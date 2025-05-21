@@ -1,0 +1,14 @@
+[project]
+name = "mindtrace-core"
+version = "0.1.0"
+dependencies = ["numpy"]
+
+[tool.setuptools]
+packages = ["mindtrace.core"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

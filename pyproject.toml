@@ -1,0 +1,21 @@
+[project]
+name = "mindtrace"
+version = "0.1.0"
+description = "Mindtrace monorepo with modular packages"
+requires-python = ">=3.12"
+readme = "README.md"
+
+[project.optional-dependencies]
+core = ["mindtrace-core"]
+services = ["mindtrace-services"]
+all = [
+  "mindtrace-core",
+  "mindtrace-services",
+]
+
+[tool.uv.sources]
+mindtrace-core = { workspace = true }
+mindtrace-services = { workspace = true }
+
+[tool.uv.workspace]
+members = ["src/core", "src/services"]
