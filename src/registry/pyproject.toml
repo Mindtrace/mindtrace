@@ -1,0 +1,17 @@
+[project]
+name = "mindtrace-registry"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "mindtrace-core"
+]
+
+[tool.setuptools]
+packages = ["mindtrace.registry"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
