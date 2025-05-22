@@ -4,18 +4,47 @@ version = "0.1.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
-
-[project.optional-dependencies]
-core = ["mindtrace-core"]
-services = ["mindtrace-services"]
-all = [
-  "mindtrace-core",
-  "mindtrace-services",
+dependencies = [
+  "mindtrace-core>=0.1.0",
+  "mindtrace-jobs>=0.1.0",
+  "mindtrace-registry>=0.1.0",
+  "mindtrace-database>=0.1.0",
+  "mindtrace-services>=0.1.0",
+  "mindtrace-hardware>=0.1.0",
+  "mindtrace-cluster>=0.1.0",
+  "mindtrace-models>=0.1.0",
+  "mindtrace-automation>=0.1.0",
+  "mindtrace-apps>=0.1.0",
+  "mindtrace-ui>=0.1.0",
+  "mindtrace-datalake>=0.1.0",
 ]
 
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-services = { workspace = true }
+mindtrace-apps = { workspace = true }
+mindtrace-cluster = { workspace = true }
+mindtrace-database = { workspace = true }
+mindtrace-hardware = { workspace = true }
+mindtrace-jobs = { workspace = true }
+mindtrace-models = { workspace = true }
+mindtrace-automation = { workspace = true }
+mindtrace-registry = { workspace = true }
+mindtrace-ui = { workspace = true }
+mindtrace-datalake = { workspace = true }
 
 [tool.uv.workspace]
-members = ["src/core", "src/services"]
+members = [
+  "mindtrace/core",
+  "mindtrace/services",
+  "mindtrace/apps",
+  "mindtrace/cluster",
+  "mindtrace/database",
+  "mindtrace/hardware",
+  "mindtrace/jobs",
+  "mindtrace/models",
+  "mindtrace/automation",
+  "mindtrace/registry",
+  "mindtrace/ui",
+  "mindtrace/datalake",
+]
