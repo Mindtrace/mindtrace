@@ -1,0 +1,1 @@
+from mindtrace.core.config.config import Config
