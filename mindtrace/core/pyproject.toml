@@ -1,7 +1,7 @@
 [project]
 name = "mindtrace-core"
 version = "0.1.0"
-dependencies = ["numpy"]
+dependencies = []
 
 [tool.setuptools]
 packages = ["mindtrace.core"]

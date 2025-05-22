@@ -2,8 +2,8 @@
 name = "mindtrace-hardware"
 version = "0.1.0"
 dependencies = [
-    "numpy",
-    "mindtrace-core"
+    "mindtrace-core",
+    "mindtrace-services",
 ]
 
 [tool.setuptools]

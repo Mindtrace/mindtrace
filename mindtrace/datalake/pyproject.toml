@@ -1,0 +1,19 @@
+[project]
+name = "mindtrace-datalake"
+version = "0.1.0"
+dependencies = [
+    "mindtrace-core",
+    "mindtrace-registry",
+    "mindtrace-database",
+    "mindtrace-services",
+]
+
+[tool.setuptools]
+packages = ["mindtrace.datalake"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
