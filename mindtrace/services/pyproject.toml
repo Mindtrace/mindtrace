@@ -1,13 +1,12 @@
 [project]
-name = "mindtrace-registry"
+name = "mindtrace-services"
 version = "0.1.0"
 dependencies = [
-    "numpy",
-    "mindtrace-core"
+    "mindtrace-core",
 ]
 
 [tool.setuptools]
-packages = ["mindtrace.registry"]
+packages = ["mindtrace.services"]
 
 [tool.setuptools.package-dir]
 "" = "."
