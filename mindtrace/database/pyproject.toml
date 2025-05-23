@@ -2,7 +2,9 @@
 name = "mindtrace-database"
 version = "0.1.0"
 dependencies = [
+    "beanie>=1.29.0",
     "mindtrace-core",
+    "redis-om>=0.3.5",
 ]
 
 [tool.setuptools]
