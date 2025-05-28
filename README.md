@@ -29,7 +29,7 @@ We use a level-based system for organizing modules based on dependency direction
 
 ### **Level 5: Applications**
 - `apps`: End-user applications composed of all previous levels.
-  - E.g., Poseidon, MIG66, Demo pipelines
+  - E.g., Demo pipelines
 
 ---
 
