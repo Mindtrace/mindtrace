@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Any, Dict, List, Type
+from typing import Any, Callable, Dict, List, Type
 
 from mindtrace.core import EventBus
 
