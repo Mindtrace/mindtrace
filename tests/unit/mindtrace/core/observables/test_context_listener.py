@@ -1,3 +1,5 @@
+"""Unit test methods for mindtrace.core.observables.context_listener module."""
+
 from unittest.mock import MagicMock
 
 import pytest
