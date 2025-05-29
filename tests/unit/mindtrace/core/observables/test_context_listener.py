@@ -1,6 +1,7 @@
 """Unit test methods for mindtrace.core.observables.context_listener module."""
 
 from unittest.mock import MagicMock
+import logging
 
 import pytest
 
@@ -41,3 +42,16 @@ def test_custom_var_method_overrides_autolog():
 
     assert listener.logger.debug.call_count == 1
     assert "x manually handled: 0 → 5" in listener.logger.debug.call_args[0][-1]
+
+def test_context_listener_with_custom_logger(caplog):
+    obj = Example()
+    custom_logger = logging.getLogger("custom_logger")
+    listener = ContextListener(autolog=["x"], logger=custom_logger, log_level=logging.INFO)
+    obj.add_listener(listener)
+
+    with caplog.at_level(logging.INFO, logger="custom_logger"):
+        obj.x = 99
+
+    # Check that the log message is present in caplog
+    assert any("x changed: 0 → 99" in message for message in caplog.messages)
+    assert any(record.name == "custom_logger" for record in caplog.records)
