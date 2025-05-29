@@ -1,5 +1,5 @@
 from functools import wraps
-from typing import Dict, List, Type
+from typing import Any, Dict, List, Type
 
 from mindtrace.core import EventBus
 
@@ -66,7 +66,14 @@ class ObservableContext:
             self._event_bus._observable_vars = self.__class__._observable_vars
             original_init(self, *args, **kwargs)
 
-        def add_listener(self, listener):
+        def add_listener(self, listener: Any):
+            """Add a listener to observe context variable changes.
+
+            Args:
+                listener: An object with a `context_updated` method and/or methods named `<var>_changed`.
+            Raises:
+                ValueError: If the listener subscribes to a variable not in the observable context.
+            """
             if hasattr(listener, "context_updated"):
                 self._listeners.append(listener)
 
@@ -77,24 +84,49 @@ class ObservableContext:
                         raise ValueError(f"Listener cannot subscribe to unknown variable '{var}'")
                     self._event_bus.subscribe(f"{var}_changed", getattr(listener, attr))
 
-        def remove_listener(self, listener):
+        def remove_listener(self, listener: Any):
+            """Remove a previously added listener.
+
+            Args:
+                listener: The listener object to remove.
+            """
             if listener in self._listeners:
                 self._listeners.remove(listener)
 
-        def _notify_listeners(self, source, var, old, new):
+        def _notify_listeners(self, source: str, var: str, old: Any, new: Any):
             for l in self._listeners:
                 if hasattr(l, "context_updated"):
                     l.context_updated(source, var, old, new)
 
         def set_context(self, **updates):
+            """Set multiple observable variables at once.
+
+            Args:
+                **updates: Key-value pairs of variable names and their new values.
+            """
             for key, value in updates.items():
                 if hasattr(self.__class__, key):
                     setattr(self, key, value)
 
-        def subscribe(self, event_name, handler):
+        def subscribe(self, event_name: str, handler: Callable):
+            """Subscribe a handler to a specific event.
+
+            Args:
+                event_name (str): The name of the event to subscribe to.
+                handler (callable): The function to call when the event is emitted.
+
+            Returns:
+                Any: The subscription ID or handler reference, depending on EventBus implementation.
+            """
             return self._event_bus.subscribe(event_name, handler)
 
-        def unsubscribe(self, event_name, handler_or_id):
+        def unsubscribe(self, event_name: str, handler_or_id: str | Callable):
+            """Unsubscribe a handler or subscription ID from a specific event.
+
+            Args:
+                event_name (str): The name of the event.
+                handler_or_id: The handler function or subscription ID to remove.
+            """
             self._event_bus.unsubscribe(event_name, handler_or_id)
 
         cls.__init__ = new_init
