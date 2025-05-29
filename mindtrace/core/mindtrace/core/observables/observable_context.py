@@ -1,11 +1,41 @@
 from functools import wraps
-from typing import Dict, Type
+from typing import Dict, List, Type
 
 from mindtrace.core import EventBus
 
 
 class ObservableContext:
-    def __init__(self, vars: Dict[str, Type]):
+    """A class decorator that allows listeners to subscribe to changes in the class properties.
+    
+    Example::
+
+        from mindtrace.core import ObservableContext
+
+        @ObservableContext(vars={"x": int, "y": int})
+        class MyContext:
+            def __init__(self):
+                self.x = 0
+                self.y = 0
+                self.z = 0  # Not observable because it's not in the vars list
+
+        my_context = MyContext()
+        my_context.add_listener(ContextListener(autolog=["x", "y"]))
+        # my_context.add_listener(ContextListener(autolog=["z"]))  # Will throw an error
+
+        my_context.x = 1
+        my_context.y = 2
+
+        # Logs:
+        # [MyContext] x changed: 0 → 1
+        # [MyContext] y changed: 0 → 2
+    """
+
+    def __init__(self, vars: List[str] | Dict[str, Type]):
+        """Initialize the observable context.
+        
+        Args:
+            vars: A list of variable names to be made observable, or a dictionary of variable names and their types.
+        """
         self.vars = vars
 
     def __call__(self, cls):
