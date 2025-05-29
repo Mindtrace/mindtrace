@@ -2,7 +2,7 @@
 
 import pytest
 
-from mindtrace.core import ObservableContext
+from mindtrace.core import ContextListener, ObservableContext
 
 
 @ObservableContext(vars={"x": int, "y": int})
@@ -78,3 +78,22 @@ def test_set_context_with_partial_update(example):
     example.set_context(x=42)
     assert example.x == 42
     assert example.y == 0
+
+def test_listener_cannot_subscribe_to_unknown_variable(example):
+    """Assert that an error is raised if a listener tries to subscribe to a non-observable variable."""
+
+    class GoodListener:
+        def just_a_method(self, source, old, new):  # Not a reserved event name.
+            pass
+
+    class BadListener:
+        def z_changed(self, source, old, new):  # "{var}_changed" is a reserved event name.
+            pass
+
+    example.add_listener(GoodListener())  # Should succeed
+
+    with pytest.raises(ValueError, match="Listener cannot subscribe to unknown variable 'z'"):
+        example.add_listener(BadListener())
+
+    with pytest.raises(ValueError, match="Listener cannot subscribe to unknown variable 'z'"):
+        example.add_listener(ContextListener(autolog=["z"]))
