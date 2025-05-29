@@ -9,7 +9,7 @@ class ObservableContext:
     
     Example::
 
-        from mindtrace.core import ObservableContext
+        from mindtrace.core import ContextListener, ObservableContext
 
         @ObservableContext(vars={"x": int, "y": int})
         class MyContext:
@@ -20,7 +20,7 @@ class ObservableContext:
 
         my_context = MyContext()
         my_context.add_listener(ContextListener(autolog=["x", "y"]))
-        # my_context.add_listener(ContextListener(autolog=["z"]))  # Will throw an error
+        # my_context.add_listener(ContextListener(autolog=["z"]))  # Raises ValueError
 
         my_context.x = 1
         my_context.y = 2
@@ -36,9 +36,10 @@ class ObservableContext:
         Args:
             vars: A list of variable names to be made observable, or a dictionary of variable names and their types.
         """
-        self.vars = vars
+        self.vars = list(vars) if isinstance(vars, list) else list(vars.keys())
 
     def __call__(self, cls):
+        cls._observable_vars = self.vars  # Attach observable vars to the class
         for var_name in self.vars:
             private_name = f"_{var_name}"
 
@@ -62,6 +63,7 @@ class ObservableContext:
         def new_init(self, *args, **kwargs):
             self._listeners = []
             self._event_bus = EventBus()
+            self._event_bus._observable_vars = self.__class__._observable_vars
             original_init(self, *args, **kwargs)
 
         def add_listener(self, listener):
@@ -71,6 +73,8 @@ class ObservableContext:
             for attr in dir(listener):
                 if attr.endswith("_changed") and callable(getattr(listener, attr)):
                     var = attr[:-8]
+                    if var not in self.__class__._observable_vars:  # Use class attribute
+                        raise ValueError(f"Listener cannot subscribe to unknown variable '{var}'")
                     self._event_bus.subscribe(f"{var}_changed", getattr(listener, attr))
 
         def remove_listener(self, listener):
