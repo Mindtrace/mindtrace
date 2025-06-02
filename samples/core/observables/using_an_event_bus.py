@@ -11,7 +11,7 @@ class Source:
 
 class Listener:
     def __init__(self, event_bus: EventBus):
-        event_bus.subscribe("event", self.on_event)
+        event_bus.subscribe(self.on_event, "event")
 
     def on_event(self, **kwargs):
         print(f"Received event: {kwargs}")

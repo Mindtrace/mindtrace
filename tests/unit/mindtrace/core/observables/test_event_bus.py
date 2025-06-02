@@ -12,7 +12,7 @@ def test_eventbus_subscribe_emit():
     def handler(**kwargs):
         result.update(kwargs)
 
-    bus.subscribe("test_event", handler)
+    bus.subscribe(handler, "test_event")
     bus.emit("test_event", key="value")
     assert result == {"key": "value"}
 
@@ -23,11 +23,11 @@ def test_eventbus_unsubscribe_by_function():
     def handler(**kwargs):
         called.append(True)
 
-    bus.subscribe("event", handler)
+    bus.subscribe(handler, "event")
     bus.emit("event")
     assert len(called) == 1
 
-    bus.unsubscribe("event", handler)
+    bus.unsubscribe(handler, "event")
     bus.emit("event")
     assert len(called) == 1
 
@@ -38,11 +38,11 @@ def test_eventbus_unsubscribe_by_id():
     def handler(**kwargs):
         called.append(True)
 
-    handler_id = bus.subscribe("event", handler)
+    handler_id = bus.subscribe(handler, "event")
 
     bus.emit("event")   
     assert len(called) == 1
 
-    bus.unsubscribe("event", handler_id)
+    bus.unsubscribe(handler_id, "event")
     bus.emit("event")
     assert len(called) == 1

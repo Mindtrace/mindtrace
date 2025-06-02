@@ -32,12 +32,12 @@ class EventBus:
         """Initialize the event bus."""
         self._subscribers: Dict[str, Dict[str, Callable]] = defaultdict(dict)
 
-    def subscribe(self, event_name: str, handler: Callable) -> str:
+    def subscribe(self, handler: Callable, event_name: str) -> str:
         """Subscribe to an event.
         
         Args:
-            event_name: The name of the event to subscribe to.
             handler: The handler to call when the event is emitted.
+            event_name: The name of the event to subscribe to.
 
         Returns:
             The handler ID.
@@ -46,12 +46,12 @@ class EventBus:
         self._subscribers[event_name][handler_id] = handler
         return handler_id
 
-    def unsubscribe(self, event_name: str, handler_or_id: Union[Callable, str]):
+    def unsubscribe(self, handler_or_id: Union[Callable, str], event_name: str):
         """Unsubscribe from an event.
         
         Args:
-            event_name: The name of the event to unsubscribe from.
             handler_or_id: The handler or ID to unsubscribe from.
+            event_name: The name of the event to unsubscribe from.
         """
         subs = self._subscribers[event_name]
         if isinstance(handler_or_id, str):

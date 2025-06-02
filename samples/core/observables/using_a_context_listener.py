@@ -23,8 +23,8 @@ class SecurityMonitor(ContextListener):
 
 
 svc = InferenceService()
-svc.add_listener(ContextListener(autolog=["failed_login_attempts", "gpu_utilization"], log_level=logging.WARNING))
-svc.add_listener(SecurityMonitor())
+svc.subscribe(ContextListener(autolog=["failed_login_attempts", "gpu_utilization"], log_level=logging.WARNING))
+svc.subscribe(SecurityMonitor())
 
 for i in range(3):
     svc.failed_login()

@@ -36,10 +36,10 @@ def resource_alert(source, old, new):
 
 # Initialize the service and add listeners
 svc = InferenceService()
-svc.add_listener(SecurityMonitor())  # Use `add_listener` for class-based listeners
-svc.add_listener(Logger())
-svc.subscribe("context_updated", log_change)  # Use `subscribe` for function-based listeners
-svc.subscribe("gpu_utilization_changed", resource_alert)  
+svc.subscribe(SecurityMonitor()) 
+svc.subscribe(Logger())
+svc.subscribe(log_change, "context_updated") 
+svc.subscribe(resource_alert, "gpu_utilization_changed")  
 
 # Simulate some activity
 for i in range(3):
