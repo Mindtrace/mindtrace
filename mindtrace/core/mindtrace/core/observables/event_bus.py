@@ -1,5 +1,6 @@
 from collections import defaultdict
 from typing import Callable, Dict, Union
+import uuid
 
 
 class EventBus:
@@ -41,7 +42,7 @@ class EventBus:
         Returns:
             The handler ID.
         """
-        handler_id = f"{id(handler)}"
+        handler_id = str(uuid.uuid4())
         self._subscribers[event_name][handler_id] = handler
         return handler_id
 
