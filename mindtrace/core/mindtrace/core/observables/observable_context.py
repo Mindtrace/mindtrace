@@ -92,18 +92,18 @@ class ObservableContext:
                 Uuid: The subscription ID.
             """
             if callable(target) and event_name:
-                return self._event_bus.subscribe(event_name, target)
+                return self._event_bus.subscribe(target, event_name)
             elif hasattr(target, "__class__"):
                 num_subscriptions = 0
                 if hasattr(target, "context_updated"):
-                    self._event_bus.subscribe("context_updated", target.context_updated)
+                    self._event_bus.subscribe(target.context_updated, "context_updated")
                     num_subscriptions += 1
                 for attr in dir(target):
                     if attr.endswith("_changed") and callable(getattr(target, attr)):
                         var = attr[:-8]
                         if var not in self.__class__._observable_vars:
                             raise ValueError(f"Listener cannot subscribe to unknown variable '{var}'")
-                        self._event_bus.subscribe(f"{var}_changed", getattr(target, attr))
+                        self._event_bus.subscribe(getattr(target, attr), f"{var}_changed")
                         num_subscriptions += 1
                 if num_subscriptions == 0:
                     raise ValueError("Listener did not subscribe to any observable variables. Must subscribe to at "
@@ -122,17 +122,17 @@ class ObservableContext:
             """
             unsubscribed = False
             if callable(target) and event_name:
-                self._event_bus.unsubscribe(event_name, target)
+                self._event_bus.unsubscribe(target, event_name)
                 unsubscribed = True
             elif hasattr(target, "__class__"):
                 if hasattr(target, "context_updated"):
-                    self._event_bus.unsubscribe("context_updated", target.context_updated)
+                    self._event_bus.unsubscribe(target.context_updated, "context_updated")
                     unsubscribed = True
                 for attr in dir(target):
                     if attr.endswith("_changed") and callable(getattr(target, attr)):
                         var = attr[:-8]
                         if var in self.__class__._observable_vars:
-                            self._event_bus.unsubscribe(f"{var}_changed", getattr(target, attr))
+                            self._event_bus.unsubscribe(getattr(target, attr), f"{var}_changed")
                             unsubscribed = True
             if not unsubscribed:
                 raise ValueError("Subscription not found, unable to unsubscribe.")
