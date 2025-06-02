@@ -19,8 +19,8 @@ class ObservableContext:
                 self.z = 0  # Not observable because it's not in the vars list
 
         my_context = MyContext()
-        my_context.add_listener(ContextListener(autolog=["x", "y"]))
-        # my_context.add_listener(ContextListener(autolog=["z"]))  # Raises ValueError
+        my_context.subscribe(ContextListener(autolog=["x", "y"]))
+        # my_context.subscribe(ContextListener(autolog=["z"]))  # Raises ValueError
 
         my_context.x = 1
         my_context.y = 2
@@ -43,8 +43,8 @@ class ObservableContext:
         elif isinstance(vars, dict):
             self.vars = list(vars.keys())
         else:
-            raise ValueError(f"Invalid vars argument: {vars}, must be a list of variable names or a dictionary of " 
-                "variable names and their types.")
+            raise ValueError(f"Invalid vars argument: {vars}, vars must be a str variable name, list of variable names "
+                "or a dictionary of variable names and their types.")
 
     def __call__(self, cls):
         cls._observable_vars = self.vars
@@ -58,10 +58,16 @@ class ObservableContext:
                 old = getattr(self, name, None)
                 setattr(self, name, value)
                 if old != value:
-                    self._notify_listeners(source=self.__class__.__name__, var=var, old=old, new=value)
                     self._event_bus.emit(
-                        "context_updated", source=self.__class__.__name__, var=var, old=old, new=value)
-                    self._event_bus.emit(f"{var}_changed", source=self.__class__.__name__, old=old, new=value)
+                        "context_updated", 
+                        source=self.__class__.__name__, 
+                        var=var, old=old, 
+                        new=value)
+                    self._event_bus.emit(
+                        f"{var}_changed", 
+                        source=self.__class__.__name__, 
+                        old=old, 
+                        new=value)
 
             setattr(cls, var_name, property(getter, setter))
 
@@ -69,79 +75,69 @@ class ObservableContext:
 
         @wraps(original_init)
         def new_init(self, *args, **kwargs):
-            self._listeners = []
             self._event_bus = EventBus()
-            self._event_bus._observable_vars = self.__class__._observable_vars
             original_init(self, *args, **kwargs)
 
-        def add_listener(self, listener: Any):
-            """Add a listener to observe context variable changes.
+        def subscribe(self, target, event_name: str | None = None):
+            """Register a handler or listener object for context events.
+
+            - If `target` is a callable and `event_name` is provided, subscribes the callable to the event.
+            - If `target` is an object, inspects it for `context_updated` and `{var}_changed` methods and subscribes them.
 
             Args:
-                listener: An object with a `context_updated` method and/or methods named `<var>_changed`.
-            Raises:
-                ValueError: If the listener subscribes to a variable not in the observable context.
-            """
-            if hasattr(listener, "context_updated"):
-                self._listeners.append(listener)
-
-            for attr in dir(listener):
-                if attr.endswith("_changed") and callable(getattr(listener, attr)):
-                    var = attr[:-8]
-                    if var not in self.__class__._observable_vars:  # Use class attribute
-                        raise ValueError(f"Listener cannot subscribe to unknown variable '{var}'")
-                    self._event_bus.subscribe(f"{var}_changed", getattr(listener, attr))
-
-        def remove_listener(self, listener: Any):
-            """Remove a previously added listener.
-
-            Args:
-                listener: The listener object to remove.
-            """
-            if listener in self._listeners:
-                self._listeners.remove(listener)
-
-        def _notify_listeners(self, source: str, var: str, old: Any, new: Any):
-            for l in self._listeners:
-                if hasattr(l, "context_updated"):
-                    l.context_updated(source, var, old, new)
-
-        def set_context(self, **updates):
-            """Set multiple observable variables at once.
-
-            Args:
-                **updates: Key-value pairs of variable names and their new values.
-            """
-            for key, value in updates.items():
-                if hasattr(self.__class__, key):
-                    setattr(self, key, value)
-
-        def subscribe(self, event_name: str, handler: Callable):
-            """Subscribe a handler to a specific event.
-
-            Args:
-                event_name (str): The name of the event to subscribe to.
-                handler (callable): The function to call when the event is emitted.
-
+                target: A callable or an object with `context_updated` and/or `{var}_changed` methods.
+                event_name: The name of the event to subscribe to. May be omitted if the target is an object.
+            
             Returns:
-                Any: The subscription ID or handler reference, depending on EventBus implementation.
+                Uuid: The subscription ID.
             """
-            return self._event_bus.subscribe(event_name, handler)
+            if callable(target) and event_name:
+                return self._event_bus.subscribe(event_name, target)
+            elif hasattr(target, "__class__"):
+                num_subscriptions = 0
+                if hasattr(target, "context_updated"):
+                    self._event_bus.subscribe("context_updated", target.context_updated)
+                    num_subscriptions += 1
+                for attr in dir(target):
+                    if attr.endswith("_changed") and callable(getattr(target, attr)):
+                        var = attr[:-8]
+                        if var not in self.__class__._observable_vars:
+                            raise ValueError(f"Listener cannot subscribe to unknown variable '{var}'")
+                        self._event_bus.subscribe(f"{var}_changed", getattr(target, attr))
+                        num_subscriptions += 1
+                if num_subscriptions == 0:
+                    raise ValueError("Listener did not subscribe to any observable variables. Must subscribe to at "
+                        f"least one of: context_updated, {', '
+                        .join([f'{var}_changed' for var in self.__class__._observable_vars])}.")
 
-        def unsubscribe(self, event_name: str, handler_or_id: str | Callable):
-            """Unsubscribe a handler or subscription ID from a specific event.
+        def unsubscribe(self, target, event_name: str | None = None):
+            """Unsubscribe a handler or listener object from context events.
 
             Args:
-                event_name (str): The name of the event.
-                handler_or_id: The handler function or subscription ID to remove.
+                target: A callable or an object with `context_updated` and/or `{var}_changed` methods.
+                event_name: The name of the event to unsubscribe from. May be omitted if the target is an object.
+
+            - If `target` is a callable and `event_name` is provided, unsubscribes the callable from the event.
+            - If `target` is an object, removes it from listeners and unsubscribes its `{var}_changed` methods.
             """
-            self._event_bus.unsubscribe(event_name, handler_or_id)
+            unsubscribed = False
+            if callable(target) and event_name:
+                self._event_bus.unsubscribe(event_name, target)
+                unsubscribed = True
+            elif hasattr(target, "__class__"):
+                if hasattr(target, "context_updated"):
+                    self._event_bus.unsubscribe("context_updated", target.context_updated)
+                    unsubscribed = True
+                for attr in dir(target):
+                    if attr.endswith("_changed") and callable(getattr(target, attr)):
+                        var = attr[:-8]
+                        if var in self.__class__._observable_vars:
+                            self._event_bus.unsubscribe(f"{var}_changed", getattr(target, attr))
+                            unsubscribed = True
+            if not unsubscribed:
+                raise ValueError("Subscription not found, unable to unsubscribe.")
 
         cls.__init__ = new_init
-        cls.add_listener = add_listener
-        cls.remove_listener = remove_listener
-        cls._notify_listeners = _notify_listeners
-        cls.set_context = set_context
         cls.subscribe = subscribe
         cls.unsubscribe = unsubscribe
         return cls
