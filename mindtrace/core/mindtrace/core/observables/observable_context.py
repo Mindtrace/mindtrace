@@ -36,10 +36,18 @@ class ObservableContext:
         Args:
             vars: A list of variable names to be made observable, or a dictionary of variable names and their types.
         """
-        self.vars = list(vars) if isinstance(vars, list) else list(vars.keys())
+        if isinstance(vars, str):
+            self.vars = [vars]
+        elif isinstance(vars, list):
+            self.vars = vars
+        elif isinstance(vars, dict):
+            self.vars = list(vars.keys())
+        else:
+            raise ValueError(f"Invalid vars argument: {vars}, must be a list of variable names or a dictionary of " 
+                "variable names and their types.")
 
     def __call__(self, cls):
-        cls._observable_vars = self.vars  # Attach observable vars to the class
+        cls._observable_vars = self.vars
         for var_name in self.vars:
             private_name = f"_{var_name}"
 
