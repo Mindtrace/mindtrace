@@ -19,7 +19,7 @@ def test_auto_logger_for_watched_var():
     obj = Example()
     listener = ContextListener(autolog=["x"])
     listener.logger = MagicMock()
-    obj.add_listener(listener)
+    obj.subscribe(listener)
 
     obj.x = 42
 
@@ -37,7 +37,7 @@ def test_custom_var_method_overrides_autolog():
 
     listener = MyListener()
     listener.logger = MagicMock()
-    obj.add_listener(listener)
+    obj.subscribe(listener)
     obj.x = 5
 
     assert listener.logger.debug.call_count == 1
@@ -47,7 +47,7 @@ def test_context_listener_with_custom_logger(caplog):
     obj = Example()
     custom_logger = logging.getLogger("custom_logger")
     listener = ContextListener(autolog=["x"], logger=custom_logger, log_level=logging.INFO)
-    obj.add_listener(listener)
+    obj.subscribe(listener)
 
     with caplog.at_level(logging.INFO, logger="custom_logger"):
         obj.x = 99
