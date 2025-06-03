@@ -10,5 +10,14 @@ services:
     volumes:
       - mongodb_test_data:/data/db
 
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    volumes:
+      - redis_test_data:/data
+
 volumes:
-  mongodb_test_data: 
+  mongodb_test_data:
+  redis_test_data: 
