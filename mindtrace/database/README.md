@@ -113,6 +113,40 @@ RedisODMBackend(
 )
 ```
 
+#### Redis Document Model
+```python
+from mindtrace.database import MindtraceRedisDocument
+from redis_om import Field
+
+class UserDoc(MindtraceRedisDocument):
+    name: str = Field(index=True)
+    age: int = Field(index=True)
+    email: str = Field(index=True)
+    skills: List[str] = Field(index=True, default_factory=list)
+
+    class Meta:
+        global_key_prefix = "mindtrace"
+```
+
+#### Redis Backend Features
+- JSON data storage and operations
+- Indexed field support
+- Advanced search capabilities
+- TTL (Time To Live) support
+- Raw Redis commands access
+- Automatic key prefixing
+- Duplicate detection
+- Bulk operations
+
+#### Redis Backend Methods
+- `initialize()`: Set up Redis OM migrations
+- `insert(obj: BaseModel)`: Insert with duplicate checking
+- `get(id: str)`: Retrieve document by ID
+- `delete(id: str)`: Delete document and associated keys
+- `all()`: Retrieve all documents
+- `find(*args)`: Find documents using Redis OM expressions
+- `get_raw_model()`: Access underlying Redis OM model
+
 ### Local Backend
 ```python
 LocalODMBackend(
@@ -177,10 +211,12 @@ The test suite uses pytest fixtures for setup and teardown:
 - `mongo_client`: Provides MongoDB client instance
 - `test_db`: Creates and cleans up test database
 - `mongo_backend`: Sets up ODM backend with test models
+- `redis_backend`: Sets up Redis ODM backend with test models
 
-Example test model:
+Example test models:
 
 ```python
+# MongoDB Test Model
 class UserDoc(MindtraceDocument):
     name: str
     age: int
@@ -189,18 +225,32 @@ class UserDoc(MindtraceDocument):
     class Settings:
         name = "users"
         use_cache = False
+
+# Redis Test Model
+class UserDoc(MindtraceRedisDocument):
+    name: str = Field(index=True)
+    age: int = Field(index=True)
+    email: str = Field(index=True)
+    
+    class Meta:
+        global_key_prefix = "mindtrace"
 ```
 
 ### Writing New Tests
 
 To add new tests:
 
-1. Create test models inheriting from `MindtraceDocument`
+1. Create test models inheriting from `MindtraceDocument` or `MindtraceRedisDocument`
 2. Use the `@pytest.mark.asyncio` decorator for async tests
-3. Use the `mongo_backend` fixture with your model:
+3. Use the appropriate backend fixture:
    ```python
+   # For MongoDB
    @pytest.mark.parametrize("mongo_backend", [YourModel], indirect=True)
    async def test_your_feature(mongo_backend):
+       # Your test code here
+
+   # For Redis
+   def test_your_feature(redis_backend):
        # Your test code here
    ```
 
