@@ -65,7 +65,7 @@ class LocalRegistryBackend(RegistryBackend):
         shutil.copytree(local_path, dst, dirs_exist_ok=True)
         self.logger.debug(f"Upload complete. Contents: {list(dst.rglob('*'))}")
 
-    def download(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str):
         """Copy a directory from the backend store to a local path.
 
         Args:

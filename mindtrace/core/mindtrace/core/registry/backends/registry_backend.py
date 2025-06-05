@@ -11,10 +11,10 @@ class RegistryBackend(MindtraceABC):
     @property
     @abstractmethod
     def uri(self) -> Path:
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
-    def push(self, name: str, obj: Any, materializer: BaseMaterializer | None = None, version: str | None = None):
+    def push(self, name: str, version: str | None = None, local_path: str | None = None):
         """Upload a local object version to the remote backend.
 
         Args:
@@ -23,10 +23,10 @@ class RegistryBackend(MindtraceABC):
             materializer: Materializer to use for the object.
             version: Version string (e.g., "1.0.0").
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
-    def download(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str):
         """Download a remote object version into a local path.
 
         Args:
@@ -34,22 +34,7 @@ class RegistryBackend(MindtraceABC):
             version: Version string.
             local_path: Local target directory to download into.
         """
-        pass
-    
-    def pull(self, name: str, version: str, materializer: BaseMaterializer | None = None) -> Any:
-        """Pull and load a remote object version into memory.
-
-        This method is optional and not all backends may support it.
-
-        Args:
-            name: Name of the object.
-            version: Version string.
-            materializer: Materializer to use to instantiate the object.
-
-        Raises:
-            NotImplementedError: If the backend does not support pulling.
-        """
-        raise NotImplementedError("Pull is not implemented for this backend.")
+        pass  # pragma: no cover
     
     @abstractmethod
     def delete(self, name: str, version: str = "all"):
@@ -59,7 +44,7 @@ class RegistryBackend(MindtraceABC):
             name: Name of the object.
             version: Version string.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def save_metadata(self, name: str, version: str, metadata: dict):
@@ -70,7 +55,7 @@ class RegistryBackend(MindtraceABC):
             version: Version string.
             metadata: Dictionary of object metadata.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def fetch_metadata(self, name: str, version: str) -> dict:
@@ -83,7 +68,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Metadata dictionary.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def delete_metadata(self, model_name: str, version: str) -> dict:
@@ -96,7 +81,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Metadata dictionary.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def list_objects(self) -> List[str]:
@@ -105,7 +90,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             List of object names.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def list_versions(self, name: str) -> List[str]:
@@ -117,7 +102,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             List of versions for the given object.
         """
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def has_object(self, name: str, version: str) -> bool:
@@ -130,7 +115,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             True if the object version exists, False otherwise.
         """
-        pass
+        pass  # pragma: no cover
     
     def validate_object_name(self, name: str) -> None:
         """Validate that the object name contains only allowed characters.
