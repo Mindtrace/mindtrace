@@ -20,6 +20,6 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     pass
 
 
-class MindtraceABC(ABC, metaclass=MindtraceABCMeta):
+class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     """Base class for Mindtrace-derived abstract classes."""
     pass
