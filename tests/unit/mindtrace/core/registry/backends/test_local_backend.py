@@ -63,7 +63,7 @@ def test_push_and_download(backend, sample_object_dir):
     # Download to a new location
     download_dir = backend.uri / "download"
     download_dir.mkdir()
-    backend.download("test:object", "1.0.0", str(download_dir))
+    backend.pull("test:object", "1.0.0", str(download_dir))
     
     # Verify the download
     assert (download_dir / "file1.txt").exists()
