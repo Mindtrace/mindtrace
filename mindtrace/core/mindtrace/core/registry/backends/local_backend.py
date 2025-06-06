@@ -1,7 +1,7 @@
-import datetime
+import json
 from pathlib import Path
 import shutil
-from typing import Any, List
+from typing import Dict, List
 import yaml
 
 from mindtrace.core import RegistryBackend
@@ -21,12 +21,20 @@ class LocalRegistryBackend(RegistryBackend):
         super().__init__(**kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
+        self._metadata = self._uri / "registry_metadata.json"
+        with open(self._metadata, "w") as f:
+            json.dump({"materializers": {}}, f)
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
         
     @property
     def uri(self) -> Path:
         """The resolved base directory path for the backend."""
         return self._uri
+
+    @property
+    def metadata(self) -> Path:
+        """The resolved metadata file path for the backend."""
+        return self._metadata
 
     def _full_path(self, remote_key: str) -> Path:
         """Convert a remote key to a full filesystem path.
@@ -198,3 +206,47 @@ class LocalRegistryBackend(RegistryBackend):
             return False
         else:
             return version in self.list_versions(name)
+
+    def register_materializer(self, object_class: str, materializer_class: str):
+        """Register a materializer for an object class.
+
+        Args:
+            object_class: Object class to register the materializer for.
+            materializer_class: Materializer class to register.
+        """
+        try:
+            with open(self.metadata, "r") as f:
+                metadata = json.load(f)
+            metadata["materializers"][object_class] = materializer_class
+            with open(self.metadata, "w") as f:
+                json.dump(metadata, f)
+        except Exception as e:
+            self.logger.error(f"Error registering materializer for {object_class}: {e}")
+            raise e
+        else:
+            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")        
+    
+    def registered_materializer(self, object_class: str) -> str | None:
+        """Get the registered materializer for an object class.
+
+        Args:
+            object_class: Object class to get the registered materializer for.
+
+        Returns:
+            Materializer class string, or None if no materializer is registered for the object class.
+        """
+        return self.registered_materializers().get(object_class, None)
+
+    def registered_materializers(self) -> Dict[str, str]:
+        """Get all registered materializers.
+
+        Returns:
+            Dictionary mapping object classes to their registered materializer classes.
+        """
+        try:
+            with open(self.metadata, "r") as f:
+                materializers = json.load(f).get("materializers", {})
+        except Exception as e:
+            self.logger.error(f"Error loading materializers: {e}")
+            raise e
+        return materializers
