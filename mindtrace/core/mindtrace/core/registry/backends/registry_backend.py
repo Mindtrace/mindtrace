@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, List
+from typing import Any, Dict, List
 
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -114,6 +114,37 @@ class RegistryBackend(MindtraceABC):
 
         Returns:
             True if the object version exists, False otherwise.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    def register_materializer(self, object_class: str, materializer_class: str):
+        """Register a materializer for an object class.
+
+        Args:
+            object_class: Object class to register the materializer for.
+            materializer_class: Materializer class to register.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    def registered_materializer(self, object_class: str) -> str:
+        """Get the registered materializer for an object class.
+
+        Args:
+            object_class: Object class to get the registered materializer for.
+
+        Returns:
+            Materializer class string.
+        """
+        pass  # pragma: no cover
+
+    @abstractmethod
+    def registered_materializers(self) -> Dict[str, str]:
+        """Get all registered materializers.
+
+        Returns:
+            Dictionary mapping object classes to their registered materializer classes.
         """
         pass  # pragma: no cover
     
