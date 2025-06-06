@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+from typing import Dict
 
 from mindtrace.core import RegistryBackend
 
@@ -7,6 +8,10 @@ from mindtrace.core import RegistryBackend
 @pytest.fixture
 def concrete_backend():
     class ConcreteBackend(RegistryBackend):
+        def __init__(self):
+            super().__init__()
+            self._materializers: Dict[str, str] = {}
+
         @property
         def uri(self) -> Path:
             return Path("/tmp")
@@ -37,6 +42,15 @@ def concrete_backend():
 
         def has_object(self, name: str, version: str) -> bool:
             return False
+
+        def register_materializer(self, object_class: str, materializer_class: str):
+            self._materializers[object_class] = materializer_class
+
+        def registered_materializer(self, object_class: str) -> str | None:
+            return self._materializers.get(object_class)
+
+        def registered_materializers(self) -> Dict[str, str]:
+            return self._materializers.copy()
 
     return ConcreteBackend()
 
