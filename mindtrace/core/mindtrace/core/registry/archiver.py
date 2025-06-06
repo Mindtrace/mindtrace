@@ -9,10 +9,7 @@ from mindtrace.core import Mindtrace, MindtraceMeta
 
 class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
     """Meta class for Archiver."""
-
-    def __new__(mcs, name, bases, namespace):
-        cls = super().__new__(mcs, name, bases, namespace)
-        return cls
+    pass
 
 
 class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
@@ -23,8 +20,7 @@ class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
     ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
 
     def __init__(self, uri: str, *args, **kwargs):
-        Mindtrace.__init__(self)
-        BaseMaterializer.__init__(self, uri=uri, *args, **kwargs)
+        super().__init__(uri=uri, *args, **kwargs)
         self.logger.info(f"Archiver initialized at: {self.uri}")
 
     @abstractmethod
@@ -32,5 +28,5 @@ class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
         raise NotImplementedError("Subclasses must implement load().")
 
     @abstractmethod
-    def save(self, obj: Any) -> None:
+    def save(self, data: Any) -> None:
         raise NotImplementedError("Subclasses must implement save().")
