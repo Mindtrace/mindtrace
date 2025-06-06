@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
@@ -298,6 +299,108 @@ class Registry(Mindtrace):
         for object_name in self.list_objects():
             result[object_name] = self.list_versions(object_name)
         return result
+
+    def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
+        """Returns a human-readable summary of the registry contents.
+
+        Args:
+            color: Whether to colorize the output using `rich`
+            latest_only: If True, only show the latest version of each model
+        """
+        try:
+            from rich.console import Console
+            from rich.table import Table
+
+            use_rich = color
+        except ImportError:
+            use_rich = False
+
+        info = self.info()
+        if not info:
+            return "Model Registry is empty."
+
+        if use_rich:
+            console = Console()
+            table = Table(title=f"Registry at {self.backend.uri}")
+
+            table.add_column("Model", style="bold cyan")
+            table.add_column("Version", style="green")
+            table.add_column("Class", style="magenta")
+            table.add_column("Value", style="yellow")
+            table.add_column("Metadata", style="dim")
+
+            for model_name, versions in info.items():
+                version_items = versions.items()
+                if latest_only and version_items:
+                    version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
+
+                for version, details in version_items:
+                    meta = details.get("metadata", {})
+                    metadata_str = ", ".join(f"{k}={v}" for k, v in meta.items()) if meta else "(none)"
+                    
+                    # Get the class name from metadata
+                    class_name = details.get("class", "❓")
+                    
+                    # Only try to load basic built-in types
+                    if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
+                        try:
+                            obj = self.load(model_name, version)
+                            value_str = str(obj)
+                            # Truncate long values
+                            if len(value_str) > 50:
+                                value_str = value_str[:47] + "..."
+                        except Exception:
+                            value_str = "❓ (error loading)"
+                    else:
+                        # For non-basic types, just show the class name wrapped in angle brackets
+                        value_str = f"<{class_name.split('.')[-1]}>"
+
+                    table.add_row(
+                        model_name,
+                        f"v{version}",
+                        class_name,
+                        value_str,
+                        metadata_str,
+                    )
+
+            with console.capture() as capture:
+                console.print(table)
+            return capture.get()
+
+        # Fallback to plain string
+        lines = [f"📦 Model Registry at: {self.backend.base_path}"]
+        for model_name, versions in info.items():
+            lines.append(f"\n🧠 {model_name}:")
+            version_items = versions.items()
+            if latest_only:
+                version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
+            for version, details in version_items:
+                cls = details.get("class", "❓ Not registered")
+                
+                # Only try to load basic built-in types
+                if cls in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
+                    try:
+                        obj = self.load(model_name, version)
+                        value_str = str(obj)
+                        # Truncate long values
+                        if len(value_str) > 50:
+                            value_str = value_str[:47] + "..."
+                    except Exception:
+                        value_str = "❓ (error loading)"
+                else:
+                    # For non-basic types, just show the class name wrapped in angle brackets
+                    value_str = f"<{cls.split('.')[-1]}>"
+
+                lines.append(f"  - v{version}:")
+                lines.append(f"      class: {cls}")
+                lines.append(f"      value: {value_str}")
+                metadata = details.get("metadata", {})
+                if metadata:
+                    for key, val in metadata.items():
+                        lines.append(f"      {key}: {val}")
+                else:
+                    lines.append("      metadata: (none)")
+        return "\n".join(lines)
 
     def _temp_dir(self):
         temp_dir = Path(self.config["MINDTRACE_TEMP_DIR"])
