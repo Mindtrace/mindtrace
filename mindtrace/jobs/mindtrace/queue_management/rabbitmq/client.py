@@ -1,19 +1,24 @@
 import json
 import time
+import uuid
+import logging
 from typing import Optional
 import pydantic
 
 import pika
 import pika.exceptions
+from pika import BasicProperties, DeliveryMode
 
 from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq.rabbitmq_connection import RabbitMQConnection
+from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.mindtrace.utils import ifnone
+from mindtrace.jobs.mindtrace.types import Job
 
 
 class RabbitMQClient(OrchestratorBackend):
     def __init__(self, host: str = None, port: int = None, username: str = None, password: str = None):
         super().__init__()
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self.connection.connect()
         self.channel = self.connection.get_channel()
@@ -68,7 +73,7 @@ class RabbitMQClient(OrchestratorBackend):
 
         try:
             self.channel.queue_declare(queue=queue, passive=True)
-            return
+            return {"status": "success", "message": f"Queue '{queue}' already exists."}
 
         except pika.exceptions.ChannelClosedByBroker:
             self.channel = self.connection.get_channel()
@@ -76,7 +81,7 @@ class RabbitMQClient(OrchestratorBackend):
                 if exchange:
                     self.logger.info(f"Using provided exchange: {exchange}.")
                 else:
-                    exchange = self.config["RABBITMQ"]["DEFAULT_EXCHANGE"]
+                    exchange = "default"
                     self.logger.info(f"Exchange not provided. Using default exchange: {exchange}.")
 
                 try:
@@ -147,9 +152,6 @@ class RabbitMQClient(OrchestratorBackend):
             self.channel = self.connection.get_channel()
 
         if self.channel is not None:
-            import uuid
-            from pika import BasicProperties, DeliveryMode
-            
             job_id = str(uuid.uuid1())
             exchange = kwargs.get('exchange', '')
             routing_key = kwargs.get('routing_key', queue_name)
@@ -240,7 +242,6 @@ class RabbitMQClient(OrchestratorBackend):
                         self.logger.info(f"Received message from queue '{queue_name}'.")
                         # Parse JSON back to dict and create Job object
                         message_dict = json.loads(body.decode('utf-8'))
-                        from mindtrace.jobs.mindtrace.types import Job
                         return Job(**message_dict)
                     
                     if timeout is not None and (time.time() - start_time) > timeout:
@@ -253,7 +254,6 @@ class RabbitMQClient(OrchestratorBackend):
                     self.logger.info(f"Received message from queue '{queue_name}'.")
                     # Parse JSON back to dict and create Job object
                     message_dict = json.loads(body.decode('utf-8'))
-                    from mindtrace.jobs.mindtrace.types import Job
                     return Job(**message_dict)
                 else:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")

@@ -9,6 +9,7 @@ from mindtrace.jobs.mindtrace.utils import ifnone, SingletonByArgsMeta
 from mindtrace.jobs.mindtrace.queue_management.local.fifo_queue import LocalQueue
 from mindtrace.jobs.mindtrace.queue_management.local.stack import LocalStack
 from mindtrace.jobs.mindtrace.queue_management.local.priority_queue import LocalPriorityQueue
+from mindtrace.jobs.mindtrace.types import Job
 
 
 class LocalBrokerMeta(SingletonByArgsMeta, type(OrchestratorBackend)):
@@ -65,15 +66,16 @@ class LocalBroker(OrchestratorBackend, metaclass=LocalBrokerMeta):
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues[queue_name]
 
-        if "job_id" not in message:
-            message["job_id"] = str(uuid.uuid1())
+        message_dict = message.model_dump()
+        if "job_id" not in message_dict:
+            message_dict["job_id"] = str(uuid.uuid1())
 
-        body = json.dumps(message)
+        body = json.dumps(message_dict)
         if type(queue_instance).__name__ == "LocalPriorityQueue" and priority is not None:
             queue_instance.push(item=body, priority=priority)
         else:
             queue_instance.push(item=body)
-        return message["job_id"]
+        return message_dict["job_id"]
 
     def receive_message(self, queue_name: str, **kwargs) -> Optional[pydantic.BaseModel]:
         """Retrieve a message from the specified queue.
@@ -92,12 +94,10 @@ class LocalBroker(OrchestratorBackend, metaclass=LocalBrokerMeta):
             if raw_message is None:
                 return None
             
-            # Parse JSON back to dict and create Job object
+            
             message_dict = json.loads(raw_message)
-            from mindtrace.jobs.mindtrace.types import Job
             return Job(**message_dict)
         except Exception:
-            # This includes queue.Empty and JSON parsing errors
             return None 
 
     def clean_queue(self, queue_name: str, **kwargs) -> None:
