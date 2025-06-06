@@ -14,15 +14,18 @@ class Orchestrator:
     def __init__(self, backend: OrchestratorBackend) -> None:
         self.backend = backend
 
-    def publish(self, queue_name: str, job: Job) -> None:
+    def publish(self, queue_name: str, job: Job) -> str:
         """
         Send job to specified queue
         
         Args:
             queue_name: Name of the queue to publish to
             job: Job object to publish
+            
+        Returns:
+            Job ID of the published job
         """
-        self.backend.publish(queue_name, job)
+        return self.backend.publish(queue_name, job)
 
     def receive_message(self, queue_name: str) -> Optional[pydantic.BaseModel]:
         """
@@ -66,31 +69,5 @@ class Orchestrator:
         """
         return self.backend.count_queue_messages(queue_name)
 
-    def register_schema(self, schema: JobSchema) -> None:
-        """
-        Register a job schema for validation
-        
-        Args:
-            schema: Job schema to register
-        """
-        # Schema registration logic can be implemented here
-        # For now, this is a placeholder for future schema validation
-        pass
-
-    def get_queue_stats(self) -> dict:
-        """
-        Get statistics about all queues
-        
-        Returns:
-            Dictionary containing queue statistics
-        """
-        # This could be extended to provide comprehensive queue statistics
-        # For now, return basic info that backends can override
-        return {
-            "backend_type": type(self.backend).__name__,
-            "queues": []  # Backends can implement queue listing
-        }
-
-   
 
     
