@@ -7,6 +7,7 @@ dependencies = [
     "mindtrace-registry",
     "mindtrace-database",
     "mindtrace-services",
+    "pydantic>=2.11.1",
 ]
 
 [tool.setuptools]
