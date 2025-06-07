@@ -305,7 +305,7 @@ class Registry(Mindtrace):
 
         Args:
             color: Whether to colorize the output using `rich`
-            latest_only: If True, only show the latest version of each model
+            latest_only: If True, only show the latest version of each object
         """
         try:
             from rich.console import Console
@@ -317,19 +317,19 @@ class Registry(Mindtrace):
 
         info = self.info()
         if not info:
-            return "Model Registry is empty."
+            return "Registry is empty."
 
         if use_rich:
             console = Console()
             table = Table(title=f"Registry at {self.backend.uri}")
 
-            table.add_column("Model", style="bold cyan")
+            table.add_column("Object", style="bold cyan")
             table.add_column("Version", style="green")
             table.add_column("Class", style="magenta")
             table.add_column("Value", style="yellow")
             table.add_column("Metadata", style="dim")
 
-            for model_name, versions in info.items():
+            for object_name, versions in info.items():
                 version_items = versions.items()
                 if latest_only and version_items:
                     version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
@@ -344,7 +344,7 @@ class Registry(Mindtrace):
                     # Only try to load basic built-in types
                     if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
                         try:
-                            obj = self.load(model_name, version)
+                            obj = self.load(object_name, version)
                             value_str = str(obj)
                             # Truncate long values
                             if len(value_str) > 50:
@@ -356,7 +356,7 @@ class Registry(Mindtrace):
                         value_str = f"<{class_name.split('.')[-1]}>"
 
                     table.add_row(
-                        model_name,
+                        object_name,
                         f"v{version}",
                         class_name,
                         value_str,
@@ -368,9 +368,9 @@ class Registry(Mindtrace):
             return capture.get()
 
         # Fallback to plain string
-        lines = [f"📦 Model Registry at: {self.backend.base_path}"]
-        for model_name, versions in info.items():
-            lines.append(f"\n🧠 {model_name}:")
+        lines = [f"📦 Registry at: {self.backend.base_path}"]
+        for object_name, versions in info.items():
+            lines.append(f"\n🧠 {object_name}:")
             version_items = versions.items()
             if latest_only:
                 version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
@@ -380,7 +380,7 @@ class Registry(Mindtrace):
                 # Only try to load basic built-in types
                 if cls in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
                     try:
-                        obj = self.load(model_name, version)
+                        obj = self.load(object_name, version)
                         value_str = str(obj)
                         # Truncate long values
                         if len(value_str) > 50:
