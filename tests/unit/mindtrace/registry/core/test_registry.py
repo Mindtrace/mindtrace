@@ -32,6 +32,13 @@ def registry(temp_registry_dir):
 
 
 @pytest.fixture
+def concrete_backend():
+    """Create a concrete backend instance."""
+    with TemporaryDirectory() as temp_dir:
+        yield LocalRegistryBackend(uri=Path(temp_dir))
+
+
+@pytest.fixture
 def test_config():
     """Create a test configuration."""
     return Config()
@@ -239,3 +246,108 @@ def test_info(registry, test_config):
     version_info = registry.info("test:config", version="1.0.0")
     assert version_info["class"] == "mindtrace.core.config.config.Config"
     assert version_info["version"] == "1.0.0"
+
+def test_registry_with_custom_backend(concrete_backend):
+    """Test that Registry can be initialized with a custom backend."""
+    registry = Registry(backend=concrete_backend)
+    assert registry is not None
+    assert registry.backend == concrete_backend
+    assert registry.backend.uri == Path(concrete_backend.uri)
+
+def test_versioning_and_deletion(registry, test_config):
+    """Test versioning behavior including multiple saves and deletion of latest version."""
+    # Save initial version
+    registry.save("test:config", test_config, version="1.0.0")
+    assert registry.has_object("test:config", "1.0.0")
+    
+    # Save second version
+    registry.save("test:config", test_config)
+    assert registry.has_object("test:config", "1.0.1")
+    
+    # Save third version
+    registry.save("test:config", test_config, version="1.0.2")
+    assert registry.has_object("test:config", "1.0.2")
+    
+    # Verify latest version is 1.0.2
+    assert registry._latest("test:config") == "1.0.2"
+    
+    # Delete latest version
+    registry.delete("test:config", version="1.0.2")
+    assert not registry.has_object("test:config", "1.0.2")
+    
+    # Verify latest version is now 1.0.1
+    assert registry._latest("test:config") == "1.0.1"
+    
+    # Load latest version (should be 1.0.1)
+    loaded_config = registry.load("test:config", version="latest")
+    assert isinstance(loaded_config, Config)
+    
+    # Save new version (should be 1.0.3)
+    registry.save("test:config", test_config)
+    assert registry.has_object("test:config", "1.0.2")
+    
+    # Verify latest version is now 1.0.3
+    assert registry._latest("test:config") == "1.0.2"
+
+def test_save_without_materializer(registry):
+    """Test that saving an object without a registered materializer raises a ValueError."""
+    class CustomObject:
+        def __init__(self):
+            self.value = "test"
+    
+    custom_obj = CustomObject()
+    
+    # Attempt to save an object without a registered materializer
+    with pytest.raises(ValueError, match=f"No materializer found for object of type {type(custom_obj)}"):
+        registry.save("test:custom", custom_obj)
+
+def test_load_without_class_metadata(registry, test_config):
+    """Test that loading an object without a class in metadata raises a ValueError."""
+    # Save the config first
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Manually modify the metadata to remove the class information
+    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    metadata.pop("class", None)
+    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    
+    # Attempt to load the object with corrupted metadata
+    with pytest.raises(ValueError, match="Class not registered for test:config@1.0.0"):
+        registry.load("test:config", version="1.0.0")
+
+def test_load_directory_with_contents(registry):
+    """Test loading a directory with contents and moving them to output directory."""
+    # Create a temporary directory with some test files
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Create some test files in the directory
+        (temp_path / "file1.txt").write_text("content1")
+        (temp_path / "file2.txt").write_text("content2")
+        (temp_path / "subdir").mkdir()
+        (temp_path / "subdir" / "file3.txt").write_text("content3")
+        
+        # Save the directory to registry
+        registry.save("test:dir", temp_path, version="1.0.0")
+        
+        # Create a new output directory
+        with TemporaryDirectory() as output_dir:
+            # Load the directory with output_dir specified
+            loaded_path = registry.load("test:dir", version="1.0.0", output_dir=output_dir)
+            
+            # Verify the output directory structure
+            assert loaded_path == Path(output_dir)
+            assert (loaded_path / "file1.txt").exists()
+            assert (loaded_path / "file2.txt").exists()
+            assert (loaded_path / "subdir").exists()
+            assert (loaded_path / "subdir" / "file3.txt").exists()
+            
+            # Verify file contents
+            assert (loaded_path / "file1.txt").read_text() == "content1"
+            assert (loaded_path / "file2.txt").read_text() == "content2"
+            assert (loaded_path / "subdir" / "file3.txt").read_text() == "content3"
+            
+            # Verify original files were moved (not copied)
+            assert not (temp_path / "file1.txt").exists()
+            assert not (temp_path / "file2.txt").exists()
+            assert not (temp_path / "subdir" / "file3.txt").exists()
