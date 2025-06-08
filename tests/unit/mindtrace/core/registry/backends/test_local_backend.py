@@ -6,7 +6,8 @@ from typing import Generator
 import uuid
 import yaml
 
-from mindtrace.core import Config, LocalRegistryBackend
+from mindtrace.core import Config 
+from mindtrace.registry import LocalRegistryBackend
 
 
 @pytest.fixture

@@ -5,16 +5,9 @@ from mindtrace.core.base.mindtrace_base import Mindtrace, MindtraceABC, Mindtrac
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
 from mindtrace.core.observables.context_listener import ContextListener
-from mindtrace.core.registry.archiver import Archiver
-from mindtrace.core.registry.archivers.config_archiver import ConfigArchiver
-from mindtrace.core.registry.backends.registry_backend import RegistryBackend
-from mindtrace.core.registry.backends.local_backend import LocalRegistryBackend
-from mindtrace.core.registry.registry import Registry
 
 
 __all__ = [
-    "Archiver",
-    "ConfigArchiver",
     "ContextListener", 
     "Config",
     "EventBus", 
@@ -22,11 +15,8 @@ __all__ = [
     "get_class",
     "ifnone", 
     "instantiate_target",
-    "LocalRegistryBackend",
     "Mindtrace", 
     "MindtraceABC", 
     "MindtraceMeta",
     "ObservableContext",
-    "Registry",
-    "RegistryBackend",
 ]

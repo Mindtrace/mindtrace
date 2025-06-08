@@ -8,7 +8,8 @@ from typing import Any, Type
 from pydantic import BaseModel
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Config, LocalRegistryBackend, Registry
+from mindtrace.core import Config 
+from mindtrace.registry import LocalRegistryBackend, Registry
 
 
 class SampleModel(BaseModel):

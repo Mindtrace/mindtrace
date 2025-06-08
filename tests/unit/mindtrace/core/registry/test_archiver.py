@@ -1,7 +1,7 @@
 import pytest
 from typing import Type, Any
 
-from mindtrace.core import Archiver
+from mindtrace.registry import Archiver
 
 
 class TestArchiver:

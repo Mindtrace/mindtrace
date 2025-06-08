@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from typing import Dict
 
-from mindtrace.core import RegistryBackend
+from mindtrace.registry import RegistryBackend
 
 
 @pytest.fixture
