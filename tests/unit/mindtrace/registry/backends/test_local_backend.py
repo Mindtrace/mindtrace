@@ -165,3 +165,33 @@ def test_invalid_object_name(backend):
     """Test handling of invalid object names."""
     with pytest.raises(ValueError):
         backend.push("invalid_name", "1.0.0", "some_path")
+
+def test_register_materializer_error(backend):
+    """Test error handling when registering a materializer fails."""
+    # Make the metadata file read-only to simulate a file system error
+    backend.metadata.chmod(0o444)
+    
+    # Attempt to register a materializer - should raise an exception
+    with pytest.raises(Exception) as exc_info:
+        backend.register_materializer("test:object", "TestMaterializer")
+    
+    # Verify the exception was re-raised
+    assert str(exc_info.value)  # Should have some error message
+    
+    # Restore write permissions
+    backend.metadata.chmod(0o644)
+
+def test_registered_materializers_error(backend):
+    """Test error handling when loading materializers fails."""
+    # Make the metadata file unreadable to simulate a file system error
+    backend.metadata.chmod(0o000)
+    
+    # Attempt to get registered materializers - should raise an exception
+    with pytest.raises(Exception) as exc_info:
+        backend.registered_materializers()
+    
+    # Verify the exception was re-raised
+    assert str(exc_info.value)  # Should have some error message
+    
+    # Restore read permissions
+    backend.metadata.chmod(0o644)
