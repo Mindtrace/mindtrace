@@ -754,3 +754,35 @@ def test_next_version_first_version(registry):
     
     # Verify that _latest returns None for a non-existent object
     assert registry._latest("new:object") is None
+
+def test_register_default_materializers_without_datasets():
+    """Test _register_default_materializers when datasets package is not available."""
+    with TemporaryDirectory() as temp_dir:
+        # Mock the import to raise ImportError only for datasets
+        from unittest.mock import patch
+        import builtins
+        original_import = builtins.__import__
+        
+        def mock_import(name, *args, **kwargs):
+            if name == 'datasets':
+                raise ImportError("No module named 'datasets'")
+            return original_import(name, *args, **kwargs)
+            
+        with patch('builtins.__import__', side_effect=mock_import):
+            # Create registry (which will register default materializers)
+            registry = Registry(registry_dir=temp_dir)
+            
+            # Get registered materializers
+            materializers = registry.registered_materializers()
+            
+            # Verify that datasets materializers are not registered
+            assert "datasets.Dataset" not in materializers
+            assert "datasets.dataset_dict.DatasetDict" not in materializers
+            assert "datasets.arrow_dataset.Dataset" not in materializers
+            
+            # Verify that core materializers are still registered
+            assert "builtins.str" in materializers
+            assert "builtins.int" in materializers
+            assert "builtins.float" in materializers
+            assert "builtins.bool" in materializers
+            assert "mindtrace.core.config.config.Config" in materializers
