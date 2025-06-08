@@ -7,11 +7,11 @@ from zenml.materializers.base_materializer import BaseMaterializer
 from mindtrace.core import MindtraceABC
 
 
-class RegistryBackend(MindtraceABC):
+class RegistryBackend(MindtraceABC):  # pragma: no cover
     @property
     @abstractmethod
     def uri(self) -> Path:
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def push(self, name: str, version: str | None = None, local_path: str | None = None):
@@ -23,7 +23,7 @@ class RegistryBackend(MindtraceABC):
             materializer: Materializer to use for the object.
             version: Version string (e.g., "1.0.0").
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def pull(self, name: str, version: str, local_path: str):
@@ -34,7 +34,7 @@ class RegistryBackend(MindtraceABC):
             version: Version string.
             local_path: Local target directory to download into.
         """
-        pass  # pragma: no cover
+        pass
     
     @abstractmethod
     def delete(self, name: str, version: str = "all"):
@@ -44,7 +44,7 @@ class RegistryBackend(MindtraceABC):
             name: Name of the object.
             version: Version string.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def save_metadata(self, name: str, version: str, metadata: dict):
@@ -55,7 +55,7 @@ class RegistryBackend(MindtraceABC):
             version: Version string.
             metadata: Dictionary of object metadata.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def fetch_metadata(self, name: str, version: str) -> dict:
@@ -68,7 +68,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Metadata dictionary.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def delete_metadata(self, model_name: str, version: str) -> dict:
@@ -81,7 +81,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Metadata dictionary.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def list_objects(self) -> List[str]:
@@ -90,7 +90,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             List of object names.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def list_versions(self, name: str) -> List[str]:
@@ -102,7 +102,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             List of versions for the given object.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def has_object(self, name: str, version: str) -> bool:
@@ -115,7 +115,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             True if the object version exists, False otherwise.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def register_materializer(self, object_class: str, materializer_class: str):
@@ -125,7 +125,7 @@ class RegistryBackend(MindtraceABC):
             object_class: Object class to register the materializer for.
             materializer_class: Materializer class to register.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def registered_materializer(self, object_class: str) -> str:
@@ -137,7 +137,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Materializer class string.
         """
-        pass  # pragma: no cover
+        pass
 
     @abstractmethod
     def registered_materializers(self) -> Dict[str, str]:
@@ -146,7 +146,7 @@ class RegistryBackend(MindtraceABC):
         Returns:
             Dictionary mapping object classes to their registered materializer classes.
         """
-        pass  # pragma: no cover
+        pass
     
     def validate_object_name(self, name: str) -> None:
         """Validate that the object name contains only allowed characters.

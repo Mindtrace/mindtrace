@@ -123,6 +123,21 @@ class Registry(Mindtrace):
             self.logger.debug(f"Pushed {name} version {version} to registry.")
 
     def load(self, name: str, version: str | None = "latest", output_dir: str | None = None, **kwargs) -> Any:
+        """Load an object from the registry.
+
+        Args:
+            name: Name of the object.
+            version: Version of the object.
+            output_dir (optional): If the loaded object is a Path, the Path contents will be moved to this directory.
+            **kwargs: Additional keyword arguments to pass to the object's constructor.
+
+        Returns:
+            The loaded object.
+
+        Raises:
+            ValueError: If the object does not exist.
+        """
+
         if version == "latest":
             version = self._latest(name)
 
@@ -159,8 +174,8 @@ class Registry(Mindtrace):
                     if obj.exists():
                         output_path = Path(output_dir)
                         if obj.is_file():
-                            # For files, copy the file to the output directory
-                            shutil.copy2(str(obj), str(output_path / obj.name))
+                            # For files, move the file to the output directory
+                            shutil.move(str(obj), str(output_path / obj.name))
                             obj = output_path / obj.name
                         else:
                             # For directories, copy all contents
@@ -175,6 +190,12 @@ class Registry(Mindtrace):
             self.logger.debug(f"Loaded {name}@{version} from registry.")
 
     def delete(self, name: str, version: str | None = None) -> None:
+        """Delete an object from the registry.
+
+        Args:
+            name: Name of the object.
+            version: Version of the object.
+        """
         versions = self.list_versions(name) if version is None else [version]
         for ver in versions:
             self.backend.delete(name, ver)
@@ -223,9 +244,6 @@ class Registry(Mindtrace):
                     try:
                         meta = self.backend.fetch_metadata(obj_name, ver)
                         result[obj_name][ver] = meta
-                    except (FileNotFoundError, S3Error):
-                        # Skip versions with missing metadata
-                        continue
                     except Exception as e:
                         self.logger.warning(f"Error loading metadata for {obj_name}@{ver}: {e}")
                         continue
@@ -374,7 +392,7 @@ class Registry(Mindtrace):
             return capture.get()
 
         # Fallback to plain string
-        lines = [f"📦 Registry at: {self.backend.base_path}"]
+        lines = [f"📦 Registry at: {self.backend.uri}"]
         for object_name, versions in info.items():
             lines.append(f"\n🧠 {object_name}:")
             version_items = versions.items()
@@ -408,25 +426,6 @@ class Registry(Mindtrace):
                     lines.append("      metadata: (none)")
         return "\n".join(lines)
 
-    def _temp_dir(self):
-        temp_dir = Path(self.config["MINDTRACE_TEMP_DIR"])
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        yield temp_dir
-        shutil.rmtree(temp_dir)
-
-    def _get_temp_path(self, filename: str) -> str:
-        """Get a temporary file path in the registry's temp directory.
-
-        Args:
-            filename: Name of the temporary file
-
-        Returns:
-            str: Full path to the temporary file
-        """
-        temp_dir = Path(self.config["MINDTRACE_TEMP_DIR"])
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        return str(temp_dir / filename)
-        
     def _next_version(self, name: str) -> str:
         """Generate the next version string for an object.
 
