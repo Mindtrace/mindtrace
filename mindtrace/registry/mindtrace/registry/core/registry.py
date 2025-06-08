@@ -175,7 +175,11 @@ class Registry(Mindtrace):
             self.logger.debug(f"Loaded {name}@{version} from registry.")
 
     def delete(self, name: str, version: str | None = None) -> None:
-        pass
+        versions = self.list_versions(name) if version is None else [version]
+        for ver in versions:
+            self.backend.delete(name, ver)
+            self.backend.delete_metadata(name, ver)
+        self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
 
     def info(self, name: str | None = None, version: str | None = None) -> Dict[str, Any]:
         """Get detailed information about objects in the registry.
