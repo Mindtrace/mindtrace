@@ -488,8 +488,7 @@ class Registry(Mindtrace):
         # Core mindtrace materializers
         self.register_materializer("mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver")
 
-        # Additional (optional) materializers
-
+        # (Optional) Huggingface materializers
         try:
             import datasets
             self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
