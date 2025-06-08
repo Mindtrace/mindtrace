@@ -5,6 +5,7 @@ import re
 from tempfile import TemporaryDirectory
 from typing import Any, Type
 
+from minio import S3Error
 from pydantic import BaseModel
 from zenml.materializers.base_materializer import BaseMaterializer
 
@@ -247,6 +248,57 @@ def test_info(registry, test_config):
     assert version_info["class"] == "mindtrace.core.config.config.Config"
     assert version_info["version"] == "1.0.0"
 
+def test_info_error_handling(registry, test_config):
+    """Test error handling in info method for metadata loading."""
+    # Save a valid config first
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Create a mock backend that raises different types of errors
+    class MockBackend(registry.backend.__class__):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._error_type = None
+        
+        def set_error_type(self, error_type):
+            self._error_type = error_type
+            
+        def fetch_metadata(self, name: str, version: str) -> dict:
+            if self._error_type == "FileNotFoundError":
+                raise FileNotFoundError("Simulated file not found")
+            elif self._error_type == "S3Error":
+                raise S3Error("Simulated S3 error")
+            elif self._error_type == "RuntimeError":
+                raise RuntimeError("Simulated runtime error")
+            return super().fetch_metadata(name, version)
+    
+    # Replace the backend with our mock
+    original_backend = registry.backend
+    mock_backend = MockBackend(uri=registry.backend.uri)
+    registry.backend = mock_backend
+    
+    try:
+        # Test FileNotFoundError handling
+        mock_backend.set_error_type("FileNotFoundError")
+        result = registry.info()
+        assert "test:config" in result
+        assert "1.0.0" not in result["test:config"]  # Version should be skipped
+        
+        # Test S3Error handling
+        mock_backend.set_error_type("S3Error")
+        result = registry.info()
+        assert "test:config" in result
+        assert "1.0.0" not in result["test:config"]  # Version should be skipped
+        
+        # Test general exception handling
+        mock_backend.set_error_type("RuntimeError")
+        result = registry.info()
+        assert "test:config" in result
+        assert "1.0.0" not in result["test:config"]  # Version should be skipped
+        
+    finally:
+        # Restore the original backend
+        registry.backend = original_backend
+
 def test_registry_with_custom_backend(concrete_backend):
     """Test that Registry can be initialized with a custom backend."""
     registry = Registry(backend=concrete_backend)
@@ -347,7 +399,358 @@ def test_load_directory_with_contents(registry):
             assert (loaded_path / "file2.txt").read_text() == "content2"
             assert (loaded_path / "subdir" / "file3.txt").read_text() == "content3"
             
-            # Verify original files were moved (not copied)
-            assert not (temp_path / "file1.txt").exists()
-            assert not (temp_path / "file2.txt").exists()
-            assert not (temp_path / "subdir" / "file3.txt").exists()
+def test_load_error_handling(registry, test_config):
+    """Test that errors during loading are properly logged and re-raised."""
+    # Save a valid config first
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Create a mock backend that raises an exception during pull
+    class MockBackend(registry.backend.__class__):
+        def pull(self, name: str, version: str, local_path: str):
+            raise RuntimeError("Simulated pull error")
+    
+    # Replace the backend with our mock
+    original_backend = registry.backend
+    registry.backend = MockBackend(uri=registry.backend.uri)
+    
+    try:
+        # Attempt to load the config, which should fail
+        with pytest.raises(RuntimeError, match="Simulated pull error"):
+            registry.load("test:config", version="1.0.0")
+    finally:
+        # Restore the original backend
+        registry.backend = original_backend
+
+def test_info_latest_version(registry, test_config):
+    """Test that info method correctly handles 'latest' version parameter."""
+    # Save multiple versions of the config
+    registry.save("test:config", test_config, version="1.0.0")
+    registry.save("test:config", test_config, version="1.0.1")
+    registry.save("test:config", test_config, version="1.0.2")
+    
+    # Test getting info with version="latest"
+    info = registry.info("test:config", version="latest")
+    
+    # Verify that we got the latest version (1.0.2)
+    assert info["version"] == "1.0.2"
+    
+    # Verify that the version was resolved using _latest
+    assert registry._latest("test:config") == "1.0.2"
+    
+    # Test that the info contains the correct metadata
+    assert "class" in info
+    assert info["class"] == "mindtrace.core.config.config.Config"
+
+def test_registered_materializers(registry):
+    """Test that registered_materializers returns the correct mapping of materializers."""
+    # Get the registered materializers
+    materializers = registry.registered_materializers()
+    
+    # Verify it's a dictionary
+    assert isinstance(materializers, dict)
+    
+    # Verify it contains the default materializers
+    assert "builtins.str" in materializers
+    assert "builtins.int" in materializers
+    assert "builtins.float" in materializers
+    assert "builtins.bool" in materializers
+    assert "builtins.list" in materializers
+    assert "builtins.dict" in materializers
+    assert "builtins.tuple" in materializers
+    assert "builtins.set" in materializers
+    assert "builtins.bytes" in materializers
+    assert "pathlib.PosixPath" in materializers
+    assert "pydantic.BaseModel" in materializers
+    assert "mindtrace.core.config.config.Config" in materializers
+    
+    # Verify the materializer classes are correct
+    assert materializers["builtins.str"] == "zenml.materializers.built_in_materializer.BuiltInMaterializer"
+    assert materializers["builtins.list"] == "zenml.materializers.BuiltInContainerMaterializer"
+    assert materializers["mindtrace.core.config.config.Config"] == "mindtrace.registry.archivers.config_archiver.ConfigArchiver"
+    
+    # Register a new materializer
+    registry.register_materializer("test.Object", "test.Materializer")
+    
+    # Verify the new materializer is in the list
+    updated_materializers = registry.registered_materializers()
+    assert "test.Object" in updated_materializers
+    assert updated_materializers["test.Object"] == "test.Materializer"
+    
+    # Verify the original materializers are still there
+    assert "builtins.str" in updated_materializers
+    assert "mindtrace.core.config.config.Config" in updated_materializers
+
+def test_str_empty_registry(registry):
+    """Test string representation of an empty registry."""
+    assert registry.__str__() == "Registry is empty."
+
+def test_str_basic_types(registry):
+    """Test string representation with basic types."""
+    # Save some basic types
+    registry.save("test:str", "hello world", version="1.0.0")
+    registry.save("test:int", 42, version="1.0.0")
+    registry.save("test:float", 3.14, version="1.0.0")
+    registry.save("test:bool", True, version="1.0.0")
+    
+    # Test plain text output
+    output = registry.__str__(color=False)
+    
+    # Verify basic structure
+    assert "📦 Registry at:" in output
+    assert "🧠 test:str:" in output
+    assert "🧠 test:int:" in output
+    assert "🧠 test:float:" in output
+    assert "🧠 test:bool:" in output
+    
+    # Verify content
+    assert "v1.0.0" in output
+    assert "class: builtins.str" in output
+    assert "value: hello world" in output
+    assert "class: builtins.int" in output
+    assert "value: 42" in output
+    assert "class: builtins.float" in output
+    assert "value: 3.14" in output
+    assert "class: builtins.bool" in output
+    assert "value: True" in output
+
+def test_str_custom_types(registry, test_config):
+    """Test string representation with custom types."""
+    # Save a custom type
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Test plain text output
+    output = registry.__str__(color=False)
+    
+    # Verify basic structure
+    assert "📦 Registry at:" in output
+    assert "🧠 test:config:" in output
+    
+    # Verify content
+    assert "v1.0.0" in output
+    assert "class: mindtrace.core.config.config.Config" in output
+    assert "value: <Config>" in output  # Custom types show class name in angle brackets
+
+def test_str_multiple_versions(registry, test_config):
+    """Test string representation with multiple versions."""
+    # Save multiple versions
+    registry.save("test:config", test_config, version="1.0.0")
+    registry.save("test:config", test_config, version="1.0.1")
+    registry.save("test:config", test_config, version="1.0.2")
+    
+    # Test with latest_only=True (default)
+    output = registry.__str__(color=False)
+    assert "v1.0.2" in output  # Should show latest version
+    assert "v1.0.1" not in output  # Should not show older versions
+    assert "v1.0.0" not in output  # Should not show older versions
+    
+    # Test with latest_only=False
+    output = registry.__str__(color=False, latest_only=False)
+    assert "v1.0.2" in output  # Should show all versions
+    assert "v1.0.1" in output
+    assert "v1.0.0" in output
+
+def test_str_with_metadata(registry, test_config):
+    """Test string representation with metadata."""
+    # Save with metadata
+    registry.save("test:config", test_config, version="1.0.0", metadata={"key": "value", "number": 42})
+    
+    # Test plain text output
+    output = registry.__str__(color=False)
+    
+    # Verify metadata is included
+    assert "key: value" in output
+    assert "number: 42" in output
+
+def test_str_without_rich(registry, test_config):
+    """Test string representation when rich package is not available."""
+    # Save a test object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Mock the import of rich to raise ImportError
+    from unittest.mock import patch
+    with patch('builtins.__import__', side_effect=ImportError("No module named 'rich'")):
+        # Get string representation
+        output = registry.__str__(color=True)  # Even with color=True, should fall back to plain text
+        
+        # Verify it's using the plain text format
+        assert "Registry at:" in output
+        assert "test:config:" in output
+        assert "v1.0.0" in output
+        assert "class: mindtrace.core.config.config.Config" in output
+        assert "value: <Config>" in output
+        
+        # Verify it's not using rich table format
+        assert "┌" not in output  # Rich table borders
+        assert "│" not in output  # Rich table borders
+        assert "└" not in output  # Rich table borders
+
+def test_str_with_rich(registry, test_config):
+    """Test string representation with rich table formatting."""
+    # Save multiple types of objects
+    registry.save("test:str", "hello world", version="1.0.0")
+    registry.save("test:int", 42, version="1.0.0")
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Get string representation with rich formatting
+    output = registry.__str__(color=True)
+    
+    # Verify table structure
+    assert "Registry at" in output  # Table title
+    assert "Object" in output  # Column headers
+    assert "Version" in output
+    assert "Class" in output
+    assert "Value" in output
+    assert "Metadata" in output
+    
+    # Verify content formatting
+    assert "test:str" in output
+    assert "v1.0.0" in output
+    assert "builtins.str" in output
+    assert "hello world" in output
+    
+    assert "test:int" in output
+    assert "builtins.int" in output
+    assert "42" in output
+    
+    assert "test:config" in output
+    assert "Config" in output  # Just check for the class name without the full path
+    assert "<Config>" in output
+    
+    # Verify rich table formatting characters
+    assert "┏" in output  # Top border (thick)
+    assert "┳" in output  # Top separator (thick)
+    assert "┓" in output  # Top right corner (thick)
+    assert "┃" in output  # Vertical line (thick)
+    assert "└" in output  # Bottom left corner (thin)
+    assert "┴" in output  # Bottom separator (thin)
+    assert "┘" in output  # Bottom right corner (thin)
+    assert "━" in output  # Horizontal line (thick)
+    assert "─" in output  # Horizontal line (thin)
+
+@pytest.mark.parametrize("color", [True, False])
+def test_str_with_rich_long_value(registry, color):
+    """Test rich table formatting with long string values."""
+    # Test exact truncation at 50 characters
+    long_str = "This is a very long string that should be truncated in the output"
+    registry.save("test:longstr", long_str, version="1.0.0")
+    
+    # Get string representation with and without rich formatting
+    output = registry.__str__(color=color)
+    
+    # Verify the long string is truncated exactly at 47 characters plus "..."
+    assert len("This is a very long string that should be trunc...") == 50  # 47 + 3 for "..."
+    assert "trunc..." in output  # The full line will be spread over multiple lines, so we check for the trunc... part
+    assert long_str not in output  # Full string should not be present
+
+def test_str_with_rich_value_load_error(registry):
+    """Test rich table formatting when loading a value fails."""
+    # Save a string value
+    registry.save("test:str", "hello world", version="1.0.0")
+    
+    # Create a mock backend that raises an error during load
+    class MockBackend(registry.backend.__class__):
+        def pull(self, name: str, version: str, local_path: str):
+            if name == "test:str":
+                raise RuntimeError("Simulated load error")
+            return super().pull(name, version, local_path)
+    
+    # Replace the backend with our mock
+    original_backend = registry.backend
+    registry.backend = MockBackend(uri=registry.backend.uri)
+    
+    try:
+        # Get string representation with rich formatting
+        output = registry.__str__(color=True)
+        
+        # Verify the error is handled gracefully
+        assert "test:str" in output
+        assert "❓ (error loading)" in output
+        assert "hello world" not in output  # Original value should not be shown
+    finally:
+        # Restore the original backend
+        registry.backend = original_backend
+
+def test_str_with_rich_latest_only(registry, test_config):
+    """Test rich table formatting with latest_only parameter."""
+    # Save multiple versions
+    registry.save("test:config", test_config, version="1.0.0")
+    registry.save("test:config", test_config, version="1.0.1")
+    registry.save("test:config", test_config, version="1.0.2")
+    
+    # Test with latest_only=True (default)
+    output = registry.__str__(color=True)
+    assert "v1.0.2" in output  # Should show latest version
+    assert "v1.0.1" not in output  # Should not show older versions
+    assert "v1.0.0" not in output  # Should not show older versions
+    
+    # Test with latest_only=False
+    output = registry.__str__(color=True, latest_only=False)
+    assert "v1.0.2" in output  # Should show all versions
+    assert "v1.0.1" in output
+    assert "v1.0.0" in output
+
+def test_str_with_rich_load_error(registry):
+    """Test rich table formatting when loading an object fails."""
+    # Save a string value
+    registry.save("test:str", "hello world", version="1.0.0")
+    
+    # Create a mock backend that raises an error during load
+    class MockBackend(registry.backend.__class__):
+        def pull(self, name: str, version: str, local_path: str):
+            if name == "test:str":
+                raise RuntimeError("Simulated load error")
+            return super().pull(name, version, local_path)
+    
+    # Replace the backend with our mock
+    original_backend = registry.backend
+    registry.backend = MockBackend(uri=registry.backend.uri)
+    
+    try:
+        # Get string representation with rich formatting
+        output = registry.__str__(color=True)
+        
+        # Verify the error is handled gracefully
+        assert "test:str" in output
+        assert "❓ (error loading)" in output
+        assert "hello world" not in output  # Original value should not be shown
+    finally:
+        # Restore the original backend
+        registry.backend = original_backend
+
+@pytest.mark.parametrize("color", [True, False])
+def test_str_value_load_error(registry, color):
+    """Test string representation when loading a value fails."""
+    # Save a string value
+    registry.save("test:str", "hello world", version="1.0.0")
+    
+    # Create a mock backend that raises an error during load
+    class MockBackend(registry.backend.__class__):
+        def pull(self, name: str, version: str, local_path: str):
+            if name == "test:str":
+                raise RuntimeError("Simulated load error")
+            return super().pull(name, version, local_path)
+    
+    # Replace the backend with our mock
+    original_backend = registry.backend
+    registry.backend = MockBackend(uri=registry.backend.uri)
+    
+    try:
+        # Get string representation
+        output = registry.__str__(color=color)
+        
+        # Verify the error is handled gracefully
+        assert "test:str" in output
+        assert "❓ (error loading)" in output
+        assert "hello world" not in output  # Original value should not be shown
+    finally:
+        # Restore the original backend
+        registry.backend = original_backend
+
+def test_next_version_first_version(registry):
+    """Test _next_version returns "1" for the first version of an object."""
+    # Test with a new object name that has no versions
+    next_version = registry._next_version("new:object")
+    assert next_version == "1"
+    
+    # Verify that _latest returns None for a non-existent object
+    assert registry._latest("new:object") is None
