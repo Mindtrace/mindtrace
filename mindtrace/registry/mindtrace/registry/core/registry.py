@@ -472,7 +472,7 @@ class Registry(Mindtrace):
     def _register_default_materializers(self):
         """Register default materializers for built-in object types."""
 
-        # ZenML materializers
+        # Core zenml materializers
         self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
         self.register_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
         self.register_materializer("builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
@@ -485,5 +485,15 @@ class Registry(Mindtrace):
         self.register_materializer("pathlib.PosixPath", "zenml.materializers.PathMaterializer")
         self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
 
-        # mindtrace.core materializers
+        # Core mindtrace materializers
         self.register_materializer("mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver")
+
+        # Additional (optional) materializers
+
+        try:
+            import datasets
+            self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+            self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+            self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+        except ImportError:
+            pass
