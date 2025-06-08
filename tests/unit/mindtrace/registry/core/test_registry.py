@@ -786,3 +786,58 @@ def test_register_default_materializers_without_datasets():
             assert "builtins.float" in materializers
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
+
+def test_huggingface_dataset():
+    """Test saving and loading a HuggingFace dataset."""
+    # Try to import datasets
+    try:
+        import datasets
+    except ImportError:
+        pytest.skip("HuggingFace datasets library not installed. Skipping test.")
+
+    # Create a small test dataset
+    dataset = datasets.Dataset.from_dict({
+        "text": ["Hello", "World"],
+        "label": [0, 1]
+    })
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Save the dataset
+        registry.save("test:dataset", dataset, version="1.0.0")
+
+        # Verify it exists
+        assert registry.has_object("test:dataset", "1.0.0")
+
+        # Load the dataset
+        loaded_dataset = registry.load("test:dataset", version="1.0.0")
+
+        # Verify it's a dataset
+        assert isinstance(loaded_dataset, datasets.Dataset)
+
+        # Verify the data
+        assert loaded_dataset["text"] == ["Hello", "World"]
+        assert loaded_dataset["label"] == [0, 1]
+
+        # Test with DatasetDict
+        dataset_dict = datasets.DatasetDict({
+            "train": dataset,
+            "test": dataset
+        })
+
+        # Save the dataset dict
+        registry.save("test:datasetdict", dataset_dict, version="1.0.0")
+
+        # Load the dataset dict
+        loaded_dict = registry.load("test:datasetdict", version="1.0.0")
+
+        # Verify it's a DatasetDict
+        assert isinstance(loaded_dict, datasets.DatasetDict)
+
+        # Verify the data
+        assert "train" in loaded_dict
+        assert "test" in loaded_dict
+        assert loaded_dict["train"]["text"] == ["Hello", "World"]
+        assert loaded_dict["test"]["text"] == ["Hello", "World"] 
