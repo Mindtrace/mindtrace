@@ -1,80 +1,107 @@
+import os
 import logging
-import logging.config
+from logging.handlers import RotatingFileHandler
+from logging import Logger
 from pathlib import Path
 from typing import Optional
-from mindtrace.core.logging.config import default_logging_config
 
 
-def setup_logging(log_config: dict = None, log_dir: Optional[Path] = None) -> None:
+def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
     """
-    Configure and initialize logging for Mindtrace components.
+    Returns a logging formatter with a default format if none is specified.
+    """
+    default_fmt = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
+    return logging.Formatter(fmt or default_fmt)
 
-    This function sets up a default logging configuration that includes a file handler
-    to write logs to a persistent log file and a console handler for error-level messages.
-    If no custom configuration is provided, a default configuration is used. The log
-    file path defaults to `~/.cache/mindtrace/mindtrace.log` and the directory is created
-    if it does not exist.
+def setup_logger(
+    name: str = "mindtrace",
+    log_dir: Optional[Path] = None,
+    logger_level: int = logging.DEBUG,
+    stream_level: int = logging.ERROR,
+    file_level: int = logging.DEBUG,
+    file_mode: str = "a",
+    propagate: bool = False,
+    max_bytes: int = 10 * 1024 * 1024,  # 10 MB
+    backup_count: int = 5
+) -> Logger:
+    """
+    Configure and initialize logging for Mindtrace components programmatically.
+
+    Sets up a rotating file handler and a console handler on the given logger.
+    Log file defaults to ~/.cache/mindtrace/{name}.log.
 
     Args:
-        log_config (dict, optional): A custom logging configuration dictionary following
-            Python's ``logging.config.dictConfig`` format. If provided, it will be used as-is.
-        log_dir (Optional[Path]): Optional custom directory for the log file. If not set,
-            defaults to ``~/.cache/mindtrace``.
+        name (str): Logger name, defaults to "mindtrace".
+        log_dir (Optional[Path]): Custom directory for log file.
+        logger_level (int): Overall logger level.
+        stream_level (int): StreamHandler level (e.g., ERROR).
+        file_level (int): FileHandler level (e.g., DEBUG).
+        file_mode (str): Mode for file handler, default is 'a' (append).
+        propagate (bool): Whether the logger should propagate messages to ancestor loggers.
+        max_bytes (int): Maximum size in bytes before rotating log file.
+        backup_count (int): Number of backup files to retain.
 
     Returns:
-        None
-
-    Raises:
-        OSError: If the log directory cannot be created.
-        ValueError: If the logging configuration is invalid.
-
-    Example:
-        .. code-block:: python
-
-            from mindtrace.core.logging.utils import setup_logging
-            setup_logging()
-
-        This will produce logs in the default file location and print errors to the console.
-
+        Logger: Configured logger instance.
     """
-    if log_config:
-        logging.config.dictConfig(config=log_config)
-        return
+    logger = logging.getLogger(name)
+    logger.setLevel(logger_level)
+    logger.propagate = propagate
 
-    log_file_path = (log_dir or Path.home() / ".cache/mindtrace") / "mindtrace.log" # ToDo: Get the path from default config values or core settings
-    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+    if logger.hasHandlers():
+        return logger
 
-    merged_config = default_logging_config.copy()
-    merged_config["handlers"]["file"]["filename"] = str(log_file_path)
+    # Set up stream handler
+    stream_handler = logging.StreamHandler()
+    stream_handler.setLevel(stream_level)
+    stream_handler.setFormatter(default_formatter())
+    logger.addHandler(stream_handler)
 
-    logging.config.dictConfig(config=merged_config)
+    # Set up file handler
+    log_file_path = (log_dir or Path.home() / ".cache/mindtrace") / f"{name}.log"
+    os.makedirs(log_file_path.parent, exist_ok=True)
+    file_handler = RotatingFileHandler(
+        filename=str(log_file_path),
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        mode=file_mode
+    )
+    file_handler.setLevel(file_level)
+    file_handler.setFormatter(default_formatter())
+    logger.addHandler(file_handler)
 
-def Logger(name: str = "Mindtrace") -> logging.Logger:
+    return logger
+
+
+
+
+def get_logger(name: str = 'mindtrace', **kwargs) -> logging.Logger:
     """
     Create or retrieve a named logger instance.
 
     This function wraps Python's built-in ``logging.getLogger()`` to provide a
     standardized logger for Mindtrace components. If the logger with the given
     name already exists, it returns the existing instance; otherwise, it creates
-    a new one.
+    a new one with optional configuration overrides.
 
     Args:
-        name (str): The name of the logger. Defaults to "Mindtrace".
+        name (str): The name of the logger. Defaults to "mindtrace".
+        **kwargs: Additional keyword arguments to be passed to `setup_logger`.
 
     Returns:
-        logging.Logger: A configured logger instance for the given name.
+        logging.Logger: A configured logger instance.
 
     Example:
         .. code-block:: python
 
-            from mindtrace.core.logging.logger import Logger
+            from mindtrace.core.logging.logger import get_logger
 
-            logger = Logger("mindtrace.core.base")
-            logger.info("This will be recorded with the correct namespace.")
-
-    See also:
-        Python logging documentation:
-        `logging.getLogger <https://docs.python.org/3/library/logging.html#logging.getLogger>`_
-
+            logger = get_logger("core.module", stream_level=logging.INFO, propagate=True)
+            logger.info("Logger configured with custom settings.")
     """
-    return logging.getLogger(name)
+    if not name:
+        name = "mindtrace"
+
+    full_name = name if name.startswith("mindtrace") else f"mindtrace.{name}"
+    kwargs.setdefault("propagate", True)
+    return setup_logger(full_name, **kwargs)
