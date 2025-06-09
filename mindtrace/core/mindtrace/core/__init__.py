@@ -1,4 +1,4 @@
-from mindtrace.core.utils.checks import ifnone, first_not_none
+from mindtrace.core.utils.checks import check_libs, ifnone, first_not_none
 from mindtrace.core.utils.dynamic import instantiate_target, get_class
 from mindtrace.core.config import Config
 from mindtrace.core.base.mindtrace_base import Mindtrace, MindtraceABC, MindtraceMeta
@@ -8,6 +8,7 @@ from mindtrace.core.observables.context_listener import ContextListener
 
 
 __all__ = [
+    "check_libs",
     "ContextListener", 
     "Config",
     "EventBus", 
