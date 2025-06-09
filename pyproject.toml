@@ -49,8 +49,8 @@ members = [
   "mindtrace/datalake",
 ]
 
-[project.optional-dependencies]
-test = [
+[tool.uv]
+dev-dependencies = [
   "pytest>=8.2.0",
   "pytest-cov>=5.0.0",
   "fastapi>=0.115.0",
