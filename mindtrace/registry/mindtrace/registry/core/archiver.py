@@ -24,9 +24,9 @@ class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
         self.logger.debug(f"Archiver initialized at: {self.uri}")
 
     @abstractmethod
-    def load(self, data_type: Type[Any]) -> Any:
-        raise NotImplementedError("Subclasses must implement load().")
+    def save(self, data: Any):
+        raise NotImplementedError("Subclasses must implement save().")
 
     @abstractmethod
-    def save(self, data: Any) -> None:
-        raise NotImplementedError("Subclasses must implement save().")
+    def load(self, data_type: Type[Any]) -> Any:
+        raise NotImplementedError("Subclasses must implement load().")
