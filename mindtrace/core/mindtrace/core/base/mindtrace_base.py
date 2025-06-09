@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 
 from mindtrace.core.config import Config
-from mindtrace.core.logging import Logger
+from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
 
@@ -36,10 +36,12 @@ class MindtraceMeta(type):
 
     def __init__(cls, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
-        cls._logger = logging.getLogger(f"{cls.unique_name}")
+        cls._logger = None
 
     @property
     def logger(cls):
+        if cls._logger is None:
+            cls._logger = get_logger(cls.unique_name)
         return cls._logger
 
     @logger.setter
@@ -79,15 +81,17 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-    def __init__(self, suppress: bool = False):
+    def __init__(self, suppress: bool = False, **logger_kwargs):
         """Initialize the Mindtrace object.
 
         Args:
             suppress: Whether to suppress exceptions when exiting this class when used as a context manager.
+            **logger_kwargs: Additional keyword arguments to pass to `get_logger`.
+                             e.g., propagate=True, file_level=logging.INFO, etc.
         """
         self.suppress = suppress
         self.config = Config()
-        self.logger = Logger(self.unique_name)
+        self.logger = get_logger(self.unique_name, **logger_kwargs)
 
     @property
     def unique_name(self) -> str:
@@ -98,7 +102,7 @@ class Mindtrace(metaclass=MindtraceMeta):
         return type(self).__name__
 
     def __enter__(self):
-        self.logger.debug({f"Initializing {self.name} as a context manager."})
+        self.logger.debug(f"Initializing {self.name} as a context manager.")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

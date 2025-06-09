@@ -12,6 +12,6 @@ class MyClass(Mindtrace):
         cls.logger.info(f"Find this log in `~/.cache/mindtrace/mindtrace.log`. Using cls logger: {cls.logger.name}")  # Using logger: mindtrace.my_module.MyClass
 
 if __name__=="__main__":
-    cls_insance = MyClass()
-    cls_insance.instance_method()
-    cls_insance.class_method()
+    cls_instance = MyClass()
+    cls_instance.instance_method()
+    cls_instance.class_method()
