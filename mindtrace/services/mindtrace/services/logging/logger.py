@@ -44,7 +44,8 @@ class ServiceLogMixin:
         .. code-block:: python
 
             from mindtrace.core.base.mindtrace_base import Mindtrace
-            from mindtrace.core.logging.mixin import ServiceLogMixin
+            from mindtrace.services.logging.logger import ServiceLogMixin
+
 
             class MyService(Mindtrace, ServiceLogMixin):
                 def __init__(self):

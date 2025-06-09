@@ -20,7 +20,7 @@ class MindtraceMeta(type):
 
     Example, logging in both class methods and instance methods::
 
-        from mindtrace import Mindtrace
+        from mindtrace.core import Mindtrace
 
         class MyClass(Mindtrace):
             def __init__(self):
@@ -62,7 +62,7 @@ class Mindtrace(metaclass=MindtraceMeta):
 
     .. code-block:: python
 
-        from mindtrace import Mindtrace
+        from mindtrace.core import Mindtrace
 
         class MyClass(Mindtrace):
             def __init__(self):
@@ -151,7 +151,7 @@ class Mindtrace(metaclass=MindtraceMeta):
 
         Example::
 
-            from mindtrace import Mindtrace
+            from mindtrace.core import Mindtrace
 
             class MyClass(Mindtrace):
                 def __init__(self):
@@ -188,7 +188,7 @@ class Mindtrace(metaclass=MindtraceMeta):
         .. code-block:: python
 
             from fastapi import FastAPI
-            from mindtrace import Mindtrace
+            from mindtrace.core import Mindtrace
 
             class MyClass(Mindtrace):
                 def __init__():
