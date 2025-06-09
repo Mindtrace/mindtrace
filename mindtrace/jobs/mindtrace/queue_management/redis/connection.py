@@ -3,7 +3,7 @@ import time
 import redis
 
 from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.utils import ifnone, SingletonByArgsMeta
+from mindtrace.jobs.mindtrace.utils import ifnone
 
 
 class RedisConnection(BrokerConnectionBase):

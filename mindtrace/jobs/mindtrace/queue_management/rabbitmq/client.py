@@ -4,9 +4,7 @@ import uuid
 import logging
 from typing import Optional
 import pydantic
-
 import pika
-import pika.exceptions
 from pika import BasicProperties, DeliveryMode
 
 from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
@@ -17,6 +15,14 @@ from mindtrace.jobs.mindtrace.types import Job
 
 class RabbitMQClient(OrchestratorBackend):
     def __init__(self, host: str = None, port: int = None, username: str = None, password: str = None):
+        """Initialize the RabbitMQ client with connection parameters.
+
+        Args:
+            host: RabbitMQ server hostname.
+            port: RabbitMQ server port.
+            username: Username for RabbitMQ authentication.
+            password: Password for RabbitMQ authentication.
+        """
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
@@ -61,6 +67,7 @@ class RabbitMQClient(OrchestratorBackend):
             auto_delete: Automatically delete the queue when no consumers are connected.
             routing_key: Routing key for binding the queue to the exchange.
             force: Force exchange creation if it doesn't exist.
+            max_priority: Maximum priority for priority queue (0-255).
         """
 
         queue = queue_name
@@ -70,6 +77,11 @@ class RabbitMQClient(OrchestratorBackend):
         auto_delete = kwargs.get('auto_delete', False)
         routing_key = kwargs.get('routing_key')
         force = kwargs.get('force', False)
+        max_priority = kwargs.get('max_priority')
+
+        queue_arguments = {}
+        if max_priority is not None:
+            queue_arguments['x-max-priority'] = max_priority
 
         try:
             self.channel.queue_declare(queue=queue, passive=True)
@@ -88,7 +100,7 @@ class RabbitMQClient(OrchestratorBackend):
                     self.channel.exchange_declare(exchange=exchange, passive=True)
                     self.logger.debug(f"Exchange '{exchange}' exists. Binding queue '{queue}' to it.")
                     self.channel.queue_declare(
-                        queue=queue, durable=durable, exclusive=exclusive, auto_delete=auto_delete
+                        queue=queue, durable=durable, exclusive=exclusive, auto_delete=auto_delete, arguments=queue_arguments
                     )
                     self.logger.debug(f"Queue '{queue}' declared successfully.")
                     self.channel.queue_bind(
@@ -105,7 +117,7 @@ class RabbitMQClient(OrchestratorBackend):
                         self.channel.exchange_declare(exchange=exchange, exchange_type="direct", durable=True)
                         self.logger.debug(f"Exchange '{exchange}' declared successfully.")
                         self.channel.queue_declare(
-                            queue=queue, durable=durable, exclusive=exclusive, auto_delete=auto_delete
+                            queue=queue, durable=durable, exclusive=exclusive, auto_delete=auto_delete, arguments=queue_arguments
                         )
                         self.logger.debug(f"Queue '{queue}' declared successfully.")
                         self.channel.queue_bind(
