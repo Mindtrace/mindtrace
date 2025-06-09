@@ -41,7 +41,7 @@ def setup_logging(log_config: dict = None, log_dir: Optional[Path] = None) -> No
         logging.config.dictConfig(config=log_config)
         return
 
-    log_file_path = (log_dir or Path.home() / ".cache/mindtrace") / "mindtrace.log"
+    log_file_path = (log_dir or Path.home() / ".cache/mindtrace") / "mindtrace.log" # ToDo: Get the path from default config values or core settings
     log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
     merged_config = default_logging_config.copy()
