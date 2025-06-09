@@ -1,4 +1,8 @@
-from typing import TypeVar
+import os
+from pathlib import Path
+import tempfile
+from typing import Dict, List, TypeVar
+import yaml
 
 from minio import Minio
 from minio.error import S3Error
@@ -10,15 +14,107 @@ from mindtrace.registry import RegistryBackend
 T = TypeVar("T")
 
 
-class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
-    def __init__((
+class MinioRegistryBackend(RegistryBackend):
+    """Handles syncing object version directories and registry metadata with a remote MinIO server.
+
+    Expects the same logical registry layout in a given MinIO bucket.
+
+    Local Docker Example:
+        To run a local MinIO registry, first start a MinIO server using docker:
+
+        .. code-block:: bash
+
+            $ docker run --rm --name minio \\
+                -p 9000:9000 \\
+                -p 9001:9001 \\
+                -e MINIO_ROOT_USER=minioadmin \\
+                -e MINIO_ROOT_PASSWORD=minioadmin \\
+                -v ~/.cache/mindtrace/minio_data:/data \\
+                minio/minio server /data --console-address ":9001"
+
+        =============================  ===============================================
+        Option                         Description
+        =============================  ===============================================
+        -p 9000:9000                   API access (S3-compatible)
+        -p 9001:9001                   Web UI (access at http://localhost:9001)
+        -v ~/minio_data:/data          Persistent volume for object storage
+        MINIO_ROOT_USER/PASSWORD       Admin credentials (change in production)
+        minio server /data             Starts the object server
+        =============================  ===============================================
+
+    Usage Example::
+
+from mindtrace.registry import Registry, MinioRegistryBackend
+
+# Connect to a remote MinIO registry (expected to be non-local in practice)
+minio_backend = MinioRegistryBackend(
+    uri="~/.cache/mindtrace/minio_registry",
+    endpoint="localhost:9000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    bucket="minio-registry",
+    secure=False
+)
+registry = Registry(backend=minio_backend)
+
+# Save some objects to the registry
+registry.save("test:int", 42)
+registry.save("test:float", 3.14)
+registry.save("test:str", "Hello, World!")
+registry.save("test:list", [1, 2, 3])
+registry.save("test:dict", {"a": 1, "b": 2})
+
+        # Print the contents of the remote registry
+        print(registry)
+
+        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
+        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
+        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
+        │ yolo8:l │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ d6d9c366... │ (none)   │
+        │ yolo8:m │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 9a78d408... │ (none)   │
+        │ yolo8:n │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ f5295590... │ (none)   │
+        │ yolo8:s │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ e7ecc651... │ (none)   │
+        │ yolo8:x │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
+        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
+
+        # Transfer a model to the local registry
+        local_registry.request_model_from(remote_registry, "yolo8:x")
+        print(local_registry)
+
+        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
+        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
+        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
+        │ yolo8:x │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
+        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
+
+        # Load, use and register new models using the local registry
+        model = local_registry.load_model("yolo8:x")
+        type(model)  # <class 'mtrix.models.pretrained.yolo8.Yolo8'>
+        local_registry.register_model("yolo8:x", model, version="2.0.0")
+        remote_registry.register_model("yolo8:x", model, version="2.0.0")  # Also works, but it is recommended to save the model locally first
+
+        # Send a model to the remote registry
+        local_registry.send_model_to(remote_registry, "yolo8:x", version="2.0.0")
+
+        print(remote_registry)
+
+        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
+        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
+        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
+        │ yolo8:x │ v2.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
+        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
+        | ...     | ...     | ...                                 | ...         | ...      |
+        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘   
+    """
+
+    def __init__(
         self,
         uri: str | Path | None = None,
         *,
         endpoint: str,
         access_key: str,
         secret_key: str,
-        bucket: str = "model-registry",
+        bucket: str = "minio-registry",
         secure: bool = True,
         **kwargs,
     ):
@@ -32,7 +128,7 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
             bucket: Name of the MinIO bucket to use
             secure: Whether to use HTTPS (True) or HTTP (False)
         """
-        super().__init__(**kwargs)
+        super().__init__(uri=uri, **kwargs)
         if uri is not None:
             self._uri = Path(uri).expanduser().resolve()
         else:
@@ -68,10 +164,10 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
 
         Args:
             local_path: Path to local directory to upload
-            name: Name of the model
+            name: Name of the object
             version: Version string
         """
-        self.validate_model_name(name)
+        self.validate_object_name(name)
         remote_key = self._object_key(name, version)
         self.logger.debug(f"Uploading directory from {local_path} to {remote_key}.")
 
@@ -86,7 +182,7 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
         """Download a directory from MinIO.
 
         Args:
-            name: Name of the model
+            name: Name of the object
             version: Version string
             local_path: Path to local directory to download
         """
@@ -104,7 +200,7 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
         """Delete a version directory from MinIO.
 
         Args:
-            name: Name of the model
+            name: Name of the object
             version: Version string
         """
         remote_key = self._object_key(name, version)
@@ -115,14 +211,14 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
  
 
     def save_metadata(self, name: str, version: str, metadata: dict):
-        """Save model metadata to MinIO.
+        """Save object metadata to MinIO.
 
         Args:
-            name: Name of the model
+            name: Name of the object
             version: Version string
-            metadata: Dictionary containing model metadata
+            metadata: Dictionary containing object metadata
         """
-        self.validate_model_name(name)
+        self.validate_object_name(name)
         key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
         self.logger.debug(f"Saving metadata to {key}: {metadata}")
 
@@ -131,14 +227,14 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
             self.client.fput_object(self.bucket, key, tmp.name)
 
     def fetch_metadata(self, name: str, version: str) -> dict:
-        """Fetch model metadata from MinIO.
+        """Fetch object metadata from MinIO.
 
         Args:
-            name: Name of the model
+            name: Name of the object
             version: Version string
         
         Returns:
-            Dictionary containing model metadata
+            Dictionary containing object metadata
         """
         key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
@@ -149,10 +245,10 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
             return data
 
     def delete_metadata(self, name: str, version: str):
-        """Delete model metadata from MinIO.
+        """Delete object metadata from MinIO.
 
         Args:
-            name: Name of the model
+            name: Name of the object
             version: Version string
         """
         key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
@@ -178,7 +274,8 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
             # Get the backend metadata
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
                 self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                metadata = yaml.safe_load(tmp.name)
+                with open(tmp.name, 'r') as f:
+                    metadata = yaml.safe_load(f)
             metadata["materializers"][object_class] = materializer_class
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
                 yaml.safe_dump(metadata, tmp)
@@ -201,7 +298,8 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
         try:
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
                 self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                metadata = yaml.safe_load(tmp.name)
+                with open(tmp.name, "r") as f:
+                    metadata = yaml.safe_load(f)
             return metadata["materializers"].get(object_class, None)
         except Exception as e:
             self.logger.error(f"Error getting registered materializer for {object_class}: {e}")
@@ -216,7 +314,8 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
         try:
             with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
                 self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                metadata = yaml.safe_load(tmp.name)
+                with open(tmp.name, 'r') as f:
+                    metadata = yaml.safe_load(f)
             return metadata["materializers"]
         except Exception as e:
             self.logger.error(f"Error getting registered materializers: {e}")
@@ -257,14 +356,14 @@ class MinioRegistryBackend(RegistryBackend):  # pragma: no cover
         return sorted(versions)
 
     def has_object(self, name: str, version: str) -> bool:
-        """Check if a specific model version exists in the backend.
+        """Check if a specific object version exists in the backend.
 
         Args:
             name: Name of the object.
             version: Version string.
 
         Returns:
-            True if the model version exists, False otherwise.
+            True if the object version exists, False otherwise.
         """
         if name not in self.list_objects():
             return False

@@ -15,7 +15,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
 
     @abstractmethod
     def __init__(self, uri: str | Path, **kwargs):
-        pass
+        super().__init__(**kwargs)
 
     @abstractmethod
     def push(self, name: str, version: str, local_path: str):

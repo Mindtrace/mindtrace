@@ -23,4 +23,6 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
 
 class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     """Base class for Mindtrace-derived abstract classes."""
-    pass
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
