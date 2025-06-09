@@ -787,6 +787,7 @@ def test_register_default_materializers_without_datasets():
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
 
+@pytest.mark.slow
 def test_huggingface_dataset():
     """Test saving and loading a HuggingFace dataset."""
     try:
