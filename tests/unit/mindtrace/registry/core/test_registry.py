@@ -9,7 +9,7 @@ from minio import S3Error
 from pydantic import BaseModel
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Config 
+from mindtrace.core import check_libs, Config 
 from mindtrace.registry import LocalRegistryBackend, Registry
 
 
@@ -789,11 +789,13 @@ def test_register_default_materializers_without_datasets():
 
 def test_huggingface_dataset():
     """Test saving and loading a HuggingFace dataset."""
-    # Try to import datasets
     try:
         import datasets
+        import transformers
     except ImportError:
-        pytest.skip("HuggingFace datasets library not installed. Skipping test.")
+        missing_libs = check_libs(["datasets", "transformers"])
+        if missing_libs:
+            pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
     # Create a small test dataset
     dataset = datasets.Dataset.from_dict({

@@ -17,7 +17,7 @@ class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
 
     # Required by BaseMaterializer
     ASSOCIATED_TYPES: Set[Type] = {Any}
-    ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
+    ASSOCIATED_ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
 
     def __init__(self, uri: str, *args, **kwargs):
         super().__init__(uri=uri, *args, **kwargs)
