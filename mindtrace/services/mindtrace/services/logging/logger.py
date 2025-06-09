@@ -96,7 +96,7 @@ class ServiceLogMixin:
             return event_dict
 
         # Setup default log path if not provided
-        default_log_dir = Path.home() / ".cache" / "mindtrace" / "services" / service_name
+        default_log_dir = Path.home() / ".cache" / "mindtrace" / "services" / service_name # ToDo: Get the path from default config values or service settings
         log_dir = Path(ifnone(log_dir, default_log_dir))
         log_dir.mkdir(parents=True, exist_ok=True)
 
