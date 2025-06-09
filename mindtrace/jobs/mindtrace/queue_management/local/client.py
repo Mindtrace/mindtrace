@@ -5,18 +5,14 @@ from typing import Optional
 import pydantic
 
 from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.utils import ifnone, SingletonByArgsMeta
 from mindtrace.jobs.mindtrace.queue_management.local.fifo_queue import LocalQueue
 from mindtrace.jobs.mindtrace.queue_management.local.stack import LocalStack
 from mindtrace.jobs.mindtrace.queue_management.local.priority_queue import LocalPriorityQueue
+from mindtrace.jobs.mindtrace.utils import ifnone
 from mindtrace.jobs.mindtrace.types import Job
 
 
-class LocalBrokerMeta(SingletonByArgsMeta, type(OrchestratorBackend)):
-    pass
-
-
-class LocalBroker(OrchestratorBackend, metaclass=LocalBrokerMeta):
+class LocalClient(OrchestratorBackend):
     """A pure-python in-memory message broker.
 
     This client subclasses BrokerClientBase and supports multiple unique instances based on the provided 'broker_id'

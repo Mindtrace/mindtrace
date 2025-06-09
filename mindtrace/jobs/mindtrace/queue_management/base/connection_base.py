@@ -1,12 +1,15 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+
+from mindtrace.core import Mindtrace
 import logging
 
 
-class BrokerConnectionBase(ABC):
+class BrokerConnectionBase(Mindtrace):
     """Abstract base class for broker connections."""
 
     def __init__(self, *args, **kwargs):
+        super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod

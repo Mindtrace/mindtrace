@@ -11,7 +11,7 @@ from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import 
 from mindtrace.jobs.mindtrace.queue_management.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.mindtrace.queue_management.redis.stack import RedisStack
 from mindtrace.jobs.mindtrace.queue_management.redis.priority import RedisPriorityQueue
-from mindtrace.jobs.mindtrace.utils import SingletonByArgsMeta
+
 from mindtrace.jobs.mindtrace.types import Job
 
 
@@ -27,6 +27,7 @@ class RedisClient(OrchestratorBackend):
             port: Redis server port.
             db: Redis database number.
         """
+        super().__init__()
         self.redis_params = {"host": host, "port": port, "db": db}
         self.redis = redis.Redis(**self.redis_params)
         self.queues: dict[str, any] = {}  # Local cache of queue objects

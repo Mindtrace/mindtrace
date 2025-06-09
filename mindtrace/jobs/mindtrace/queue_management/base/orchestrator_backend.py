@@ -1,8 +1,10 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Optional
 import pydantic
 
-class OrchestratorBackend(ABC):
+from mindtrace.core import Mindtrace
+
+class OrchestratorBackend(Mindtrace):
     """
     Abstract base class for orchestrator backends.
     

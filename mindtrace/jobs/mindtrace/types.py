@@ -1,6 +1,7 @@
 from pydantic import BaseModel
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from enum import Enum
+
 class BackendType(str, Enum):
     LOCAL = "local"
     REDIS = "redis" 
@@ -14,44 +15,22 @@ class ExecutionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 class JobSchema(BaseModel):
+    """A job schema that can handle input and output directly"""
     name: str
-    input_schema: Dict[str, Any]
-    output_schema: Dict[str, Any]
-    test_case: Optional[Dict[str, Any]] = None
+    input: Dict[str, Any]
+    output: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] = {}
+    metadata: Optional[Dict[str, str]] = {}
     description: Optional[str] = None
     version: str = "1.0.0"
 
-class JobDefinition(BaseModel):
-    schema_name: str  # References a JobSchema
-    inputs: Dict[str, Any]  # Must conform to schema's input_schema
-    config: Optional[Dict[str, Any]] = {}
-    resources: Optional[Dict[str, Any]] = {}
-    metadata: Optional[Dict[str, str]] = {}
-
-class JobExecution(BaseModel):
-    """Represents a job actually running on the cluster"""
+class Job(BaseModel):
+    """A job instance ready for execution"""
     id: str
-    queue_id: str  
-    backend: BackendType
-    status: ExecutionStatus
-    definition: JobDefinition
-    worker_id: Optional[str] = None
+    job_schema: JobSchema
+    status: ExecutionStatus = ExecutionStatus.QUEUED
+    backend: Optional[BackendType] = None
     created_at: str
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
-    results: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-
-class JobValidationResponse(BaseModel):
-    valid: bool
-    errors: List[str] = []
-    warnings: List[str] = []
-    estimated_cost: Optional[float] = None
-    estimated_duration: Optional[str] = None
-
-class Job(BaseModel):
-    id: str
-    schema_name: str
-    definition: JobDefinition
-    created_at: str
-    updated_at: str

@@ -2,7 +2,7 @@ import time
 from pika import PlainCredentials, ConnectionParameters, BlockingConnection, exceptions
 
 from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.utils import ifnone, SingletonByArgsMeta
+from mindtrace.jobs.mindtrace.utils import ifnone
 
 
 class RabbitMQConnection(BrokerConnectionBase):
