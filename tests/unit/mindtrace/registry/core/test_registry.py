@@ -794,8 +794,7 @@ def test_huggingface_dataset():
         import transformers
     except ImportError:
         missing_libs = check_libs(["datasets", "transformers"])
-        if missing_libs:
-            pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
     # Create a small test dataset
     dataset = datasets.Dataset.from_dict({
