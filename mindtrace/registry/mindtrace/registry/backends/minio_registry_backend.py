@@ -44,67 +44,39 @@ class MinioRegistryBackend(RegistryBackend):
 
     Usage Example::
 
-from mindtrace.registry import Registry, MinioRegistryBackend
+        from mindtrace.registry import Registry, MinioRegistryBackend
 
-# Connect to a remote MinIO registry (expected to be non-local in practice)
-minio_backend = MinioRegistryBackend(
-    uri="~/.cache/mindtrace/minio_registry",
-    endpoint="localhost:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    bucket="minio-registry",
-    secure=False
-)
-registry = Registry(backend=minio_backend)
+        # Connect to a remote MinIO registry (expected to be non-local in practice)
+        minio_backend = MinioRegistryBackend(
+            uri="~/.cache/mindtrace/minio_registry",
+            endpoint="localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="minio-registry",
+            secure=False
+        )
+        registry = Registry(backend=minio_backend)
 
-# Save some objects to the registry
-registry.save("test:int", 42)
-registry.save("test:float", 3.14)
-registry.save("test:str", "Hello, World!")
-registry.save("test:list", [1, 2, 3])
-registry.save("test:dict", {"a": 1, "b": 2})
+        # Save some objects to the registry
+        registry.save("test:int", 42)
+        registry.save("test:float", 3.14)
+        registry.save("test:str", "Hello, World!")
+        registry.save("test:list", [1, 2, 3])
+        registry.save("test:dict", {"a": 1, "b": 2})
 
-        # Print the contents of the remote registry
+        # Print the contents of the registry
         print(registry)
 
-        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
-        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
-        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
-        │ yolo8:l │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ d6d9c366... │ (none)   │
-        │ yolo8:m │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 9a78d408... │ (none)   │
-        │ yolo8:n │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ f5295590... │ (none)   │
-        │ yolo8:s │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ e7ecc651... │ (none)   │
-        │ yolo8:x │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
-        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
-
-        # Transfer a model to the local registry
-        local_registry.request_model_from(remote_registry, "yolo8:x")
-        print(local_registry)
-
-        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
-        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
-        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
-        │ yolo8:x │ v1.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
-        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
-
-        # Load, use and register new models using the local registry
-        model = local_registry.load_model("yolo8:x")
-        type(model)  # <class 'mtrix.models.pretrained.yolo8.Yolo8'>
-        local_registry.register_model("yolo8:x", model, version="2.0.0")
-        remote_registry.register_model("yolo8:x", model, version="2.0.0")  # Also works, but it is recommended to save the model locally first
-
-        # Send a model to the remote registry
-        local_registry.send_model_to(remote_registry, "yolo8:x", version="2.0.0")
-
-        print(remote_registry)
-
-        ┏━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┓
-        ┃ Model   ┃ Version ┃ Class                               ┃ Hash        ┃ Metadata ┃
-        ┡━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━┩
-        │ yolo8:x │ v2.0.0  │ mtrix.models.pretrained.yolo8.Yolo8 │ 55c7fd03... │ (none)   │
-        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘
-        | ...     | ...     | ...                                 | ...         | ...      |
-        └─────────┴─────────┴─────────────────────────────────────┴─────────────┴──────────┘   
+        Registry at /Users/jeremywurbs/.cache/mindtrace/minio_registry   
+        ┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
+        ┃ Object     ┃ Version ┃ Class          ┃ Value         ┃ Metadata ┃
+        ┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
+        │ test:dict  │ v1      │ builtins.dict  │ <dict>        │ (none)   │
+        │ test:float │ v1      │ builtins.float │ 3.14          │ (none)   │
+        │ test:int   │ v1      │ builtins.int   │ 42            │ (none)   │
+        │ test:list  │ v1      │ builtins.list  │ <list>        │ (none)   │
+        │ test:str   │ v1      │ builtins.str   │ Hello, World! │ (none)   │
+        └────────────┴─────────┴────────────────┴───────────────┴──────────┘    
     """
 
     def __init__(
