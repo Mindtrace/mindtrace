@@ -56,6 +56,27 @@ class Mindtrace(metaclass=MindtraceMeta):
 
     The Mindtrace class adds default context manager and logging methods. All classes that derive from Mindtrace can be
     used as context managers and will use a unified logging format.
+
+    The class automatically provides logging capabilities for both class methods and instance methods.
+    For example:
+
+    .. code-block:: python
+
+        from mindtrace import Mindtrace
+
+        class MyClass(Mindtrace):
+            def __init__(self):
+                super().__init__()
+
+            def instance_method(self):
+                self.logger.info(f"Using logger: {self.logger.name}")  # Using logger: mindtrace.my_module.MyClass
+
+            @classmethod
+            def class_method(cls):
+                cls.logger.info(f"Using logger: {cls.logger.name}")  # Using logger: mindtrace.my_module.MyClass
+
+    The logging functionality is automatically provided through the MindtraceMeta metaclass,
+    which ensures consistent logging behavior across all method types.
     """
 
     def __init__(self, suppress: bool = False):
