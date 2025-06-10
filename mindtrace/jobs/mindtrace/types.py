@@ -1,11 +1,13 @@
 from pydantic import BaseModel
-from typing import Optional, Type, Any
+from typing import Optional
 from enum import Enum
+
 
 class BackendType(str, Enum):
     LOCAL = "local"
-    REDIS = "redis" 
+    REDIS = "redis"
     RABBITMQ = "rabbitmq"
+
 
 class ExecutionStatus(str, Enum):
     QUEUED = "queued"
@@ -14,6 +16,7 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
 class JobType(str, Enum):
     ML_TRAINING = "ml_training"
     OBJECT_DETECTION = "object_detection"
@@ -21,22 +24,30 @@ class JobType(str, Enum):
     CLASSIFICATION = "classification"
     DEFAULT = "default"
 
+
 class JobInput(BaseModel):
     """Base class for job input data - extend this for specific job types"""
+
     pass
+
 
 class JobOutput(BaseModel):
     """Base class for job output data - extend this for specific job types"""
+
     pass
+
 
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
+
     name: str
     input: JobInput
     output: Optional[JobOutput] = None
 
+
 class Job(BaseModel):
     """A job instance ready for execution - system routes based on job_type"""
+
     id: str
     name: str
     job_type: JobType = JobType.DEFAULT
@@ -47,15 +58,16 @@ class Job(BaseModel):
     completed_at: Optional[str] = None
     error: Optional[str] = None
     entrypoint: Optional[str] = None
-    
+
     # User can optionally specify priority for job processing
     priority: Optional[int] = None
+
 
 # Queue mapping for automatic routing
 QUEUE_MAPPING = {
     JobType.ML_TRAINING: "ml_training_jobs",
-    JobType.OBJECT_DETECTION: "detection_jobs", 
+    JobType.OBJECT_DETECTION: "detection_jobs",
     JobType.DATA_PROCESSING: "data_jobs",
     JobType.CLASSIFICATION: "classification_jobs",
-    JobType.DEFAULT: "default_jobs"
+    JobType.DEFAULT: "default_jobs",
 }

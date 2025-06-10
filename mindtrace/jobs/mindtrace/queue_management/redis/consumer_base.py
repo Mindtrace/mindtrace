@@ -1,4 +1,3 @@
-import json
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -36,7 +35,7 @@ class RedisConsumerBase(ConsumerBase, ABC):
         self.queues: List[str] = ifnone(queues, default=["default_queue"])
         self.connection = ifnone(connection, default=RedisConnection())
         self.connection.connect()
-        
+
         # Create a RedisClient using connection parameters.
         self.client = RedisClient(
             host=self.connection.host,
@@ -79,20 +78,28 @@ class RedisConsumerBase(ConsumerBase, ABC):
                 for queue in queues:
                     try:
                         # Attempt to receive a message (blocking call with timeout).
-                        raw_message = self.client.receive_message(queue_name=queue, block=True, timeout=self.poll_timeout)
+                        raw_message = self.client.receive_message(
+                            queue_name=queue, block=True, timeout=self.poll_timeout
+                        )
                         if raw_message:
                             # Convert the pydantic model back to dict
                             message = raw_message.model_dump()
-                            self.logger.debug(f"Received message from queue '{queue}': {message}")
+                            self.logger.debug(
+                                f"Received message from queue '{queue}': {message}"
+                            )
                             result = None
                             try:
                                 result = self.process_message(message, queue)
                             except Exception as e:
-                                self.logger.error(f"Error processing message from queue '{queue}': {e}")
+                                self.logger.error(
+                                    f"Error processing message from queue '{queue}': {e}"
+                                )
                             messages_consumed += 1
                     except Exception as e:
                         # No message available or a polling error occurred; sleep briefly and continue.
-                        self.logger.debug(f"No message available in queue '{queue}' or error occurred: {e}")
+                        self.logger.debug(
+                            f"No message available in queue '{queue}' or error occurred: {e}"
+                        )
                         time.sleep(1)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
@@ -111,4 +118,6 @@ class RedisConsumerBase(ConsumerBase, ABC):
 
         while any(self.client.count_queue_messages(q) > 0 for q in queues):
             self.consume(num_messages=1, queues=queues)
-        self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
+        self.logger.info(
+            f"Stopped consuming messages from queues: {queues} (queues empty)."
+        )

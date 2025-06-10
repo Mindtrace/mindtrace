@@ -3,8 +3,12 @@ from abc import abstractmethod
 from typing import Optional
 
 from mindtrace.jobs.mindtrace.queue_management.base.consumer_base import ConsumerBase
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import RabbitMQConnection
+from mindtrace.jobs.mindtrace.queue_management.base.connection_base import (
+    BrokerConnectionBase,
+)
+from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import (
+    RabbitMQConnection,
+)
 from mindtrace.jobs.mindtrace.utils import ifnone
 
 
@@ -61,7 +65,9 @@ class RabbitMQConsumerBase(ConsumerBase):
             self.process_message(channel, method, properties, body)
             channel.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}\nMessage body: {body}\n{traceback.format_exc()}")
+            self.logger.error(
+                f"Error processing message: {e}\nMessage body: {body}\n{traceback.format_exc()}"
+            )
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
     def consume(self, num_messages: int = 0, queues: str | list[str] | None = None):
@@ -76,7 +82,10 @@ class RabbitMQConsumerBase(ConsumerBase):
         queues = ifnone(queues, default=self.queues)
 
         with RabbitMQConnection(
-            self.connection.host, self.connection.port, self.connection.username, self.connection.password
+            self.connection.host,
+            self.connection.port,
+            self.connection.username,
+            self.connection.password,
         ) as connection:
             channel = connection.get_channel()
             channel.basic_qos(prefetch_count=self.prefetch_count)
@@ -99,7 +108,9 @@ class RabbitMQConsumerBase(ConsumerBase):
             )
             messages_consumed = 0
             while messages_consumed < num_messages:
-                method_frame, properties, body = channel.basic_get(queue=queue, auto_ack=False)
+                method_frame, properties, body = channel.basic_get(
+                    queue=queue, auto_ack=False
+                )
                 if method_frame is None:
                     continue
                 self.on_message_callback(channel, method_frame, properties, body)
@@ -108,7 +119,11 @@ class RabbitMQConsumerBase(ConsumerBase):
     def _consume_infinite_messages(self, channel, queues: list[str]):
         """Consume messages indefinitely from the specified queues using basic_consume."""
         for queue in queues:
-            channel.basic_consume(queue=queue, on_message_callback=self.on_message_callback, auto_ack=False)
+            channel.basic_consume(
+                queue=queue,
+                on_message_callback=self.on_message_callback,
+                auto_ack=False,
+            )
             self.logger.info(
                 f"Started consuming messages indefinitely from queue: {queue}."
             )

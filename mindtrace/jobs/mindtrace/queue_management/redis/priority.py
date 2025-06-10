@@ -17,18 +17,19 @@ class RedisPriorityQueue:
 
     def push(self, item, priority=0):
         """Serialize and add an item to the priority queue.
-        
+
         Args:
             item: The item to add to the queue.
             priority: Priority value (higher numbers = higher priority).
         """
-        import time
-        import uuid
-        
+
         # Use priority as main score, with small increment for ordering within same priority
         # This ensures deterministic ordering: higher priority = higher score
         import random
-        random.seed(hash(str(item)) % 2147483647)  # Deterministic seed based on item content
+
+        random.seed(
+            hash(str(item)) % 2147483647
+        )  # Deterministic seed based on item content
         tie_breaker = random.random() * 1e-10  # Very small tie breaker
         score = priority + tie_breaker
         self.__db.zadd(self.key, {pickle.dumps(item): score})
@@ -46,16 +47,17 @@ class RedisPriorityQueue:
         if block:
             # For blocking behavior, we'll poll since Redis sorted sets don't have blocking pop
             import time
+
             start_time = time.time()
             while True:
                 # Try to get the highest priority item
                 items = self.__db.zpopmax(self.key, 1)
                 if items:
                     return pickle.loads(items[0][0])
-                
+
                 if timeout is not None and (time.time() - start_time) > timeout:
                     raise Empty
-                
+
                 time.sleep(0.1)  # Sleep briefly before checking again
         else:
             items = self.__db.zpopmax(self.key, 1)
@@ -71,4 +73,3 @@ class RedisPriorityQueue:
     def empty(self):
         """Return True if the priority queue is empty, False otherwise."""
         return self.qsize() == 0
-

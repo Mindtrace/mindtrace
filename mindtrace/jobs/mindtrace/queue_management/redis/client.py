@@ -7,7 +7,9 @@ import pydantic
 
 import redis
 
-from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import (
+    OrchestratorBackend,
+)
 from mindtrace.jobs.mindtrace.queue_management.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.mindtrace.queue_management.redis.stack import RedisStack
 from mindtrace.jobs.mindtrace.queue_management.redis.priority import RedisPriorityQueue
@@ -41,17 +43,33 @@ class RedisClient(OrchestratorBackend):
         metadata = self.redis.hgetall(self.METADATA_KEY)
         for queue, queue_type in metadata.items():
             qname = queue.decode("utf-8") if isinstance(queue, bytes) else queue
-            qtype = queue_type.decode("utf-8") if isinstance(queue_type, bytes) else queue_type
+            qtype = (
+                queue_type.decode("utf-8")
+                if isinstance(queue_type, bytes)
+                else queue_type
+            )
             with self._local_lock:
                 if qtype.lower() == "fifo":
-                    instance = RedisQueue(qname, host=self.redis_params["host"], 
-                                        port=self.redis_params["port"], db=self.redis_params["db"])
+                    instance = RedisQueue(
+                        qname,
+                        host=self.redis_params["host"],
+                        port=self.redis_params["port"],
+                        db=self.redis_params["db"],
+                    )
                 elif qtype.lower() == "stack":
-                    instance = RedisStack(qname, host=self.redis_params["host"], 
-                                        port=self.redis_params["port"], db=self.redis_params["db"])
+                    instance = RedisStack(
+                        qname,
+                        host=self.redis_params["host"],
+                        port=self.redis_params["port"],
+                        db=self.redis_params["db"],
+                    )
                 elif qtype.lower() == "priority":
-                    instance = RedisPriorityQueue(qname, host=self.redis_params["host"], 
-                                                port=self.redis_params["port"], db=self.redis_params["db"])
+                    instance = RedisPriorityQueue(
+                        qname,
+                        host=self.redis_params["host"],
+                        port=self.redis_params["port"],
+                        db=self.redis_params["db"],
+                    )
                 else:
                     continue
                 self.queues[qname] = instance
@@ -75,31 +93,46 @@ class RedisClient(OrchestratorBackend):
                         if event == "declare":
                             # Create and cache the new queue instance.
                             if qtype.lower() == "fifo":
-                                instance = RedisQueue(qname, host=self.redis_params["host"], 
-                                                    port=self.redis_params["port"], db=self.redis_params["db"])
+                                instance = RedisQueue(
+                                    qname,
+                                    host=self.redis_params["host"],
+                                    port=self.redis_params["port"],
+                                    db=self.redis_params["db"],
+                                )
                             elif qtype.lower() == "stack":
-                                instance = RedisStack(qname, host=self.redis_params["host"], 
-                                                    port=self.redis_params["port"], db=self.redis_params["db"])
+                                instance = RedisStack(
+                                    qname,
+                                    host=self.redis_params["host"],
+                                    port=self.redis_params["port"],
+                                    db=self.redis_params["db"],
+                                )
                             elif qtype.lower() == "priority":
-                                instance = RedisPriorityQueue(qname, host=self.redis_params["host"], 
-                                                            port=self.redis_params["port"], db=self.redis_params["db"])
+                                instance = RedisPriorityQueue(
+                                    qname,
+                                    host=self.redis_params["host"],
+                                    port=self.redis_params["port"],
+                                    db=self.redis_params["db"],
+                                )
                             else:
                                 continue
                             self.queues[qname] = instance
                         elif event == "delete":
                             if qname in self.queues:
                                 del self.queues[qname]
-                except Exception as e:
+                except Exception:
                     pass
 
     def declare_queue(self, queue_name: str, **kwargs) -> dict:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
-        queue_type = kwargs.get('queue_type', 'fifo')
-        force = kwargs.get('force', False)
-        
+        queue_type = kwargs.get("queue_type", "fifo")
+        force = kwargs.get("force", False)
+
         with self._local_lock:
             if queue_name in self.queues:
-                return {"status": "success", "message": f"Queue '{queue_name}' already exists."}
+                return {
+                    "status": "success",
+                    "message": f"Queue '{queue_name}' already exists.",
+                }
 
         # Acquire a distributed lock.
         lock = self.redis.lock("mtrix:queue_lock", timeout=5)
@@ -112,14 +145,26 @@ class RedisClient(OrchestratorBackend):
 
             # Create the queue instance with explicit parameters
             if queue_type.lower() == "fifo":
-                instance = RedisQueue(queue_name, host=self.redis_params["host"], 
-                                    port=self.redis_params["port"], db=self.redis_params["db"])
+                instance = RedisQueue(
+                    queue_name,
+                    host=self.redis_params["host"],
+                    port=self.redis_params["port"],
+                    db=self.redis_params["db"],
+                )
             elif queue_type.lower() == "stack":
-                instance = RedisStack(queue_name, host=self.redis_params["host"], 
-                                    port=self.redis_params["port"], db=self.redis_params["db"])
+                instance = RedisStack(
+                    queue_name,
+                    host=self.redis_params["host"],
+                    port=self.redis_params["port"],
+                    db=self.redis_params["db"],
+                )
             elif queue_type.lower() == "priority":
-                instance = RedisPriorityQueue(queue_name, host=self.redis_params["host"], 
-                                            port=self.redis_params["port"], db=self.redis_params["db"])
+                instance = RedisPriorityQueue(
+                    queue_name,
+                    host=self.redis_params["host"],
+                    port=self.redis_params["port"],
+                    db=self.redis_params["db"],
+                )
             else:
                 raise TypeError(f"Unknown queue type '{queue_type}'.")
 
@@ -127,10 +172,15 @@ class RedisClient(OrchestratorBackend):
                 self.queues[queue_name] = instance
 
             # Publish an event to notify other clients.
-            event_data = json.dumps({"event": "declare", "queue": queue_name, "queue_type": queue_type})
+            event_data = json.dumps(
+                {"event": "declare", "queue": queue_name, "queue_type": queue_type}
+            )
             self.redis.publish(self.EVENTS_CHANNEL, event_data)
 
-            return {"status": "success", "message": f"Queue '{queue_name}' declared as {queue_type} successfully."}
+            return {
+                "status": "success",
+                "message": f"Queue '{queue_name}' declared as {queue_type} successfully.",
+            }
 
         finally:
             lock.release()
@@ -160,15 +210,18 @@ class RedisClient(OrchestratorBackend):
             # Publish an event to notify other clients.
             event_data = json.dumps({"event": "delete", "queue": queue_name})
             self.redis.publish(self.EVENTS_CHANNEL, event_data)
-            
-            return {"status": "success", "message": f"Queue '{queue_name}' deleted successfully."}
+
+            return {
+                "status": "success",
+                "message": f"Queue '{queue_name}' deleted successfully.",
+            }
         finally:
             lock.release()
 
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
         """Publish a message (a pydantic model) to the specified Redis queue."""
-        priority = kwargs.get('priority')
-        
+        priority = kwargs.get("priority")
+
         with self._local_lock:
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
@@ -185,12 +238,14 @@ class RedisClient(OrchestratorBackend):
                 instance.push(item=body, priority=priority)
             else:
                 instance.push(item=body)
-            
+
             return message_dict["job_id"]
-        except Exception as e:
+        except Exception:
             raise
 
-    def receive_message(self, queue_name: str, **kwargs) -> Optional[pydantic.BaseModel]:
+    def receive_message(
+        self, queue_name: str, **kwargs
+    ) -> Optional[pydantic.BaseModel]:
         """Retrieve a message from a specified Redis queue."""
         with self._local_lock:
             if queue_name not in self.queues:
@@ -204,7 +259,7 @@ class RedisClient(OrchestratorBackend):
                 raw_message = instance.pop(block=False, timeout=None)
             else:
                 raise Exception("Queue type does not support receiving messages.")
-            
+
             # Parse JSON back to dict
             message_dict = json.loads(raw_message)
             # For now, return a generic pydantic model - this should be improved
@@ -256,13 +311,23 @@ class RedisClient(OrchestratorBackend):
             # Delete the key associated with the queue.
             count = self.redis.llen(instance.key)
             self.redis.delete(instance.key)
-            return {"status": "success", "message": f"Queue '{queue_name}' cleaned; deleted {count} key(s)."}
-        except Exception as e:
+            return {
+                "status": "success",
+                "message": f"Queue '{queue_name}' cleaned; deleted {count} key(s).",
+            }
+        except Exception:
             raise
         finally:
             lock.release()
 
     # DLQ Methods - TODO: Implement
-    def move_to_dlq(self, source_queue: str, dlq_name: str, message: pydantic.BaseModel, error_details: str, **kwargs):
+    def move_to_dlq(
+        self,
+        source_queue: str,
+        dlq_name: str,
+        message: pydantic.BaseModel,
+        error_details: str,
+        **kwargs,
+    ):
         """Move a failed message to a dead letter queue"""
         pass
