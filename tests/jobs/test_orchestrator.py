@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
 from mindtrace.jobs.mindtrace.queue_management.orchestrator import Orchestrator
-from mindtrace.jobs.mindtrace.types import JobType
 from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
 from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
 from .conftest import create_test_job, unique_queue_name
@@ -16,7 +15,7 @@ class TestOrchestrator:
         queue_name = unique_queue_name("fifo_test")
         client.declare_queue(queue_name, queue_type="fifo")
         
-        jobs = [create_test_job(f"job_{i}") for i in range(3)]
+        jobs = [create_test_job(f"job_{i}", f"job_{i}_schema") for i in range(3)]
         
         for job in jobs:
             orchestrator.publish(queue_name, job)
@@ -29,9 +28,8 @@ class TestOrchestrator:
         
         assert len(received_jobs) == 3
         for i, job in enumerate(received_jobs):
-            assert job.payload.name == f"job_{i}_schema"
+            assert job.schema_name == f"job_{i}_schema"
         
-        # Cleanup
         client.delete_queue(queue_name)
     
     def test_orchestrator_queue_isolation(self, unique_queue_name):
@@ -44,8 +42,8 @@ class TestOrchestrator:
         client.declare_queue(queue1)
         client.declare_queue(queue2)
         
-        ml_job = create_test_job("ml_task", JobType.ML_TRAINING)
-        obj_job = create_test_job("obj_task", JobType.OBJECT_DETECTION)
+        ml_job = create_test_job("ml_task", "ml_task_schema")
+        obj_job = create_test_job("obj_task", "obj_task_schema")
         
         orchestrator.publish(queue1, ml_job)
         orchestrator.publish(queue2, obj_job)
@@ -53,10 +51,9 @@ class TestOrchestrator:
         ml_received = orchestrator.receive_message(queue1)
         obj_received = orchestrator.receive_message(queue2)
         
-        assert ml_received.payload.name == "ml_task_schema"
-        assert obj_received.payload.name == "obj_task_schema"
+        assert ml_received.schema_name == "ml_task_schema"
+        assert obj_received.schema_name == "obj_task_schema"
         
-        # Cleanup
         client.delete_queue(queue1)
         client.delete_queue(queue2)
     
@@ -67,7 +64,7 @@ class TestOrchestrator:
         queue_name = unique_queue_name("cleanup_test")
         client.declare_queue(queue_name)
         
-        job = create_test_job("cleanup_test", JobType.DATA_PROCESSING)
+        job = create_test_job("cleanup_test", "cleanup_test_schema")
         orchestrator.publish(queue_name, job)
         
         assert orchestrator.count_queue_messages(queue_name) == 1
@@ -75,7 +72,6 @@ class TestOrchestrator:
         orchestrator.clean_queue(queue_name)
         assert orchestrator.count_queue_messages(queue_name) == 0
         
-        # Cleanup
         client.delete_queue(queue_name)
     
     def test_orchestrator_backend_delegation(self):
@@ -106,14 +102,13 @@ class TestOrchestrator:
         queue_name = unique_queue_name("redis_integration")
         redis_client.declare_queue(queue_name)
         
-        job = create_test_job("redis_integration", JobType.CLASSIFICATION)
+        job = create_test_job("redis_integration", "redis_integration_schema")
         orchestrator.publish(queue_name, job)
         
         assert orchestrator.count_queue_messages(queue_name) == 1
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == "redis_integration_schema"
+        assert received_job.schema_name == "redis_integration_schema"
         
-        # Cleanup
         redis_client.delete_queue(queue_name) 

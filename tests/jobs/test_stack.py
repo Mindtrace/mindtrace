@@ -3,24 +3,29 @@ import time
 from queue import Empty
 from mindtrace.jobs.mindtrace.queue_management.local.stack import LocalStack
 from mindtrace.jobs.mindtrace.queue_management.redis.stack import RedisStack
-from mindtrace.jobs.mindtrace.types import Job, JobType, JobSchema, JobInput
+from mindtrace.jobs.mindtrace.types import Job, JobSchema, JobInput, JobOutput
+from mindtrace.jobs.mindtrace.utils import job_from_schema
 from .conftest import create_test_job
 
 
 class SampleJobInput(JobInput):
     data: str = "test_input"
 
+class SampleJobOutput(JobOutput):
+    result: str = "success"
 
-def create_test_job(name: str = "test_job") -> Job:
+
+def create_test_job_local(name: str = "test_job") -> Job:
     test_input = SampleJobInput()
-    schema = JobSchema(name=f"{name}_schema", input=test_input)
-    job = Job(
-        id=f"{name}_123",
-        name=name,
-        job_type=JobType.DEFAULT,
-        payload=schema,
-        created_at="2024-01-01T00:00:00"
+    schema = JobSchema(
+        name=f"{name}_schema", 
+        input=test_input,
+        output=SampleJobOutput()
     )
+    job = job_from_schema(schema, test_input)
+    job.id = f"{name}_123"
+    job.name = name
+    job.created_at = "2024-01-01T00:00:00"
     return job
 
 
@@ -30,7 +35,7 @@ class TestLocalStack:
     def test_lifo_behavior(self):
         stack = LocalStack()
         
-        jobs = [create_test_job(f"job_{i}") for i in range(3)]
+        jobs = [create_test_job_local(f"job_{i}") for i in range(3)]
         
         for job in jobs:
             stack.push(job)
@@ -55,7 +60,7 @@ class TestLocalStack:
     
     def test_stack_with_content(self):
         stack = LocalStack()
-        job = create_test_job("peek_test")
+        job = create_test_job_local("peek_test")
         
         stack.push(job)
         
@@ -75,7 +80,7 @@ class TestRedisStack:
         self.stack = RedisStack(self.stack_name, host="localhost", port=6379, db=0)
     
     def test_lifo_behavior(self):
-        jobs = [create_test_job(f"job_{i}") for i in range(3)]
+        jobs = [create_test_job_local(f"job_{i}") for i in range(3)]
         
         for job in jobs:
             self.stack.push(job)
@@ -100,7 +105,7 @@ class TestRedisStack:
             empty_stack.pop(block=False)
     
     def test_serialization(self):
-        job = create_test_job("serialize_test")
+        job = create_test_job_local("serialize_test")
         job.payload.input.data = "complex_data_123"
         
         self.stack.push(job)
@@ -120,7 +125,7 @@ class TestStackEquivalence:
         """Verify both stack implementations have identical behavior."""
         local_stack = LocalStack()
         
-        jobs = [create_test_job(f"equiv_{i}") for i in range(3)]
+        jobs = [create_test_job_local(f"equiv_{i}") for i in range(3)]
         
         for job in jobs:
             local_stack.push(job)

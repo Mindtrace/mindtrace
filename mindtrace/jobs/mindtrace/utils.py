@@ -1,33 +1,28 @@
+import uuid
+from datetime import datetime
 from typing import Any
-from .types import JobType, QUEUE_MAPPING, Job
-
-
+from .types import Job, JobSchema, JobInput
 def ifnone(val: Any, default: Any) -> Any:
     """Return default if val is None, otherwise return val."""
     return default if val is None else val
-
-
-def get_queue_for_job_type(job_type: JobType) -> str:
+def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job:
     """
-    Get the appropriate queue name for a given job type.
-
+    Create a Job from a JobSchema and input data.
+    This function automatically adds metadata like job ID and creation timestamp.
     Args:
-        job_type: The JobType enum value
-
+        schema: The JobSchema to use for the job
+        input_data: The input data for the job
     Returns:
-        Queue name string
+        Job: A complete Job instance ready for submission
     """
-    return QUEUE_MAPPING[job_type]
-
-
-def get_queue_for_job(job: Job) -> str:
-    """
-    Get the appropriate queue name for a given job.
-
-    Args:
-        job: The Job instance
-
-    Returns:
-        Queue name string
-    """
-    return get_queue_for_job_type(job.job_type)
+    return Job(
+        id=str(uuid.uuid4()),
+        name=schema.name,
+        schema_name=schema.name,
+        payload=JobSchema(
+            name=schema.name,
+            input=input_data,
+            output=schema.output
+        ),
+        created_at=datetime.now().isoformat()
+    )

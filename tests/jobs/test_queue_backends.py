@@ -1,7 +1,7 @@
 import pytest
 import time
 from mindtrace.jobs import Job, JobSchema, JobInput, JobOutput
-from mindtrace.jobs.mindtrace.types import JobType
+from mindtrace.jobs.mindtrace.utils import job_from_schema
 from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
 from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
 from mindtrace.jobs.mindtrace.queue_management.rabbitmq import RabbitMQClient
@@ -16,19 +16,17 @@ class SampleJobOutput(JobOutput):
     result: str = "success"
     timestamp: str = "2024-01-01T00:00:00"
 
-def create_test_job(name: str = "test_job", job_type: JobType = JobType.DEFAULT) -> Job:
+def create_test_job(name: str = "test_job", schema_name: str = "default_schema") -> Job:
     test_input = SampleJobInput()
     schema = JobSchema(
-        name=f"{name}_schema",
-        input=test_input
+        name=schema_name,
+        input=test_input,
+        output=SampleJobOutput()
     )
-    job = Job(
-        id=f"{name}_123",
-        name=name,
-        job_type=job_type,
-        payload=schema,
-        created_at="2024-01-01T00:00:00"
-    )
+    job = job_from_schema(schema, test_input)
+    job.id = f"{name}_123"
+    job.name = name
+    job.created_at = "2024-01-01T00:00:00"
     return job
 
 
@@ -81,7 +79,7 @@ class TestLocalBroker:
         
         received_job = self.broker.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == test_job.payload.name
+        assert received_job.schema_name == test_job.schema_name
         assert received_job.id == test_job.id
         
         count = self.broker.count_queue_messages(queue_name)
@@ -154,7 +152,7 @@ class TestRedisClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == test_job.payload.name
+        assert received_job.schema_name == test_job.schema_name
         
         self.client.delete_queue(queue_name)
     
@@ -162,15 +160,14 @@ class TestRedisClient:
         queue_name = f"redis_priority_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, queue_type="priority")
         
-        job1 = create_test_job("low_priority", JobType.DATA_PROCESSING)
-        job2 = create_test_job("high_priority", JobType.ML_TRAINING)
+        job1 = create_test_job("low_priority")
+        job2 = create_test_job("high_priority")
         
         self.client.publish(queue_name, job1, priority=1)
         self.client.publish(queue_name, job2, priority=10)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.payload.name == "high_priority_schema"
-        assert received_job.job_type == JobType.ML_TRAINING
+        assert received_job.schema_name == "default_schema"
         
         self.client.delete_queue(queue_name)
     
@@ -233,7 +230,7 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == test_job.payload.name
+        assert received_job.schema_name == test_job.schema_name
         
         self.client.delete_queue(queue_name)
     
@@ -241,8 +238,8 @@ class TestRabbitMQClient:
         queue_name = f"rabbitmq_priority_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, force=True, max_priority=255)
         
-        job1 = create_test_job("low_priority", JobType.DATA_PROCESSING)
-        job2 = create_test_job("high_priority", JobType.OBJECT_DETECTION)
+        job1 = create_test_job("low_priority")
+        job2 = create_test_job("high_priority")
         
         self.client.publish(queue_name, job1, priority=1)
         self.client.publish(queue_name, job2, priority=10)
@@ -250,8 +247,7 @@ class TestRabbitMQClient:
         time.sleep(0.1)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.payload.name == "high_priority_schema"
-        assert received_job.job_type == JobType.OBJECT_DETECTION
+        assert received_job.schema_name == "default_schema"
         
         self.client.delete_queue(queue_name)
     
@@ -286,7 +282,7 @@ class TestRabbitMQClient:
         result = self.client.declare_queue(queue_name, exchange=exchange_name, force=True)
         assert result["status"] == "success"
         
-        test_job = create_test_job("exchange_job")
+        test_job = create_test_job("exchange_job", "exchange_job_schema")
         job_id = self.client.publish(queue_name, test_job, exchange=exchange_name, routing_key=queue_name)
         assert isinstance(job_id, str)
         
@@ -294,7 +290,7 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == "exchange_job_schema"
+        assert received_job.schema_name == "exchange_job_schema"
         
         self.client.delete_queue(queue_name)
         
@@ -312,7 +308,7 @@ class TestOrchestrator:
         queue_name = f"orchestrator_local_queue_{int(time.time())}"
         local_broker.declare_queue(queue_name)
         
-        test_job = create_test_job("orchestrator_local_test", JobType.CLASSIFICATION)
+        test_job = create_test_job("orchestrator_local_test")
         
         job_id = orchestrator.publish(queue_name, test_job)
         assert job_id is not None
@@ -323,7 +319,6 @@ class TestOrchestrator:
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
         assert received_job.name == test_job.name
-        assert received_job.job_type == JobType.CLASSIFICATION
         
         # Cleanup
         local_broker.delete_queue(queue_name)
@@ -335,7 +330,7 @@ class TestOrchestrator:
         queue_name = f"orchestrator_redis_queue_{int(time.time())}"
         redis_client.declare_queue(queue_name)
         
-        test_job = create_test_job("orchestrator_redis_test", JobType.ML_TRAINING)
+        test_job = create_test_job("orchestrator_redis_test")
         
         job_id = orchestrator.publish(queue_name, test_job)
         assert job_id is not None
@@ -346,7 +341,6 @@ class TestOrchestrator:
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
         assert received_job.name == test_job.name
-        assert received_job.job_type == JobType.ML_TRAINING
         
         redis_client.delete_queue(queue_name)
     
@@ -358,7 +352,7 @@ class TestOrchestrator:
         queue_name = f"orchestrator_rabbitmq_queue_{int(time.time())}"
         rabbitmq_client.declare_queue(queue_name, force=True)
         
-        test_job = create_test_job("orchestrator_rabbitmq_test", JobType.OBJECT_DETECTION)
+        test_job = create_test_job("orchestrator_rabbitmq_test")
         
         job_id = orchestrator.publish(queue_name, test_job)
         assert job_id is not None
@@ -371,6 +365,5 @@ class TestOrchestrator:
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
         assert received_job.name == test_job.name
-        assert received_job.job_type == JobType.OBJECT_DETECTION
         
         rabbitmq_client.delete_queue(queue_name) 

@@ -2,7 +2,7 @@ import pytest
 import time
 from datetime import datetime
 from mindtrace.jobs import Job, JobSchema, JobInput, JobOutput
-from mindtrace.jobs.mindtrace.types import JobType
+from mindtrace.jobs.mindtrace.utils import job_from_schema
 
 
 class SampleJobInput(JobInput):
@@ -15,19 +15,17 @@ class SampleJobOutput(JobOutput):
     timestamp: str = "2024-01-01T00:00:00"
 
 
-def create_test_job(name: str = "test_job", job_type: JobType = JobType.DEFAULT) -> Job:
+def create_test_job(name: str = "test_job", schema_name: str = "default_schema") -> Job:
     test_input = SampleJobInput()
     schema = JobSchema(
-        name=f"{name}_schema",
-        input=test_input
+        name=schema_name,
+        input=test_input,
+        output=SampleJobOutput()
     )
-    job = Job(
-        id=f"{name}_123",
-        name=name,
-        job_type=job_type,
-        payload=schema,
-        created_at="2024-01-01T00:00:00"
-    )
+    job = job_from_schema(schema, test_input)
+    job.id = f"{name}_123"
+    job.name = name
+    job.created_at = "2024-01-01T00:00:00"
     return job
 
 
