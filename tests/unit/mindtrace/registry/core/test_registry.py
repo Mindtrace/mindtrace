@@ -817,6 +817,81 @@ def test_register_default_materializers_without_numpy():
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
 
+def test_register_default_materializers_without_pillow():
+    """Test _register_default_materializers when Pillow package is not available."""
+    with TemporaryDirectory() as temp_dir:
+        # Mock the import to raise ImportError only for PIL
+        from unittest.mock import patch
+        import builtins
+        original_import = builtins.__import__
+        
+        def mock_import(name, *args, **kwargs):
+            if name == 'PIL':
+                raise ImportError("No module named 'PIL'")
+            return original_import(name, *args, **kwargs)
+            
+        with patch('builtins.__import__', side_effect=mock_import):
+            # Create registry (which will register default materializers)
+            registry = Registry(registry_dir=temp_dir)
+            
+            # Get registered materializers
+            materializers = registry.registered_materializers()
+            
+            # Verify that Pillow materializer is not registered
+            assert "PIL.Image.Image" not in materializers
+            
+            # Verify that core materializers are still registered
+            assert "builtins.str" in materializers
+            assert "builtins.int" in materializers
+            assert "builtins.float" in materializers
+            assert "builtins.bool" in materializers
+            assert "mindtrace.core.config.config.Config" in materializers
+
+@pytest.mark.slow
+def test_pillow_image():
+    """Test saving and loading Pillow images."""
+    try:
+        from PIL import Image
+        import numpy as np
+    except ImportError:
+        missing_libs = check_libs(["PIL", "numpy"])
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    # Create test images of different types
+    images = {
+        "rgb": Image.new('RGB', (100, 100), color='red'),
+        "grayscale": Image.new('L', (100, 100), color=128),
+        "rgba": Image.new('RGBA', (100, 100), color=(255, 0, 0, 128)),
+        "with:data": Image.fromarray(np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8))
+    }
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Save and load each image
+        for name, img in images.items():
+            # Save the image
+            registry.save(f"test:{name}", img, version="1.0.0")
+
+            # Verify it exists
+            assert registry.has_object(f"test:{name}", "1.0.0")
+
+            # Load the image
+            loaded_img = registry.load(f"test:{name}", version="1.0.0")
+
+            # Verify it's a PIL Image
+            assert isinstance(loaded_img, Image.Image)
+
+            # Verify the mode
+            assert loaded_img.mode == img.mode
+
+            # Verify the size
+            assert loaded_img.size == img.size
+
+            # Verify the data
+            np.testing.assert_array_equal(np.array(loaded_img), np.array(img))
+
 @pytest.mark.slow
 def test_huggingface_dataset():
     """Test saving and loading a HuggingFace dataset."""
