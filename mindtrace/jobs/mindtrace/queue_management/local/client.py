@@ -123,3 +123,8 @@ class LocalClient(OrchestratorBackend):
         """Retrieve the stored result for the given job_id."""
         with self._lock:
             return self._job_results.get(job_id, None)
+    
+    # DLQ Methods - TODO: Implement
+    def move_to_dlq(self, source_queue: str, dlq_name: str, message: pydantic.BaseModel, error_details: str, **kwargs):
+        """Move a failed message to a dead letter queue"""
+        pass

@@ -312,15 +312,15 @@ class RabbitMQClient(OrchestratorBackend):
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not count exchanges: {str(e)}")
 
-    def delete_exchange(self, exchange: str):
-        """Delete an exchange.
-
-        Args:
-            exchange: Name of the exchange to delete.
-        """
+    def delete_exchange(self, exchange: str, **kwargs):
+        """Delete an exchange."""
         try:
             self.channel.exchange_delete(exchange=exchange)
-            self.logger.debug(f"Exchange '{exchange}' deleted successfully.")
-            return {"status": "success", "message": f"Exchange '{exchange}' deleted successfully."}
-        except Exception as e:
-            raise RuntimeError(f"Could not delete exchange '{exchange}': {str(e)}")
+            return {"status": "success", "message": f"Deleted exchange '{exchange}'."}
+        except pika.exceptions.ChannelClosedByBroker as e:
+            raise ConnectionError(f"Could not delete exchange '{exchange}': {str(e)}")
+
+    # DLQ Methods - TODO: Implement
+    def move_to_dlq(self, source_queue: str, dlq_name: str, message: pydantic.BaseModel, error_details: str, **kwargs):
+        """Move a failed message to a dead letter queue"""
+        pass

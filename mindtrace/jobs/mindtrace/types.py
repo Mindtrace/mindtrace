@@ -14,6 +14,13 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+class JobType(str, Enum):
+    ML_TRAINING = "ml_training"
+    OBJECT_DETECTION = "object_detection"
+    DATA_PROCESSING = "data_processing"
+    CLASSIFICATION = "classification"
+    DEFAULT = "default"
+
 class JobInput(BaseModel):
     """Base class for job input data - extend this for specific job types"""
     pass
@@ -29,9 +36,10 @@ class JobSchema(BaseModel):
     output: Optional[JobOutput] = None
 
 class Job(BaseModel):
-    """A job instance ready for execution - system auto-routes based on job characteristics"""
+    """A job instance ready for execution - system routes based on job_type"""
     id: str
     name: str
+    job_type: JobType = JobType.DEFAULT
     payload: JobSchema
     status: ExecutionStatus = ExecutionStatus.QUEUED
     created_at: str
@@ -42,3 +50,12 @@ class Job(BaseModel):
     
     # User can optionally specify priority for job processing
     priority: Optional[int] = None
+
+# Queue mapping for automatic routing
+QUEUE_MAPPING = {
+    JobType.ML_TRAINING: "ml_training_jobs",
+    JobType.OBJECT_DETECTION: "detection_jobs", 
+    JobType.DATA_PROCESSING: "data_jobs",
+    JobType.CLASSIFICATION: "classification_jobs",
+    JobType.DEFAULT: "default_jobs"
+}
