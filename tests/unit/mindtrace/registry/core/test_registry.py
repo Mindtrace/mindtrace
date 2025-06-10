@@ -847,6 +847,81 @@ def test_register_default_materializers_without_pillow():
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
 
+def test_register_default_materializers_without_pytorch():
+    """Test _register_default_materializers when PyTorch package is not available."""
+    with TemporaryDirectory() as temp_dir:
+        # Mock the import to raise ImportError only for torch
+        from unittest.mock import patch
+        import builtins
+        original_import = builtins.__import__
+        
+        def mock_import(name, *args, **kwargs):
+            if name == 'torch':
+                raise ImportError("No module named 'torch'")
+            return original_import(name, *args, **kwargs)
+            
+        with patch('builtins.__import__', side_effect=mock_import):
+            # Create registry (which will register default materializers)
+            registry = Registry(registry_dir=temp_dir)
+            
+            # Get registered materializers
+            materializers = registry.registered_materializers()
+            
+            # Verify that PyTorch materializers are not registered
+            assert "torch.utils.data.Dataset" not in materializers
+            assert "torch.utils.data.DataLoader" not in materializers
+            
+            # Verify that core materializers are still registered
+            assert "builtins.str" in materializers
+            assert "builtins.int" in materializers
+            assert "builtins.float" in materializers
+            assert "builtins.bool" in materializers
+            assert "mindtrace.core.config.config.Config" in materializers
+
+@pytest.mark.slow
+def test_pytorch_dataset_and_dataloader():
+    """Test saving and loading PyTorch datasets and dataloaders."""
+    try:
+        import torch
+        from torch.utils.data import TensorDataset, DataLoader
+    except ImportError:
+        missing_libs = check_libs(["torch"])
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    # Create test data
+    data = torch.randn(100, 3, 32, 32)  # 100 random images of size 3x32x32
+    labels = torch.randint(0, 10, (100,))  # 100 random labels
+    dataset = TensorDataset(data, labels)
+    dataloader = DataLoader(dataset, batch_size=10, shuffle=False)  # Disable shuffling for testing
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Test saving and loading dataset
+        registry.save("test:dataset", dataset, version="1.0.0")
+        assert registry.has_object("test:dataset", "1.0.0")
+        
+        loaded_dataset = registry.load("test:dataset", version="1.0.0")
+        assert isinstance(loaded_dataset, TensorDataset)
+        assert len(loaded_dataset) == len(dataset)
+        assert torch.allclose(loaded_dataset[0][0], dataset[0][0])  # Compare data
+        assert torch.allclose(loaded_dataset[0][1], dataset[0][1])  # Compare labels
+
+        # Test saving and loading dataloader
+        registry.save("test:dataloader", dataloader, version="1.0.0")
+        assert registry.has_object("test:dataloader", "1.0.0")
+        
+        loaded_dataloader = registry.load("test:dataloader", version="1.0.0")
+        assert isinstance(loaded_dataloader, DataLoader)
+        assert loaded_dataloader.batch_size == dataloader.batch_size
+        
+        # Compare a few batches
+        for batch_orig, batch_loaded in zip(dataloader, loaded_dataloader):
+            assert torch.allclose(batch_orig[0], batch_loaded[0])  # Compare data
+            assert torch.allclose(batch_orig[1], batch_loaded[1])  # Compare labels
+            break  # Just check first batch
+
 @pytest.mark.slow
 def test_pillow_image():
     """Test saving and loading Pillow images."""
