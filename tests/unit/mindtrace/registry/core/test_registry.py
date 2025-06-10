@@ -868,8 +868,10 @@ def test_register_default_materializers_without_pytorch():
             materializers = registry.registered_materializers()
             
             # Verify that PyTorch materializers are not registered
-            assert "torch.utils.data.Dataset" not in materializers
-            assert "torch.utils.data.DataLoader" not in materializers
+            assert "torch.utils.data.dataset.Dataset" not in materializers
+            assert "torch.utils.data.dataset.TensorDataset" not in materializers
+            assert "torch.utils.data.dataloader.DataLoader" not in materializers
+            assert "torch.nn.modules.module.Module" not in materializers
             
             # Verify that core materializers are still registered
             assert "builtins.str" in materializers
@@ -877,6 +879,86 @@ def test_register_default_materializers_without_pytorch():
             assert "builtins.float" in materializers
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
+
+# Try to import torch at module level
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    torch = None
+    nn = None
+
+# Create a simple neural network for testing
+if TORCH_AVAILABLE:
+    class SimpleNet(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = nn.Conv2d(3, 6, 3)
+            self.pool = nn.MaxPool2d(2, 2)
+            self.conv2 = nn.Conv2d(6, 16, 3)
+            self.fc1 = nn.Linear(16 * 6 * 6, 120)
+            self.fc2 = nn.Linear(120, 84)
+            self.fc3 = nn.Linear(84, 10)
+
+        def forward(self, x):
+            x = self.pool(torch.relu(self.conv1(x)))
+            x = self.pool(torch.relu(self.conv2(x)))
+            x = x.view(-1, 16 * 6 * 6)
+            x = torch.relu(self.fc1(x))
+            x = torch.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
+else:
+    SimpleNet = None
+
+@pytest.mark.slow
+@pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch is not installed")
+def test_pytorch_module():
+    """Test saving and loading PyTorch modules."""
+    # Create and initialize the model
+    model = SimpleNet()
+    model.train()  # Set to training mode
+
+    # Create some test input
+    test_input = torch.randn(1, 3, 32, 32)
+    original_output = model(test_input)
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Register the materializer for our specific class
+        registry.register_materializer(
+            f"{type(model).__module__}.{type(model).__name__}",
+            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer"
+        )
+
+        # Save the model
+        registry.save("test:model", model, version="1.0.0")
+        assert registry.has_object("test:model", "1.0.0")
+
+        # Load the model
+        loaded_model = registry.load("test:model", version="1.0.0")
+        assert isinstance(loaded_model, nn.Module)
+        assert isinstance(loaded_model, SimpleNet)
+
+        # Verify the model structure
+        assert hasattr(loaded_model, 'conv1')
+        assert hasattr(loaded_model, 'conv2')
+        assert hasattr(loaded_model, 'fc1')
+        assert hasattr(loaded_model, 'fc2')
+        assert hasattr(loaded_model, 'fc3')
+
+        # Verify the model parameters
+        for p1, p2 in zip(model.parameters(), loaded_model.parameters()):
+            assert torch.allclose(p1, p2)
+
+        # Verify the model behavior
+        loaded_model.train()  # Set to training mode
+        loaded_output = loaded_model(test_input)
+        assert torch.allclose(original_output, loaded_output)
 
 @pytest.mark.slow
 def test_pytorch_dataset_and_dataloader():
