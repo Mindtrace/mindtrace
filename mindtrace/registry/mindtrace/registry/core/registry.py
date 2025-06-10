@@ -63,7 +63,7 @@ class Registry(Mindtrace):
 
         1. Materializer provided as an argument.
         2. Materializer previously registered for the object type.
-        3. Materializer for any of the object's base classes.
+        3. Materializer for any of the object's base classes (checked recursively).
         4. The object itself, if it's its own materializer.
         
         If a materializer cannot be found through one of the above means, an error will be raised.
@@ -81,11 +81,19 @@ class Registry(Mindtrace):
         """
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
         
+        # Get all base classes recursively
+        def get_all_base_classes(cls):
+            bases = []
+            for base in cls.__bases__:
+                bases.append(base)
+                bases.extend(get_all_base_classes(base))
+            return bases
+        
         # Try to find a materializer in order of precedence
         materializer = first_not_none((
             materializer,
             self.registered_materializer(object_class),
-            *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in type(obj).__bases__],
+            *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in get_all_base_classes(type(obj))],
             object_class if isinstance(obj, BaseMaterializer) else None,
         ))
         
@@ -109,7 +117,7 @@ class Registry(Mindtrace):
             }
             
             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                materializer = instantiate_target(self.registered_materializer(object_class), uri=temp_dir, artifact_store=self._artifact_store)
+                materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
                 materializer.save(obj)
                 self.backend.push(name=name, version=version, local_path=temp_dir)
                 self.backend.save_metadata(name=name, version=version, metadata=metadata)
@@ -151,13 +159,14 @@ class Registry(Mindtrace):
         self.logger.debug(f"Metadata: {metadata}")
 
         object_class = metadata["class"]
+        materializer = metadata["materializer"]
         init_params = metadata.get("init_params", {}).copy()
         init_params.update(kwargs)
 
         try:
             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                 self.backend.pull(name=name, version=version, local_path=temp_dir)
-                materializer = instantiate_target(self.registered_materializer(object_class), uri=temp_dir, artifact_store=self._artifact_store)
+                materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
                 
                 # Convert string class name to actual class
                 if isinstance(object_class, str):
@@ -492,6 +501,13 @@ class Registry(Mindtrace):
             self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+        except ImportError:
+            pass
+        
+        try:
+            import transformers
+            self.register_materializer("transformers.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
+            self.register_materializer("transformers.modeling_utils.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
         except ImportError:
             pass
 
