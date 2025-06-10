@@ -503,3 +503,12 @@ class Registry(Mindtrace):
             self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
         except ImportError:
             pass
+
+        # (Optional) PyTorch materializers
+        try:
+            import torch
+            self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+        except ImportError:
+            pass
