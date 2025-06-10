@@ -18,7 +18,7 @@ class LocalRegistryBackend(RegistryBackend):
     """
 
     def __init__(self, uri: str | Path, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
@@ -215,17 +215,17 @@ class LocalRegistryBackend(RegistryBackend):
             materializer_class: Materializer class to register.
         """
         try:
-            with open(self.metadata, "r") as f:
+            with open(self.metadata_path, "r") as f:
                 metadata = json.load(f)
             metadata["materializers"][object_class] = materializer_class
-            with open(self.metadata, "w") as f:
+            with open(self.metadata_path, "w") as f:
                 json.dump(metadata, f)
         except Exception as e:
             self.logger.error(f"Error registering materializer for {object_class}: {e}")
             raise e
         else:
-            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")        
-    
+            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+
     def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.
 

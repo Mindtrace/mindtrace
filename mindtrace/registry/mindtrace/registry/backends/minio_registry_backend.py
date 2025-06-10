@@ -116,11 +116,20 @@ class MinioRegistryBackend(RegistryBackend):
         )
         self.bucket = bucket
 
+        # Create bucket if it doesn't exist
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                yaml.safe_dump({"materializers": {}}, tmp)
-                self.client.fput_object(self.bucket, self._metadata_path, tmp.name)
+
+        # Ensure metadata file exists
+        try:
+            self.client.stat_object(self.bucket, self._metadata_path)
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
+                    yaml.safe_dump({"materializers": {}}, tmp)
+                    self.client.fput_object(self.bucket, self._metadata_path, tmp.name)
+            else:
+                raise
 
     @property
     def uri(self) -> Path:
