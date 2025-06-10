@@ -1,36 +1,43 @@
 import pytest
 import time
-from mindtrace.jobs import Job, JobSchema
+from mindtrace.jobs import Job, JobSchema, JobInput, JobOutput
+from mindtrace.jobs.mindtrace.types import JobType
 from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
 from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
 from mindtrace.jobs.mindtrace.queue_management.rabbitmq import RabbitMQClient
 from mindtrace.jobs.mindtrace.queue_management.orchestrator import Orchestrator
 
 
-def create_test_job(name: str = "test_job") -> Job:
-    """Helper function to create test jobs."""
+class SampleJobInput(JobInput):
+    data: str = "test_input"
+    param1: str = "value1"
+
+class SampleJobOutput(JobOutput):
+    result: str = "success"
+    timestamp: str = "2024-01-01T00:00:00"
+
+def create_test_job(name: str = "test_job", job_type: JobType = JobType.DEFAULT) -> Job:
+    test_input = SampleJobInput()
     schema = JobSchema(
-        name=name,
-        input={"data": "test_input", "param1": "value1"},
-        config={"timeout": 300},
-        metadata={"test": "true"}
+        name=f"{name}_schema",
+        input=test_input
     )
     job = Job(
         id=f"{name}_123",
-        job_schema=schema,
+        name=name,
+        job_type=job_type,
+        payload=schema,
         created_at="2024-01-01T00:00:00"
     )
     return job
 
 
 class TestLocalBroker:
-    """Tests for LocalBroker backend."""
     
     def setup_method(self):
         self.broker = LocalClient(broker_id=f"test_broker_{int(time.time())}")
     
     def test_declare_queue(self):
-        """Test queue declaration."""
         queue_name = f"test_queue_{int(time.time())}"
         
         result = self.broker.declare_queue(queue_name, queue_type="fifo")
@@ -40,7 +47,6 @@ class TestLocalBroker:
         assert result2["status"] == "success"
     
     def test_queue_types(self):
-        """Test different queue types."""
         base_name = f"queue_{int(time.time())}"
         
         fifo_queue = f"{base_name}_fifo"
@@ -54,9 +60,13 @@ class TestLocalBroker:
         priority_queue = f"{base_name}_priority"
         result = self.broker.declare_queue(priority_queue, queue_type="priority")
         assert result["status"] == "success"
+        
+        # Cleanup
+        self.broker.delete_queue(fifo_queue)
+        self.broker.delete_queue(stack_queue)
+        self.broker.delete_queue(priority_queue)
     
     def test_publish_and_receive(self):
-        """Test publishing and receiving messages."""
         queue_name = f"test_queue_{int(time.time())}"
         self.broker.declare_queue(queue_name)
         
@@ -71,14 +81,16 @@ class TestLocalBroker:
         
         received_job = self.broker.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.job_schema.name == test_job.job_schema.name
+        assert received_job.payload.name == test_job.payload.name
         assert received_job.id == test_job.id
         
         count = self.broker.count_queue_messages(queue_name)
         assert count == 0
+        
+        # Cleanup
+        self.broker.delete_queue(queue_name)
     
     def test_clean_queue(self):
-        """Test cleaning a queue."""
         queue_name = f"test_queue_{int(time.time())}"
         self.broker.declare_queue(queue_name)
         
@@ -91,9 +103,11 @@ class TestLocalBroker:
         result = self.broker.clean_queue(queue_name)
         assert result["status"] == "success"
         assert self.broker.count_queue_messages(queue_name) == 0
+        
+        # Cleanup
+        self.broker.delete_queue(queue_name)
     
     def test_delete_queue(self):
-        """Test deleting a queue."""
         queue_name = f"test_queue_{int(time.time())}"
         self.broker.declare_queue(queue_name)
         
@@ -104,7 +118,6 @@ class TestLocalBroker:
             self.broker.count_queue_messages(queue_name)
     
     def test_exchange_methods_not_implemented(self):
-        """Test that LocalBroker raises NotImplementedError for exchange methods."""
         with pytest.raises(NotImplementedError):
             self.broker.declare_exchange(exchange="test_exchange")
         
@@ -116,13 +129,11 @@ class TestLocalBroker:
 
 
 class TestRedisClient:
-    """Tests for RedisClient backend."""
     
     def setup_method(self):
         self.client = RedisClient(host="localhost", port=6379, db=0)
     
     def test_declare_queue(self):
-        """Test queue declaration."""
         queue_name = f"redis_test_queue_{int(time.time())}"
         
         result = self.client.declare_queue(queue_name, queue_type="fifo")
@@ -130,7 +141,6 @@ class TestRedisClient:
         assert queue_name in result["message"]
     
     def test_publish_and_receive(self):
-        """Test publishing and receiving messages."""
         queue_name = f"redis_test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name)
         
@@ -144,28 +154,27 @@ class TestRedisClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.job_schema.name == test_job.job_schema.name
+        assert received_job.payload.name == test_job.payload.name
         
         self.client.delete_queue(queue_name)
     
     def test_priority_queue(self):
-        """Test priority queue functionality."""
         queue_name = f"redis_priority_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, queue_type="priority")
         
-        job1 = create_test_job("low_priority")
-        job2 = create_test_job("high_priority")
+        job1 = create_test_job("low_priority", JobType.DATA_PROCESSING)
+        job2 = create_test_job("high_priority", JobType.ML_TRAINING)
         
         self.client.publish(queue_name, job1, priority=1)
         self.client.publish(queue_name, job2, priority=10)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.job_schema.name == "high_priority"
+        assert received_job.payload.name == "high_priority_schema"
+        assert received_job.job_type == JobType.ML_TRAINING
         
         self.client.delete_queue(queue_name)
     
     def test_clean_and_delete(self):
-        """Test cleaning and deleting queues."""
         queue_name = f"redis_test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name)
         
@@ -183,7 +192,6 @@ class TestRedisClient:
         assert result["status"] == "success"
     
     def test_exchange_methods_not_implemented(self):
-        """Test that RedisClient raises NotImplementedError for exchange methods."""
         with pytest.raises(NotImplementedError):
             self.client.declare_exchange(exchange="test_exchange")
         
@@ -194,21 +202,22 @@ class TestRedisClient:
             self.client.count_exchanges()
 
 
+@pytest.mark.rabbitmq
 class TestRabbitMQClient:
-    """Tests for RabbitMQClient backend."""
     
     def setup_method(self):
         self.client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
     
     def test_declare_queue(self):
-        """Test queue declaration."""
         queue_name = f"rabbitmq_test_queue_{int(time.time())}"
         
         result = self.client.declare_queue(queue_name, force=True)
         assert result["status"] == "success"
+        
+        # Cleanup
+        self.client.delete_queue(queue_name)
     
     def test_publish_and_receive(self):
-        """Test publishing and receiving messages."""
         queue_name = f"rabbitmq_test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, force=True)
         
@@ -224,17 +233,16 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.job_schema.name == test_job.job_schema.name
+        assert received_job.payload.name == test_job.payload.name
         
         self.client.delete_queue(queue_name)
     
     def test_priority_queue(self):
-        """Test priority queue functionality."""
         queue_name = f"rabbitmq_priority_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, force=True, max_priority=255)
         
-        job1 = create_test_job("low_priority")
-        job2 = create_test_job("high_priority")
+        job1 = create_test_job("low_priority", JobType.DATA_PROCESSING)
+        job2 = create_test_job("high_priority", JobType.OBJECT_DETECTION)
         
         self.client.publish(queue_name, job1, priority=1)
         self.client.publish(queue_name, job2, priority=10)
@@ -242,12 +250,12 @@ class TestRabbitMQClient:
         time.sleep(0.1)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.job_schema.name == "high_priority"
+        assert received_job.payload.name == "high_priority_schema"
+        assert received_job.job_type == JobType.OBJECT_DETECTION
         
         self.client.delete_queue(queue_name)
     
     def test_clean_and_delete(self):
-        """Test cleaning and deleting queues."""
         queue_name = f"rabbitmq_test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, force=True)
         
@@ -264,7 +272,6 @@ class TestRabbitMQClient:
         assert result["status"] == "success"
     
     def test_exchange_functionality(self):
-        """Test RabbitMQ exchange functionality."""
         exchange_name = f"test_exchange_{int(time.time())}"
         
         result = self.client.declare_exchange(exchange=exchange_name, exchange_type="direct")
@@ -287,7 +294,7 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.job_schema.name == "exchange_job"
+        assert received_job.payload.name == "exchange_job_schema"
         
         self.client.delete_queue(queue_name)
         
@@ -295,59 +302,66 @@ class TestRabbitMQClient:
         assert result["status"] == "success"
 
 
+@pytest.mark.orchestrator
 class TestOrchestrator:
-    """Tests for the Orchestrator with different backends."""
     
     def test_orchestrator_with_local_broker(self):
-        """Test Orchestrator with LocalBroker backend."""
-        broker = LocalClient(broker_id=f"orch_test_{int(time.time())}")
-        orchestrator = Orchestrator(broker)
+        local_broker = LocalClient(broker_id=f"orchestrator_test_{int(time.time())}")
+        orchestrator = Orchestrator(local_broker)
         
-        queue_name = f"orch_local_queue_{int(time.time())}"
-        broker.declare_queue(queue_name)
+        queue_name = f"orchestrator_local_queue_{int(time.time())}"
+        local_broker.declare_queue(queue_name)
         
-        test_job = create_test_job()
+        test_job = create_test_job("orchestrator_local_test", JobType.CLASSIFICATION)
+        
         job_id = orchestrator.publish(queue_name, test_job)
-        assert isinstance(job_id, str)
+        assert job_id is not None
         
         count = orchestrator.count_queue_messages(queue_name)
         assert count == 1
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.job_schema.name == test_job.job_schema.name
+        assert received_job.name == test_job.name
+        assert received_job.job_type == JobType.CLASSIFICATION
+        
+        # Cleanup
+        local_broker.delete_queue(queue_name)
     
     def test_orchestrator_with_redis_client(self):
-        """Test Orchestrator with RedisClient backend."""
-        client = RedisClient(host="localhost", port=6379, db=0)
-        orchestrator = Orchestrator(client)
+        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        orchestrator = Orchestrator(redis_client)
         
-        queue_name = f"orch_redis_queue_{int(time.time())}"
-        client.declare_queue(queue_name)
+        queue_name = f"orchestrator_redis_queue_{int(time.time())}"
+        redis_client.declare_queue(queue_name)
         
-        test_job = create_test_job()
+        test_job = create_test_job("orchestrator_redis_test", JobType.ML_TRAINING)
+        
         job_id = orchestrator.publish(queue_name, test_job)
-        assert isinstance(job_id, str)
+        assert job_id is not None
         
         count = orchestrator.count_queue_messages(queue_name)
         assert count == 1
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
+        assert received_job.name == test_job.name
+        assert received_job.job_type == JobType.ML_TRAINING
         
-        client.delete_queue(queue_name)
+        redis_client.delete_queue(queue_name)
     
+    @pytest.mark.rabbitmq
     def test_orchestrator_with_rabbitmq_client(self):
-        """Test Orchestrator with RabbitMQClient backend."""
-        client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
-        orchestrator = Orchestrator(client)
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        orchestrator = Orchestrator(rabbitmq_client)
         
-        queue_name = f"orch_rabbitmq_queue_{int(time.time())}"
-        client.declare_queue(queue_name, force=True)
+        queue_name = f"orchestrator_rabbitmq_queue_{int(time.time())}"
+        rabbitmq_client.declare_queue(queue_name, force=True)
         
-        test_job = create_test_job()
+        test_job = create_test_job("orchestrator_rabbitmq_test", JobType.OBJECT_DETECTION)
+        
         job_id = orchestrator.publish(queue_name, test_job)
-        assert isinstance(job_id, str)
+        assert job_id is not None
         
         time.sleep(0.1)
         
@@ -356,5 +370,7 @@ class TestOrchestrator:
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
+        assert received_job.name == test_job.name
+        assert received_job.job_type == JobType.OBJECT_DETECTION
         
-        client.delete_queue(queue_name) 
+        rabbitmq_client.delete_queue(queue_name) 
