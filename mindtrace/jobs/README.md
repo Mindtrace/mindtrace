@@ -3,165 +3,161 @@
 A backend-agnostic job queue system with automatic queuing direction.
 The jobs module is designed for integration with distributed systems through the Orchestrator interface. Applications can use the orchestrator to manage job queues and routing.
 
-## Core Concepts
+## Architecture Overview
 
-### Job Structure
+The Jobs module implements a consumer pattern with backend-specific optimizations:
+
+**Key Architectural Benefits:**
+- **Backend-Specific Optimizations**: Each backend has tailored consumer strategies
+- **LocalConsumerBackend**: Fast in-memory operations, no polling delays
+- **RedisConsumerBackend**: Blocking operations, timeout handling, connection management
+- **RabbitMQConsumerBackend**: ACK/NACK support, prefetch control, delivery guarantees
+- **Auto-Detection**: Consumer.connect() automatically selects the right backend
+- **Unified API**: Same Consumer interface works across all backends
+- **Mindtrace Integration**: All base classes inherit from Mindtrace/MindtraceABC
+
+## Consumer Pattern
+
+The Consumer class provides a simple API that automatically creates the appropriate backend-specific ConsumerBackend when connected to an Orchestrator:
+
+1. **User Layer**: Your consumer classes inherit from Consumer and implement `run(job)`
+2. **Abstraction Layer**: Consumer and Orchestrator provide unified APIs
+3. **Backend-Specific Layer**: ConsumerBackend classes handle backend optimizations
+4. **Backend Layer**: LocalClient, RedisClient, RabbitMQClient manage infrastructure
+5. **Infrastructure**: In-Memory Queues, Redis Server, RabbitMQ Server
+
+## Backend-Specific Features
+
+### LocalConsumerBackend
+- ✅ **Optimized polling**: No timeouts needed for in-memory operations
+- ✅ **Fast processing**: Immediate queue access
+- ✅ **Simple error handling**: Lightweight retry mechanisms
+
+### RedisConsumerBackend  
+- ✅ **Blocking operations**: Efficient Redis BLPOP-style operations
+- ✅ **Timeout handling**: Configurable poll timeouts (default: 5s)
+- ✅ **Connection management**: Redis-specific connection optimizations
+- ✅ **Backoff strategies**: Redis-aware error handling
+
+### RabbitMQConsumerBackend
+- ✅ **Message acknowledgment**: ACK for success, NACK for failures
+- ✅ **Prefetch control**: Configurable prefetch count (default: 1)
+- ✅ **Delivery guarantees**: Ensures message processing reliability
+- ✅ **Dead letter queues**: Failed messages can be routed to DLQ
+
+## Running Examples
+
+### Example 1: Local Backend (Always Available)
 ```python
-from mindtrace.jobs import Job, JobSchema, JobInput, JobType
+from mindtrace.jobs import Orchestrator, LocalClient, Consumer, JobSchema, JobInput
 
-class SimpleJobInput(JobInput):
-    data: str = "test_data"
-    param1: str = "value1"
+local_backend = LocalClient()
+orchestrator = Orchestrator(local_backend)
 
-input_data = SimpleJobInput()
-schema = JobSchema(name="example_schema", input=input_data)
+schema = JobSchema(name="my_jobs", input=MyJobInput(), output=MyJobOutput())
+orchestrator.register(schema)
 
-job = Job(
-    id="job_123",
-    name="example_job",
-    job_type=JobType.DATA_PROCESSING,
-    payload=schema,
-    created_at="2024-01-01T00:00:00"
-)
+class MyConsumer(Consumer):
+    def run(self, job):
+        print(f"Processing job {job.id} with LOCAL backend")
+
+consumer = MyConsumer("my_jobs")
+consumer.connect(orchestrator)
+consumer.consume(num_messages=5)
 ```
 
-### Job Types
-- `JobType.ML_TRAINING` → `"ml_training_jobs"`
-- `JobType.OBJECT_DETECTION` → `"detection_jobs"`
-- `JobType.DATA_PROCESSING` → `"data_jobs"`
-- `JobType.CLASSIFICATION` → `"classification_jobs"`
-- `JobType.DEFAULT` → `"default_jobs"`
-
-## Quick Start
-
+### Example 2: Redis Backend (Requires Redis Server)
 ```python
-from mindtrace.jobs import Orchestrator, LocalClient
+from mindtrace.jobs import RedisClient
 
-orchestrator = Orchestrator(LocalClient())
-orchestrator.declare_queue("my_queue")
-orchestrator.publish("my_queue", job)
+redis_backend = RedisClient(host="localhost", port=6379, db=0)
+orchestrator = Orchestrator(redis_backend)
 
-received_job = orchestrator.receive_message("my_queue")
+consumer = MyConsumer("my_jobs")
+consumer.connect(orchestrator)
+consumer.consume(num_messages=5)
 ```
 
-## Backend Support
-
-### Local Backend 
+### Example 3: RabbitMQ Backend (Requires RabbitMQ Server)
 ```python
-from mindtrace.jobs import LocalClient, Orchestrator
+from mindtrace.jobs import RabbitMQClient
 
-client = LocalClient(broker_id="my_app")
-orchestrator = Orchestrator(client)
-```
-
-### Redis Backend 
-```python
-from mindtrace.jobs import RedisClient, Orchestrator
-
-client = RedisClient(host="localhost", port=6379, db=0)
-orchestrator = Orchestrator(client)
-```
-
-### RabbitMQ Backend 
-```python
-from mindtrace.jobs import RabbitMQClient, Orchestrator
-import time
-
-client = RabbitMQClient(
-    host="localhost",
-    port=5672,
-    username="user",
+rabbitmq_backend = RabbitMQClient(
+    host="localhost", 
+    port=5672, 
+    username="user", 
     password="password"
 )
-orchestrator = Orchestrator(client)
+orchestrator = Orchestrator(rabbitmq_backend)
+
+consumer = MyConsumer("my_jobs")
+consumer.connect(orchestrator)
+consumer.consume(num_messages=5)
 ```
 
-## Queue Operations
-
-### Basic Operations
+### Example 4: Multi-Backend Testing
 ```python
-orchestrator.declare_queue("my_queue")
-job_id = orchestrator.publish("my_queue", job)
-received_job = orchestrator.receive_message("my_queue")
-count = orchestrator.count_queue_messages("my_queue")
-orchestrator.clean_queue("my_queue")
-orchestrator.delete_queue("my_queue")
-```
-
-### Queue Types
-```python
-orchestrator.declare_queue("fifo_queue", queue_type="fifo")
-orchestrator.declare_queue("stack_queue", queue_type="stack") 
-orchestrator.declare_queue("priority_queue", queue_type="priority")
-```
-
-### Priority Queues
-```python
-orchestrator.publish("priority_queue", high_priority_job, priority=10)
-orchestrator.publish("priority_queue", low_priority_job, priority=1)
-```
-
-### RabbitMQ Specific
-```python
-orchestrator.declare_queue("rabbitmq_queue", force=True)
-orchestrator.declare_queue("priority_queue", force=True, max_priority=255)
-orchestrator.publish("rabbitmq_queue", job)
-time.sleep(0.1)  
-count = orchestrator.count_queue_messages("rabbitmq_queue")
-```
-
-## Auto-Routing Logic
-
-The system automatically determines routing based on:
-
-1. **Job Type**: `job.job_type` maps to queue using `QUEUE_MAPPING`
-2. **Queue Types**:
-   - `"fifo"` - First in, first out (default)
-   - `"stack"` - Last in, first out
-   - `"priority"` - Priority-based ordering (Redis and RabbitMQ)
-
-## Complete Example
-
-```python
-import time
-from mindtrace.jobs import Orchestrator, RedisClient, Job, JobSchema, JobInput, JobType
-
-class DataProcessingInput(JobInput):
-    dataset_path: str
-    processing_type: str
-    timeout: int = 300
-
-job_input = DataProcessingInput(
-    dataset_path="/data/my_dataset.csv",
-    processing_type="classification"
-)
-
-schema = JobSchema(name="data_processing_schema", input=job_input)
-
-job = Job(
-    id="dp_001",
-    name="data_processing_job",
-    job_type=JobType.DATA_PROCESSING,
-    payload=schema,
-    created_at="2024-01-01T00:00:00"
-)
-
-client = RedisClient(host="localhost", port=6379, db=0)
-orchestrator = Orchestrator(client)
-
-queue_name = "data_processing_queue"
-orchestrator.declare_queue(queue_name)
-
-job_id = orchestrator.publish(queue_name, job)
-print(f"Published job: {job_id}")
-
-count = orchestrator.count_queue_messages(queue_name)
-print(f"Jobs in queue: {count}")
-
-received_job = orchestrator.receive_message(queue_name)
-if received_job:
-    print(f"Processing job: {received_job.name}")
+def test_all_backends():
+    backends = [
+        ("Local", LocalClient()),
+        ("Redis", RedisClient(host="localhost", port=6379, db=0)),
+        ("RabbitMQ", RabbitMQClient(host="localhost", port=5672, username="user", password="password"))
+    ]
     
-orchestrator.clean_queue(queue_name)
-orchestrator.delete_queue(queue_name)
+    for name, backend in backends:
+        try:
+            orchestrator = Orchestrator(backend)
+            orchestrator.register(schema)
+            
+            consumer = MyConsumer("my_jobs")
+            consumer.connect(orchestrator)
+            print(f"✓ {name} backend: {type(consumer.consumer_backend).__name__}")
+            
+            consumer.consume(num_messages=1)
+        except Exception as e:
+            print(f"✗ {name} backend failed: {e}")
+
+test_all_backends()
+```
+
+## Running the Complete Demo
+
+```bash
+python3 example_new_consumer.py
+```
+
+Expected output:
+- ✓ Local: success - Created LocalConsumerBackend
+- ✓ Redis: success - Created RedisConsumerBackend  
+- ✓ RabbitMQ: success - Created RabbitMQConsumerBackend
+
+## API Reference
+
+### Consumer Class
+```python
+class Consumer(MindtraceABC):
+    def __init__(self, job_type_name: str)
+    def connect(self, orchestrator: Orchestrator) -> None
+    def consume(self, num_messages: Optional[int] = None) -> None
+    def run(self, job: Job) -> None  # Abstract method to implement
+```
+
+### Orchestrator Class
+```python
+class Orchestrator(Mindtrace):
+    def __init__(self, backend: OrchestratorBackend)
+    def register(self, schema: JobSchema) -> str
+    def publish(self, queue_name: str, job: Job) -> str
+    def receive_message(self, queue_name: str) -> Optional[Job]
+    def count_queue_messages(self, queue_name: str) -> int
+```
+
+### JobSchema and Utilities
+```python
+class JobSchema:
+    name: str
+    input: JobInput
+    output: JobOutput
+
+def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job
 ```

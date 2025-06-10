@@ -1,38 +1,29 @@
 from __future__ import annotations
-from abc import abstractmethod
-from typing import Optional
+from abc import ABC, abstractmethod
+from typing import Optional, Callable
+from mindtrace.core.mindtrace.core import MindtraceABC
 import logging
-
-from mindtrace.core import Mindtrace
-
-
-class ConsumerBase(Mindtrace):
-    """Abstract base class for message consumers."""
-
-    @abstractmethod
+class ConsumerBackendBase(MindtraceABC):
+    """Abstract base class for consumer backends that handle low-level message consumption."""
     def __init__(
         self,
-        queues: str | list[str] | None = None,
-        connection: Optional["BrokerConnectionBase"] = None,
-        producer: Optional["ProducerBase"] = None,
-        database: Optional["Database"] = None,
+        queue_name: str,
+        orchestrator_backend,
+        message_processor: Optional[Callable] = None,
     ):
-        super().__init__()
+        super().__init__()  # Initialize MindtraceABC base
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.queues = queues
-        self.connection = connection
-        self.producer = producer
-        self.database = database
-
-    @property
+        self.queue_name = queue_name
+        self.orchestrator_backend = orchestrator_backend
+        self.message_processor = message_processor
     @abstractmethod
-    def subscriptions(self) -> list[str]:
+    def consume_messages(self, num_messages: Optional[int] = None) -> None:
+        """Consume messages from the queue and process them."""
         raise NotImplementedError
-
     @abstractmethod
-    def consume(self):
+    def process_message(self, message, processor_func: Callable) -> None:
+        """Process a single message by calling the processor function."""
         raise NotImplementedError
-
-    @abstractmethod
-    def process_message(self, *args, **kwargs) -> any:
-        raise NotImplementedError
+    def set_message_processor(self, processor: Callable) -> None:
+        """Set the message processor function (typically Consumer.run)."""
+        self.message_processor = processor

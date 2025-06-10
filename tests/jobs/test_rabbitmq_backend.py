@@ -1,8 +1,7 @@
 import pytest
 import time
 from mindtrace.jobs.mindtrace.queue_management.rabbitmq import RabbitMQClient
-from mindtrace.jobs.mindtrace.types import JobType
-from .conftest import create_test_job
+from .conftest import create_test_job, unique_queue_name
 
 
 @pytest.mark.rabbitmq
@@ -44,7 +43,7 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == test_job.payload.name
+        assert received_job.schema_name == test_job.schema_name
         
         self.client.delete_queue(queue_name)
     
@@ -74,7 +73,7 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.payload.name == test_job.payload.name
+        assert received_job.schema_name == test_job.schema_name
         
         self.client.delete_queue(queue_name)
         self.client.delete_exchange(exchange=exchange_name)
