@@ -463,7 +463,7 @@ class Registry(Mindtrace):
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
     def _register_default_materializers(self):
-        """Register default materializers for built-in object types."""
+        """Register default materializers."""
 
         # Core zenml materializers
         self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
@@ -494,5 +494,12 @@ class Registry(Mindtrace):
         try:
             import numpy
             self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
+        except ImportError:
+            pass
+
+        # (Optional) Pillow materializers
+        try:
+            from PIL import Image
+            self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
         except ImportError:
             pass
