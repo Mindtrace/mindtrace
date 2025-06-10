@@ -787,6 +787,36 @@ def test_register_default_materializers_without_datasets():
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
 
+def test_register_default_materializers_without_numpy():
+    """Test _register_default_materializers when numpy package is not available."""
+    with TemporaryDirectory() as temp_dir:
+        # Mock the import to raise ImportError only for numpy
+        from unittest.mock import patch
+        import builtins
+        original_import = builtins.__import__
+        
+        def mock_import(name, *args, **kwargs):
+            if name == 'numpy':
+                raise ImportError("No module named 'numpy'")
+            return original_import(name, *args, **kwargs)
+            
+        with patch('builtins.__import__', side_effect=mock_import):
+            # Create registry (which will register default materializers)
+            registry = Registry(registry_dir=temp_dir)
+            
+            # Get registered materializers
+            materializers = registry.registered_materializers()
+            
+            # Verify that numpy materializer is not registered
+            assert "numpy.ndarray" not in materializers
+            
+            # Verify that core materializers are still registered
+            assert "builtins.str" in materializers
+            assert "builtins.int" in materializers
+            assert "builtins.float" in materializers
+            assert "builtins.bool" in materializers
+            assert "mindtrace.core.config.config.Config" in materializers
+
 @pytest.mark.slow
 def test_huggingface_dataset():
     """Test saving and loading a HuggingFace dataset."""
@@ -843,3 +873,52 @@ def test_huggingface_dataset():
         assert "test" in loaded_dict
         assert loaded_dict["train"]["text"] == ["Hello", "World"]
         assert loaded_dict["test"]["text"] == ["Hello", "World"] 
+
+@pytest.mark.slow
+def test_numpy_array():
+    """Test saving and loading NumPy arrays."""
+    try:
+        import numpy as np
+    except ImportError:
+        missing_libs = check_libs(["numpy"])
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    # Create test arrays of different types and shapes
+    arrays = {
+        "1d:int": np.array([1, 2, 3, 4, 5]),
+        "2d:float": np.array([[1.0, 2.0], [3.0, 4.0]]),
+        "3d:bool": np.array([[[True, False], [False, True]], [[True, True], [False, False]]]),
+        "complex": np.array([1+2j, 3+4j, 5+6j]),
+        "structured": np.array([(1, 2.0), (3, 4.0)], dtype=[('x', 'i4'), ('y', 'f4')])
+    }
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Save and load each array
+        for name, arr in arrays.items():
+            # Save the array
+            registry.save(f"test:{name}", arr, version="1.0.0")
+
+            # Verify it exists
+            assert registry.has_object(f"test:{name}", "1.0.0")
+
+            # Load the array
+            loaded_arr = registry.load(f"test:{name}", version="1.0.0")
+
+            # Verify it's a numpy array
+            assert isinstance(loaded_arr, np.ndarray)
+
+            # Verify the data type
+            assert loaded_arr.dtype == arr.dtype
+
+            # Verify the shape
+            assert loaded_arr.shape == arr.shape
+
+            # Verify the data
+            np.testing.assert_array_equal(loaded_arr, arr)
+
+            # For structured arrays, also verify field names
+            if arr.dtype.names is not None:
+                assert loaded_arr.dtype.names == arr.dtype.names 
