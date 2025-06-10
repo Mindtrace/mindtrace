@@ -5,13 +5,6 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
-from zenml.materializers import (
-    BuiltInMaterializer, 
-    BuiltInContainerMaterializer, 
-    BytesMaterializer, 
-    PathMaterializer, 
-    PydanticMaterializer
-)
 from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import (
@@ -494,5 +487,12 @@ class Registry(Mindtrace):
             self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+        except ImportError:
+            pass
+
+        # (Optional) NumPy materializers
+        try:
+            import numpy
+            self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
         except ImportError:
             pass
