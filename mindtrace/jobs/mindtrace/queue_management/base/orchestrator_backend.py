@@ -79,6 +79,34 @@ class OrchestratorBackend(Mindtrace):
         """
         pass
 
+    @abstractmethod
+    def move_to_dlq(self, source_queue: str, dlq_name: str, message: pydantic.BaseModel, error_details: str, **kwargs):
+        """
+        Move a failed message to a dead letter queue
+        
+        Args:
+            source_queue: Name of the original queue
+            dlq_name: Name of the dead letter queue
+            message: The failed message/job
+            error_details: Details about why the job failed
+        """
+        pass
+
+    @abstractmethod
+    def list_dlq_messages(self, dlq_name: str, limit: Optional[int] = None, **kwargs) -> List[pydantic.BaseModel]:
+        """
+        List messages in a dead letter queue
+        
+        Args:
+            dlq_name: Name of the dead letter queue
+            limit: Maximum number of messages to return (None for all)
+            
+        Returns:
+            List of messages in the DLQ
+        """
+        pass
+
+    
 
 
     def declare_exchange(self, **kwargs):
