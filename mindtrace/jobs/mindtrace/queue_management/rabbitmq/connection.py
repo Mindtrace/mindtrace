@@ -1,7 +1,9 @@
 import time
 from pika import PlainCredentials, ConnectionParameters, BlockingConnection, exceptions
 
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.mindtrace.queue_management.base.connection_base import (
+    BrokerConnectionBase,
+)
 from mindtrace.jobs.mindtrace.utils import ifnone
 
 
@@ -12,7 +14,11 @@ class RabbitMQConnection(BrokerConnectionBase):
     """
 
     def __init__(
-        self, host: str | None = None, port: int | None = None, username: str | None = None, password: str | None = None
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ):
         """Initialize the RabbitMQ connection.
 
@@ -37,14 +43,18 @@ class RabbitMQConnection(BrokerConnectionBase):
         while retries < 10:
             try:
                 credentials = PlainCredentials(self.username, self.password)
-                parameters = ConnectionParameters(host=self.host, port=self.port, credentials=credentials, heartbeat=0)
+                parameters = ConnectionParameters(
+                    host=self.host, port=self.port, credentials=credentials, heartbeat=0
+                )
                 self.connection = BlockingConnection(parameters)
                 self.logger.debug(f"{self.name} connected to RabbitMQ.")
                 return
             except exceptions.AMQPConnectionError:
                 retries += 1
                 wait_time = 2**retries
-                self.logger.debug(f"{self.name} failed to connect to RabbitMQ, retrying in {wait_time} seconds...")
+                self.logger.debug(
+                    f"{self.name} failed to connect to RabbitMQ, retrying in {wait_time} seconds..."
+                )
                 time.sleep(wait_time)
         self.logger.debug(f"{self.name} exceeded maximum number of connection retries.")
         raise exceptions.AMQPConnectionError("Failed to connect to RabbitMQ.")

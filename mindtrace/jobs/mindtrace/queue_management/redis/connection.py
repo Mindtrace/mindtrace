@@ -2,7 +2,9 @@ import time
 
 import redis
 
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.mindtrace.queue_management.base.connection_base import (
+    BrokerConnectionBase,
+)
 from mindtrace.jobs.mindtrace.utils import ifnone
 
 
@@ -14,7 +16,11 @@ class RedisConnection(BrokerConnectionBase):
     """
 
     def __init__(
-        self, host: str | None = None, port: int | None = None, db: int | None = None, password: str | None = None
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        db: int | None = None,
+        password: str | None = None,
     ):
         """
         Initialize the Redis connection.
@@ -51,7 +57,9 @@ class RedisConnection(BrokerConnectionBase):
                 self.connection = redis.Redis(**conn_params)
                 # Force connection by issuing a PING command.
                 if self.connection.ping():
-                    self.logger.debug(f"{self.name} connected to Redis at {self.host}:{self.port}, db: {self.db}.")
+                    self.logger.debug(
+                        f"{self.name} connected to Redis at {self.host}:{self.port}, db: {self.db}."
+                    )
                     return
                 else:
                     raise redis.ConnectionError("Ping failed.")
@@ -59,10 +67,14 @@ class RedisConnection(BrokerConnectionBase):
             except redis.ConnectionError:
                 retries += 1
                 wait_time = 2**retries
-                self.logger.debug(f"{self.name} failed to connect to Redis, retrying in {wait_time} seconds...")
+                self.logger.debug(
+                    f"{self.name} failed to connect to Redis, retrying in {wait_time} seconds..."
+                )
                 if retries < max_tries:
                     time.sleep(wait_time)
-        self.logger.debug(f"{self.name} exceeded maximum number of connection retries to Redis.")
+        self.logger.debug(
+            f"{self.name} exceeded maximum number of connection retries to Redis."
+        )
         raise redis.ConnectionError("Failed to connect to Redis.")
 
     def is_connected(self) -> bool:
