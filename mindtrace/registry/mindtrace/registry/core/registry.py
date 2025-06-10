@@ -63,7 +63,8 @@ class Registry(Mindtrace):
 
         1. Materializer provided as an argument.
         2. Materializer previously registered for the object type.
-        3. The object itself, if it's its own materializer.
+        3. Materializer for any of the object's base classes.
+        4. The object itself, if it's its own materializer.
         
         If a materializer cannot be found through one of the above means, an error will be raised.
         
@@ -79,11 +80,15 @@ class Registry(Mindtrace):
             ValueError: If no materializer is found for the object.
         """
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
+        
+        # Try to find a materializer in order of precedence
         materializer = first_not_none((
             materializer,
             self.registered_materializer(object_class),
+            *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in type(obj).__bases__],
             object_class if isinstance(obj, BaseMaterializer) else None,
         ))
+        
         if materializer is None:
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
         materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
@@ -510,5 +515,7 @@ class Registry(Mindtrace):
             self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
             self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
             self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.nn.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
+            self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
         except ImportError:
             pass
