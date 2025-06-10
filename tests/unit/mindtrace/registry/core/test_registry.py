@@ -916,7 +916,7 @@ def test_register_default_materializers_with_transformers():
     try:
         import transformers
     except ImportError:
-        pytest.skip("transformers package not available")
+        pytest.skip("Required libraries not installed: transformers. Skipping test.")
 
     with TemporaryDirectory() as temp_dir:
         # Create registry (which will register default materializers)
@@ -975,7 +975,7 @@ else:
     SimpleNet = None
 
 @pytest.mark.slow
-@pytest.mark.skipif(not TORCH_AVAILABLE, reason="PyTorch is not installed")
+@pytest.mark.skipif(not TORCH_AVAILABLE, reason="Required libraries not installed: torch. Skipping test.")
 def test_pytorch_module():
     """Test saving and loading PyTorch modules."""
     # Create and initialize the model
