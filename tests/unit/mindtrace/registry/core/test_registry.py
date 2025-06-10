@@ -880,6 +880,67 @@ def test_register_default_materializers_without_pytorch():
             assert "builtins.bool" in materializers
             assert "mindtrace.core.config.config.Config" in materializers
 
+def test_register_default_materializers_without_transformers():
+    """Test _register_default_materializers when transformers package is not available."""
+    with TemporaryDirectory() as temp_dir:
+        # Mock the import to raise ImportError only for transformers
+        from unittest.mock import patch
+        import builtins
+        original_import = builtins.__import__
+        
+        def mock_import(name, *args, **kwargs):
+            if name == 'transformers':
+                raise ImportError("No module named 'transformers'")
+            return original_import(name, *args, **kwargs)
+            
+        with patch('builtins.__import__', side_effect=mock_import):
+            # Create registry (which will register default materializers)
+            registry = Registry(registry_dir=temp_dir)
+            
+            # Get registered materializers
+            materializers = registry.registered_materializers()
+            
+            # Verify that transformers materializers are not registered
+            assert "transformers.PreTrainedModel" not in materializers
+            assert "transformers.modeling_utils.PreTrainedModel" not in materializers
+            
+            # Verify that core materializers are still registered
+            assert "builtins.str" in materializers
+            assert "builtins.int" in materializers
+            assert "builtins.float" in materializers
+            assert "builtins.bool" in materializers
+            assert "mindtrace.core.config.config.Config" in materializers
+
+def test_register_default_materializers_with_transformers():
+    """Test _register_default_materializers when transformers package is available."""
+    try:
+        import transformers
+    except ImportError:
+        pytest.skip("transformers package not available")
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry (which will register default materializers)
+        registry = Registry(registry_dir=temp_dir)
+        
+        # Get registered materializers
+        materializers = registry.registered_materializers()
+        
+        # Verify that transformers materializers are registered
+        assert "transformers.PreTrainedModel" in materializers
+        assert "transformers.modeling_utils.PreTrainedModel" in materializers
+        
+        # Verify the materializer class is correct
+        expected_materializer = "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer"
+        assert materializers["transformers.PreTrainedModel"] == expected_materializer
+        assert materializers["transformers.modeling_utils.PreTrainedModel"] == expected_materializer
+        
+        # Verify that core materializers are still registered
+        assert "builtins.str" in materializers
+        assert "builtins.int" in materializers
+        assert "builtins.float" in materializers
+        assert "builtins.bool" in materializers
+        assert "mindtrace.core.config.config.Config" in materializers
+
 # Try to import torch at module level
 try:
     import torch
@@ -921,6 +982,9 @@ def test_pytorch_module():
     model = SimpleNet()
     model.train()  # Set to training mode
 
+    print(f"Model: {model}")
+    print(f"Model class: {type(model)}")
+
     # Create some test input
     test_input = torch.randn(1, 3, 32, 32)
     original_output = model(test_input)
@@ -928,12 +992,6 @@ def test_pytorch_module():
     with TemporaryDirectory() as temp_dir:
         # Create registry
         registry = Registry(registry_dir=temp_dir)
-
-        # Register the materializer for our specific class
-        registry.register_materializer(
-            f"{type(model).__module__}.{type(model).__name__}",
-            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer"
-        )
 
         # Save the model
         registry.save("test:model", model, version="1.0.0")
@@ -959,6 +1017,85 @@ def test_pytorch_module():
         loaded_model.train()  # Set to training mode
         loaded_output = loaded_model(test_input)
         assert torch.allclose(original_output, loaded_output)
+
+@pytest.mark.slow
+def test_huggingface_model():
+    """Test saving and loading HuggingFace pretrained models."""
+    try:
+        from transformers import AutoModel
+        import torch
+        import datasets  # Required by the HuggingFace materializer
+    except ImportError:
+        missing_libs = check_libs(["transformers", "torch", "datasets"])
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    # Set random seeds for reproducibility
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    # Load a small pretrained model for testing
+    model = AutoModel.from_pretrained("prajjwal1/bert-tiny")
+    model.eval()  # Set to evaluation mode for more stable outputs
+
+    # Create some test input
+    test_input = torch.randint(0, 1000, (1, 10))  # Random token IDs
+    with torch.no_grad():  # Disable gradient computation
+        original_output = model(test_input)
+
+    with TemporaryDirectory() as temp_dir:
+        # Create registry
+        registry = Registry(registry_dir=temp_dir)
+
+        # Save the model
+        registry.save("test:model", model, version="1.0.0")
+        assert registry.has_object("test:model", "1.0.0")
+
+        # Load the model
+        loaded_model = registry.load("test:model", version="1.0.0")
+        assert isinstance(loaded_model, type(model))
+
+        # Print model state information
+        print(f"\nOriginal model mode: {model.training}")
+        print(f"Loaded model mode: {loaded_model.training}")
+
+        # Verify the model parameters
+        param_diffs = []
+        for (name1, p1), (name2, p2) in zip(model.named_parameters(), loaded_model.named_parameters()):
+            assert name1 == name2, f"Parameter names don't match: {name1} vs {name2}"
+            max_diff = torch.max(torch.abs(p1 - p2)).item()
+            mean_diff = torch.mean(torch.abs(p1 - p2)).item()
+            param_diffs.append((name1, max_diff, mean_diff))
+            assert torch.allclose(p1, p2, rtol=1e-4, atol=1e-4), f"Parameters for {name1} differ too much"
+
+        # Print parameter differences
+        print("\nParameter differences:")
+        for name, max_diff, mean_diff in param_diffs:
+            print(f"{name}: max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}")
+
+        # Set both models to eval mode
+        model.eval()
+        loaded_model.eval()
+
+        # Verify the model behavior
+        with torch.no_grad():
+            loaded_output = loaded_model(test_input)
+
+        # Print output information
+        print(f"\nOriginal output shape: {original_output.last_hidden_state.shape}")
+        print(f"Loaded output shape: {loaded_output.last_hidden_state.shape}")
+        print(f"Max difference: {torch.max(torch.abs(original_output.last_hidden_state - loaded_output.last_hidden_state))}")
+        print(f"Mean difference: {torch.mean(torch.abs(original_output.last_hidden_state - loaded_output.last_hidden_state))}")
+        print(f"Original output range: [{torch.min(original_output.last_hidden_state)}, {torch.max(original_output.last_hidden_state)}]")
+        print(f"Loaded output range: [{torch.min(loaded_output.last_hidden_state)}, {torch.max(loaded_output.last_hidden_state)}]")
+
+        # Use more lenient tolerances for output comparison
+        assert torch.allclose(
+            original_output.last_hidden_state,
+            loaded_output.last_hidden_state,
+            rtol=0.01,  # 1% relative tolerance
+            atol=0.01   # 0.01 absolute tolerance
+        )
 
 @pytest.mark.slow
 def test_pytorch_dataset_and_dataloader():
