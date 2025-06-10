@@ -24,7 +24,7 @@ class TestMindtraceMeta:
             pass
         
         assert isinstance(TestClass.logger, logging.Logger)
-        assert TestClass.logger.name == TestClass.unique_name
+        assert TestClass.logger.name == f"mindtrace.{TestClass.unique_name}"
 
 
 class TestMindtrace:
