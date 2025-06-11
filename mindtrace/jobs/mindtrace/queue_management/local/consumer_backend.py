@@ -1,29 +1,34 @@
 from typing import Optional, Callable
 from ..base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.mindtrace.types import Job
+
 class LocalConsumerBackend(ConsumerBackendBase):
-    """Local in-memory consumer backend optimized for fast, non-blocking operations."""
-    def __init__(self, queue_name: str, orchestrator, message_processor: Optional[Callable] = None):
-        super().__init__(queue_name, orchestrator, message_processor)
+    """Local in-memory consumer backend."""
+    
+    def __init__(self, queue_name: str, orchestrator, run_method: Optional[Callable] = None):
+        super().__init__(queue_name, orchestrator, run_method)
+    
     def consume_messages(self, num_messages: Optional[int] = None) -> None:
-        """Consume messages from local queue with optimized in-memory polling."""
-        if not self.message_processor:
-            raise RuntimeError("No message processor set. Call set_message_processor() first.")
+        """Consume messages from the local queue."""
+        if not self.run_method:
+            raise RuntimeError("No run method set.")
+        
         processed = 0
         while num_messages is None or processed < num_messages:
             message = self.orchestrator_backend.receive_message(self.queue_name)
             if message:
-                self.process_message(message, self.message_processor)
+                self.process_message(message)
                 processed += 1
             else:
                 break
-    def process_message(self, message, processor_func: Callable) -> None:
-        """Process a single message with local-optimized error handling."""
+    
+    def process_message(self, message) -> None:
+        """Process a single message."""
         if isinstance(message, Job):
             try:
-                processor_func(message)
-                self.logger.debug(f"Successfully processed local job {message.id}")
+                self.run_method(message)
+                self.logger.debug(f"Successfully processed job {message.id}")
             except Exception as e:
-                self.logger.error(f"Error processing local job {message.id}: {str(e)}")
+                self.logger.error(f"Error processing job {message.id}: {str(e)}")
         else:
-            self.logger.warning(f"Received non-Job message in local queue: {type(message)}") 
+            self.logger.warning(f"Received non-Job message: {type(message)}") 

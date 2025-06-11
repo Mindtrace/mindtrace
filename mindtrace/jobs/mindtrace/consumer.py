@@ -7,11 +7,9 @@ from mindtrace.jobs.mindtrace.types import Job, JobSchema
 
 
 class Consumer(MindtraceABC):
-    """
-    Automatically creates the appropriate backend-specific ConsumerBackend when connected to an Orchestrator.
+    """Base class for processing jobs from queues.
     
-    Args:
-        job_type_name (str): The name of the job type to consume.
+    Automatically creates the appropriate consumer backend when connected to an orchestrator.
     """
     
     def __init__(self, job_type_name: str):
@@ -23,7 +21,7 @@ class Consumer(MindtraceABC):
         self.queue_name: Optional[str] = None
     
     def connect(self, orchestrator: Orchestrator) -> None:
-        """Connect to orchestrator and automatically create backend-specific ConsumerBackend."""
+        """Connect to orchestrator and create the appropriate consumer backend."""
         self.orchestrator = orchestrator
         
         schema_info = orchestrator.get_schema_for_job_type(self.job_type_name)
@@ -34,13 +32,13 @@ class Consumer(MindtraceABC):
         self.queue_name = schema_info['queue_name']
         
         self.consumer_backend = orchestrator.create_consumer_backend_for_schema(self.job_schema)
-        self.consumer_backend.set_message_processor(self.run)
+        self.consumer_backend.set_run_method(self.run)
     
     def consume(self, num_messages: Optional[int] = None) -> None:
-        """Consume messages indefinitely (or up to num_messages).
+        """Consume messages from the queue.
         
-        This delegates to the backend-specific ConsumerBackend which implements
-        optimized consumption strategies for each backend type.
+        Args:
+            num_messages: Number of messages to process. If None, runs indefinitely.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
@@ -49,8 +47,5 @@ class Consumer(MindtraceABC):
     
     @abstractmethod
     def run(self, job: Job) -> None:
-        """Process a single job. Must be implemented by subclasses.
-        
-        This method is called by the ConsumerBackend when a message is received.
-        """
+        """Process a single job. Must be implemented by subclasses."""
         pass

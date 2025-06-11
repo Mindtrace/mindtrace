@@ -60,6 +60,8 @@ class Orchestrator(Mindtrace):
         """Register a JobSchema and create a queue for it."""
         queue_name = schema.name
         self.backend.declare_queue(queue_name)
+        # TODO: This is in memory and not suitable for production, need a way to store
+        # the schema in a database
         self._schema_mapping[schema.name] = {
             'schema': schema,
             'queue_name': queue_name
@@ -69,11 +71,11 @@ class Orchestrator(Mindtrace):
         """Get the JobSchema and queue info for a given job type name."""
         return self._schema_mapping.get(job_type_name)
     def create_consumer_backend_for_schema(self, schema: JobSchema) -> ConsumerBackendBase:
-        """Create appropriate consumer backend for the schema based on orchestrator backend type.
-        Creates backend-specific consumer backends with their respective optimizations:
-        - LocalConsumerBackend: Fast in-memory operations
-        - RedisConsumerBackend: Blocking operations, timeout handling  
-        - RabbitMQConsumerBackend: ACK/NACK, prefetch control
+        """Create the appropriate consumer backend for the schema.
+        
+        - LocalConsumerBackend
+        - RedisConsumerBackend
+        - RabbitMQConsumerBackend
         """
         queue_name = schema.name
         backend_type = type(self.backend).__name__
