@@ -10,7 +10,7 @@ from mindtrace.cluster.core.worker_base import Worker, WorkerConnectionManager
 from mindtrace.cluster.core.node import NodeConnectionManager
 from mindtrace.cluster.mindtrace.cluster.core.types import JobStatus, node_id, worker_id, worker_registry_key, job_registry_key, worker_maintenance_id, job_id
 
-class ClusterManager(Gateway):
+class Cluster(Gateway):
     orchestrator: Orchestrator
     worker_registry: Registry[Worker]
     job_registry: Registry[JobSchema]
