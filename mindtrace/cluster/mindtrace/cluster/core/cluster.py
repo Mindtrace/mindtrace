@@ -1,14 +1,14 @@
+from typing import Type
 
 from pydantic import BaseModel
 
 from mindtrace.services import Gateway
 from mindtrace.core import JobSchema, Job
 from mindtrace.jobs import Orchestrator
-from mindtrace.registry import Registry
+from mindtrace.registry import Registry, BaseMaterializer
 from mindtrace.cluster.core.worker_base import Worker, WorkerConnectionManager
 from mindtrace.cluster.core.node import NodeConnectionManager
 from mindtrace.cluster.core.core import JobStatus, node_id, worker_id, worker_registry_key, job_registry_key, worker_maintenance_id, job_id
-
 
 class ClusterManager(Gateway):
     orchestrator: Orchestrator
@@ -31,8 +31,10 @@ class ClusterManager(Gateway):
         raise NotImplemented
     
     # Worker Registry
-    def register_worker(self, name: str, worker: ArchivedWorker):
+    def register_worker(self, name: str, worker, materializer: Type[BaseMaterializer]):
         # add worker to worker_registry
+        # worker may not be a concrete Worker, instead something that is Materializable
+        # and instantiates to a concrete Worker
         raise NotImplemented
     
     # Registering jobs to job_registry 
