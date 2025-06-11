@@ -7,15 +7,14 @@ from mindtrace.jobs.mindtrace.types import Job, JobSchema
 
 
 class Consumer(MindtraceABC):
-    """Simple Consumer class for processing jobs from queues.
+    """
+    Automatically creates the appropriate backend-specific ConsumerBackend when connected to an Orchestrator.
     
-    This is the user-facing Consumer class that automatically creates the 
-    appropriate backend-specific ConsumerBackend when connected to an Orchestrator.
-    Each backend (Local, Redis, RabbitMQ) has optimized consumption strategies.
+    Args:
+        job_type_name (str): The name of the job type to consume.
     """
     
     def __init__(self, job_type_name: str):
-        """Initialize consumer with job type name."""
         super().__init__()
         self.job_type_name = job_type_name
         self.orchestrator: Optional[Orchestrator] = None
@@ -54,4 +53,4 @@ class Consumer(MindtraceABC):
         
         This method is called by the ConsumerBackend when a message is received.
         """
-        raise NotImplementedError("Subclasses must implement run() method") 
+        pass
