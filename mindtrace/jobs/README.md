@@ -15,6 +15,32 @@ A job queue system that works with different backends (local, Redis, RabbitMQ).
 - **Redis**
 - **RabbitMQ**
 
+## Architecture 
+
+```mermaid
+graph TD
+    Consumer["Your Consumer<br/>ObjectDetection('object_detection')"] 
+    Orchestrator["Orchestrator"]
+    Schema["Job Schema<br/>(object_detection)"]
+    Job["Job Instance"]
+    Queue["Queue<br/>(object_detection)"]
+    
+    LocalClient["LocalClient"]
+    RedisClient["RedisClient"] 
+    RabbitMQClient["RabbitMQClient"]
+    
+    Consumer --> Orchestrator
+    Schema --> Orchestrator
+    Job --> Orchestrator
+    Orchestrator --> Queue
+    
+    Orchestrator -.-> LocalClient
+    Orchestrator -.-> RedisClient
+    Orchestrator -.-> RabbitMQClient
+    
+    Queue --> Consumer
+```
+
 ## Basic Example
 
 ```python
@@ -36,12 +62,7 @@ orchestrator.register(schema)
 # Create a consumer
 class ObjectDetection(Consumer):
     def run(self, job):
-        print(f"Processing job: {job.id}")
-        print(f"Job name: {job.name}")
-        # Your object detection logic here
-        detected_objects = ["car", "person", "tree"]
-        print(f"Detected objects: {detected_objects}")
-        return {"objects": detected_objects}
+        logic here
 
 # Connect and consume jobs
 consumer = ObjectDetection("object_detection")
