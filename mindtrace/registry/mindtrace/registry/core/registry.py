@@ -72,7 +72,7 @@ class Registry(Mindtrace):
             name: Name of the object.
             obj: Object to save.
             materializer: Materializer to use.
-            version: Version of the object.
+            version: Version of the object. In None, will auto-increment the version number.
             init_params: Initialization parameters for the object.
             metadata: Metadata for the object.
 
@@ -101,7 +101,7 @@ class Registry(Mindtrace):
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
         materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
 
-        if version is None:
+        if version is None or version == "latest":
             version = self._next_version(name)
 
         if self.has_object(name=name, version=version):
@@ -202,8 +202,21 @@ class Registry(Mindtrace):
         Args:
             name: Name of the object.
             version: Version of the object.
+
+        Raises:
+            KeyError: If the object doesn't exist.
         """
-        versions = self.list_versions(name) if version is None else [version]
+        if version is None:
+            # Check if object exists at all
+            if name not in self.list_objects():
+                raise KeyError(f"Object {name} does not exist")
+            versions = self.list_versions(name)
+        else:
+            # Check if specific version exists
+            if not self.has_object(name, version):
+                raise KeyError(f"Object {name} version {version} does not exist")
+            versions = [version]
+
         for ver in versions:
             self.backend.delete(name, ver)
             self.backend.delete_metadata(name, ver)
@@ -608,7 +621,10 @@ class Registry(Mindtrace):
             if "@" in key:
                 name, version = key.split("@", 1)
             else:
-                name, version = key, "latest"
+                name = key
+                version = self._latest(name)
+                if version is None:
+                    return False
             return self.has_object(name=name, version=version)
         except ValueError:
             return False
