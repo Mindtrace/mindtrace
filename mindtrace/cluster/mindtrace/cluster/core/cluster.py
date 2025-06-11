@@ -16,8 +16,8 @@ class ClusterManager(Gateway):
     job_registry: Registry[JobSchema]
     nodes: dict[node_id, NodeConnectionManager] 
     workers: dict[worker_id, WorkerConnectionManager] 
-    gateway_jobs: dict[job_registry_key, str] # str here is endpoint URL
-    orchestrator_jobs: set[job_registry_key]
+    gateway_job_types: dict[job_registry_key, str] # str here is endpoint URL
+    orchestrator_job_types: set[job_registry_key] # or could just send anything that's not in gateway_job_types to Orchestrator
     monitored_jobs: dict[job_id, worker_id]
 
     def __init__(self, url):
@@ -53,11 +53,11 @@ class ClusterManager(Gateway):
     
     # Generic method for submitting all jobs
     def submit(self, job: Job, blocking: bool = False) -> BaseModel | job_id:
-        if job.job_type in self.gateway_jobs:
+        if job.job_type in self.gateway_job_types:
             if not blocking:
                 raise RuntimeError
             raise NotImplemented # send job to endpoint
-        elif job.job_type in self.orchestrator_jobs:
+        elif job.job_type in self.orchestrator_job_types:
             return self.orchestrator.submit(job, blocking)
         else:
             raise ValueError

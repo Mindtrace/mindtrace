@@ -10,6 +10,7 @@ class Worker(Consumer, Service): # Consumer is ABC so Worker is too as we don't 
         raise NotImplemented
     
     def start(self):
+        # calls self.consume(), potentially subclass implements setup methods
         raise NotImplemented
 
     def status(self) -> WorkerStatus:
