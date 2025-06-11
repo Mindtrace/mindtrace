@@ -535,3 +535,188 @@ class Registry(Mindtrace):
             self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
         except ImportError:
             pass
+
+    ### Dictionary-like interface methods ###
+
+    def __getitem__(self, key: str) -> Any:
+        """Get an object from the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Returns:
+            The loaded object
+            
+        Raises:
+            KeyError: If the object doesn't exist
+            ValueError: If the version format is invalid
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, "latest"
+            return self.load(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Save an object to the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            value: The object to save
+            
+        Raises:
+            ValueError: If the version format is invalid
+        """
+        if "@" in key:
+            name, version = key.split("@", 1)
+        else:
+            name, version = key, None
+        self.save(name=name, obj=value, version=version)
+
+    def __delitem__(self, key: str) -> None:
+        """Delete an object from the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Raises:
+            KeyError: If the object doesn't exist
+            ValueError: If the version format is invalid
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, None
+            self.delete(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __contains__(self, key: str) -> bool:
+        """Check if an object exists in the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Returns:
+            True if the object exists, False otherwise.
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, "latest"
+            return self.has_object(name=name, version=version)
+        except ValueError:
+            return False
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get an object from the registry, returning a default value if it doesn't exist.
+        
+        This method behaves similarly to dict.get(), allowing for safe access to objects
+        without raising KeyError if they don't exist.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to return if the object doesn't exist
+            
+        Returns:
+            The loaded object if it exists, otherwise the default value.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> List[str]:
+        """Get a list of all object names in the registry.
+        
+        Returns:
+            List of object names.
+        """
+        return self.list_objects()
+
+    def values(self) -> List[Any]:
+        """Get a list of all objects in the registry (latest versions only).
+        
+        Returns:
+            List of loaded objects.
+        """
+        return [self[name] for name in self.keys()]
+
+    def items(self) -> List[tuple[str, Any]]:
+        """Get a list of (name, object) pairs for all objects in the registry (latest versions only).
+        
+        Returns:
+            List of (name, object) tuples.
+        """
+        return [(name, self[name]) for name in self.keys()]
+
+    def update(self, mapping: Dict[str, Any]) -> None:
+        """Update the registry with objects from a dictionary.
+        
+        Args:
+            mapping: Dictionary mapping object names to objects
+        """
+        for key, value in mapping.items():
+            self[key] = value
+
+    def clear(self) -> None:
+        """Remove all objects from the registry."""
+        for name in self.keys():
+            del self[name]
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        """Remove and return an object from the registry.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to return if the object doesn't exist
+            
+        Returns:
+            The removed object if it exists, otherwise the default value.
+            
+        Raises:
+            KeyError: If the object doesn't exist and no default is provided.
+        """
+        try:
+            value = self[key]
+            del self[key]
+            return value
+        except KeyError:
+            if default is not None:
+                return default
+            raise
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        """Get an object from the registry, setting it to default if it doesn't exist.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to set and return if the object doesn't exist
+            
+        Returns:
+            The object if it exists, otherwise the default value.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            if default is not None:
+                self[key] = default
+            return default
+
+    def __len__(self) -> int:
+        """Get the number of unique named items in the registry.
+        
+        This counts only unique object names, not individual versions. For example, if you have "model@1.0.0" and 
+        "model@1.0.1", this will count as 1 item.
+        
+        Returns:
+            Number of unique named items in the registry.
+        """
+        return len(self.keys())
+
+    ### End of dictionary-like interface methods ###
