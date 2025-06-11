@@ -3,7 +3,7 @@ from typing import NewType
 from mindtrace.services import Service
 from mindtrace.registry import Registry
 from mindtrace.cluster.core.worker_base import Worker, WorkerConnectionManager
-from mindtrace.cluster.core.core import worker_registry_key, any, worker_id
+from mindtrace.cluster.mindtrace.cluster.core.types import worker_registry_key, any, worker_id
 
 class Node(Service):
     _worker_registry: Registry[Worker]
