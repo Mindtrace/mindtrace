@@ -1290,4 +1290,305 @@ def test_numpy_array():
 
             # For structured arrays, also verify field names
             if arr.dtype.names is not None:
-                assert loaded_arr.dtype.names == arr.dtype.names 
+                assert loaded_arr.dtype.names == arr.dtype.names
+
+def test_dict_like_interface_basic(registry):
+    """Test basic dictionary-like interface functionality."""
+    # Test __setitem__ and __getitem__ with latest version
+    registry["test:str"] = "hello"
+    assert registry["test:str"] == "hello"
+    assert "test:str" in registry
+    
+    # Test with specific version
+    registry["test:str@1.0.0"] = "hello v1"
+    assert registry["test:str@1.0.0"] == "hello v1"
+    assert "test:str@1.0.0" in registry
+    
+    # Test that latest version is now the specific version
+    assert registry["test:str"] == "hello v1"
+    assert "test:str" in registry
+    
+    # Test __len__ (should count unique names only)
+    assert len(registry) == 1
+    
+    # Test __delitem__ with specific version
+    del registry["test:str@1.0.0"]
+    assert "test:str@1.0.0" not in registry
+    assert "test:str" in registry  # Latest version should still exist
+    
+    # Test __delitem__ with latest version
+    del registry["test:str"]
+    assert "test:str" not in registry
+    assert len(registry) == 0
+
+def test_dict_like_interface_get(registry):
+    """Test the get() method with various scenarios."""
+    # Test with default value
+    assert registry.get("nonexistent") is None
+    assert registry.get("nonexistent", "default") == "default"
+    
+    # Test with existing value
+    registry["test:str"] = "hello"
+    assert registry.get("test:str") == "hello"
+    assert registry.get("test:str", "default") == "hello"
+    
+    # Test with version
+    registry["test:str@1.0.0"] = "hello v1"
+    assert registry.get("test:str@1.0.0") == "hello v1"
+    assert registry.get("test:str@1.0.0", "default") == "hello v1"
+    
+    # Test with invalid version
+    assert registry.get("test:str@invalid") is None
+    assert registry.get("test:str@invalid", "default") == "default"
+
+def test_dict_like_interface_keys_values_items(registry):
+    """Test keys(), values(), and items() methods."""
+    # Add some test data
+    registry["test:str"] = "hello"
+    registry["test:int"] = 42
+    registry["test:str@1.0.0"] = "hello v1"
+    
+    # Test keys()
+    keys = registry.keys()
+    assert isinstance(keys, list)
+    assert set(keys) == {"test:str", "test:int"}
+    
+    # Test values() - should only return latest versions
+    values = registry.values()
+    assert isinstance(values, list)
+    assert len(values) == 2
+    assert "hello v1" in values  # Latest version of test:str
+    assert 42 in values  # Latest version of test:int
+    
+    # Test items() - should only return latest versions
+    items = registry.items()
+    assert isinstance(items, list)
+    assert len(items) == 2
+    assert ("test:str", "hello v1") in items  # Latest version of test:str
+    assert ("test:int", 42) in items  # Latest version of test:int
+
+def test_dict_like_interface_update(registry):
+    """Test the update() method."""
+    # Test with simple dictionary
+    registry.update({
+        "test:str": "hello",
+        "test:int": 42
+    })
+    assert registry["test:str"] == "hello"
+    assert registry["test:int"] == 42
+    
+    # Test with versioned items
+    registry.update({
+        "test:str@1.0.0": "hello v1",
+        "test:int@1.0.0": 42
+    })
+    assert registry["test:str@1.0.0"] == "hello v1"
+    assert registry["test:int@1.0.0"] == 42
+    
+    # Test updating latest version (should create new version)
+    registry.update({
+        "test:str": "updated"
+    })
+    assert registry["test:str"] == "updated"  # Latest version is updated
+    assert registry["test:str@1.0.0"] == "hello v1"  # Old version remains unchanged
+    
+    # Test that updating existing version raises error
+    with pytest.raises(ValueError, match="Object test:str version 1.0.0 already exists"):
+        registry.update({
+            "test:str@1.0.0": "updated v1"
+        })
+
+def test_dict_like_interface_clear(registry):
+    """Test the clear() method."""
+    # Add some test data
+    registry["test:str"] = "hello"
+    registry["test:int"] = 42
+    registry["test:str@1.0.0"] = "hello v1"
+    
+    # Clear the registry
+    registry.clear()
+    
+    # Verify everything is gone
+    assert len(registry) == 0
+    assert list(registry.keys()) == []
+    assert list(registry.values()) == []
+    assert list(registry.items()) == []
+    assert "test:str" not in registry
+    assert "test:str@1.0.0" not in registry
+
+def test_dict_like_interface_pop(registry):
+    """Test the pop() method."""
+    # Test with default value
+    assert registry.pop("nonexistent", "default") == "default"
+    
+    # Test with existing value
+    registry["test:str"] = "hello"
+    assert registry.pop("test:str") == "hello"
+    assert "test:str" not in registry
+    
+    # Test with version
+    registry["test:str@1.0.0"] = "hello v1"
+    assert registry.pop("test:str@1.0.0") == "hello v1"
+    assert "test:str@1.0.0" not in registry
+    
+    # Test without default value
+    with pytest.raises(KeyError):
+        registry.pop("nonexistent")
+
+def test_dict_like_interface_setdefault(registry):
+    """Test the setdefault() method."""
+    # Test with nonexistent key
+    assert registry.setdefault("test:str", "default") == "default"
+    assert registry["test:str"] == "default"
+    
+    # Test with existing key
+    assert registry.setdefault("test:str", "new default") == "default"
+    assert registry["test:str"] == "default"
+    
+    # Test with version
+    assert registry.setdefault("test:str@1.0.0", "v1") == "v1"
+    assert registry["test:str@1.0.0"] == "v1"
+    
+    # Test with None default
+    assert registry.setdefault("test:none") is None
+    assert "test:none" not in registry  # Should not be set if default is None
+
+def test_dict_like_interface_error_handling(registry):
+    """Test error handling in dictionary-like interface."""
+    # Test __getitem__ with nonexistent key
+    with pytest.raises(KeyError):
+        _ = registry["nonexistent"]
+    
+    # Test __getitem__ with invalid version
+    with pytest.raises(KeyError):
+        _ = registry["test:str@invalid"]
+    
+    # Test __delitem__ with nonexistent key
+    with pytest.raises(KeyError):
+        del registry["nonexistent"]
+    
+    # Test __delitem__ with invalid version
+    with pytest.raises(KeyError):
+        del registry["test:str@invalid"]
+    
+    # Test pop() without default
+    with pytest.raises(KeyError):
+        registry.pop("nonexistent")
+
+def test_dict_like_interface_version_handling(registry):
+    """Test version handling in dictionary-like interface."""
+    # Test saving multiple versions
+    registry["test:str"] = "test string"  # Saves a "1"
+    registry["test:str@1.0.2"] = "v1.0.2"
+    registry["test:str@1.0.1"] = "v1.0.1"
+    
+    # Test accessing latest version
+    assert registry["test:str"] == "v1.0.2"
+    
+    # Test accessing specific versions
+    assert registry["test:str@1"] == "test string"
+    assert registry["test:str@1.0.1"] == "v1.0.1"
+    
+    # Test deleting specific version
+    del registry["test:str@1"]
+    assert "test:str@1" not in registry
+    assert registry["test:str@1.0.1"] == "v1.0.1"
+    
+    # Test deleting all versions
+    del registry["test:str"]
+    assert "test:str" not in registry
+    assert "test:str@1.0.1" not in registry
+
+def test_dict_like_interface_complex_objects(registry):
+    """Test dictionary-like interface with complex objects."""
+    # Test with nested dictionary
+    nested_dict = {"a": {"b": {"c": 42}}}
+    registry["test:nested"] = nested_dict
+    assert registry["test:nested"] == nested_dict
+    
+    # Test with list of objects
+    obj_list = [{"id": 1}, {"id": 2}, {"id": 3}]
+    registry["test:list"] = obj_list
+    assert registry["test:list"] == obj_list
+    
+def test_getitem_not_found(registry):
+    """Test that __getitem__ raises KeyError when an object is not found."""
+    # Test with nonexistent object name
+    with pytest.raises(KeyError, match="Object not found: nonexistent"):
+        _ = registry["nonexistent"]
+    
+    # Test with nonexistent version
+    registry["test:str"] = "hello"
+    with pytest.raises(KeyError, match="Object not found: test:str@nonexistent"):
+        _ = registry["test:str@nonexistent"]
+    
+    # Test with invalid version format
+    with pytest.raises(KeyError, match="Object not found: test:str@invalid@format"):
+        _ = registry["test:str@invalid@format"]
+        
+    # Test ValueError to KeyError conversion
+    # Create a mock load method that raises ValueError
+    original_load = registry.load
+    def mock_load(*args, **kwargs):
+        raise ValueError("Simulated load error")
+    
+    # Replace the load method with our mock
+    registry.load = mock_load
+    
+    try:
+        # This should convert the ValueError to KeyError
+        with pytest.raises(KeyError, match="Object not found: test:str"):
+            _ = registry["test:str"]
+    finally:
+        # Restore the original load method
+        registry.load = original_load
+
+def test_delitem_not_found(registry):
+    """Test that __delitem__ raises KeyError when an object is not found."""
+    # Test with nonexistent object name
+    with pytest.raises(KeyError, match="Object nonexistent does not exist"):
+        del registry["nonexistent"]
+    
+    # Test with nonexistent version
+    registry["test:str"] = "hello"
+    with pytest.raises(KeyError, match="Object test:str version nonexistent does not exist"):
+        del registry["test:str@nonexistent"]
+    
+    # Test with invalid version format
+    with pytest.raises(KeyError, match="Object test:str version invalid@format does not exist"):
+        del registry["test:str@invalid@format"]
+        
+    # Test ValueError to KeyError conversion
+    # Create a mock delete method that raises ValueError
+    original_delete = registry.delete
+    def mock_delete(*args, **kwargs):
+        raise ValueError("Simulated delete error")
+    
+    # Replace the delete method with our mock
+    registry.delete = mock_delete
+    
+    try:
+        # This should convert the ValueError to KeyError
+        with pytest.raises(KeyError, match="Object not found: test:str"):
+            del registry["test:str"]
+    finally:
+        # Restore the original delete method
+        registry.delete = original_delete
+
+def test_contains_value_error(registry):
+    """Test that __contains__ returns False when a ValueError is raised."""
+    # Create a mock _latest method that raises ValueError
+    original_latest = registry._latest
+    def mock_latest(*args, **kwargs):
+        raise ValueError("Simulated version error")
+    
+    # Replace the _latest method with our mock
+    registry._latest = mock_latest
+    
+    try:
+        # This should catch the ValueError and return False
+        assert "test:str" not in registry
+    finally:
+        # Restore the original _latest method
+        registry._latest = original_latest
+    
