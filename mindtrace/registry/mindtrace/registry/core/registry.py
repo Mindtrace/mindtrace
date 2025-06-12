@@ -380,8 +380,15 @@ class Registry(Mindtrace):
         if not isinstance(source_registry, Registry):
             raise ValueError("source_registry must be an instance of Registry")
 
-        # Set target name if not specified
+        # Resolve latest version if needed
+        if version == "latest":
+            version = source_registry._latest(name)
+            if version is None:
+                raise ValueError(f"No versions found for object {name} in source registry")
+
+        # Set target name and version if not specified
         target_name = ifnone(target_name, default=name)
+        target_version = ifnone(target_version, default=version)
 
         # Check if object exists in source registry
         if not source_registry.has_object(name=name, version=version):

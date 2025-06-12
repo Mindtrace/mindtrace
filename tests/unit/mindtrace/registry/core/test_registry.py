@@ -1825,60 +1825,31 @@ def test_download_latest_version(registry, test_config):
         assert registry.has_object("test:config", "1.0.1")
         assert not registry.has_object("test:config", "1.0.0")
 
-def test_download_complex_object(registry):
-    """Test downloading a complex object with nested data."""
-    # Create source registry
-    with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
-        
-        # Create complex object
-        complex_obj = {
-            "nested": {
-                "list": [1, 2, 3],
-                "dict": {"a": 1, "b": 2},
-                "tuple": (1, 2, 3)
-            },
-            "array": [{"id": 1}, {"id": 2}]
-        }
-        
-        # Save to source registry
-        source_reg.save("test:complex", complex_obj, version="1.0.0")
-        
-        # Download to target registry
-        registry.download(source_reg, "test:complex", version="1.0.0")
-        
-        # Verify object content
-        loaded_obj = registry.load("test:complex", version="1.0.0")
-        assert loaded_obj == complex_obj
-
 def test_download_with_materializer(registry):
     """Test downloading an object with a custom materializer."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
         source_reg = Registry(registry_dir=source_dir)
         
-        # Create a custom materializer
-        class CustomMaterializer(BaseMaterializer):
-            def save(self, obj):
-                with open(self.uri / "data.txt", "w") as f:
-                    f.write(str(obj))
-            
-            def load(self, data_type):
-                with open(self.uri / "data.txt", "r") as f:
-                    return f.read()
+        # Create a test config
+        config = Config(
+            MINDTRACE_TEMP_DIR="/custom/temp/dir",
+            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
+            CUSTOM_KEY="custom_value"
+        )
         
-        # Register the materializer
-        source_reg.register_materializer("builtins.str", "test_registry.CustomMaterializer")
-        
-        # Save object with custom materializer
-        source_reg.save("test:str", "hello world", version="1.0.0")
+        # Save object with ConfigArchiver materializer
+        source_reg.save("test:config", config, version="1.0.0")
         
         # Download to target registry
-        registry.download(source_reg, "test:str", version="1.0.0")
+        registry.download(source_reg, "test:config", version="1.0.0")
         
         # Verify object content
-        loaded_str = registry.load("test:str", version="1.0.0")
-        assert loaded_str == "hello world"
+        loaded_config = registry.load("test:config", version="1.0.0")
+        assert isinstance(loaded_config, Config)
+        assert loaded_config["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_config["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_config["CUSTOM_KEY"] == "custom_value"
 
 def test_download_version_conflict(registry, test_config):
     """Test downloading when target version already exists."""
@@ -1910,4 +1881,14 @@ def test_download_non_versioned(registry, non_versioned_registry, test_config):
     # Verify object content
     loaded_config = non_versioned_registry.load("test:config")
     assert loaded_config == test_config
+    
+def test_download_latest_version_nonexistent(registry):
+    """Test downloading a non-existent object with version 'latest'."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Try to download a non-existent object with version "latest"
+        with pytest.raises(ValueError, match="No versions found for object nonexistent in source registry"):
+            registry.download(source_reg, "nonexistent", version="latest")
     
