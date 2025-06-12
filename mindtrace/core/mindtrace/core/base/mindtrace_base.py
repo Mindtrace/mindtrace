@@ -4,7 +4,7 @@ from functools import wraps
 import logging
 import traceback
 import inspect
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 
 from mindtrace.core.config import Config
@@ -81,16 +81,20 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-    def __init__(self, suppress: bool = False, **logger_kwargs):
+    def __init__(self, suppress: bool = False, extra_settings: Union[dict, list[dict]] = None, **logger_kwargs):
         """Initialize the Mindtrace object.
 
         Args:
             suppress: Whether to suppress exceptions when exiting this class when used as a context manager.
+            extra_settings: Additional settings to add or override to default Config values.
             **logger_kwargs: Additional keyword arguments to pass to `get_logger`.
                              e.g., propagate=True, file_level=logging.INFO, etc.
         """
         self.suppress = suppress
-        self.config = Config()
+        extra_settings = extra_settings or []
+        if isinstance(extra_settings, dict):
+            extra_settings = [extra_settings]
+        self.config = Config(extra_settings)
         self.logger = get_logger(self.unique_name, **logger_kwargs)
 
     @property
