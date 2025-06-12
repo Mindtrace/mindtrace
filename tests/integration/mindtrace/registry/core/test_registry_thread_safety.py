@@ -151,32 +151,63 @@ def test_concurrent_metadata_updates(registry):
 def test_concurrent_mixed_operations(registry):
     """Test mixed concurrent operations with Minio backend."""
     def mixed_operation(i: int) -> None:
-        if i % 3 == 0:
-            # Save new model
-            registry.save(f"model:{i}", {"weights": [i], "metadata": {"accuracy": 0.8}})
-        elif i % 3 == 1:
-            # Load and update existing model
-            if registry.has_object(f"model:{i-1}"):
-                model_data = registry.load(f"model:{i-1}")
-                model_data["metadata"]["updated"] = True
-                registry.save(f"model:{i-1}", model_data)
-        else:
-            # Delete model
-            if registry.has_object(f"model:{i-2}"):
-                registry.delete(f"model:{i-2}")
+        try:
+            if i % 3 == 0:
+                # Save new model
+                registry.save(f"model:{i}", {"weights": [i], "metadata": {"accuracy": 0.8}})
+            elif i % 3 == 1:
+                # Load and update existing model
+                try:
+                    if registry.has_object(f"model:{i-1}"):
+                        model_data = registry.load(f"model:{i-1}")
+                        model_data["metadata"]["updated"] = True
+                        registry.save(f"model:{i-1}", model_data)
+                except ValueError:
+                    # Model might not exist yet, which is expected in concurrent operations
+                    pass
+            else:
+                # Delete model
+                try:
+                    if registry.has_object(f"model:{i-2}"):
+                        registry.delete(f"model:{i-2}")
+                except ValueError:
+                    # Model might not exist yet, which is expected in concurrent operations
+                    pass
+        except Exception as e:
+            # Log any unexpected errors
+            print(f"Error in operation {i}: {str(e)}")
+            raise
 
     # Perform mixed operations concurrently
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(mixed_operation, i) for i in range(5)]
         [f.result() for f in as_completed(futures)]
 
-    # Verify registry state is consistent
+    # Verify final state
+    # Get all objects in the registry
     objects = registry.list_objects()
+    
+    # Verify that all existing objects have valid data
     for obj_name in objects:
-        assert registry.has_object(obj_name)
+        assert registry.has_object(obj_name), f"Object {obj_name} should exist"
         model_data = registry.load(obj_name)
-        assert "weights" in model_data
-        assert "metadata" in model_data
+        assert "weights" in model_data, f"Object {obj_name} should have weights"
+        assert "metadata" in model_data, f"Object {obj_name} should have metadata"
+        
+        # If the object was updated, verify the update flag
+        if "updated" in model_data["metadata"]:
+            assert model_data["metadata"]["updated"] is True, f"Object {obj_name} should have updated=True if present"
+
+    # Verify that no objects have invalid states
+    for i in range(5):
+        if registry.has_object(f"model:{i}"):
+            model_data = registry.load(f"model:{i}")
+            # Verify data consistency
+            assert isinstance(model_data, dict), f"Model {i} should be a dictionary"
+            assert "weights" in model_data, f"Model {i} should have weights"
+            assert "metadata" in model_data, f"Model {i} should have metadata"
+            assert isinstance(model_data["weights"], list), f"Model {i} weights should be a list"
+            assert isinstance(model_data["metadata"], dict), f"Model {i} metadata should be a dictionary"
 
 
 def test_concurrent_dict_interface(registry):

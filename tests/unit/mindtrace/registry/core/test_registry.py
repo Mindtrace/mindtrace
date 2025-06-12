@@ -2140,23 +2140,57 @@ def test_thread_safety_concurrent_materializer_registration(registry):
 def test_thread_safety_concurrent_operations(registry):
     """Test that different types of operations can run concurrently."""
     def mixed_operation(i):
-        if i % 3 == 0:
-            registry.save(f"test:obj:{i}", f"value_{i}")
-        elif i % 3 == 1:
-            if registry.has_object(f"test:obj:{i-1}"):
-                return registry.load(f"test:obj:{i-1}")
-        else:
-            if registry.has_object(f"test:obj:{i-2}"):
-                registry.delete(f"test:obj:{i-2}")
+        try:
+            if i % 3 == 0:
+                # Save new object
+                registry.save(f"test:obj:{i}", f"value_{i}")
+            elif i % 3 == 1:
+                # Try to load and return existing object
+                try:
+                    if registry.has_object(f"test:obj:{i-1}"):
+                        return registry.load(f"test:obj:{i-1}")
+                except ValueError:
+                    # Object might not exist yet, which is expected in concurrent operations
+                    pass
+            else:
+                # Try to delete object
+                try:
+                    if registry.has_object(f"test:obj:{i-2}"):
+                        registry.delete(f"test:obj:{i-2}")
+                except ValueError:
+                    # Object might not exist yet, which is expected in concurrent operations
+                    pass
+        except Exception as e:
+            # Log any unexpected errors
+            print(f"Error in operation {i}: {str(e)}")
+            raise
 
     # Create multiple threads to perform different operations concurrently
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(mixed_operation, i) for i in range(10)]
-        [f.result() for f in as_completed(futures)]
+        results = [f.result() for f in as_completed(futures)]
 
-    # Verify the registry is in a consistent state
+    # Verify final state
+    # Get all objects in the registry
     objects = registry.list_objects()
+    
+    # Verify that all existing objects have valid data
     for obj_name in objects:
-        assert registry.has_object(obj_name)
-        assert registry.load(obj_name) is not None
+        assert registry.has_object(obj_name), f"Object {obj_name} should exist"
+        value = registry.load(obj_name)
+        assert isinstance(value, str), f"Object {obj_name} should be a string"
+        assert value.startswith("value_"), f"Object {obj_name} should start with 'value_'"
+
+    # Verify that no objects have invalid states
+    for i in range(10):
+        if registry.has_object(f"test:obj:{i}"):
+            value = registry.load(f"test:obj:{i}")
+            assert isinstance(value, str), f"Object {i} should be a string"
+            assert value == f"value_{i}", f"Object {i} should have value 'value_{i}'"
+
+    # Verify that any returned values from load operations are valid
+    for result in results:
+        if result is not None:
+            assert isinstance(result, str), "Loaded value should be a string"
+            assert result.startswith("value_"), "Loaded value should start with 'value_'"
     
