@@ -14,6 +14,7 @@ import json
 import uuid
 import pydantic
 from mindtrace.jobs.mindtrace.utils import ifnone
+
 class LocalClient(OrchestratorBackend):
     """A pure-python in-memory message broker.
     This client subclasses BrokerClientBase and supports multiple unique instances based on the provided 'broker_id'
@@ -79,8 +80,9 @@ class LocalClient(OrchestratorBackend):
         return message_dict["job_id"]
     def receive_message(
         self, queue_name: str, **kwargs
-    ) -> Optional[pydantic.BaseModel]:
+    ) -> Optional[dict]:
         """Retrieve a message from the specified queue.
+        Returns the message as a dict.
         Raises:
             queue.Empty (Exception) if the requested queue is empty.
         """
@@ -95,7 +97,7 @@ class LocalClient(OrchestratorBackend):
             if raw_message is None:
                 return None
             message_dict = json.loads(raw_message)
-            return Job(**message_dict)
+            return message_dict
         except Exception:
             return None
     def clean_queue(self, queue_name: str, **kwargs) -> None:

@@ -34,7 +34,8 @@ class RedisClient(OrchestratorBackend):
         self.queues: dict[str, any] = {}  # Local cache of queue objects
         self._local_lock = threading.Lock()  # Thread lock for local state modifications
         self._load_queue_metadata()  # Load previously declared queues from metadata.
-        self._start_event_listener()  # Start a background thread to listen for queue events.
+        self._start_event_listener()
+          # Start a background thread to listen for queue events.
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
         metadata = self.redis.hgetall(self.METADATA_KEY)
@@ -70,10 +71,12 @@ class RedisClient(OrchestratorBackend):
                 else:
                     continue
                 self.queues[qname] = instance
+
     def _start_event_listener(self):
         """Start a background thread to subscribe to queue events and update local state."""
         thread = threading.Thread(target=self._subscribe_to_events, daemon=True)
         thread.start()
+
     def _subscribe_to_events(self):
         pubsub = self.redis.pubsub()
         pubsub.subscribe(self.EVENTS_CHANNEL)
@@ -167,6 +170,7 @@ class RedisClient(OrchestratorBackend):
             }
         finally:
             lock.release()
+            
     def delete_queue(self, queue_name: str, **kwargs) -> dict:
         """Delete a declared queue.
         Uses distributed locking and transactions to remove the queue from the centralized metadata, and publishes an
@@ -214,8 +218,10 @@ class RedisClient(OrchestratorBackend):
             raise
     def receive_message(
         self, queue_name: str, **kwargs
-    ) -> Optional[pydantic.BaseModel]:
-        """Retrieve a message from a specified Redis queue."""
+    ) -> Optional[dict]:
+        """Retrieve a message from a specified Redis queue.
+        Returns the message as a dict.
+        """
         with self._local_lock:
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
@@ -228,7 +234,7 @@ class RedisClient(OrchestratorBackend):
             else:
                 raise Exception("Queue type does not support receiving messages.")
             message_dict = json.loads(raw_message)
-            return Job(**message_dict)
+            return message_dict
         except Empty:
             return None
         except Exception:

@@ -79,8 +79,9 @@ class TestLocalBroker:
         
         received_job = self.broker.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
-        assert received_job.id == test_job.id
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
+        assert received_job["id"] == test_job.id
         
         count = self.broker.count_queue_messages(queue_name)
         assert count == 0
@@ -152,7 +153,8 @@ class TestRedisClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
         
         self.client.delete_queue(queue_name)
     
@@ -167,7 +169,8 @@ class TestRedisClient:
         self.client.publish(queue_name, job2, priority=10)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.schema_name == "default_schema"
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == "default_schema"
         
         self.client.delete_queue(queue_name)
     
@@ -230,7 +233,8 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
         
         self.client.delete_queue(queue_name)
     
@@ -247,7 +251,8 @@ class TestRabbitMQClient:
         time.sleep(0.1)
         
         received_job = self.client.receive_message(queue_name)
-        assert received_job.schema_name == "default_schema"
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == "default_schema"
         
         self.client.delete_queue(queue_name)
     
@@ -290,12 +295,42 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == "exchange_job_schema"
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == "exchange_job_schema"
         
         self.client.delete_queue(queue_name)
         
         result = self.client.delete_exchange(exchange=exchange_name)
         assert result["status"] == "success"
+
+    def test_input_data_preservation(self):
+        """Test that input_data field is preserved correctly in dict messages."""
+        local_broker = LocalClient(broker_id=f"input_data_test_{int(time.time())}")
+        queue_name = f"input_data_queue_{int(time.time())}"
+        local_broker.declare_queue(queue_name)
+        
+        test_job = create_test_job("input_data_test")
+        
+        # Verify the job has input_data field
+        assert hasattr(test_job, 'input_data')
+        assert test_job.input_data is not None
+        assert isinstance(test_job.input_data, dict)
+        assert test_job.input_data.get('data') == "test_input"
+        assert test_job.input_data.get('param1') == "value1"
+        
+        # Publish and receive
+        job_id = local_broker.publish(queue_name, test_job)
+        received_job = local_broker.receive_message(queue_name)
+        
+        # Verify dict structure and input_data preservation
+        assert isinstance(received_job, dict)
+        assert "input_data" in received_job
+        assert isinstance(received_job["input_data"], dict)
+        assert received_job["input_data"]["data"] == "test_input"
+        assert received_job["input_data"]["param1"] == "value1"
+        
+        # Cleanup
+        local_broker.delete_queue(queue_name)
 
 
 @pytest.mark.orchestrator
@@ -318,7 +353,8 @@ class TestOrchestrator:
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.name == test_job.name
+        assert isinstance(received_job, dict)
+        assert received_job["name"] == test_job.name
         
         # Cleanup
         local_broker.delete_queue(queue_name)
@@ -340,7 +376,8 @@ class TestOrchestrator:
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.name == test_job.name
+        assert isinstance(received_job, dict)
+        assert received_job["name"] == test_job.name
         
         redis_client.delete_queue(queue_name)
     
@@ -364,6 +401,7 @@ class TestOrchestrator:
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.name == test_job.name
+        assert isinstance(received_job, dict)
+        assert received_job["name"] == test_job.name
         
         rabbitmq_client.delete_queue(queue_name) 

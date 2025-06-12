@@ -2,6 +2,7 @@ import time
 from typing import Optional, Callable
 from ..base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.mindtrace.types import Job
+from mindtrace.jobs.mindtrace.utils import ifnone
 
 class RedisConsumerBackend(ConsumerBackendBase):
     """Redis consumer backend with blocking operations."""
@@ -10,37 +11,63 @@ class RedisConsumerBackend(ConsumerBackendBase):
                  poll_timeout: int = 5):
         super().__init__(queue_name, orchestrator, run_method)
         self.poll_timeout = poll_timeout
+        # Support for multiple queues (backward compatible)
+        self.queues = [queue_name] if queue_name else []
     
-    def consume_messages(self, num_messages: Optional[int] = None) -> None:
-        """Consume messages from Redis queue with timeout handling."""
+    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
+        """Consume messages from Redis queue(s) with timeout handling."""
         if not self.run_method:
             raise RuntimeError("No run method set.")
         
-        processed = 0
-        while num_messages is None or processed < num_messages:
-            try:
-                message = self.orchestrator_backend.receive_message(self.queue_name)
-                if message:
-                    self.process_message(message)
-                    processed += 1
-                else:
-                    time.sleep(0.1)
-                    if num_messages is not None:
-                        break
-            except Exception as e:
-                self.logger.debug(f"Redis polling error or timeout: {e}")
-                time.sleep(1)
+        if isinstance(queues, str):
+            queues = [queues]
+        queues = ifnone(queues, default=self.queues)
+        
+        messages_consumed = 0
+        try:
+            while num_messages == 0 or messages_consumed < num_messages:
+                for queue in queues:
+                    try:
+                        # Use the configured poll timeout for blocking operations
+                        message = self.orchestrator.receive_message(queue, block=True, timeout=self.poll_timeout)
+                        if message:
+                            self.logger.debug(f"Received message from queue '{queue}': processing {messages_consumed + 1}")
+                            self.process_message(message)
+                            messages_consumed += 1
+                    except Exception as e:
+                        self.logger.debug(f"No message available in queue '{queue}' or error occurred: {e}")
+                        if block is False:
+                            return
+                        time.sleep(1)
+        except KeyboardInterrupt:
+            self.logger.info("Consumption interrupted by user.")
+        finally:
+            self.logger.info(f"Stopped consuming messages from queues: {queues}.")
     
     def process_message(self, message) -> None:
         """Process a single message."""
-        if isinstance(message, Job):
+        if isinstance(message, dict):
             try:
                 self.run_method(message)
-                self.logger.debug(f"Successfully processed job {message.id}")
+                job_id = message.get('id', 'unknown')
+                self.logger.debug(f"Successfully processed dict job {job_id}")
             except Exception as e:
-                self.logger.error(f"Error processing job {message.id}: {str(e)}")
+                job_id = message.get('id', 'unknown')
+                self.logger.error(f"Error processing dict job {job_id}: {str(e)}")
         else:
-            self.logger.warning(f"Received non-Job message from Redis: {type(message)}")
+            self.logger.warning(f"Received non-dict message: {type(message)}")
+            self.logger.debug(f"Message content: {message}")
+    
+    def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
+        """Consume messages from the queue(s) until empty."""
+        if isinstance(queues, str):
+            queues = [queues]
+        queues = ifnone(queues, default=self.queues)
+        
+        while any(self.orchestrator.count_queue_messages(q) > 0 for q in queues):
+            self.consume(num_messages=1, queues=queues, block=block)
+            
+        self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
     
     def set_poll_timeout(self, timeout: int) -> None:
         """Set the polling timeout for Redis operations."""
