@@ -10,6 +10,7 @@ class Consumer(MindtraceABC):
     """Base class for processing jobs from queues.
     
     Automatically creates the appropriate consumer backend when connected to an orchestrator.
+    Consumers receive job data as dict objects for processing.
     """
     
     def __init__(self, job_type_name: str):
@@ -60,6 +61,13 @@ class Consumer(MindtraceABC):
         self.consumer_backend.consume_until_empty(queues, block)
     
     @abstractmethod
-    def run(self, job: Job) -> None:
-        """Process a single job. Must be implemented by subclasses."""
+    def run(self, job_dict: dict) -> dict:
+        """Process a single job. Must be implemented by subclasses.
+        
+        Args:
+            job_dict: Dict containing job data including 'input_data' with the job inputs
+            
+        Returns:
+            dict: Processing results
+        """
         pass
