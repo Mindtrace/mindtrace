@@ -1726,7 +1726,7 @@ def test_download_basic(registry, test_config):
         source_reg.save("test:config", test_config, version="1.0.0")
         
         # Download to target registry
-        registry.download(source_reg, "test:config", version="1.0.0")
+        registry.download(source_reg, "test:config", version="1.0.0", target_version="1.0.0")
         
         # Verify object exists in target registry
         assert registry.has_object("test:config", "1.0.0")
@@ -1745,7 +1745,7 @@ def test_download_with_rename(registry, test_config):
         source_reg.save("source:config", test_config, version="1.0.0")
         
         # Download with new name
-        registry.download(source_reg, "source:config", version="1.0.0", target_name="target:config")
+        registry.download(source_reg, "source:config", version="1.0.0", target_name="target:config", target_version="1.0.0")
         
         # Verify object exists with new name
         assert registry.has_object("target:config", "1.0.0")
@@ -1786,7 +1786,7 @@ def test_download_with_metadata(registry, test_config):
         source_reg.save("test:config", test_config, version="1.0.0", metadata=metadata)
         
         # Download to target registry
-        registry.download(source_reg, "test:config", version="1.0.0")
+        registry.download(source_reg, "test:config", version="1.0.0", target_version="1.0.0")
         
         # Verify metadata is preserved
         info = registry.info("test:config", version="1.0.0")
@@ -1815,15 +1815,15 @@ def test_download_latest_version(registry, test_config):
         source_reg = Registry(registry_dir=source_dir)
         
         # Save multiple versions
-        source_reg.save("test:config", test_config, version="1.0.0")
-        source_reg.save("test:config", test_config, version="1.0.1")
+        source_reg.save("test:float", 1.0)
+        source_reg.save("test:float", 2.0)
         
         # Download latest version
-        registry.download(source_reg, "test:config")
+        registry.download(source_reg, "test:float")
         
         # Verify latest version was downloaded
-        assert registry.has_object("test:config", "1.0.1")
-        assert not registry.has_object("test:config", "1.0.0")
+        assert len(registry.list_versions("test:float")) == 1
+        assert registry["test:float"] == 2.0
 
 def test_download_with_materializer(registry):
     """Test downloading an object with a custom materializer."""
@@ -1842,7 +1842,7 @@ def test_download_with_materializer(registry):
         source_reg.save("test:config", config, version="1.0.0")
         
         # Download to target registry
-        registry.download(source_reg, "test:config", version="1.0.0")
+        registry.download(source_reg, "test:config", version="1.0.0", target_version="1.0.0")
         
         # Verify object content
         loaded_config = registry.load("test:config", version="1.0.0")
@@ -1865,7 +1865,7 @@ def test_download_version_conflict(registry, test_config):
         
         # Attempt to download same version
         with pytest.raises(ValueError, match="Object test:config version 1.0.0 already exists"):
-            registry.download(source_reg, "test:config", version="1.0.0")
+            registry.download(source_reg, "test:config", version="1.0.0", target_version="1.0.0")
 
 def test_download_non_versioned(registry, non_versioned_registry, test_config):
     """Test downloading between versioned and non-versioned registries."""
