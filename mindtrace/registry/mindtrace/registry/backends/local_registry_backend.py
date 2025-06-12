@@ -78,7 +78,7 @@ class LocalRegistryBackend(RegistryBackend):
         """Copy a directory from the backend store to a local path.
 
         Args:
-            model_name: Name of the model.
+            name: Name of the object.
             version: Version string.
             local_path: Destination directory path to copy to.
         """
