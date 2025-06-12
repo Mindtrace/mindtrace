@@ -23,9 +23,8 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
 
         Args:
             name: Name of the object (e.g., "yolo8:x").
-            obj: Object to upload.
-            materializer: Materializer to use for the object.
             version: Version string (e.g., "1.0.0").
+            local_path: Local source directory to upload from.
         """
         pass
 
