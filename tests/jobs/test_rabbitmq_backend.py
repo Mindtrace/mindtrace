@@ -26,6 +26,7 @@ class TestRabbitMQClient:
         self.client.delete_queue(queue_name)
     
     def test_publish_and_receive(self):
+        """Test publishing and receiving messages."""
         queue_name = f"test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, force=True)
         
@@ -35,7 +36,7 @@ class TestRabbitMQClient:
         assert isinstance(job_id, str)
         assert len(job_id) > 0
         
-        # Small delay to allow RabbitMQ to process the message
+        # Allow message to be processed
         time.sleep(0.1)
         
         count = self.client.count_queue_messages(queue_name)
@@ -43,8 +44,10 @@ class TestRabbitMQClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
         
+        # Cleanup
         self.client.delete_queue(queue_name)
     
     def test_exchange_operations(self):
@@ -59,22 +62,27 @@ class TestRabbitMQClient:
         self.client.delete_exchange(exchange=exchange_name)
     
     def test_queue_with_exchange(self):
-        queue_name = f"test_queue_{int(time.time())}"
+        """Test queue with exchange functionality."""
         exchange_name = f"test_exchange_{int(time.time())}"
+        queue_name = f"test_queue_{int(time.time())}"
         
+        # Create exchange and queue
         self.client.declare_exchange(exchange=exchange_name, exchange_type="direct")
-        self.client.declare_queue(queue_name, exchange=exchange_name, routing_key="test.key")
+        self.client.declare_queue(queue_name, exchange=exchange_name, force=True)
         
         test_job = create_test_job()
-        job_id = self.client.publish(queue_name, test_job, exchange=exchange_name, routing_key="test.key")
+        job_id = self.client.publish(queue_name, test_job, exchange=exchange_name, routing_key=queue_name)
         
-        # Small delay to allow RabbitMQ to process the message
+        assert isinstance(job_id, str)
+        
         time.sleep(0.1)
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
         
+        # Cleanup
         self.client.delete_queue(queue_name)
         self.client.delete_exchange(exchange=exchange_name)
     

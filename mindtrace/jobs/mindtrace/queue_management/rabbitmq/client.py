@@ -14,6 +14,8 @@ from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import 
 from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.mindtrace.utils import ifnone
 from mindtrace.jobs.mindtrace.types import Job
+import traceback
+
 class RabbitMQClient(OrchestratorBackend):
     def __init__(
         self,
@@ -189,69 +191,55 @@ class RabbitMQClient(OrchestratorBackend):
         Returns:
             str: The generated job ID for the message.
         """
-        if (
-            not self.connection.is_connected()
-        ):  # Reconnect if the connection was lost or timed out
-            self.connection.connect()
-            self.channel.confirm_delivery()
-        if self.channel is None or self.channel.is_closed:
-            self.channel = self.connection.get_channel()
-        if self.channel is not None:
-            job_id = str(uuid.uuid1())
-            exchange = kwargs.get("exchange", "")
-            routing_key = kwargs.get("routing_key", queue_name)
-            durable = kwargs.get("durable", True)
-            delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
-            mandatory = kwargs.get("mandatory", True)
-            priority = kwargs.get("priority", 0)
-            self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
-            try:
-                message_dict = message.model_dump()
-                self.channel.basic_publish(
-                    exchange=exchange,
-                    routing_key=routing_key,
-                    body=json.dumps(message_dict).encode("utf-8"),
-                    properties=BasicProperties(
-                        content_type="application/json",
-                        headers={"job_id": job_id, "routing_key": routing_key},
-                        delivery_mode=delivery_mode,
-                        priority=priority,
-                    ),
-                    mandatory=mandatory,
-                )
-                self.logger.debug(
-                    f"RabbitMQClient sent message (job_id: {job_id}) "
-                    f"with routing key: {routing_key} "
-                    f"to exchange: {exchange}"
-                )
-                return job_id
-            except pika.exceptions.UnroutableError as e:
-                self.logger.error("Unroutable Message error: %s \n ", e)
-                raise
-            except pika.exceptions.ChannelClosedByBroker:
-                self.logger.error(
-                    f"Channel closed by broker, Check {exchange} existence"
-                )
-                raise
-            except pika.exceptions.ConnectionClosedByBroker:
-                self.logger.error(
-                    "Connection closed by broker. RabbitMQClient failed to publish the message."
-                )
-                raise
-            except Exception as e:
-                self.logger.error(f"Unexpected error in publish: {e}")
-                raise e
-        else:
+        job_id = str(uuid.uuid1())
+        exchange = kwargs.get("exchange", "default")
+        routing_key = kwargs.get("routing_key", queue_name)
+        durable = kwargs.get("durable", True)
+        delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
+        mandatory = kwargs.get("mandatory", True)
+        priority = kwargs.get("priority", 0)
+        self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
+        try:
+            message_dict = message.model_dump()
+            self.channel.basic_publish(
+                exchange=exchange,
+                routing_key=routing_key,
+                body=json.dumps(message_dict).encode("utf-8"),
+                properties=BasicProperties(
+                    content_type="application/json",
+                    headers={"job_id": job_id, "routing_key": routing_key},
+                    delivery_mode=delivery_mode,
+                    priority=priority,
+                ),
+                mandatory=mandatory,
+            )
+            self.logger.debug(
+                f"RabbitMQClient sent message (job_id: {job_id}) "
+                f"with routing key: {routing_key} "
+                f"to exchange: {exchange}"
+            )
+            return job_id
+        except pika.exceptions.UnroutableError as e:
+            self.logger.error("Unroutable Message error: %s \n ", e)
+            raise
+        except pika.exceptions.ChannelClosedByBroker:
             self.logger.error(
-                "RabbitMQClient failed to obtain a channel for publishing the message."
+                f"Channel closed by broker, Check {exchange} existence"
             )
-            raise pika.exceptions.ChannelError(
-                "Failed to obtain a channel for publishing the message"
+            raise
+        except pika.exceptions.ConnectionClosedByBroker:
+            self.logger.error(
+                "Connection closed by broker. RabbitMQClient failed to publish the message."
             )
+            raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error in publish: {e}")
+            raise e
+        
     def receive_message(
         self, queue_name: str, **kwargs
-    ) -> Optional[pydantic.BaseModel]:
-        """Retrieve a message from a specified RabbitMQ queue, returning full message details.
+    ) -> Optional[dict]:
+        """Retrieve a message from a specified RabbitMQ queue.
         This method uses RabbitMQ's basic_get method to fetch a message. It supports blocking behavior by polling until
         a message is available or the timeout is reached.
         Args:
@@ -261,7 +249,7 @@ class RabbitMQClient(OrchestratorBackend):
             auto_ack: Whether to automatically acknowledge the message upon retrieval.
             **kwargs: Additional keyword arguments to pass to basic_get (if any).
         Returns:
-            Optional[pydantic.BaseModel]: On success, returns a Job object. On failure or timeout, returns None.
+            dict: The message content as a dictionary, or None if no message is available.
         """
         if not self.connection.is_connected():
             self.connection.connect()
@@ -280,12 +268,12 @@ class RabbitMQClient(OrchestratorBackend):
                     if method_frame:
                         self.logger.info(f"Received message from queue '{queue_name}'.")
                         message_dict = json.loads(body.decode("utf-8"))
-                        return Job(**message_dict)
+                        return message_dict  # Return dict directly
                     if timeout is not None and (time.time() - start_time) > timeout:
                         self.logger.warning(
                             f"Timeout reached while waiting for a message from queue '{queue_name}'."
                         )
-                        return None
+                        return {"status": "error", "message": "Timeout reached while waiting for a message"}
                     time.sleep(0.1)
             else:
                 method_frame, header_frame, body = self.channel.basic_get(
@@ -294,10 +282,10 @@ class RabbitMQClient(OrchestratorBackend):
                 if method_frame:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
                     message_dict = json.loads(body.decode("utf-8"))
-                    return Job(**message_dict)
+                    return message_dict  # Return dict directly
                 else:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
-                    return None
+                    return {"status": "error", "message": "No message available"}
         except Exception as e:
             self.logger.error(
                 f"Error receiving message from queue '{queue_name}': {str(e)}"

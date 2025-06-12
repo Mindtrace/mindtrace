@@ -60,8 +60,9 @@ class TestLocalBroker:
         
         received_job = self.broker.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
-        assert received_job.id == test_job.id
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
+        assert received_job["id"] == test_job.id
         
         count = self.broker.count_queue_messages(queue_name)
         assert count == 0

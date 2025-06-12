@@ -34,16 +34,30 @@ class Consumer(MindtraceABC):
         self.consumer_backend = orchestrator.create_consumer_backend_for_schema(self.job_schema)
         self.consumer_backend.set_run_method(self.run)
     
-    def consume(self, num_messages: Optional[int] = None) -> None:
+    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
         """Consume messages from the queue.
         
         Args:
-            num_messages: Number of messages to process. If None, runs indefinitely.
+            num_messages: Number of messages to process. If 0, runs indefinitely.
+            queues: Queue(s) to consume from. If None, uses the consumer's default queue.
+            block: Whether to block when no messages are available.
         """
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
         
-        self.consumer_backend.consume_messages(num_messages)
+        self.consumer_backend.consume(num_messages, queues, block)
+    
+    def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
+        """Consume messages until all specified queues are empty.
+        
+        Args:
+            queues: Queue(s) to consume from. If None, uses the consumer's default queue.
+            block: Whether to block when no messages are available.
+        """
+        if not self.consumer_backend:
+            raise RuntimeError("Consumer not connected. Call connect() first.")
+        
+        self.consumer_backend.consume_until_empty(queues, block)
     
     @abstractmethod
     def run(self, job: Job) -> None:

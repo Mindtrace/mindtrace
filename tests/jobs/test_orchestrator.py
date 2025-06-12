@@ -27,8 +27,9 @@ class TestOrchestrator:
                 received_jobs.append(received_job)
         
         assert len(received_jobs) == 3
-        for i, job in enumerate(received_jobs):
-            assert job.schema_name == f"job_{i}_schema"
+        for i, job_dict in enumerate(received_jobs):
+            assert isinstance(job_dict, dict)
+            assert job_dict["schema_name"] == f"job_{i}_schema"
         
         client.delete_queue(queue_name)
     
@@ -51,8 +52,10 @@ class TestOrchestrator:
         ml_received = orchestrator.receive_message(queue1)
         obj_received = orchestrator.receive_message(queue2)
         
-        assert ml_received.schema_name == "ml_task_schema"
-        assert obj_received.schema_name == "obj_task_schema"
+        assert isinstance(ml_received, dict)
+        assert isinstance(obj_received, dict)
+        assert ml_received["schema_name"] == "ml_task_schema"
+        assert obj_received["schema_name"] == "obj_task_schema"
         
         client.delete_queue(queue1)
         client.delete_queue(queue2)
@@ -109,6 +112,7 @@ class TestOrchestrator:
         
         received_job = orchestrator.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == "redis_integration_schema"
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == "redis_integration_schema"
         
         redis_client.delete_queue(queue_name) 

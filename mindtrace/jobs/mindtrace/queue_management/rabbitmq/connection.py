@@ -1,10 +1,7 @@
-"""RabbitMQ connection handler that manages AMQP connections."""
 import time
 from pika import PlainCredentials, ConnectionParameters, BlockingConnection, exceptions
-import pika
 from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.mindtrace.utils import ifnone
-import logging
 class RabbitMQConnection(BrokerConnectionBase):
     """Singleton class for RabbitMQ connection.
     The use of a singleton class ensures that only one connection is established throughout an application.
@@ -44,7 +41,7 @@ class RabbitMQConnection(BrokerConnectionBase):
                 return
             except exceptions.AMQPConnectionError:
                 retries += 1
-                wait_time = 2**retries
+                wait_time = 0.2
                 self.logger.debug(
                     f"{self.name} failed to connect to RabbitMQ, retrying in {wait_time} seconds..."
                 )

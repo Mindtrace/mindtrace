@@ -15,7 +15,7 @@ def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job:
     Returns:
         Job: A complete Job instance ready for submission
     """
-    return Job(
+    job = Job(
         id=str(uuid.uuid4()),
         name=schema.name,
         schema_name=schema.name,
@@ -26,3 +26,6 @@ def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job:
         ),
         created_at=datetime.now().isoformat()
     )
+    
+    job.input_data = input_data.model_dump()
+    return job

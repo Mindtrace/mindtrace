@@ -10,17 +10,17 @@ class ConsumerBackendBase(MindtraceABC):
     def __init__(
         self,
         queue_name: str,
-        orchestrator_backend,
+        orchestrator,
         run_method: Optional[Callable] = None,
     ):
         super().__init__() 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.queue_name = queue_name
-        self.orchestrator_backend = orchestrator_backend
+        self.orchestrator = orchestrator
         self.run_method = run_method
     
     @abstractmethod
-    def consume_messages(self, num_messages: Optional[int] = None) -> None:
+    def consume(self, num_messages: Optional[int] = None) -> None:
         """Consume messages from the queue and process them."""
         raise NotImplementedError
     

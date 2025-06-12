@@ -23,6 +23,7 @@ class TestRedisClient:
         self.client.delete_queue(queue_name)
     
     def test_publish_and_receive(self):
+        """Test publishing and receiving messages."""
         queue_name = f"test_queue_{int(time.time())}"
         self.client.declare_queue(queue_name)
         
@@ -37,7 +38,8 @@ class TestRedisClient:
         
         received_job = self.client.receive_message(queue_name)
         assert received_job is not None
-        assert received_job.schema_name == test_job.schema_name
+        assert isinstance(received_job, dict)
+        assert received_job["schema_name"] == test_job.schema_name
         
         count = self.client.count_queue_messages(queue_name)
         assert count == 0
@@ -46,20 +48,29 @@ class TestRedisClient:
         self.client.delete_queue(queue_name)
     
     def test_priority_queue(self):
+        """Test priority queue functionality."""
         queue_name = f"priority_queue_{int(time.time())}"
         self.client.declare_queue(queue_name, queue_type="priority")
         
-        high_priority_job = create_test_job("high_priority", "high_priority_schema")
-        low_priority_job = create_test_job("low_priority", "low_priority_schema")
+        # Create jobs with different priorities
+        low_priority_job = create_test_job("low_priority_job", "low_priority_schema")
+        high_priority_job = create_test_job("high_priority_job", "high_priority_schema")
         
+        # Publish lower priority first, then higher priority
         self.client.publish(queue_name, low_priority_job, priority=1)
         self.client.publish(queue_name, high_priority_job, priority=10)
         
+        # First received should be high priority
         first_received = self.client.receive_message(queue_name)
-        assert first_received.schema_name == "high_priority_schema"
+        assert first_received is not None
+        assert isinstance(first_received, dict)
+        assert first_received["schema_name"] == "high_priority_schema"
         
+        # Second received should be low priority
         second_received = self.client.receive_message(queue_name)
-        assert second_received.schema_name == "low_priority_schema"
+        assert second_received is not None
+        assert isinstance(second_received, dict)
+        assert second_received["schema_name"] == "low_priority_schema"
         
         # Cleanup
         self.client.delete_queue(queue_name)
