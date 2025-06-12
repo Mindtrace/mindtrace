@@ -1962,3 +1962,26 @@ def test_update_with_registry(registry):
         assert registry.load("config2", version="1") == config2
         assert registry.load("config2", version="2") == config2
     
+def test_update_with_existing_objects(registry):
+    """Test that updating with existing objects raises an error."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Create and save object to source registry with multiple versions
+        source_reg.save("test:int", 1, version="1.0.0")
+        source_reg.save("test:int", 2, version="2.0.0")
+        
+        # Save a different object with the same name to target registry
+        different_config = Config(MINDTRACE_TEMP_DIR="/different/dir")
+        registry.save("test:int", 3, version="1.0.0")
+        
+        # Attempt to update with source registry
+        # This should fail during the version check because version 1.0.0 exists
+        with pytest.raises(ValueError, match="Object test:int version 1.0.0 already exists in registry"):
+            registry.update(source_reg, sync_all_versions=True)
+        
+        # Verify the original object is unchanged
+        loaded_int = registry.load("test:int", version="1.0.0")
+        assert loaded_int == 3
+    

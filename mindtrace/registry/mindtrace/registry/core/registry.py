@@ -752,10 +752,10 @@ class Registry(Mindtrace):
                 version will be saved. Only used if mapping is a Registry instance.
         """
         if isinstance(mapping, Registry) and sync_all_versions:
-            # First check that there will be no conflicts
             for name in mapping.list_objects():
-                if self.has_object(name):
-                    raise ValueError(f"Object {name} already exists in registry.")
+                for version in mapping.list_versions(name):
+                    if self.has_object(name, version):
+                        raise ValueError(f"Object {name} version {version} already exists in registry.")
             for name in mapping.list_objects():
                 for version in mapping.list_versions(name):
                     self.download(mapping, name, version=version)
