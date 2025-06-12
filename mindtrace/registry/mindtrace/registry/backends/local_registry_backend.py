@@ -22,8 +22,9 @@ class LocalRegistryBackend(RegistryBackend):
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
-        with open(self._metadata_path, "w") as f:
-            json.dump({"materializers": {}}, f)
+        if not self._metadata_path.exists():
+            with open(self._metadata_path, "w") as f:
+                json.dump({"materializers": {}}, f)
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
         
     @property
