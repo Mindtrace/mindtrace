@@ -21,16 +21,24 @@ from mindtrace.registry import (
 )
 
 class Registry(Mindtrace):
-    def __init__(self, registry_dir: str | None = None, backend: RegistryBackend | None = None, **kwargs):
+    def __init__(self, registry_dir: str | None = None, backend: RegistryBackend | None = None, version_objects: bool = True, **kwargs):
+        """Initialize the registry.
+        
+        Args:
+            registry_dir: Directory to store registry objects. If None, uses the default from config.
+            backend: Backend to use for storage. If None, uses LocalRegistryBackend.
+            version_objects: Whether to keep version history. If False, only one version per object is kept.
+            **kwargs: Additional arguments to pass to the backend.
+        """
         super().__init__(**kwargs)
-
-        if backend is not None:
-            self.backend = backend
-        else:
-            registry_dir = str(
-                Path(ifnone(registry_dir, default=self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"])).expanduser().resolve()
-            )
-            self.backend = LocalRegistryBackend(uri=registry_dir)
+        
+        if backend is None:
+            if registry_dir is None:
+                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+            registry_dir = Path(registry_dir).expanduser().resolve()
+            backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
+        self.backend = backend
+        self.version_objects = version_objects
         
         self._artifact_store = LocalArtifactStore(
             name="local_artifact_store",
@@ -57,7 +65,7 @@ class Registry(Mindtrace):
     ):
         """Save an object to the registry.
 
-        If materializer is not provided, the materializer will be inferred from the object type. The inferred 
+        If a materializer is not provided, the materializer will be inferred from the object type. The inferred 
         materializer will be registered with the object for loading the object from the registry in the future. The 
         order of precedence for determining the materializer is:
 
@@ -71,11 +79,11 @@ class Registry(Mindtrace):
         Args:
             name: Name of the object.
             obj: Object to save.
-            materializer: Materializer to use.
-            version: Version of the object. In None, will auto-increment the version number.
-            init_params: Initialization parameters for the object.
-            metadata: Metadata for the object.
-
+            materializer: Materializer to use. If None, uses the default for the object type.
+            version: Version of the object. If None, auto-increments the version number.
+            init_params: Additional parameters to pass to the materializer.
+            metadata: Additional metadata to store with the object.
+            
         Raises:
             ValueError: If no materializer is found for the object.
         """
@@ -101,12 +109,17 @@ class Registry(Mindtrace):
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
         materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
 
+        if not self.version_objects:  # If versioning is disabled, delete any existing object
+            if self.has_object(name=name):
+                self.delete(name=name)  
+            version = "latest"
+        elif self.has_object(name=name, version=version):
+            self.logger.error(f"Object {name} version {version} already exists.")
+            raise ValueError(f"Object {name} version {version} already exists.")
+
         if version is None or version == "latest":
             version = self._next_version(name)
 
-        if self.has_object(name=name, version=version):
-            self.logger.error(f"Object {name} version {version} already exists.")
-            raise ValueError(f"Object {name} version {version} already exists.")
 
         try:
             metadata = {
@@ -130,7 +143,7 @@ class Registry(Mindtrace):
 
     def load(self, name: str, version: str | None = "latest", output_dir: str | None = None, **kwargs) -> Any:
         """Load an object from the registry.
-
+        
         Args:
             name: Name of the object.
             version: Version of the object.
@@ -139,12 +152,12 @@ class Registry(Mindtrace):
 
         Returns:
             The loaded object.
-
+            
         Raises:
             ValueError: If the object does not exist.
         """
 
-        if version == "latest":
+        if version == "latest" or not self.version_objects:
             version = self._latest(name)
 
         if not self.has_object(name=name, version=version):
@@ -198,11 +211,11 @@ class Registry(Mindtrace):
 
     def delete(self, name: str, version: str | None = None) -> None:
         """Delete an object from the registry.
-
+        
         Args:
             name: Name of the object.
-            version: Version of the object.
-
+            version: Version of the object. If None, deletes all versions.
+            
         Raises:
             KeyError: If the object doesn't exist.
         """
@@ -283,7 +296,9 @@ class Registry(Mindtrace):
                 result[ver] = info
             return result
 
-    def has_object(self, name: str, version: str) -> bool:
+    def has_object(self, name: str, version: str = "latest") -> bool:
+        if version == "latest":
+            version = self._latest(name)
         return self.backend.has_object(name, version)
 
     def register_materializer(self, object_class: str, materializer_class: str):
@@ -343,6 +358,52 @@ class Registry(Mindtrace):
         for object_name in self.list_objects():
             result[object_name] = self.list_versions(object_name)
         return result
+
+    def download(self, source_registry: 'Registry', name: str, version: str | None = "latest", target_name: str | None = None, target_version: str | None = None) -> None:
+        """Download an object from another registry.
+
+        This method loads an object from a source registry and saves it to the current registry.
+        All metadata and versioning information is preserved.
+
+        Args:
+            source_registry: The source registry to download from
+            name: Name of the object in the source registry
+            version: Version of the object in the source registry. Defaults to "latest"
+            target_name: Name to use in the current registry. If None, uses the same name as source
+            target_version: Version to use in the current registry. If None, uses the same version as source
+
+        Raises:
+            ValueError: If the object doesn't exist in the source registry
+            ValueError: If the target object already exists and versioning is disabled
+        """
+        # Validate source registry
+        if not isinstance(source_registry, Registry):
+            raise ValueError("source_registry must be an instance of Registry")
+
+        # Set target name if not specified
+        target_name = ifnone(target_name, default=name)
+
+        # Check if object exists in source registry
+        if not source_registry.has_object(name=name, version=version):
+            raise ValueError(f"Object {name} version {version} does not exist in source registry")
+
+        # Get metadata from source registry
+        metadata = source_registry.info(name=name, version=version)
+        
+        # Load object from source registry
+        obj = source_registry.load(name=name, version=version)
+
+        # Save to current registry
+        self.save(
+            name=target_name,
+            obj=obj,
+            version=target_version,
+            materializer=metadata.get("materializer"),
+            init_params=metadata.get("init_params", {}),
+            metadata=metadata.get("metadata", {})
+        )
+
+        self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
