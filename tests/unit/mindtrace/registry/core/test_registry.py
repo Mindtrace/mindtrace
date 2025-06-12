@@ -1892,3 +1892,47 @@ def test_download_latest_version_nonexistent(registry):
         with pytest.raises(ValueError, match="No versions found for object nonexistent in source registry"):
             registry.download(source_reg, "nonexistent", version="latest")
     
+def test_download_vs_dict_assignment(registry):
+    """Test that download and dictionary-style assignment produce the same result."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Create a test config
+        config = Config(
+            MINDTRACE_TEMP_DIR="/custom/temp/dir",
+            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
+            CUSTOM_KEY="custom_value"
+        )
+        
+        # Save object to source registry
+        source_reg.save("test:config", config, version="1.0.0")
+        
+        # Create two target registries
+        with TemporaryDirectory() as target_dir1, TemporaryDirectory() as target_dir2:
+            target_reg1 = Registry(registry_dir=target_dir1)
+            target_reg2 = Registry(registry_dir=target_dir2)
+            
+            # Transfer using download method (without specifying target_version)
+            target_reg1.download(source_reg, "test:config", version="1.0.0")
+            
+            # Transfer using dictionary-style assignment
+            target_reg2["test:config"] = source_reg["test:config"]
+            
+            # Verify both methods produce the same result
+            # Both should use version "1" as it's the first version
+            assert target_reg1.has_object("test:config", "1")
+            assert target_reg2.has_object("test:config", "1")
+            
+            # Compare the loaded objects
+            obj1 = target_reg1.load("test:config", version="1")
+            obj2 = target_reg2.load("test:config", version="1")
+            assert obj1 == obj2
+            assert isinstance(obj1, Config)
+            assert isinstance(obj2, Config)
+            
+            # Compare metadata
+            info1 = target_reg1.info("test:config", version="1")
+            info2 = target_reg2.info("test:config", version="1")
+            assert info1["metadata"] == info2["metadata"]
+    
