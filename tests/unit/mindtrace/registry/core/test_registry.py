@@ -88,11 +88,54 @@ def test_path():
         yield test_file
 
 
+@pytest.fixture
+def non_versioned_registry(temp_registry_dir):
+    """Create a registry with versioning disabled."""
+    return Registry(registry_dir=temp_registry_dir, version_objects=False)
+
+
 def test_registry_initialization(registry, temp_registry_dir):
     """Test that Registry can be initialized with required arguments."""
     assert registry is not None
     assert isinstance(registry.backend, LocalRegistryBackend)
     assert Path(temp_registry_dir).exists()
+
+def test_registry_default_directory():
+    """Test that Registry uses the default directory from config when registry_dir is None."""
+    # Create a registry without specifying registry_dir
+    registry = Registry()
+    
+    # Verify that it uses the default from config
+    expected_dir = Path(registry.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]).expanduser().resolve()
+    assert registry.backend.uri == expected_dir
+    assert registry.backend.uri.is_absolute()
+    assert registry.backend.uri.exists()
+
+def test_registry_directory_path_resolution():
+    """Test that registry directory paths are properly resolved."""
+    # Test with relative path
+    with TemporaryDirectory() as temp_dir:
+        rel_path = Path(temp_dir) / "subdir"
+        registry = Registry(registry_dir=str(rel_path))
+        assert registry.backend.uri == rel_path.resolve()
+        assert registry.backend.uri.is_absolute()
+        assert registry.backend.uri.exists()
+
+    # Test with home directory expansion
+    with TemporaryDirectory() as temp_dir:
+        home_path = Path.home() / "test_registry"
+        registry = Registry(registry_dir="~/test_registry")
+        assert registry.backend.uri == home_path.resolve()
+        assert registry.backend.uri.is_absolute()
+        assert registry.backend.uri.exists()
+
+    # Test with absolute path
+    with TemporaryDirectory() as temp_dir:
+        abs_path = Path(temp_dir).resolve()
+        registry = Registry(registry_dir=str(abs_path))
+        assert registry.backend.uri == abs_path
+        assert registry.backend.uri.is_absolute()
+        assert registry.backend.uri.exists()
 
 def test_save_and_load_config(registry, test_config):
     """Test saving and loading a Config object."""
@@ -1591,4 +1634,280 @@ def test_contains_value_error(registry):
     finally:
         # Restore the original _latest method
         registry._latest = original_latest
+    
+def test_non_versioned_save_and_load(non_versioned_registry, test_config):
+    """Test saving and loading objects in non-versioned mode."""
+    # Save object
+    non_versioned_registry.save("test:config", test_config)
+    
+    # Verify only one version exists
+    versions = non_versioned_registry.list_versions("test:config")
+    assert len(versions) == 1
+    assert versions[0] == "1"
+    
+    # Load object
+    loaded_config = non_versioned_registry.load("test:config")
+    assert loaded_config == test_config
+    
+    # Save again - should overwrite
+    new_config = {"new": "value"}
+    non_versioned_registry.save("test:config", new_config)
+    
+    # Verify still only one version
+    versions = non_versioned_registry.list_versions("test:config")
+    assert len(versions) == 1
+    assert versions[0] == "1"
+    
+    # Load should get new value
+    loaded_config = non_versioned_registry.load("test:config")
+    assert loaded_config == new_config
+
+def test_non_versioned_delete(non_versioned_registry, test_config):
+    """Test deleting objects in non-versioned mode."""
+    # Save object
+    non_versioned_registry.save("test:config", test_config)
+    
+    # Delete should work with version string as well
+    non_versioned_registry.delete("test:config", "1")
+    assert not non_versioned_registry.has_object("test:config", "1")
+    
+    # Save again
+    non_versioned_registry.save("test:config", test_config)
+    
+    # Delete without version should work
+    non_versioned_registry.delete("test:config")
+    assert not non_versioned_registry.has_object("test:config", "latest")
+
+def test_non_versioned_dict_interface(non_versioned_registry, test_config):
+    """Test dictionary interface in non-versioned mode."""
+    # Test __setitem__ and __getitem__
+    non_versioned_registry["test:config"] = test_config
+    assert non_versioned_registry["test:config"] == test_config
+    
+    # Test update
+    new_config = {"new": "value"}
+    non_versioned_registry.update({"test:config": new_config})
+    assert non_versioned_registry["test:config"] == new_config
+    
+    # Test pop
+    value = non_versioned_registry.pop("test:config")
+    assert value == new_config
+    assert "test:config" not in non_versioned_registry
+    
+    # Test setdefault
+    non_versioned_registry.setdefault("test:config", test_config)
+    assert non_versioned_registry["test:config"] == test_config
+
+def test_non_versioned_version_handling(non_versioned_registry, test_config):
+    """Test that version parameters are ignored in non-versioned mode."""
+    # Save with explicit version
+    non_versioned_registry.save("test:config", test_config, version="v1")
+    
+    # Verify version is always "latest"
+    versions = non_versioned_registry.list_versions("test:config")
+    assert len(versions) == 1
+    assert versions[0] == "1"
+    
+    # Load with explicit version should still work
+    loaded_config = non_versioned_registry.load("test:config", version="v2")
+    assert loaded_config == test_config
+    
+    # Delete with explicit version should work
+    non_versioned_registry.delete("test:config", version="1")
+    assert not non_versioned_registry.has_object("test:config", "1")
+    
+def test_download_basic(registry, test_config):
+    """Test basic download functionality between registries."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save object to source registry
+        source_reg.save("test:config", test_config, version="1.0.0")
+        
+        # Download to target registry
+        registry.download(source_reg, "test:config", version="1.0.0")
+        
+        # Verify object exists in target registry
+        assert registry.has_object("test:config", "1.0.0")
+        
+        # Verify object content
+        loaded_config = registry.load("test:config", version="1.0.0")
+        assert loaded_config == test_config
+
+def test_download_with_rename(registry, test_config):
+    """Test downloading with a different target name."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save object to source registry
+        source_reg.save("source:config", test_config, version="1.0.0")
+        
+        # Download with new name
+        registry.download(source_reg, "source:config", version="1.0.0", target_name="target:config")
+        
+        # Verify object exists with new name
+        assert registry.has_object("target:config", "1.0.0")
+        assert not registry.has_object("source:config", "1.0.0")
+        
+        # Verify object content
+        loaded_config = registry.load("target:config", version="1.0.0")
+        assert loaded_config == test_config
+
+def test_download_with_reversion(registry, test_config):
+    """Test downloading with a different target version."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save object to source registry
+        source_reg.save("test:config", test_config, version="1.0.0")
+        
+        # Download with new version
+        registry.download(source_reg, "test:config", version="1.0.0", target_version="2.0.0")
+        
+        # Verify object exists with new version
+        assert registry.has_object("test:config", "2.0.0")
+        assert not registry.has_object("test:config", "1.0.0")
+        
+        # Verify object content
+        loaded_config = registry.load("test:config", version="2.0.0")
+        assert loaded_config == test_config
+
+def test_download_with_metadata(registry, test_config):
+    """Test downloading preserves metadata."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save object with metadata
+        metadata = {"key": "value", "number": 42}
+        source_reg.save("test:config", test_config, version="1.0.0", metadata=metadata)
+        
+        # Download to target registry
+        registry.download(source_reg, "test:config", version="1.0.0")
+        
+        # Verify metadata is preserved
+        info = registry.info("test:config", version="1.0.0")
+        assert info["metadata"] == metadata
+
+def test_download_nonexistent_object(registry):
+    """Test downloading a nonexistent object raises an error."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Attempt to download nonexistent object
+        with pytest.raises(ValueError, match="Object test:config version 1.0.0 does not exist in source registry"):
+            registry.download(source_reg, "test:config", version="1.0.0")
+
+def test_download_invalid_source(registry, test_config):
+    """Test downloading from an invalid source raises an error."""
+    # Attempt to download from invalid source
+    with pytest.raises(ValueError, match="source_registry must be an instance of Registry"):
+        registry.download("not_a_registry", "test:config", version="1.0.0")
+
+def test_download_latest_version(registry, test_config):
+    """Test downloading the latest version of an object."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save multiple versions
+        source_reg.save("test:config", test_config, version="1.0.0")
+        source_reg.save("test:config", test_config, version="1.0.1")
+        
+        # Download latest version
+        registry.download(source_reg, "test:config")
+        
+        # Verify latest version was downloaded
+        assert registry.has_object("test:config", "1.0.1")
+        assert not registry.has_object("test:config", "1.0.0")
+
+def test_download_complex_object(registry):
+    """Test downloading a complex object with nested data."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Create complex object
+        complex_obj = {
+            "nested": {
+                "list": [1, 2, 3],
+                "dict": {"a": 1, "b": 2},
+                "tuple": (1, 2, 3)
+            },
+            "array": [{"id": 1}, {"id": 2}]
+        }
+        
+        # Save to source registry
+        source_reg.save("test:complex", complex_obj, version="1.0.0")
+        
+        # Download to target registry
+        registry.download(source_reg, "test:complex", version="1.0.0")
+        
+        # Verify object content
+        loaded_obj = registry.load("test:complex", version="1.0.0")
+        assert loaded_obj == complex_obj
+
+def test_download_with_materializer(registry):
+    """Test downloading an object with a custom materializer."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Create a custom materializer
+        class CustomMaterializer(BaseMaterializer):
+            def save(self, obj):
+                with open(self.uri / "data.txt", "w") as f:
+                    f.write(str(obj))
+            
+            def load(self, data_type):
+                with open(self.uri / "data.txt", "r") as f:
+                    return f.read()
+        
+        # Register the materializer
+        source_reg.register_materializer("builtins.str", "test_registry.CustomMaterializer")
+        
+        # Save object with custom materializer
+        source_reg.save("test:str", "hello world", version="1.0.0")
+        
+        # Download to target registry
+        registry.download(source_reg, "test:str", version="1.0.0")
+        
+        # Verify object content
+        loaded_str = registry.load("test:str", version="1.0.0")
+        assert loaded_str == "hello world"
+
+def test_download_version_conflict(registry, test_config):
+    """Test downloading when target version already exists."""
+    # Create source registry
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Save to source registry
+        source_reg.save("test:config", test_config, version="1.0.0")
+        
+        # Save to target registry with same version
+        registry.save("test:config", test_config, version="1.0.0")
+        
+        # Attempt to download same version
+        with pytest.raises(ValueError, match="Object test:config version 1.0.0 already exists"):
+            registry.download(source_reg, "test:config", version="1.0.0")
+
+def test_download_non_versioned(registry, non_versioned_registry, test_config):
+    """Test downloading between versioned and non-versioned registries."""
+    # Save to source registry
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Download to non-versioned registry
+    non_versioned_registry.download(registry, "test:config", version="1.0.0")
+    
+    # Verify object exists in non-versioned registry
+    assert non_versioned_registry.has_object("test:config", "1")
+    
+    # Verify object content
+    loaded_config = non_versioned_registry.load("test:config")
+    assert loaded_config == test_config
     
