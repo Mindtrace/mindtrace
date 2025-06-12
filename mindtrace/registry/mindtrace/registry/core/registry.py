@@ -388,7 +388,11 @@ class Registry(Mindtrace):
 
         # Set target name and version if not specified
         target_name = ifnone(target_name, default=name)
-        target_version = ifnone(target_version, default=version)
+        if target_version is None:
+            target_version = self._next_version(target_name)
+        else:
+            if self.has_object(name=target_name, version=target_version):
+                raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
 
         # Check if object exists in source registry
         if not source_registry.has_object(name=name, version=version):
