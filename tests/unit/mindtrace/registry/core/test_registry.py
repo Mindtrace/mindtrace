@@ -1936,3 +1936,29 @@ def test_download_vs_dict_assignment(registry):
             info2 = target_reg2.info("test:config", version="1")
             assert info1["metadata"] == info2["metadata"]
     
+def test_update_with_registry(registry):
+    """Test updating a registry with objects from another registry."""
+    # Create source registry with multiple objects
+    with TemporaryDirectory() as source_dir:
+        source_reg = Registry(registry_dir=source_dir)
+        
+        # Create and save multiple objects to source registry
+        config1 = Config(MINDTRACE_TEMP_DIR="/dir1")
+        config2 = Config(MINDTRACE_TEMP_DIR="/dir2")
+        source_reg.save("config1", config1, version="1.0.0")
+        source_reg.save("config2", config2, version="1.0.0")
+        source_reg.save("config2", config2, version="2.0.0")  # Multiple versions
+        
+        # Update target registry with source registry
+        registry.update(source_reg)
+        
+        # Verify all objects and versions were transferred
+        assert registry.has_object("config1", "1")
+        assert registry.has_object("config2", "1")
+        assert registry.has_object("config2", "2")
+        
+        # Verify object contents
+        assert registry.load("config1", version="1") == config1
+        assert registry.load("config2", version="1") == config2
+        assert registry.load("config2", version="2") == config2
+    
