@@ -1,23 +1,22 @@
 from mindtrace.core import Mindtrace
-import os
+from pydantic_settings import BaseSettings
+
+
+class ServiceSettings(BaseSettings):
+    MLFLOWPORT: int = 8000
+
+class CameraSettings(BaseSettings):
+    CAM_RESOLUTION: float = 1.0
+
 
 class MyClass(Mindtrace):
     def __init__(self):
-        super().__init__(extra_settings=[{
-                                            'SERVICE': {
-                                                'PORT': 8080,
-                                                        },
-                                            },
-                                        {
-                                            'CAMERA': {
-                                                'RESOLUTION': 0.1,
-                                                }
-                                            },
+        super().__init__(extra_settings=[ServiceSettings().model_dump(),
+                                         CameraSettings().model_dump()
         ])
     def instance_method(self):
         print(self.config['RABBITMQ']['PASSWORD']) # Accessing a config value from config_dict
-        print(self.config['SERVICE']['PORT'])
-        print(self.config.get('SERVICE').get('PORT'))
-        print(self.config['CAMERA']['RESOLUTION'])
+        print(self.config['MLFLOWPORT'])
+        print(self.config.get('CAM_RESOLUTION'))
 
 MyClass().instance_method()
