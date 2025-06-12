@@ -166,3 +166,5 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """
         if "_" in name:
             raise ValueError("Object names cannot contain underscores. Use colons (':') for namespacing.")
+        elif "@" in name:
+            raise ValueError("Object names cannot contain '@'.")

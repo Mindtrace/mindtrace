@@ -743,14 +743,21 @@ class Registry(Mindtrace):
         """
         return [(name, self[name]) for name in self.keys()]
 
-    def update(self, mapping: Dict[str, Any]) -> None:
-        """Update the registry with objects from a dictionary.
+    def update(self, mapping: Dict[str, Any] | 'Registry', *, sync_all_versions: bool = True) -> None:
+        """Update the registry with objects from a dictionary or another registry.
         
         Args:
-            mapping: Dictionary mapping object names to objects
+            mapping: Either a dictionary mapping object names to objects, or another Registry instance.
+            sync_all_versions: Whether to save all versions of the objects being downloaded. If False, only the latest
+                version will be saved. Only used if mapping is a Registry instance.
         """
-        for key, value in mapping.items():
-            self[key] = value
+        if isinstance(mapping, Registry) and sync_all_versions:
+            for name in mapping.list_objects():
+                for version in mapping.list_versions(name):
+                    self.download(mapping, name, version=version)
+        else:
+            for key, value in mapping.items():
+                self[key] = value
 
     def clear(self) -> None:
         """Remove all objects from the registry."""
