@@ -1,8 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
 import pytest
 import re
 from tempfile import TemporaryDirectory
+import threading
+import time
 from typing import Any, Type
 
 from minio import S3Error
@@ -1984,4 +1987,176 @@ def test_update_with_existing_objects(registry):
         # Verify the original object is unchanged
         loaded_int = registry.load("test:int", version="1.0.0")
         assert loaded_int == 3
+    
+def test_thread_safety_concurrent_save(registry):
+    """Test that concurrent save operations are thread-safe."""
+    def save_operation(i):
+        registry.save(f"test:obj:{i}", f"value_{i}")
+        return i
+
+    # Create multiple threads to save objects concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(save_operation, i) for i in range(10)]
+        results = [f.result() for f in as_completed(futures)]
+
+    # Verify all objects were saved correctly
+    assert len(results) == 10
+    for i in results:
+        assert registry.load(f"test:obj:{i}") == f"value_{i}"
+
+def test_thread_safety_concurrent_load(registry):
+    """Test that concurrent load operations are thread-safe."""
+    # First save some objects
+    for i in range(5):
+        registry.save(f"test:obj:{i}", f"value_{i}")
+
+    def load_operation(i):
+        return registry.load(f"test:obj:{i}")
+
+    # Create multiple threads to load objects concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(load_operation, i % 5) for i in range(10)]
+        results = [f.result() for f in as_completed(futures)]
+
+    # Verify all loads returned correct values
+    assert len(results) == 10
+    for result in results:
+        assert result in [f"value_{i}" for i in range(5)]
+
+def test_thread_safety_reentrant_lock(registry):
+    """Test that the reentrant lock allows recursive calls."""
+    # This test verifies that methods can call other methods that need the lock
+    # without causing deadlocks
+    
+    # Save an object that will be deleted during save
+    registry.save("test:obj", "value")
+    
+    # This save operation will trigger delete() internally if versioning is disabled
+    registry.version_objects = False
+    registry.save("test:obj", "new_value")
+    
+    # Verify the operation completed successfully
+    assert registry.load("test:obj") == "new_value"
+
+def test_thread_safety_dict_interface(registry):
+    """Test thread safety of dictionary-like interface operations."""
+    def dict_operation(i):
+        registry[f"test:key:{i}"] = f"value_{i}"
+        return registry[f"test:key:{i}"]
+
+    # Test concurrent dictionary operations
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(dict_operation, i) for i in range(5)]
+        results = [f.result() for f in as_completed(futures)]
+
+    # Verify all operations completed successfully
+    assert len(results) == 5
+    # Check that all expected values are present, regardless of order
+    expected_values = {f"value_{i}" for i in range(5)}
+    assert set(results) == expected_values
+    
+    # Verify that all keys are present in the registry
+    for i in range(5):
+        assert f"test:key:{i}" in registry
+        assert registry[f"test:key:{i}"] == f"value_{i}"
+
+def test_thread_safety_versioning(registry):
+    """Test thread safety of versioning operations."""
+    def version_operation(i):
+        registry.save("test:obj", f"value_{i}")
+        return registry._latest("test:obj")
+
+    # Create multiple threads to save different versions
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(version_operation, i) for i in range(5)]
+        results = [f.result() for f in as_completed(futures)]
+
+    # Verify all versions were created
+    versions = registry.list_versions("test:obj")
+    assert len(versions) == 5
+
+def test_thread_safety_concurrent_delete(registry):
+    """Test that concurrent delete operations are thread-safe."""
+    # First save some objects
+    for i in range(5):
+        registry.save(f"test:obj:{i}", f"value_{i}")
+
+    def delete_operation(i):
+        registry.delete(f"test:obj:{i}")
+
+    # Create multiple threads to delete objects concurrently
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(delete_operation, i) for i in range(5)]
+        [f.result() for f in as_completed(futures)]
+
+    # Verify all objects were deleted
+    assert len(registry.list_objects()) == 0
+
+def test_thread_safety_concurrent_info(registry):
+    """Test that concurrent info operations are thread-safe."""
+    # First save some objects
+    for i in range(5):
+        registry.save(f"test:obj:{i}", f"value_{i}")
+
+    def info_operation(i):
+        return registry.info(f"test:obj:{i}")
+
+    # Create multiple threads to get info concurrently
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(info_operation, i) for i in range(5)]
+        results = [f.result() for f in as_completed(futures)]
+
+    # Verify all info operations completed successfully
+    assert len(results) == 5
+    for result in results:
+        # The result should be a dictionary with version information
+        assert isinstance(result, dict)
+        # Get the latest version info
+        latest_version = max(result.keys())
+        version_info = result[latest_version]
+        # Check that the version info contains the expected keys
+        assert "class" in version_info
+        assert "materializer" in version_info
+        assert "metadata" in version_info
+        assert version_info["class"] == "builtins.str"
+
+def test_thread_safety_concurrent_materializer_registration(registry):
+    """Test that concurrent materializer registration is thread-safe."""
+    def register_materializer(i):
+        registry.register_materializer(f"test:class:{i}", f"test:materializer:{i}")
+
+    # Create multiple threads to register materializers concurrently
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(register_materializer, i) for i in range(5)]
+        [f.result() for f in as_completed(futures)]
+
+    # Verify all materializers were registered
+    materializers = registry.registered_materializers()
+    assert len(materializers) >= 5  # Note: >= because there are default materializers
+    for i in range(5):
+        assert f"test:class:{i}" in materializers
+        assert materializers[f"test:class:{i}"] == f"test:materializer:{i}"
+
+def test_thread_safety_concurrent_operations(registry):
+    """Test that different types of operations can run concurrently."""
+    def mixed_operation(i):
+        if i % 3 == 0:
+            registry.save(f"test:obj:{i}", f"value_{i}")
+        elif i % 3 == 1:
+            if registry.has_object(f"test:obj:{i-1}"):
+                return registry.load(f"test:obj:{i-1}")
+        else:
+            if registry.has_object(f"test:obj:{i-2}"):
+                registry.delete(f"test:obj:{i-2}")
+
+    # Create multiple threads to perform different operations concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(mixed_operation, i) for i in range(10)]
+        [f.result() for f in as_completed(futures)]
+
+    # Verify the registry is in a consistent state
+    objects = registry.list_objects()
+    for obj_name in objects:
+        assert registry.has_object(obj_name)
+        assert registry.load(obj_name) is not None
     
