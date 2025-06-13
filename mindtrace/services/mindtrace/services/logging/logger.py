@@ -4,8 +4,10 @@ import structlog
 from datetime import datetime
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from mindtrace.services.logging.request_filter import RequestFilter
 from mindtrace.core.utils import ifnone
+from mindtrace.core.config import Config
+from mindtrace.services.logging.request_filter import RequestFilter
+
 
 
 def filter_logs(logger: logging.Logger, method_name: str, event_dict: dict[str, any]) -> dict[str, any]:
@@ -97,7 +99,8 @@ class ServiceLogMixin:
             return event_dict
 
         # Setup default log path if not provided
-        default_log_dir = Path.home() / ".cache" / "mindtrace" / "services" / service_name # ToDo: Get the path from default config values or service settings
+        default_config = Config()
+        default_log_dir = os.path.join(default_config.get('LOGGER').get('LOG_DIR'), "services", service_name)
         log_dir = Path(ifnone(log_dir, default_log_dir))
         log_dir.mkdir(parents=True, exist_ok=True)
 
