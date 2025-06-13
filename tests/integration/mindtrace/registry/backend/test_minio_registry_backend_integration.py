@@ -120,16 +120,28 @@ def test_save_and_fetch_metadata(backend, sample_metadata, minio_client, test_bu
     backend.save_metadata("test:object", "1.0.0", sample_metadata)
     
     # Verify metadata exists in MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.yaml"))
+    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
     assert len(objects) == 1
     
-    # Fetch metadata
+    # Fetch metadata and verify contents
     fetched_metadata = backend.fetch_metadata("test:object", "1.0.0")
+    
+    # Remove the path field for comparison since it's added by fetch_metadata
+    path = fetched_metadata.pop("path", None)
+    assert path is not None  # Verify path was added
+    assert fetched_metadata == sample_metadata
     
     # Verify metadata content
     assert fetched_metadata["name"] == sample_metadata["name"]
     assert fetched_metadata["version"] == sample_metadata["version"]
     assert fetched_metadata["description"] == sample_metadata["description"]
+    
+    # Delete metadata
+    backend.delete_metadata("test:object", "1.0.0")
+    
+    # Verify metadata is deleted
+    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    assert len(objects) == 0
 
 
 def test_delete_metadata(backend, sample_metadata, minio_client, test_bucket):
@@ -141,7 +153,7 @@ def test_delete_metadata(backend, sample_metadata, minio_client, test_bucket):
     backend.delete_metadata("test:object", "1.0.0")
     
     # Verify metadata is deleted from MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.yaml"))
+    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
     assert len(objects) == 0
 
 
@@ -392,43 +404,48 @@ def test_delete_metadata_other_error(backend, monkeypatch):
 
 def test_register_materializer_error(backend, monkeypatch):
     """Test error handling in register_materializer."""
-    # Mock fget_object to raise an exception
-    def mock_fget_object(*args, **kwargs):
+    # Mock get_object to raise an exception
+    def mock_get_object(*args, **kwargs):
         raise Exception("Failed to get metadata file")
-    
-    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
-    
-    # Attempt to register a materializer - should raise the exception
+
+    # Mock put_object to raise an exception
+    def mock_put_object(*args, **kwargs):
+        raise Exception("Failed to save metadata file")
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    # Attempt to register a materializer - should raise the exception from put_object
     with pytest.raises(Exception) as exc_info:
         backend.register_materializer("test:object", "TestMaterializer")
-    
+
     # Verify the error message
     assert str(exc_info.value) == "Failed to get metadata file"
 
 
 def test_registered_materializer_error(backend, monkeypatch):
     """Test error handling in registered_materializer."""
-    # Mock fget_object to raise an exception
-    def mock_fget_object(*args, **kwargs):
+    # Mock get_object to raise an exception
+    def mock_get_object(*args, **kwargs):
         raise Exception("Failed to get metadata file")
-    
-    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
-    
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
     # Attempt to get registered materializer - should raise the exception
     with pytest.raises(Exception) as exc_info:
         backend.registered_materializer("test:object")
-    
+
     # Verify the error message
     assert str(exc_info.value) == "Failed to get metadata file"
 
 
 def test_registered_materializers_error(backend, monkeypatch):
     """Test error handling in registered_materializers."""
-    # Mock fget_object to raise an exception
-    def mock_fget_object(*args, **kwargs):
+    # Mock get_object to raise an exception
+    def mock_get_object(*args, **kwargs):
         raise Exception("Failed to get metadata file")
     
-    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
     
     # Attempt to get all registered materializers - should raise the exception
     with pytest.raises(Exception) as exc_info:
