@@ -1,8 +1,18 @@
 import json
+import os
+import time
 from pathlib import Path
+import platform
 import shutil
+from tempfile import TemporaryDirectory
 from typing import Dict, List
 import yaml
+
+# Import appropriate locking mechanism based on OS
+if platform.system() == 'Windows':
+    import msvcrt
+else:
+    import fcntl
 
 from mindtrace.registry import RegistryBackend
 
@@ -10,21 +20,21 @@ from mindtrace.registry import RegistryBackend
 class LocalRegistryBackend(RegistryBackend):
     """A simple local filesystem-based registry backend.
 
-    All object directories and registry files are stored under a configurable base directory.
-    The backend provides methods for uploading, downloading, and managing object files and metadata.
-
-    Args:
-        uri (str): Base directory path where all object files and metadata will be stored.
+    All object directories and registry files are stored under a configurable base directory. The backend provides 
+    methods for uploading, downloading, and managing object files and metadata.
     """
 
     def __init__(self, uri: str | Path, **kwargs):
+        """Initialize the LocalRegistryBackend.
+
+        Args:
+            uri (str | Path): The base directory path where all object files and metadata will be stored.
+            **kwargs: Additional keyword arguments for the RegistryBackend.
+        """
         super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
-        if not self._metadata_path.exists():
-            with open(self._metadata_path, "w") as f:
-                json.dump({"materializers": {}}, f)
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
         
     @property
@@ -104,7 +114,12 @@ class LocalRegistryBackend(RegistryBackend):
         parent = target.parent
         if parent.exists() and not any(parent.iterdir()):
             self.logger.debug(f"Removing empty parent directory: {parent}")
-            parent.rmdir()
+            try:
+                parent.rmdir()
+            except Exception as e:
+                if parent.exists():
+                    self.logger.error(f"Error deleting parent directory: {e}")
+                    raise
 
     def save_metadata(self, name: str, version: str, metadata: dict):
         """Save metadata for a object version.
@@ -216,10 +231,13 @@ class LocalRegistryBackend(RegistryBackend):
             materializer_class: Materializer class to register.
         """
         try:
-            with open(self.metadata_path, "r") as f:
-                metadata = json.load(f)
+            if not self._metadata_path.exists():
+                metadata = {"materializers": {}}
+            else:
+                with open(self._metadata_path, "r") as f:
+                    metadata = json.load(f)
             metadata["materializers"][object_class] = materializer_class
-            with open(self.metadata_path, "w") as f:
+            with open(self._metadata_path, "w") as f:
                 json.dump(metadata, f)
         except Exception as e:
             self.logger.error(f"Error registering materializer for {object_class}: {e}")
@@ -245,9 +263,224 @@ class LocalRegistryBackend(RegistryBackend):
             Dictionary mapping object classes to their registered materializer classes.
         """
         try:
-            with open(self.metadata_path, "r") as f:
+            if not self._metadata_path.exists():
+                return {}
+            with open(self._metadata_path, "r") as f:
                 materializers = json.load(f).get("materializers", {})
         except Exception as e:
             self.logger.error(f"Error loading materializers: {e}")
             raise e
         return materializers
+
+    def _lock_path(self, key: str) -> Path:
+        """Get the path for a lock file."""
+        return self._full_path(f"_lock_{key}")
+
+    def _acquire_file_lock(self, file_obj) -> bool:
+        """Acquire a file lock using the appropriate mechanism for the OS."""
+        try:
+            if platform.system() == 'Windows':
+                # Windows: Try to lock the file using msvcrt
+                msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+                return True
+            else:
+                # Unix: Try to acquire an exclusive file lock
+                fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+        except (IOError, OSError):
+            return False
+
+    def _release_file_lock(self, file_obj) -> None:
+        """Release a file lock using the appropriate mechanism for the OS."""
+        try:
+            if platform.system() == 'Windows':
+                # Windows: Unlock the file
+                msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                # Unix: Release the file lock
+                fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+        except (IOError, OSError) as e:
+            self.logger.warning(f"Error releasing file lock: {e}")
+
+    def _acquire_shared_lock(self, file_obj) -> bool:
+        """Acquire a shared (read) lock using the appropriate mechanism for the OS."""
+        try:
+            if platform.system() == 'Windows':
+                # Windows: Try to lock the file using msvcrt
+                msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+                return True
+            else:
+                # Unix: Try to acquire a shared file lock
+                # Use blocking mode for shared locks since multiple readers should be able to share
+                fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH)
+                return True
+        except (IOError, OSError):
+            return False
+
+    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Acquire a lock using atomic file operations.
+        
+        Uses platform-specific file locking mechanisms to ensure atomic operations. The lock file contains both the 
+        lock_id and expiration time in JSON format.
+        
+        Args:
+            key: The key to acquire the lock for.
+            lock_id: The ID of the lock to acquire.
+            timeout: The timeout in seconds for the lock.
+            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
+            
+        Returns:
+            True if the lock was acquired, False otherwise.
+        """
+        lock_path = self._lock_path(key)
+        
+        try:
+            # Create lock file if it doesn't exist
+            if not lock_path.exists():
+                lock_path.touch()
+            
+            # Open the lock file for reading and writing
+            with open(lock_path, 'r+') as f:
+                # For shared locks, we need to check if there's an exclusive lock first
+                if shared:
+                    try:
+                        content = f.read().strip()
+                        if content:
+                            metadata = json.loads(content)
+                            # If there's an exclusive lock that's not expired, we can't acquire a shared lock
+                            if not metadata.get("shared", False) and time.time() < metadata.get("expires_at", 0):
+                                return False
+                    except (json.JSONDecodeError, IOError):
+                        # Invalid content, we can proceed
+                        pass
+                
+                # Try to acquire the appropriate type of file lock
+                if shared:
+                    if not self._acquire_shared_lock(f):
+                        return False
+                else:
+                    if not self._acquire_file_lock(f):
+                        return False
+                
+                try:
+                    # For exclusive locks, check if there are any active shared locks
+                    if not shared:
+                        try:
+                            content = f.read().strip()
+                            if content:
+                                metadata = json.loads(content)
+                                if metadata.get("shared", False) and time.time() < metadata.get("expires_at", 0):
+                                    # There are active shared locks, we can't acquire an exclusive lock
+                                    return False
+                        except (json.JSONDecodeError, IOError):
+                            # Invalid content, we can proceed
+                            pass
+                    
+                    # Write our lock information
+                    f.seek(0)
+                    f.truncate()
+                    metadata = {
+                        "lock_id": lock_id,
+                        "expires_at": time.time() + timeout,
+                        "shared": shared
+                    }
+                    f.write(json.dumps(metadata))
+                    
+                    # Keep the file locked
+                    return True
+                    
+                except Exception as e:
+                    self._release_file_lock(f)  # Release lock on error
+                    self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
+                    return False
+                
+        except Exception as e:
+            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
+            return False
+
+    def release_lock(self, key: str, lock_id: str) -> bool:
+        """Release a lock by verifying ownership and removing the file.
+        
+        Uses platform-specific file locking to ensure atomic operations during release.
+
+        Args:
+            key: The key to release the lock for.
+            lock_id: The ID of the lock to release.
+
+        Returns:
+            True if the lock was released, False otherwise.
+        """
+        lock_path = self._lock_path(key)
+        
+        try:
+            if not lock_path.exists():
+                return True
+                
+            with open(lock_path, 'r+') as f:
+                # Try to acquire an exclusive file lock
+                if not self._acquire_file_lock(f):
+                    return False
+                
+                try:
+                    # Verify lock ownership
+                    try:
+                        metadata = json.loads(f.read().strip())
+                        if metadata.get("lock_id") != lock_id:
+                            self._release_file_lock(f)  # Release lock if not ours
+                            return False
+                    except (json.JSONDecodeError, IOError):
+                        self._release_file_lock(f)  # Release lock on error
+                        return False
+                    
+                    # Remove the lock file
+                    lock_path.unlink()
+                    return True
+                    
+                except Exception as e:
+                    self._release_file_lock(f)  # Release lock on any other error
+                    self.logger.error(f"Error releasing lock for {key}: {e}")
+                    return False
+                
+        except Exception as e:
+            self.logger.error(f"Error releasing lock for {key}: {e}")
+            return False
+
+    def check_lock(self, key: str) -> tuple[bool, str | None]:
+        """Check if a key is currently locked.
+        
+        Uses platform-specific file locking to ensure atomic read operations.
+
+        Args:
+            key: The key to check the lock for.
+
+        Returns:
+            Tuple containing a boolean indicating if the key is locked and the lock ID if it is, or None if it is not.
+        """
+        lock_path = self._lock_path(key)
+        
+        try:
+            if not lock_path.exists():
+                return False, None
+                
+            with open(lock_path, 'r') as f:
+                # Try to acquire a shared file lock
+                if not self._acquire_shared_lock(f):
+                    # File is locked by someone else
+                    return True, None
+                
+                try:
+                    # Check if lock is expired
+                    try:
+                        metadata = json.loads(f.read().strip())
+                        if time.time() > metadata.get("expires_at", 0):
+                            return False, None
+                        return True, metadata.get("lock_id")
+                    except (json.JSONDecodeError, IOError):
+                        return False, None
+                    
+                finally:
+                    self._release_file_lock(f)
+                
+        except Exception as e:
+            self.logger.error(f"Error checking lock for {key}: {e}")
+            return False, None

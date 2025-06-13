@@ -167,3 +167,51 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             raise ValueError("Object names cannot contain underscores. Use colons (':') for namespacing.")
         elif "@" in name:
             raise ValueError("Object names cannot contain '@'.")
+
+    @abstractmethod
+    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Atomically acquire a lock for the given key.
+        
+        This method should be implemented to provide atomic lock acquisition. The implementation should ensure that 
+        only one client can acquire an exclusive lock at a time, or multiple clients can acquire a shared lock, 
+        even in a distributed environment.
+        
+        Args:
+            key: The key to lock
+            lock_id: Unique identifier for this lock attempt
+            timeout: Lock timeout in seconds
+            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
+            
+        Returns:
+            True if lock was acquired, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def release_lock(self, key: str, lock_id: str) -> bool:
+        """Atomically release a lock for the given key.
+        
+        This method should be implemented to provide atomic lock release. The implementation should ensure that only 
+        the lock owner can release it.
+        
+        Args:
+            key: The key to unlock
+            lock_id: The lock ID that was used to acquire the lock
+            
+        Returns:
+            True if lock was released, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def check_lock(self, key: str) -> tuple[bool, str | None]:
+        """Check if a key is currently locked.
+        
+        Args:
+            key: The key to check
+            
+        Returns:
+            Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID. If not locked, 
+            lock_id will be None.
+        """
+        pass
