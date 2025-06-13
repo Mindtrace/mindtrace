@@ -6,10 +6,12 @@ import platform
 import pytest
 import shutil
 import sys
+import time
 from typing import Generator
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, mock_open
 import uuid
 import yaml
+
 
 from mindtrace.core import Config 
 from mindtrace.registry import LocalRegistryBackend
@@ -203,6 +205,19 @@ def test_registered_materializers_error(backend):
     # Try to get registered materializers - should raise an error
     with pytest.raises(Exception):
         backend.registered_materializers()
+
+def test_registered_materializers_empty(backend):
+    """Test that registered_materializers returns an empty dict when metadata path doesn't exist."""
+    # Ensure metadata path doesn't exist
+    if backend.metadata_path.exists():
+        backend.metadata_path.unlink()
+    
+    # Get registered materializers
+    materializers = backend.registered_materializers()
+    
+    # Verify empty dict is returned
+    assert materializers == {}
+    assert isinstance(materializers, dict)
 
 class TestUnixLocks:
     """Test suite for Unix-specific locking mechanisms."""
@@ -425,6 +440,104 @@ class TestCrossPlatformLockOperations:
         assert not is_locked
         assert found_id is None
 
+    def test_acquire_shared_lock_failure(self, backend):
+        """Test error handling when acquiring a shared lock fails."""
+        # Create a temporary file to lock
+        lock_path = backend.uri / "test.lock"
+        lock_path.touch()
+        
+        # Open the file and try to acquire a shared lock
+        with open(lock_path, 'r+') as f:
+            # Mock the platform-specific lock function to raise an error
+            if platform.system() == 'Windows':
+                with patch.object(msvcrt, 'locking', side_effect=OSError("Failed to lock")):
+                    result = backend._acquire_shared_lock(f)
+            else:
+                with patch.object(fcntl, 'flock', side_effect=OSError("Failed to lock")):
+                    result = backend._acquire_shared_lock(f)
+        
+        # Verify that False is returned on failure
+        assert result is False
+
+    def test_acquire_shared_lock_with_active_exclusive(self, backend):
+        """Test that shared lock acquisition fails when there's an active exclusive lock."""
+        # Create a lock file with an active exclusive lock
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
+        
+        # Write metadata for an active exclusive lock
+        with open(lock_path, 'w') as f:
+            metadata = {
+                "lock_id": "test_id",
+                "expires_at": time.time() + 60,  # Lock expires in 60 seconds
+                "shared": False  # This is an exclusive lock
+            }
+            f.write(json.dumps(metadata))
+        
+        # Try to acquire a shared lock
+        result = backend.acquire_lock("test_lock", "other_id", timeout=30, shared=True)
+        
+        # Verify that lock acquisition failed
+        assert result is False
+
+    def test_acquire_shared_lock_failure_in_acquire_lock(self, backend):
+        """Test that acquire_lock returns False when _acquire_shared_lock fails."""
+        # Create a lock file
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
+        
+        # Mock _acquire_shared_lock to return False (simulating failure)
+        with patch.object(backend, '_acquire_shared_lock', return_value=False):
+            # Try to acquire a shared lock
+            result = backend.acquire_lock("test_lock", "test_id", timeout=30, shared=True)
+            
+            # Verify that lock acquisition failed
+            assert result is False
+
+    def test_acquire_exclusive_lock_with_active_shared(self, backend):
+        """Test that exclusive lock acquisition fails when there are active shared locks."""
+        # Create a lock file with an active shared lock
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
+        
+        # Write metadata for an active shared lock
+        with open(lock_path, 'w') as f:
+            metadata = {
+                "lock_id": "shared_id",
+                "expires_at": time.time() + 60,  # Lock expires in 60 seconds
+                "shared": True  # This is a shared lock
+            }
+            f.write(json.dumps(metadata))
+        
+        # Try to acquire an exclusive lock
+        result = backend.acquire_lock("test_lock", "exclusive_id", timeout=30, shared=False)
+        
+        # Verify that lock acquisition failed
+        assert result is False
+
+    def test_acquire_exclusive_lock_with_invalid_content(self, backend):
+        """Test that exclusive lock acquisition proceeds when lock file has invalid content."""
+        # Create a lock file with invalid JSON content
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
+        
+        # Write invalid JSON content to the lock file
+        with open(lock_path, 'w') as f:
+            f.write("invalid json content")
+        
+        # Try to acquire an exclusive lock
+        result = backend.acquire_lock("test_lock", "test_id", timeout=30, shared=False)
+        
+        # Verify that lock acquisition succeeded despite invalid content
+        assert result is True
+        
+        # Verify that the lock file now contains valid JSON
+        with open(lock_path, 'r') as f:
+            metadata = json.loads(f.read())
+            assert metadata["lock_id"] == "test_id"
+            assert metadata["shared"] is False
+            assert "expires_at" in metadata
+
 
 class TestPlatformSpecificImports:
     """Test suite for platform-specific import logic."""
@@ -522,4 +635,190 @@ class TestPlatformSpecificImports:
             
             # Verify that fcntl is imported and msvcrt is not
             assert hasattr(module, 'fcntl')
-            assert not hasattr(module, 'msvcrt') 
+            assert not hasattr(module, 'msvcrt')
+
+def test_delete_parent_directory_error(backend, sample_object_dir, caplog):
+    """Test error handling when deleting parent directory fails."""
+    # Save an object first
+    backend.push("test:obj", "1.0.0", str(sample_object_dir))
+    
+    # Create a parent directory that will be empty after deletion
+    parent_dir = backend.uri / "test:obj"
+    parent_dir.mkdir(exist_ok=True)
+    
+    # Mock rmdir to raise an exception
+    with patch.object(Path, 'rmdir', side_effect=OSError("Permission denied")):
+        # Try to delete the object
+        with pytest.raises(OSError, match="Permission denied"):
+            backend.delete("test:obj", "1.0.0")
+            
+        # Verify that the error was logged
+        assert "Error deleting parent directory" in caplog.text 
+
+def test_release_file_lock_error(backend, caplog):
+    """Test error handling when releasing a file lock fails."""
+    # Create a temporary file to lock
+    lock_path = backend.uri / "test.lock"
+    lock_path.touch()
+    
+    # Open the file and acquire a lock
+    with open(lock_path, 'r+') as f:
+        # Mock the platform-specific unlock function to raise an error
+        if platform.system() == 'Windows':
+            with patch.object(msvcrt, 'locking', side_effect=OSError("Failed to unlock")):
+                backend._release_file_lock(f)
+        else:
+            with patch.object(fcntl, 'flock', side_effect=OSError("Failed to unlock")):
+                backend._release_file_lock(f)
+    
+    # Verify that the error was logged
+    assert "Error releasing file lock" in caplog.text
+    assert "Failed to unlock" in caplog.text 
+
+def test_acquire_lock_inner_exception(backend, caplog):
+    """Test error handling when an exception occurs during lock acquisition inner block."""
+    # Create a lock file
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    
+    # Mock _release_file_lock to verify it's called
+    with patch.object(backend, '_release_file_lock') as mock_release:
+        # Mock json.dumps to raise an exception during metadata writing
+        with patch('json.dumps', side_effect=Exception("Test error")):
+            # Try to acquire a lock
+            result = backend.acquire_lock("test_lock", "test_id", timeout=30)
+            
+            # Verify that lock acquisition failed
+            assert result is False
+            # Verify that the error was logged
+            assert "Error acquiring lock for test_lock" in caplog.text
+            assert "Test error" in caplog.text
+            # Verify that _release_file_lock was called
+            mock_release.assert_called_once()
+
+def test_acquire_lock_outer_exception(backend, caplog):
+    """Test error handling when an exception occurs during lock acquisition outer block."""
+    # Create a lock file
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    
+    # Mock file operations to raise an exception before inner block
+    with patch('builtins.open', side_effect=Exception("Test error")):
+        # Try to acquire a lock
+        result = backend.acquire_lock("test_lock", "test_id", timeout=30)
+        
+        # Verify that lock acquisition failed
+        assert result is False
+        # Verify that the error was logged
+        assert "Error acquiring lock for test_lock" in caplog.text
+        assert "Test error" in caplog.text 
+
+def test_release_lock_inner_exception(backend, caplog):
+    """Test error handling when an exception occurs during lock release inner block."""
+    # Create a lock file with valid metadata
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    with open(lock_path, 'w') as f:
+        json.dump({"lock_id": "test_id", "expires_at": time.time() + 30}, f)
+    
+    # Mock _release_file_lock to verify it's called
+    with patch.object(backend, '_release_file_lock') as mock_release:
+        # Mock file operations to raise an exception during unlink
+        with patch('pathlib.Path.unlink', side_effect=Exception("Test error")):
+            # Try to release the lock
+            result = backend.release_lock("test_lock", "test_id")
+            
+            # Verify that lock release failed
+            assert result is False
+            # Verify that the error was logged
+            assert "Error releasing lock for test_lock" in caplog.text
+            assert "Test error" in caplog.text
+            # Verify that _release_file_lock was called
+            mock_release.assert_called_once()
+
+def test_release_lock_outer_exception(backend, caplog):
+    """Test error handling when an exception occurs during lock release outer block."""
+    # Create a lock file
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    
+    # Mock file operations to raise an exception before inner block
+    with patch('builtins.open', side_effect=Exception("Test error")):
+        # Try to release the lock
+        result = backend.release_lock("test_lock", "test_id")
+        
+        # Verify that lock release failed
+        assert result is False
+        # Verify that the error was logged
+        assert "Error releasing lock for test_lock" in caplog.text
+        assert "Test error" in caplog.text 
+
+def test_check_lock_cannot_acquire_shared(backend):
+    """Test check_lock behavior when the lock file doesn't exist."""
+    # Mock _lock_path to return a path that doesn't exist
+    non_existent_path = Path("/non/existent/path")
+    with patch.object(backend, '_lock_path', return_value=non_existent_path):
+        # Check the lock
+        is_locked, lock_id = backend.check_lock("test_lock")
+        
+        # Verify that the method indicates there is no lock
+        assert is_locked is False
+        assert lock_id is None
+
+def test_check_lock_invalid_metadata(backend):
+    """Test check_lock behavior when the lock file exists but has invalid metadata."""
+    # Create a lock file with invalid JSON content
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    with open(lock_path, 'w') as f:
+        f.write("invalid json content")
+    
+    # Mock _acquire_shared_lock to return True to simulate successful lock acquisition
+    with patch.object(backend, '_acquire_shared_lock', return_value=False):
+        # Check the lock
+        is_locked, lock_id = backend.check_lock("test_lock")
+        
+        # Verify that the method indicates the file is not locked due to invalid metadata
+        assert is_locked is True
+        assert lock_id is None
+
+def test_check_lock_io_error(backend):
+    """Test check_lock behavior when an IOError occurs while reading the lock file."""
+    # Create a lock file
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    
+    # Mock _acquire_shared_lock to return True to simulate successful lock acquisition
+    with patch.object(backend, '_acquire_shared_lock', return_value=True), \
+         patch.object(backend, '_release_file_lock'), \
+         patch('builtins.open', side_effect=IOError("Test IO error")):
+        # Check the lock
+        is_locked, lock_id = backend.check_lock("test_lock")
+        
+        # Verify that the method indicates the file is not locked due to IO error
+        assert is_locked is False
+        assert lock_id is None
+
+def test_check_lock_expired(backend):
+    """Test check_lock behavior when the lock has expired."""
+    # Create a lock file with expired metadata
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    with open(lock_path, 'w') as f:
+        metadata = {
+            "lock_id": "test_id",
+            "expires_at": time.time() - 1,  # Expired 1 second ago
+            "shared": False
+        }
+        f.write(json.dumps(metadata))
+    
+    # Mock _acquire_shared_lock to return True to simulate successful lock acquisition
+    with patch.object(backend, '_acquire_shared_lock', return_value=True), \
+         patch.object(backend, '_release_file_lock'), \
+         patch('json.loads', side_effect=json.JSONDecodeError("Test error", "", 0)):
+        # Check the lock
+        is_locked, lock_id = backend.check_lock("test_lock")
+        
+        # Verify that the method indicates the file is not locked due to JSON decode error
+        assert is_locked is False
+        assert lock_id is None
