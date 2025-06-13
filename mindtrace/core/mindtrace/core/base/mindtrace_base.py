@@ -7,7 +7,7 @@ import inspect
 from typing import Callable, Optional, Union
 
 
-from mindtrace.core.config import Config
+from mindtrace.core.config import Config, CoreSettings
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
@@ -81,20 +81,34 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-    def __init__(self, suppress: bool = False, extra_settings: Union[dict, list[dict]] = None, **logger_kwargs):
-        """Initialize the Mindtrace object.
+    def __init__(
+        self,
+        suppress: bool = False,
+        extra_settings: Union[dict, list[dict], CoreSettings, None] = None,
+        **logger_kwargs
+    ):
+        """
+        Initialize the Mindtrace object.
 
         Args:
-            suppress: Whether to suppress exceptions when exiting this class when used as a context manager.
-            extra_settings: Additional settings to add or override to default Config values.
-            **logger_kwargs: Additional keyword arguments to pass to `get_logger`.
-                             e.g., propagate=True, file_level=logging.INFO, etc.
+            suppress (bool): Whether to suppress exceptions in context manager use.
+            extra_settings (Union[dict, list[dict], CoreSettings], optional):
+                - Dictionary or list of dictionaries to override configuration.
+                - Or a full CoreSettings instance.
+            **logger_kwargs: Keyword arguments passed to `get_logger`.
+                e.g., propagate=True, file_level=logging.INFO
         """
         self.suppress = suppress
-        extra_settings = extra_settings or []
-        if isinstance(extra_settings, dict):
-            extra_settings = [extra_settings]
-        self.config = Config(extra_settings)
+
+        # Normalize extra_settings and initialize config
+        if isinstance(extra_settings, (dict, CoreSettings)):
+            self.config = Config(extra_settings=[extra_settings] if isinstance(extra_settings, dict) else extra_settings)
+        elif isinstance(extra_settings, list):
+            self.config = Config(extra_settings)
+        else:
+            self.config = Config()
+
+        # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)
 
     @property

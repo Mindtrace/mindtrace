@@ -1,21 +1,23 @@
 import os
 import configparser
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import  Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 
 
 
 
-class API_KEYS(BaseSettings):
+
+class API_KEYS(BaseModel):
     OPENAI: Optional[SecretStr]
     DISCORD: Optional[SecretStr]
     ROBOFLOW: Optional[SecretStr]
 
 
-class DIR_PATHS(BaseSettings):
+class DIR_PATHS(BaseModel):
     ROOT: str 
     DATA: str
     MODELS: str
@@ -31,7 +33,7 @@ class DIR_PATHS(BaseSettings):
     RESULTS: str
 
 
-class DATALAKE(BaseSettings):
+class DATALAKE(BaseModel):
     ROOT: str
     GCP_CREDS_PATH: str
     GCP_BUCKET_NAME: str
@@ -40,26 +42,26 @@ class DATALAKE(BaseSettings):
     CHECK_LEGACY_VERSIONS: bool
 
 
-class DIR_MODELS(BaseSettings):
+class DIR_MODELS(BaseModel):
     SAM: str
     YOLO8: str
     YOLO10: str
     DINOV2: str
 
 
-class FILE_PATHS(BaseSettings):
+class FILE_PATHS(BaseModel):
     LOGS: str
     UNITTEST_LOGS: str
 
 
-class DEFAULT_HOST_URLS(BaseSettings):
+class DEFAULT_HOST_URLS(BaseModel):
     SERVERBASE: HttpUrl
     NODE_MANAGER: HttpUrl
     CLUSTER_MANAGER: HttpUrl
     RESERVED_TEST_URL: HttpUrl
 
 
-class REDIS(BaseSettings):
+class REDIS(BaseModel):
     HOST: str
     PORT: int
     DB: int
@@ -68,7 +70,7 @@ class REDIS(BaseSettings):
 
 
 
-class RABBITMQ(BaseSettings):
+class RABBITMQ(BaseModel):
     HOST: str
     PORT: int
     USER: str
@@ -78,12 +80,12 @@ class RABBITMQ(BaseSettings):
     DEFAULT_ROUTING_KEY: str
 
 
-class LOGGER(BaseSettings):
+class LOGGER(BaseModel):
     LOKI_URL: HttpUrl
     LOG_DIR: str
 
 
-class DIR_SOURCE(BaseSettings):
+class DIR_SOURCE(BaseModel):
     ROOT: str
 
 
@@ -176,28 +178,53 @@ class Config(dict):
     This class behaves like a dictionary but initializes itself with default values
     derived from `CoreSettings`, and optionally updates them with user-provided overrides.
 
-    It is typically used to provide structured, overrideable settings across services,
-    components, and utilities within the Mindtrace system.
+    It accepts:
+    - A list of `dict`s that override parts of the config.
+    - Or a `CoreSettings` instance directly.
 
     Args:
-        extra_settings: A dictionary of user-defined settings
-            that override the defaults from `CoreSettings`.
+        extra_settings (Union[List[Dict], CoreSettings], optional): 
+            Either a list of dictionaries to override values, or a CoreSettings instance.
 
     Example:
         .. code-block:: python
 
-            config = Config(extra_settings={"log_level": "INFO"})
-            print(config["log_level"])  # INFO
+            # Override via dict
+            config = Config(extra_settings=[{"LOGGER": {"LOG_DIR": "/tmp"}}])
+
+            # Override via full settings object
+            custom_settings = CoreSettings(RABBITMQ={"PASSWORD": "env_secret"})
+            config = Config(extra_settings=custom_settings)
+        
+        print(config["LOGGER"]["LOG_DIR"])  # /tmp or from env
 
     See also:
         - `CoreSettings` for the definition of default configuration schema.
     """
-    
-    def __init__(self, extra_settings: list[dict] = None):
-        default_config = CoreSettings().model_dump()
-        for override_dict in extra_settings:
-            if override_dict:
-                default_config.update(override_dict)
+
+    def __init__(self, extra_settings: Union[List[Dict], CoreSettings, None] = None):
+        if isinstance(extra_settings, CoreSettings):
+            default_config = extra_settings.model_dump()
+        else:
+            default_config = CoreSettings().model_dump()
+            extra_settings = extra_settings or []
+
+            for override in extra_settings:
+                if isinstance(override, (BaseSettings, BaseModel)):
+                    override_dict = override.model_dump()
+                    default_config = self._deep_update(default_config, override_dict)
+                elif isinstance(override, dict):
+                    default_config = self._deep_update(default_config, override)
+
         super().__init__(default_config)
 
-    
+    def _deep_update(self, base: dict, override: dict) -> dict:
+        """
+        Recursively update nested dictionaries.
+        """
+        for k, v in override.items():
+            if isinstance(v, dict) and isinstance(base.get(k), dict):
+                base[k] = self._deep_update(base.get(k, {}), v)
+            else:
+                base[k] = v
+        return base
