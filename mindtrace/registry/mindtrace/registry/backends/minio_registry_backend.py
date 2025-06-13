@@ -413,17 +413,6 @@ class MinioRegistryBackend(RegistryBackend):
         """
         return f"objects/{name}/{version}"
 
-    def _full_path(self, remote_key: str) -> Path:
-        """Convert a remote key to a full filesystem path.
-
-        Args:
-            remote_key (str): The remote key (relative path) to resolve.
-
-        Returns:
-            Path: The full resolved filesystem path.
-        """
-        return self.uri / remote_key
-
     def _lock_key(self, key: str) -> str:
         """Convert a key to a lock file key.
 
