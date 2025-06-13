@@ -53,6 +53,18 @@ def concrete_backend():
         def registered_materializers(self) -> Dict[str, str]:
             return self._materializers.copy()
 
+        def acquire_lock(self, key: str, lock_id: str, timeout: int) -> bool:
+            """Test implementation of acquire_lock."""
+            return True
+
+        def release_lock(self, key: str, lock_id: str) -> bool:
+            """Test implementation of release_lock."""
+            return True
+
+        def check_lock(self, key: str) -> tuple[bool, str | None]:
+            """Test implementation of check_lock."""
+            return False, None
+
     with tempfile.TemporaryDirectory() as temp_dir:
         yield ConcreteBackend(temp_dir)
 

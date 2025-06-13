@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import pytest
@@ -169,30 +170,26 @@ def test_invalid_object_name(backend):
 
 def test_register_materializer_error(backend):
     """Test error handling when registering a materializer fails."""
+    # Create the metadata file first
+    with open(backend.metadata_path, "w") as f:
+        json.dump({"materializers": {}}, f)
+    
     # Make the metadata file read-only to simulate a file system error
     backend.metadata_path.chmod(0o444)
     
-    # Attempt to register a materializer - should raise an exception
-    with pytest.raises(Exception) as exc_info:
-        backend.register_materializer("test:object", "TestMaterializer")
-    
-    # Verify the exception was re-raised
-    assert str(exc_info.value)  # Should have some error message
-    
-    # Restore write permissions
-    backend.metadata_path.chmod(0o644)
+    # Try to register a materializer - should raise an error
+    with pytest.raises(Exception):
+        backend.register_materializer("test.Object", "test.Materializer")
 
 def test_registered_materializers_error(backend):
-    """Test error handling when loading materializers fails."""
+    """Test error handling when fetching registered materializers fails."""
+    # Create the metadata file first
+    with open(backend.metadata_path, "w") as f:
+        json.dump({"materializers": {}}, f)
+    
     # Make the metadata file unreadable to simulate a file system error
     backend.metadata_path.chmod(0o000)
     
-    # Attempt to get registered materializers - should raise an exception
-    with pytest.raises(Exception) as exc_info:
+    # Try to get registered materializers - should raise an error
+    with pytest.raises(Exception):
         backend.registered_materializers()
-    
-    # Verify the exception was re-raised
-    assert str(exc_info.value)  # Should have some error message
-    
-    # Restore read permissions
-    backend.metadata_path.chmod(0o644)

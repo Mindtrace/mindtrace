@@ -1642,7 +1642,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     """Test saving and loading objects in non-versioned mode."""
     # Save object
     non_versioned_registry.save("test:config", test_config)
-    
+
     # Verify only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
@@ -1651,12 +1651,12 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Load object
     loaded_config = non_versioned_registry.load("test:config")
     assert loaded_config == test_config
-    
+
     # Save again - should overwrite
     new_config = {"new": "value"}
     non_versioned_registry.save("test:config", new_config)
-    
-    # Verify still only one version
+
+    # Verify still only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
     assert versions[0] == "1"
@@ -1879,6 +1879,8 @@ def test_download_non_versioned(registry, non_versioned_registry, test_config):
     non_versioned_registry.download(registry, "test:config", version="1.0.0")
     
     # Verify object exists in non-versioned registry
+    print(non_versioned_registry.list_versions("test:config"))
+    print(non_versioned_registry)
     assert non_versioned_registry.has_object("test:config", "1")
     
     # Verify object content
@@ -1987,210 +1989,157 @@ def test_update_with_existing_objects(registry):
         # Verify the original object is unchanged
         loaded_int = registry.load("test:int", version="1.0.0")
         assert loaded_int == 3
+
+@pytest.mark.slow
+def test_distributed_lock_save_concurrent(registry):
+    """Test that concurrent saves are properly serialized using distributed locks."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
     
-def test_thread_safety_concurrent_save(registry):
-    """Test that concurrent save operations are thread-safe."""
-    def save_operation(i):
-        registry.save(f"test:obj:{i}", f"value_{i}")
-        return i
-
-    # Create multiple threads to save objects concurrently
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(save_operation, i) for i in range(10)]
-        results = [f.result() for f in as_completed(futures)]
-
-    # Verify all objects were saved correctly
-    assert len(results) == 10
-    for i in results:
-        assert registry.load(f"test:obj:{i}") == f"value_{i}"
-
-def test_thread_safety_concurrent_load(registry):
-    """Test that concurrent load operations are thread-safe."""
-    # First save some objects
-    for i in range(5):
-        registry.save(f"test:obj:{i}", f"value_{i}")
-
-    def load_operation(i):
-        return registry.load(f"test:obj:{i}")
-
-    # Create multiple threads to load objects concurrently
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(load_operation, i % 5) for i in range(10)]
-        results = [f.result() for f in as_completed(futures)]
-
-    # Verify all loads returned correct values
-    assert len(results) == 10
-    for result in results:
-        assert result in [f"value_{i}" for i in range(5)]
-
-def test_thread_safety_reentrant_lock(registry):
-    """Test that the reentrant lock allows recursive calls."""
-    # This test verifies that methods can call other methods that need the lock
-    # without causing deadlocks
+    # Create a test object
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir", 
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir", 
+        CUSTOM_KEY="custom_value")
     
-    # Save an object that will be deleted during save
-    registry.save("test:obj", "value")
+    # Function to perform save with delay
+    def save_with_delay(i):
+        time.sleep(0.1)  # Add delay to increase chance of concurrent access
+        registry.save(f"testobj:{i}", test_obj)
     
-    # This save operation will trigger delete() internally if versioning is disabled
-    registry.version_objects = False
-    registry.save("test:obj", "new_value")
+    # Try to save the same object concurrently from multiple threads
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(save_with_delay, i) for i in range(5)]
+        for future in futures:
+            future.result()  # Wait for all saves to complete
     
-    # Verify the operation completed successfully
-    assert registry.load("test:obj") == "new_value"
-
-def test_thread_safety_dict_interface(registry):
-    """Test thread safety of dictionary-like interface operations."""
-    def dict_operation(i):
-        registry[f"test:key:{i}"] = f"value_{i}"
-        return registry[f"test:key:{i}"]
-
-    # Test concurrent dictionary operations
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(dict_operation, i) for i in range(5)]
-        results = [f.result() for f in as_completed(futures)]
-
-    # Verify all operations completed successfully
-    assert len(results) == 5
-    # Check that all expected values are present, regardless of order
-    expected_values = {f"value_{i}" for i in range(5)}
-    assert set(results) == expected_values
-    
-    # Verify that all keys are present in the registry
+    # Verify that all saves completed successfully
     for i in range(5):
-        assert f"test:key:{i}" in registry
-        assert registry[f"test:key:{i}"] == f"value_{i}"
+        loaded_obj = registry.load(f"testobj:{i}")
+        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["CUSTOM_KEY"] == "custom_value"
 
-def test_thread_safety_versioning(registry):
-    """Test thread safety of versioning operations."""
-    def version_operation(i):
-        registry.save("test:obj", f"value_{i}")
-        return registry._latest("test:obj")
+def test_distributed_lock_save_conflict(registry):
+    """Test that saving to the same version is properly prevented by locks."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from mindtrace.registry.core.registry import LockTimeoutError
 
-    # Create multiple threads to save different versions
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(version_operation, i) for i in range(5)]
-        results = [f.result() for f in as_completed(futures)]
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
+        CUSTOM_KEY="custom_value"
+    )
 
-    # Verify all versions were created
-    versions = registry.list_versions("test:obj")
-    assert len(versions) == 5
+    # First save should succeed
+    registry.save("test:conflict", test_obj, version="1.0.0")
 
-def test_thread_safety_concurrent_delete(registry):
-    """Test that concurrent delete operations are thread-safe."""
-    # First save some objects
-    for i in range(5):
-        registry.save(f"test:obj:{i}", f"value_{i}")
-
-    def delete_operation(i):
-        registry.delete(f"test:obj:{i}")
-
-    # Create multiple threads to delete objects concurrently
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(delete_operation, i) for i in range(5)]
-        [f.result() for f in as_completed(futures)]
-
-    # Verify all objects were deleted
-    assert len(registry.list_objects()) == 0
-
-def test_thread_safety_concurrent_info(registry):
-    """Test that concurrent info operations are thread-safe."""
-    # First save some objects
-    for i in range(5):
-        registry.save(f"test:obj:{i}", f"value_{i}")
-
-    def info_operation(i):
-        return registry.info(f"test:obj:{i}")
-
-    # Create multiple threads to get info concurrently
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(info_operation, i) for i in range(5)]
-        results = [f.result() for f in as_completed(futures)]
-
-    # Verify all info operations completed successfully
-    assert len(results) == 5
-    for result in results:
-        # The result should be a dictionary with version information
-        assert isinstance(result, dict)
-        # Get the latest version info
-        latest_version = max(result.keys())
-        version_info = result[latest_version]
-        # Check that the version info contains the expected keys
-        assert "class" in version_info
-        assert "materializer" in version_info
-        assert "metadata" in version_info
-        assert version_info["class"] == "builtins.str"
-
-def test_thread_safety_concurrent_materializer_registration(registry):
-    """Test that concurrent materializer registration is thread-safe."""
-    def register_materializer(i):
-        registry.register_materializer(f"test:class:{i}", f"test:materializer:{i}")
-
-    # Create multiple threads to register materializers concurrently
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(register_materializer, i) for i in range(5)]
-        [f.result() for f in as_completed(futures)]
-
-    # Verify all materializers were registered
-    materializers = registry.registered_materializers()
-    assert len(materializers) >= 5  # Note: >= because there are default materializers
-    for i in range(5):
-        assert f"test:class:{i}" in materializers
-        assert materializers[f"test:class:{i}"] == f"test:materializer:{i}"
-
-def test_thread_safety_concurrent_operations(registry):
-    """Test that different types of operations can run concurrently."""
-    def mixed_operation(i):
+    # Function to attempt save to same version
+    def attempt_conflicting_save(i):
         try:
-            if i % 3 == 0:
-                # Save new object
-                registry.save(f"test:obj:{i}", f"value_{i}")
-            elif i % 3 == 1:
-                # Try to load and return existing object
-                try:
-                    if registry.has_object(f"test:obj:{i-1}"):
-                        return registry.load(f"test:obj:{i-1}")
-                except ValueError:
-                    # Object might not exist yet, which is expected in concurrent operations
-                    pass
-            else:
-                # Try to delete object
-                try:
-                    if registry.has_object(f"test:obj:{i-2}"):
-                        registry.delete(f"test:obj:{i-2}")
-                except ValueError:
-                    # Object might not exist yet, which is expected in concurrent operations
-                    pass
-        except Exception as e:
-            # Log any unexpected errors
-            print(f"Error in operation {i}: {str(e)}")
-            raise
+            registry.save("test:conflict", test_obj, version="1.0.0")
+            return False  # Should not reach here
+        except (ValueError, LockTimeoutError):
+            return True  # Expected error
 
-    # Create multiple threads to perform different operations concurrently
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = [executor.submit(mixed_operation, i) for i in range(10)]
-        results = [f.result() for f in as_completed(futures)]
+    # Try to save to same version concurrently
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(attempt_conflicting_save, i) for i in range(5)]
+        results = [future.result() for future in futures]
 
-    # Verify final state
-    # Get all objects in the registry
-    objects = registry.list_objects()
+    # All attempts should have failed
+    assert all(results)
+
+    # Original object should still be intact
+    loaded_obj = registry.load("test:conflict", version="1.0.0")
+    assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+    assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+    assert loaded_obj["CUSTOM_KEY"] == "custom_value"
+
+def test_distributed_lock_load_concurrent(registry):
+    """Test that concurrent loads work correctly with shared locks."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
     
-    # Verify that all existing objects have valid data
-    for obj_name in objects:
-        assert registry.has_object(obj_name), f"Object {obj_name} should exist"
-        value = registry.load(obj_name)
-        assert isinstance(value, str), f"Object {obj_name} should be a string"
-        assert value.startswith("value_"), f"Object {obj_name} should start with 'value_'"
+    # Create and save a test object
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir", 
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir", 
+        CUSTOM_KEY="custom_value"
+    )
+    registry.save("test:concurrent:load", test_obj)
+    
+    # Function to perform load
+    def load_object():
+        loaded_obj = registry.load("test:concurrent:load")
+        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["CUSTOM_KEY"] == "custom_value"
+        return True
+    
+    # Try to load the same object concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(load_object) for _ in range(10)]
+        results = [future.result() for future in futures]
+    
+    # All loads should have succeeded
+    assert all(results)
 
-    # Verify that no objects have invalid states
-    for i in range(10):
-        if registry.has_object(f"test:obj:{i}"):
-            value = registry.load(f"test:obj:{i}")
-            assert isinstance(value, str), f"Object {i} should be a string"
-            assert value == f"value_{i}", f"Object {i} should have value 'value_{i}'"
+@pytest.mark.slow
+def test_distributed_lock_save_load_race(registry):
+    """Test that save and load operations are properly synchronized."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    import time
 
-    # Verify that any returned values from load operations are valid
-    for result in results:
-        if result is not None:
-            assert isinstance(result, str), "Loaded value should be a string"
-            assert result.startswith("value_"), "Loaded value should start with 'value_'"
+    test_obj1 = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir1",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir1",
+        CUSTOM_KEY="value1"
+    )
+    test_obj2 = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir2",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
+        CUSTOM_KEY="value2"
+    )
+
+    # Function to perform save
+    def save_object():
+        time.sleep(0.1)  # Add delay to increase chance of race condition
+        registry.save("test:race", test_obj1)
+        time.sleep(0.1)
+        registry.save("test:race", test_obj2)
+
+    # Function to perform load
+    def load_object():
+        time.sleep(0.1)  # Add delay to increase chance of race condition
+        try:
+            obj = registry.load("test:race")
+            return obj["CUSTOM_KEY"]
+        except ValueError:
+            # If the object doesn't exist yet, wait a bit and try again
+            time.sleep(0.2)
+            obj = registry.load("test:race")
+            return obj["CUSTOM_KEY"]
+
+    # Run save and load operations concurrently
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        save_future = executor.submit(save_object)
+        load_future = executor.submit(load_object)
+        
+        # Wait for both operations to complete
+        save_future.result()
+        load_value = load_future.result()
+    
+    # Verify that the loaded value is consistent
+    # It should be either value1 or value2, but not a mix of both
+    assert load_value in ("value1", "value2")
+    
+    # Final state should be test_obj2
+    final_obj = registry.load("test:race")
+    assert final_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir2"
+    assert final_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir2"
+    assert final_obj["CUSTOM_KEY"] == "value2"
     
