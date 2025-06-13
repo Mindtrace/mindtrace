@@ -49,9 +49,6 @@ def setup_logger(
     logger.setLevel(logger_level)
     logger.propagate = propagate
 
-    if logger.hasHandlers():
-        return logger
-
     # Set up stream handler
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(stream_level)
