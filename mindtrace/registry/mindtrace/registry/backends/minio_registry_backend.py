@@ -1,7 +1,11 @@
+import io
+import json
 import os
 from pathlib import Path
 import tempfile
+import time
 from typing import Dict, List, TypeVar
+import uuid
 import yaml
 
 from minio import Minio
@@ -90,15 +94,16 @@ class MinioRegistryBackend(RegistryBackend):
         secure: bool = True,
         **kwargs,
     ):
-        """Initialize the MinIO backend.
+        """Initialize the MinioRegistryBackend.
 
         Args:
-            uri: Local base path for temporary storage
-            endpoint: MinIO server endpoint (e.g., 'localhost:9000')
-            access_key: MinIO access key for authentication
-            secret_key: MinIO secret key for authentication
-            bucket: Name of the MinIO bucket to use
-            secure: Whether to use HTTPS (True) or HTTP (False)
+            uri: The base directory path where all object files and metadata will be stored.
+            endpoint: MinIO server endpoint.
+            access_key: MinIO access key.
+            secret_key: MinIO secret key.
+            bucket: MinIO bucket name.
+            secure: Whether to use HTTPS.
+            **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
         if uri is not None:
@@ -106,7 +111,8 @@ class MinioRegistryBackend(RegistryBackend):
         else:
             self._uri = Path(self.config["MINDTRACE_MINIO_REGISTRY_URI"]).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
-        self._metadata_path = "registry_metadata.yaml"
+        self._metadata_path = "registry_metadata.json"
+        self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
 
         self.client = Minio(
             endpoint=endpoint,
@@ -114,21 +120,29 @@ class MinioRegistryBackend(RegistryBackend):
             secret_key=secret_key,
             secure=secure,
         )
-        self.bucket = bucket
 
         # Create bucket if it doesn't exist
-        if not self.client.bucket_exists(self.bucket):
-            self.client.make_bucket(self.bucket)
+        if not self.client.bucket_exists(bucket):
+            self.client.make_bucket(bucket)
+        self.bucket = bucket
 
-        # Ensure metadata file exists
+        # Check if metadata file exists
         try:
-            self.client.stat_object(self.bucket, self._metadata_path)
+            self.client.stat_object(self.bucket, str(self._metadata_path))
         except S3Error as e:
             if e.code == "NoSuchKey":
-                with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                    yaml.safe_dump({"materializers": {}}, tmp)
-                    self.client.fput_object(self.bucket, self._metadata_path, tmp.name)
+                # Create empty metadata file if it doesn't exist
+                data = json.dumps({"materializers": {}}).encode()
+                data_io = io.BytesIO(data)
+                self.client.put_object(
+                    self.bucket,
+                    str(self._metadata_path),
+                    data_io,
+                    len(data),
+                    content_type="application/json"
+                )
             else:
+                # Re-raise other S3 errors
                 raise
 
     @property
@@ -138,7 +152,7 @@ class MinioRegistryBackend(RegistryBackend):
     @property
     def metadata_path(self) -> Path:
         """The resolved metadata file path for the backend."""
-        return self._metadata_path
+        return Path(self._metadata_path)
 
     def push(self, name: str, version: str, local_path: str):
         """Upload a local directory to MinIO.
@@ -200,12 +214,20 @@ class MinioRegistryBackend(RegistryBackend):
             metadata: Dictionary containing object metadata
         """
         self.validate_object_name(name)
-        key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
-        self.logger.debug(f"Saving metadata to {key}: {metadata}")
-
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-            yaml.safe_dump(metadata, tmp)
-            self.client.fput_object(self.bucket, key, tmp.name)
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
+        
+        # Convert metadata to bytes and wrap in BytesIO
+        data = json.dumps(metadata).encode()
+        data_io = io.BytesIO(data)
+        
+        self.client.put_object(
+            self.bucket,
+            meta_path,
+            data_io,
+            len(data),
+            content_type="application/json"
+        )
 
     def fetch_metadata(self, name: str, version: str) -> dict:
         """Fetch object metadata from MinIO.
@@ -213,35 +235,36 @@ class MinioRegistryBackend(RegistryBackend):
         Args:
             name: Name of the object
             version: Version string
-        
+
         Returns:
             Dictionary containing object metadata
         """
-        key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-            self.client.fget_object(self.bucket, key, tmp.name)
-            with open(tmp.name, "r") as f:
-                data = yaml.safe_load(f)
-            self.logger.debug(f"Loaded metadata: {data}")
-            return data
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        self.logger.debug(f"Loading metadata from: {meta_path}")
+        
+        response = self.client.get_object(self.bucket, meta_path)
+        metadata = json.loads(response.data.decode())
+
+        # Add the path to the object directory to the metadata:
+        object_key = self._object_key(name, version)
+        metadata.update({"path": str(self._uri / object_key)})
+
+        self.logger.debug(f"Loaded metadata: {metadata}")
+        return metadata
 
     def delete_metadata(self, name: str, version: str):
         """Delete object metadata from MinIO.
 
         Args:
-            name: Name of the object
-            version: Version string
+            name: Name of the object.
+            version: Version of the object.
         """
-        key = f"_meta_{name.replace(':', '_')}@{version}.yaml"
-        self.logger.debug(f"Deleting metadata file: {key}")
-
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
-            self.client.remove_object(self.bucket, key)
+            self.client.remove_object(self.bucket, meta_path)
         except S3Error as e:
-            if e.code == "NoSuchKey":
-                pass  # Ignore if file doesn't exist
-            else:
-                self.logger.error(f"Error deleting metadata file: {e}")
+            if e.code != "NoSuchKey":
                 raise
 
     def register_materializer(self, object_class: str, materializer_class: str):
@@ -252,15 +275,32 @@ class MinioRegistryBackend(RegistryBackend):
             materializer_class: Materializer class to register.
         """
         try:
-            # Get the backend metadata
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                with open(tmp.name, 'r') as f:
-                    metadata = yaml.safe_load(f)
+            try:
+                response = self.client.get_object(self.bucket, str(self._metadata_path))
+                metadata = json.loads(response.data.decode())
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    # If metadata doesn't exist, create new metadata
+                    metadata = {"materializers": {}}
+                else:
+                    # Re-raise any other S3 errors
+                    raise
+
+            # Update metadata with new materializer
             metadata["materializers"][object_class] = materializer_class
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                yaml.safe_dump(metadata, tmp)
-                self.client.fput_object(self.bucket, self.metadata_path, tmp.name)
+
+            # Convert metadata to bytes and wrap in BytesIO
+            data = json.dumps(metadata).encode()
+            data_io = io.BytesIO(data)
+
+            # Save updated metadata
+            self.client.put_object(
+                self.bucket,
+                str(self._metadata_path),
+                data_io,
+                len(data),
+                content_type="application/json"
+            )
         except Exception as e:
             self.logger.error(f"Error registering materializer for {object_class}: {e}")
             raise e
@@ -274,17 +314,22 @@ class MinioRegistryBackend(RegistryBackend):
             object_class: Object class to get the registered materializer for.
 
         Returns:
-            Materializer class string.
+            Materializer class string, or None if no materializer is registered for the object class.
         """
         try:
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                with open(tmp.name, "r") as f:
-                    metadata = yaml.safe_load(f)
-            return metadata["materializers"].get(object_class, None)
+            response = self.client.get_object(self.bucket, str(self._metadata_path))
+            metadata = json.loads(response.data.decode())
+            return metadata.get("materializers", {}).get(object_class)
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                # No metadata file exists, so no materializers are registered
+                return None
+            # Re-raise any other S3 errors
+            raise
         except Exception as e:
+            # Re-raise any other errors
             self.logger.error(f"Error getting registered materializer for {object_class}: {e}")
-            raise e
+            raise
         
     def registered_materializers(self) -> Dict[str, str]:
         """Get all registered materializers.
@@ -293,14 +338,19 @@ class MinioRegistryBackend(RegistryBackend):
             Dictionary mapping object classes to their registered materializer classes.
         """
         try:
-            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".yaml") as tmp:
-                self.client.fget_object(self.bucket, self.metadata_path, tmp.name)
-                with open(tmp.name, 'r') as f:
-                    metadata = yaml.safe_load(f)
-            return metadata["materializers"]
+            response = self.client.get_object(self.bucket, str(self._metadata_path))
+            metadata = json.loads(response.data.decode())
+            return metadata.get("materializers", {})
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                # No metadata file exists, so no materializers are registered
+                return {}
+            # Re-raise any other S3 errors
+            raise
         except Exception as e:
-            self.logger.error(f"Error getting registered materializers: {e}")
-            raise e
+            # Re-raise any other errors
+            self.logger.error(f"Error loading materializers: {e}")
+            raise
 
     def list_objects(self) -> List[str]:
         """List all objects in the registry.
@@ -311,7 +361,7 @@ class MinioRegistryBackend(RegistryBackend):
         objects = set()
         prefix = "_meta_"
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".yaml"):
+            if obj.object_name.endswith(".json"):
                 # Extract object name from metadata filename
                 name_part = Path(obj.object_name).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
@@ -331,7 +381,7 @@ class MinioRegistryBackend(RegistryBackend):
         versions = []
 
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".yaml"):
+            if obj.object_name.endswith(".json"):
                 version = obj.object_name[len(prefix) : -5]
                 versions.append(version)
         return sorted(versions)
@@ -352,4 +402,150 @@ class MinioRegistryBackend(RegistryBackend):
             return version in self.list_versions(name)
 
     def _object_key(self, name: str, version: str) -> str:
+        """Convert object name and version to a storage key.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Storage key for the object version.
+        """
         return f"objects/{name}/{version}"
+
+    def _full_path(self, remote_key: str) -> Path:
+        """Convert a remote key to a full filesystem path.
+
+        Args:
+            remote_key (str): The remote key (relative path) to resolve.
+
+        Returns:
+            Path: The full resolved filesystem path.
+        """
+        return self.uri / remote_key
+
+    def _lock_key(self, key: str) -> str:
+        """Convert a key to a lock file key.
+
+        Args:
+            key: The key to convert.
+
+        Returns:
+            Lock file key.
+        """
+        return f"_lock_{key}"
+
+    def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Acquire a lock using Minio's object locking features.
+        
+        Args:
+            key: The key to acquire the lock for.
+            lock_id: The ID of the lock to acquire.
+            timeout: The timeout in seconds for the lock.
+            shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
+            
+        Returns:
+            True if the lock was acquired, False otherwise.
+        """
+        lock_key = self._lock_key(key)
+        
+        try:
+            # Check if lock exists and is not expired
+            try:
+                response = self.client.get_object(self.bucket, lock_key)
+                metadata = json.loads(response.data.decode())
+                if time.time() < metadata.get("expires_at", 0):
+                    # If there's an active exclusive lock, we can't acquire a shared lock
+                    if shared and not metadata.get("shared", False):
+                        return False
+                    # If there are active shared locks, we can't acquire an exclusive lock
+                    if not shared and metadata.get("shared", False):
+                        return False
+            except Exception:
+                # Lock doesn't exist or is invalid, we can proceed
+                pass
+            
+            # Create lock metadata
+            metadata = {
+                "lock_id": lock_id,
+                "expires_at": time.time() + timeout,
+                "shared": shared
+            }
+            
+            # Convert metadata to bytes and wrap in BytesIO
+            data = json.dumps(metadata).encode()
+            data_io = io.BytesIO(data)
+            
+            # Upload lock file with metadata
+            self.client.put_object(
+                self.bucket,
+                lock_key,
+                data_io,
+                len(data),
+                content_type="application/json"
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
+            return False
+
+    def release_lock(self, key: str, lock_id: str) -> bool:
+        """Release a lock by verifying ownership and removing the lock object.
+        
+        Args:
+            key: The key to unlock
+            lock_id: The lock ID that was used to acquire the lock
+            
+        Returns:
+            True if lock was released, False otherwise
+        """
+        lock_key = self._lock_key(key)
+        
+        try:
+            # Verify lock ownership
+            try:
+                response = self.client.get_object(self.bucket, lock_key)
+                lock_data = json.loads(response.data.decode())
+                if lock_data.get("lock_id") != lock_id:
+                    return False  # Not our lock
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    return True  # Lock doesn't exist
+                raise  # Unexpected error
+            
+            # Remove the lock
+            self.client.remove_object(self.bucket, lock_key)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error releasing lock for {key}: {e}")
+            return False
+
+    def check_lock(self, key: str) -> tuple[bool, str | None]:
+        """Check if a key is currently locked.
+        
+        Args:
+            key: The key to check
+            
+        Returns:
+            Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID.
+            If not locked, lock_id will be None.
+        """
+        lock_key = self._lock_key(key)
+        
+        try:
+            response = self.client.get_object(self.bucket, lock_key)
+            lock_data = json.loads(response.data.decode())
+            
+            # Check if lock is expired
+            if time.time() > lock_data.get("expires_at", 0):
+                return False, None
+                
+            return True, lock_data.get("lock_id")
+            
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False, None
+            raise  # Unexpected error

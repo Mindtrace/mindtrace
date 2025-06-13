@@ -1,25 +1,20 @@
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
-
 import shutil
 from tempfile import TemporaryDirectory
-from threading import RLock
 from typing import Any, Dict, List, Type
+import uuid
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import (
-    Config, 
-    ifnone, 
-    instantiate_target, 
-    first_not_none, 
-    Mindtrace, 
-)
-from mindtrace.registry import (
-    ConfigArchiver, 
-    LocalRegistryBackend, 
-    RegistryBackend
-)
+from mindtrace.core import Config, ifnone, instantiate_target, first_not_none, Mindtrace
+from mindtrace.registry import ConfigArchiver, LocalRegistryBackend, RegistryBackend
+
+class LockTimeoutError(Exception):
+    """Exception raised when a lock cannot be acquired within the timeout period."""
+    pass
+
 
 class Registry(Mindtrace):
     """A thread-safe registry for storing and versioning objects.
@@ -66,34 +61,89 @@ class Registry(Mindtrace):
             updated=None,  # Will be auto-generated
         )
         
-        # Initialize thread safety
-        self._lock = RLock()
+        # Initialize materializers only if metadata doesn't exist
+        with self._get_object_lock("_registry", "init"):
+            if not self.backend.metadata_path.exists():
+                self._register_default_materializers()
+
+    def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
+        """Get a distributed lock for a specific object version.
         
-        # Register default materializers
-        self._register_default_materializers()
+        Args:
+            name: Name of the object
+            version: Version of the object
+            shared: Whether to use a shared (read) lock. If False, uses an exclusive (write) lock.
+        
+        Returns:
+            A context manager that handles lock acquisition and release.
+        """
+        if version == "latest":
+            version = self._latest(name)
+        lock_key = f"{name}@{version}"
+        lock_id = str(uuid.uuid4())
+        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        
+        @contextmanager
+        def lock_context():
+            try:
+                if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
+                    raise LockTimeoutError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                yield
+            finally:
+                self.backend.release_lock(lock_key, lock_id)
+                
+        return lock_context()
+
+    def _validate_version(self, version: str | None) -> str:
+        """Validate and normalize a version string to follow semantic versioning syntax.
+        
+        Args:
+            version: Version string to validate.
+            
+        Returns:
+            Normalized version string.
+            
+        Raises:
+            ValueError: If version string is invalid.
+        """
+        if version is None or version == "latest":
+            return None
+            
+        # Remove any 'v' prefix
+        if version.startswith('v'):
+            version = version[1:]
+            
+        # Split into components and validate
+        try:
+            components = version.split('.')
+            # Convert each component to int to validate
+            [int(c) for c in components]
+            return version
+        except ValueError:
+            raise ValueError(f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')")
 
     def save(
-        self, 
-        name: str, 
-        obj: Any, 
-        materializer: Type[BaseMaterializer] | None = None, 
+        self,
+        name: str,
+        obj: Any,
+        materializer: Type[BaseMaterializer] | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
         metadata: Dict[str, Any] | None = None,
     ):
         """Save an object to the registry.
 
-        If a materializer is not provided, the materializer will be inferred from the object type. The inferred 
-        materializer will be registered with the object for loading the object from the registry in the future. The 
+        If a materializer is not provided, the materializer will be inferred from the object type. The inferred
+        materializer will be registered with the object for loading the object from the registry in the future. The
         order of precedence for determining the materializer is:
 
         1. Materializer provided as an argument.
         2. Materializer previously registered for the object type.
         3. Materializer for any of the object's base classes (checked recursively).
         4. The object itself, if it's its own materializer.
-        
+
         If a materializer cannot be found through one of the above means, an error will be raised.
-        
+
         Args:
             name: Name of the object.
             obj: Object to save.
@@ -101,71 +151,102 @@ class Registry(Mindtrace):
             version: Version of the object. If None, auto-increments the version number.
             init_params: Additional parameters to pass to the materializer.
             metadata: Additional metadata to store with the object.
-            
+
         Raises:
             ValueError: If no materializer is found for the object.
+            ValueError: If version string is invalid.
         """
-        with self._lock:
-            object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-            
-            # Get all base classes recursively
-            def get_all_base_classes(cls):
-                bases = []
-                for base in cls.__bases__:
-                    bases.append(base)
-                    bases.extend(get_all_base_classes(base))
-                return bases
-            
-            # Try to find a materializer in order of precedence
-            materializer = first_not_none((
-                materializer,
-                self.registered_materializer(object_class),
-                *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in get_all_base_classes(type(obj))],
-                object_class if isinstance(obj, BaseMaterializer) else None,
-            ))
-            
-            if materializer is None:
-                raise ValueError(f"No materializer found for object of type {type(obj)}.")
-            materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
+        object_class = f"{type(obj).__module__}.{type(obj).__name__}"
 
-            if not self.version_objects:  # If versioning is disabled, delete any existing object
-                if self.has_object(name=name):
-                    self.delete(name=name)  
-                version = "latest"
-            elif self.has_object(name=name, version=version):
-                self.logger.error(f"Object {name} version {version} already exists.")
-                raise ValueError(f"Object {name} version {version} already exists.")
+        # Get all base classes recursively
+        def get_all_base_classes(cls):
+            bases = []
+            for base in cls.__bases__:
+                bases.append(base)
+                bases.extend(get_all_base_classes(base))
+            return bases
 
-            if version is None or version == "latest":
+        # Try to find a materializer in order of precedence
+        materializer = first_not_none((
+            materializer,
+            self.registered_materializer(object_class),
+            *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in get_all_base_classes(type(obj))],
+            object_class if isinstance(obj, BaseMaterializer) else None,
+        ))
+
+        if materializer is None:
+            raise ValueError(f"No materializer found for object of type {type(obj)}.")
+        materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
+
+        # Generate temp version for atomic save
+        temp_version = f"__temp__{uuid.uuid4()}__"
+
+        try:
+            # Save to temp location first
+            with self._get_object_lock(name, temp_version):
+                try:
+                    metadata = {
+                        "class": object_class,
+                        "materializer": materializer_class,
+                        "init_params": ifnone(init_params, default={}),
+                        "metadata": ifnone(metadata, default={}),
+                    }
+
+                    with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
+                        materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
+                        materializer.save(obj)
+                        self.backend.push(name=name, version=temp_version, local_path=temp_dir)
+                        self.backend.save_metadata(name=name, version=temp_version, metadata=metadata)
+                except Exception as e:
+                    self.logger.error(f"Error saving object to temp location {name}@{temp_version}: {e}")
+                    raise e
+        
+            if not self.version_objects or version is None:
                 version = self._next_version(name)
-
-            try:
-                metadata = {
-                    "class": object_class,
-                    "materializer": materializer_class,
-                    "init_params": ifnone(init_params, default={}),
-                    "metadata": ifnone(metadata, default={}),
-                }
-                
-                with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                    materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
-                    materializer.save(obj)
-                    self.backend.push(name=name, version=version, local_path=temp_dir)
-                    self.backend.save_metadata(name=name, version=version, metadata=metadata)
-
-            except Exception as e:
-                self.logger.error(f"Error pushing object {name} version {version}: {e}")
-                raise e
             else:
-                self.logger.debug(f"Pushed {name} version {version} to registry.")
+                # Validate and normalize version string
+                version = self._validate_version(version)
+                if self.has_object(name=name, version=version):
+                    self.logger.error(f"Object {name} version {version} already exists.")
+                    raise ValueError(f"Object {name} version {version} already exists.")
 
-    def load(self, name: str, version: str | None = "latest", output_dir: str | None = None, **kwargs) -> Any:
+            # Now handle versioning and final save
+            with self._get_object_lock(name, version):
+                # Move temp version to final version
+                try:
+                    # If target exists, delete it first
+                    if self.has_object(name=name, version=version):
+                        self.backend.delete(name=name, version=version)
+                        self.backend.delete_metadata(name=name, version=version)
+
+                    # Move temp version to target by pulling and pushing
+                    with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
+                        self.backend.pull(name=name, version=temp_version, local_path=temp_dir)
+                        self.backend.push(name=name, version=version, local_path=temp_dir)
+                        self.backend.save_metadata(name=name, version=version, metadata=metadata)
+                
+                except Exception as e:
+                    self.logger.error(f"Error moving temp version to final version for {name}@{version}: {e}")
+                    raise e
+
+        finally:
+            # Cleanup temp version
+            try:
+                self.backend.delete(name=name, version=temp_version)
+                self.backend.delete_metadata(name=name, version=temp_version)
+            except Exception as e:
+                self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
+
+        self.logger.debug(f"Saved {name}@{version} to registry.")
+
+    def load(self, name: str, version: str | None = "latest", output_dir: str | None = None, acquire_lock: bool = True, **kwargs) -> Any:
         """Load an object from the registry.
         
         Args:
             name: Name of the object.
             version: Version of the object.
             output_dir (optional): If the loaded object is a Path, the Path contents will be moved to this directory.
+            acquire_lock: Whether to acquire a lock for this operation. Set to False if the caller already has a lock.
             **kwargs: Additional keyword arguments to pass to the object's constructor.
 
         Returns:
@@ -174,26 +255,31 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If the object does not exist.
         """
-        with self._lock:
-            if version == "latest" or not self.version_objects:
-                version = self._latest(name)
+        if version == "latest" or not self.version_objects:
+            version = self._latest(name)
 
-            if not self.has_object(name=name, version=version):
-                self.logger.error(f"Object {name} version {version} does not exist.")
-                raise ValueError(f"Object {name} version {version} does not exist.")
+        if not self.has_object(name=name, version=version):
+            self.logger.error(f"Object {name} version {version} does not exist.")
+            raise ValueError(f"Object {name} version {version} does not exist.")
 
-            metadata = self.info(name=name, version=version)
+        # Acquire shared lock for reading if requested
+        lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+        with lock_context:
+            metadata = self.info(name=name, version=version, acquire_lock=acquire_lock)
             if not metadata.get("class"):
                 raise ValueError(f"Class not registered for {name}@{version}.")
             
             self.logger.debug(f"Loading {name}@{version} from registry.")
             self.logger.debug(f"Metadata: {metadata}")
 
-            object_class = metadata["class"]
-            materializer = metadata["materializer"]
-            init_params = metadata.get("init_params", {}).copy()
-            init_params.update(kwargs)
+        object_class = metadata["class"]
+        materializer = metadata["materializer"]
+        init_params = metadata.get("init_params", {}).copy()
+        init_params.update(kwargs)
 
+        # Now acquire lock for the actual load operation
+        lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+        with lock_context:
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                     self.backend.pull(name=name, version=version, local_path=temp_dir)
@@ -237,30 +323,31 @@ class Registry(Mindtrace):
         Raises:
             KeyError: If the object doesn't exist.
         """
-        with self._lock:
-            if version is None:
-                # Check if object exists at all
-                if name not in self.list_objects():
-                    raise KeyError(f"Object {name} does not exist")
-                versions = self.list_versions(name)
-            else:
-                # Check if specific version exists
-                if not self.has_object(name, version):
-                    raise KeyError(f"Object {name} version {version} does not exist")
-                versions = [version]
+        if version is None:
+            # Check if object exists at all
+            if name not in self.list_objects():
+                raise KeyError(f"Object {name} does not exist")
+            versions = self.list_versions(name)
+        else:
+            # Check if specific version exists
+            if not self.has_object(name, version):
+                raise KeyError(f"Object {name} version {version} does not exist")
+            versions = [version]
 
-            for ver in versions:
+        for ver in versions:
+            with self._get_object_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
-            self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
+        self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
 
-    def info(self, name: str | None = None, version: str | None = None) -> Dict[str, Any]:
+    def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
         """Get detailed information about objects in the registry.
 
         Args:
             name: Optional name of a specific object. If None, returns info for all objects.
             version: Optional version string. If None and name is provided, returns info for latest version.
                     Ignored if name is None.
+            acquire_lock: Whether to acquire a lock for this operation. Set to False if the caller already has a lock.
 
         Returns:
             If name is None:
@@ -287,40 +374,55 @@ class Registry(Mindtrace):
             # Get info for specific object and version
             object_info = registry.info("yolo8", version="1.0.0")
         """
-        with self._lock:
-            if name is None:
-                # Return info for all objects
-                result = {}
-                for obj_name in self.list_objects():
-                    result[obj_name] = {}
-                    for ver in self.list_versions(obj_name):
-                        try:
+        if name is None:
+            # Return info for all objects
+            result = {}
+            for obj_name in self.list_objects():
+                result[obj_name] = {}
+                for ver in self.list_versions(obj_name):
+                    try:
+                        lock_context = self._get_object_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
+                        with lock_context:
                             meta = self.backend.fetch_metadata(obj_name, ver)
                             result[obj_name][ver] = meta
-                        except Exception as e:
-                            self.logger.warning(f"Error loading metadata for {obj_name}@{ver}: {e}")
-                            continue
-                return result
-            elif version is not None or version == "latest":
-                # Return info for a specific object
-                if version == "latest":
-                    version = self._latest(name)
+                    except Exception as e:
+                        self.logger.warning(f"Error loading metadata for {obj_name}@{ver}: {e}")
+                        continue
+            return result
+        elif version is not None or version == "latest":
+            # Return info for a specific object
+            if version == "latest":
+                version = self._latest(name)
+            lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+            with lock_context:
                 info = self.backend.fetch_metadata(name, version)
                 info.update({"version": version})
                 return info
-            else:  # name is not None and version is None, return all versions for the given objectd name
-                result = {}
-                for ver in self.list_versions(name):
+        else:  # name is not None and version is None, return all versions for the given object name
+            result = {}
+            for ver in self.list_versions(name):
+                lock_context = self._get_object_lock(name, ver, shared=True) if acquire_lock else nullcontext()
+                with lock_context:
                     info = self.backend.fetch_metadata(name, ver)
                     info.update({"version": ver})
                     result[ver] = info
-                return result
+            return result
 
     def has_object(self, name: str, version: str = "latest") -> bool:
-        with self._lock:
-            if version == "latest":
-                version = self._latest(name)
-            return self.backend.has_object(name, version)
+        """Check if an object exists in the registry.
+
+        Args:
+            name: Name of the object.
+            version: Version of the object. If "latest", checks the latest version.
+
+        Returns:
+            True if the object exists, False otherwise.
+        """
+        if version == "latest":
+            version = self._latest(name)
+            if version is None:
+                return False
+        return self.backend.has_object(name, version)
 
     def register_materializer(self, object_class: str, materializer_class: str):
         """Register a materializer for an object class.
@@ -329,7 +431,7 @@ class Registry(Mindtrace):
             object_class: Object class to register the materializer for.
             materializer_class: Materializer class to register.
         """
-        with self._lock:
+        with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
 
     def registered_materializer(self, object_class: str) -> str | None:
@@ -341,7 +443,7 @@ class Registry(Mindtrace):
         Returns:
             Materializer class string, or None if no materializer is registered for the object class.
         """
-        with self._lock:
+        with self._get_object_lock("_registry", "materializers", shared=True):
             return self.backend.registered_materializer(object_class)
 
     def registered_materializers(self) -> Dict[str, str]:
@@ -350,7 +452,7 @@ class Registry(Mindtrace):
         Returns:
             Dictionary mapping object classes to their registered materializer classes.
         """
-        with self._lock:
+        with self._get_object_lock("_registry", "materializers", shared=True):
             return self.backend.registered_materializers()
 
     def list_objects(self) -> List[str]:
@@ -359,7 +461,7 @@ class Registry(Mindtrace):
         Returns:
             List of object names.
         """
-        with self._lock:
+        with self._get_object_lock("_registry", "objects", shared=True):
             return self.backend.list_objects()
 
     def list_versions(self, object_name: str) -> List[str]:
@@ -371,8 +473,7 @@ class Registry(Mindtrace):
         Returns:
             List of version strings
         """
-        with self._lock:
-            return self.backend.list_versions(object_name)
+        return self.backend.list_versions(object_name)
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
         """Map object types to their available versions.
@@ -380,11 +481,10 @@ class Registry(Mindtrace):
         Returns:
             Dict of object_name → version list
         """
-        with self._lock:
-            result = {}
-            for object_name in self.list_objects():
-                result[object_name] = self.list_versions(object_name)
-            return result
+        result = {}
+        for object_name in self.list_objects():
+            result[object_name] = self.list_versions(object_name)
+        return result
 
     def download(self, source_registry: 'Registry', name: str, version: str | None = "latest", target_name: str | None = None, target_version: str | None = None) -> None:
         """Download an object from another registry.
@@ -403,36 +503,36 @@ class Registry(Mindtrace):
             ValueError: If the object doesn't exist in the source registry
             ValueError: If the target object already exists and versioning is disabled
         """
-        with self._lock:
-            # Validate source registry
-            if not isinstance(source_registry, Registry):
-                raise ValueError("source_registry must be an instance of Registry")
+        # Validate source registry
+        if not isinstance(source_registry, Registry):
+            raise ValueError("source_registry must be an instance of Registry")
 
-            # Resolve latest version if needed
-            if version == "latest":
-                version = source_registry._latest(name)
-                if version is None:
-                    raise ValueError(f"No versions found for object {name} in source registry")
+        # Resolve latest version if needed
+        if version == "latest":
+            version = source_registry._latest(name)
+            if version is None:
+                raise ValueError(f"No versions found for object {name} in source registry")
 
-            # Set target name and version if not specified
-            target_name = ifnone(target_name, default=name)
-            if target_version is None:
-                target_version = self._next_version(target_name)
-            else:
-                if self.has_object(name=target_name, version=target_version):
-                    raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
+        # Set target name and version if not specified
+        target_name = ifnone(target_name, default=name)
+        if target_version is None:
+            target_version = self._next_version(target_name)
+        else:
+            if self.has_object(name=target_name, version=target_version):
+                raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
 
-            # Check if object exists in source registry
-            if not source_registry.has_object(name=name, version=version):
-                raise ValueError(f"Object {name} version {version} does not exist in source registry")
+        # Check if object exists in source registry
+        if not source_registry.has_object(name=name, version=version):
+            raise ValueError(f"Object {name} version {version} does not exist in source registry")
 
-            # Get metadata from source registry
-            metadata = source_registry.info(name=name, version=version)
-            
-            # Load object from source registry
-            obj = source_registry.load(name=name, version=version)
+        # Get metadata from source registry
+        metadata = source_registry.info(name=name, version=version)
+        
+        # Load object from source registry
+        obj = source_registry.load(name=name, version=version)
 
-            # Save to current registry
+        # Save to current registry with lock
+        with self._get_object_lock(target_name, target_version):
             self.save(
                 name=target_name,
                 obj=obj,
@@ -442,7 +542,7 @@ class Registry(Mindtrace):
                 metadata=metadata.get("metadata", {})
             )
 
-            self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
+        self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
@@ -567,14 +667,16 @@ class Registry(Mindtrace):
         Returns:
             Next version string
         """
-        with self._lock:
-            most_recent = self._latest(name)
-            if most_recent is None:
-                return "1"
-            components = most_recent.split(".")
-            components[-1] = str(int(components[-1]) + 1)
+        if not self.version_objects:
+            return "1"
+            
+        most_recent = self._latest(name)
+        if most_recent is None:
+            return "1"
+        components = most_recent.split(".")
+        components[-1] = str(int(components[-1]) + 1)
 
-            return ".".join(components)
+        return ".".join(components)
 
     def _latest(self, name: str) -> str:
         """Return the most recent version string for an object.
@@ -585,71 +687,76 @@ class Registry(Mindtrace):
         Returns:
             Most recent version string, or None if no versions exist
         """
-        with self._lock:
-            versions = self.list_versions(name)
-            if not versions:
-                return None
-            return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
+        versions = self.list_versions(name)
+        if not versions:
+            return None
+            
+        # Filter out temporary versions (those with __temp__ prefix)
+        versions = [v for v in versions if not v.startswith('__temp__')]
+        if not versions:
+            return None
+            
+        return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
     def _register_default_materializers(self):
         """Register default materializers."""
-        with self._lock:
-            # Core zenml materializers
-            self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-            self.register_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-            self.register_materializer("builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-            self.register_materializer("builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-            self.register_materializer("builtins.list", "zenml.materializers.BuiltInContainerMaterializer")
-            self.register_materializer("builtins.dict", "zenml.materializers.BuiltInContainerMaterializer")
-            self.register_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
-            self.register_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
-            self.register_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
-            self.register_materializer("pathlib.PosixPath", "zenml.materializers.PathMaterializer")
-            self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
+        
+        # Core zenml materializers
+        self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
+        self.register_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
+        self.register_materializer("builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
+        self.register_materializer("builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
+        self.register_materializer("builtins.list", "zenml.materializers.BuiltInContainerMaterializer")
+        self.register_materializer("builtins.dict", "zenml.materializers.BuiltInContainerMaterializer")
+        self.register_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
+        self.register_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
+        self.register_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
+        self.register_materializer("pathlib.PosixPath", "zenml.materializers.PathMaterializer")
+        self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
 
-            # Core mindtrace materializers
-            self.register_materializer("mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver")
+        # Core mindtrace materializers
+        self.register_materializer("mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver")
 
-            # (Optional) Huggingface materializers
-            try:
-                import datasets
-                self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
-                self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
-                self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
-            except ImportError:
-                pass
-            
-            try:
-                import transformers
-                self.register_materializer("transformers.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
-                self.register_materializer("transformers.modeling_utils.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
-            except ImportError:
-                pass
+        # (Optional) Huggingface materializers
+        try:
+            import datasets
+            self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+            self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+            self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+        except ImportError:
+            pass
+        
+        try:
+            import transformers
+            self.register_materializer("transformers.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
+            self.register_materializer("transformers.modeling_utils.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
+        except ImportError:
+            pass
 
-            # (Optional) NumPy materializers
-            try:
-                import numpy
-                self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
-            except ImportError:
-                pass
+        # (Optional) NumPy materializers
+        try:
+            import numpy
+            self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
+        except ImportError:
+            pass
 
-            # (Optional) Pillow materializers
-            try:
-                from PIL import Image
-                self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
-            except ImportError:
-                pass
+        # (Optional) Pillow materializers
+        try:
+            from PIL import Image
+            self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
+        except ImportError:
+            pass
 
-            # (Optional) PyTorch materializers
-            try:
-                import torch
-                self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
-                self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
-                self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
-                self.register_materializer("torch.nn.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
-                self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
-            except ImportError:
-                pass
+        # (Optional) PyTorch materializers
+        try:
+            import torch
+            self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.nn.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
+            self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
+        except ImportError:
+            pass
 
     ### Dictionary-like interface methods ###
 
@@ -666,15 +773,14 @@ class Registry(Mindtrace):
             KeyError: If the object doesn't exist
             ValueError: If the version format is invalid
         """
-        with self._lock:
-            try:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name, version = key, "latest"
-                return self.load(name=name, version=version)
-            except ValueError as e:
-                raise KeyError(f"Object not found: {key}") from e
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, "latest"
+            return self.load(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
 
     def __setitem__(self, key: str, value: Any) -> None:
         """Save an object to the registry using dictionary-like syntax.
@@ -686,12 +792,11 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If the version format is invalid
         """
-        with self._lock:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
-            self.save(name=name, obj=value, version=version)
+        if "@" in key:
+            name, version = key.split("@", 1)
+        else:
+            name, version = key, None
+        self.save(name=name, obj=value, version=version)
 
     def __delitem__(self, key: str) -> None:
         """Delete an object from the registry using dictionary-like syntax.
@@ -703,15 +808,14 @@ class Registry(Mindtrace):
             KeyError: If the object doesn't exist
             ValueError: If the version format is invalid
         """
-        with self._lock:
-            try:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name, version = key, None
-                self.delete(name=name, version=version)
-            except ValueError as e:
-                raise KeyError(f"Object not found: {key}") from e
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, None
+            self.delete(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
 
     def __contains__(self, key: str) -> bool:
         """Check if an object exists in the registry using dictionary-like syntax.
@@ -722,18 +826,17 @@ class Registry(Mindtrace):
         Returns:
             True if the object exists, False otherwise.
         """
-        with self._lock:
-            try:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name = key
-                    version = self._latest(name)
-                    if version is None:
-                        return False
-                return self.has_object(name=name, version=version)
-            except ValueError:
-                return False
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name = key
+                version = self._latest(name)
+                if version is None:
+                    return False
+            return self.has_object(name=name, version=version)
+        except ValueError:
+            return False
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get an object from the registry, returning a default value if it doesn't exist.
@@ -748,11 +851,10 @@ class Registry(Mindtrace):
         Returns:
             The loaded object if it exists, otherwise the default value.
         """
-        with self._lock:
-            try:
-                return self[key]
-            except KeyError:
-                return default
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     def keys(self) -> List[str]:
         """Get a list of all object names in the registry.
@@ -760,8 +862,7 @@ class Registry(Mindtrace):
         Returns:
             List of object names.
         """
-        with self._lock:
-            return self.list_objects()
+        return self.list_objects()
 
     def values(self) -> List[Any]:
         """Get a list of all objects in the registry (latest versions only).
@@ -769,8 +870,7 @@ class Registry(Mindtrace):
         Returns:
             List of loaded objects.
         """
-        with self._lock:
-            return [self[name] for name in self.keys()]
+        return [self[name] for name in self.keys()]
 
     def items(self) -> List[tuple[str, Any]]:
         """Get a list of (name, object) pairs for all objects in the registry (latest versions only).
@@ -778,8 +878,7 @@ class Registry(Mindtrace):
         Returns:
             List of (name, object) tuples.
         """
-        with self._lock:
-            return [(name, self[name]) for name in self.keys()]
+        return [(name, self[name]) for name in self.keys()]
 
     def update(self, mapping: Dict[str, Any] | 'Registry', *, sync_all_versions: bool = True) -> None:
         """Update the registry with objects from a dictionary or another registry.
@@ -789,24 +888,22 @@ class Registry(Mindtrace):
             sync_all_versions: Whether to save all versions of the objects being downloaded. If False, only the latest
                 version will be saved. Only used if mapping is a Registry instance.
         """
-        with self._lock:
-            if isinstance(mapping, Registry) and sync_all_versions:
-                for name in mapping.list_objects():
-                    for version in mapping.list_versions(name):
-                        if self.has_object(name, version):
-                            raise ValueError(f"Object {name} version {version} already exists in registry.")
-                for name in mapping.list_objects():
-                    for version in mapping.list_versions(name):
-                        self.download(mapping, name, version=version)
-            else:
-                for key, value in mapping.items():
-                    self[key] = value
+        if isinstance(mapping, Registry) and sync_all_versions:
+            for name in mapping.list_objects():
+                for version in mapping.list_versions(name):
+                    if self.has_object(name, version):
+                        raise ValueError(f"Object {name} version {version} already exists in registry.")
+            for name in mapping.list_objects():
+                for version in mapping.list_versions(name):
+                    self.download(mapping, name, version=version)
+        else:
+            for key, value in mapping.items():
+                self[key] = value
 
     def clear(self) -> None:
         """Remove all objects from the registry."""
-        with self._lock:
-            for name in self.keys():
-                del self[name]
+        for name in self.keys():
+            del self[name]
 
     def pop(self, key: str, default: Any = None) -> Any:
         """Remove and return an object from the registry.
@@ -821,15 +918,32 @@ class Registry(Mindtrace):
         Raises:
             KeyError: If the object doesn't exist and no default is provided.
         """
-        with self._lock:
-            try:
-                value = self[key]
-                del self[key]
-                return value
-            except KeyError:
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, None
+                version = self._latest(name)
+                if version is None:
+                    if default is not None:
+                        return default
+                    raise KeyError(f"Object {name} does not exist")
+
+            # Check existence first without locks
+            if not self.has_object(name, version):
                 if default is not None:
                     return default
-                raise
+                raise KeyError(f"Object {name} version {version} does not exist")
+
+            # Use a single exclusive lock for both reading and deleting
+            with self._get_object_lock(name, version):
+                value = self.load(name=name, version=version, acquire_lock=False)
+                self.delete(name=name, version=version)
+                return value
+        except KeyError:
+            if default is not None:
+                return default
+            raise
 
     def setdefault(self, key: str, default: Any = None) -> Any:
         """Get an object from the registry, setting it to default if it doesn't exist.
@@ -841,13 +955,17 @@ class Registry(Mindtrace):
         Returns:
             The object if it exists, otherwise the default value.
         """
-        with self._lock:
-            try:
-                return self[key]
-            except KeyError:
-                if default is not None:
+        try:
+            return self[key]
+        except KeyError:
+            if default is not None:
+                if "@" in key:
+                    name, version = key.split("@", 1)
+                else:
+                    name, version = key, None
+                with self._get_object_lock(name, version or "latest"):
                     self[key] = default
-                return default
+            return default
 
     def __len__(self) -> int:
         """Get the number of unique named items in the registry.
@@ -858,7 +976,6 @@ class Registry(Mindtrace):
         Returns:
             Number of unique named items in the registry.
         """
-        with self._lock:
-            return len(self.keys())
+        return len(self.keys())
 
     ### End of dictionary-like interface methods ###
