@@ -112,14 +112,22 @@ class LocalRegistryBackend(RegistryBackend):
 
         # Cleanup parent if empty
         parent = target.parent
-        if parent.exists() and not any(parent.iterdir()):
-            self.logger.debug(f"Removing empty parent directory: {parent}")
-            try:
-                parent.rmdir()
-            except Exception as e:
-                if parent.exists():
-                    self.logger.error(f"Error deleting parent directory: {e}")
-                    raise
+        
+        # Use a lock file for the parent directory
+        lock_path = self._lock_path(f"{name}@parent")
+        with open(lock_path, 'w') as f:
+            if self._acquire_file_lock(f):
+                try:
+                    if parent.exists() and not any(parent.iterdir()):
+                        self.logger.debug(f"Removing empty parent directory: {parent}")
+                        try:
+                            parent.rmdir()
+                        except Exception as e:
+                            if parent.exists():
+                                self.logger.error(f"Error deleting parent directory: {e}")
+                                raise
+                finally:
+                    self._release_file_lock(f)
 
     def save_metadata(self, name: str, version: str, metadata: dict):
         """Save metadata for a object version.
