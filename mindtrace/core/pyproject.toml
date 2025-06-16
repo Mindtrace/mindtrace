@@ -1,7 +1,10 @@
 [project]
 name = "mindtrace-core"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0"
+]
 
 [tool.setuptools]
 packages = ["mindtrace.core"]
