@@ -1061,3 +1061,177 @@ def test_overwrite_handles_other_metadata_error(backend, monkeypatch):
     
     # Verify it's not a NoSuchKey error
     assert exc_info.value.code == "InternalError"
+
+
+def test_metadata_path_property(backend):
+    """Test that the metadata_path property returns the correct Path object."""
+    # The default metadata path should be "registry_metadata.json"
+    assert backend.metadata_path == Path("registry_metadata.json")
+    
+    # Create a new backend with a custom metadata path
+    custom_backend = MinioRegistryBackend(
+        uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / "test_dir"),
+        endpoint="localhost:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket="test-bucket",
+        secure=False
+    )
+    custom_backend._metadata_path = "custom_metadata.json"
+    
+    # Verify the custom metadata path is returned correctly
+    assert custom_backend.metadata_path == Path("custom_metadata.json")
+
+
+def test_skip_directory_markers(backend, monkeypatch, tmp_path):
+    """Test that directory markers (objects ending with '/') are skipped during operations."""
+    # Create test files and directories
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("test content")
+    
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    subdir_file = subdir / "file.txt"
+    subdir_file.write_text("subdir content")
+    
+    another_dir = tmp_path / "another_dir"
+    another_dir.mkdir()
+    another_dir_file = another_dir / "test.txt"
+    another_dir_file.write_text("another dir content")
+    
+    # Track fput_object calls to verify directory markers are skipped
+    fput_calls = []
+    def mock_fput_object(bucket, object_name, file_path):
+        fput_calls.append(object_name)
+    
+    monkeypatch.setattr(backend.client, "fput_object", mock_fput_object)
+    
+    # Perform push operation
+    backend.push("test:object", "1.0.0", str(tmp_path))
+    
+    # Verify that directory markers were skipped
+    assert len(fput_calls) == 3, "Should have uploaded exactly 3 files (skipping directory markers)"
+    assert not any(call.endswith('/') for call in fput_calls), "No directory markers should have been uploaded"
+    assert any("test.txt" in call for call in fput_calls), "Root test.txt should have been uploaded"
+    assert any("subdir/file.txt" in call for call in fput_calls), "File in subdir should have been uploaded"
+    assert any("another_dir/test.txt" in call for call in fput_calls), "File in another_dir should have been uploaded"
+
+
+def test_skip_directory_markers_during_overwrite(backend, monkeypatch):
+    """Test that directory markers are skipped during overwrite operations, especially with double-digit versions."""
+    # Mock list_objects to return a mix of regular files and directory markers
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [
+            MockObject(f"{prefix}/test.txt"),
+            MockObject(f"{prefix}/10/"),  # Directory marker that looks like a version
+            MockObject(f"{prefix}/10/data.json"),  # File that could be confused with a version
+            MockObject(f"{prefix}/subdir/"),  # Regular directory marker
+            MockObject(f"{prefix}/subdir/file.txt")
+        ]
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    # Track copy_object calls
+    copy_calls = []
+    def mock_copy_object(bucket, target_obj_name, source):
+        copy_calls.append({
+            "bucket": bucket,
+            "target_obj_name": target_obj_name,
+            "source": source
+        })
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "copy_object", mock_copy_object)
+    
+    # Perform overwrite from version 1.0.0 to 10.0.0
+    backend.overwrite(
+        source_name="test:source",
+        source_version="1.0.0",
+        target_name="test:source",
+        target_version="10.0.0"
+    )
+    
+    # Verify that directory markers were skipped
+    assert len(copy_calls) == 3, "Should have copied exactly 3 files (skipping 2 directory markers)"
+    assert not any(call["target_obj_name"].endswith('/') for call in copy_calls), "No directory markers should have been copied"
+    assert any("test.txt" in call["target_obj_name"] for call in copy_calls), "Root test.txt should have been copied"
+    assert any("10/data.json" in call["target_obj_name"] for call in copy_calls), "File in 10/ should have been copied"
+    assert any("subdir/file.txt" in call["target_obj_name"] for call in copy_calls), "File in subdir should have been copied"
+
+
+def test_pull_skips_directory_markers(backend, monkeypatch, tmp_path):
+    """Test that pull skips directory markers (objects ending with '/') and only downloads files."""
+    # Mock list_objects to return files and directory markers
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [
+            MockObject(f"{prefix}/file1.txt"),
+            MockObject(f"{prefix}/subdir/"),  # Directory marker
+            MockObject(f"{prefix}/subdir/file2.txt"),
+            MockObject(f"{prefix}/10/"),      # Directory marker for double-digit version
+            MockObject(f"{prefix}/10/data.json"),
+        ]
+
+    # Track which files are actually downloaded
+    downloaded = []
+    def mock_fget_object(bucket, object_name, file_path):
+        downloaded.append(object_name)
+
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
+
+    # Call pull
+    backend.pull("test:object", "1.0.0", str(tmp_path))
+
+    # Only files, not directory markers, should be downloaded
+    assert f"objects/test:object/1.0.0/file1.txt" in downloaded
+    assert f"objects/test:object/1.0.0/subdir/file2.txt" in downloaded
+    assert f"objects/test:object/1.0.0/10/data.json" in downloaded
+    # Directory markers should NOT be downloaded
+    assert not any(obj.endswith('/') for obj in downloaded)
+    assert len(downloaded) == 3
+
+
+def test_pull_skips_root_directory_marker(backend, monkeypatch, tmp_path):
+    """Test that pull skips the root directory marker (object name == prefix)."""
+    # Simulate the remote_key as it would be constructed in pull
+    remote_key = "objects/test:object/1.0.0"
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [
+            MockObject(remote_key),  # This is the root directory marker
+            MockObject(f"{remote_key}/file1.txt"),
+        ]
+
+    downloaded = []
+    def mock_fget_object(bucket, object_name, file_path):
+        downloaded.append(object_name)
+
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
+
+    backend.pull("test:object", "1.0.0", str(tmp_path))
+
+    # Only the file should be downloaded, not the root marker
+    assert f"{remote_key}/file1.txt" in downloaded
+    assert remote_key not in downloaded
+    assert len(downloaded) == 1
