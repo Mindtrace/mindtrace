@@ -65,6 +65,9 @@ def concrete_backend():
             """Test implementation of check_lock."""
             return False, None
 
+        def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
+            pass
+
     with tempfile.TemporaryDirectory() as temp_dir:
         yield ConcreteBackend(temp_dir)
 

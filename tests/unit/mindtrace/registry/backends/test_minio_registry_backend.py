@@ -503,4 +503,3 @@ def test_check_lock_other_error(backend, monkeypatch):
     
     # Verify it's not a NoSuchKey error
     assert exc_info.value.code == "InternalError"
-

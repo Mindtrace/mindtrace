@@ -9,6 +9,7 @@ import uuid
 import yaml
 
 from minio import Minio
+from minio.api import CopySource
 from minio.error import S3Error
 from pydantic import BaseModel
 
@@ -167,11 +168,22 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Uploading directory from {local_path} to {remote_key}.")
 
         local_path = Path(local_path)
+        uploaded_files = []
         for file in local_path.rglob("*"):
             if file.is_file():
                 obj_key = os.path.join(remote_key, file.relative_to(local_path)).replace("\\", "/")
+                self.logger.debug(f"Uploading file {file} to {obj_key}")
                 self.client.fput_object(self.bucket, obj_key, str(file))
-  
+                uploaded_files.append(obj_key)
+        
+        self.logger.debug(f"Upload complete. Files uploaded: {uploaded_files}")
+        
+        # Verify upload
+        try:
+            objects = list(self.client.list_objects(self.bucket, prefix=remote_key))
+            self.logger.debug(f"Verification - Objects in {remote_key}: {[obj.object_name for obj in objects]}")
+        except Exception as e:
+            self.logger.error(f"Error verifying upload: {e}")
 
     def pull(self, name: str, version: str, local_path: str):
         """Download a directory from MinIO.
@@ -184,12 +196,31 @@ class MinioRegistryBackend(RegistryBackend):
         remote_key = self._object_key(name, version)
         self.logger.debug(f"Downloading directory from {remote_key} to {local_path}.")
 
+        # List objects before download
+        try:
+            objects = list(self.client.list_objects(self.bucket, prefix=remote_key))
+            self.logger.debug(f"Objects found in {remote_key}: {[obj.object_name for obj in objects]}")
+        except Exception as e:
+            self.logger.error(f"Error listing objects before download: {e}")
+
         local_path = Path(local_path)
+        downloaded_files = []
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
             relative_path = Path(obj.object_name).relative_to(remote_key)
             dest_path = local_path / relative_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
+            self.logger.debug(f"Downloading {obj.object_name} to {dest_path}")
             self.client.fget_object(self.bucket, obj.object_name, str(dest_path))
+            downloaded_files.append(str(dest_path))
+
+        self.logger.debug(f"Download complete. Files downloaded: {downloaded_files}")
+        
+        # Verify download
+        try:
+            local_files = list(local_path.rglob("*"))
+            self.logger.debug(f"Verification - Local files after download: {[str(f) for f in local_files]}")
+        except Exception as e:
+            self.logger.error(f"Error verifying download: {e}")
 
     def delete(self, name: str, version: str):
         """Delete a version directory from MinIO.
@@ -538,3 +569,113 @@ class MinioRegistryBackend(RegistryBackend):
             if e.code == "NoSuchKey":
                 return False, None
             raise  # Unexpected error
+
+    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
+        """Overwrite an object.
+
+        This method supports saving objects to a temporary source location first, and then moving it to a target 
+        object in a single atomic operation.
+        
+        After the overwrite method completes, the source object should be deleted, and the target object should be 
+        updated to be the new source version.
+
+        Args:
+            source_name: Name of the source object.
+            source_version: Version of the source object.
+            target_name: Name of the target object.
+            target_version: Version of the target object.
+        """
+        try:
+            # Get the source and target object keys
+            source_key = self._object_key(source_name, source_version)
+            target_key = self._object_key(target_name, target_version)
+            
+            # Get the source and target metadata keys
+            source_meta_key = f"_meta_{source_name.replace(':', '_')}@{source_version}.json"
+            target_meta_key = f"_meta_{target_name.replace(':', '_')}@{target_version}.json"
+            
+            self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
+            
+            # List source objects before any operations
+            try:
+                source_objects = list(self.client.list_objects(self.bucket, prefix=source_key, recursive=True))
+            except Exception as e:
+                self.logger.error(f"Error listing source objects: {e}")
+                raise
+            
+            # If target exists, delete it first
+            try:
+                target_objects = list(self.client.list_objects(self.bucket, prefix=target_key, recursive=True))
+                if target_objects:
+                    for obj in target_objects:
+                        self.client.remove_object(self.bucket, obj.object_name)
+                self.client.remove_object(self.bucket, target_meta_key)
+            except S3Error as e:
+                if e.code != "NoSuchKey":
+                    self.logger.error(f"Error deleting target objects: {e}")
+                    raise
+                self.logger.debug("No existing target objects to delete")
+            
+            # Copy all objects from source to target
+            if not source_objects:
+                raise ValueError(f"No source objects found for {source_name}@{source_version}")
+                
+            for obj in source_objects:
+                # Skip directory markers (objects ending with /)
+                if obj.object_name.endswith('/'):
+                    continue
+                    
+                # Create target object name by replacing source prefix with target prefix
+                target_obj_name = obj.object_name.replace(source_key, target_key)
+                self.logger.debug(f"Copying {obj.object_name} to {target_obj_name}")
+                
+                # Copy the object
+                self.client.copy_object(
+                    self.bucket,
+                    target_obj_name,
+                    CopySource(self.bucket, obj.object_name)
+                )
+            
+            # Copy metadata file if it exists
+            try:
+                self.logger.debug(f"Copying metadata from {source_meta_key} to {target_meta_key}")
+                source_meta = self.client.get_object(self.bucket, source_meta_key)
+                metadata = json.loads(source_meta.data.decode())
+                
+                # Update the path in metadata
+                metadata["path"] = f"s3://{self.bucket}/{target_key}"
+                
+                # Save updated metadata
+                data = json.dumps(metadata).encode()
+                data_io = io.BytesIO(data)
+                self.client.put_object(
+                    self.bucket,
+                    target_meta_key,
+                    data_io,
+                    len(data),
+                    content_type="application/json"
+                )
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    raise ValueError(f"No source metadata found for {source_name}@{source_version}")
+                raise
+            
+            # Delete source objects
+            for obj in source_objects:
+                # Skip directory markers
+                if obj.object_name.endswith('/'):
+                    continue
+                self.client.remove_object(self.bucket, obj.object_name)
+            
+            # Delete source metadata
+            try:
+                self.client.remove_object(self.bucket, source_meta_key)
+            except S3Error as e:
+                if e.code != "NoSuchKey":
+                    raise
+            
+            self.logger.debug(f"Successfully completed overwrite operation for {target_name}@{target_version}")
+            
+        except Exception as e:
+            self.logger.error(f"Error during overwrite operation: {e}")
+            raise e
