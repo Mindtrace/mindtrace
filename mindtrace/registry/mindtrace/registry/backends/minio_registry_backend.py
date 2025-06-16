@@ -206,7 +206,15 @@ class MinioRegistryBackend(RegistryBackend):
         local_path = Path(local_path)
         downloaded_files = []
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
-            relative_path = Path(obj.object_name).relative_to(remote_key)
+            # Skip directory markers
+            if obj.object_name.endswith('/'):
+                continue
+                
+            # Get the relative path by removing the remote_key prefix
+            relative_path = obj.object_name[len(remote_key):].lstrip('/')
+            if not relative_path:  # Skip if it's the root directory
+                continue
+                
             dest_path = local_path / relative_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Downloading {obj.object_name} to {dest_path}")

@@ -4,6 +4,7 @@ import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
 import uuid
+import time
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
@@ -61,11 +62,12 @@ class Registry(Mindtrace):
             updated=None,  # Will be auto-generated
         )
         
-        # Initialize materializers only if metadata doesn't exist
-        with self._get_object_lock("_registry", "init"):
-            if not self.backend.metadata_path.exists():
+        # Register the default materializers if there are none
+        if len(self.registered_materializers()) == 0:
+            with self._get_object_lock("_registry", "init"):
                 self._register_default_materializers()
-
+                return
+                                    
     def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
         """Get a distributed lock for a specific object version.
         
@@ -200,7 +202,6 @@ class Registry(Mindtrace):
                         "init_params": ifnone(init_params, default={}),
                         "metadata": ifnone(metadata, default={}),
                     }
-
                     with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                         materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
                         materializer.save(obj)
