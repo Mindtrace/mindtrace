@@ -907,4 +907,34 @@ def test_overwrite_updates_metadata_path(backend, temp_dir):
     expected_path = str(backend.uri / "test:source" / "2.0.0")
     assert target_meta["path"] == expected_path
 
+def test_release_lock_handles_invalid_json_and_io_errors(backend):
+    """Test that release_lock properly handles JSON decode errors and IO errors."""
+    # Create a lock file with invalid JSON content
+    lock_path = backend._lock_path("test_lock")
+    lock_path.touch()
+    with open(lock_path, 'w') as f:
+        f.write("invalid json content")
+    
+    # Test JSON decode error
+    result = backend.release_lock("test_lock", "test_id")
+    assert result is False
+    
+    # Test IO error by making the file unreadable
+    if platform.system() == 'Windows':
+        # On Windows, we need to close the file before changing permissions
+        import stat
+        lock_path.chmod(stat.S_IREAD)  # Make read-only
+    else:
+        lock_path.chmod(0o000)  # Remove all permissions
+    
+    result = backend.release_lock("test_lock", "test_id")
+    assert result is False
+    
+    # Clean up
+    if platform.system() == 'Windows':
+        lock_path.chmod(stat.S_IWRITE | stat.S_IREAD)  # Restore read/write
+    else:
+        lock_path.chmod(0o666)  # Restore permissions
+    lock_path.unlink()
+
 
