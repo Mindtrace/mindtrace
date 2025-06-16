@@ -146,8 +146,9 @@ class CoreSettings(BaseSettings):
     LOGGER: LOGGER
     DIR_SOURCE: DIR_SOURCE
 
-    class Config:
-        env_nested_delimiter = "__"
+    model_config = {
+        "env_nested_delimiter": "__",
+    }
 
     @classmethod
     def settings_customise_sources(
@@ -159,9 +160,9 @@ class CoreSettings(BaseSettings):
         file_secret_settings,
     ):
         return (
+            init_settings,        # constructor kwargs
             env_settings,         # env vars take precedence
             dotenv_settings,      # then .env
-            init_settings,        # then constructor kwargs
             load_ini_settings,    # then INI file (lowest precedence)
             file_secret_settings,
         )
