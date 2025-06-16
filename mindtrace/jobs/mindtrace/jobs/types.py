@@ -1,11 +1,14 @@
-from pydantic import BaseModel
-from typing import Optional
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel
+
 
 class BackendType(str, Enum):
     LOCAL = "local"
     REDIS = "redis"
     RABBITMQ = "rabbitmq"
+
 
 class ExecutionStatus(str, Enum):
     QUEUED = "queued"
@@ -14,19 +17,23 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
 class JobInput(BaseModel):
     """Example job input class - in practice, define your own BaseModel classes"""
     pass
 
+
 class JobOutput(BaseModel):
     """Example job output class - in practice, define your own BaseModel classes"""
     pass
+
 
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
     name: str
     input: BaseModel  # Accept any BaseModel, not just JobInput
     output: Optional[BaseModel] = None  # Accept any BaseModel, not just JobOutput
+
 
 class Job(BaseModel):
     """A job instance ready for execution - system routes based on schema_name"""

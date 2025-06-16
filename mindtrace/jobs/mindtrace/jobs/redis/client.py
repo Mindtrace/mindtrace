@@ -3,21 +3,18 @@ Redis queue implementation using Redis data structures.
 Provides distributed, persistent queuing for production deployments.
 """
 import json
-import uuid
-from typing import Optional, Dict, Any, List
-import pydantic
-from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.queue_management.redis.fifo_queue import RedisQueue
-from mindtrace.jobs.mindtrace.queue_management.redis.stack import RedisStack
-from mindtrace.jobs.mindtrace.queue_management.redis.priority import RedisPriorityQueue
-from mindtrace.jobs.mindtrace.queue_management.redis.connection import RedisConnection
-from mindtrace.jobs.mindtrace.types import Job
 import logging
-import redis
 from queue import Empty
 import threading
-from typing import Optional
+from typing import Any, Dict, List, Optional
+import uuid
+
 import pydantic
+import redis
+
+from mindtrace.jobs import Job, OrchestratorBackend, RedisConnection, RedisPriorityQueue, RedisQueue, RedisStack
+
+
 class RedisClient(OrchestratorBackend):
     METADATA_KEY = "mtrix:queue_metadata"  # Centralized metadata key
     EVENTS_CHANNEL = "mtrix:queue_events"  # Pub/Sub channel for queue events
@@ -34,8 +31,8 @@ class RedisClient(OrchestratorBackend):
         self.queues: dict[str, any] = {}  # Local cache of queue objects
         self._local_lock = threading.Lock()  # Thread lock for local state modifications
         self._load_queue_metadata()  # Load previously declared queues from metadata.
-        self._start_event_listener()
-          # Start a background thread to listen for queue events.
+        self._start_event_listener() # Start a background thread to listen for queue events.
+    
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
         metadata = self.redis.hgetall(self.METADATA_KEY)
@@ -118,6 +115,7 @@ class RedisClient(OrchestratorBackend):
                                 del self.queues[qname]
                 except Exception:
                     pass
+
     def declare_queue(self, queue_name: str, **kwargs) -> dict:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
         queue_type = kwargs.get("queue_type", "fifo")
@@ -197,6 +195,7 @@ class RedisClient(OrchestratorBackend):
             }
         finally:
             lock.release()
+
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
         """Publish a message (a pydantic model) to the specified Redis queue."""
         priority = kwargs.get("priority")
@@ -216,10 +215,10 @@ class RedisClient(OrchestratorBackend):
             return message_dict["job_id"]
         except Exception:
             raise
-    def receive_message(
-        self, queue_name: str, **kwargs
-    ) -> Optional[dict]:
+
+    def receive_message(self, queue_name: str, **kwargs) -> Optional[dict]:
         """Retrieve a message from a specified Redis queue.
+
         Returns the message as a dict.
         """
         with self._local_lock:
@@ -239,12 +238,16 @@ class RedisClient(OrchestratorBackend):
             return None
         except Exception:
             return None
+
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         """Count the number of messages in a specified Redis queue.
+
         Args:
             queue_name: The name of the declared queue.
+
         Returns:
             Number of messages in the given queue.
+
         Raises:
             KeyError if the queue is not declared.
         """
@@ -253,10 +256,13 @@ class RedisClient(OrchestratorBackend):
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
             instance = self.queues[queue_name]
         return instance.qsize()
+
     def clean_queue(self, queue_name: str, **kwargs) -> dict:
         """Clean (purge) a specified Redis queue by deleting its underlying key.
+
         Args:
             queue_name: The name of the declared queue to be cleaned.
+
         Raises:
             KeyError if the queue is not declared.
         """
@@ -279,6 +285,7 @@ class RedisClient(OrchestratorBackend):
             raise
         finally:
             lock.release()
+
     def move_to_dlq(
         self,
         source_queue: str,
