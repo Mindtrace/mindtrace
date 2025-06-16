@@ -101,11 +101,17 @@ class Mindtrace(metaclass=MindtraceMeta):
         self.suppress = suppress
 
         # Normalize extra_settings and initialize config
-        if isinstance(extra_settings, (dict, CoreSettings)):
-            self.config = Config(extra_settings=[extra_settings] if isinstance(extra_settings, dict) else extra_settings)
+        if isinstance(extra_settings, dict):
+            # Wrap single dict in a list
+            self.config = Config(extra_settings=[extra_settings])
+        elif isinstance(extra_settings, CoreSettings):
+            # Use CoreSettings instance directly
+            self.config = Config(extra_settings=extra_settings)
         elif isinstance(extra_settings, list):
-            self.config = Config(extra_settings)
+            # Assume list of dicts or settings
+            self.config = Config(extra_settings=extra_settings)
         else:
+            # Fallback to default config
             self.config = Config()
 
         # Set up the logger
