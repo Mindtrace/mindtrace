@@ -1,13 +1,18 @@
-import uuid
 from datetime import datetime
 from typing import Any
-from .types import Job, JobSchema, JobInput
+import uuid
+
+from mindtrace.jobs import Job, JobSchema, JobInput
+
+
 def ifnone(val: Any, default: Any) -> Any:
     """Return default if val is None, otherwise return val."""
     return default if val is None else val
+
+
 def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job:
-    """
-    Create a Job from a JobSchema and input data.
+    """Create a Job from a JobSchema and input data.
+    
     This function automatically adds metadata like job ID and creation timestamp.
     Args:
         schema: The JobSchema to use for the job

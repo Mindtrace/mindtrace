@@ -1,9 +1,8 @@
 from abc import abstractmethod
 from typing import Optional
-from mindtrace.core.mindtrace.core import MindtraceABC
-from mindtrace.jobs.mindtrace.queue_management.orchestrator import Orchestrator
-from mindtrace.jobs.mindtrace.queue_management.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.mindtrace.types import Job, JobSchema
+
+from mindtrace.core import MindtraceABC
+from mindtrace.jobs import ConsumerBackendBase, Job, JobSchema, Orchestrator
 
 
 class Consumer(MindtraceABC):
