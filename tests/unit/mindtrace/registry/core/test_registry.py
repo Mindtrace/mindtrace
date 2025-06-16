@@ -2227,11 +2227,11 @@ def test_validate_version_none_or_latest(registry):
     
 def test_save_temp_version_move_error(registry, test_config):
     """Test error handling when moving temp version to final version fails."""
-    # Mock the backend's pull method to raise an exception
-    with patch.object(registry.backend, 'pull', side_effect=Exception("Failed to pull temp version")):
+    # Mock the backend's overwrite method to raise an exception
+    with patch.object(registry.backend, 'overwrite', side_effect=Exception("Failed to move temp version")):
         # Attempt to save should raise the exception
-        with pytest.raises(Exception, match="Failed to pull temp version"):
-            registry.save("test:config", test_config, version="1.0.0")
+        with pytest.raises(Exception, match="Failed to move temp version"):
+            registry.save("test:config", test_config)
         
         # Verify that temp version was cleaned up
         assert not registry.has_object("test:config", "__temp__")
@@ -2287,5 +2287,3 @@ def test_pop_keyerror_handling(registry, test_config):
             
         # With default, KeyError should be caught and default returned
         assert registry.pop("test:config@1.0.0", "default") == "default"
-    
-    

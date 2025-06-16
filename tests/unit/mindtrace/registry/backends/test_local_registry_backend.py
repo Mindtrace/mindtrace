@@ -15,6 +15,7 @@ import yaml
 
 from mindtrace.core import Config 
 from mindtrace.registry import LocalRegistryBackend
+from mindtrace.registry import Registry
 
 # Import platform-specific modules safely
 if platform.system() != 'Windows':
@@ -822,3 +823,88 @@ def test_check_lock_expired(backend):
         # Verify that the method indicates the file is not locked due to JSON decode error
         assert is_locked is False
         assert lock_id is None
+
+def test_overwrite_metadata_error_handling(backend, temp_dir, monkeypatch):
+    """Test error handling during metadata operations in overwrite."""
+    import os
+    
+    # Create source metadata and directory
+    source_meta = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "description": "Test source",
+        "created_at": "2024-01-01",
+        "path": str(temp_dir / "test:source" / "1.0.0")
+    }
+    
+    # Create source directory and write a test file
+    source_dir = temp_dir / "test:source" / "1.0.0"
+    source_dir.mkdir(parents=True)
+    with open(source_dir / "test.txt", "w") as f:
+        f.write("test content")
+    
+    # Save source metadata
+    backend.save_metadata("test:source", "1.0.0", source_meta)
+    
+    # Mock os.rename to raise an error when renaming metadata files
+    original_rename = os.rename
+    def mock_rename(src, dst):
+        if '_meta_' in str(src) and '_meta_' in str(dst):  # If renaming metadata files
+            raise OSError("Simulated rename error")
+        return original_rename(src, dst)
+    
+    # Apply the mock
+    monkeypatch.setattr(os, "rename", mock_rename)
+    
+    # Attempt overwrite - should raise an error
+    with pytest.raises(OSError) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:source",
+            target_version="2.0.0"
+        )
+    
+    # Verify the error message
+    assert "Simulated rename error" in str(exc_info.value)
+    
+    # Verify that the source metadata still exists (rollback worked)
+    assert (backend.uri / f"_meta_test_source@1.0.0.yaml").exists()
+    
+    # Verify that the target metadata doesn't exist (rollback worked)
+    assert not (backend.uri / f"_meta_test_source@2.0.0.yaml").exists()
+
+def test_overwrite_updates_metadata_path(backend, temp_dir):
+    """Test that overwrite updates the path in metadata correctly."""
+    # Create source metadata and directory
+    source_meta = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "description": "Test source",
+        "created_at": "2024-01-01",
+        "path": str(temp_dir / "test:source" / "1.0.0")
+    }
+    
+    # Create source directory and write a test file
+    source_dir = temp_dir / "test:source" / "1.0.0"
+    source_dir.mkdir(parents=True)
+    with open(source_dir / "test.txt", "w") as f:
+        f.write("test content")
+    
+    # Save source metadata
+    backend.save_metadata("test:source", "1.0.0", source_meta)
+    
+    # Perform overwrite
+    backend.overwrite(
+        source_name="test:source",
+        source_version="1.0.0",
+        target_name="test:source",
+        target_version="2.0.0"
+    )
+    
+    # Verify that the target metadata exists and has the correct path
+    target_meta = backend.fetch_metadata("test:source", "2.0.0")
+    expected_path = str(backend.uri / "test:source" / "2.0.0")
+    assert target_meta["path"] == expected_path
+
+

@@ -181,6 +181,15 @@ class Registry(Mindtrace):
         # Generate temp version for atomic save
         temp_version = f"__temp__{uuid.uuid4()}__"
 
+        if not self.version_objects or version is None:
+            version = self._next_version(name)
+        else:
+            # Validate and normalize version string
+            version = self._validate_version(version)
+            if self.has_object(name=name, version=version):
+                self.logger.error(f"Object {name} version {version} already exists.")
+                raise ValueError(f"Object {name} version {version} already exists.")
+
         try:
             # Save to temp location first
             with self._get_object_lock(name, temp_version):
@@ -201,29 +210,10 @@ class Registry(Mindtrace):
                     self.logger.error(f"Error saving object to temp location {name}@{temp_version}: {e}")
                     raise e
         
-            if not self.version_objects or version is None:
-                version = self._next_version(name)
-            else:
-                # Validate and normalize version string
-                version = self._validate_version(version)
-                if self.has_object(name=name, version=version):
-                    self.logger.error(f"Object {name} version {version} already exists.")
-                    raise ValueError(f"Object {name} version {version} already exists.")
-
-            # Now handle versioning and final save
+            # Get a lock for the version to be updated and move the temp version to the final version
             with self._get_object_lock(name, version):
-                # Move temp version to final version
                 try:
-                    # If target exists, delete it first
-                    if self.has_object(name=name, version=version):
-                        self.backend.delete(name=name, version=version)
-                        self.backend.delete_metadata(name=name, version=version)
-
-                    # Move temp version to target by pulling and pushing
-                    with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                        self.backend.pull(name=name, version=temp_version, local_path=temp_dir)
-                        self.backend.push(name=name, version=version, local_path=temp_dir)
-                        self.backend.save_metadata(name=name, version=version, metadata=metadata)
+                    self.backend.overwrite(source_name=name, source_version=temp_version, target_name=name, target_version=version)
                 
                 except Exception as e:
                     self.logger.error(f"Error moving temp version to final version for {name}@{version}: {e}")
@@ -693,8 +683,6 @@ class Registry(Mindtrace):
             
         # Filter out temporary versions (those with __temp__ prefix)
         versions = [v for v in versions if not v.startswith('__temp__')]
-        if not versions:
-            return None
             
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 

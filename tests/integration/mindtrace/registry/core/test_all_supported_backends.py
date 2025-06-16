@@ -1,3 +1,4 @@
+import logging
 import os
 import pytest
 from pathlib import Path
@@ -53,6 +54,7 @@ def registry(backend_type, temp_dir):
         backend_params["bucket"] = f"test-registry-{uuid.uuid4().hex[:8]}"
     
     backend = backend_config["class"](**backend_params)
+    
     registry = Registry(backend=backend)
     return registry
 
@@ -75,9 +77,9 @@ def test_save_and_load_config(registry, test_config):
     
     # Load the config
     loaded_config = registry.load("test:config", version="1.0.0")
-    assert loaded_config["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-    assert loaded_config["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
-    assert loaded_config["CUSTOM_KEY"] == "custom_value"
+    
+    # Verify the loaded config matches the original
+    assert loaded_config == test_config
 
 def test_versioning(registry, test_config):
     """Test versioning functionality."""

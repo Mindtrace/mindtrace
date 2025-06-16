@@ -215,3 +215,21 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
             lock_id will be None.
         """
         pass
+
+    @abstractmethod
+    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
+        """Overwrite an object.
+
+        This method should support saving objects to a temporary source location first, and then moving it to a target 
+        object in a single atomic operation.
+        
+        After the overwrite method completes, the source object should be deleted, and the target object should be 
+        updated to be the new source version.
+
+        Args:
+            source_name: Name of the source object.
+            source_version: Version of the source object.
+            target_name: Name of the target object.
+            target_version: Version of the target object.
+        """
+        pass

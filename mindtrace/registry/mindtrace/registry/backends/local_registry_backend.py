@@ -492,3 +492,62 @@ class LocalRegistryBackend(RegistryBackend):
         except Exception as e:
             self.logger.error(f"Error checking lock for {key}: {e}")
             return False, None
+
+    def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
+        """Overwrite an object.
+
+        This method supports saving objects to a temporary source location first, and then moving it to a target 
+        object in a single atomic operation.
+        
+        After the overwrite method completes, the source object should be deleted, and the target object should be 
+        updated to be the new source version.
+
+        Args:
+            source_name: Name of the source object.
+            source_version: Version of the source object.
+            target_name: Name of the target object.
+            target_version: Version of the target object.
+        """
+        # Get the source and target paths
+        source_path = self._full_path(self._object_key(source_name, source_version))
+        target_path = self._full_path(self._object_key(target_name, target_version))
+        
+        # Get the source and target metadata paths
+        source_meta_path = self.uri / f"_meta_{source_name.replace(':', '_')}@{source_version}.yaml"
+        target_meta_path = self.uri / f"_meta_{target_name.replace(':', '_')}@{target_version}.yaml"
+        
+        self.logger.debug(f"Overwriting {target_name}@{target_version} with {source_name}@{source_version}")
+        
+        try:
+            # If target exists, delete it first
+            if target_path.exists():
+                shutil.rmtree(target_path)
+            if target_meta_path.exists():
+                target_meta_path.unlink()
+            
+            # Move source to target using atomic rename
+            source_path.rename(target_path)
+            
+            # Move metadata file
+            if source_meta_path.exists():
+                source_meta_path.rename(target_meta_path)
+            
+            # Update metadata to reflect new name/version
+            if target_meta_path.exists():
+                with open(target_meta_path, 'r') as f:
+                    metadata = yaml.safe_load(f)
+            
+                # Update the path in metadata
+                metadata["path"] = str(target_path)
+            
+                with open(target_meta_path, 'w') as f:
+                    yaml.safe_dump(metadata, f)
+            
+            self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
+            
+        except Exception as e:
+            self.logger.error(f"Error during overwrite operation: {e}")
+            # Cleanup any partial state
+            if target_path.exists() and not source_path.exists():
+                shutil.rmtree(target_path)
+            raise e
