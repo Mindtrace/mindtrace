@@ -39,6 +39,15 @@ def mock_minio_client(monkeypatch):
             
         def list_objects(self, *args, **kwargs):
             return []
+            
+        def copy_object(self, *args, **kwargs):
+            pass
+            
+        def fput_object(self, *args, **kwargs):
+            pass
+            
+        def fget_object(self, *args, **kwargs):
+            pass
     
     monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
     return MockMinio()
@@ -500,6 +509,555 @@ def test_check_lock_other_error(backend, monkeypatch):
     # Check lock - should raise the S3Error
     with pytest.raises(S3Error) as exc_info:
         backend.check_lock("test-key")
+    
+    # Verify it's not a NoSuchKey error
+    assert exc_info.value.code == "InternalError"
+
+
+def test_overwrite_updates_metadata_path(backend, monkeypatch):
+    """Test that overwrite updates the path in metadata correctly."""
+    # Mock list_objects to return source objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject("objects/test:source/1.0.0/test.txt")]
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    # Track put_object calls to verify metadata was updated correctly
+    put_calls = []
+    def mock_put_object(bucket, object_name, data, length, **kwargs):
+        put_calls.append({
+            "bucket": bucket,
+            "object_name": object_name,
+            "data": data.getvalue().decode(),
+            "length": length
+        })
+    
+    # Track copy_object calls to verify objects are copied
+    copy_calls = []
+    def mock_copy_object(bucket, target_obj_name, source):
+        copy_calls.append({
+            "bucket": bucket,
+            "target_obj_name": target_obj_name,
+            "source": source
+        })
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "copy_object", mock_copy_object)
+    
+    # Perform overwrite
+    backend.overwrite(
+        source_name="test:source",
+        source_version="1.0.0",
+        target_name="test:source",
+        target_version="2.0.0"
+    )
+    
+    # Verify that metadata was updated with correct path
+    assert len(put_calls) > 0
+    metadata_put = next(call for call in put_calls if call["object_name"] == "_meta_test_source@2.0.0.json")
+    updated_metadata = json.loads(metadata_put["data"])
+    expected_path = f"s3://{backend.bucket}/objects/test:source/2.0.0"
+    assert updated_metadata["path"] == expected_path
+    
+    # Verify that objects were copied
+    assert len(copy_calls) > 0
+    assert any(call["target_obj_name"] == "objects/test:source/2.0.0/test.txt" for call in copy_calls)
+
+
+def test_push_verifies_upload(backend, monkeypatch, tmp_path):
+    """Test that push verifies the upload by listing objects after upload."""
+    # Create a test file to upload
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("test content")
+    
+    # Track list_objects calls to verify verification step
+    list_calls = []
+    def mock_list_objects(bucket, prefix, recursive=True):
+        list_calls.append({
+            "bucket": bucket,
+            "prefix": prefix,
+            "recursive": recursive
+        })
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject(f"{prefix}/test.txt")]
+    
+    # Mock fput_object to simulate file upload
+    def mock_fput_object(bucket, object_name, file_path):
+        pass
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "fput_object", mock_fput_object)
+    
+    # Perform push
+    backend.push("test:object", "1.0.0", str(tmp_path))
+    
+    # Verify that list_objects was called for verification
+    assert len(list_calls) > 0
+    verification_call = list_calls[-1]  # Last call should be the verification
+    assert verification_call["bucket"] == backend.bucket
+    assert verification_call["prefix"] == "objects/test:object/1.0.0"
+    assert verification_call["recursive"] is True
+
+
+def test_push_handles_verification_error(backend, monkeypatch, tmp_path):
+    """Test that push handles errors during upload verification."""
+    # Create a test file to upload
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("test content")
+    
+    # Mock fput_object to simulate successful file upload
+    def mock_fput_object(bucket, object_name, file_path):
+        pass
+    
+    # Mock list_objects to raise an exception during verification
+    def mock_list_objects(bucket, prefix, recursive=True):
+        if prefix == "objects/test:object/1.0.0":  # This is the verification call
+            raise Exception("Simulated verification error")
+        return []
+    
+    monkeypatch.setattr(backend.client, "fput_object", mock_fput_object)
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    
+    # Perform push - should not raise an exception despite verification error
+    backend.push("test:object", "1.0.0", str(tmp_path))
+    
+    # The test passes if no exception is raised, as the error is caught and logged
+
+
+def test_pull_handles_list_objects_error(backend, monkeypatch, tmp_path):
+    """Test that pull handles errors when listing objects before download."""
+    # Track calls to list_objects
+    list_calls = []
+    
+    def mock_list_objects(bucket, prefix, recursive=True):
+        list_calls.append({
+            "bucket": bucket,
+            "prefix": prefix,
+            "recursive": recursive
+        })
+        # Only raise exception on first call (the one in try-except block)
+        if len(list_calls) == 1:
+            raise Exception("Simulated list objects error")
+        # Return empty list for subsequent calls
+        return []
+    
+    # Mock fget_object to simulate file download
+    def mock_fget_object(bucket, object_name, file_path):
+        pass
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
+    
+    # Perform pull - should not raise an exception despite list_objects error
+    backend.pull("test:object", "1.0.0", str(tmp_path))
+    
+    # Verify that list_objects was called at least once
+    assert len(list_calls) > 0
+    # Verify the first call was for the verification step
+    assert list_calls[0]["prefix"] == "objects/test:object/1.0.0"
+    assert list_calls[0]["recursive"] is True
+
+
+def test_pull_handles_verification_error(backend, monkeypatch, tmp_path):
+    """Test that pull handles errors during download verification."""
+    # Mock list_objects to return a test object
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject(f"{prefix}/test.txt")]
+    
+    # Mock fget_object to simulate successful file download
+    def mock_fget_object(bucket, object_name, file_path):
+        pass
+    
+    # Mock Path.rglob to raise an exception during verification
+    def mock_rglob(self, pattern):
+        raise Exception("Simulated verification error")
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "fget_object", mock_fget_object)
+    monkeypatch.setattr(Path, "rglob", mock_rglob)
+    
+    # Perform pull - should not raise an exception despite verification error
+    backend.pull("test:object", "1.0.0", str(tmp_path))
+    
+    # The test passes if no exception is raised, as the error is caught and logged
+
+
+def test_overwrite_handles_list_objects_error(backend, monkeypatch):
+    """Test that overwrite properly handles errors when listing source objects."""
+    # Mock list_objects to raise an exception
+    def mock_list_objects(bucket, prefix, recursive=True):
+        raise Exception("Simulated list objects error")
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    
+    # Attempt overwrite - should raise the exception
+    with pytest.raises(Exception) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:source",
+            target_version="2.0.0"
+        )
+    
+    # Verify the error message
+    assert str(exc_info.value) == "Simulated list objects error"
+
+
+def test_overwrite_handles_nosuchkey_error(backend, monkeypatch):
+    """Test that overwrite handles NoSuchKey error when deleting target objects."""
+    # Mock list_objects to return source and target objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        
+        # Return different objects based on the prefix
+        if "test:source" in prefix:
+            return [MockObject("objects/test:source/1.0.0/test.txt")]
+        elif "test:target" in prefix:
+            return [MockObject("objects/test:target/2.0.0/test.txt")]
+        return []
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    # Track remove_object calls
+    remove_calls = []
+    
+    # Mock remove_object to raise NoSuchKey error only for target objects
+    def mock_remove_object(bucket, object_name):
+        remove_calls.append(object_name)
+        # Only raise NoSuchKey for target objects
+        if "test:target" in object_name:
+            raise S3Error(
+                code="NoSuchKey",
+                message="Object does not exist",
+                resource="/test-bucket/objects/test:target/2.0.0/test.txt",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name=object_name
+            )
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+    
+    # This should not raise an exception
+    backend.overwrite(
+        source_name="test:source",
+        source_version="1.0.0",
+        target_name="test:target",
+        target_version="2.0.0"
+    )
+    
+    # Verify that remove_object was called for both target and source objects
+    assert any("test:target" in call for call in remove_calls), "Should have attempted to remove target objects"
+    assert any("test:source" in call for call in remove_calls), "Should have attempted to remove source objects"
+
+
+def test_overwrite_handles_other_s3error(backend, monkeypatch):
+    """Test that overwrite re-raises non-NoSuchKey S3Errors when deleting target objects."""
+    # Mock list_objects to return source objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject("objects/test:source/1.0.0/test.txt")]
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    # Mock remove_object to raise InternalError
+    def mock_remove_object(bucket, object_name):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/objects/test:target/2.0.0/test.txt",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="objects/test:target/2.0.0/test.txt"
+        )
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+    
+    # This should raise the S3Error
+    with pytest.raises(S3Error) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:target",
+            target_version="2.0.0"
+        )
+    
+    # Verify it's not a NoSuchKey error
+    assert exc_info.value.code == "InternalError"
+
+
+def test_overwrite_raises_error_when_no_source_objects(backend, monkeypatch):
+    """Test that overwrite raises ValueError when no source objects are found."""
+    # Mock list_objects to return empty list for source objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        
+        # Return empty list for source objects, but return target objects
+        if "test:source" in prefix:
+            return []
+        elif "test:target" in prefix:
+            return [MockObject("objects/test:target/2.0.0/test.txt")]
+        return []
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    
+    # Attempt overwrite - should raise ValueError
+    with pytest.raises(ValueError) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:target",
+            target_version="2.0.0"
+        )
+    
+    # Verify the error message
+    assert str(exc_info.value) == "No source objects found for test:source@1.0.0"
+
+
+def test_overwrite_skips_directory_markers(backend, monkeypatch):
+    """Test that overwrite skips directory markers when copying objects."""
+    # Mock list_objects to return source objects including a directory marker
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        
+        # Return source objects including a directory marker
+        if "test:source" in prefix:
+            return [
+                MockObject("objects/test:source/1.0.0/test.txt"),
+                MockObject("objects/test:source/1.0.0/subdir/"),  # Directory marker
+                MockObject("objects/test:source/1.0.0/subdir/file.txt")
+            ]
+        elif "test:target" in prefix:
+            return [MockObject("objects/test:target/2.0.0/test.txt")]
+        return []
+    
+    # Mock get_object to return source metadata
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    # Mock remove_object to handle target deletion
+    def mock_remove_object(bucket, object_name):
+        pass
+    
+    # Track copy_object calls
+    copy_calls = []
+    def mock_copy_object(bucket, target_obj_name, source):
+        copy_calls.append({
+            "bucket": bucket,
+            "target_obj_name": target_obj_name,
+            "source": source
+        })
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+    monkeypatch.setattr(backend.client, "copy_object", mock_copy_object)
+    
+    # Perform overwrite
+    backend.overwrite(
+        source_name="test:source",
+        source_version="1.0.0",
+        target_name="test:target",
+        target_version="2.0.0"
+    )
+    
+    # Verify that directory markers were skipped
+    assert len(copy_calls) == 2, "Should have copied exactly 2 files (skipping directory marker)"
+    assert not any(call["target_obj_name"].endswith('/') for call in copy_calls), "Directory marker should not have been copied"
+    assert any("test.txt" in call["target_obj_name"] for call in copy_calls), "Regular file should have been copied"
+    assert any("subdir/file.txt" in call["target_obj_name"] for call in copy_calls), "File in subdirectory should have been copied"
+
+
+def test_overwrite_handles_nosuchkey_metadata_error(backend, monkeypatch):
+    """Test that overwrite raises ValueError when source metadata doesn't exist."""
+    # Mock list_objects to return source objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject("objects/test:source/1.0.0/test.txt")]
+    
+    # Mock get_object to raise NoSuchKey when getting metadata
+    def mock_get_object(bucket, object_name):
+        if "_meta_" in object_name:  # This is a metadata file
+            raise S3Error(
+                code="NoSuchKey",
+                message="Object does not exist",
+                resource="/test-bucket/_meta_test_source@1.0.0.json",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name=object_name
+            )
+        # Return normal response for other objects
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    
+    # Attempt overwrite - should raise ValueError
+    with pytest.raises(ValueError) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:target",
+            target_version="2.0.0"
+        )
+    
+    # Verify the error message
+    assert str(exc_info.value) == "No source metadata found for test:source@1.0.0"
+
+
+def test_overwrite_handles_other_metadata_error(backend, monkeypatch):
+    """Test that overwrite re-raises non-NoSuchKey S3Errors when copying metadata."""
+    # Mock list_objects to return source objects
+    def mock_list_objects(bucket, prefix, recursive=True):
+        class MockObject:
+            def __init__(self, name):
+                self.object_name = name
+        return [MockObject("objects/test:source/1.0.0/test.txt")]
+    
+    # Mock get_object to raise InternalError when getting metadata
+    def mock_get_object(bucket, object_name):
+        if "_meta_" in object_name:  # This is a metadata file
+            raise S3Error(
+                code="InternalError",
+                message="Internal server error",
+                resource="/test-bucket/_meta_test_source@1.0.0.json",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name=object_name
+            )
+        # Return normal response for other objects
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:source",
+                    "version": "1.0.0",
+                    "description": "Test source",
+                    "created_at": "2024-01-01",
+                    "path": "s3://test-bucket/objects/test:source/1.0.0"
+                }).encode()
+        return MockResponse()
+    
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    
+    # Attempt overwrite - should raise the S3Error
+    with pytest.raises(S3Error) as exc_info:
+        backend.overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:target",
+            target_version="2.0.0"
+        )
     
     # Verify it's not a NoSuchKey error
     assert exc_info.value.code == "InternalError"

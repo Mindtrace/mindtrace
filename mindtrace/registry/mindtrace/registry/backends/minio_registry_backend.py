@@ -668,11 +668,7 @@ class MinioRegistryBackend(RegistryBackend):
                 self.client.remove_object(self.bucket, obj.object_name)
             
             # Delete source metadata
-            try:
-                self.client.remove_object(self.bucket, source_meta_key)
-            except S3Error as e:
-                if e.code != "NoSuchKey":
-                    raise
+            self.client.remove_object(self.bucket, source_meta_key)
             
             self.logger.debug(f"Successfully completed overwrite operation for {target_name}@{target_version}")
             
