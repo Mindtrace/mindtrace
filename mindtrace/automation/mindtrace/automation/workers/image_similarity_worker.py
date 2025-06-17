@@ -13,7 +13,10 @@ class ImageSimilarityWorker(Worker):
     """
     
     def run(self, job) -> Dict[str, Any]:
-        pass
+        dataset_name = job.get('dataset_name_in_datalake')
+        version = job.get('version', 'latest')
+        self.dataset = self.datalake.load(dataset_name, version=version)
+        return
     
     def embedding(self, images: Any) -> Any:
         pass

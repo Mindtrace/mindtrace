@@ -43,7 +43,10 @@ class AnnotatorWorker(Worker):
     
     def run(self, job) -> Dict[str, Any]:
         """Execute annotation job on dataset loaded from datalake."""
-        pass
+        dataset_name = job.get('dataset_name_in_datalake')
+        version = job.get('version', 'latest')
+        self.dataset = self.datalake.load(dataset_name, version=version)
+        return
     
-    def predict_dataset(self, dataset: Any, output_callback: Callable = None, *args, **kwargs) -> List[Dict[str, Any]]:
+    def predict_dataset(self, output_callback: Callable = None, *args, **kwargs) -> List[Dict[str, Any]]:
        pass

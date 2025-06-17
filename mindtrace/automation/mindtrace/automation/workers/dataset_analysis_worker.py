@@ -11,24 +11,32 @@ class DatasetAnalysisWorker(Worker):
     Job inputs:
     - dataset_name_in_datalake: str
     - version: str (default "latest")
-    - analysis_type: str (optional, default "all")
     """
     
     def __init__(self):
         """Initialize Dataset Analysis Worker."""
         self.datalake = Datalake()
+        self.dataset = None
     
     def run(self, job) -> Dict[str, Any]:
+        """Execute dataset analysis job."""
+        dataset_name = job.get('dataset_name_in_datalake')
+        version = job.get('version', 'latest')
+        self.dataset = self.datalake.load(dataset_name, version=version)
+        return
+    
+    def analyze_dataset_quality(self) -> Dict[str, Any]:
+        """Analyze quality of the loaded dataset."""
         pass
     
-    def analyze_dataset_quality(self, dataset: Any) -> Dict[str, Any]:
+    def analyze_class_balance(self) -> Dict[str, Any]:
+        """Analyze class balance of the loaded dataset."""
         pass
     
-    def analyze_class_balance(self, dataset: Any) -> Dict[str, Any]:
+    def analyze_data_drift(self) -> Dict[str, Any]:
+        """Analyze data drift of the loaded dataset."""
         pass
     
-    def analyze_data_drift(self, dataset: Any) -> Dict[str, Any]:
-        pass
-    
-    def analyze_model_drift(self, dataset: Any) -> Dict[str, Any]:
+    def analyze_model_drift(self) -> Dict[str, Any]:
+        """Analyze model drift of the loaded dataset."""
         pass
