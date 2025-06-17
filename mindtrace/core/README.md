@@ -71,7 +71,7 @@ config = Config({
 
 ### Observables
 
-The main idea of the Observables module is to enable lightweight observability and reactivity for `Mindtrace` objects by automatically turning selected properties into observable variables. This framework allows external components (listeners) to be notified whenever specific values change, without hard-coding the coupling between the source and observers.
+The Observables module enables lightweight observability and reactivity for class objects, automatically turning selected properties into observable variables. This framework allows external components (listeners) to be notified whenever specific values change, without hard-coding the coupling between the source and observers.
 
 There are three main classes included in the `observables` module:
 
@@ -79,9 +79,12 @@ There are three main classes included in the `observables` module:
 
 ### 1. `EventBus`
 
-An `EventBus` is a lightweight internal publish-subscribe system for event dispatching. 
+The `EventBus` is a lightweight internal publish-subscribe system for event dispatching. 
 
 **API:**
+
+Event buses expose three main methods, which may be used to `subscribe`/`unsubscribe` individual listeners and `emit` event messages.
+
 ```python
 subscribe(handler: Callable, event_name: str) -> str
 unsubscribe(handler_or_id: Union[str, Callable], event_name: str)
@@ -89,7 +92,7 @@ emit(event_name: str, **kwargs)
 ```
 
 **Example Usage:**
-An `EventBus` allows for any number of event names to be registered and used.
+To use an event bus, subscribe a handler to the bus with an associated event name. The handler will be called any time the event name is emitted. 
 
 ```python
 from mindtrace.core import EventBus
@@ -110,20 +113,21 @@ bus.emit("event", x="1", y="2")  # No output
 
 ### 2. `ObservableContext`
 
-**API:**
-
-```python
-@ObservableContext(vars: str | list[str] | dict[str, Any])  # I.e. use as a class decorator, which adds the following two methods on the wrapped class:
-subscribe(handler, event_name)
-unsubscribe(handler_or_id, event_name)
-```
-
 The `ObservableContext` class decorator automatically turns specified properties into observable fields and wires up listener support.
 
 The `ObservableContext` class supports two specific event types, with associated event names:
 
 1. `context_updated(source: str, var: str, old: any, new: any)`: May be used when _any_ observed variable changes. The name of the variable will be given as the `var` argument, with associated old and new values.
 2. `{var}_updated(source: str, old: any, new: any)`: May be used to listen to specific variables. Effectively a shorthand for:
+
+**API:**
+
+The `ObservableContext` decorator adds `subscribe` and `unsubscribe` methods onto a wrapped class, which may be used directly analogously to with the `EventBus`.
+
+```python
+subscribe(handler, event_name)
+unsubscribe(handler_or_id, event_name)
+```
 
 **Example Usage:**
 
