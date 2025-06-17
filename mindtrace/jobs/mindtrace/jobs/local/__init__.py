@@ -1,2 +1,3 @@
-from mindtrace.jobs.mindtrace.queue_management.local.client import LocalClient
+from mindtrace.jobs.mindtrace.jobs.local.client import LocalClient
+
 __all__ = ["LocalClient"]
