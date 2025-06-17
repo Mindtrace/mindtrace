@@ -1,4 +1,5 @@
-from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.queue_management.base.consumer_base import ConsumerBackendBase
-__all__ = ["OrchestratorBackend", "BrokerConnectionBase", "ConsumerBackendBase"]
+from mindtrace.jobs.mindtrace.jobs.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+
+__all__ = ["BrokerConnectionBase", "ConsumerBackendBase", "OrchestratorBackend"]
