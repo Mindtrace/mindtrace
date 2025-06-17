@@ -118,7 +118,7 @@ The `ObservableContext` class decorator automatically turns specified properties
 The `ObservableContext` class supports two specific event types, with associated event names:
 
 1. `context_updated(source: str, var: str, old: any, new: any)`: May be used when _any_ observed variable changes. The name of the variable will be given as the `var` argument, with associated old and new values.
-2. `{var}_updated(source: str, old: any, new: any)`: May be used to listen to specific variables. Effectively a shorthand for:
+2. `{var}_updated(source: str, old: any, new: any)`: May be used to listen to specific variables. 
 
 **API:**
 
