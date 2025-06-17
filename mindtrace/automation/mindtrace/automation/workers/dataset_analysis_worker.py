@@ -1,6 +1,7 @@
-from typing import Dict, Any, List
-from mindtrace.cluster.core.worker_base import Worker
+from typing import Dict, Any
 from mindtrace.datalake import Datalake
+from mindtrace.core import Worker
+
 
 
 class DatasetAnalysisWorker(Worker):

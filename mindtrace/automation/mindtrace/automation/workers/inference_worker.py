@@ -1,8 +1,9 @@
 from typing import Dict, Any, List, Callable, Union
-from mindtrace.cluster.core.worker_base import Worker
-from mindtrace.registry import Registry
-from mindtrace.core.models import ClassificationModel, DetectionModel, SegmentationModel
 from mindtrace.datalake import Datalake
+from mindtrace.models import BaseModel
+from mindtrace.core import Worker
+from mindtrace.registry import Registry
+from mindtrace.models import ClassificationModel, DetectionModel, SegmentationModel
 
 
 class AnnotatorWorker(Worker):
@@ -19,7 +20,7 @@ class AnnotatorWorker(Worker):
     - output_key: str (optional)
     """
     
-    def __init__(self, model: Union[str, Any], registry_path: str = None):
+    def __init__(self, model: Union[str, BaseModel], registry_path: str = None):
         """Initialize Annotator with model from registry or direct model instance."""
         self.registry = Registry(path=registry_path) if registry_path else None
         self.datalake = Datalake()

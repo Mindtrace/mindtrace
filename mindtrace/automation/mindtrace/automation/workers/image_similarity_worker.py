@@ -1,5 +1,5 @@
-from typing import Dict, Any, List, Optional
-from mindtrace.cluster.core.worker_base import Worker
+from typing import Dict, Any, List
+from mindtrace.core import Worker
 
 
 class ImageSimilarityWorker(Worker):

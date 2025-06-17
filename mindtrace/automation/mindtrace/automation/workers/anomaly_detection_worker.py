@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Union
-from mindtrace.cluster.core.worker_base import Worker
+from mindtrace.models import BaseModel
+from mindtrace.core import Worker
 from mindtrace.registry import Registry
 from mindtrace.datalake import Datalake
 
@@ -13,7 +14,7 @@ class AnomalyDetectionWorker(Worker):
     - version: str (default "latest")
     """
     
-    def __init__(self, model: Union[str, Any], registry_path: str = None):
+    def __init__(self, model: Union[str, BaseModel], registry_path: str = None):
         """Initialize Anomaly Detection Worker with specific model."""
         self.registry = Registry(path=registry_path) if registry_path else None
         self.datalake = Datalake()
