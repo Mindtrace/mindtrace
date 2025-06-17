@@ -46,6 +46,7 @@ def setup_logger(
         Logger: Configured logger instance.
     """
     logger = logging.getLogger(name)
+    logger.handlers.clear()
     logger.setLevel(logger_level)
     logger.propagate = propagate
 
