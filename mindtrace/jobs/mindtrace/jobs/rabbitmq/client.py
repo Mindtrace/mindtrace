@@ -75,7 +75,7 @@ class RabbitMQClient(OrchestratorBackend):
                 }
             except Exception as e:
                 raise RuntimeError(f"Could not declare exchange '{exchange}': {str(e)}")
-    def declare_queue(self, queue_name: str, **kwargs):
+    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a RabbitMQ queue.
         Args:
             queue: Name of the queue to declare.
@@ -287,14 +287,14 @@ class RabbitMQClient(OrchestratorBackend):
             raise RuntimeError(
                 f"Error receiving message from queue '{queue_name}': {str(e)}"
             )
-    def clean_queue(self, queue_name: str, **kwargs) -> None:
+    def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from a queue."""
         try:
             self.channel.queue_purge(queue=queue_name)
             return {"status": "success", "message": f"Cleaned queue '{queue_name}'."}
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not clean queue '{queue_name}': {str(e)}")
-    def delete_queue(self, queue_name: str, **kwargs) -> None:
+    def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Delete a queue."""
         try:
             self.channel.queue_delete(queue=queue_name)

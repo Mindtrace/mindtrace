@@ -15,7 +15,7 @@ class OrchestratorBackend(MindtraceABC):
         super().__init__()
     
     @abstractmethod
-    def declare_queue(self, queue_name: str, **kwargs):
+    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """
         Declare a queue
         Args:
@@ -23,7 +23,7 @@ class OrchestratorBackend(MindtraceABC):
         """
         pass
     @abstractmethod
-    def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs):
+    def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
         """
         Publish a message to the specified queue
         Args:
@@ -44,7 +44,7 @@ class OrchestratorBackend(MindtraceABC):
         """
         pass
     @abstractmethod
-    def clean_queue(self, queue_name: str, **kwargs):
+    def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """
         Remove all messages from the specified queue
         Args:
@@ -52,7 +52,7 @@ class OrchestratorBackend(MindtraceABC):
         """
         pass
     @abstractmethod
-    def delete_queue(self, queue_name: str, **kwargs):
+    def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """
         Delete the specified queue
         Args:
