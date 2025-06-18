@@ -1,11 +1,13 @@
 from abc import abstractmethod
 from typing import Optional
 
-from mindtrace.core import MindtraceABC
-from mindtrace.jobs import ConsumerBackendBase, Job, JobSchema, Orchestrator
+from mindtrace.core import Mindtrace
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.types import Job, JobSchema
+from mindtrace.jobs.orchestrator import Orchestrator
 
 
-class Consumer(MindtraceABC):
+class Consumer(Mindtrace):
     """Base class for processing jobs from queues.
     
     Automatically creates the appropriate consumer backend when connected to an orchestrator.

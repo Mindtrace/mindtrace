@@ -1,18 +1,17 @@
-"""
-Redis queue implementation using Redis data structures.
-Provides distributed, persistent queuing for production deployments.
-"""
 import json
 import logging
-from queue import Empty
 import threading
-from typing import Any, Dict, List, Optional
 import uuid
+from queue import Empty
+from typing import Any, Dict, List, Optional
 
 import pydantic
 import redis
 
-from mindtrace.jobs import Job, OrchestratorBackend, RedisConnection, RedisPriorityQueue, RedisQueue, RedisStack
+from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.redis.fifo_queue import RedisQueue
+from mindtrace.jobs.redis.priority import RedisPriorityQueue
+from mindtrace.jobs.redis.stack import RedisStack
 
 
 class RedisClient(OrchestratorBackend):

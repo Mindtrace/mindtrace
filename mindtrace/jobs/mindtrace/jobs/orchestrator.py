@@ -1,8 +1,14 @@
-import pydantic
 from typing import Optional, Dict, Any
 
+import pydantic
+
 from mindtrace.core import Mindtrace
-from mindtrace.jobs import ConsumerBackendBase, Job, JobSchema, OrchestratorBackend
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
+from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
+from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.types import Job, JobSchema
 
 
 class Orchestrator(Mindtrace):
@@ -95,13 +101,10 @@ class Orchestrator(Mindtrace):
         queue_name = schema.name
         backend_type = type(self.backend).__name__
         if backend_type == "LocalClient":
-            from .local.consumer_backend import LocalConsumerBackend
             return LocalConsumerBackend(queue_name, self)
         elif backend_type == "RedisClient":
-            from .redis.consumer_backend import RedisConsumerBackend
             return RedisConsumerBackend(queue_name, self, poll_timeout=5)
         elif backend_type == "RabbitMQClient":
-            from .rabbitmq.consumer_backend import RabbitMQConsumerBackend
             return RabbitMQConsumerBackend(queue_name, self, prefetch_count=1)
         else:
             raise ValueError(f"Unknown backend type: {backend_type}")

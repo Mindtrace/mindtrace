@@ -1,12 +1,19 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Optional
+
 import pydantic
-class OrchestratorBackend(ABC):
+from mindtrace.core import MindtraceABC
+
+class OrchestratorBackend(MindtraceABC):
     """
     Abstract base class for orchestrator backends.
     Defines the interface that all backend implementations must follow
     for queue management operations.
     """
+    
+    def __init__(self):
+        super().__init__()
+    
     @abstractmethod
     def declare_queue(self, queue_name: str, **kwargs):
         """
@@ -27,13 +34,13 @@ class OrchestratorBackend(ABC):
     @abstractmethod
     def receive_message(
         self, queue_name: str, **kwargs
-    ) -> Optional[pydantic.BaseModel]:
+    ) -> Optional[dict]:
         """
         Receive a message from the specified queue
         Args:
             queue_name: Name of the queue to receive from
         Returns:
-            Pydantic model if message available, None if queue is empty
+            Dict if message available, None if queue is empty
         """
         pass
     @abstractmethod

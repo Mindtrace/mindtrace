@@ -1,8 +1,8 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Optional, Callable
-from mindtrace.core.mindtrace.core import MindtraceABC
-import logging
+
+from mindtrace.core import MindtraceABC
 
 class ConsumerBackendBase(MindtraceABC):
     """Base class for consumer backends that handle message consumption."""
@@ -13,8 +13,7 @@ class ConsumerBackendBase(MindtraceABC):
         orchestrator,
         run_method: Optional[Callable] = None,
     ):
-        super().__init__() 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        super().__init__()
         self.queue_name = queue_name
         self.orchestrator = orchestrator
         self.run_method = run_method

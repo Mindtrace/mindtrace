@@ -1,20 +1,15 @@
-"""
-RabbitMQ queue implementation using AMQP protocol.
-Provides enterprise-grade distributed queuing with advanced routing.
-"""
 import json
 import time
 import uuid
-import logging
-from typing import Optional, Dict, Any, List
-import pydantic
+from typing import Optional
+
 import pika
 from pika import BasicProperties, DeliveryMode
-from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.mindtrace.utils import ifnone
-from mindtrace.jobs.mindtrace.types import Job
-import traceback
+import pydantic
+
+from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
 class RabbitMQClient(OrchestratorBackend):
     def __init__(
@@ -32,7 +27,6 @@ class RabbitMQClient(OrchestratorBackend):
             password: Password for RabbitMQ authentication.
         """
         super().__init__()
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.connection = RabbitMQConnection(
             host=host, port=port, username=username, password=password
         )

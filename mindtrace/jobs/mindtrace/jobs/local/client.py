@@ -1,19 +1,16 @@
-"""
-Local queue implementation using in-memory data structures.
-Provides thread-safe local queuing for development and testing.
-"""
-from typing import List, Dict, Any, Optional
-from mindtrace.jobs.mindtrace.queue_management.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.mindtrace.queue_management.local.fifo_queue import LocalQueue
-from mindtrace.jobs.mindtrace.queue_management.local.stack import LocalStack
-from mindtrace.jobs.mindtrace.queue_management.local.priority_queue import LocalPriorityQueue
-from mindtrace.jobs.mindtrace.types import Job
-import threading
-import logging
 import json
+import threading
 import uuid
+from typing import Optional
+
 import pydantic
-from mindtrace.jobs.mindtrace.utils import ifnone
+
+from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.types import Job
+from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.local.fifo_queue import LocalQueue
+from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
+from mindtrace.jobs.local.stack import LocalStack
 
 class LocalClient(OrchestratorBackend):
     """A pure-python in-memory message broker.
