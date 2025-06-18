@@ -114,7 +114,7 @@ class RedisClient(OrchestratorBackend):
                 except Exception:
                     pass
 
-    def declare_queue(self, queue_name: str, **kwargs) -> dict:
+    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
         queue_type = kwargs.get("queue_type", "fifo")
         force = kwargs.get("force", False)
@@ -255,7 +255,7 @@ class RedisClient(OrchestratorBackend):
             instance = self.queues[queue_name]
         return instance.qsize()
 
-    def clean_queue(self, queue_name: str, **kwargs) -> dict:
+    def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Clean (purge) a specified Redis queue by deleting its underlying key.
 
         Args:

@@ -22,7 +22,7 @@ class LocalClient(OrchestratorBackend):
         self.queues: dict[str, Any] = {}
         self._lock = threading.Lock()
         self._job_results: dict[str, Any] = {}
-    def declare_queue(self, queue_name: str, **kwargs):
+    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""
         queue_type = kwargs.get("queue_type", "fifo")
         with self._lock:
@@ -44,7 +44,7 @@ class LocalClient(OrchestratorBackend):
                 "status": "success",
                 "message": f"Queue '{queue_name}' declared successfully.",
             }
-    def delete_queue(self, queue_name: str):
+    def delete_queue(self, queue_name: str, **kwargs):
         with self._lock:
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
@@ -96,7 +96,7 @@ class LocalClient(OrchestratorBackend):
             return message_dict
         except Exception:
             return None
-    def clean_queue(self, queue_name: str, **kwargs) -> None:
+    def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from the specified queue."""
         with self._lock:
             if queue_name not in self.queues:
