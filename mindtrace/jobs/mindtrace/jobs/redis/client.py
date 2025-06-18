@@ -2,7 +2,7 @@ import json
 import threading
 import uuid
 from queue import Empty
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import pydantic
 import redis
@@ -26,7 +26,7 @@ class RedisClient(OrchestratorBackend):
         super().__init__()
         self.redis_params = {"host": host, "port": port, "db": db}
         self.redis = redis.Redis(**self.redis_params)
-        self.queues: dict[str, any] = {}  # Local cache of queue objects
+        self.queues: dict[str, Any] = {}  # Local cache of queue objects
         self._local_lock = threading.Lock()  # Thread lock for local state modifications
         self._load_queue_metadata()  # Load previously declared queues from metadata.
         self._start_event_listener() # Start a background thread to listen for queue events.

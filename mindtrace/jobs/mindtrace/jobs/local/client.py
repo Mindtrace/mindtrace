@@ -1,7 +1,7 @@
 import json
 import threading
 import uuid
-from typing import Optional
+from typing import Optional, Any
 
 import pydantic
 
@@ -19,9 +19,9 @@ class LocalClient(OrchestratorBackend):
     def __init__(self, broker_id: str | None = None):
         super().__init__()
         self.broker_id = ifnone(broker_id, default="mtrix.default_broker")
-        self.queues: dict[str, any] = {}
+        self.queues: dict[str, Any] = {}
         self._lock = threading.Lock()
-        self._job_results: dict[str, any] = {}
+        self._job_results: dict[str, Any] = {}
     def declare_queue(self, queue_name: str, **kwargs):
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""
         queue_type = kwargs.get("queue_type", "fifo")
@@ -111,12 +111,12 @@ class LocalClient(OrchestratorBackend):
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues[queue_name]
         return queue_instance.qsize()
-    def store_job_result(self, job_id: str, result: any) -> dict[str, any]:
+    def store_job_result(self, job_id: str, result: Any) -> dict[str, Any]:
         """Save the job result (JSON-serializable) keyed by job_id."""
         with self._lock:
             self._job_results[job_id] = result
         return {"status": "success", "message": f"Stored result for job_id: {job_id}."}
-    def get_job_result(self, job_id: str) -> any:
+    def get_job_result(self, job_id: str) -> Any:
         """Retrieve the stored result for the given job_id."""
         with self._lock:
             return self._job_results.get(job_id, None)

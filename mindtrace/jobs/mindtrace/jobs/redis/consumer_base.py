@@ -1,6 +1,6 @@
 import time
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Any
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
@@ -42,7 +42,7 @@ class RedisConsumerBase(ConsumerBackendBase, ABC):
         """Return the list of queues the consumer is subscribed to."""
         return self.queues
     @abstractmethod
-    def process_message(self, message: dict, queue: str) -> any:
+    def process_message(self, message: dict, queue: str) -> Any:
         """Process an incoming message.
         Subclasses must implement this method to define how to handle a message.
         Args:
