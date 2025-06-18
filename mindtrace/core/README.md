@@ -144,7 +144,7 @@ class MyListener:
     def y_updated(...): ...
 ```
 
-Listeners may subscribe to any class that has been decorated with the `ObservaleContext` decorator, listening to any of the listed `vars` in the decorator.
+Listeners may subscribe to any class that has been decorated with the `ObservableContext` decorator, listening to any of the listed `vars` in the decorator.
 
 ```python
 from mindtrace.core import ObservableContext
