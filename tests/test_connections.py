@@ -1,8 +1,9 @@
 import pytest
 from unittest.mock import Mock, patch
-from mindtrace.jobs.mindtrace.queue_management.redis.connection import RedisConnection
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.redis.connection import RedisConnection
+from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
+from mindtrace.jobs.base.connection_base import BrokerConnectionBase
+
 
 
 class MockConnection(BrokerConnectionBase):
@@ -99,7 +100,7 @@ class TestRabbitMQConnection:
 
 class TestMockedConnections:
     
-    @patch('mindtrace.jobs.mindtrace.queue_management.redis.connection.redis.Redis')
+    @patch('mindtrace.jobs.redis.connection.redis.Redis')
     def test_redis_mocked_initialization(self, mock_redis):
         mock_redis_instance = Mock()
         mock_redis_instance.ping.return_value = True
@@ -111,9 +112,9 @@ class TestMockedConnections:
         assert connection.connection is mock_redis_instance
         assert connection.is_connected() is True
     
-    @patch('mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection.PlainCredentials')
-    @patch('mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection.ConnectionParameters')
-    @patch('mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection.BlockingConnection')
+    @patch('mindtrace.jobs.rabbitmq.connection.PlainCredentials')
+    @patch('mindtrace.jobs.rabbitmq.connection.ConnectionParameters')
+    @patch('mindtrace.jobs.rabbitmq.connection.BlockingConnection')
     def test_rabbitmq_mocked_initialization(self, mock_blocking_conn, mock_conn_params, mock_creds):
         mock_conn_instance = Mock()
         mock_conn_instance.is_open = True

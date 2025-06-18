@@ -1,17 +1,18 @@
 import pytest
+import threading
 import time
 from queue import Empty
-from mindtrace.jobs.mindtrace.queue_management.local.stack import LocalStack
-from mindtrace.jobs.mindtrace.queue_management.redis.stack import RedisStack
-from mindtrace.jobs.mindtrace.types import Job, JobSchema, JobInput, JobOutput
-from mindtrace.jobs.mindtrace.utils import job_from_schema
-from .conftest import create_test_job
+from pydantic import BaseModel
+from mindtrace.jobs.local.stack import LocalStack
+from mindtrace.jobs.redis.stack import RedisStack
+from mindtrace.jobs.types.job_specs import Job, JobSchema
+from .conftest import create_test_job, job_from_schema
 
 
-class SampleJobInput(JobInput):
+class SampleJobInput(BaseModel):
     data: str = "test_input"
 
-class SampleJobOutput(JobOutput):
+class SampleJobOutput(BaseModel):
     result: str = "success"
 
 

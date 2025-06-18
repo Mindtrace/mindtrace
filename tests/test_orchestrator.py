@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import MagicMock
-from mindtrace.jobs.mindtrace.queue_management.orchestrator import Orchestrator
-from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
-from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
+from mindtrace.jobs.orchestrator import Orchestrator
+from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.redis.client import RedisClient
 from .conftest import create_test_job, unique_queue_name
 
 

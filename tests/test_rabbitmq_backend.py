@@ -1,6 +1,6 @@
 import pytest
 import time
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq import RabbitMQClient
+from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from .conftest import create_test_job, unique_queue_name
 
 
