@@ -14,10 +14,10 @@ from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 class RabbitMQClient(OrchestratorBackend):
     def __init__(
         self,
-        host: str = None,
-        port: int = None,
-        username: str = None,
-        password: str = None,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
     ):
         """Initialize the RabbitMQ client with connection parameters.
         Args:
