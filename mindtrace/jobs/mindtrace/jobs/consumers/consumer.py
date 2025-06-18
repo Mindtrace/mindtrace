@@ -3,7 +3,7 @@ from typing import Optional
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.types import Job, JobSchema
+from mindtrace.jobs.types.jobs import JobSchema
 from mindtrace.jobs.orchestrator import Orchestrator
 
 

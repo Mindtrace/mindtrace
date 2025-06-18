@@ -1,5 +1,4 @@
 import json
-import logging
 import threading
 import uuid
 from queue import Empty

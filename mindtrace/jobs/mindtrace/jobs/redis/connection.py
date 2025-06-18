@@ -1,7 +1,7 @@
 import time
 import redis
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 
 class RedisConnection(BrokerConnectionBase):
     """Singleton class for Redis connection.

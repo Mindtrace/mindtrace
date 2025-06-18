@@ -5,7 +5,7 @@ from typing import Optional
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 
 class RabbitMQConsumerBase(ConsumerBackendBase):
     def __init__(
