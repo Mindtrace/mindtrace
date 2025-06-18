@@ -1,11 +1,13 @@
 import time
 from abc import ABC, abstractmethod
 from typing import List
-from mindtrace.jobs.mindtrace.queue_management.base.consumer_base import ConsumerBase
-from mindtrace.jobs.mindtrace.queue_management.redis.connection import RedisConnection
-from mindtrace.jobs.mindtrace.queue_management.redis.client import RedisClient
-from mindtrace.jobs.mindtrace.utils import ifnone
-class RedisConsumerBase(ConsumerBase, ABC):
+
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.redis.connection import RedisConnection
+from mindtrace.jobs.redis.client import RedisClient
+from mindtrace.jobs.utils import ifnone
+
+class RedisConsumerBase(ConsumerBackendBase, ABC):
     """Abstract base class for Redis message consumers.
     Subclass this class and implement the process_message method. The consume method starts a loop that polls the
     specified Redis queue(s) for messages, converts them from JSON, and then passes them to process_message.
