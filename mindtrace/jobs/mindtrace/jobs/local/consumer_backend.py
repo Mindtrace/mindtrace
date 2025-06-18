@@ -14,7 +14,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
         self.poll_timeout = poll_timeout
         self.queues = [queue_name] if queue_name else []
     
-    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
+    def consume(self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Consume messages from the local queue(s)."""
         if not self.run_method:
             raise RuntimeError("No run method set.")
@@ -44,7 +44,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
     
-    def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
+    def consume_until_empty(self, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
         """Consume messages from the queue(s) until empty."""
         if isinstance(queues, str):
             queues = [queues]
@@ -52,16 +52,19 @@ class LocalConsumerBackend(ConsumerBackendBase):
         while any(self.orchestrator.count_queue_messages(q) > 0 for q in queues):
             self.consume(num_messages=1, queues=queues, block=block)
     
-    def process_message(self, message) -> None:
+    def process_message(self, message) -> bool:
         """Process a single message."""
         if isinstance(message, dict):
             try:
                 self.run_method(message)
                 job_id = message.get('id', 'unknown')
                 self.logger.debug(f"Successfully processed dict job {job_id}")
+                return True
             except Exception as e:
                 job_id = message.get('id', 'unknown')
                 self.logger.error(f"Error processing dict job {job_id}: {str(e)}")
+                return False
         else:
             self.logger.warning(f"Received non-dict message: {type(message)}")
             self.logger.debug(f"Message content: {message}") 
+            return False

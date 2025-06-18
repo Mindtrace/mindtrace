@@ -19,12 +19,17 @@ class ConsumerBackendBase(MindtraceABC):
         self.run_method = run_method
     
     @abstractmethod
-    def consume(self, num_messages: Optional[int] = None, **kwargs) -> None:
+    def consume(self, num_messages: int = 0, **kwargs) -> None:
         """Consume messages from the queue and process them."""
         raise NotImplementedError
-    
+
     @abstractmethod
-    def process_message(self, message) -> None:
+    def consume_until_empty(self, **kwargs) -> None:
+        """Consume messages until the queue is empty and process them."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def process_message(self, message) -> bool:
         """Process a single message using the stored run method."""
         raise NotImplementedError
     
