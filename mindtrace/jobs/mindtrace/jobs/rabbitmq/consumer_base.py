@@ -1,6 +1,6 @@
 import traceback
 from abc import abstractmethod
-from typing import Optional
+from typing import Optional, Any
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
@@ -25,7 +25,7 @@ class RabbitMQConsumerBase(ConsumerBackendBase):
         self.prefetch_count = prefetch_count
         self.durable = durable
     @abstractmethod
-    def process_message(self, channel, method, properties, body) -> any:
+    def process_message(self, channel, method, properties, body) -> Any:
         """Process an incoming message. Must be implemented by subclasses.
         Args:
             channel: pika.adapters.blocking_connection.BlockingChannel - Channel object for the message.
