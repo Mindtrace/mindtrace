@@ -4,9 +4,12 @@ from fastapi import HTTPException
 from mtrix import MtrixBase
 from mtrix.services import ConnectionManagerBase, ServerBase
 from pydantic import BaseModel
-import requests
+import httpx
 
-from mindtrace.core import ifnone
+# Simple inline utility to avoid import issues
+def ifnone(val, default):
+    """Return the given value if it is not None, else return the default."""
+    return val if val is not None else default
 
 
 class TaskSchema(BaseModel):
@@ -31,8 +34,8 @@ def generate_connection_manager(service_cls):
         def make_method(task_path, input_schema, output_schema):
             def method(self, blocking: bool = True, **kwargs):
                 payload = input_schema(**kwargs).dict()
-                res = requests.post(
-                    str(self.url) + task_path,
+                res = httpx.post(
+                    str(self.url).rstrip('/') + task_path,
                     json=payload,
                     params={"blocking": str(blocking).lower()},
                     timeout=30
@@ -43,21 +46,55 @@ def generate_connection_manager(service_cls):
                 if not blocking:
                     return result  # raw job result dict
                 return output_schema(**result)
-            return method
+            
+            async def amethod(self, blocking: bool = True, **kwargs):
+                payload = input_schema(**kwargs).dict()
+                async with httpx.AsyncClient(timeout=30) as client:
+                    res = await client.post(
+                        str(self.url).rstrip('/') + task_path,
+                        json=payload,
+                        params={"blocking": str(blocking).lower()}
+                    )
+                if res.status_code != 200:
+                    raise HTTPException(res.status_code, res.text)
+                result = res.json()
+                if not blocking:
+                    return result  # raw job result dict
+                return output_schema(**result)
+            
+            return method, amethod
 
-        method = make_method(task_name, task.input_schema, task.output_schema)
+        method, amethod = make_method(task_path, task.input_schema, task.output_schema)
+        
+        # Set up sync method
         method.__name__ = task_name
         method.__doc__ = f"Calls the `{task_name}` pipeline at `{task_path}`"
         setattr(ServiceConnectionManager, task_name, method)
+        
+        # Set up async method
+        amethod.__name__ = f"a{task_name}"
+        amethod.__doc__ = f"Async version: Calls the `{task_name}` pipeline at `{task_path}`"
+        setattr(ServiceConnectionManager, f"a{task_name}", amethod)
 
     def get_job(self, job_id: str):
-        res = requests.get(str(self.url) + f"/job/{job_id}", timeout=10)
+        res = httpx.get(str(self.url).rstrip('/') + f"/job/{job_id}", timeout=10)
         if res.status_code == 404:
             return None
         elif res.status_code != 200:
             raise HTTPException(res.status_code, res.text)
         return res.json()
+    
+    async def aget_job(self, job_id: str):
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(str(self.url).rstrip('/') + f"/job/{job_id}")
+        if res.status_code == 404:
+            return None
+        elif res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+        return res.json()
+    
     setattr(ServiceConnectionManager, "get_job", get_job)
+    setattr(ServiceConnectionManager, "aget_job", aget_job)
 
     ServiceConnectionManager.__name__ = class_name
     return ServiceConnectionManager
