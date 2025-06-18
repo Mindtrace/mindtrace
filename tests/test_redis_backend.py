@@ -1,6 +1,6 @@
 import pytest
 import time
-from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
+from mindtrace.jobs.redis.client import RedisClient
 from .conftest import create_test_job, unique_queue_name
 
 

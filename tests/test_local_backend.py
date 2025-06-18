@@ -1,6 +1,6 @@
 import pytest
 import time
-from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
+from mindtrace.jobs.local.client import LocalClient
 from .conftest import create_test_job
 
 

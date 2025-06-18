@@ -1,31 +1,34 @@
 import pytest
 import time
-from mindtrace.jobs import Job, JobSchema, JobInput, JobOutput
-from mindtrace.jobs.mindtrace.utils import job_from_schema
-from mindtrace.jobs.mindtrace.queue_management.local import LocalClient
-from mindtrace.jobs.mindtrace.queue_management.redis import RedisClient
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq import RabbitMQClient
-from mindtrace.jobs.mindtrace.queue_management.orchestrator import Orchestrator
+from pydantic import BaseModel
+from mindtrace.jobs.types.job_specs import Job, JobSchema
+from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.redis.client import RedisClient
+from mindtrace.jobs.rabbitmq.client import RabbitMQClient
+from mindtrace.jobs.orchestrator import Orchestrator
+from .conftest import job_from_schema
 
 
-class SampleJobInput(JobInput):
+class SampleJobInput(BaseModel):
     data: str = "test_input"
     param1: str = "value1"
 
-class SampleJobOutput(JobOutput):
+class SampleJobOutput(BaseModel):
     result: str = "success"
     timestamp: str = "2024-01-01T00:00:00"
 
 def create_test_job(name: str = "test_job", schema_name: str = "default_schema") -> Job:
     test_input = SampleJobInput()
+    test_output = SampleJobOutput()
     schema = JobSchema(
         name=schema_name,
         input=test_input,
-        output=SampleJobOutput()
+        output=test_output
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
     job.name = name
+    job.schema_name = schema_name
     job.created_at = "2024-01-01T00:00:00"
     return job
 
