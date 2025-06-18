@@ -18,21 +18,11 @@ class ExecutionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class JobInput(BaseModel):
-    """Example job input class - in practice, define your own BaseModel classes"""
-    pass
-
-
-class JobOutput(BaseModel):
-    """Example job output class - in practice, define your own BaseModel classes"""
-    pass
-
-
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
     name: str
-    input: BaseModel  # Accept any BaseModel, not just JobInput
-    output: Optional[BaseModel] = None  # Accept any BaseModel, not just JobOutput
+    input: BaseModel
+    output: Optional[BaseModel] = None
 
 
 class Job(BaseModel):
