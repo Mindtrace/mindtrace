@@ -19,6 +19,12 @@ dependencies = [
   "mindtrace-datalake>=0.1.0",
 ]
 
+[tool.uv]
+dev-dependencies = [
+    "pytest-cov>=6.1.1",
+    "pytest>=8.3.5",
+]
+
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-services = { workspace = true }
@@ -48,3 +54,8 @@ members = [
   "mindtrace/ui",
   "mindtrace/datalake",
 ]
+
+[tool.ds.scripts]
+test = """
+    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${@:- --maxfail=1 tests}
+"""
