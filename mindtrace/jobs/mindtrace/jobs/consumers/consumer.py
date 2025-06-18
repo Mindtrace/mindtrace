@@ -47,7 +47,7 @@ class Consumer(Mindtrace):
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
         
-        self.consumer_backend.consume(num_messages, queues, block)
+        self.consumer_backend.consume(num_messages, queues=queues, block=block)
     
     def consume_until_empty(self, queues: str | list[str] | None = None, block: bool = True) -> None:
         """Consume messages until all specified queues are empty.
@@ -59,7 +59,7 @@ class Consumer(Mindtrace):
         if not self.consumer_backend:
             raise RuntimeError("Consumer not connected. Call connect() first.")
         
-        self.consumer_backend.consume_until_empty(queues, block)
+        self.consumer_backend.consume_until_empty(queues=queues, block=block)
     
     @abstractmethod
     def run(self, job_dict: dict) -> dict:

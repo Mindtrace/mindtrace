@@ -50,7 +50,7 @@ class RedisConsumerBase(ConsumerBackendBase, ABC):
             queue: The name of the queue from which the message was received.
         """
         raise NotImplementedError
-    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None):
+    def consume(self, num_messages: int = 0, *, queues: str | list[str] | None = None, **kwargs):
         """Start consuming messages from the specified Redis queues.
         Args:
             num_messages: The number of messages to consume. If 0, consume indefinitely.
@@ -89,7 +89,7 @@ class RedisConsumerBase(ConsumerBackendBase, ABC):
             self.logger.info("Consumption interrupted by user.")
         finally:
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
-    def consume_until_empty(self, queues: str | list[str] | None = None):
+    def consume_until_empty(self, *, queues: str | list[str] | None = None, **kwargs):
         """Consume messages from the specified queues until all are empty.
         Args:
             queues: The queue(s) to consume messages from. If not specified, uses self.queues.

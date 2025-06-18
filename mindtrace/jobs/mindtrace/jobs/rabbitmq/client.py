@@ -34,10 +34,12 @@ class RabbitMQClient(OrchestratorBackend):
         self.channel = self.connection.get_channel()
     def declare_exchange(
         self,
+        *,
         exchange: str,
         exchange_type: str = "direct",
         durable: bool = True,
         auto_delete: bool = False,
+        **kwargs,
     ):
         """Declare a RabbitMQ exchange.
         Args:
@@ -316,7 +318,7 @@ class RabbitMQClient(OrchestratorBackend):
             raise ConnectionError(
                 f"Could not count messages in queue '{queue_name}': {str(e)}"
             )
-    def count_exchanges(self, exchange: str):
+    def count_exchanges(self, *, exchange: str, **kwargs):
         """Get the number of exchanges in the RabbitMQ server.
         Args:
             exchange: Name of the exchange to check.
@@ -326,7 +328,7 @@ class RabbitMQClient(OrchestratorBackend):
             return result
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not count exchanges: {str(e)}")
-    def delete_exchange(self, exchange: str, **kwargs):
+    def delete_exchange(self, *, exchange: str, **kwargs):
         """Delete an exchange."""
         try:
             self.channel.exchange_delete(exchange=exchange)

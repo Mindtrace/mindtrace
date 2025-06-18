@@ -35,7 +35,7 @@ class Orchestrator(Mindtrace):
         """
         return self.backend.publish(queue_name, job, **kwargs)
     
-    def receive_message(self, queue_name: str, **kwargs) -> Optional[pydantic.BaseModel]:
+    def receive_message(self, queue_name: str, **kwargs) -> Optional[dict]:
         """Get job from specified queue.
         
         Args:

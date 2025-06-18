@@ -58,7 +58,7 @@ class RabbitMQConsumerBase(ConsumerBackendBase):
                 f"Error processing message: {e}\nMessage body: {body}\n{traceback.format_exc()}"
             )
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-    def consume(self, num_messages: int = 0, queues: str | list[str] | None = None):
+    def consume(self, num_messages: int = 0, *, queues: str | list[str] | None = None, **kwargs):
         """Starts consuming messages from the specified queues.
         Args:
             num_messages: The number of messages to consume from *each* queue. If set to 0, consumes indefinitely.
@@ -111,7 +111,7 @@ class RabbitMQConsumerBase(ConsumerBackendBase):
                 f"Started consuming messages indefinitely from queue: {queue}."
             )
         channel.start_consuming()
-    def consume_until_empty(self, queues: str | list[str] | None = None):
+    def consume_until_empty(self, *, queues: str | list[str] | None = None, **kwargs):
         """Consumes messages from the specified queues until they are all empty."""
         if isinstance(queues, str):
             queues = [queues]
