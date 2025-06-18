@@ -8,7 +8,7 @@ from pika import BasicProperties, DeliveryMode
 import pydantic
 
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
 class RabbitMQClient(OrchestratorBackend):

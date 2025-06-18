@@ -2,7 +2,7 @@ import time
 from typing import Optional, Callable
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 
 class RedisConsumerBackend(ConsumerBackendBase):
     """Redis consumer backend with blocking operations."""

@@ -3,7 +3,7 @@ from queue import Empty
 from typing import Optional, Callable
 
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 
 class LocalConsumerBackend(ConsumerBackendBase):
     """Local in-memory consumer backend."""

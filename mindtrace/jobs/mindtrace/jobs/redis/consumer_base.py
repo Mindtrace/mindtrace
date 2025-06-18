@@ -5,7 +5,7 @@ from typing import List
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
 from mindtrace.jobs.redis.client import RedisClient
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 
 class RedisConsumerBase(ConsumerBackendBase, ABC):
     """Abstract base class for Redis message consumers.

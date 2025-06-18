@@ -6,8 +6,7 @@ from typing import Optional
 import pydantic
 
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.types import Job
-from mindtrace.jobs.utils import ifnone
+from mindtrace.jobs.utils.checks import ifnone
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
