@@ -8,7 +8,7 @@ from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.types.jobs import Job, JobSchema
+from mindtrace.jobs.mindtrace.jobs.types.job_specs import Job, JobSchema
 
 
 class Orchestrator(Mindtrace):

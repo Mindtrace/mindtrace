@@ -1,4 +1,4 @@
-from mindtrace.jobs.types.jobs import Job, JobInput, JobOutput, JobSchema, BackendType, ExecutionStatus
+from mindtrace.jobs.mindtrace.jobs.types.job_specs import Job, JobSchema, BackendType, ExecutionStatus
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
