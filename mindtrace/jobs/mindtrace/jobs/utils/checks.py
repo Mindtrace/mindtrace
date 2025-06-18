@@ -1,10 +1,11 @@
-from typing import Any
+from typing import TypeVar
 from datetime import datetime
 import uuid
-from mindtrace.jobs.mindtrace.jobs.types.job_specs import Job, JobSchema, JobInput
+from mindtrace.jobs.types.job_specs import Job, JobSchema, JobInput
 
+T = TypeVar("T")
 
-def ifnone(val: Any, default: Any) -> Any:
+def ifnone(val: T | None, default: T) -> T:
     """Return default if val is None, otherwise return val."""
     return default if val is None else val
 
