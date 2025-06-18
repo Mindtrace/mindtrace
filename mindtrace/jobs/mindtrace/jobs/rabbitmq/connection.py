@@ -1,7 +1,8 @@
 import time
 from pika import PlainCredentials, ConnectionParameters, BlockingConnection, exceptions
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.utils import ifnone
+from mindtrace.jobs.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.utils import ifnone
+
 class RabbitMQConnection(BrokerConnectionBase):
     """Singleton class for RabbitMQ connection.
     The use of a singleton class ensures that only one connection is established throughout an application.

@@ -1,15 +1,13 @@
 import traceback
 from abc import abstractmethod
 from typing import Optional
-from mindtrace.jobs.mindtrace.queue_management.base.consumer_base import ConsumerBase
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import (
-    BrokerConnectionBase,
-)
-from mindtrace.jobs.mindtrace.queue_management.rabbitmq.connection import (
-    RabbitMQConnection,
-)
-from mindtrace.jobs.mindtrace.utils import ifnone
-class RabbitMQConsumerBase(ConsumerBase):
+
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
+from mindtrace.jobs.utils import ifnone
+
+class RabbitMQConsumerBase(ConsumerBackendBase):
     def __init__(
         self,
         queues: str | list[str] | None = None,

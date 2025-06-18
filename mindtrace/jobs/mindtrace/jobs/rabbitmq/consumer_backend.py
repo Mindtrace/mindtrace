@@ -1,8 +1,8 @@
 import traceback
 from typing import Optional, Callable
-from ..base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.mindtrace.types import Job
-from mindtrace.jobs.mindtrace.utils import ifnone
+
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.utils import ifnone
 
 class RabbitMQConsumerBackend(ConsumerBackendBase):
     """RabbitMQ consumer backend with improved consumption logic."""

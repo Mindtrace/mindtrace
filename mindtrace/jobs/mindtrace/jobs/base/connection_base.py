@@ -1,10 +1,12 @@
 from __future__ import annotations
-from abc import ABC, abstractmethod
-import logging
-class BrokerConnectionBase(ABC):
+from abc import abstractmethod
+from mindtrace.core import MindtraceABC
+
+class BrokerConnectionBase(MindtraceABC):
     """Abstract base class for broker connections."""
     def __init__(self, *args, **kwargs):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        super().__init__()
+        
     @abstractmethod
     def connect(self):
         raise NotImplementedError
