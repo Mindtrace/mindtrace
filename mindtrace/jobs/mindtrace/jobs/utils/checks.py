@@ -1,7 +1,7 @@
 from typing import TypeVar
 from datetime import datetime
 import uuid
-from mindtrace.jobs.types.job_specs import Job, JobSchema, JobInput
+from mindtrace.jobs.types.job_specs import Job, JobSchema
 
 T = TypeVar("T")
 
@@ -9,7 +9,7 @@ def ifnone(val: T | None, default: T) -> T:
     """Return default if val is None, otherwise return val."""
     return default if val is None else val
 
-def job_from_schema(schema: JobSchema, input_data: JobInput) -> Job:
+def job_from_schema(schema: JobSchema, input_data) -> Job:
     """Create a Job from a JobSchema and input data.
     
     This function automatically adds metadata like job ID and creation timestamp.
