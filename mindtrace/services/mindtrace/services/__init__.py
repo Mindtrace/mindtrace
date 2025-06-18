@@ -1,3 +1,3 @@
-from mindtrace.services.core.service import Service, TaskSchema
+from .core.service import generate_connection_manager, Service, TaskSchema
 
-__all__ = ["Service", "TaskSchema"]
+__all__ = [ "generate_connection_manager", "Service", "TaskSchema"]
