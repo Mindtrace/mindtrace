@@ -19,6 +19,13 @@ dependencies = [
   "mindtrace-datalake>=0.1.0",
 ]
 
+[project.optional-dependencies]
+cameras-basler = ["mindtrace-hardware[cameras-basler]"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]"]
+cameras-all = ["mindtrace-hardware[cameras-all]"]
+hardware-all = ["mindtrace-hardware[hardware-all]"]
+hardware-dev = ["mindtrace-hardware[dev]"]
+
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-services = { workspace = true }

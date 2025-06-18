@@ -4,7 +4,7 @@ version = "0.1.0"
 dependencies = [
     "mindtrace-core",
     "pydantic>=2.11.1",
-    "zenml>=0.82.1",
+    "zenml>=0.83.0",
 ]
 
 [tool.setuptools]

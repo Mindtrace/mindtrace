@@ -5,7 +5,20 @@ dependencies = [
     "beanie>=1.29.0",
     "mindtrace-core",
     "redis-om>=0.3.5",
+    "motor>=3.3.0",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
 
 [tool.setuptools]
 packages = ["mindtrace.database"]
