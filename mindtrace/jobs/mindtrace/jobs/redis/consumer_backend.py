@@ -1,8 +1,8 @@
 import time
 from typing import Optional, Callable
-from ..base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.mindtrace.types import Job
-from mindtrace.jobs.mindtrace.utils import ifnone
+
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+from mindtrace.jobs.utils import ifnone
 
 class RedisConsumerBackend(ConsumerBackendBase):
     """Redis consumer backend with blocking operations."""
@@ -11,7 +11,6 @@ class RedisConsumerBackend(ConsumerBackendBase):
                  poll_timeout: int = 5):
         super().__init__(queue_name, orchestrator, run_method)
         self.poll_timeout = poll_timeout
-        # Support for multiple queues (backward compatible)
         self.queues = [queue_name] if queue_name else []
     
     def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:

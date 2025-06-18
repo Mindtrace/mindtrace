@@ -1,9 +1,8 @@
-"""Redis connection handler that manages Redis client connections."""
 import time
 import redis
-from mindtrace.jobs.mindtrace.queue_management.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.mindtrace.utils import ifnone
-import logging
+from mindtrace.jobs.base.connection_base import BrokerConnectionBase
+from mindtrace.jobs.utils import ifnone
+
 class RedisConnection(BrokerConnectionBase):
     """Singleton class for Redis connection.
     This class establishes and maintains a connection to the Redis server. It uses a retry loop and a PING command to

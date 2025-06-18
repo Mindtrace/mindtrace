@@ -19,7 +19,7 @@ class ConsumerBackendBase(MindtraceABC):
         self.run_method = run_method
     
     @abstractmethod
-    def consume(self, num_messages: Optional[int] = None) -> None:
+    def consume(self, num_messages: Optional[int] = None, **kwargs) -> None:
         """Consume messages from the queue and process them."""
         raise NotImplementedError
     
