@@ -7,7 +7,7 @@ import inspect
 from typing import Callable, Optional, Union
 
 
-from mindtrace.core.config import Config, CoreSettings
+from mindtrace.core.config import Config
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
@@ -84,7 +84,6 @@ class Mindtrace(metaclass=MindtraceMeta):
     def __init__(
         self,
         suppress: bool = False,
-        extra_settings: Union[dict, list[dict], CoreSettings, None] = None,
         **logger_kwargs
     ):
         """
@@ -92,27 +91,11 @@ class Mindtrace(metaclass=MindtraceMeta):
 
         Args:
             suppress (bool): Whether to suppress exceptions in context manager use.
-            extra_settings (Union[dict, list[dict], CoreSettings], optional):
-                - Dictionary or list of dictionaries to override configuration.
-                - Or a full CoreSettings instance.
             **logger_kwargs: Keyword arguments passed to `get_logger`.
                 e.g., propagate=True, file_level=logging.INFO
         """
-        self.suppress = suppress
-
-        # Normalize extra_settings and initialize config
-        if isinstance(extra_settings, dict):
-            # Wrap single dict in a list
-            self.config = Config(extra_settings=[extra_settings])
-        elif isinstance(extra_settings, CoreSettings):
-            # Use CoreSettings instance directly
-            self.config = Config(extra_settings=extra_settings)
-        elif isinstance(extra_settings, list):
-            # Assume list of dicts or settings
-            self.config = Config(extra_settings=extra_settings)
-        else:
-            # Fallback to default config
-            self.config = Config()
+        self.suppress = suppress        
+        self.config = Config()
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)
