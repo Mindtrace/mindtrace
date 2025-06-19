@@ -1,7 +1,9 @@
-from typing import Any, Iterable
+from typing import Any, Iterable, TypeVar
+
+T = TypeVar("T")
 
 
-def ifnone(val: Any, default: Any):
+def ifnone(val: T | None, default: T) -> T:
     """Return the given value if it is not None, else return the default."""
     return val if val is not None else default
 

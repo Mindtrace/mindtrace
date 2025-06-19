@@ -30,7 +30,7 @@ class TestLogger:
             assert logging.StreamHandler in handler_types
             assert any("RotatingFileHandler" in str(type(h)) for h in logger.handlers)
             # Check log file creation
-            log_file = log_dir / "misc" / "test_logger.log"
+            log_file = log_dir / "modules" / "test_logger.log"
             assert log_file.exists()
             # Write a log and check file content
             logger.info("Test log message")
@@ -56,7 +56,7 @@ class TestLogger:
         assert logging.StreamHandler in handler_types
         assert any("RotatingFileHandler" in str(type(h)) for h in logger.handlers)
         # Log file should exist
-        log_file = tmp_path / "misc" / "mindtrace.unit.test_get_logger.log"
+        log_file = tmp_path / "modules" / "mindtrace.unit.test_get_logger.log"
         assert log_file.exists()
         logger.debug("Debug message")
         with open(log_file) as f:

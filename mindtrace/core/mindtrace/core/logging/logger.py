@@ -1,9 +1,10 @@
-import os
 import logging
-from logging.handlers import RotatingFileHandler
+import os
 from logging import Logger
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
+
 from mindtrace.core.config import Config
 
 
@@ -13,6 +14,7 @@ def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
     """
     default_fmt = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
     return logging.Formatter(fmt or default_fmt)
+
 
 def setup_logger(
     name: str = "mindtrace",
@@ -25,8 +27,7 @@ def setup_logger(
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 5
 ) -> Logger:
-    """
-    Configure and initialize logging for Mindtrace components programmatically.
+    """Configure and initialize logging for Mindtrace components programmatically.
 
     Sets up a rotating file handler and a console handler on the given logger.
     Log file defaults to ~/.cache/mindtrace/{name}.log.
@@ -61,12 +62,12 @@ def setup_logger(
     if name == "mindtrace":
         child_log_path = f"{name}.log"
     else:
-        child_log_path = os.path.join("misc", f"{name}.log")
+        child_log_path = os.path.join("modules", f"{name}.log")
         
     if log_dir:
         log_file_path = os.path.join(log_dir,child_log_path)
     else:
-        log_file_path = os.path.join(default_config.get('LOGGER').get('LOG_DIR'), child_log_path)
+        log_file_path = os.path.join(default_config["LOGGER"]["LOG_DIR"], child_log_path)
     
     os.makedirs(Path(log_file_path).parent, exist_ok=True)
     file_handler = RotatingFileHandler(
@@ -80,8 +81,6 @@ def setup_logger(
     logger.addHandler(file_handler)
 
     return logger
-
-
 
 
 def get_logger(name: str = 'mindtrace', **kwargs) -> logging.Logger:
