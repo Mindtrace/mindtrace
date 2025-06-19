@@ -46,7 +46,7 @@ class ContextListener(Mindtrace):
         # [MyContext] y changed: 0 → 2  
     """
 
-    def __init__(self, autolog: list[str] | None = None, log_level: int = logging.ERROR, logger: Any = None, **kwargs):
+    def __init__(self, autolog: list[str] = None, log_level: int = logging.ERROR, logger: Any = None, **kwargs):
         """Initialize the context listener.
         
         Args:
