@@ -6,7 +6,6 @@ import traceback
 import inspect
 from typing import Callable, Optional, Union
 
-
 from mindtrace.core.config import Config
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
@@ -81,6 +80,8 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
+    config = Config()
+
     def __init__(
         self,
         suppress: bool = False,
@@ -95,7 +96,6 @@ class Mindtrace(metaclass=MindtraceMeta):
                 e.g., propagate=True, file_level=logging.INFO
         """
         self.suppress = suppress        
-        self.config = Config()
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)

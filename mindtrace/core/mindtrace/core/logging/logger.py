@@ -16,6 +16,40 @@ def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
     return logging.Formatter(fmt or default_fmt)
 
 
+def default_logger(
+    name: str,
+    stream_level: int = logging.ERROR,
+    file_level: int = logging.DEBUG,
+    file_name: str | None = None,
+    **kwargs
+) -> Logger:
+    """Create a default logger with consistent configuration.
+    
+    This is a convenience function that creates a logger with the standard
+    Mindtrace configuration.
+    
+    Args:
+        name: Logger name
+        stream_level: Level for console output
+        file_level: Level for file output  
+        file_name: Custom log file path
+        **kwargs: Additional arguments passed to setup_logger
+        
+    Returns:
+        Configured logger instance
+    """
+    if file_name:
+        log_dir = Path(file_name).parent
+        kwargs['log_dir'] = log_dir
+        
+    return setup_logger(
+        name=name,
+        stream_level=stream_level,
+        file_level=file_level,
+        **kwargs
+    )
+
+
 def setup_logger(
     name: str = "mindtrace",
     log_dir: Optional[Path] = None,
@@ -67,7 +101,7 @@ def setup_logger(
     if log_dir:
         log_file_path = os.path.join(log_dir,child_log_path)
     else:
-        log_file_path = os.path.join(default_config["LOGGER"]["LOG_DIR"], child_log_path)
+        log_file_path = os.path.join(default_config["MINDTRACE_DEFAULT_LOG_DIR"], child_log_path)
     
     os.makedirs(Path(log_file_path).parent, exist_ok=True)
     file_handler = RotatingFileHandler(

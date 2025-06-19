@@ -1,12 +1,13 @@
 import argparse
+from argparse import RawTextHelpFormatter
 import json
 import logging
 import os
-from argparse import RawTextHelpFormatter
+from pathlib import Path
 
 from gunicorn.app.base import BaseApplication
-from mindtrace.core.logging.logger import setup_logger
-from mindtrace.core.utils import instantiate_target
+
+from mindtrace.core import instantiate_target, setup_logger
 
 
 class Launcher(BaseApplication):
@@ -29,7 +30,7 @@ class Launcher(BaseApplication):
             name=server.unique_name,
             stream_level=logging.INFO,
             file_level=logging.DEBUG,
-            file_name=os.path.join(server.config["DIR_PATHS"]["LOGS"], f"{server.name}_logs.txt"),
+            log_dir=Path(server.config["MINDTRACE_DEFAULT_LOG_DIR"]),
         )
         self.application = server.app
         server.url = options.bind
