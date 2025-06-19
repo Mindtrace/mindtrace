@@ -113,8 +113,7 @@ class ServiceLogMixin:
         logging.getLogger("requests").propagate = False
 
         # Setup file handler
-        logger = logging.getLogger(service_name)
-        logger.handlers.clear()
+        logger = self.logger
         logger.setLevel(log_level)
 
         file_handler = RotatingFileHandler(str(log_file), mode="w", maxBytes=max_bytes, backupCount=backup_count)
