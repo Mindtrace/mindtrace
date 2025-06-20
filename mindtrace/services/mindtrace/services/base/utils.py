@@ -8,7 +8,7 @@ from mindtrace import Mindtrace
 def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
     """Register a new endpoint.
 
-    This decorator method is functionally identical as calling add_endpoint on a ServerBase instance. It is useful when
+    This decorator method is functionally identical as calling add_endpoint on a Service instance. It is useful when
     the endpoints are defined in a separate method, such as grouping api routes in a more complicated FastAPI app.
 
     Args:
@@ -20,9 +20,9 @@ def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
     Example::
 
         from fastapi import FastAPI
-        from mindtrace.services import ServerBase
+        from mindtrace.services import Service
 
-        class MyServer(ServerBase):
+        class MyServer(Service):
             def __init__(self):
                 super().__init__()
 

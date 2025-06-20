@@ -4,6 +4,7 @@ from mindtrace.core.utils.timers import Timer, TimerCollection, Timeout
 from mindtrace.core.config import Config
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
 from mindtrace.core.logging.logger import setup_logger
+from mindtrace.core.types.task_schema import TaskSchema
 
 setup_logger()  # Initialize the default logger
 
@@ -27,6 +28,7 @@ __all__ = [
     "MindtraceMeta",
     "named_lambda",
     "ObservableContext",
+    "TaskSchema",
     "Timer",
     "TimerCollection",
     "Timeout",
