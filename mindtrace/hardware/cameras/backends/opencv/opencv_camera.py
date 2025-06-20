@@ -95,6 +95,7 @@ Performance Notes:
     - Consider camera-specific optimizations for production use
 """
 
+import asyncio
 import glob
 import os
 import time
@@ -150,12 +151,7 @@ class OpenCVCamera(BaseCamera):
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        fps: Optional[int] = None,
-        exposure: Optional[float] = None,
-        timeout_ms: Optional[int] = None,
-        **kwargs
+        **backend_kwargs
     ):
         """
         Initialize OpenCV camera with configuration.
@@ -165,12 +161,12 @@ class OpenCVCamera(BaseCamera):
             camera_config: Path to camera config file (not used for OpenCV)
             img_quality_enhancement: Whether to apply image quality enhancement (uses config default if None)
             retrieve_retry_count: Number of times to retry capture (uses config default if None)
-            width: Frame width (uses config default if None)
-            height: Frame height (uses config default if None)
-            fps: Frame rate (uses config default if None)
-            exposure: Exposure value (uses config default if None)
-            timeout_ms: Capture timeout in milliseconds (uses config default if None)
-            **kwargs: Additional camera parameters
+            **backend_kwargs: Backend-specific parameters:
+                - width: Frame width (uses config default if None)
+                - height: Frame height (uses config default if None)
+                - fps: Frame rate (uses config default if None)
+                - exposure: Exposure value (uses config default if None)
+                - timeout_ms: Capture timeout in milliseconds (uses config default if None)
                 
         Raises:
             SDKNotAvailableError: If OpenCV is not installed
@@ -185,6 +181,13 @@ class OpenCVCamera(BaseCamera):
         
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
         
+        # Get backend-specific configuration with fallbacks
+        width = backend_kwargs.get('width')
+        height = backend_kwargs.get('height')
+        fps = backend_kwargs.get('fps')
+        exposure = backend_kwargs.get('exposure')
+        timeout_ms = backend_kwargs.get('timeout_ms')
+        
         if width is None:
             width = getattr(self.camera_config.cameras, 'opencv_default_width', 1280)
         if height is None:
@@ -196,8 +199,6 @@ class OpenCVCamera(BaseCamera):
         if timeout_ms is None:
             timeout_ms = getattr(self.camera_config.cameras, 'timeout_ms', 5000)
         
-        if self.retrieve_retry_count < 1:
-            raise CameraConfigurationError("Retry count must be at least 1")
         if width <= 0 or height <= 0:
             raise CameraConfigurationError(f"Invalid resolution: {width}x{height}")
         if fps <= 0:
@@ -219,15 +220,6 @@ class OpenCVCamera(BaseCamera):
             f"OpenCV camera '{camera_name}' initialized with configuration: "
             f"resolution={width}x{height}, fps={fps}, exposure={exposure}, timeout={timeout_ms}ms"
         )
-
-        try:
-            self.initialized, self.cap, _ = self.initialize()
-        except (CameraNotFoundError, CameraInitializationError):
-            raise
-        except Exception as e:
-            self.logger.error(f"Failed to initialize OpenCV camera '{camera_name}': {str(e)}")
-            self.initialized = False
-            raise CameraInitializationError(f"Failed to initialize OpenCV camera '{camera_name}': {str(e)}")
 
     def _parse_camera_identifier(self, camera_name: str) -> Union[int, str]:
         """
@@ -263,7 +255,7 @@ class OpenCVCamera(BaseCamera):
             else:
                 raise CameraConfigurationError(f"Invalid camera identifier: {camera_name}")
 
-    def initialize(self) -> Tuple[bool, Any, Any]:
+    async def initialize(self) -> Tuple[bool, Any, Any]:
         """
         Initialize the camera and establish connection.
         
@@ -285,17 +277,24 @@ class OpenCVCamera(BaseCamera):
                 self.logger.error(f"Could not open camera {self.camera_index}")
                 raise CameraNotFoundError(f"Could not open camera {self.camera_index}")
             
+            # Configure camera settings
             self._configure_camera()
             
+            # Test capture to verify camera is working
             ret, frame = self.cap.read()
             if not ret or frame is None:
                 self.logger.error(f"Camera {self.camera_index} failed to capture test frame")
                 raise CameraInitializationError(f"Camera {self.camera_index} failed to capture test frame")
             
+            # Verify frame has expected properties
+            if len(frame.shape) != 3 or frame.shape[2] != 3:
+                self.logger.error(f"Camera {self.camera_index} returned invalid frame format: {frame.shape}")
+                raise CameraInitializationError(f"Camera {self.camera_index} returned invalid frame format")
+            
             self.initialized = True
             self.logger.info(
                 f"OpenCV camera '{self.camera_name}' initialization successful, "
-                f"test frame shape: {frame.shape}"
+                f"test frame shape: {frame.shape}, dtype: {frame.dtype}"
             )
             
             return True, self.cap, self.cap
@@ -366,35 +365,56 @@ class OpenCVCamera(BaseCamera):
         Raises:
             HardwareOperationError: If camera discovery fails
         """
+        if not OPENCV_AVAILABLE:
+            return [] if not include_details else {}
+        
         try:
             available_cameras = []
             camera_details = {}
             
-            for i in range(10):
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    camera_name = f"opencv_camera_{i}"
-                    available_cameras.append(camera_name)
-                    
-                    if include_details:
-                        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        fps = cap.get(cv2.CAP_PROP_FPS)
-                        
-                        camera_details[camera_name] = {
-                            "user_id": camera_name,
-                            "device_id": str(i),
-                            "device_name": f"OpenCV Camera {i}",
-                            "device_type": "OpenCV",
-                            "width": str(width),
-                            "height": str(height),
-                            "fps": str(fps),
-                            "backend": "OpenCV"
-                        }
-                    
-                    cap.release()
-                else:
-                    cap.release()
+            # Get maximum camera index to test from config or use default
+            max_camera_index = 10
+            
+            for i in range(max_camera_index):
+                cap = None
+                try:
+                    cap = cv2.VideoCapture(i)
+                    if cap.isOpened():
+                        # Try to read a frame to verify camera is actually working
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            camera_name = f"opencv_camera_{i}"
+                            available_cameras.append(camera_name)
+                            
+                            if include_details:
+                                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                                fps = cap.get(cv2.CAP_PROP_FPS)
+                                
+                                # Try to get additional camera properties
+                                backend_name = cap.getBackendName() if hasattr(cap, 'getBackendName') else "Unknown"
+                                
+                                camera_details[camera_name] = {
+                                    "user_id": camera_name,
+                                    "device_id": str(i),
+                                    "device_name": f"OpenCV Camera {i}",
+                                    "device_type": "OpenCV",
+                                    "width": str(width),
+                                    "height": str(height),
+                                    "fps": f"{fps:.1f}",
+                                    "backend": backend_name,
+                                    "pixel_format": "BGR8",
+                                    "interface": f"USB/Video{i}"
+                                }
+                        else:
+                            # Camera opened but can't capture - might be in use
+                            pass
+                except Exception as e:
+                    # Camera index might not exist or be accessible
+                    pass
+                finally:
+                    if cap:
+                        cap.release()
             
             if include_details:
                 return camera_details
@@ -404,7 +424,7 @@ class OpenCVCamera(BaseCamera):
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover OpenCV cameras: {str(e)}")
 
-    def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
+    async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
         """
         Capture an image from the camera.
         
@@ -442,7 +462,10 @@ class OpenCVCamera(BaseCamera):
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     
                     if self.img_quality_enhancement:
-                        frame_rgb = self._enhance_image_quality(frame_rgb)
+                        try:
+                            frame_rgb = self._enhance_image_quality(frame_rgb)
+                        except Exception as enhance_error:
+                            self.logger.warning(f"Image enhancement failed, using original image: {enhance_error}")
                     
                     self.logger.debug(
                         f"Capture successful for camera '{self.camera_name}': "
@@ -488,18 +511,36 @@ class OpenCVCamera(BaseCamera):
             CameraCaptureError: If image enhancement fails
         """
         try:
-            yuv = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
-            yuv[:, :, 0] = cv2.equalizeHist(yuv[:, :, 0])
-            enhanced = cv2.cvtColor(yuv, cv2.COLOR_YUV2RGB)
+            # Convert RGB to LAB color space for better enhancement
+            lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
+            l, a, b = cv2.split(lab)
+            
+            # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            
+            # Merge channels and convert back to RGB
+            enhanced_lab = cv2.merge((cl, a, b))
+            enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
+            
+            # Additional enhancement: gamma correction
+            gamma = 1.1
+            enhanced_img = np.power(enhanced_img / 255.0, gamma) * 255.0
+            enhanced_img = enhanced_img.astype(np.uint8)
+            
+            # Slight contrast adjustment
+            alpha = 1.05  # Contrast control (lower than other backends for USB cameras)
+            beta = 5      # Brightness control
+            enhanced_img = cv2.convertScaleAbs(enhanced_img, alpha=alpha, beta=beta)
             
             self.logger.debug(f"Image quality enhancement applied for camera '{self.camera_name}'")
-            return enhanced
+            return enhanced_img
             
         except Exception as e:
             self.logger.warning(f"Image enhancement failed for camera '{self.camera_name}': {e}")
             raise CameraCaptureError(f"Image enhancement failed for camera '{self.camera_name}': {str(e)}")
 
-    def check_connection(self) -> bool:
+    async def check_connection(self) -> bool:
         """
         Check if camera connection is active and healthy.
         
@@ -522,7 +563,7 @@ class OpenCVCamera(BaseCamera):
             self.logger.debug(f"Connection check failed for camera '{self.camera_name}': {e}")
             return False
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
         Close camera connection and cleanup resources.
         
@@ -546,7 +587,7 @@ class OpenCVCamera(BaseCamera):
         self.initialized = False
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
 
-    def set_exposure(self, exposure: float) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set camera exposure time.
         
@@ -565,15 +606,15 @@ class OpenCVCamera(BaseCamera):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
         
         try:
-            exposure_range = self.get_exposure_range()
+            exposure_range = await self.get_exposure_range()
             if exposure < exposure_range[0] or exposure > exposure_range[1]:
                 raise CameraConfigurationError(
                     f"Exposure {exposure} outside valid range {exposure_range} for camera '{self.camera_name}'"
                 )
             
-            success = self.cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
+            success = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
             if success:
-                self._exposure = exposure
+                self._exposure = float(exposure)
                 actual_exposure = self.cap.get(cv2.CAP_PROP_EXPOSURE)
                 self.logger.info(
                     f"Exposure set for camera '{self.camera_name}': "
@@ -590,7 +631,7 @@ class OpenCVCamera(BaseCamera):
             self.logger.error(f"Error setting exposure for camera '{self.camera_name}': {e}")
             raise HardwareOperationError(f"Failed to set exposure for camera '{self.camera_name}': {str(e)}")
 
-    def get_exposure(self) -> float:
+    async def get_exposure(self) -> float:
         """
         Get current camera exposure time.
         
@@ -606,12 +647,12 @@ class OpenCVCamera(BaseCamera):
         
         try:
             exposure = self.cap.get(cv2.CAP_PROP_EXPOSURE)
-            return exposure
+            return float(exposure)
         except Exception as e:
             self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
             raise HardwareOperationError(f"Failed to get exposure for camera '{self.camera_name}': {str(e)}")
 
-    def get_exposure_range(self) -> List[Union[int, float]]:
+    async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get camera exposure time range.
         
@@ -623,7 +664,7 @@ class OpenCVCamera(BaseCamera):
             getattr(self.camera_config.cameras, 'opencv_exposure_range_max', -1.0)
         ]
 
-    def get_width_range(self) -> List[int]:
+    async def get_width_range(self) -> List[int]:
         """
         Get supported width range.
         
@@ -635,7 +676,7 @@ class OpenCVCamera(BaseCamera):
             getattr(self.camera_config.cameras, 'opencv_width_range_max', 1920)
         ]
 
-    def get_height_range(self) -> List[int]:
+    async def get_height_range(self) -> List[int]:
         """
         Get supported height range.
         
@@ -647,7 +688,214 @@ class OpenCVCamera(BaseCamera):
             getattr(self.camera_config.cameras, 'opencv_height_range_max', 1080)
         ]
 
-    def get_triggermode(self) -> str:
+    def get_gain_range(self) -> List[Union[int, float]]:
+        """
+        Get the supported gain range.
+
+        Returns:
+            List with [min_gain, max_gain]
+        """
+        return [0.0, 100.0]
+
+    def set_gain(self, gain: Union[int, float]) -> bool:
+        """
+        Set camera gain.
+        
+        Args:
+            gain: Gain value
+            
+        Returns:
+            True if gain was set successfully
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If gain value is out of range or setting fails
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available for gain setting")
+        
+        try:
+            gain_range = self.get_gain_range()
+            if gain < gain_range[0] or gain > gain_range[1]:
+                raise CameraConfigurationError(f"Gain {gain} out of range {gain_range}")
+            
+            success = self.cap.set(cv2.CAP_PROP_GAIN, float(gain))
+            if success:
+                actual_gain = self.cap.get(cv2.CAP_PROP_GAIN)
+                self.logger.info(f"Gain set to {gain} (actual: {actual_gain:.1f}) for camera '{self.camera_name}'")
+                return True
+            else:
+                raise CameraConfigurationError(f"Failed to set gain to {gain} for camera '{self.camera_name}'")
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
+
+    def get_gain(self) -> float:
+        """
+        Get current camera gain.
+        
+        Returns:
+            Current gain value
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            return 0.0
+        
+        try:
+            gain = self.cap.get(cv2.CAP_PROP_GAIN)
+            return float(gain)
+        except Exception as e:
+            self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
+            return 0.0
+
+    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+        """
+        Set Region of Interest (ROI).
+        
+        Note: OpenCV cameras typically don't support hardware ROI,
+        this would need to be implemented in software.
+
+        Args:
+            x: ROI x offset
+            y: ROI y offset  
+            width: ROI width
+            height: ROI height
+
+        Returns:
+            False (not supported by OpenCV backend)
+        """
+        self.logger.warning(f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'")
+        return False
+
+    def get_ROI(self) -> Dict[str, int]:
+        """
+        Get current Region of Interest (ROI).
+        
+        Returns:
+            Dictionary with full frame dimensions (ROI not supported)
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            return {"x": 0, "y": 0, "width": 0, "height": 0}
+        
+        try:
+            width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            return {"x": 0, "y": 0, "width": width, "height": height}
+        except Exception as e:
+            self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
+            return {"x": 0, "y": 0, "width": 0, "height": 0}
+
+    def reset_ROI(self) -> bool:
+        """
+        Reset ROI to full sensor size.
+        
+        Returns:
+            False (not supported by OpenCV backend)
+        """
+        self.logger.warning(f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'")
+        return False
+
+    async def get_wb(self) -> str:
+        """
+        Get current white balance mode.
+
+        Returns:
+            Current white balance mode ("auto" or "manual")
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            return "unknown"
+        
+        try:
+            # OpenCV doesn't have a direct white balance mode query
+            # Check if auto white balance is enabled
+            auto_wb = self.cap.get(cv2.CAP_PROP_AUTO_WB)
+            return "auto" if auto_wb > 0 else "manual"
+        except Exception as e:
+            self.logger.debug(f"Could not get white balance mode for camera '{self.camera_name}': {str(e)}")
+            return "unknown"
+
+    async def set_auto_wb_once(self, value: str) -> bool:
+        """
+        Set white balance mode.
+
+        Args:
+            value: White balance mode ("auto", "manual", "off")
+
+        Returns:
+            True if white balance was set successfully
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
+            return False
+        
+        try:
+            if value.lower() in ["auto", "continuous"]:
+                success = self.cap.set(cv2.CAP_PROP_AUTO_WB, 1)
+            elif value.lower() in ["manual", "off"]:
+                success = self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)
+            else:
+                self.logger.error(f"Unsupported white balance mode: {value}")
+                return False
+            
+            if success:
+                self.logger.info(f"White balance set to '{value}' for camera '{self.camera_name}'")
+                return True
+            else:
+                self.logger.warning(f"Failed to set white balance to '{value}' for camera '{self.camera_name}'")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
+            return False
+
+    def get_wb_range(self) -> List[str]:
+        """
+        Get available white balance modes.
+        
+        Returns:
+            List of available white balance modes
+        """
+        return ["auto", "manual", "off"]
+
+    def get_pixel_format_range(self) -> List[str]:
+        """
+        Get available pixel formats.
+        
+        Returns:
+            List of available pixel formats (OpenCV always uses BGR internally)
+        """
+        return ["BGR8", "RGB8"]
+
+    def get_current_pixel_format(self) -> str:
+        """
+        Get current pixel format.
+        
+        Returns:
+            Current pixel format (always BGR8 for OpenCV, converted to RGB8 in capture)
+        """
+        return "RGB8"  # We convert BGR to RGB in capture method
+
+    def set_pixel_format(self, pixel_format: str) -> bool:
+        """
+        Set pixel format.
+        
+        Args:
+            pixel_format: Pixel format to set
+            
+        Returns:
+            True if pixel format is supported
+            
+        Raises:
+            CameraConfigurationError: If pixel format is not supported
+        """
+        available_formats = self.get_pixel_format_range()
+        if pixel_format in available_formats:
+            self.logger.info(f"Pixel format '{pixel_format}' is supported for camera '{self.camera_name}'")
+            return True
+        else:
+            raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
+
+    async def get_triggermode(self) -> str:
         """
         Get trigger mode (always continuous for USB cameras).
         
@@ -656,7 +904,7 @@ class OpenCVCamera(BaseCamera):
         """
         return "continuous"
 
-    def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
         """
         Set trigger mode.
         
@@ -700,6 +948,8 @@ class OpenCVCamera(BaseCamera):
         """
         try:
             self.img_quality_enhancement = img_quality_enhancement
+            if img_quality_enhancement and not hasattr(self, '_enhancement_initialized'):
+                self._initialize_image_enhancement()
             self.logger.info(
                 f"Image quality enhancement {'enabled' if img_quality_enhancement else 'disabled'} "
                 f"for camera '{self.camera_name}'"
@@ -709,9 +959,18 @@ class OpenCVCamera(BaseCamera):
             self.logger.error(f"Failed to set image quality enhancement for camera '{self.camera_name}': {str(e)}")
             return False
 
-    def export_config(self, config_path: str) -> bool:
+    def _initialize_image_enhancement(self):
+        """Initialize image enhancement parameters for OpenCV camera."""
+        try:
+            # Initialize enhancement parameters - for OpenCV we use histogram equalization
+            self._enhancement_initialized = True
+            self.logger.debug(f"Image enhancement initialized for camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}")
+
+    async def export_config(self, config_path: str) -> bool:
         """
-        Export current camera configuration to JSON file.
+        Export current camera configuration to common JSON format.
         
         Args:
             config_path: Path to save configuration file
@@ -731,43 +990,46 @@ class OpenCVCamera(BaseCamera):
             
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
             
+            # Common flat format
             config = {
                 "camera_type": "opencv",
                 "camera_name": self.camera_name,
                 "camera_index": self.camera_index,
                 "timestamp": time.time(),
-                "settings": {
-                    "width": int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-                    "height": int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-                    "fps": self.cap.get(cv2.CAP_PROP_FPS),
-                    "exposure": self.cap.get(cv2.CAP_PROP_EXPOSURE),
-                    "brightness": self.cap.get(cv2.CAP_PROP_BRIGHTNESS),
-                    "contrast": self.cap.get(cv2.CAP_PROP_CONTRAST),
-                    "saturation": self.cap.get(cv2.CAP_PROP_SATURATION),
-                    "hue": self.cap.get(cv2.CAP_PROP_HUE),
-                    "gain": self.cap.get(cv2.CAP_PROP_GAIN),
-                    "auto_exposure": self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE),
-                    "white_balance_blue_u": self.cap.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-                    "white_balance_red_v": self.cap.get(cv2.CAP_PROP_WHITE_BALANCE_RED_V),
-                    "img_quality_enhancement": self.img_quality_enhancement,
-                    "retrieve_retry_count": self.retrieve_retry_count,
-                    "timeout_ms": self.timeout_ms
-                }
+                "width": int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                "height": int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+                "fps": self.cap.get(cv2.CAP_PROP_FPS),
+                "exposure_time": self.cap.get(cv2.CAP_PROP_EXPOSURE),
+                "brightness": self.cap.get(cv2.CAP_PROP_BRIGHTNESS),
+                "contrast": self.cap.get(cv2.CAP_PROP_CONTRAST),
+                "saturation": self.cap.get(cv2.CAP_PROP_SATURATION),
+                "hue": self.cap.get(cv2.CAP_PROP_HUE),
+                "gain": self.cap.get(cv2.CAP_PROP_GAIN),
+                "auto_exposure": self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE),
+                "white_balance": "auto" if self.cap.get(cv2.CAP_PROP_AUTO_WB) > 0 else "manual",
+                "white_balance_blue_u": self.cap.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
+                "white_balance_red_v": self.cap.get(cv2.CAP_PROP_WHITE_BALANCE_RED_V),
+                "image_enhancement": self.img_quality_enhancement,
+                "retrieve_retry_count": self.retrieve_retry_count,
+                "timeout_ms": self.timeout_ms,
+                "pixel_format": "RGB8",  # OpenCV converted output
+                "trigger_mode": "continuous",  # OpenCV default
+                "roi": {"x": 0, "y": 0, "width": int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH)), "height": int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}
             }
             
             with open(config_path, 'w') as f:
                 json.dump(config, f, indent=2)
             
-            self.logger.info(f"Configuration exported to '{config_path}' for camera '{self.camera_name}'")
+            self.logger.info(f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format")
             return True
             
         except Exception as e:
             self.logger.error(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")
 
-    def import_config(self, config_path: str) -> bool:
+    async def import_config(self, config_path: str) -> bool:
         """
-        Import camera configuration from JSON file.
+        Import camera configuration from common JSON format.
         
         Args:
             config_path: Path to configuration file
@@ -791,13 +1053,14 @@ class OpenCVCamera(BaseCamera):
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
-            if not isinstance(config, dict) or 'settings' not in config:
+            if not isinstance(config, dict):
                 raise CameraConfigurationError("Invalid configuration file format")
-            
-            settings = config['settings']
             
             success_count = 0
             total_settings = 0
+            
+            # Handle both common format and legacy nested format for backward compatibility
+            settings = config.get('settings', config)  # Use nested if available, otherwise flat
             
             if 'width' in settings and 'height' in settings:
                 total_settings += 2
@@ -811,9 +1074,11 @@ class OpenCVCamera(BaseCamera):
                 if self.cap.set(cv2.CAP_PROP_FPS, settings['fps']):
                     success_count += 1
             
-            if 'exposure' in settings and settings['exposure'] >= 0:
+            # Handle both exposure_time (common format) and exposure (legacy)
+            exposure_key = 'exposure_time' if 'exposure_time' in settings else 'exposure'
+            if exposure_key in settings and settings[exposure_key] >= 0:
                 total_settings += 1
-                if self.cap.set(cv2.CAP_PROP_EXPOSURE, settings['exposure']):
+                if self.cap.set(cv2.CAP_PROP_EXPOSURE, settings[exposure_key]):
                     success_count += 1
             
             optional_props = [
@@ -838,8 +1103,24 @@ class OpenCVCamera(BaseCamera):
                     except Exception as e:
                         self.logger.debug(f"Failed to set {setting_name} for camera '{self.camera_name}': {str(e)}")
             
-            if 'img_quality_enhancement' in settings:
-                self.img_quality_enhancement = settings['img_quality_enhancement']
+            # Handle white balance mode
+            if 'white_balance' in settings:
+                total_settings += 1
+                try:
+                    wb_mode = settings['white_balance']
+                    if wb_mode.lower() in ["auto", "continuous"]:
+                        if self.cap.set(cv2.CAP_PROP_AUTO_WB, 1):
+                            success_count += 1
+                    elif wb_mode.lower() in ["manual", "off"]:
+                        if self.cap.set(cv2.CAP_PROP_AUTO_WB, 0):
+                            success_count += 1
+                except Exception as e:
+                    self.logger.debug(f"Failed to set white_balance for camera '{self.camera_name}': {str(e)}")
+            
+            # Handle both image_enhancement (common format) and img_quality_enhancement (legacy)
+            enhancement_key = 'image_enhancement' if 'image_enhancement' in settings else 'img_quality_enhancement'
+            if enhancement_key in settings:
+                self.img_quality_enhancement = settings[enhancement_key]
                 success_count += 1
                 total_settings += 1
             
@@ -869,6 +1150,9 @@ class OpenCVCamera(BaseCamera):
     def __del__(self) -> None:
         """Destructor to ensure proper cleanup."""
         try:
-            self.close()
-        except Exception:
-            pass 
+            if hasattr(self, 'cap') and self.cap is not None:
+                self.cap.release()
+                self.cap = None
+        except Exception as e:
+            # Use print instead of logger since logger might not be available during destruction
+            print(f"Warning: Failed to cleanup OpenCV camera during destruction: {e}") 
