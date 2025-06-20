@@ -48,6 +48,7 @@ Each layer only depends on modules in lower levels.
 | `cluster`  | `jobs`, `registry`, `database`, `services`           |
 | `datalake` | `registry`, `database`, `services`                   |
 | `models`   | `registry`, `services`                               |
+| `hardware` | `core`                                               | 
 | `automation` | `jobs`, `registry`, `database`, `services`, `datalake`, `models`, `cluster` |
 | `apps`     | Everything                                           |
 
