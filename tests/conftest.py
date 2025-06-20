@@ -1,3 +1,5 @@
+import logging
+import pytest
 from _pytest.mark import Mark
 
 
@@ -24,3 +26,30 @@ def pytest_addoption(parser):
 def pytest_collection_modifyitems(items, config):
     if config.getoption('--slow-last'):
         items.sort(key=by_slow_marker)
+
+
+@pytest.fixture(autouse=True)
+def configure_logging_for_tests(caplog):
+    """Configure logging to work properly with caplog fixture.
+    
+    This fixture ensures that all Mindtrace loggers propagate their messages to the root logger so that caplog can 
+    capture them properly.
+    """
+    # Set caplog to capture all levels
+    caplog.set_level(logging.DEBUG)
+    
+    # Configure the root logger to ensure proper propagation
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    root_logger.setLevel(logging.DEBUG)
+    
+    # Ensure mindtrace loggers propagate to root
+    mindtrace_logger = logging.getLogger('mindtrace')
+    original_propagate = mindtrace_logger.propagate
+    mindtrace_logger.propagate = True
+        
+    yield
+    
+    # Restore original settings
+    root_logger.setLevel(original_level)
+    mindtrace_logger.propagate = original_propagate
