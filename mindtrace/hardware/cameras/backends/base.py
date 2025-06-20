@@ -13,6 +13,7 @@ Features:
     - Configuration system integration
     - Resource management and cleanup
     - Default implementations for optional features
+    - Standardized constructor signature across all backends
 
 Usage:
     This is an abstract base class and cannot be instantiated directly.
@@ -43,6 +44,9 @@ from pathlib import Path
 
 from mindtrace.core.base.mindtrace_base import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
+from mindtrace.hardware.core.exceptions import (
+    CameraInitializationError, CameraNotFoundError, CameraConnectionError
+)
 
 class BaseCamera(MindtraceABC):
     """
@@ -80,9 +84,7 @@ class BaseCamera(MindtraceABC):
         """
         super().__init__()
         
-        self.config = self.config.get_config()
         self.camera_config = get_camera_config().get_config()
-        self.logger = self.logger
         
         self._setup_camera_logger_formatting()
         
@@ -133,6 +135,30 @@ class BaseCamera(MindtraceABC):
         
         self.logger.propagate = False
 
+    async def setup_camera(self) -> None:
+        """
+        Common setup method for camera initialization.
+        
+        This method provides a standardized setup pattern that can be used
+        by all camera backends. It calls the abstract initialize() method
+        and handles common initialization patterns.
+        
+        Raises:
+            CameraNotFoundError: If camera cannot be found
+            CameraInitializationError: If camera initialization fails  
+            CameraConnectionError: If camera connection fails
+        """
+        try:
+            self.initialized, self.camera, _ = await self.initialize()
+            if not self.initialized:
+                raise CameraInitializationError(f"Camera '{self.camera_name}' initialization returned False")
+        except (CameraNotFoundError, CameraInitializationError, CameraConnectionError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera '{self.camera_name}': {str(e)}")
+            self.initialized = False
+            raise CameraInitializationError(f"Failed to initialize camera '{self.camera_name}': {str(e)}")
+
     @abstractmethod
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """
@@ -151,7 +177,7 @@ class BaseCamera(MindtraceABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def set_exposure(self, exposure: float) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set camera exposure time.
         
@@ -201,20 +227,20 @@ class BaseCamera(MindtraceABC):
     @abstractmethod
     async def check_connection(self) -> bool:
         """
-        Check if camera is connected and operational.
+        Check if camera is connected and responding.
         
         Returns:
-            True if camera is connected and can capture images, False otherwise
+            True if camera is connected and responding, False otherwise
         """
         raise NotImplementedError
 
     @abstractmethod
     async def close(self) -> None:
         """
-        Close the camera connection and release resources.
+        Close camera connection and release resources.
         
-        This method should properly clean up all camera resources,
-        close connections, and prepare for safe destruction.
+        This method should ensure all camera resources are properly
+        released and the camera is disconnected safely.
         """
         raise NotImplementedError
 
@@ -222,38 +248,37 @@ class BaseCamera(MindtraceABC):
     @abstractmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """
-        Get list of available cameras for this backend.
-        
-        This method should discover and return all cameras that can be
-        accessed by this backend implementation. It's a static method
-        because it doesn't require an instance.
+        Get list of available cameras.
         
         Args:
-            include_details: If True, return detailed information about each camera
+            include_details: If True, return detailed camera information
             
         Returns:
-            List of camera names or dict with detailed information
+            List of camera names or dictionary with detailed camera information
         """
         raise NotImplementedError
 
-    # Optional methods with default implementations
-    
+    # Default implementations for optional methods
     async def set_config(self, config: str) -> bool:
         """
         Set camera configuration.
         
+        Default implementation that can be overridden by specific backends.
+        
         Args:
-            config: Configuration string or identifier
+            config: Configuration string or path
             
         Returns:
             True if configuration was set successfully, False otherwise
         """
-        self.logger.warning(f"Configuration setting not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"set_config not implemented for {self.__class__.__name__}")
         return False
 
     async def import_config(self, config_path: str) -> bool:
         """
         Import camera configuration from file.
+        
+        Default implementation that can be overridden by specific backends.
         
         Args:
             config_path: Path to configuration file
@@ -261,66 +286,88 @@ class BaseCamera(MindtraceABC):
         Returns:
             True if configuration was imported successfully, False otherwise
         """
-        self.logger.warning(f"Configuration import not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"import_config not implemented for {self.__class__.__name__}")
         return False
 
     async def export_config(self, config_path: str) -> bool:
         """
         Export camera configuration to file.
         
+        Default implementation that can be overridden by specific backends.
+        
         Args:
-            config_path: Path where to save configuration file
+            config_path: Path to save configuration file
             
         Returns:
             True if configuration was exported successfully, False otherwise
         """
-        self.logger.warning(f"Configuration export not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"export_config not implemented for {self.__class__.__name__}")
         return False
 
     async def get_wb(self) -> str:
         """
-        Get current white balance setting.
+        Get camera white balance setting.
+        
+        Default implementation that can be overridden by specific backends.
         
         Returns:
-            Current white balance mode or setting
+            Current white balance setting
         """
-        self.logger.warning(f"White balance reading not implemented for {self.__class__.__name__}")
-        return "off"
+        self.logger.warning(f"get_wb not implemented for {self.__class__.__name__}")
+        return "unknown"
 
     async def set_auto_wb_once(self, value: str) -> bool:
         """
-        Set white balance auto mode.
+        Set camera white balance.
+        
+        Default implementation that can be overridden by specific backends.
         
         Args:
-            value: White balance mode (e.g., "auto", "off", "once")
+            value: White balance setting
             
         Returns:
             True if white balance was set successfully, False otherwise
         """
-        self.logger.warning(f"White balance setting not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"set_auto_wb_once not implemented for {self.__class__.__name__}")
         return False
+
+    def get_wb_range(self) -> List[str]:
+        """
+        Get available white balance modes.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            List of available white balance modes
+        """
+        self.logger.warning(f"get_wb_range not implemented for {self.__class__.__name__}")
+        return ["auto", "manual", "off"]
 
     async def get_triggermode(self) -> str:
         """
-        Get current trigger mode.
+        Get camera trigger mode.
+        
+        Default implementation that can be overridden by specific backends.
         
         Returns:
-            Current trigger mode (e.g., "continuous", "trigger", "software")
+            Current trigger mode
         """
-        self.logger.warning(f"Trigger mode reading not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"get_triggermode not implemented for {self.__class__.__name__}")
         return "continuous"
 
     async def set_triggermode(self, triggermode: str = "continuous") -> bool:
         """
         Set camera trigger mode.
         
+        Default implementation that can be overridden by specific backends.
+        
         Args:
-            triggermode: Trigger mode to set (e.g., "continuous", "trigger", "software")
+            triggermode: Trigger mode to set
             
         Returns:
             True if trigger mode was set successfully, False otherwise
         """
-        self.logger.warning(f"Trigger mode setting not implemented for {self.__class__.__name__}")
+        self.logger.warning(f"set_triggermode not implemented for {self.__class__.__name__}")
         return False
 
     def get_image_quality_enhancement(self) -> bool:
@@ -334,7 +381,7 @@ class BaseCamera(MindtraceABC):
 
     def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
         """
-        Set image quality enhancement.
+        Set image quality enhancement setting.
         
         Args:
             img_quality_enhancement: Whether to enable image quality enhancement
@@ -343,32 +390,157 @@ class BaseCamera(MindtraceABC):
             True if setting was applied successfully, False otherwise
         """
         self.img_quality_enhancement = img_quality_enhancement
-        self.logger.info(f"Image quality enhancement set to {img_quality_enhancement}")
+        self.logger.info(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
         return True
 
     async def get_width_range(self) -> List[int]:
         """
         Get camera width range.
         
+        Default implementation that can be overridden by specific backends.
+        
         Returns:
-            List containing [min_width, max_width] in pixels
+            List containing [min_width, max_width]
         """
-        self.logger.warning(f"Width range reading not implemented for {self.__class__.__name__}")
-        return [0, 1920]  # Default values
+        self.logger.warning(f"get_width_range not implemented for {self.__class__.__name__}")
+        return [640, 1920]
 
     async def get_height_range(self) -> List[int]:
         """
         Get camera height range.
         
+        Default implementation that can be overridden by specific backends.
+        
         Returns:
-            List containing [min_height, max_height] in pixels
+            List containing [min_height, max_height]
         """
-        self.logger.warning(f"Height range reading not implemented for {self.__class__.__name__}")
-        return [0, 1080]  # Default values
+        self.logger.warning(f"get_height_range not implemented for {self.__class__.__name__}")
+        return [480, 1080]
+
+    # Additional standardized methods for camera control
+    def set_gain(self, gain: Union[int, float]) -> bool:
+        """
+        Set camera gain.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Args:
+            gain: Gain value
+            
+        Returns:
+            True if gain was set successfully, False otherwise
+        """
+        self.logger.warning(f"set_gain not implemented for {self.__class__.__name__}")
+        return False
+
+    def get_gain(self) -> float:
+        """
+        Get current camera gain.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            Current gain value
+        """
+        self.logger.warning(f"get_gain not implemented for {self.__class__.__name__}")
+        return 1.0
+
+    def get_gain_range(self) -> List[Union[int, float]]:
+        """
+        Get camera gain range.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            List containing [min_gain, max_gain]
+        """
+        self.logger.warning(f"get_gain_range not implemented for {self.__class__.__name__}")
+        return [1.0, 16.0]
+
+    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+        """
+        Set Region of Interest (ROI).
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Args:
+            x: ROI x offset
+            y: ROI y offset  
+            width: ROI width
+            height: ROI height
+            
+        Returns:
+            True if ROI was set successfully, False otherwise
+        """
+        self.logger.warning(f"set_ROI not implemented for {self.__class__.__name__}")
+        return False
+
+    def get_ROI(self) -> Dict[str, int]:
+        """
+        Get current Region of Interest (ROI).
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            Dictionary with ROI parameters
+        """
+        self.logger.warning(f"get_ROI not implemented for {self.__class__.__name__}")
+        return {"x": 0, "y": 0, "width": 1920, "height": 1080}
+
+    def reset_ROI(self) -> bool:
+        """
+        Reset ROI to full sensor size.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            True if ROI was reset successfully, False otherwise
+        """
+        self.logger.warning(f"reset_ROI not implemented for {self.__class__.__name__}")
+        return False
+
+    def get_pixel_format_range(self) -> List[str]:
+        """
+        Get available pixel formats.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            List of available pixel formats
+        """
+        self.logger.warning(f"get_pixel_format_range not implemented for {self.__class__.__name__}")
+        return ["BGR8", "RGB8"]
+
+    def get_current_pixel_format(self) -> str:
+        """
+        Get current pixel format.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Returns:
+            Current pixel format
+        """
+        self.logger.warning(f"get_current_pixel_format not implemented for {self.__class__.__name__}")
+        return "RGB8"
+
+    def set_pixel_format(self, pixel_format: str) -> bool:
+        """
+        Set pixel format.
+        
+        Default implementation that can be overridden by specific backends.
+        
+        Args:
+            pixel_format: Pixel format to set
+            
+        Returns:
+            True if pixel format was set successfully, False otherwise
+        """
+        self.logger.warning(f"set_pixel_format not implemented for {self.__class__.__name__}")
+        return False
 
     async def __aenter__(self):
         """Async context manager entry."""
-        await self.initialize()
+        await self.setup_camera()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -377,16 +549,15 @@ class BaseCamera(MindtraceABC):
 
     def __del__(self) -> None:
         """
-        Cleanup when camera object is destroyed.
-        
-        Note: In async context, prefer explicit cleanup with close() method.
-        This destructor is for safety only and may not properly clean up async resources.
+        Destructor to ensure resources are cleaned up.
         """
         try:
-            if hasattr(self, 'initialized') and self.initialized:
-                self.logger.warning(
-                    f"Camera '{self.camera_name}' destroyed without explicit cleanup. "
-                    "Use 'await camera.close()' for proper async cleanup."
-                )
+            if hasattr(self, 'camera') and self.camera is not None:
+                if hasattr(self, 'logger'):
+                    self.logger.warning(
+                        f"Camera '{self.camera_name}' destroyed without proper cleanup. "
+                        f"Use 'async with camera' or call 'await camera.close()' for proper cleanup."
+                    )
         except Exception:
+            # Ignore all errors during destruction
             pass 
