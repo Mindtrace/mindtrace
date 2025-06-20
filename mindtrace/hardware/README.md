@@ -25,15 +25,28 @@ mindtrace/hardware/
 │   ├── backends/
 │   │   ├── base.py        # Abstract base camera class
 │   │   ├── daheng/        # Daheng camera implementation + mock
+│   │   │   ├── daheng_camera.py
+│   │   │   └── mock_daheng.py
 │   │   ├── basler/        # Basler camera implementation + mock
+│   │   │   ├── basler_camera.py
+│   │   │   └── mock_basler.py
 │   │   └── opencv/        # OpenCV camera implementation
+│   │       └── opencv_camera.py
 ├── plcs/
 │   ├── plc_manager.py     # Main PLC management interface
 │   ├── backends/
 │   │   ├── base.py        # Abstract base PLC class
 │   │   └── allen_bradley/ # Allen Bradley PLC implementation + mock
+│   │       ├── allen_bradley_plc.py
+│   │       └── mock_allen_bradley.py
 ├── sensors/               # Sensor implementations (future)
 ├── actuators/             # Actuator implementations (future)
+├── tests/                 # Comprehensive test suite
+│   └── unit/
+│       ├── cameras/
+│       │   └── test_cameras.py
+│       └── plcs/
+│           └── test_plcs.py
 └── README.md             # This file
 ```
 
@@ -79,29 +92,30 @@ mindtrace-uninstall-basler
 
 ```python
 import asyncio
-from mindtrace.hardware.cameras import CameraManager
+from mindtrace.hardware.cameras.camera_manager import CameraManager
 
 async def camera_example():
-    # Initialize camera manager with specific backends
-    manager = CameraManager(backends=["Daheng", "Basler", "OpenCV"])
-    
-    # Discover available cameras
-    cameras = manager.get_available_cameras()
-    print(f"Found cameras: {cameras}")
-    
-    # Initialize cameras
-    failed = await manager.initialize_cameras(cameras[:2])
-    if failed:
-        print(f"Failed to initialize: {failed}")
-    
-    # Capture images
-    for camera in cameras[:2]:
-        if camera not in failed:
-            image = await manager.capture(camera, save_path=f"image_{camera}.jpg")
-            print(f"Captured image from {camera}: {image.shape}")
-    
-    # Cleanup
-    await manager.de_initialize_cameras(cameras[:2])
+    # Initialize camera manager with mock support for testing
+    async with CameraManager(include_mocks=True) as manager:
+        # Discover available cameras
+        cameras = manager.discover_cameras()
+        print(f"Found cameras: {cameras}")
+        
+        # Get a camera using the new CameraProxy interface
+        if cameras:
+            camera_proxy = await manager.get_camera(cameras[0])
+            
+            # Capture image
+            image = await camera_proxy.capture()
+            print(f"Captured image: {image.shape}")
+            
+            # Configure camera
+            success = await camera_proxy.configure(
+                exposure=15000,
+                gain=2.0,
+                trigger_mode="continuous"
+            )
+            print(f"Configuration success: {success}")
 
 asyncio.run(camera_example())
 ```
@@ -110,106 +124,198 @@ asyncio.run(camera_example())
 
 ```python
 import asyncio
-from mindtrace.hardware.plcs import PLCManager
+from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 async def plc_example():
     # Initialize PLC manager
-    manager = PLCManager(backends=["AllenBradley"])
+    manager = PLCManager()
     
     # Discover available PLCs
-    plcs = manager.get_available_plcs()
-    print(f"Found PLCs: {plcs}")
+    discovered = await manager.discover_plcs()
+    print(f"Found PLCs: {discovered}")
     
-    # Register and connect PLCs
-    for plc_id in plcs[:1]:
-        ip = plc_id.split(':')[1]  # Extract IP from "AllenBradley:192.168.1.100:Logix"
-        await manager.register_plc("TestPLC", ip)
+    # Register and connect a PLC
+    success = await manager.register_plc(
+        "TestPLC", 
+        "AllenBradley", 
+        "192.168.1.100", 
+        plc_type="logix"
+    )
     
-    # Connect all PLCs
-    await manager.connect_all_plcs()
-    
-    # Read tags
-    tags = await manager.read_tags("TestPLC", ["Motor1_Speed", "Conveyor_Status"])
-    print(f"Tag values: {tags}")
-    
-    # Write tags
-    success = await manager.write_tags("TestPLC", [("Pump1_Command", True)])
-    print(f"Write success: {success}")
+    if success:
+        # Read tags
+        tags = await manager.read_tag("TestPLC", ["Motor1_Speed", "Conveyor_Status"])
+        print(f"Tag values: {tags}")
+        
+        # Write tags
+        results = await manager.write_tag("TestPLC", [("Pump1_Command", True)])
+        print(f"Write success: {results}")
     
     # Cleanup
-    await manager.disconnect_all_plcs()
+    await manager.cleanup()
 
 asyncio.run(plc_example())
 ```
 
 ## 📋 Camera Manager API
 
-The `CameraManager` class provides a comprehensive async interface for managing multiple camera backends. All camera operations are asynchronous and thread-safe.
+The `CameraManager` class provides a comprehensive async interface for managing multiple camera backends with the new CameraProxy pattern. All camera operations are asynchronous and thread-safe.
 
-### Initialization and Backend Management
+### Modern Camera Management with CameraProxy
 
 ```python
-from mindtrace.hardware.cameras import CameraManager
+from mindtrace.hardware.cameras.camera_manager import CameraManager
 
-# Initialize with specific backends
-manager = CameraManager(backends=["Daheng", "Basler", "OpenCV"])
+async def modern_camera_usage():
+    async with CameraManager(include_mocks=True) as manager:
+        # Discover cameras
+        cameras = manager.discover_cameras()
+        
+        # Get camera proxy for unified interface
+        camera_proxy = await manager.get_camera(cameras[0])
+        
+        # Use camera through proxy
+        image = await camera_proxy.capture()
+        
+        # Configure through proxy
+        await camera_proxy.configure(
+            exposure=20000,
+            gain=1.5,
+            trigger_mode="continuous"
+        )
+        
+        # Get camera information
+        info = await camera_proxy.get_sensor_info()
+        print(f"Camera info: {info}")
+```
 
-# Register additional backends
-success = manager.register_backend("OpenCV")
-success = manager.register_backends(["Daheng", "Basler"])
+### Backend Discovery and Management
 
-# Get backend information
-backends = manager.get_supported_backends()
-available = manager.get_available_backends()
-status = manager.get_backend_status()
-instructions = manager.get_installation_instructions("Basler")
+```python
+# Get available backends
+manager = CameraManager(include_mocks=True)
+backends = manager.get_available_backends()
+backend_info = manager.get_backend_info()
+print(f"Available backends: {backends}")
+print(f"Backend details: {backend_info}")
+
+# Discover cameras across all backends
+cameras = manager.discover_cameras()
+print(f"All cameras: {cameras}")
 ```
 
 ### Camera Discovery and Setup
 
 ```python
-# Discover cameras
-cameras = manager.get_available_cameras()
-
-# Initialize multiple cameras
-failed = await manager.initialize_cameras(
-    camera_names=['Daheng:cam1', 'OpenCV:0'],
-    camera_configs=['config1.json', None],  # Optional
-    img_quality_enhancement=True,           # Optional
-    retrieve_retry_count=5                  # Optional
-)
-
-# Setup individual camera
-camera = manager.setup_camera(
-    camera_name='Daheng:cam1',
-    camera_config='camera_config.json',
-    img_quality_enhancement=True,
-    retrieve_retry_count=3
-)
+async def camera_setup():
+    async with CameraManager(include_mocks=True) as manager:
+        # Discover cameras
+        cameras = manager.discover_cameras()
+        
+        # Get specific camera
+        camera = await manager.get_camera('Daheng:cam1')
+        
+        # Get camera with configuration
+        camera = await manager.get_camera(
+            'Basler:serial123',
+            exposure=20000,
+            gain=2.0,
+            trigger_mode="continuous"
+        )
+        
+        # Check active cameras
+        active = manager.get_active_cameras()
+        print(f"Active cameras: {active}")
 ```
 
 ### Image Capture and Configuration
 
 ```python
-# Capture images
-image = await manager.capture('Daheng:cam1')
-image = await manager.capture('Daheng:cam1', save_path='captured.jpg')
+async def image_operations():
+    async with CameraManager() as manager:
+        camera = await manager.get_camera('Daheng:cam1')
+        
+        # Basic capture
+        image = await camera.capture()
+        
+        # Capture with save
+        image = await camera.capture(save_path='captured.jpg')
+        
+        # Multiple configuration methods
+        await camera.configure(
+            exposure=15000,
+            gain=1.5,
+            roi=(100, 100, 800, 600),
+            trigger_mode="continuous",
+            pixel_format="BGR8",
+            white_balance="auto",
+            image_enhancement=True
+        )
+        
+        # Individual setting methods
+        await camera.set_exposure(20000)
+        camera.set_gain(2.0)
+        camera.set_roi(0, 0, 1920, 1080)
+        await camera.set_trigger_mode("trigger")
+        camera.set_pixel_format("RGB8")
+```
 
-# HDR capture
-success = await manager.capture_hdr('Daheng:cam1', 'hdr_base.jpg', exposure_levels=5)
+### Batch Operations
 
-# Configuration management
-await manager.set_config('Daheng:cam1', 'new_config.json')
-await manager.export_config('Daheng:cam1', 'exported_config.json')
+```python
+async def batch_operations():
+    async with CameraManager(include_mocks=True) as manager:
+        cameras = manager.discover_cameras()[:3]  # Get first 3 cameras
+        
+        # Batch configuration
+        configurations = {
+            cameras[0]: {"exposure": 15000, "gain": 1.0},
+            cameras[1]: {"exposure": 20000, "gain": 1.5},
+            cameras[2]: {"exposure": 25000, "gain": 2.0}
+        }
+        results = await manager.batch_configure(configurations)
+        
+        # Batch capture
+        images = await manager.batch_capture(cameras)
+        for camera_name, image in images.items():
+            print(f"Captured from {camera_name}: {image.shape}")
+```
 
-# Exposure control
-exposure_range = await manager.get_exposure_range('Daheng:cam1')
-current_exposure = await manager.get_exposure('Daheng:cam1')
-await manager.set_exposure('Daheng:cam1', 1500.0)
+### Advanced Camera Control
 
-# White balance control
-wb = await manager.get_wb('Daheng:cam1')
-await manager.set_wb_once('Daheng:cam1', 'auto')
+```python
+async def advanced_control():
+    async with CameraManager() as manager:
+        camera = await manager.get_camera('Basler:serial123')
+        
+        # Exposure control
+        exposure_range = await camera.get_exposure_range()
+        current_exposure = await camera.get_exposure()
+        await camera.set_exposure(15000.0)
+        
+        # Gain control
+        gain_range = camera.get_gain_range()
+        current_gain = camera.get_gain()
+        camera.set_gain(2.0)
+        
+        # ROI control
+        camera.set_roi(100, 100, 800, 600)
+        roi = camera.get_roi()
+        camera.reset_roi()
+        
+        # Pixel format control
+        formats = camera.get_available_pixel_formats()
+        current_format = camera.get_pixel_format()
+        camera.set_pixel_format("RGB8")
+        
+        # White balance control
+        wb_modes = camera.get_available_white_balance_modes()
+        current_wb = await camera.get_white_balance()
+        await camera.set_white_balance("auto")
+        
+        # Configuration management
+        await camera.save_config("camera_config.json")
+        await camera.load_config("camera_config.json")
 ```
 
 ## 📋 PLC Manager API
@@ -219,7 +325,7 @@ The `PLCManager` class provides a comprehensive async interface for managing PLC
 ### Initialization and Backend Management
 
 ```python
-from mindtrace.hardware.plcs import PLCManager
+from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 # Initialize with specific backends
 manager = PLCManager(backends=["AllenBradley"])
@@ -489,6 +595,8 @@ Create a `hardware_config.json` file for persistent configuration:
 - **Supported Models**: All Daheng USB3 and GigE cameras
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
 - **Image Enhancement**: Gamma correction, contrast adjustment, color correction
+- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format
+- **Mock Support**: Comprehensive mock implementation for testing
 
 #### Basler Cameras
 - **SDK**: pypylon
@@ -497,6 +605,8 @@ Create a `hardware_config.json` file for persistent configuration:
 - **Supported Models**: All Basler USB3, GigE, and CameraLink cameras
 - **Advanced Features**: ROI selection, gain control, pixel format selection
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
+- **Configuration**: Unified JSON format with graceful feature degradation
+- **Mock Support**: Full mock implementation with realistic behavior
 
 #### OpenCV Cameras
 - **SDK**: opencv-python (included by default)
@@ -504,6 +614,7 @@ Create a `hardware_config.json` file for persistent configuration:
 - **Features**: USB cameras, webcams, IP cameras
 - **Supported Devices**: Any device supported by OpenCV VideoCapture
 - **Platform Support**: Windows, Linux, macOS
+- **Configuration**: Unified JSON format adapted for OpenCV limitations
 
 #### Mock Cameras
 - **Purpose**: Testing and development without physical hardware
@@ -616,9 +727,11 @@ from mindtrace.hardware.core.exceptions import (
 ```python
 # Camera exception handling
 try:
-    image = await camera_manager.capture('Daheng:cam1')
+    async with CameraManager(include_mocks=True) as manager:
+        camera_proxy = await manager.get_camera('Daheng:cam1')
+        image = await camera_proxy.capture()
 except CameraNotFoundError:
-    print("Camera not initialized")
+    print("Camera not found")
 except CameraCaptureError as e:
     print(f"Capture failed: {e}")
 except CameraTimeoutError:
@@ -628,7 +741,9 @@ except SDKNotAvailableError as e:
 
 # PLC exception handling
 try:
-    values = await plc_manager.read_tags("ProductionPLC", ["Motor1_Speed", "Conveyor_Status"])
+    manager = PLCManager()
+    await manager.register_plc("TestPLC", "AllenBradley", "192.168.1.100")
+    values = await manager.read_tags("TestPLC", ["Motor1_Speed", "Conveyor_Status"])
 except PLCNotFoundError:
     print("PLC not registered")
 except PLCConnectionError:
@@ -647,52 +762,52 @@ except PLCTimeoutError:
 
 ```python
 import asyncio
-from mindtrace.hardware.cameras import CameraManager
-from mindtrace.hardware.plcs import PLCManager
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 async def industrial_automation():
     # Initialize managers
-    camera_manager = CameraManager(backends=["Daheng"])
-    plc_manager = PLCManager(backends=["AllenBradley"])
-    
-    # Setup cameras
-    cameras = camera_manager.get_available_cameras()
-    await camera_manager.initialize_cameras(cameras[:1])
-    
-    # Setup PLCs
-    await plc_manager.register_plc("ProductionPLC", "192.168.1.100", plc_type="logix")
-    await plc_manager.connect_plc("ProductionPLC")
-    
-    # Production cycle
-    for cycle in range(10):
-        print(f"Production cycle {cycle + 1}")
+    async with CameraManager() as camera_manager:
+        plc_manager = PLCManager()
         
-        # Check PLC status
-        conveyor_running = await plc_manager.read_tag("ProductionPLC", "Conveyor_Status")
-        if not conveyor_running:
-            # Start conveyor
-            await plc_manager.write_tag("ProductionPLC", "Conveyor_Command", True)
-            await asyncio.sleep(1)
-        
-        # Wait for part detection
-        part_detected = await plc_manager.read_tag("ProductionPLC", "PartDetector_Sensor")
-        if part_detected:
-            # Capture image for quality inspection
-            image = await camera_manager.capture(cameras[0], f"inspection_cycle_{cycle}.jpg")
-            print(f"Captured inspection image: {image.shape}")
+        try:
+            # Setup cameras
+            cameras = camera_manager.discover_cameras()
+            inspection_camera = await camera_manager.get_camera(cameras[0])
             
-            # Process part (simulate)
-            await asyncio.sleep(0.5)
+            # Setup PLCs
+            await plc_manager.register_plc("ProductionPLC", "AllenBradley", "192.168.1.100", plc_type="logix")
+            await plc_manager.connect_plc("ProductionPLC")
             
-            # Update production counter
-            current_count = await plc_manager.read_tag("ProductionPLC", "Production_Count")
-            await plc_manager.write_tag("ProductionPLC", "Production_Count", current_count + 1)
-        
-        await asyncio.sleep(2)
-    
-    # Cleanup
-    await camera_manager.de_initialize_cameras(cameras[:1])
-    await plc_manager.disconnect_all_plcs()
+            # Production cycle
+            for cycle in range(10):
+                print(f"Production cycle {cycle + 1}")
+                
+                # Check PLC status
+                conveyor_running = await plc_manager.read_tag("ProductionPLC", "Conveyor_Status")
+                if not conveyor_running:
+                    # Start conveyor
+                    await plc_manager.write_tag("ProductionPLC", "Conveyor_Command", True)
+                    await asyncio.sleep(1)
+                
+                # Wait for part detection
+                part_detected = await plc_manager.read_tag("ProductionPLC", "PartDetector_Sensor")
+                if part_detected:
+                    # Capture image for quality inspection
+                    image = await inspection_camera.capture(f"inspection_cycle_{cycle}.jpg")
+                    print(f"Captured inspection image: {image.shape}")
+                    
+                    # Process part (simulate)
+                    await asyncio.sleep(0.5)
+                    
+                    # Update production counter
+                    current_count = await plc_manager.read_tag("ProductionPLC", "Production_Count")
+                    await plc_manager.write_tag("ProductionPLC", "Production_Count", current_count + 1)
+                
+                await asyncio.sleep(2)
+                
+        finally:
+            await plc_manager.cleanup()
 
 asyncio.run(industrial_automation())
 ```
@@ -701,7 +816,7 @@ asyncio.run(industrial_automation())
 
 ```python
 import asyncio
-from mindtrace.hardware.plcs import PLCManager
+from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 async def multi_plc_coordination():
     manager = PLCManager(backends=["AllenBradley"])
@@ -761,8 +876,8 @@ except KeyboardInterrupt:
 ```python
 import asyncio
 import os
-from mindtrace.hardware.cameras import CameraManager
-from mindtrace.hardware.plcs import PLCManager
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 async def testing_setup():
     # Enable mock backends for testing
@@ -770,43 +885,43 @@ async def testing_setup():
     os.environ['MINDTRACE_HW_PLC_MOCK_ENABLED'] = 'true'
     
     # Initialize with mock backends
-    camera_manager = CameraManager(backends=["MockDaheng", "MockBasler"])
-    plc_manager = PLCManager(backends=["MockAllenBradley"])
-    
-    # Test camera functionality
-    cameras = camera_manager.get_available_cameras()
-    print(f"Mock cameras available: {cameras}")
-    
-    await camera_manager.initialize_cameras(cameras[:2], img_quality_enhancement=True)
-    
-    # Test image capture
-    for camera in cameras[:2]:
-        image = await camera_manager.capture(camera)
-        print(f"Mock image captured from {camera}: {image.shape}")
-    
-    # Test PLC functionality
-    await plc_manager.register_plc("TestPLC", "192.168.1.100", plc_type="auto")
-    await plc_manager.connect_plc("TestPLC")
-    
-    # Test tag operations
-    tag_values = await plc_manager.read_tags("TestPLC", [
-        "Motor1_Speed",      # Logix style
-        "N7:0",             # SLC style
-        "Parameter:1"       # CIP style
-    ])
-    print(f"Mock tag values: {tag_values}")
-    
-    # Test tag writing
-    write_results = await plc_manager.write_tags("TestPLC", [
-        ("Motor1_Speed", 1600.0),
-        ("N7:1", 2200),
-        ("Parameter:2", 1485.2)
-    ])
-    print(f"Mock write results: {write_results}")
-    
-    # Cleanup
-    await camera_manager.de_initialize_cameras(cameras[:2])
-    await plc_manager.disconnect_all_plcs()
+    async with CameraManager(include_mocks=True) as camera_manager:
+        plc_manager = PLCManager(backends=["MockAllenBradley"])
+        
+        try:
+            # Test camera functionality
+            cameras = camera_manager.discover_cameras()
+            print(f"Mock cameras available: {cameras}")
+            
+            # Test image capture
+            for camera_name in cameras[:2]:
+                camera = await camera_manager.get_camera(camera_name)
+                await camera.configure(image_enhancement=True)
+                image = await camera.capture()
+                print(f"Mock image captured from {camera_name}: {image.shape}")
+            
+            # Test PLC functionality
+            await plc_manager.register_plc("TestPLC", "192.168.1.100", plc_type="auto")
+            await plc_manager.connect_plc("TestPLC")
+            
+            # Test tag operations
+            tag_values = await plc_manager.read_tags("TestPLC", [
+                "Motor1_Speed",      # Logix style
+                "N7:0",             # SLC style
+                "Parameter:1"       # CIP style
+            ])
+            print(f"Mock tag values: {tag_values}")
+            
+            # Test tag writing
+            write_results = await plc_manager.write_tags("TestPLC", [
+                ("Motor1_Speed", 1600.0),
+                ("N7:1", 2200),
+                ("Parameter:2", 1485.2)
+            ])
+            print(f"Mock write results: {write_results}")
+            
+        finally:
+            await plc_manager.cleanup()
 
 asyncio.run(testing_setup())
 ```
