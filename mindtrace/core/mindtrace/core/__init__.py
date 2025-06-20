@@ -3,7 +3,7 @@ from mindtrace.core.utils.dynamic import instantiate_target, get_class
 from mindtrace.core.utils.timers import Timer, TimerCollection, Timeout
 from mindtrace.core.config import Config
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
-from mindtrace.core.logging.logger import setup_logger, default_logger
+from mindtrace.core.logging.logger import setup_logger
 
 setup_logger()  # Initialize the default logger
 
@@ -16,7 +16,6 @@ __all__ = [
     "check_libs",
     "ContextListener", 
     "Config",
-    "default_logger",
     "EventBus", 
     "first_not_none", 
     "get_class",

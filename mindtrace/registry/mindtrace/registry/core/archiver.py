@@ -21,7 +21,7 @@ class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
 
     def __init__(self, uri: str, *args, **kwargs):
         super().__init__(uri=uri, *args, **kwargs)
-        self.logger.debug(f"Archiver initialized at: {self.uri}")
+        self.logger.debug(f"Archiver initialized at: {uri}")
 
     @abstractmethod
     def save(self, data: Any):
