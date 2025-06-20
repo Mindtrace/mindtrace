@@ -11,6 +11,8 @@ dependencies = [
     "numpy>=1.24.0",
     "pycomm3>=1.2.14",
     "python-snap7[cli]>=2.0.2",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
 ]
 
 [project.scripts]
