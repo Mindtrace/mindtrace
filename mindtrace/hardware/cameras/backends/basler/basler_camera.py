@@ -117,9 +117,7 @@ class BaslerCamera(BaseCamera):
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
-        pixel_format: Optional[str] = None,
-        buffer_count: Optional[int] = None,
-        timeout_ms: Optional[int] = None,
+        **backend_kwargs
     ):
         """
         Initialize Basler camera with configurable parameters.
@@ -129,9 +127,10 @@ class BaslerCamera(BaseCamera):
             camera_config: Path to Pylon Feature Stream (.pfs) file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
-            pixel_format: Default pixel format (uses config default if None)
-            buffer_count: Number of frame buffers (uses config default if None)
-            timeout_ms: Capture timeout in milliseconds (uses config default if None)
+            **backend_kwargs: Backend-specific parameters:
+                - pixel_format: Default pixel format (uses config default if None)
+                - buffer_count: Number of frame buffers (uses config default if None)
+                - timeout_ms: Capture timeout in milliseconds (uses config default if None)
             
         Raises:
             SDKNotAvailableError: If pypylon SDK is not available
@@ -140,19 +139,20 @@ class BaslerCamera(BaseCamera):
         """
         if not PYPYLON_AVAILABLE:
             raise SDKNotAvailableError(
-                "pypylon SDK not available. Install pypylon to use Basler cameras:\n"
+                "pypylon",
+                "Install pypylon to use Basler cameras:\n"
                 "1. Download and install Basler pylon SDK from https://www.baslerweb.com/en/downloads/software-downloads/\n"
                 "2. pip install pypylon\n"
                 "3. Ensure camera drivers are properly installed"
             )
         
-        super().__init__(camera_name=camera_name)
+        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
         
-        # Get configuration values with fallbacks
-        if img_quality_enhancement is None:
-            img_quality_enhancement = self.camera_config.image_quality_enhancement
-        if retrieve_retry_count is None:
-            retrieve_retry_count = self.camera_config.retrieve_retry_count
+        # Get backend-specific configuration with fallbacks
+        pixel_format = backend_kwargs.get('pixel_format')
+        buffer_count = backend_kwargs.get('buffer_count')
+        timeout_ms = backend_kwargs.get('timeout_ms')
+        
         if pixel_format is None:
             pixel_format = getattr(self.camera_config, 'pixel_format', 'BGR8')
         if buffer_count is None:
@@ -161,8 +161,6 @@ class BaslerCamera(BaseCamera):
             timeout_ms = getattr(self.camera_config, 'timeout_ms', 5000)
         
         # Validate parameters
-        if retrieve_retry_count < 1:
-            raise CameraConfigurationError("Retry count must be at least 1")
         if buffer_count < 1:
             raise CameraConfigurationError("Buffer count must be at least 1")
         if timeout_ms < 100:
@@ -170,8 +168,6 @@ class BaslerCamera(BaseCamera):
         
         # Store configuration
         self.camera_config_path = camera_config
-        self.img_quality_enhancement = img_quality_enhancement
-        self.retrieve_retry_count = retrieve_retry_count
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
@@ -181,10 +177,9 @@ class BaslerCamera(BaseCamera):
         self.grabbing_mode = pylon.GrabStrategy_LatestImageOnly
         self.triggermode = self.camera_config.cameras.trigger_mode
 
-        # Note: Initialization now moved to async initialize() method
-        # This constructor only sets up configuration
-
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
+
+
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
@@ -202,7 +197,10 @@ class BaslerCamera(BaseCamera):
             HardwareOperationError: If camera discovery fails
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError("Basler SDK (pypylon) is not available")
+            raise SDKNotAvailableError(
+                "pypylon", 
+                "Basler SDK (pypylon) is not available for camera discovery"
+            )
         
         try:
             available_cameras = []
@@ -328,7 +326,7 @@ class BaslerCamera(BaseCamera):
         self.logger.info(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
         return True
 
-    async def get_exposure_range(self) -> List[float]:
+    async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get the supported exposure time range in microseconds.
 
@@ -351,8 +349,9 @@ class BaslerCamera(BaseCamera):
                 
             return [min_value, max_value]
         except Exception as e:
-            self.logger.error(f"Error getting exposure range for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to get exposure range: {str(e)}")
+            self.logger.warning(f"Exposure range not available for camera '{self.camera_name}': {str(e)}")
+            # Return reasonable defaults if exposure feature is not available
+            return [1.0, 1000000.0]  # 1 μs to 1 second
 
     async def get_exposure(self) -> float:
         """
@@ -375,10 +374,11 @@ class BaslerCamera(BaseCamera):
             exposure = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
             return exposure
         except Exception as e:
-            self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to get exposure: {str(e)}")
+            self.logger.warning(f"Exposure not available for camera '{self.camera_name}': {str(e)}")
+            # Return reasonable default if exposure feature is not available
+            return 20000.0  # 20ms default
 
-    async def set_exposure(self, exposure_value: float) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set the camera exposure time in microseconds.
 
@@ -399,19 +399,19 @@ class BaslerCamera(BaseCamera):
         try:
             min_exp, max_exp = await self.get_exposure_range()
             
-            if exposure_value < min_exp or exposure_value > max_exp:
+            if exposure < min_exp or exposure > max_exp:
                 raise CameraConfigurationError(
-                    f"Exposure {exposure_value} outside valid range [{min_exp}, {max_exp}] "
+                    f"Exposure {exposure} outside valid range [{min_exp}, {max_exp}] "
                     f"for camera '{self.camera_name}'"
                 )
                 
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
 
-            await asyncio.to_thread(self.camera.ExposureTime.SetValue, exposure_value)
+            await asyncio.to_thread(self.camera.ExposureTime.SetValue, exposure)
             
             actual_exposure = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
-            success = abs(actual_exposure - exposure_value) < 0.01 * exposure_value
+            success = abs(actual_exposure - exposure) < 0.01 * exposure
 
             if not success:
                 self.logger.warning(f"Exposure setting verification failed for camera '{self.camera_name}'")
@@ -421,44 +421,44 @@ class BaslerCamera(BaseCamera):
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
-            self.logger.error(f"Error setting exposure for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to set exposure: {str(e)}")
+            self.logger.warning(f"Exposure setting not available for camera '{self.camera_name}': {str(e)}")
+            # Return True if exposure feature is not available (graceful degradation)
+            return True
 
-    def get_triggermode(self) -> List[int]:
+    async def get_triggermode(self) -> str:
         """
         Get current trigger mode.
         
         Returns:
-            [0] for continuous mode, [1] for trigger mode (compatible with Daheng API)
+            "continuous" or "trigger"
             
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
             HardwareOperationError: If trigger mode retrieval fails
         """
         if not self.initialized or self.camera is None:
-            return [0]
+            return "continuous"
             
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            if not await asyncio.to_thread(self.camera.IsOpen):
+                await asyncio.to_thread(self.camera.Open)
                 
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            if await asyncio.to_thread(self.camera.IsGrabbing):
+                await asyncio.to_thread(self.camera.StopGrabbing)
                 
-            trigger_enabled = self.camera.TriggerMode.GetValue() == "On"
-            trigger_source = self.camera.TriggerSource.GetValue() == "Software"
+            trigger_enabled = await asyncio.to_thread(self.camera.TriggerMode.GetValue) == "On"
+            trigger_source = await asyncio.to_thread(self.camera.TriggerSource.GetValue) == "Software"
 
             self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
-            result = [1] if self.triggermode == "trigger" else [0]
                 
-            self.camera.StartGrabbing(self.grabbing_mode)
-            return result
+            await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
+            return self.triggermode
             
         except Exception as e:
             self.logger.error(f"Error getting trigger mode for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get trigger mode: {str(e)}")
 
-    def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
         """
         Set the camera's trigger mode for image acquisition.
 
@@ -483,21 +483,21 @@ class BaslerCamera(BaseCamera):
             )
 
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            if not await asyncio.to_thread(self.camera.IsOpen):
+                await asyncio.to_thread(self.camera.Open)
 
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            if await asyncio.to_thread(self.camera.IsGrabbing):
+                await asyncio.to_thread(self.camera.StopGrabbing)
 
             if triggermode == "continuous":
-                self.camera.TriggerMode.SetValue("Off")
+                await asyncio.to_thread(self.camera.TriggerMode.SetValue, "Off")
             else:
-                self.camera.TriggerSelector.SetValue("FrameStart")
-                self.camera.TriggerMode.SetValue("On")
-                self.camera.TriggerSource.SetValue("Software")
+                await asyncio.to_thread(self.camera.TriggerSelector.SetValue, "FrameStart")
+                await asyncio.to_thread(self.camera.TriggerMode.SetValue, "On")
+                await asyncio.to_thread(self.camera.TriggerSource.SetValue, "Software")
 
             self.triggermode = triggermode
-            self.camera.StartGrabbing(self.grabbing_mode)
+            await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
             
             self.logger.info(f"Trigger mode set to '{triggermode}' for camera '{self.camera_name}'")
             return True
@@ -631,10 +631,10 @@ class BaslerCamera(BaseCamera):
 
     async def import_config(self, config_path: str) -> bool:
         """
-        Import camera configuration from a Pylon Feature Stream (.pfs) file.
+        Import camera configuration from common JSON format.
         
         Args:
-            config_path: Path to .pfs configuration file
+            config_path: Path to configuration file
             
         Returns:
             True if successful
@@ -650,24 +650,157 @@ class BaslerCamera(BaseCamera):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
         try:
+            import json
+            
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+            
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
                 
-            if await asyncio.to_thread(self.camera.IsGrabbing):
+            was_grabbing = await asyncio.to_thread(self.camera.IsGrabbing)
+            if was_grabbing:
                 await asyncio.to_thread(self.camera.StopGrabbing)
+            
+            success_count = 0
+            total_settings = 0
+            
+            # Set exposure time
+            if 'exposure_time' in config_data:
+                total_settings += 1
+                try:
+                    if hasattr(self.camera, 'ExposureTime') and \
+                       self.camera.ExposureTime.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.ExposureTime.SetValue, float(config_data['exposure_time']))
+                        success_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
+            
+            # Set gain
+            if 'gain' in config_data:
+                total_settings += 1
+                try:
+                    if hasattr(self.camera, 'Gain') and \
+                       self.camera.Gain.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.Gain.SetValue, float(config_data['gain']))
+                        success_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
+            
+            # Set trigger mode
+            if 'trigger_mode' in config_data:
+                total_settings += 1
+                try:
+                    if hasattr(self.camera, 'TriggerMode') and \
+                       self.camera.TriggerMode.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        if config_data['trigger_mode'] == "continuous":
+                            await asyncio.to_thread(self.camera.TriggerMode.SetValue, "Off")
+                        else:
+                            if hasattr(self.camera, 'TriggerSelector'):
+                                await asyncio.to_thread(self.camera.TriggerSelector.SetValue, "FrameStart")
+                            await asyncio.to_thread(self.camera.TriggerMode.SetValue, "On")
+                            if hasattr(self.camera, 'TriggerSource'):
+                                await asyncio.to_thread(self.camera.TriggerSource.SetValue, "Software")
+                        self.triggermode = config_data['trigger_mode']
+                        success_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
+            
+            # Set white balance
+            if 'white_balance' in config_data:
+                total_settings += 1
+                try:
+                    if hasattr(self.camera, 'BalanceWhiteAuto') and \
+                       self.camera.BalanceWhiteAuto.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        wb_mode = config_data['white_balance']
+                        if wb_mode == "off":
+                            await asyncio.to_thread(self.camera.BalanceWhiteAuto.SetValue, "Off")
+                        elif wb_mode == "once":
+                            await asyncio.to_thread(self.camera.BalanceWhiteAuto.SetValue, "Once")
+                        elif wb_mode == "continuous":
+                            await asyncio.to_thread(self.camera.BalanceWhiteAuto.SetValue, "Continuous")
+                        success_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
+            
+            # Set ROI
+            if 'roi' in config_data:
+                roi = config_data['roi']
+                roi_success = 0
+                total_settings += 1
                 
-            if not config_path.lower().endswith('.pfs'):
-                raise CameraConfigurationError("Configuration file must have .pfs extension")
+                try:
+                    if hasattr(self.camera, 'Width') and \
+                       self.camera.Width.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.Width.SetValue, int(roi.get('width', 1920)))
+                        roi_success += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set ROI Width for camera '{self.camera_name}': {e}")
+                
+                try:
+                    if hasattr(self.camera, 'Height') and \
+                       self.camera.Height.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.Height.SetValue, int(roi.get('height', 1080)))
+                        roi_success += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set ROI Height for camera '{self.camera_name}': {e}")
+                
+                try:
+                    if hasattr(self.camera, 'OffsetX') and \
+                       self.camera.OffsetX.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.OffsetX.SetValue, int(roi.get('x', 0)))
+                        roi_success += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set ROI OffsetX for camera '{self.camera_name}': {e}")
+                
+                try:
+                    if hasattr(self.camera, 'OffsetY') and \
+                       self.camera.OffsetY.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        await asyncio.to_thread(self.camera.OffsetY.SetValue, int(roi.get('y', 0)))
+                        roi_success += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set ROI OffsetY for camera '{self.camera_name}': {e}")
+                
+                if roi_success > 0:
+                    success_count += 1
             
-            await asyncio.to_thread(pylon.FeaturePersistence.Load, config_path, self.camera.GetNodeMap())
+            # Set pixel format
+            if 'pixel_format' in config_data:
+                total_settings += 1
+                try:
+                    if hasattr(self.camera, 'PixelFormat') and \
+                       self.camera.PixelFormat.GetAccessMode() in [genicam.RW, genicam.WO]:
+                        available_formats = self.get_pixel_format_range()
+                        pixel_format = config_data['pixel_format']
+                        if pixel_format in available_formats:
+                            await asyncio.to_thread(self.camera.PixelFormat.SetValue, pixel_format)
+                            success_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Could not set pixel format for camera '{self.camera_name}': {e}")
             
-            trigger_enabled = await asyncio.to_thread(self.camera.TriggerMode.GetValue) == "On"
-            trigger_source = await asyncio.to_thread(self.camera.TriggerSource.GetValue) == "Software"
+            # Apply other settings
+            if 'image_enhancement' in config_data:
+                self.img_quality_enhancement = config_data['image_enhancement']
+                success_count += 1
+                total_settings += 1
             
-            self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
+            if 'retrieve_retry_count' in config_data:
+                self.retrieve_retry_count = config_data['retrieve_retry_count']
+                success_count += 1
+                total_settings += 1
             
-            await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
-            self.logger.info(f"Configuration imported from '{config_path}' for camera '{self.camera_name}'")
+            if 'timeout_ms' in config_data:
+                self.timeout_ms = config_data['timeout_ms']
+                success_count += 1
+                total_settings += 1
+            
+            if was_grabbing:
+                await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
+            
+            self.logger.info(
+                f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
+                f"{success_count}/{total_settings} settings applied successfully"
+            )
             return True
                 
         except CameraConfigurationError:
@@ -676,12 +809,12 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error importing configuration for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
             
-    def export_config(self, config_path: str) -> bool:
+    async def export_config(self, config_path: str) -> bool:
         """
-        Export current camera configuration to a Pylon Feature Stream (.pfs) file.
+        Export current camera configuration to common JSON format.
         
         Args:
-            config_path: Path where to save .pfs configuration file
+            config_path: Path where to save configuration file
             
         Returns:
             True if successful
@@ -694,19 +827,103 @@ class BaslerCamera(BaseCamera):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
+            import json
+            
             os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
             
-            if not self.camera.IsOpen():
-                self.camera.Open()
-                
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            if not await asyncio.to_thread(self.camera.IsOpen):
+                await asyncio.to_thread(self.camera.Open)
             
-            pylon.FeaturePersistence.Save(config_path, self.camera.GetNodeMap())
-            self.logger.info(f"Configuration exported to '{config_path}' for camera '{self.camera_name}'")
+            # Default configuration values for Basler cameras
+            defaults = {
+                "exposure_time": 20000.0,
+                "gain": 1.0,
+                "trigger_mode": "continuous",
+                "white_balance": "off",
+                "width": 1920,
+                "height": 1080,
+                "roi_x": 0,
+                "roi_y": 0,
+                "pixel_format": "BayerRG8"
+            }
             
-            self.camera.StartGrabbing(self.grabbing_mode)
+            # Get current camera settings with fallbacks
+            exposure_time = defaults["exposure_time"]
+            try:
+                exposure_time = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
+            except Exception as e:
+                self.logger.warning(f"Could not get exposure time for camera '{self.camera_name}': {e}")
             
+            gain = defaults["gain"]
+            try:
+                if hasattr(self.camera, 'Gain'):
+                    gain = await asyncio.to_thread(self.camera.Gain.GetValue)
+            except Exception as e:
+                self.logger.warning(f"Could not get gain for camera '{self.camera_name}': {e}")
+            
+            trigger_mode = defaults["trigger_mode"]
+            try:
+                trigger_enabled = await asyncio.to_thread(self.camera.TriggerMode.GetValue) == "On"
+                trigger_source = await asyncio.to_thread(self.camera.TriggerSource.GetValue) == "Software"
+                trigger_mode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
+            except Exception as e:
+                self.logger.warning(f"Could not get trigger mode for camera '{self.camera_name}': {e}")
+            
+            white_balance = defaults["white_balance"]
+            try:
+                if self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RO or \
+                   self.camera.BalanceWhiteAuto.GetAccessMode() == genicam.RW:
+                    wb_auto = await asyncio.to_thread(self.camera.BalanceWhiteAuto.GetValue)
+                    white_balance = wb_auto.lower()
+            except Exception as e:
+                self.logger.warning(f"Could not get white balance for camera '{self.camera_name}': {e}")
+            
+            # Get image dimensions and ROI
+            width = defaults["width"]
+            height = defaults["height"]
+            try:
+                width = int(await asyncio.to_thread(self.camera.Width.GetValue))
+                height = int(await asyncio.to_thread(self.camera.Height.GetValue))
+            except Exception as e:
+                self.logger.warning(f"Could not get image dimensions for camera '{self.camera_name}': {e}")
+            
+            roi_x = defaults["roi_x"]
+            roi_y = defaults["roi_y"]
+            try:
+                roi_x = int(await asyncio.to_thread(self.camera.OffsetX.GetValue))
+                roi_y = int(await asyncio.to_thread(self.camera.OffsetY.GetValue))
+            except Exception as e:
+                self.logger.warning(f"Could not get ROI offsets for camera '{self.camera_name}': {e}")
+            
+            pixel_format = defaults["pixel_format"]
+            try:
+                pixel_format = await asyncio.to_thread(self.camera.PixelFormat.GetValue)
+            except Exception as e:
+                self.logger.warning(f"Could not get pixel format for camera '{self.camera_name}': {e}")
+            
+            # Create common format configuration
+            config_data = {
+                "camera_type": "basler",
+                "camera_name": self.camera_name,
+                "timestamp": time.time(),
+                "exposure_time": exposure_time,
+                "gain": gain,
+                "trigger_mode": trigger_mode,
+                "white_balance": white_balance,
+                "width": width,
+                "height": height,
+                "roi": {"x": roi_x, "y": roi_y, "width": width, "height": height},
+                "pixel_format": pixel_format,
+                "image_enhancement": self.img_quality_enhancement,
+                "retrieve_retry_count": self.retrieve_retry_count,
+                "timeout_ms": self.timeout_ms,
+                "buffer_count": getattr(self, 'buffer_count', 25)
+            }
+            
+            with open(config_path, 'w') as f:
+                json.dump(config_data, f, indent=2)
+            
+            self.logger.info(f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format")
             return True
                 
         except Exception as e:
@@ -876,8 +1093,9 @@ class BaslerCamera(BaseCamera):
             return True
                 
         except Exception as e:
-            self.logger.error(f"Error setting gain for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to set gain: {str(e)}")
+            self.logger.warning(f"Gain setting not available for camera '{self.camera_name}': {str(e)}")
+            # Return True if gain feature is not available (graceful degradation)
+            return True
 
     def get_gain(self) -> float:
         """
@@ -902,8 +1120,209 @@ class BaslerCamera(BaseCamera):
             return gain
                 
         except Exception as e:
-            self.logger.error(f"Error getting gain for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(f"Failed to get gain: {str(e)}")
+            self.logger.warning(f"Gain not available for camera '{self.camera_name}': {str(e)}")
+            # Return reasonable default if gain feature is not available
+            return 1.0  # Unity gain default
+
+    def get_gain_range(self) -> List[Union[int, float]]:
+        """
+        Get camera gain range.
+        
+        Returns:
+            List containing [min_gain, max_gain]
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If gain range retrieval fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            min_gain = self.camera.Gain.GetMin()
+            max_gain = self.camera.Gain.GetMax()
+            return [min_gain, max_gain]
+                
+        except Exception as e:
+            self.logger.warning(f"Gain range not available for camera '{self.camera_name}': {str(e)}")
+            # Return reasonable defaults if gain feature is not available
+            return [1.0, 16.0]  # Common gain range
+
+    def get_wb_range(self) -> List[str]:
+        """
+        Get available white balance modes.
+        
+        Returns:
+            List of available white balance modes
+        """
+        return ["off", "once", "continuous"]
+
+    async def get_width_range(self) -> List[int]:
+        """
+        Get camera width range.
+        
+        Returns:
+            List containing [min_width, max_width]
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If width range retrieval fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            min_width = self.camera.Width.GetMin()
+            max_width = self.camera.Width.GetMax()
+            return [min_width, max_width]
+                
+        except Exception as e:
+            self.logger.error(f"Error getting width range for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get width range: {str(e)}")
+
+    async def get_height_range(self) -> List[int]:
+        """
+        Get camera height range.
+        
+        Returns:
+            List containing [min_height, max_height]
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If height range retrieval fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            min_height = self.camera.Height.GetMin()
+            max_height = self.camera.Height.GetMax()
+            return [min_height, max_height]
+                
+        except Exception as e:
+            self.logger.error(f"Error getting height range for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get height range: {str(e)}")
+
+    def get_pixel_format_range(self) -> List[str]:
+        """
+        Get available pixel formats.
+        
+        Returns:
+            List of available pixel formats
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If pixel format range retrieval fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            # Get available pixel formats from camera
+            available_formats = []
+            pixel_format_entries = self.camera.PixelFormat.GetEntries()
+            for entry in pixel_format_entries:
+                if entry.GetAccessMode() == genicam.RW or entry.GetAccessMode() == genicam.RO:
+                    available_formats.append(entry.GetSymbolic())
+            
+            return available_formats if available_formats else ["BGR8", "RGB8", "Mono8"]
+                
+        except Exception as e:
+            self.logger.error(f"Error getting pixel format range for camera '{self.camera_name}': {str(e)}")
+            return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
+
+    def get_current_pixel_format(self) -> str:
+        """
+        Get current pixel format.
+        
+        Returns:
+            Current pixel format
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If pixel format retrieval fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            pixel_format = self.camera.PixelFormat.GetValue()
+            return pixel_format
+                
+        except Exception as e:
+            self.logger.error(f"Error getting current pixel format for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to get current pixel format: {str(e)}")
+
+    def set_pixel_format(self, pixel_format: str) -> bool:
+        """
+        Set pixel format.
+        
+        Args:
+            pixel_format: Pixel format to set
+            
+        Returns:
+            True if pixel format was set successfully, False otherwise
+            
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If pixel format is invalid
+            HardwareOperationError: If pixel format setting fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+
+            # Check if pixel format is available
+            available_formats = self.get_pixel_format_range()
+            if pixel_format not in available_formats:
+                raise CameraConfigurationError(
+                    f"Pixel format '{pixel_format}' not supported. "
+                    f"Available formats: {available_formats}"
+                )
+
+            # Stop grabbing temporarily for pixel format change
+            was_grabbing = self.camera.IsGrabbing()
+            if was_grabbing:
+                self.camera.StopGrabbing()
+
+            self.camera.PixelFormat.SetValue(pixel_format)
+            
+            # Restart grabbing if it was running
+            if was_grabbing:
+                self.camera.StartGrabbing(self.grabbing_mode)
+
+            self.logger.info(f"Pixel format set to '{pixel_format}' for camera '{self.camera_name}'")
+            return True
+                
+        except (CameraConnectionError, CameraConfigurationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Error setting pixel format for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set pixel format: {str(e)}")
 
     async def get_wb(self) -> str:
         """

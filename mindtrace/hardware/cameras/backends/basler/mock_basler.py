@@ -26,9 +26,9 @@ Usage:
     camera = MockBaslerCamera("mock_camera_1")
     
     # Use exactly like real Basler camera
-    camera.set_exposure(20000)
-    success, image = camera.capture()
-    camera.close()
+    await camera.set_exposure(20000)
+    success, image = await camera.capture()
+    await camera.close()
 
 Error Simulation:
     The mock camera can simulate various error conditions:
@@ -46,13 +46,14 @@ Error Simulation:
 import os
 import time
 import json
+import asyncio
 import numpy as np
 import cv2
 from typing import Optional, List, Tuple, Dict, Any, Union
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    CameraInitializationError, CameraNotFoundError, CameraCaptureError,
+    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError, CameraCaptureError,
     CameraConfigurationError, CameraConnectionError, CameraTimeoutError,
     HardwareOperationError
 )
@@ -88,9 +89,7 @@ class MockBaslerCamera(BaseCamera):
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
-        pixel_format: Optional[str] = None,
-        buffer_count: Optional[int] = None,
-        timeout_ms: Optional[int] = None,
+        **backend_kwargs
     ):
         """
         Initialize mock Basler camera.
@@ -98,33 +97,39 @@ class MockBaslerCamera(BaseCamera):
         Args:
             camera_name: Camera identifier
             camera_config: Path to configuration file (simulated)
-            img_quality_enhancement: Enable image enhancement simulation
-            retrieve_retry_count: Number of capture retry attempts
-            pixel_format: Pixel format (simulated)
-            buffer_count: Buffer count (simulated)
-            timeout_ms: Timeout in milliseconds
+            img_quality_enhancement: Enable image enhancement simulation (uses config default if None)
+            retrieve_retry_count: Number of capture retry attempts (uses config default if None)
+            **backend_kwargs: Backend-specific parameters:
+                - pixel_format: Pixel format (simulated)
+                - buffer_count: Buffer count (simulated)
+                - timeout_ms: Timeout in milliseconds
             
         Raises:
+            CameraConfigurationError: If configuration is invalid
             CameraInitializationError: If initialization fails (when simulated)
         """
-        super().__init__(camera_name=camera_name)
+        super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
         
-        # Get configuration values with fallbacks
-        if img_quality_enhancement is None:
-            img_quality_enhancement = self.camera_config.cameras.image_quality_enhancement
-        if retrieve_retry_count is None:
-            retrieve_retry_count = self.camera_config.cameras.retrieve_retry_count
+        # Get backend-specific configuration with fallbacks
+        pixel_format = backend_kwargs.get('pixel_format')
+        buffer_count = backend_kwargs.get('buffer_count')
+        timeout_ms = backend_kwargs.get('timeout_ms')
+        
         if pixel_format is None:
-            pixel_format = getattr(self.camera_config.cameras, 'pixel_format', 'BGR8')
+            pixel_format = getattr(self.camera_config, 'pixel_format', 'BGR8')
         if buffer_count is None:
-            buffer_count = getattr(self.camera_config.cameras, 'buffer_count', 25)
+            buffer_count = getattr(self.camera_config, 'buffer_count', 25)
         if timeout_ms is None:
-            timeout_ms = getattr(self.camera_config.cameras, 'timeout_ms', 5000)
+            timeout_ms = getattr(self.camera_config, 'timeout_ms', 5000)
+        
+        # Validate parameters
+        if buffer_count < 1:
+            raise CameraConfigurationError("Buffer count must be at least 1")
+        if timeout_ms < 100:
+            raise CameraConfigurationError("Timeout must be at least 100ms")
         
         # Store configuration
         self.camera_config_path = camera_config
-        self.img_quality_enhancement = img_quality_enhancement
-        self.retrieve_retry_count = retrieve_retry_count
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
@@ -137,6 +142,10 @@ class MockBaslerCamera(BaseCamera):
         self.triggermode = self.camera_config.cameras.trigger_mode
         self.image_counter = 0
         
+        # Internal state
+        self.converter = None
+        self.grabbing_mode = "LatestImageOnly"  # Mock grabbing mode
+        
         # Error simulation flags
         self.fail_init = os.getenv('MOCK_BASLER_FAIL_INIT', 'false').lower() == 'true'
         self.fail_capture = os.getenv('MOCK_BASLER_FAIL_CAPTURE', 'false').lower() == 'true'
@@ -145,7 +154,6 @@ class MockBaslerCamera(BaseCamera):
         # Initialize camera state (actual initialization happens in async initialize method)
         self.initialized = False
         self.camera = None
-        self.device_manager = None
 
         self.logger.info(f"Mock Basler camera '{self.camera_name}' initialized successfully")
 
@@ -183,30 +191,45 @@ class MockBaslerCamera(BaseCamera):
         Initialize the mock camera connection.
         
         Returns:
-            Tuple of (success status, mock camera object, mock remote control object)
+            Tuple of (success status, mock camera object, None)
             
         Raises:
+            CameraNotFoundError: If no cameras found or specified camera not found
             CameraInitializationError: If initialization fails (when simulated)
+            CameraConnectionError: If camera connection fails
         """
         if self.fail_init:
             raise CameraInitializationError(f"Simulated initialization failure for mock camera '{self.camera_name}'")
         
-        mock_camera_object = {
-            "name": self.camera_name,
-            "model": "acA1920-40uc",
-            "serial": "12345001",
-            "connected": True
-        }
-        
-        mock_remote_control = {
-            "type": "mock_remote_control",
-            "connected": True
-        }
-        
-        # Set initialized flag
-        self.initialized = True
-        
-        return True, mock_camera_object, mock_remote_control
+        try:
+            # Check if camera name exists in available cameras
+            available_cameras = self.get_available_cameras()
+            if self.camera_name not in available_cameras:
+                # Allow any camera name for testing flexibility
+                self.logger.debug(f"Mock camera '{self.camera_name}' not in standard list, but allowing for testing")
+            
+            mock_camera_object = {
+                "name": self.camera_name,
+                "model": "acA1920-40uc",
+                "serial": "12345001",
+                "connected": True
+            }
+            
+            # Load config if provided
+            if self.camera_config_path and os.path.exists(self.camera_config_path):
+                await self.import_config(self.camera_config_path)
+            
+            # Set initialized flag
+            self.initialized = True
+            self.logger.info(f"Mock Basler camera '{self.camera_name}' initialized successfully")
+            
+            return True, mock_camera_object, None
+            
+        except (CameraNotFoundError, CameraConnectionError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error initializing mock Basler camera '{self.camera_name}': {str(e)}")
+            raise CameraInitializationError(f"Unexpected error initializing mock camera '{self.camera_name}': {str(e)}")
 
     def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
@@ -215,10 +238,21 @@ class MockBaslerCamera(BaseCamera):
     def set_image_quality_enhancement(self, value: bool) -> bool:
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
+        if value and not hasattr(self, '_enhancement_initialized'):
+            self._initialize_image_enhancement()
         self.logger.info(f"Image quality enhancement set to {value} for mock camera '{self.camera_name}'")
         return True
 
-    async def get_exposure_range(self) -> List[float]:
+    def _initialize_image_enhancement(self):
+        """Initialize image enhancement parameters for mock camera."""
+        try:
+            # Mock CLAHE parameters - just mark as initialized for consistency
+            self._enhancement_initialized = True
+            self.logger.debug(f"Image enhancement initialized for mock camera '{self.camera_name}'")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize image enhancement for mock camera '{self.camera_name}': {str(e)}")
+
+    async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get the supported exposure time range in microseconds.
 
@@ -236,12 +270,12 @@ class MockBaslerCamera(BaseCamera):
         """
         return self.exposure_time
 
-    async def set_exposure(self, exposure_value: float) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set the camera exposure time in microseconds.
 
         Args:
-            exposure_value: Exposure time in microseconds
+            exposure: Exposure time in microseconds
 
         Returns:
             True if exposure was set successfully
@@ -249,121 +283,186 @@ class MockBaslerCamera(BaseCamera):
         Raises:
             CameraConfigurationError: If exposure value is out of range
         """
-        min_exp, max_exp = await self.get_exposure_range()
-        
-        if exposure_value < min_exp or exposure_value > max_exp:
-            raise CameraConfigurationError(
-                f"Exposure {exposure_value} outside valid range [{min_exp}, {max_exp}] "
-                f"for mock camera '{self.camera_name}'"
-            )
-        
-        self.exposure_time = exposure_value
-        self.logger.info(f"Exposure set to {exposure_value} µs for mock camera '{self.camera_name}'")
-        return True
+        try:
+            exposure_range = await self.get_exposure_range()
+            if exposure < exposure_range[0] or exposure > exposure_range[1]:
+                raise CameraConfigurationError(
+                    f"Exposure {exposure} out of range [{exposure_range[0]}, {exposure_range[1]}]"
+                )
+            
+            self.exposure_time = float(exposure)
+            self.logger.info(f"Exposure set to {exposure} for mock camera '{self.camera_name}'")
+            return True
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}")
+            return False
 
-    def get_triggermode(self) -> List[int]:
+    async def get_triggermode(self) -> str:
         """
         Get current trigger mode.
         
         Returns:
-            [0] for continuous mode, [1] for trigger mode
+            Current trigger mode
         """
-        return [1] if self.triggermode == "trigger" else [0]
+        return self.triggermode
 
-    def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
         """
-        Set the camera's trigger mode.
-
+        Set trigger mode.
+        
         Args:
             triggermode: Trigger mode ("continuous" or "trigger")
-
+            
         Returns:
-            True if mode was set successfully
+            True if trigger mode was set successfully
             
         Raises:
             CameraConfigurationError: If trigger mode is invalid
         """
         if triggermode not in ["continuous", "trigger"]:
-            raise CameraConfigurationError(
-                f"Invalid trigger mode '{triggermode}' for mock camera '{self.camera_name}'. "
-                "Must be 'continuous' or 'trigger'"
-            )
-
-        self.triggermode = triggermode
-        self.logger.info(f"Trigger mode set to '{triggermode}' for mock camera '{self.camera_name}'")
-        return True
+            raise CameraConfigurationError(f"Invalid trigger mode: {triggermode}")
+        
+        try:
+            self.triggermode = triggermode
+            self.logger.info(f"Trigger mode set to '{triggermode}' for mock camera '{self.camera_name}'")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set trigger mode for mock camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set trigger mode for mock camera '{self.camera_name}': {str(e)}")
 
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
         """
-        Capture a synthetic image.
+        Capture a single image from the mock camera.
 
         Returns:
             Tuple of (success, image_array) where image_array is BGR format
             
         Raises:
-            CameraCaptureError: If capture fails (when simulated)
-            CameraTimeoutError: If capture times out (when simulated)
+            CameraConnectionError: If camera is not initialized or accessible
+            CameraCaptureError: If image capture fails
+            CameraTimeoutError: If capture times out
         """
+        if not self.initialized:
+            raise CameraConnectionError(f"Mock camera '{self.camera_name}' is not initialized")
+
+        # Simulate different error conditions
         if self.fail_capture:
             raise CameraCaptureError(f"Simulated capture failure for mock camera '{self.camera_name}'")
         
         if self.simulate_timeout:
             raise CameraTimeoutError(f"Simulated timeout for mock camera '{self.camera_name}'")
-        
-        # Simulate capture delay based on exposure time
-        import asyncio
-        capture_delay = min(self.exposure_time / 1000000.0, 0.1)
-        await asyncio.sleep(capture_delay)
-        
-        # Generate synthetic image
-        image = self._generate_synthetic_image()
-        
-        if self.img_quality_enhancement and image is not None:
-            image = self._enhance_image(image)
-        
-        self.image_counter += 1
-        return True, image
+
+        try:
+            # Simulate capture delay based on exposure time
+            capture_delay = max(0.01, self.exposure_time / 1000000.0)  # Convert to seconds
+            await asyncio.sleep(min(capture_delay, 0.1))  # Cap at 100ms for testing
+            
+            # Generate synthetic image
+            image = self._generate_synthetic_image()
+            
+            # Apply image enhancement if enabled
+            if self.img_quality_enhancement:
+                try:
+                    image = self._enhance_image(image)
+                except Exception as enhance_error:
+                    self.logger.warning(f"Image enhancement failed, using original image: {enhance_error}")
+            
+            self.image_counter += 1
+            self.logger.debug(f"Captured frame {self.image_counter} from mock camera '{self.camera_name}'")
+            return True, image
+            
+        except (CameraConnectionError, CameraCaptureError, CameraTimeoutError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Mock capture failed for camera '{self.camera_name}': {str(e)}")
+            raise CameraCaptureError(f"Failed to capture image from mock camera '{self.camera_name}': {str(e)}")
 
     def _generate_synthetic_image(self) -> np.ndarray:
         """
-        Generate a synthetic test image with realistic patterns.
+        Generate synthetic test image using vectorized operations for performance.
         
         Returns:
             BGR image array
         """
-        width = self.roi["width"]
-        height = self.roi["height"]
-        
-        # Create base image with gradient
-        image = np.zeros((height, width, 3), dtype=np.uint8)
-        
-        # Add gradient background
-        for y in range(height):
-            for x in range(width):
-                image[y, x] = [
-                    int(128 + 127 * np.sin(2 * np.pi * x / width)),
-                    int(128 + 127 * np.cos(2 * np.pi * y / height)),
-                    int(128 + 127 * np.sin(2 * np.pi * (x + y) / (width + height)))
-                ]
-        
-        # Add some geometric patterns
-        center_x, center_y = width // 2, height // 2
-        cv2.circle(image, (center_x, center_y), min(width, height) // 4, (255, 255, 255), 2)
-        cv2.rectangle(image, (width // 4, height // 4), (3 * width // 4, 3 * height // 4), (0, 255, 0), 2)
-        
-        # Add frame counter text
-        cv2.putText(image, f"Frame: {self.image_counter}", (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        
-        # Add exposure info
-        cv2.putText(image, f"Exp: {self.exposure_time:.0f}us", (10, 70), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        return image
+        try:
+            width = self.roi["width"]
+            height = self.roi["height"]
+            
+            # Use vectorized operations for much better performance
+            x_coords = np.arange(width)
+            y_coords = np.arange(height)
+            X, Y = np.meshgrid(x_coords, y_coords)
+            
+            # Generate different patterns based on frame counter for variety
+            pattern_type = self.image_counter % 4
+            
+            if pattern_type == 0:
+                # Gradient pattern using vectorized operations
+                r_channel = (128 + 127 * np.sin(2 * np.pi * X / width)).astype(np.uint8)
+                g_channel = (128 + 127 * np.cos(2 * np.pi * Y / height)).astype(np.uint8)
+                b_channel = (64 + 64 * np.sin(2 * np.pi * (X + Y) / (width + height))).astype(np.uint8)
+                image = np.stack([b_channel, g_channel, r_channel], axis=-1)
+            elif pattern_type == 1:
+                # Checkerboard pattern using vectorized operations
+                checker_size = 50
+                checker_x = (X // checker_size) % 2
+                checker_y = (Y // checker_size) % 2
+                checkerboard = (checker_x + checker_y) % 2
+                image = np.where(checkerboard[..., np.newaxis], 200, 50).astype(np.uint8)
+                image = np.repeat(image, 3, axis=-1)
+            elif pattern_type == 2:
+                # Circular pattern using vectorized operations
+                center_x, center_y = width // 2, height // 2
+                max_radius = min(width, height) // 2
+                dist = np.sqrt((X - center_x)**2 + (Y - center_y)**2)
+                intensity = (128 + 127 * np.sin(2 * np.pi * dist / max_radius)).astype(np.uint8)
+                image = np.stack([intensity, intensity // 2, (255 - intensity) // 2], axis=-1)
+            else:
+                # Simple noise pattern (much faster than Gaussian blur)
+                image = np.random.randint(50, 200, (height, width, 3), dtype=np.uint8)
+            
+            # Apply exposure effect
+            exposure_factor = min(1.0, self.exposure_time / 20000.0)  # Normalize to 20ms
+            image = (image * exposure_factor).astype(np.uint8)
+            
+            # Add gain effect
+            if self.gain > 1.0:
+                image = np.clip(image * self.gain, 0, 255).astype(np.uint8)
+            
+            # Add noise based on gain (vectorized)
+            if self.gain > 1.0:
+                noise_level = int((self.gain - 1.0) * 10)
+                noise = np.random.randint(-noise_level, noise_level + 1, image.shape, dtype=np.int16)
+                image = np.clip(image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+            
+            # Add text overlay
+            timestamp = time.strftime("%H:%M:%S")
+            font_scale = min(width, height) / 1000.0  # Scale font with image size
+            thickness = max(1, int(font_scale * 2))
+            
+            cv2.putText(image, f"Mock Basler {timestamp}", (50, 50), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            cv2.putText(image, f"Frame: {self.image_counter}", (50, 90), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            cv2.putText(image, f"Exp: {self.exposure_time:.0f}us", (50, 130), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            cv2.putText(image, f"Gain: {self.gain:.1f}", (50, 170), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            cv2.putText(image, f"ROI: {width}x{height}", (50, 210), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+            
+            return image
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate synthetic image: {str(e)}")
+            # Return simple pattern as fallback
+            return np.full((height, width, 3), 128, dtype=np.uint8)
 
     def _enhance_image(self, image: np.ndarray) -> np.ndarray:
         """
-        Apply CLAHE enhancement to simulate image quality enhancement.
+        Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) enhancement.
 
         Args:
             image: Input BGR image
@@ -372,12 +471,28 @@ class MockBaslerCamera(BaseCamera):
             Enhanced BGR image
         """
         try:
+            # Convert to LAB color space
             lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
             l, a, b = cv2.split(lab)
+            
+            # Apply CLAHE to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             cl = clahe.apply(l)
+            
+            # Merge channels and convert back to BGR
             enhanced_lab = cv2.merge((cl, a, b))
             enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            
+            # Additional enhancement: gamma correction
+            gamma = 1.2
+            enhanced_img = np.power(enhanced_img / 255.0, gamma) * 255.0
+            enhanced_img = enhanced_img.astype(np.uint8)
+            
+            # Slight contrast adjustment
+            alpha = 1.1  # Contrast control
+            beta = 10    # Brightness control
+            enhanced_img = cv2.convertScaleAbs(enhanced_img, alpha=alpha, beta=beta)
+            
             return enhanced_img
         except Exception as e:
             self.logger.error(f"Image enhancement failed for mock camera '{self.camera_name}': {str(e)}")
@@ -392,154 +507,203 @@ class MockBaslerCamera(BaseCamera):
         """
         if not self.initialized:
             return False
-        
+            
         try:
             status, img = await self.capture()
             return status and img is not None and img.shape[0] > 0 and img.shape[1] > 0
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"Connection check failed for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    def import_config(self, config_path: str) -> bool:
+    async def import_config(self, config_path: str) -> bool:
         """
-        Import camera configuration from a JSON file (simulated).
+        Import camera configuration from common JSON format.
         
         Args:
             config_path: Path to configuration file
             
         Returns:
-            True if successful
+            True if configuration was imported successfully
             
         Raises:
-            CameraConfigurationError: If configuration import fails
+            CameraConfigurationError: If configuration file is not found or invalid
         """
-        if not os.path.exists(config_path):
-            raise CameraConfigurationError(f"Configuration file not found: {config_path}")
-
         try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
+            if not os.path.exists(config_path):
+                raise CameraConfigurationError(f"Configuration file not found: {config_path}")
             
-            # Apply configuration settings
-            if 'exposure_time' in config:
-                self.exposure_time = config['exposure_time']
-            if 'gain' in config:
-                self.gain = config['gain']
-            if 'roi' in config:
-                self.roi.update(config['roi'])
-            if 'trigger_mode' in config:
-                self.triggermode = config['trigger_mode']
-            if 'white_balance_mode' in config:
-                self.white_balance_mode = config['white_balance_mode']
+            # Simulate configuration import
+            await asyncio.sleep(0.01)  # Simulate processing time
+            
+            # Load JSON configuration
+            try:
+                with open(config_path, 'r') as f:
+                    config_data = json.load(f)
+                
+                # Apply configuration settings using common format
+                if 'exposure_time' in config_data:
+                    self.exposure_time = float(config_data['exposure_time'])
+                if 'gain' in config_data:
+                    self.gain = float(config_data['gain'])
+                if 'trigger_mode' in config_data:
+                    self.triggermode = config_data['trigger_mode']
+                if 'white_balance' in config_data:
+                    self.white_balance_mode = config_data['white_balance']
+                if 'image_enhancement' in config_data:
+                    self.img_quality_enhancement = config_data['image_enhancement']
+                if 'roi' in config_data:
+                    self.roi = config_data['roi']
+                if 'retrieve_retry_count' in config_data:
+                    self.retrieve_retry_count = config_data['retrieve_retry_count']
+                if 'timeout_ms' in config_data:
+                    self.timeout_ms = config_data['timeout_ms']
+                if 'pixel_format' in config_data:
+                    self.default_pixel_format = config_data['pixel_format']
+                    
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
+                raise CameraConfigurationError(f"Invalid JSON configuration format: {e}")
             
             self.logger.info(f"Configuration imported from '{config_path}' for mock camera '{self.camera_name}'")
             return True
-            
+        except CameraConfigurationError:
+            raise
         except Exception as e:
-            self.logger.error(f"Error importing configuration for mock camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
+            self.logger.error(f"Failed to import config from '{config_path}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to import config from '{config_path}': {str(e)}")
 
-    def export_config(self, config_path: str) -> bool:
+    async def export_config(self, config_path: str) -> bool:
         """
-        Export current camera configuration to a JSON file (simulated).
+        Export camera configuration to common JSON format.
         
         Args:
-            config_path: Path where to save configuration file
+            config_path: Path to save configuration file
             
         Returns:
-            True if successful
-            
-        Raises:
-            CameraConfigurationError: If configuration export fails
+            True if configuration was exported successfully, False otherwise
         """
         try:
-            os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
-            
-            config = {
+            # Create common format configuration data
+            config_data = {
+                "camera_type": "mock_basler",
                 "camera_name": self.camera_name,
-                "model": "acA1920-40uc (Mock)",
+                "timestamp": time.time(),
                 "exposure_time": self.exposure_time,
                 "gain": self.gain,
-                "roi": self.roi,
                 "trigger_mode": self.triggermode,
-                "white_balance_mode": self.white_balance_mode,
-                "image_quality_enhancement": self.img_quality_enhancement,
-                "timestamp": time.time()
+                "white_balance": self.white_balance_mode,
+                "width": self.roi["width"],
+                "height": self.roi["height"],
+                "roi": self.roi,
+                "pixel_format": self.default_pixel_format,
+                "image_enhancement": self.img_quality_enhancement,
+                "retrieve_retry_count": self.retrieve_retry_count,
+                "timeout_ms": self.timeout_ms,
+                "buffer_count": self.buffer_count
             }
             
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            
+            # Write configuration as JSON
             with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
+                json.dump(config_data, f, indent=2)
             
-            self.logger.info(f"Configuration exported to '{config_path}' for mock camera '{self.camera_name}'")
+            self.logger.info(f"Configuration exported to '{config_path}' for mock camera '{self.camera_name}' using common JSON format")
             return True
-            
         except Exception as e:
-            self.logger.error(f"Error exporting configuration for mock camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
+            self.logger.error(f"Failed to export config to '{config_path}': {str(e)}")
+            return False
 
     def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
-        Set the Region of Interest for image acquisition.
-
+        Set Region of Interest (ROI).
+        
         Args:
-            x: X offset from sensor top-left
-            y: Y offset from sensor top-left
+            x: ROI x offset
+            y: ROI y offset  
             width: ROI width
             height: ROI height
-
+            
         Returns:
             True if ROI was set successfully
             
         Raises:
             CameraConfigurationError: If ROI parameters are invalid
         """
-        if width <= 0 or height <= 0:
-            raise CameraConfigurationError(f"Invalid ROI dimensions: {width}x{height}")
-        if x < 0 or y < 0:
-            raise CameraConfigurationError(f"Invalid ROI offsets: ({x}, {y})")
-        
-        # Simulate increment alignment (typical for Basler cameras)
-        x = (x // 4) * 4
-        y = (y // 2) * 2
-        width = (width // 4) * 4
-        height = (height // 2) * 2
-        
-        self.roi = {"x": x, "y": y, "width": width, "height": height}
-        self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for mock camera '{self.camera_name}'")
-        return True
+        try:
+            if width <= 0 or height <= 0:
+                raise CameraConfigurationError(f"Invalid ROI dimensions: {width}x{height}")
+            
+            if x < 0 or y < 0:
+                raise CameraConfigurationError(f"Invalid ROI offset: ({x}, {y})")
+            
+            self.roi = {"x": x, "y": y, "width": width, "height": height}
+            self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for mock camera '{self.camera_name}'")
+            return True
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set ROI for mock camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set ROI for mock camera '{self.camera_name}': {str(e)}")
 
     def get_ROI(self) -> Dict[str, int]:
         """
-        Get current Region of Interest settings.
+        Get current Region of Interest (ROI).
         
         Returns:
-            Dictionary with x, y, width, height
+            Dictionary with ROI parameters
         """
         return self.roi.copy()
 
     def reset_ROI(self) -> bool:
         """
-        Reset ROI to maximum sensor area.
+        Reset ROI to full sensor size.
         
         Returns:
-            True if successful
+            True if ROI was reset successfully
         """
-        self.roi = {"x": 0, "y": 0, "width": 1920, "height": 1080}
-        self.logger.info(f"ROI reset to maximum for mock camera '{self.camera_name}'")
-        return True
+        try:
+            self.roi = {"x": 0, "y": 0, "width": 1920, "height": 1080}
+            self.logger.info(f"ROI reset to full size for mock camera '{self.camera_name}'")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to reset ROI for mock camera '{self.camera_name}': {str(e)}")
+            return False
 
-    def set_gain(self, gain: float) -> bool:
+    def set_gain(self, gain: Union[int, float]) -> bool:
         """
-        Set the camera's gain value.
-
+        Set camera gain.
+        
         Args:
             gain: Gain value
-
+            
         Returns:
             True if gain was set successfully
+            
+        Raises:
+            CameraConfigurationError: If gain value is out of range
         """
-        self.gain = max(0.0, min(gain, 20.0))  # Clamp to realistic range
-        self.logger.info(f"Gain set to {self.gain} for mock camera '{self.camera_name}'")
-        return True
+        try:
+            if gain < 1.0 or gain > 16.0:
+                raise CameraConfigurationError(f"Gain {gain} out of range [1.0, 16.0]")
+            
+            self.gain = float(gain)
+            self.logger.info(f"Gain set to {gain} for mock camera '{self.camera_name}'")
+            return True
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set gain for mock camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set gain for mock camera '{self.camera_name}': {str(e)}")
+
+    def get_gain_range(self) -> List[Union[int, float]]:
+        """
+        Get the supported gain range.
+
+        Returns:
+            List with [min_gain, max_gain]
+        """
+        return [1.0, 16.0]
 
     def get_gain(self) -> float:
         """
@@ -552,41 +716,92 @@ class MockBaslerCamera(BaseCamera):
 
     async def get_wb(self) -> str:
         """
-        Get the current white balance auto setting.
-
+        Get current white balance mode.
+        
         Returns:
-            White balance auto setting ("off", "once", "continuous")
+            Current white balance mode
         """
         return self.white_balance_mode
 
     async def set_auto_wb_once(self, value: str) -> bool:
         """
-        Set the white balance auto mode.
-
+        Set white balance mode.
+        
         Args:
-            value: White balance mode ("off", "once", "continuous")
-
+            value: White balance mode
+            
         Returns:
-            True if white balance mode was set successfully
+            True if white balance was set successfully
+        """
+        try:
+            self.white_balance_mode = value
+            self.logger.info(f"White balance set to '{value}' for mock camera '{self.camera_name}'")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to set white balance for mock camera '{self.camera_name}': {str(e)}")
+            return False
+
+    def get_wb_range(self) -> List[str]:
+        """
+        Get available white balance modes.
+        
+        Returns:
+            List of available white balance modes
+        """
+        return ["off", "auto", "continuous", "once"]
+
+    def get_pixel_format_range(self) -> List[str]:
+        """
+        Get available pixel formats.
+        
+        Returns:
+            List of available pixel formats
+        """
+        return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
+
+    def get_current_pixel_format(self) -> str:
+        """
+        Get current pixel format.
+        
+        Returns:
+            Current pixel format
+        """
+        return self.default_pixel_format
+
+    def set_pixel_format(self, pixel_format: str) -> bool:
+        """
+        Set pixel format.
+        
+        Args:
+            pixel_format: Pixel format to set
+            
+        Returns:
+            True if pixel format was set successfully
             
         Raises:
-            CameraConfigurationError: If white balance mode is invalid
+            CameraConfigurationError: If pixel format is not supported
         """
-        if value not in ["off", "once", "continuous"]:
-            raise CameraConfigurationError(
-                f"Invalid white balance mode '{value}' for mock camera '{self.camera_name}'. "
-                "Must be 'off', 'once', or 'continuous'"
-            )
-        
-        self.white_balance_mode = value
-        self.logger.info(f"White balance mode set to '{value}' for mock camera '{self.camera_name}'")
-        return True
+        try:
+            available_formats = self.get_pixel_format_range()
+            if pixel_format not in available_formats:
+                raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
+            
+            self.default_pixel_format = pixel_format
+            self.logger.info(f"Pixel format set to '{pixel_format}' for mock camera '{self.camera_name}'")
+            return True
+        except CameraConfigurationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to set pixel format for mock camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set pixel format for mock camera '{self.camera_name}': {str(e)}")
 
     async def close(self):
         """
         Close the mock camera and release resources.
         """
-        if self.initialized:
+        try:
             self.initialized = False
             self.camera = None
-            self.logger.info(f"Mock Basler camera '{self.camera_name}' closed")
+            self.logger.info(f"Mock Basler camera '{self.camera_name}' closed successfully")
+        except Exception as e:
+            self.logger.error(f"Error closing mock camera '{self.camera_name}': {str(e)}")
