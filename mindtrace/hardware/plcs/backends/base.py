@@ -85,7 +85,6 @@ class BasePLC(MindtraceABC):
         self.device_manager = None
         self.initialized = False
         
-        self.logger = self.logger
         self._setup_plc_logger_formatting()
         
         self.logger.info(
