@@ -1,8 +1,12 @@
 from typing import Optional, Type, TYPE_CHECKING
 
+import httpx
+from fastapi import HTTPException
+
 if TYPE_CHECKING:
-    from mindtrace.services import ConnectionManagerBase, ServerBase
-from mindtrace import Mindtrace
+    from mindtrace.services import ServerBase
+from mindtrace.core import Mindtrace
+from mindtrace.services.base.connection_manager import ConnectionManager
 
 
 def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
@@ -53,7 +57,7 @@ def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
     return wrapper
 
 
-def register_connection_manager(connection_manager: Type["ConnectionManagerBase"]):
+def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     """Register a connection manager for a server class.
 
     This decorator is used to register a connection manager for a server class. The connection manager is used to
@@ -94,3 +98,107 @@ def register_connection_manager(connection_manager: Type["ConnectionManagerBase"
         return server_class
 
     return wrapper
+
+
+def generate_connection_manager(service_cls):
+    """Generates a dedicated ConnectionManager class with one method per endpoint."""
+
+    class_name = f"{service_cls.__name__}ConnectionManager"
+
+    class ServiceConnectionManager(ConnectionManager):
+        pass  # Methods will be added dynamically
+
+    # Create a temporary service instance to get the endpoints
+    temp_service = service_cls()
+    
+    # Properties that should not be overridden by dynamic methods
+    #protected_names = ['endpoints', 'status', 'server_id', 'pid_file', 'heartbeat', 'shutdown']
+    protected_methods = ['shutdown']
+    
+    # Dynamically define one method per endpoint
+    for endpoint_name, endpoint in temp_service._endpoints.items():
+        # Skip if this would override an existing method in ConnectionManager
+        if endpoint_name in protected_methods:
+            continue
+            
+        endpoint_path = f"/{endpoint_name}"
+
+        def make_method(endpoint_path, input_schema, output_schema):
+            def method(self, blocking: bool = True, **kwargs):
+                payload = input_schema(**kwargs).dict() if input_schema is not None else {}
+                res = httpx.post(
+                    str(self.url).rstrip('/') + endpoint_path,
+                    json=payload,
+                    params={"blocking": str(blocking).lower()},
+                    timeout=30
+                )
+                if res.status_code != 200:
+                    raise HTTPException(res.status_code, res.text)
+                
+                # Handle empty responses (e.g., from shutdown endpoint)
+                try:
+                    result = res.json()
+                except:
+                    result = {"success": True}  # Default response for empty content
+                    
+                if not blocking:
+                    return result  # raw job result dict
+                return output_schema(**result) if output_schema is not None else result
+            
+            async def amethod(self, blocking: bool = True, **kwargs):
+                payload = input_schema(**kwargs).dict() if input_schema is not None else {}
+                async with httpx.AsyncClient(timeout=30) as client:
+                    res = await client.post(
+                        str(self.url).rstrip('/') + endpoint_path,
+                        json=payload,
+                        params={"blocking": str(blocking).lower()}
+                    )
+                if res.status_code != 200:
+                    raise HTTPException(res.status_code, res.text)
+                
+                # Handle empty responses (e.g., from shutdown endpoint)
+                try:
+                    result = res.json()
+                except:
+                    result = {"success": True}  # Default response for empty content
+                    
+                if not blocking:
+                    return result  # raw job result dict
+                return output_schema(**result) if output_schema is not None else result
+            
+            return method, amethod
+
+        method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
+        
+        # Set up sync method
+        method.__name__ = endpoint_name
+        method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
+        setattr(ServiceConnectionManager, endpoint_name, method)
+        
+        # Set up async method
+        amethod.__name__ = f"a{endpoint_name}"
+        amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
+        setattr(ServiceConnectionManager, f"a{endpoint_name}", amethod)
+
+    def get_job(self, job_id: str):
+        res = httpx.get(str(self.url).rstrip('/') + f"/job/{job_id}", timeout=10)
+        if res.status_code == 404:
+            return None
+        elif res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+        return res.json()
+    
+    async def aget_job(self, job_id: str):
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(str(self.url).rstrip('/') + f"/job/{job_id}")
+        if res.status_code == 404:
+            return None
+        elif res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+        return res.json()
+    
+    setattr(ServiceConnectionManager, "get_job", get_job)
+    setattr(ServiceConnectionManager, "aget_job", aget_job)
+
+    ServiceConnectionManager.__name__ = class_name
+    return ServiceConnectionManager
