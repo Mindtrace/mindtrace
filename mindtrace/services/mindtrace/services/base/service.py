@@ -19,8 +19,19 @@ import fastapi
 from fastapi import FastAPI, HTTPException
 from urllib3.util.url import parse_url, Url
 
-from mindtrace.core import ifnone, ifnone_url, Mindtrace, named_lambda, Timeout
-from mindtrace.services import ConnectionManager, Heartbeat, ServerStatus
+from mindtrace.core import ifnone, ifnone_url, Mindtrace, named_lambda, TaskSchema, Timeout
+from mindtrace.services import ( 
+    ConnectionManager,
+    EndpointsSchema, 
+    generate_connection_manager,
+    Heartbeat, 
+    HeartbeatSchema,
+    PIDFileSchema,
+    ServerIDSchema,
+    ServerStatus, 
+    ShutdownSchema,
+    StatusSchema, 
+)
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -30,8 +41,8 @@ class Service(Mindtrace):
     """Base class for all Mindtrace services."""
 
     _status = ServerStatus.Down
-    _endpoints: list[str] = []
-    _client_interface: Type[C] = ConnectionManager
+    _endpoints: dict[str, TaskSchema] = {}
+    _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
 
     def __init__(
@@ -68,9 +79,6 @@ class Service(Mindtrace):
         # 2. Host/port parameters
         # 3. Default URL from config
         self._url = self.build_url(url=url, host=host, port=port)
-        self._endpoints_metadata: dict[
-            str, dict[str, list[str] | str]
-        ] = {}  # path -> {"methods": [...], "role": "public"}
 
         """
         self.logger = default_logger(
@@ -101,16 +109,12 @@ class Service(Mindtrace):
             license_info=license_info,
             lifespan=lifespan,
         )
-        self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda: {"endpoints": self.endpoints}))
-        self.add_endpoint(
-            path="/endpoint_metadata",
-            func=named_lambda("endpoint_metadata", lambda: {"endpoint_metadata": self._endpoints_metadata}),
-        )
-        self.add_endpoint(path="/status", func=named_lambda("status", lambda: {"status": self.status}))
-        self.add_endpoint(path="/heartbeat", func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}))
-        self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}))
-        self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}))
-        self.add_endpoint(path="/shutdown", func=self.shutdown, autolog_kwargs={"log_level": logging.DEBUG})
+        self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}), schema=EndpointsSchema())
+        self.add_endpoint(path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema())
+        self.add_endpoint(path="/heartbeat", func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}), schema=HeartbeatSchema())
+        self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema())
+        self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema())
+        self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -184,7 +188,10 @@ class Service(Mindtrace):
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)
         if host_status == ServerStatus.Available:
-            return cls._client_interface(url=url)
+            if cls._client_interface is None:
+                return generate_connection_manager(cls)(url=url)
+            else:
+                return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
 
     @classmethod
@@ -292,9 +299,9 @@ class Service(Mindtrace):
         return connection_manager
 
     @property
-    def endpoints(self) -> list[str]:
+    def endpoints(self) -> dict[str, TaskSchema]:
         """Return the available commands for the service."""
-        return list(self._endpoints)
+        return self._endpoints
 
     @property
     def status(self) -> ServerStatus:
@@ -413,6 +420,7 @@ class Service(Mindtrace):
         self,
         path,
         func,
+        schema: TaskSchema,
         api_route_kwargs=None,
         autolog_kwargs=None,
         methods: list[str] | None = None,
@@ -422,8 +430,8 @@ class Service(Mindtrace):
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         autolog_kwargs = ifnone(autolog_kwargs, default={})
-        self._endpoints.append(path)
-        self._endpoints_metadata[path] = {"methods": ifnone(methods, default=["POST"]), "role": scope}
+        
+        self._endpoints[path] = schema
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),

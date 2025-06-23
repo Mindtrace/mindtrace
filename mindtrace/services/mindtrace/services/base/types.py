@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 from enum import Enum
 import json
+from typing import Any, Literal, Type
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from mindtrace.core import TaskSchema
 
 
 class ServerStatus(Enum):
@@ -31,7 +34,7 @@ class Heartbeat:
     status: ServerStatus = ServerStatus.Down
     server_id: UUID | None = None
     message: str | None = None
-    details: any = None
+    details: Any = None
 
     def __str__(self):
         if isinstance(self.details, dict):
@@ -47,5 +50,55 @@ class Heartbeat:
             )
 
 
-class SetServerIDInput(BaseModel):
+class EndpointsOutput(BaseModel):
+    endpoints: list[str]
+
+
+class EndpointsSchema(TaskSchema):
+    name: Literal["endpoints"] = "endpoints"
+    output_schema: Type[EndpointsOutput] = EndpointsOutput
+
+
+class StatusOutput(BaseModel):
+    status: ServerStatus
+
+
+class StatusSchema(TaskSchema):
+    name: Literal["status"] = "status"
+    output_schema: Type[StatusOutput] = StatusOutput
+
+
+class HeartbeatOutput(BaseModel):
+    heartbeat: Heartbeat
+
+
+class HeartbeatSchema(TaskSchema):
+    name: Literal["heartbeat"] = "heartbeat"
+    output_schema: Type[HeartbeatOutput] = HeartbeatOutput
+
+
+class ServerIDOutput(BaseModel):
     server_id: UUID
+
+
+class ServerIDSchema(TaskSchema):
+    name: Literal["server_id"] = "server_id"
+    output_schema: Type[ServerIDOutput] = ServerIDOutput
+
+
+class PIDFileOutput(BaseModel):
+    pid_file: str
+
+
+class PIDFileSchema(TaskSchema):
+    name: Literal["pid_file"] = "pid_file"
+    output_schema: Type[PIDFileOutput] = PIDFileOutput
+
+
+class ShutdownOutput(BaseModel):
+    shutdown: bool
+
+
+class ShutdownSchema(TaskSchema):
+    name: Literal["shutdown"] = "shutdown"
+    output_schema: Type[ShutdownOutput] = ShutdownOutput

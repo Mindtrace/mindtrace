@@ -9,8 +9,9 @@ from fastapi import HTTPException
 import requests
 from urllib3.util.url import parse_url, Url
 
-from mindtrace.core import Mindtrace, ifnone
-from mindtrace.services.base.types import Heartbeat, ServerStatus
+from mindtrace.core import Mindtrace, ifnone, Timeout
+from mindtrace.services.base.types import Heartbeat, ServerStatus, ShutdownOutput
+
 
 
 class ConnectionManager(Mindtrace):
@@ -22,69 +23,15 @@ class ConnectionManager(Mindtrace):
         self._server_id = server_id
         self._server_pid_file = server_pid_file
 
-    @property
-    def endpoints(self) -> List[str]:
-        """Get the list of registered endpoints on the server."""
-        response = requests.request("POST", urljoin(str(self.url), "endpoints"), timeout=60)
-        if response.status_code != 200:
-            raise HTTPException(response.status_code, response.content)
-        return json.loads(response.content)["endpoints"]
-
-    @property
-    def status(self) -> ServerStatus:
-        """Get the status of the server."""
-        try:
-            response = requests.post(urljoin(str(self.url), "status"), timeout=60)
-            if response.status_code != 200:
-                return ServerStatus.Down
-            else:
-                return ServerStatus(json.loads(response.content)["status"])
-        except Exception as e:
-            self.logger.warning(f"Failed to get status of server at {self.url}: {e}")
-            return ServerStatus.Down
-
-    def heartbeat(self) -> Heartbeat:
-        """Get the heartbeat of the server.
-
-        The heartbeat includes both the server's status, as well as any additional diagnostic information the server may
-        provide.
-        """
-        response = requests.request("POST", urljoin(str(self.url), "heartbeat"), timeout=60)
-        if response.status_code != 200:
-            raise HTTPException(response.status_code, response.content)
-        response = json.loads(response.content)["heartbeat"]
-        return Heartbeat(
-            status=ServerStatus(response["status"]),
-            server_id=response["server_id"],
-            message=response["message"],
-            details=response["details"],
-        )
-
-    @property
-    def server_id(self) -> UUID:
-        """Get the server's unique id."""
-        if self._server_id is not None:
-            return self._server_id
-        else:
-            response = requests.post(urljoin(str(self.url), "server_id"), timeout=60)
-            if response.status_code != 200:
-                raise HTTPException(response.status_code, response.content)
-            self._server_id = UUID(json.loads(response.content)["server_id"])
-            return self._server_id
-
-    @property
-    def pid_file(self) -> str:
-        """Get the server's pid file."""
-        if self._server_pid_file is not None:
-            return self._server_pid_file
-        else:
-            response = requests.post(urljoin(str(self.url), "pid_file"), timeout=60)
-            if response.status_code != 200:
-                raise HTTPException(response.status_code, response.content)
-            return json.loads(response.content)["pid_file"]
-
-    def shutdown(self):
+    def shutdown(self, block: bool = True):
         """Shutdown the server.
+
+        This method sends a shutdown request to the server. If block=True, it will also poll the server until it 
+        becomes unavailable, ensuring the shutdown process is complete.
+
+        Args:
+            block: If True, waits for the server to actually shut down. If False, returns immediately after sending 
+            the shutdown request.
 
         Example::
 
@@ -93,14 +40,49 @@ class ConnectionManager(Mindtrace):
             cm = Service.launch()
             assert cm.status == ServerStatus.Available
 
-            cm.shutdown()
+            # Wait for shutdown to complete
+            cm.shutdown(block=True)
             assert cm.status == ServerStatus.Down
+            
+            # Or send shutdown command and return immediately
+            cm.shutdown(block=False)
         """
+        # Send the shutdown request
         response = requests.request("POST", urljoin(str(self.url), "shutdown"), timeout=60)
         if response.status_code != 200:
             raise HTTPException(response.status_code, response.content)
-        return response
-
+        
+        # If not blocking, return immediately after sending the shutdown request
+        if not block:
+            return ShutdownOutput(shutdown=True)
+        
+        def check_server_down():
+            """Check if server is down by trying to connect to status endpoint."""
+            try:
+                test_response = requests.post(urljoin(str(self.url), "status"), timeout=2)
+                # If we get any response, server is still up - raise exception to retry
+                raise ConnectionError("Server still responding")
+            except requests.exceptions.ConnectionError:
+                # Connection failed - server is down, this is what we want
+                return True
+            except requests.exceptions.Timeout:
+                # Timeout - server might be shutting down, this is what we want
+                return True
+        
+        timeout_handler = Timeout(
+            timeout=30,
+            retry_delay=0.2,
+            exceptions=(ConnectionError,),
+            progress_bar=False,  # No progress bar for shutdown
+        )
+        try:
+            timeout_handler.run(check_server_down)
+        except TimeoutError:
+            self.logger.error(f"Server at {self.url} did not shut down within timeout period.")
+            raise TimeoutError(f"Server at {self.url} did not shut down within timeout period.")
+        
+        return ShutdownOutput(shutdown=True)
+    
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.logger.debug(f"Shutting down {self.name} Server.")
         try:
