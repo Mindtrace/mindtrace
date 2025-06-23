@@ -1,10 +1,8 @@
-from typing import Any, Iterable, TypeVar
+from typing import Any, Iterable
 from urllib3.util.url import Url, parse_url
 
-T = TypeVar("T")
 
-
-def ifnone(val: T | None, default: T) -> T:
+def ifnone(val: Any, default: Any) -> Any:
     """Return the given value if it is not None, else return the default."""
     return val if val is not None else default
 
