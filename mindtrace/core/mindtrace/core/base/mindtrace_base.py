@@ -11,7 +11,8 @@ class MindtraceMeta(type):
 class Mindtrace(metaclass=MindtraceMeta):
     """Base class for Mindtrace components."""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.config = Config()
         self.logger = Logger()
 
@@ -20,6 +21,6 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     pass
 
 
-class MindtraceABC(ABC, metaclass=MindtraceABCMeta):
+class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     """Base class for Mindtrace-derived abstract classes."""
     pass

@@ -57,5 +57,5 @@ members = [
 
 [tool.ds.scripts]
 test = """
-    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${@:- --maxfail=1 tests}
+    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${@:- --maxfail=1 --slow-last tests}
 """
