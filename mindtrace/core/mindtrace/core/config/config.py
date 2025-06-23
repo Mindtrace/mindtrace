@@ -9,6 +9,9 @@ class Config(dict):
             "MINDTRACE_MINIO_ENDPOINT": "localhost:9000",
             "MINDTRACE_MINIO_ACCESS_KEY": "minioadmin",
             "MINDTRACE_MINIO_SECRET_KEY": "minioadmin",
+            'LOGGER': {
+                'LOG_DIR': '.cache/mindtrace/logs',
+            }
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
