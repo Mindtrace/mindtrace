@@ -17,12 +17,12 @@ class LocalRegistryBackend(RegistryBackend):
         uri (str): Base directory path where all object files and metadata will be stored.
     """
 
-    def __init__(self, uri: str, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, uri: str | Path, **kwargs):
+        super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
-        self._metadata = self._uri / "registry_metadata.json"
-        with open(self._metadata, "w") as f:
+        self._metadata_path = self._uri / "registry_metadata.json"
+        with open(self._metadata_path, "w") as f:
             json.dump({"materializers": {}}, f)
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
         
@@ -32,9 +32,9 @@ class LocalRegistryBackend(RegistryBackend):
         return self._uri
 
     @property
-    def metadata(self) -> Path:
+    def metadata_path(self) -> Path:
         """The resolved metadata file path for the backend."""
-        return self._metadata
+        return self._metadata_path
 
     def _full_path(self, remote_key: str) -> Path:
         """Convert a remote key to a full filesystem path.
@@ -215,17 +215,17 @@ class LocalRegistryBackend(RegistryBackend):
             materializer_class: Materializer class to register.
         """
         try:
-            with open(self.metadata, "r") as f:
+            with open(self.metadata_path, "r") as f:
                 metadata = json.load(f)
             metadata["materializers"][object_class] = materializer_class
-            with open(self.metadata, "w") as f:
+            with open(self.metadata_path, "w") as f:
                 json.dump(metadata, f)
         except Exception as e:
             self.logger.error(f"Error registering materializer for {object_class}: {e}")
             raise e
         else:
-            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")        
-    
+            self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+
     def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.
 
@@ -244,7 +244,7 @@ class LocalRegistryBackend(RegistryBackend):
             Dictionary mapping object classes to their registered materializer classes.
         """
         try:
-            with open(self.metadata, "r") as f:
+            with open(self.metadata_path, "r") as f:
                 materializers = json.load(f).get("materializers", {})
         except Exception as e:
             self.logger.error(f"Error loading materializers: {e}")

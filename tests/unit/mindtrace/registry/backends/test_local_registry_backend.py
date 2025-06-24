@@ -11,17 +11,18 @@ from mindtrace.registry import LocalRegistryBackend
 
 
 @pytest.fixture
-def temp_dir(tmp_path) -> Generator[Path, None, None]:
+def temp_dir() -> Generator[Path, None, None]:
     """Create a temporary directory for testing."""
-    temp_dir = Path(Config()["MINDTRACE_TEMP_DIR"]) / f"test_dir_{uuid.uuid4()}"
+    temp_dir = Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     yield temp_dir
     shutil.rmtree(temp_dir)
 
+
 @pytest.fixture
 def backend(temp_dir):
     """Create a LocalRegistryBackend instance with a temporary directory."""
-    return LocalRegistryBackend(str(temp_dir))
+    return LocalRegistryBackend(uri=str(temp_dir))
 
 
 @pytest.fixture
@@ -169,7 +170,7 @@ def test_invalid_object_name(backend):
 def test_register_materializer_error(backend):
     """Test error handling when registering a materializer fails."""
     # Make the metadata file read-only to simulate a file system error
-    backend.metadata.chmod(0o444)
+    backend.metadata_path.chmod(0o444)
     
     # Attempt to register a materializer - should raise an exception
     with pytest.raises(Exception) as exc_info:
@@ -179,12 +180,12 @@ def test_register_materializer_error(backend):
     assert str(exc_info.value)  # Should have some error message
     
     # Restore write permissions
-    backend.metadata.chmod(0o644)
+    backend.metadata_path.chmod(0o644)
 
 def test_registered_materializers_error(backend):
     """Test error handling when loading materializers fails."""
     # Make the metadata file unreadable to simulate a file system error
-    backend.metadata.chmod(0o000)
+    backend.metadata_path.chmod(0o000)
     
     # Attempt to get registered materializers - should raise an exception
     with pytest.raises(Exception) as exc_info:
@@ -194,4 +195,4 @@ def test_registered_materializers_error(backend):
     assert str(exc_info.value)  # Should have some error message
     
     # Restore read permissions
-    backend.metadata.chmod(0o644)
+    backend.metadata_path.chmod(0o644)

@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+import tempfile
 from typing import Dict
 
 from mindtrace.registry import RegistryBackend
@@ -8,13 +9,13 @@ from mindtrace.registry import RegistryBackend
 @pytest.fixture
 def concrete_backend():
     class ConcreteBackend(RegistryBackend):
-        def __init__(self):
-            super().__init__()
+        def __init__(self, uri: str | Path):
+            super().__init__(uri=uri)
             self._materializers: Dict[str, str] = {}
 
         @property
         def uri(self) -> Path:
-            return Path("/tmp")
+            return self._uri
 
         def push(self, name: str, version: str | None = None, local_path: str | None = None):
             pass
@@ -52,7 +53,8 @@ def concrete_backend():
         def registered_materializers(self) -> Dict[str, str]:
             return self._materializers.copy()
 
-    return ConcreteBackend()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield ConcreteBackend(temp_dir)
 
 
 def test_validate_object_name_valid(concrete_backend):

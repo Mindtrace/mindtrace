@@ -14,4 +14,4 @@ def pytest_addoption(parser):
 
 def pytest_collection_modifyitems(items, config):
     if config.getoption('--slow-last'):
-        items.sort(key=by_slow_marker, reverse=True)
+        items.sort(key=by_slow_marker)
