@@ -1,11 +1,6 @@
 import pytest
 import asyncio
 import requests
-import subprocess
-import sys
-import os
-import time
-from pathlib import Path
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.sample.echo_service import EchoService, EchoOutput
@@ -29,114 +24,39 @@ class TestServiceIntegration:
         assert str(manager.url) == "http://localhost:8080"
     
     @pytest.mark.asyncio
-    async def test_attempt_service_launch_and_basic_functionality(self):
-        """Attempt to launch a service and test basic functionality if successful"""
-        service_port = 8090  # Use a different port
-        service_url = f"http://localhost:{service_port}"
-        process = None
+    async def test_service_launch_and_basic_functionality(self, echo_service_manager):
+        """Test service functionality using the launched service from conftest.py"""
+        if echo_service_manager is None:
+            # Service didn't start - verify connection manager creation still works
+            print("Service didn't start, testing connection manager behavior")
+            
+            ConnectionManager = generate_connection_manager(EchoService)
+            manager = ConnectionManager(url="http://localhost:8090")
+            
+            # These should fail with connection errors, not other errors
+            with pytest.raises((requests.exceptions.ConnectionError, Exception)) as exc_info:
+                manager.echo(message="This should fail")
+            
+            # Verify it's a connection error, not a coding error
+            assert "connection" in str(exc_info.value).lower() or "refused" in str(exc_info.value).lower()
+            
+            print("Connection manager behavior is correct for non-running service")
+            return
+            
+        # Service is running - test full functionality
+        print("Service launched successfully!")
         
-        try:
-            # Get the path to the mindtrace directory  
-            mindtrace_path = Path(__file__).parent.parent.parent.parent.parent / "mindtrace"
-            
-            # Create a simple launch script
-            launch_script = f"""
-import sys
-sys.path.insert(0, '{mindtrace_path}')
-
-try:
-    from mindtrace.services.sample.echo_service import EchoService
-    service = EchoService.launch(port={service_port}, host="localhost")
-    print("Service created successfully")
-except Exception as e:
-    print(f"Service launch failed: {{e}}")
-    import traceback
-    traceback.print_exc()
-"""
-            
-            script_path = "/tmp/test_echo_service.py"
-            with open(script_path, "w") as f:
-                f.write(launch_script)
-            
-            # Launch subprocess
-            process = subprocess.Popen([
-                sys.executable, script_path
-            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-               cwd=str(mindtrace_path.parent))  # Set working directory
-            
-            # Wait a bit for potential service startup
-            service_running = False
-            for attempt in range(20):  # 2 seconds
-                try:
-                    response = requests.get(f"{service_url}/health", timeout=0.5)
-                    if response.status_code == 200:
-                        service_running = True
-                        break
-                except:
-                    pass
-                await asyncio.sleep(0.1)
-            
-            if service_running:
-                print("✅ Service launched successfully!")
-                
-                # Test connection manager creation
-                ConnectionManager = generate_connection_manager(EchoService)
-                manager = ConnectionManager(url=service_url)
-                
-                # Test sync call
-                result = manager.echo(message="Integration test message")
-                assert isinstance(result, EchoOutput)
-                assert result.echoed == "Integration test message"
-                
-                # Test async call
-                async_result = await manager.aecho(message="Async integration test")
-                assert isinstance(async_result, EchoOutput)
-                assert async_result.echoed == "Async integration test"
-                
-                print("✅ All integration tests passed!")
-                
-            else:
-                # Service didn't start - that's okay, we'll just verify our logic works
-                print("⚠️  Service didn't start, but that's expected given import issues")
-                print("Verifying the connection manager creation still works...")
-                
-                ConnectionManager = generate_connection_manager(EchoService)
-                manager = ConnectionManager(url=service_url)
-                
-                # These should fail with connection errors, not other errors
-                with pytest.raises((requests.exceptions.ConnectionError, Exception)) as exc_info:
-                    manager.echo(message="This should fail")
-                
-                # Verify it's a connection error, not a coding error
-                assert "connection" in str(exc_info.value).lower() or "refused" in str(exc_info.value).lower()
-                
-                print("✅ Connection manager behavior is correct for non-running service")
-                
-        except Exception as e:
-            print(f"Test encountered error: {e}")
-            if process:
-                try:
-                    stdout, stderr = process.communicate(timeout=2)
-                    print(f"Service stdout: {stdout.decode()}")
-                    print(f"Service stderr: {stderr.decode()}")
-                except:
-                    pass
-            # Don't fail the test - this is expected given the import issues
-            print("⚠️  Service launch failed as expected due to import path issues")
-            
-        finally:
-            # Cleanup
-            if process and process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-            
-            try:
-                os.unlink("/tmp/test_echo_service.py")
-            except:
-                pass
+        # Test sync call
+        result = echo_service_manager.echo(message="Integration test message")
+        assert isinstance(result, EchoOutput)
+        assert result.echoed == "Integration test message"
+        
+        # Test async call
+        async_result = await echo_service_manager.aecho(message="Async integration test")
+        assert isinstance(async_result, EchoOutput)
+        assert async_result.echoed == "Async integration test"
+        
+        print("All integration tests passed!")
     
     def test_url_construction_logic(self):
         """Test URL construction without requiring a running service"""
@@ -174,7 +94,7 @@ except Exception as e:
             ConnectionManager = generate_connection_manager(EchoService)
             assert ConnectionManager.__name__ == "EchoServiceConnectionManager"
             
-            print("✅ Service import and instantiation works correctly")
+            print("Service import and instantiation works correctly")
             
         except Exception as e:
             # This shouldn't fail since we're just importing and creating, not launching
