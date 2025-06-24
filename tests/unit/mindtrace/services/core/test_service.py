@@ -157,7 +157,6 @@ class TestSyncMethods:
         mock_post.assert_called_once_with(
             "http://localhost:8000/test_task",
             json={"message": "test message", "count": 1},
-            params={"validate_output": "true"},
             timeout=30
         )
         
@@ -182,10 +181,12 @@ class TestSyncMethods:
         # Call without output validation
         result = ConnectionManager.test_task(manager, validate_output=False, message="test", count=1)
         
-        # Verify parameters
-        mock_post.assert_called_once()
-        call_args = mock_post.call_args
-        assert call_args[1]["params"]["validate_output"] == "false"
+        # Verify the call was made
+        mock_post.assert_called_once_with(
+            "http://localhost:8000/test_task",
+            json={"message": "test", "count": 1},
+            timeout=30
+        )
         
         # Should return raw result, not parsed as TestOutput
         assert result == {"job_id": "123", "status": "pending"}
@@ -276,7 +277,7 @@ class TestAsyncMethods:
         mock_client.post.assert_called_once_with(
             "http://localhost:8000/test_task",
             json={"message": "async test", "count": 2},
-            params={"validate_output": "true"}
+            timeout=30
         )
         
         # Verify the result
@@ -382,6 +383,48 @@ class TestInputValidation:
         # Missing required field should raise validation error
         with pytest.raises(Exception):  # Pydantic validation error
             ConnectionManager.test_task(manager, count=5)  # missing 'message'
+    
+    @patch('mindtrace.services.base.utils.httpx.post')
+    def test_input_validation_disabled(self, mock_post):
+        """Test that input validation can be disabled"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "test", "processed_count": 1}
+        mock_post.return_value = mock_response
+        
+        ConnectionManager = generate_connection_manager(TestService)
+        manager = Mock()
+        manager.url = "http://localhost:8000"
+        manager.__class__ = ConnectionManager
+        
+        # With validate_input=False, raw kwargs should be sent
+        ConnectionManager.test_task(manager, validate_input=False, message="test", extra_field="value")
+        
+        # Check that raw kwargs were passed through without validation
+        call_args = mock_post.call_args
+        expected_payload = {"message": "test", "extra_field": "value"}
+        assert call_args[1]["json"] == expected_payload
+    
+    @patch('mindtrace.services.base.utils.httpx.post')
+    def test_input_validation_enabled_default(self, mock_post):
+        """Test that input validation is enabled by default"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "test", "processed_count": 1}
+        mock_post.return_value = mock_response
+        
+        ConnectionManager = generate_connection_manager(TestService)
+        manager = Mock()
+        manager.url = "http://localhost:8000"
+        manager.__class__ = ConnectionManager
+        
+        # With default validate_input=True, should validate through schema
+        ConnectionManager.test_task(manager, message="test", count=5)
+        
+        # Check that the payload was validated and serialized (count gets default value)
+        call_args = mock_post.call_args
+        expected_payload = {"message": "test", "count": 5}
+        assert call_args[1]["json"] == expected_payload
 
 
 class TestMultipleTasks:
