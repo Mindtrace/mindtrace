@@ -1,5 +1,5 @@
 from contextlib import contextmanager, nullcontext
-from pathlib import Path
+from pathlib import Path, PosixPath
 import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
@@ -415,13 +415,15 @@ class Registry(Mindtrace):
                 return False
         return self.backend.has_object(name, version)
 
-    def register_materializer(self, object_class: str, materializer_class: str):
+    def register_materializer(self, object_class: str | type, materializer_class: str):
         """Register a materializer for an object class.
 
         Args:
             object_class: Object class to register the materializer for.
             materializer_class: Materializer class to register.
         """
+        if isinstance(object_class, type):
+            object_class = f"{object_class.__module__}.{object_class.__name__}"
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
 
@@ -700,7 +702,7 @@ class Registry(Mindtrace):
         self.register_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
         self.register_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
         self.register_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
-        self.register_materializer("pathlib.PosixPath", "zenml.materializers.PathMaterializer")
+        self.register_materializer(PosixPath, "zenml.materializers.PathMaterializer")
         self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
 
         # Core mindtrace materializers
