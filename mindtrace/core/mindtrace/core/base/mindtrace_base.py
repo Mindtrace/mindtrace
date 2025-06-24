@@ -110,6 +110,8 @@ class Mindtrace(metaclass=MindtraceMeta):
             except TypeError:
                 # If that still fails, try with no kwargs
                 super().__init__()
+        
+        # Set Mindtrace-specific attributes
         self.suppress = suppress        
         self.config = Config()
 

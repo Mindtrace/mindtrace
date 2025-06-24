@@ -1,16 +1,20 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 from pathlib import Path
 import pytest
 import re
 from tempfile import TemporaryDirectory
+import threading
+import time
 from typing import Any, Type
+from unittest.mock import patch
 
 from minio import S3Error
 from pydantic import BaseModel
 from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import check_libs, Config 
-from mindtrace.registry import LocalRegistryBackend, Registry
+from mindtrace.registry import LocalRegistryBackend, LockTimeoutError, Registry
 
 
 class SampleModel(BaseModel):
@@ -1639,7 +1643,7 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     """Test saving and loading objects in non-versioned mode."""
     # Save object
     non_versioned_registry.save("test:config", test_config)
-    
+
     # Verify only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
@@ -1648,12 +1652,12 @@ def test_non_versioned_save_and_load(non_versioned_registry, test_config):
     # Load object
     loaded_config = non_versioned_registry.load("test:config")
     assert loaded_config == test_config
-    
+
     # Save again - should overwrite
     new_config = {"new": "value"}
     non_versioned_registry.save("test:config", new_config)
-    
-    # Verify still only one version
+
+    # Verify still only one version exists
     versions = non_versioned_registry.list_versions("test:config")
     assert len(versions) == 1
     assert versions[0] == "1"
@@ -1876,6 +1880,8 @@ def test_download_non_versioned(registry, non_versioned_registry, test_config):
     non_versioned_registry.download(registry, "test:config", version="1.0.0")
     
     # Verify object exists in non-versioned registry
+    print(non_versioned_registry.list_versions("test:config"))
+    print(non_versioned_registry)
     assert non_versioned_registry.has_object("test:config", "1")
     
     # Verify object content
@@ -1984,4 +1990,300 @@ def test_update_with_existing_objects(registry):
         # Verify the original object is unchanged
         loaded_int = registry.load("test:int", version="1.0.0")
         assert loaded_int == 3
+
+@pytest.mark.slow
+def test_distributed_lock_save_concurrent(registry):
+    """Test that concurrent saves are properly serialized using distributed locks."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
     
+    # Create a test object
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir", 
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir", 
+        CUSTOM_KEY="custom_value")
+    
+    # Function to perform save with delay
+    def save_with_delay(i):
+        time.sleep(0.1)  # Add delay to increase chance of concurrent access
+        registry.save(f"testobj:{i}", test_obj)
+    
+    # Try to save the same object concurrently from multiple threads
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(save_with_delay, i) for i in range(5)]
+        for future in futures:
+            future.result()  # Wait for all saves to complete
+    
+    # Verify that all saves completed successfully
+    for i in range(5):
+        loaded_obj = registry.load(f"testobj:{i}")
+        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["CUSTOM_KEY"] == "custom_value"
+
+def test_distributed_lock_save_conflict(registry):
+    """Test that saving to the same version is properly prevented by locks."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from mindtrace.registry.core.registry import LockTimeoutError
+
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
+        CUSTOM_KEY="custom_value"
+    )
+
+    # First save should succeed
+    registry.save("test:conflict", test_obj, version="1.0.0")
+
+    # Function to attempt save to same version
+    def attempt_conflicting_save(i):
+        try:
+            registry.save("test:conflict", test_obj, version="1.0.0")
+            return False  # Should not reach here
+        except (ValueError, LockTimeoutError):
+            return True  # Expected error
+
+    # Try to save to same version concurrently
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(attempt_conflicting_save, i) for i in range(5)]
+        results = [future.result() for future in futures]
+
+    # All attempts should have failed
+    assert all(results)
+
+    # Original object should still be intact
+    loaded_obj = registry.load("test:conflict", version="1.0.0")
+    assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+    assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+    assert loaded_obj["CUSTOM_KEY"] == "custom_value"
+
+def test_distributed_lock_load_concurrent(registry):
+    """Test that concurrent loads work correctly with shared locks."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    
+    # Create and save a test object
+    test_obj = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir", 
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir", 
+        CUSTOM_KEY="custom_value"
+    )
+    registry.save("test:concurrent:load", test_obj)
+    
+    # Function to perform load
+    def load_object():
+        loaded_obj = registry.load("test:concurrent:load")
+        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["CUSTOM_KEY"] == "custom_value"
+        return True
+    
+    # Try to load the same object concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(load_object) for _ in range(10)]
+        results = [future.result() for future in futures]
+    
+    # All loads should have succeeded
+    assert all(results)
+
+@pytest.mark.slow
+def test_distributed_lock_save_load_race(registry):
+    """Test that save and load operations are properly synchronized."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    test_obj1 = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir1",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir1",
+        CUSTOM_KEY="value1"
+    )
+    test_obj2 = Config(
+        MINDTRACE_TEMP_DIR="/custom/temp/dir2",
+        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
+        CUSTOM_KEY="value2"
+    )
+
+    # Function to perform save
+    def save_object():
+        time.sleep(0.1)  # Add delay to increase chance of race condition
+        registry.save("test:race", test_obj1)
+        time.sleep(0.1)
+        registry.save("test:race", test_obj2)
+
+    # Function to perform load
+    def load_object():
+        time.sleep(0.1)  # Add delay to increase chance of race condition
+        try:
+            obj = registry.load("test:race")
+            return obj["CUSTOM_KEY"]
+        except ValueError:
+            # If the object doesn't exist yet, wait a bit and try again
+            time.sleep(0.2)
+            obj = registry.load("test:race")
+            return obj["CUSTOM_KEY"]
+
+    # Run save and load operations concurrently
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        save_future = executor.submit(save_object)
+        load_future = executor.submit(load_object)
+        
+        # Wait for both operations to complete
+        save_future.result()
+        load_value = load_future.result()
+    
+    # Verify that the loaded value is consistent
+    # It should be either value1 or value2, but not a mix of both
+    assert load_value in ("value1", "value2")
+    
+    # Final state should be test_obj2
+    final_obj = registry.load("test:race")
+    assert final_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir2"
+    assert final_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir2"
+    assert final_obj["CUSTOM_KEY"] == "value2"
+    
+def test_lock_timeout_error(registry):
+    """Test that LockTimeoutError is raised when lock acquisition fails."""
+    # Mock the backend's acquire_lock method to simulate failure
+    with patch.object(registry.backend, 'acquire_lock', return_value=False):
+        # Test exclusive lock timeout
+        with pytest.raises(LockTimeoutError, match="Failed to acquire lock for test_key"):
+            with registry._get_object_lock("test_key", "1.0"):
+                pass
+
+        # Test shared lock timeout
+        with pytest.raises(LockTimeoutError, match="Failed to acquire shared lock for test_key"):
+            with registry._get_object_lock("test_key", "1.0", shared=True):
+                pass
+
+def test_lock_success(registry):
+    """Test successful lock acquisition."""
+    # Mock the backend's acquire_lock and release_lock methods
+    with patch.object(registry.backend, 'acquire_lock', return_value=True) as mock_acquire, \
+         patch.object(registry.backend, 'release_lock', return_value=True) as mock_release:
+        
+        # Test exclusive lock
+        with registry._get_object_lock("test_key", "1.0"):
+            mock_acquire.assert_called_once()
+            assert not mock_acquire.call_args[1].get('shared', False)
+        
+        # Verify lock was released
+        mock_release.assert_called_once()
+        
+        # Reset mocks
+        mock_acquire.reset_mock()
+        mock_release.reset_mock()
+        
+        # Test shared lock
+        with registry._get_object_lock("test_key", "1.0", shared=True):
+            mock_acquire.assert_called_once()
+            assert mock_acquire.call_args[1].get('shared', False)
+        
+        # Verify lock was released
+        mock_release.assert_called_once()
+
+def test_lock_timeout_value(registry):
+    """Test that the correct timeout value is passed to acquire_lock."""
+    # Mock the backend's acquire_lock method
+    with patch.object(registry.backend, 'acquire_lock', return_value=True) as mock_acquire:
+        # Test with default timeout
+        with registry._get_object_lock("test_key", "1.0"):
+            mock_acquire.assert_called_once()
+            # timeout is the third positional argument (index 2)
+            assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        
+        # Reset mock
+        mock_acquire.reset_mock()
+        
+        # Test with modified config timeout
+        original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        try:
+            registry.config["MINDTRACE_LOCK_TIMEOUT"] = 60
+            with registry._get_object_lock("test_key", "1.0"):
+                mock_acquire.assert_called_once()
+                # timeout is the third positional argument (index 2)
+                assert mock_acquire.call_args[0][2] == 60
+        finally:
+            # Restore original timeout
+            registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
+    
+def test_validate_version_none_or_latest(registry):
+    """Test that _validate_version returns None for None or 'latest' versions."""
+    # Test None version
+    assert registry._validate_version(None) is None
+    
+    # Test 'latest' version
+    assert registry._validate_version("latest") is None
+    
+    # Test that other versions are validated
+    assert registry._validate_version("1.0.0") == "1.0.0"
+    assert registry._validate_version("v1.0.0") == "1.0.0"  # v prefix is removed
+    
+    # Test invalid versions
+    with pytest.raises(ValueError, match="Invalid version string"):
+        registry._validate_version("1.0.0-alpha")
+    
+def test_save_temp_version_move_error(registry, test_config):
+    """Test error handling when moving temp version to final version fails."""
+    # Mock the backend's overwrite method to raise an exception
+    with patch.object(registry.backend, 'overwrite', side_effect=Exception("Failed to move temp version")):
+        # Attempt to save should raise the exception
+        with pytest.raises(Exception, match="Failed to move temp version"):
+            registry.save("test:config", test_config)
+        
+        # Verify that temp version was cleaned up
+        assert not registry.has_object("test:config", "__temp__")
+        
+        # Verify that final version was not created
+        assert not registry.has_object("test:config", "1.0.0")
+        
+        # Verify that object-specific metadata was not created
+        meta_path = registry.backend.uri / f"_meta_test:config@1.0.0.yaml"
+        assert not meta_path.exists()
+    
+def test_save_temp_cleanup_warning(registry, test_config, caplog):
+    """Test that a warning is logged when there's an error cleaning up temporary files."""
+    # Mock the backend's delete method to raise an exception during cleanup
+    with patch.object(registry.backend, 'delete', side_effect=Exception("Failed to delete temp version")):
+        # Save should still succeed since cleanup errors are just logged
+        registry.save("test:config", test_config, version="1.0.0")
+        
+        # Verify that the warning was logged
+        assert any("Error cleaning up temp version" in record.message for record in caplog.records)
+        assert any("Failed to delete temp version" in record.message for record in caplog.records)
+        
+        # Verify that the object was still saved successfully
+        assert registry.has_object("test:config", "1.0.0")
+        loaded_config = registry.load("test:config", "1.0.0")
+        assert loaded_config == test_config
+    
+def test_pop_nonexistent_object(registry):
+    """Test that pop raises KeyError when object doesn't exist and no default is provided."""
+    # Test with non-existent object name
+    with pytest.raises(KeyError, match="Object nonexistent does not exist"):
+        registry.pop("nonexistent")
+        
+    # Test with non-existent version
+    registry.save("test:obj", "value", version="1.0.0")
+    with pytest.raises(KeyError, match="Object test:obj version 2.0.0 does not exist"):
+        registry.pop("test:obj@2.0.0")
+        
+    # Test that default value is returned when provided
+    assert registry.pop("nonexistent", "default") == "default"
+    assert registry.pop("test:obj@2.0.0", "default") == "default"
+    
+def test_pop_keyerror_handling(registry, test_config):
+    """Test that KeyError is properly handled in pop method."""
+    # Save an object first
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Mock load to raise KeyError
+    with patch.object(registry, 'load', side_effect=KeyError("Object not found")):
+        # Without default, KeyError should be propagated
+        with pytest.raises(KeyError, match="Object not found"):
+            registry.pop("test:config@1.0.0")
+            
+        # With default, KeyError should be caught and default returned
+        assert registry.pop("test:config@1.0.0", "default") == "default"
