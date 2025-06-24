@@ -14,7 +14,11 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
-    def push(self, name: str, version: str | None = None, local_path: str | None = None):
+    def __init__(self, uri: str | Path, **kwargs):
+        super().__init__(**kwargs)
+
+    @abstractmethod
+    def push(self, name: str, version: str, local_path: str):
         """Upload a local object version to the remote backend.
 
         Args:
@@ -37,7 +41,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
     
     @abstractmethod
-    def delete(self, name: str, version: str = "all"):
+    def delete(self, name: str, version: str):
         """Delete an object version from the backend.
 
         Args:
@@ -128,14 +132,14 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
-    def registered_materializer(self, object_class: str) -> str:
+    def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.
 
         Args:
             object_class: Object class to get the registered materializer for.
 
         Returns:
-            Materializer class string.
+            Materializer class string, or None if no materializer is registered for the object class.
         """
         pass
 
