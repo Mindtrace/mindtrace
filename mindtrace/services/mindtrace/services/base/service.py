@@ -40,7 +40,7 @@ C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or 
 class Service(Mindtrace):
     """Base class for all Mindtrace services."""
 
-    _status = ServerStatus.Down
+    _status = ServerStatus.DOWN
     _endpoints: dict[str, TaskSchema] = {}
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
@@ -71,7 +71,7 @@ class Service(Mindtrace):
         considered private internal use.
         """
         super().__init__()
-        self._status: ServerStatus = ServerStatus.Available
+        self._status: ServerStatus = ServerStatus.AVAILABLE
         self.id, self.pid_file = self._generate_id_and_pid_file()
 
         # Build URL with the following priority:
@@ -162,9 +162,9 @@ class Service(Mindtrace):
         try:
             response = requests.request("POST", str(url) + "/status", timeout=timeout)
         except requests.exceptions.ConnectionError:
-            return ServerStatus.Down
+            return ServerStatus.DOWN
         if response.status_code != 200:
-            return ServerStatus.Down
+            return ServerStatus.DOWN
 
         status = ServerStatus(response.json()["status"])
         return status
@@ -187,7 +187,7 @@ class Service(Mindtrace):
         """
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)
-        if host_status == ServerStatus.Available:
+        if host_status == ServerStatus.AVAILABLE:
             if cls._client_interface is None:
                 return generate_connection_manager(cls)(url=url)
             else:
@@ -230,7 +230,7 @@ class Service(Mindtrace):
         # Check that there is not already a service at the given URL
         try:
             existing_status = cls.status_at_host(launch_url)
-            if existing_status != ServerStatus.Down:
+            if existing_status != ServerStatus.DOWN:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Server {cls.unique_name} at {launch_url} is already running with status {existing_status}.",

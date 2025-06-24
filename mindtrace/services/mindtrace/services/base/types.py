@@ -10,11 +10,11 @@ from mindtrace.core import TaskSchema
 
 
 class ServerStatus(Enum):
-    Down = "Down"
-    Launching = "Launching"
-    FailedToLaunch = "FailedToLaunch"
-    Available = "Available"
-    Stopping = "Stopping"
+    DOWN = "Down"
+    LAUNCHING = "Launching"
+    FAILED_TO_LAUNCH = "FailedToLaunch"
+    AVAILABLE = "Available"
+    STOPPING = "Stopping"
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Heartbeat:
             IDs.
     """
 
-    status: ServerStatus = ServerStatus.Down
+    status: ServerStatus = ServerStatus.DOWN
     server_id: UUID | None = None
     message: str | None = None
     details: Any = None

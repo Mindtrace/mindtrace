@@ -1,5 +1,6 @@
 """Client-side helper class for communicating with any ServerBase server."""
 
+import asyncio
 import json
 from typing import List
 from urllib.parse import urljoin
@@ -82,6 +83,57 @@ class ConnectionManager(Mindtrace):
             raise TimeoutError(f"Server at {self.url} did not shut down within timeout period.")
         
         return ShutdownOutput(shutdown=True)
+
+    async def ashutdown(self, block: bool = True):
+        """Async shutdown of the server."""
+        # Run the shutdown in a thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.shutdown, block)
+
+    def status(self):
+        """Get the status of the server.
+        
+        Returns ServerStatus.DOWN if the server is unreachable, otherwise returns the actual status.
+        
+        Returns:
+            StatusOutput with the current server status.
+        """
+        from mindtrace.services.base.types import ServerStatus, StatusOutput
+        
+        try:
+            response = requests.post(urljoin(str(self.url), "status"), timeout=10)
+            if response.status_code != 200:
+                return StatusOutput(status=ServerStatus.DOWN)
+            
+            result = response.json()
+            return StatusOutput(**result)
+            
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.RequestException):
+            return StatusOutput(status=ServerStatus.DOWN)
+
+    async def astatus(self):
+        """Async get the status of the server.
+        
+        Returns ServerStatus.DOWN if the server is unreachable, otherwise returns the actual status.
+        
+        Returns:
+            StatusOutput with the current server status.
+        """
+        from mindtrace.services.base.types import ServerStatus, StatusOutput
+        import httpx
+        
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(urljoin(str(self.url), "status"))
+            
+            if response.status_code != 200:
+                return StatusOutput(status=ServerStatus.DOWN)
+            
+            result = response.json()
+            return StatusOutput(**result)
+            
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
+            return StatusOutput(status=ServerStatus.DOWN)
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.logger.debug(f"Shutting down {self.name} Server.")
