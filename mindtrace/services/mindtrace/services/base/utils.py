@@ -128,12 +128,12 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
         endpoint_path = f"/{endpoint_name}"
 
         def make_method(endpoint_path, input_schema, output_schema):
-            def method(self, blocking: bool = True, **kwargs):
+            def method(self, validate_output: bool = True, **kwargs):
                 payload = input_schema(**kwargs).dict() if input_schema is not None else {}
                 res = httpx.post(
                     str(self.url).rstrip('/') + endpoint_path,
                     json=payload,
-                    params={"blocking": str(blocking).lower()},
+                    params={"validate_output": str(validate_output).lower()},
                     timeout=30
                 )
                 if res.status_code != 200:
@@ -145,17 +145,17 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
                 except:
                     result = {"success": True}  # Default response for empty content
                     
-                if not blocking:
-                    return result  # raw job result dict
+                if not validate_output:
+                    return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
             
-            async def amethod(self, blocking: bool = True, **kwargs):
+            async def amethod(self, validate_output: bool = True, **kwargs):
                 payload = input_schema(**kwargs).dict() if input_schema is not None else {}
                 async with httpx.AsyncClient(timeout=30) as client:
                     res = await client.post(
                         str(self.url).rstrip('/') + endpoint_path,
                         json=payload,
-                        params={"blocking": str(blocking).lower()}
+                        params={"validate_output": str(validate_output).lower()}
                     )
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
@@ -166,8 +166,8 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
                 except:
                     result = {"success": True}  # Default response for empty content
                     
-                if not blocking:
-                    return result  # raw job result dict
+                if not validate_output:
+                    return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
             
             return method, amethod
