@@ -7,8 +7,8 @@ import os
 import time
 from pathlib import Path
 
+from mindtrace.services import generate_connection_manager
 from mindtrace.services.sample.echo_service import EchoService, EchoOutput
-from mindtrace.services.core.service import generate_connection_manager
 
 
 class TestServiceIntegration:
@@ -164,9 +164,11 @@ except Exception as e:
         try:
             service = EchoService(port=8091, host="localhost") 
             
-            # Verify service has the expected tasks
-            assert "echo" in service.tasks
-            assert service.tasks["echo"].name == "echo"
+            # Verify service has the expected endpoints
+            assert "echo" in service.endpoints
+            assert service.endpoints["echo"].name == "echo"
+            assert service.endpoints["echo"].input_schema.__name__ == "EchoInput"
+            assert service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
             
             # Verify connection manager generation works
             ConnectionManager = generate_connection_manager(EchoService)
@@ -183,8 +185,8 @@ except Exception as e:
         service = EchoService(port=8092, host="localhost")
         
         # Check that echo task is registered
-        assert "echo" in service.tasks
-        echo_task = service.tasks["echo"]
+        assert "echo" in service.endpoints
+        echo_task = service.endpoints["echo"]
         
         assert echo_task.name == "echo"
         assert echo_task.input_schema.__name__ == "EchoInput"
