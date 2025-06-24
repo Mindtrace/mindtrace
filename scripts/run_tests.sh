@@ -2,6 +2,7 @@
 
 # Default test path
 TEST_PATH="tests"
+IS_INTEGRATION=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -12,6 +13,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --integration)
             TEST_PATH="tests/integration"
+            IS_INTEGRATION=true
             shift
             ;;
         *)
@@ -22,15 +24,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Start MinIO container
-echo "Starting MinIO container..."
-docker-compose -f tests/docker-compose.yml up -d
+# Start MinIO container for integration tests or when running all tests
+if [ "$IS_INTEGRATION" = true ] || [ "$TEST_PATH" = "tests" ]; then
+    echo "Starting MinIO container..."
+    docker-compose -f tests/docker-compose.yml up -d
 
-# Wait for MinIO to be healthy
-echo "Waiting for MinIO to be ready..."
-until curl -s http://localhost:9000/minio/health/live > /dev/null; do
-    sleep 1
-done
+    # Wait for MinIO to be healthy
+    echo "Waiting for MinIO to be ready..."
+    until curl -s http://localhost:9000/minio/health/live > /dev/null; do
+        sleep 1
+    done
+fi
 
 # Run the tests
 echo "Running tests in $TEST_PATH..."
@@ -39,9 +43,11 @@ pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W
 # Capture the test exit code
 TEST_EXIT_CODE=$?
 
-# Stop MinIO container
-echo "Stopping MinIO container..."
-docker-compose -f tests/docker-compose.yml down
+# Stop MinIO container only if it was started
+if [ "$IS_INTEGRATION" = true ] || [ "$TEST_PATH" = "tests" ]; then
+    echo "Stopping MinIO container..."
+    docker-compose -f tests/docker-compose.yml down
+fi
 
 # Exit with the test exit code
 exit $TEST_EXIT_CODE 
