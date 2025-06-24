@@ -21,16 +21,24 @@ from mindtrace.registry import (
 )
 
 class Registry(Mindtrace):
-    def __init__(self, registry_dir: str | None = None, backend: RegistryBackend | None = None, **kwargs):
+    def __init__(self, registry_dir: str | None = None, backend: RegistryBackend | None = None, version_objects: bool = True, **kwargs):
+        """Initialize the registry.
+        
+        Args:
+            registry_dir: Directory to store registry objects. If None, uses the default from config.
+            backend: Backend to use for storage. If None, uses LocalRegistryBackend.
+            version_objects: Whether to keep version history. If False, only one version per object is kept.
+            **kwargs: Additional arguments to pass to the backend.
+        """
         super().__init__(**kwargs)
-
-        if backend is not None:
-            self.backend = backend
-        else:
-            registry_dir = str(
-                Path(ifnone(registry_dir, default=self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"])).expanduser().resolve()
-            )
-            self.backend = LocalRegistryBackend(uri=registry_dir)
+        
+        if backend is None:
+            if registry_dir is None:
+                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+            registry_dir = Path(registry_dir).expanduser().resolve()
+            backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
+        self.backend = backend
+        self.version_objects = version_objects
         
         self._artifact_store = LocalArtifactStore(
             name="local_artifact_store",
@@ -57,7 +65,7 @@ class Registry(Mindtrace):
     ):
         """Save an object to the registry.
 
-        If materializer is not provided, the materializer will be inferred from the object type. The inferred 
+        If a materializer is not provided, the materializer will be inferred from the object type. The inferred 
         materializer will be registered with the object for loading the object from the registry in the future. The 
         order of precedence for determining the materializer is:
 
@@ -71,11 +79,11 @@ class Registry(Mindtrace):
         Args:
             name: Name of the object.
             obj: Object to save.
-            materializer: Materializer to use.
-            version: Version of the object.
-            init_params: Initialization parameters for the object.
-            metadata: Metadata for the object.
-
+            materializer: Materializer to use. If None, uses the default for the object type.
+            version: Version of the object. If None, auto-increments the version number.
+            init_params: Additional parameters to pass to the materializer.
+            metadata: Additional metadata to store with the object.
+            
         Raises:
             ValueError: If no materializer is found for the object.
         """
@@ -101,12 +109,17 @@ class Registry(Mindtrace):
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
         materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
 
-        if version is None:
-            version = self._next_version(name)
-
-        if self.has_object(name=name, version=version):
+        if not self.version_objects:  # If versioning is disabled, delete any existing object
+            if self.has_object(name=name):
+                self.delete(name=name)  
+            version = "latest"
+        elif self.has_object(name=name, version=version):
             self.logger.error(f"Object {name} version {version} already exists.")
             raise ValueError(f"Object {name} version {version} already exists.")
+
+        if version is None or version == "latest":
+            version = self._next_version(name)
+
 
         try:
             metadata = {
@@ -130,7 +143,7 @@ class Registry(Mindtrace):
 
     def load(self, name: str, version: str | None = "latest", output_dir: str | None = None, **kwargs) -> Any:
         """Load an object from the registry.
-
+        
         Args:
             name: Name of the object.
             version: Version of the object.
@@ -139,12 +152,12 @@ class Registry(Mindtrace):
 
         Returns:
             The loaded object.
-
+            
         Raises:
             ValueError: If the object does not exist.
         """
 
-        if version == "latest":
+        if version == "latest" or not self.version_objects:
             version = self._latest(name)
 
         if not self.has_object(name=name, version=version):
@@ -198,12 +211,25 @@ class Registry(Mindtrace):
 
     def delete(self, name: str, version: str | None = None) -> None:
         """Delete an object from the registry.
-
+        
         Args:
             name: Name of the object.
-            version: Version of the object.
+            version: Version of the object. If None, deletes all versions.
+            
+        Raises:
+            KeyError: If the object doesn't exist.
         """
-        versions = self.list_versions(name) if version is None else [version]
+        if version is None:
+            # Check if object exists at all
+            if name not in self.list_objects():
+                raise KeyError(f"Object {name} does not exist")
+            versions = self.list_versions(name)
+        else:
+            # Check if specific version exists
+            if not self.has_object(name, version):
+                raise KeyError(f"Object {name} version {version} does not exist")
+            versions = [version]
+
         for ver in versions:
             self.backend.delete(name, ver)
             self.backend.delete_metadata(name, ver)
@@ -270,7 +296,9 @@ class Registry(Mindtrace):
                 result[ver] = info
             return result
 
-    def has_object(self, name: str, version: str) -> bool:
+    def has_object(self, name: str, version: str = "latest") -> bool:
+        if version == "latest":
+            version = self._latest(name)
         return self.backend.has_object(name, version)
 
     def register_materializer(self, object_class: str, materializer_class: str):
@@ -330,6 +358,63 @@ class Registry(Mindtrace):
         for object_name in self.list_objects():
             result[object_name] = self.list_versions(object_name)
         return result
+
+    def download(self, source_registry: 'Registry', name: str, version: str | None = "latest", target_name: str | None = None, target_version: str | None = None) -> None:
+        """Download an object from another registry.
+
+        This method loads an object from a source registry and saves it to the current registry.
+        All metadata and versioning information is preserved.
+
+        Args:
+            source_registry: The source registry to download from
+            name: Name of the object in the source registry
+            version: Version of the object in the source registry. Defaults to "latest"
+            target_name: Name to use in the current registry. If None, uses the same name as source
+            target_version: Version to use in the current registry. If None, uses the same version as source
+
+        Raises:
+            ValueError: If the object doesn't exist in the source registry
+            ValueError: If the target object already exists and versioning is disabled
+        """
+        # Validate source registry
+        if not isinstance(source_registry, Registry):
+            raise ValueError("source_registry must be an instance of Registry")
+
+        # Resolve latest version if needed
+        if version == "latest":
+            version = source_registry._latest(name)
+            if version is None:
+                raise ValueError(f"No versions found for object {name} in source registry")
+
+        # Set target name and version if not specified
+        target_name = ifnone(target_name, default=name)
+        if target_version is None:
+            target_version = self._next_version(target_name)
+        else:
+            if self.has_object(name=target_name, version=target_version):
+                raise ValueError(f"Object {target_name} version {target_version} already exists in current registry")
+
+        # Check if object exists in source registry
+        if not source_registry.has_object(name=name, version=version):
+            raise ValueError(f"Object {name} version {version} does not exist in source registry")
+
+        # Get metadata from source registry
+        metadata = source_registry.info(name=name, version=version)
+        
+        # Load object from source registry
+        obj = source_registry.load(name=name, version=version)
+
+        # Save to current registry
+        self.save(
+            name=target_name,
+            obj=obj,
+            version=target_version,
+            materializer=metadata.get("materializer"),
+            init_params=metadata.get("init_params", {}),
+            metadata=metadata.get("metadata", {})
+        )
+
+        self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
@@ -535,3 +620,202 @@ class Registry(Mindtrace):
             self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
         except ImportError:
             pass
+
+    ### Dictionary-like interface methods ###
+
+    def __getitem__(self, key: str) -> Any:
+        """Get an object from the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Returns:
+            The loaded object
+            
+        Raises:
+            KeyError: If the object doesn't exist
+            ValueError: If the version format is invalid
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, "latest"
+            return self.load(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        """Save an object to the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            value: The object to save
+            
+        Raises:
+            ValueError: If the version format is invalid
+        """
+        if "@" in key:
+            name, version = key.split("@", 1)
+        else:
+            name, version = key, None
+        self.save(name=name, obj=value, version=version)
+
+    def __delitem__(self, key: str) -> None:
+        """Delete an object from the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Raises:
+            KeyError: If the object doesn't exist
+            ValueError: If the version format is invalid
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name, version = key, None
+            self.delete(name=name, version=version)
+        except ValueError as e:
+            raise KeyError(f"Object not found: {key}") from e
+
+    def __contains__(self, key: str) -> bool:
+        """Check if an object exists in the registry using dictionary-like syntax.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            
+        Returns:
+            True if the object exists, False otherwise.
+        """
+        try:
+            if "@" in key:
+                name, version = key.split("@", 1)
+            else:
+                name = key
+                version = self._latest(name)
+                if version is None:
+                    return False
+            return self.has_object(name=name, version=version)
+        except ValueError:
+            return False
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get an object from the registry, returning a default value if it doesn't exist.
+        
+        This method behaves similarly to dict.get(), allowing for safe access to objects
+        without raising KeyError if they don't exist.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to return if the object doesn't exist
+            
+        Returns:
+            The loaded object if it exists, otherwise the default value.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def keys(self) -> List[str]:
+        """Get a list of all object names in the registry.
+        
+        Returns:
+            List of object names.
+        """
+        return self.list_objects()
+
+    def values(self) -> List[Any]:
+        """Get a list of all objects in the registry (latest versions only).
+        
+        Returns:
+            List of loaded objects.
+        """
+        return [self[name] for name in self.keys()]
+
+    def items(self) -> List[tuple[str, Any]]:
+        """Get a list of (name, object) pairs for all objects in the registry (latest versions only).
+        
+        Returns:
+            List of (name, object) tuples.
+        """
+        return [(name, self[name]) for name in self.keys()]
+
+    def update(self, mapping: Dict[str, Any] | 'Registry', *, sync_all_versions: bool = True) -> None:
+        """Update the registry with objects from a dictionary or another registry.
+        
+        Args:
+            mapping: Either a dictionary mapping object names to objects, or another Registry instance.
+            sync_all_versions: Whether to save all versions of the objects being downloaded. If False, only the latest
+                version will be saved. Only used if mapping is a Registry instance.
+        """
+        if isinstance(mapping, Registry) and sync_all_versions:
+            for name in mapping.list_objects():
+                for version in mapping.list_versions(name):
+                    if self.has_object(name, version):
+                        raise ValueError(f"Object {name} version {version} already exists in registry.")
+            for name in mapping.list_objects():
+                for version in mapping.list_versions(name):
+                    self.download(mapping, name, version=version)
+        else:
+            for key, value in mapping.items():
+                self[key] = value
+
+    def clear(self) -> None:
+        """Remove all objects from the registry."""
+        for name in self.keys():
+            del self[name]
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        """Remove and return an object from the registry.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to return if the object doesn't exist
+            
+        Returns:
+            The removed object if it exists, otherwise the default value.
+            
+        Raises:
+            KeyError: If the object doesn't exist and no default is provided.
+        """
+        try:
+            value = self[key]
+            del self[key]
+            return value
+        except KeyError:
+            if default is not None:
+                return default
+            raise
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        """Get an object from the registry, setting it to default if it doesn't exist.
+        
+        Args:
+            key: The object name, optionally including version (e.g. "name@version")
+            default: The value to set and return if the object doesn't exist
+            
+        Returns:
+            The object if it exists, otherwise the default value.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            if default is not None:
+                self[key] = default
+            return default
+
+    def __len__(self) -> int:
+        """Get the number of unique named items in the registry.
+        
+        This counts only unique object names, not individual versions. For example, if you have "model@1.0.0" and 
+        "model@1.0.1", this will count as 1 item.
+        
+        Returns:
+            Number of unique named items in the registry.
+        """
+        return len(self.keys())
+
+    ### End of dictionary-like interface methods ###
