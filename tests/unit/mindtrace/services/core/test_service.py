@@ -3,7 +3,8 @@ from unittest.mock import Mock, patch, AsyncMock
 from pydantic import BaseModel
 from fastapi import HTTPException
 
-from mindtrace.services import Service, TaskSchema, generate_connection_manager
+from mindtrace.core import TaskSchema
+from mindtrace.services import Service, generate_connection_manager
 
 
 class TestInput(BaseModel):
@@ -26,7 +27,7 @@ class TestService(Service):
             input_schema=TestInput,
             output_schema=TestOutput,
         )
-        self.add_endpoint("test_task", self.test_handler, task=test_task)
+        self.add_endpoint("test_task", self.test_handler, schema=test_task)
         
         # Add another task for multiple task testing
         echo_task = TaskSchema(
@@ -34,7 +35,7 @@ class TestService(Service):
             input_schema=TestInput,
             output_schema=TestOutput,
         )
-        self.add_endpoint("echo", self.echo_handler, task=echo_task)
+        self.add_endpoint("echo", self.echo_handler, schema=echo_task)
 
     def test_handler(self, payload: TestInput) -> TestOutput:
         return TestOutput(
@@ -54,21 +55,24 @@ class TestServiceClass:
     
     def test_service_initialization(self):
         service = TestService()
-        assert len(service.tasks) == 2
-        assert "test_task" in service.tasks
-        assert "echo" in service.tasks
+        # Check that our custom endpoints are present (plus system endpoints)
+        assert "test_task" in service.endpoints
+        assert "echo" in service.endpoints
+        # Verify system endpoints are also present
+        assert "status" in service.endpoints
+        assert "heartbeat" in service.endpoints
     
     def test_task_schema_registration(self):
         service = TestService()
         
         # Check test_task
-        test_task = service.tasks["test_task"]
+        test_task = service.endpoints["test_task"]
         assert test_task.name == "test_task"
         assert test_task.input_schema == TestInput
         assert test_task.output_schema == TestOutput
         
         # Check echo task
-        echo_task = service.tasks["echo"]
+        echo_task = service.endpoints["echo"]
         assert echo_task.name == "echo"
         assert echo_task.input_schema == TestInput
         assert echo_task.output_schema == TestOutput
@@ -79,10 +83,9 @@ class TestServiceClass:
         def dummy_handler():
             return {"status": "ok"}
         
-        with patch.object(service, 'logger') as mock_logger:
+        # The schema parameter is now required, so this should raise TypeError
+        with pytest.raises(TypeError):
             service.add_endpoint("dummy", dummy_handler)
-            mock_logger.warning.assert_called_once()
-            assert "No task provided" in mock_logger.warning.call_args[0][0]
 
 
 class TestGenerateConnectionManager:
@@ -129,7 +132,7 @@ class TestGenerateConnectionManager:
 class TestSyncMethods:
     """Test synchronous method functionality"""
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_sync_method_success(self, mock_post):
         """Test successful sync method call"""
         # Setup mock response
@@ -163,7 +166,7 @@ class TestSyncMethods:
         assert result.result == "Processed: test message"
         assert result.processed_count == 2
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_sync_method_non_blocking(self, mock_post):
         """Test non-blocking sync method call"""
         mock_response = Mock()
@@ -187,7 +190,7 @@ class TestSyncMethods:
         # Should return raw result, not parsed as TestOutput
         assert result == {"job_id": "123", "status": "pending"}
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_sync_method_error(self, mock_post):
         """Test sync method error handling"""
         mock_response = Mock()
@@ -207,7 +210,7 @@ class TestSyncMethods:
         assert exc_info.value.status_code == 500
         assert exc_info.value.detail == "Internal Server Error"
     
-    @patch('mindtrace.services.core.service.httpx.get')
+    @patch('mindtrace.services.base.utils.httpx.get')
     def test_get_job_success(self, mock_get):
         """Test get_job method success"""
         mock_response = Mock()
@@ -225,7 +228,7 @@ class TestSyncMethods:
         mock_get.assert_called_once_with("http://localhost:8000/job/123", timeout=10)
         assert result == {"job_id": "123", "status": "completed", "result": "done"}
     
-    @patch('mindtrace.services.core.service.httpx.get')
+    @patch('mindtrace.services.base.utils.httpx.get')
     def test_get_job_not_found(self, mock_get):
         """Test get_job method when job not found"""
         mock_response = Mock()
@@ -246,7 +249,7 @@ class TestAsyncMethods:
     """Test asynchronous method functionality"""
     
     @pytest.mark.asyncio
-    @patch('mindtrace.services.core.service.httpx.AsyncClient')
+    @patch('mindtrace.services.base.utils.httpx.AsyncClient')
     async def test_async_method_success(self, mock_client_class):
         """Test successful async method call"""
         # Setup mock async client
@@ -282,7 +285,7 @@ class TestAsyncMethods:
         assert result.processed_count == 4
     
     @pytest.mark.asyncio
-    @patch('mindtrace.services.core.service.httpx.AsyncClient')
+    @patch('mindtrace.services.base.utils.httpx.AsyncClient')
     async def test_async_method_error(self, mock_client_class):
         """Test async method error handling"""
         mock_client = AsyncMock()
@@ -305,7 +308,7 @@ class TestAsyncMethods:
         assert exc_info.value.detail == "Bad Request"
     
     @pytest.mark.asyncio
-    @patch('mindtrace.services.core.service.httpx.AsyncClient')
+    @patch('mindtrace.services.base.utils.httpx.AsyncClient')
     async def test_aget_job_success(self, mock_client_class):
         """Test async get_job method"""
         mock_client = AsyncMock()
@@ -326,7 +329,7 @@ class TestAsyncMethods:
         assert result == {"job_id": "456", "status": "running"}
     
     @pytest.mark.asyncio
-    @patch('mindtrace.services.core.service.httpx.AsyncClient')
+    @patch('mindtrace.services.base.utils.httpx.AsyncClient')
     async def test_aget_job_not_found(self, mock_client_class):
         """Test async get_job method when job not found"""
         mock_client = AsyncMock()
@@ -348,7 +351,7 @@ class TestAsyncMethods:
 class TestInputValidation:
     """Test input validation through Pydantic schemas"""
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_input_validation_success(self, mock_post):
         """Test that input validation works correctly"""
         mock_response = Mock()
@@ -394,7 +397,7 @@ class TestMultipleTasks:
         assert hasattr(ConnectionManager, "atest_task")
         assert hasattr(ConnectionManager, "aecho")
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_different_tasks_different_endpoints(self, mock_post):
         """Test that different tasks call different endpoints"""
         mock_response = Mock()
@@ -429,7 +432,7 @@ class TestMultipleTasks:
 class TestUrlConstruction:
     """Test URL construction and the fix for double slash issues"""
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_url_construction_with_trailing_slash(self, mock_post):
         """Test URL construction with trailing slash in base URL"""
         mock_response = Mock()
@@ -449,7 +452,7 @@ class TestUrlConstruction:
         assert called_url == "http://localhost:8080/test_task"
         assert "//" not in called_url.replace("://", "")
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_url_construction_without_trailing_slash(self, mock_post):
         """Test URL construction without trailing slash in base URL"""
         mock_response = Mock()
@@ -468,7 +471,7 @@ class TestUrlConstruction:
         called_url = mock_post.call_args[0][0]
         assert called_url == "http://localhost:8080/test_task"
     
-    @patch('mindtrace.services.core.service.httpx.post')
+    @patch('mindtrace.services.base.utils.httpx.post')
     def test_url_construction_various_formats(self, mock_post):
         """Test URL construction with various URL formats"""
         mock_response = Mock()

@@ -1,6 +1,9 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
-from mindtrace.services import Service, TaskSchema
+from mindtrace.core import TaskSchema
+from mindtrace.services import Service
 
 
 class EchoInput(BaseModel):
@@ -11,17 +14,19 @@ class EchoOutput(BaseModel):
     echoed: str
 
 
-echo_task = TaskSchema(
-    name="echo",
-    input_schema=EchoInput,
-    output_schema=EchoOutput,
-)
+class EchoTaskSchema(TaskSchema):
+    name: str = "echo"
+    input_schema: type[EchoInput] = EchoInput
+    output_schema: type[EchoOutput] = EchoOutput
+
+
+echo_task = EchoTaskSchema()
 
 
 class EchoService(Service):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.add_endpoint("echo", self.echo, task=echo_task)
+        self.add_endpoint("echo", self.echo, schema=echo_task)
 
     def echo(self, payload: EchoInput) -> EchoOutput:
         return EchoOutput(echoed=payload.message)
