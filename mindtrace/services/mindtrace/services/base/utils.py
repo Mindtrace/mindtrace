@@ -100,8 +100,16 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     return wrapper
 
 
-def generate_connection_manager(service_cls):
-    """Generates a dedicated ConnectionManager class with one method per endpoint."""
+def generate_connection_manager(service_cls, protected_methods: list[str] = ['shutdown', 'ashutdown', 'status', 'astatus']):
+    """Generates a dedicated ConnectionManager class with one method per endpoint.
+    
+    Args:
+        service_cls: The service class to generate a connection manager for.
+        protected_methods: A list of methods that should not be overridden by dynamic methods.
+        
+    Returns:
+        A ConnectionManager class with one method per endpoint.        
+    """
 
     class_name = f"{service_cls.__name__}ConnectionManager"
 
@@ -110,10 +118,7 @@ def generate_connection_manager(service_cls):
 
     # Create a temporary service instance to get the endpoints
     temp_service = service_cls()
-    
-    # Properties that should not be overridden by dynamic methods
-    protected_methods = ['shutdown']
-    
+        
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
         # Skip if this would override an existing method in ConnectionManager

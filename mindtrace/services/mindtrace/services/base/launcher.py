@@ -30,7 +30,7 @@ class Launcher(BaseApplication):
             name=server.unique_name,
             stream_level=logging.INFO,
             file_level=logging.DEBUG,
-            log_dir=Path(server.config["MINDTRACE_DEFAULT_LOG_DIR"]),
+            log_dir=Path(server.config["MINDTRACE_LOGGER_DIR"]),
         )
         self.application = server.app
         server.url = options.bind
