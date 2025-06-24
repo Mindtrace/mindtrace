@@ -336,7 +336,7 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     pass
 
 
-class MindtraceABC(Mindtrace, metaclass=MindtraceABCMeta):
+class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     """Abstract base class combining Mindtrace class functionality with ABC support.
 
     This class enables creating abstract classes that also have access to all Mindtrace features
@@ -361,4 +361,5 @@ class MindtraceABC(Mindtrace, metaclass=MindtraceABCMeta):
         would fail due to metaclass conflicts. MindtraceABC resolves this by using the CombinedABCMeta.
     """
 
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
