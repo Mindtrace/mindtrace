@@ -506,7 +506,7 @@ def test_registered_materializers(registry):
     assert "builtins.tuple" in materializers
     assert "builtins.set" in materializers
     assert "builtins.bytes" in materializers
-    assert "pathlib.PosixPath" in materializers
+    assert "pathlib.PosixPath" in materializers or "pathlib._local.PosixPath" in materializers
     assert "pydantic.BaseModel" in materializers
     assert "mindtrace.core.config.config.Config" in materializers
     
