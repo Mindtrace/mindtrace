@@ -1,3 +1,7 @@
 def Config():
     """Template Config "class"."""
-    return {}
+    return {
+    'LOGGER': {
+        'LOG_DIR': '.cache/mindtrace/logs',
+    }
+}

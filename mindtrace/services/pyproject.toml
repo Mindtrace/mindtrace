@@ -3,6 +3,7 @@ name = "mindtrace-services"
 version = "0.1.0"
 dependencies = [
     "mindtrace-core",
+    "structlog>=24.4.0",
 ]
 
 [tool.setuptools]
