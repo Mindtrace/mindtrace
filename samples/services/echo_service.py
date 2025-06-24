@@ -44,10 +44,10 @@ def sync_example():
         print(f"Sent: 'Sync mode is working!'")
         print(f"Received: '{result2.echoed}'")
         
-        # Non-blocking call (returns job info instead of waiting for result)
-        job_result = connection_manager.echo(message="Non-blocking call", blocking=False)
-        print(f"Sent (non-blocking): 'Non-blocking call'")
-        print(f"Job result: {job_result}")
+        # Raw output call (returns raw dict instead of validated object)
+        job_result = connection_manager.echo(message="Raw output call", validate_output=False)
+        print(f"Sent (raw output): 'Raw output call'")
+        print(f"Raw result: {job_result}")
         
     except Exception as e:
         print(f"Error during sync calls: {e}")
@@ -103,13 +103,13 @@ async def async_example():
         for i, result in enumerate(results, 1):
             print(f"Result {i}: '{result.echoed}'")
         
-        # Non-blocking async call
+        # Raw output async call
         job_result = await connection_manager.aecho(
-            message="Async non-blocking call", 
-            blocking=False
+            message="Async raw output call", 
+            validate_output=False
         )
-        print(f"Sent (async non-blocking): 'Async non-blocking call'")
-        print(f"Job result: {job_result}")
+        print(f"Sent (async raw output): 'Async raw output call'")
+        print(f"Raw result: {job_result}")
         
     except Exception as e:
         print(f"Error during async calls: {e}")
