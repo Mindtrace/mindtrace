@@ -112,7 +112,6 @@ def generate_connection_manager(service_cls):
     temp_service = service_cls()
     
     # Properties that should not be overridden by dynamic methods
-    #protected_names = ['endpoints', 'status', 'server_id', 'pid_file', 'heartbeat', 'shutdown']
     protected_methods = ['shutdown']
     
     # Dynamically define one method per endpoint
