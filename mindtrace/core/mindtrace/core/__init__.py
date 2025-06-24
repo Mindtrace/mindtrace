@@ -1,4 +1,4 @@
-from mindtrace.core.utils import check_libs, ifnone, first_not_none
+from mindtrace.core.utils.checks import check_libs, ifnone, first_not_none
 from mindtrace.core.utils.dynamic import instantiate_target, get_class
 from mindtrace.core.config import Config
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
