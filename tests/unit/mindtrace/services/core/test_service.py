@@ -7,44 +7,44 @@ from mindtrace.core import TaskSchema
 from mindtrace.services import Service, generate_connection_manager
 
 
-class TestInput(BaseModel):
+class SampleInput(BaseModel):
     message: str
     count: int = 1
 
 
-class TestOutput(BaseModel):
+class SampleOutput(BaseModel):
     result: str
     processed_count: int
 
 
-class TestService(Service):
+class SampleService(Service):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         # Add a test task
         test_task = TaskSchema(
             name="test_task",
-            input_schema=TestInput,
-            output_schema=TestOutput,
+            input_schema=SampleInput,
+            output_schema=SampleOutput,
         )
         self.add_endpoint("test_task", self.test_handler, schema=test_task)
         
         # Add another task for multiple task testing
         echo_task = TaskSchema(
             name="echo",
-            input_schema=TestInput,
-            output_schema=TestOutput,
+            input_schema=SampleInput,
+            output_schema=SampleOutput,
         )
         self.add_endpoint("echo", self.echo_handler, schema=echo_task)
 
-    def test_handler(self, payload: TestInput) -> TestOutput:
-        return TestOutput(
+    def test_handler(self, payload: SampleInput) -> SampleOutput:
+        return SampleOutput(
             result=f"Processed: {payload.message}",
             processed_count=payload.count * 2
         )
     
-    def echo_handler(self, payload: TestInput) -> TestOutput:
-        return TestOutput(
+    def echo_handler(self, payload: SampleInput) -> SampleOutput:
+        return SampleOutput(
             result=payload.message,
             processed_count=payload.count
         )
@@ -54,7 +54,7 @@ class TestServiceClass:
     """Test the Service class functionality"""
     
     def test_service_initialization(self):
-        service = TestService()
+        service = SampleService()
         # Check that our custom endpoints are present (plus system endpoints)
         assert "test_task" in service.endpoints
         assert "echo" in service.endpoints
@@ -63,19 +63,19 @@ class TestServiceClass:
         assert "heartbeat" in service.endpoints
     
     def test_task_schema_registration(self):
-        service = TestService()
+        service = SampleService()
         
         # Check test_task
         test_task = service.endpoints["test_task"]
         assert test_task.name == "test_task"
-        assert test_task.input_schema == TestInput
-        assert test_task.output_schema == TestOutput
+        assert test_task.input_schema == SampleInput
+        assert test_task.output_schema == SampleOutput
         
         # Check echo task
         echo_task = service.endpoints["echo"]
         assert echo_task.name == "echo"
-        assert echo_task.input_schema == TestInput
-        assert echo_task.output_schema == TestOutput
+        assert echo_task.input_schema == SampleInput
+        assert echo_task.output_schema == SampleOutput
     
     def test_add_endpoint_without_task(self):
         service = Service()
@@ -93,10 +93,10 @@ class TestGenerateConnectionManager:
     
     def test_connection_manager_generation(self):
         """Test that connection manager is generated with correct methods"""
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         
         # Check class name
-        assert ConnectionManager.__name__ == "TestServiceConnectionManager"
+        assert ConnectionManager.__name__ == "SampleServiceConnectionManager"
         
         # Check that methods exist
         manager_instance = Mock()
@@ -114,7 +114,7 @@ class TestGenerateConnectionManager:
     
     def test_method_names_and_docs(self):
         """Test that generated methods have correct names and documentation"""
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         
         # Test sync method
         test_method = getattr(ConnectionManager, "test_task")
@@ -145,7 +145,7 @@ class TestSyncMethods:
         mock_post.return_value = mock_response
         
         # Create connection manager and instance
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -161,7 +161,7 @@ class TestSyncMethods:
         )
         
         # Verify the result
-        assert isinstance(result, TestOutput)
+        assert isinstance(result, SampleOutput)
         assert result.result == "Processed: test message"
         assert result.processed_count == 2
     
@@ -173,7 +173,7 @@ class TestSyncMethods:
         mock_response.json.return_value = {"job_id": "123", "status": "pending"}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -188,7 +188,7 @@ class TestSyncMethods:
             timeout=30
         )
         
-        # Should return raw result, not parsed as TestOutput
+        # Should return raw result, not parsed as SampleOutput
         assert result == {"job_id": "123", "status": "pending"}
     
     @patch('mindtrace.services.base.utils.httpx.post')
@@ -199,7 +199,7 @@ class TestSyncMethods:
         mock_response.text = "Internal Server Error"
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -219,7 +219,7 @@ class TestSyncMethods:
         mock_response.json.return_value = {"job_id": "123", "status": "completed", "result": "done"}
         mock_get.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -236,7 +236,7 @@ class TestSyncMethods:
         mock_response.status_code = 404
         mock_get.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -265,7 +265,7 @@ class TestAsyncMethods:
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
         # Create connection manager and instance
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -281,7 +281,7 @@ class TestAsyncMethods:
         )
         
         # Verify the result
-        assert isinstance(result, TestOutput)
+        assert isinstance(result, SampleOutput)
         assert result.result == "Processed: async test"
         assert result.processed_count == 4
     
@@ -296,7 +296,7 @@ class TestAsyncMethods:
         mock_client.post.return_value = mock_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -319,7 +319,7 @@ class TestAsyncMethods:
         mock_client.get.return_value = mock_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -339,7 +339,7 @@ class TestAsyncMethods:
         mock_client.get.return_value = mock_response
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -360,7 +360,7 @@ class TestInputValidation:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -375,7 +375,7 @@ class TestInputValidation:
     
     def test_input_validation_error(self):
         """Test that input validation raises appropriate errors"""
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -392,7 +392,7 @@ class TestInputValidation:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -413,7 +413,7 @@ class TestInputValidation:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -432,7 +432,7 @@ class TestMultipleTasks:
     
     def test_multiple_tasks_registered(self):
         """Test that multiple tasks are properly registered"""
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         
         # Both tasks should be available
         assert hasattr(ConnectionManager, "test_task")
@@ -448,7 +448,7 @@ class TestMultipleTasks:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
@@ -483,7 +483,7 @@ class TestUrlConstruction:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8080/"  # with trailing slash
         manager.__class__ = ConnectionManager
@@ -503,7 +503,7 @@ class TestUrlConstruction:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         manager = Mock()
         manager.url = "http://localhost:8080"  # without trailing slash
         manager.__class__ = ConnectionManager
@@ -522,7 +522,7 @@ class TestUrlConstruction:
         mock_response.json.return_value = {"result": "test", "processed_count": 1}
         mock_post.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(TestService)
+        ConnectionManager = generate_connection_manager(SampleService)
         
         test_urls = [
             "http://localhost:8080/",
