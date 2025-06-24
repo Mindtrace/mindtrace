@@ -60,7 +60,19 @@ members = [
 
 [tool.ds.scripts]
 test = """
-    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${@:- --maxfail=1 tests}
+    # Run all tests
+    # ds test
+
+    # Run only unit tests
+    # ds test --unit
+
+    # Run only integration tests
+    # ds test --integration
+
+    # Run specific test file or function
+    # ds test tests/unit/mindtrace/registry/backends/test_minio_registry_backend.py::test_register_materializer
+
+    bash scripts/run_tests.sh ${@:- --maxfail=1 --slow-last}
 """
 
 [tool.ruff]
