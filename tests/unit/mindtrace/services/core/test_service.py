@@ -157,7 +157,7 @@ class TestSyncMethods:
         mock_post.assert_called_once_with(
             "http://localhost:8000/test_task",
             json={"message": "test message", "count": 1},
-            params={"blocking": "true"},
+            params={"validate_output": "true"},
             timeout=30
         )
         
@@ -167,8 +167,8 @@ class TestSyncMethods:
         assert result.processed_count == 2
     
     @patch('mindtrace.services.base.utils.httpx.post')
-    def test_sync_method_non_blocking(self, mock_post):
-        """Test non-blocking sync method call"""
+    def test_sync_method_non_validating(self, mock_post):
+        """Test non-validating sync method call"""
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"job_id": "123", "status": "pending"}
@@ -179,13 +179,13 @@ class TestSyncMethods:
         manager.url = "http://localhost:8000"
         manager.__class__ = ConnectionManager
         
-        # Call non-blocking
-        result = ConnectionManager.test_task(manager, blocking=False, message="test", count=1)
+        # Call without output validation
+        result = ConnectionManager.test_task(manager, validate_output=False, message="test", count=1)
         
         # Verify parameters
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert call_args[1]["params"]["blocking"] == "false"
+        assert call_args[1]["params"]["validate_output"] == "false"
         
         # Should return raw result, not parsed as TestOutput
         assert result == {"job_id": "123", "status": "pending"}
@@ -276,7 +276,7 @@ class TestAsyncMethods:
         mock_client.post.assert_called_once_with(
             "http://localhost:8000/test_task",
             json={"message": "async test", "count": 2},
-            params={"blocking": "true"}
+            params={"validate_output": "true"}
         )
         
         # Verify the result
