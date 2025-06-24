@@ -5,13 +5,6 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
-from zenml.materializers import (
-    BuiltInMaterializer, 
-    BuiltInContainerMaterializer, 
-    BytesMaterializer, 
-    PathMaterializer, 
-    PydanticMaterializer
-)
 from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import (
@@ -70,7 +63,8 @@ class Registry(Mindtrace):
 
         1. Materializer provided as an argument.
         2. Materializer previously registered for the object type.
-        3. The object itself, if it's its own materializer.
+        3. Materializer for any of the object's base classes (checked recursively).
+        4. The object itself, if it's its own materializer.
         
         If a materializer cannot be found through one of the above means, an error will be raised.
         
@@ -86,11 +80,23 @@ class Registry(Mindtrace):
             ValueError: If no materializer is found for the object.
         """
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
+        
+        # Get all base classes recursively
+        def get_all_base_classes(cls):
+            bases = []
+            for base in cls.__bases__:
+                bases.append(base)
+                bases.extend(get_all_base_classes(base))
+            return bases
+        
+        # Try to find a materializer in order of precedence
         materializer = first_not_none((
             materializer,
             self.registered_materializer(object_class),
+            *[self.registered_materializer(f"{base.__module__}.{base.__name__}") for base in get_all_base_classes(type(obj))],
             object_class if isinstance(obj, BaseMaterializer) else None,
         ))
+        
         if materializer is None:
             raise ValueError(f"No materializer found for object of type {type(obj)}.")
         materializer_class = f"{type(materializer).__module__}.{type(materializer).__name__}" if not isinstance(materializer, str) else materializer
@@ -111,7 +117,7 @@ class Registry(Mindtrace):
             }
             
             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                materializer = instantiate_target(self.registered_materializer(object_class), uri=temp_dir, artifact_store=self._artifact_store)
+                materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
                 materializer.save(obj)
                 self.backend.push(name=name, version=version, local_path=temp_dir)
                 self.backend.save_metadata(name=name, version=version, metadata=metadata)
@@ -153,13 +159,14 @@ class Registry(Mindtrace):
         self.logger.debug(f"Metadata: {metadata}")
 
         object_class = metadata["class"]
+        materializer = metadata["materializer"]
         init_params = metadata.get("init_params", {}).copy()
         init_params.update(kwargs)
 
         try:
             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                 self.backend.pull(name=name, version=version, local_path=temp_dir)
-                materializer = instantiate_target(self.registered_materializer(object_class), uri=temp_dir, artifact_store=self._artifact_store)
+                materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
                 
                 # Convert string class name to actual class
                 if isinstance(object_class, str):
@@ -470,7 +477,7 @@ class Registry(Mindtrace):
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
     def _register_default_materializers(self):
-        """Register default materializers for built-in object types."""
+        """Register default materializers."""
 
         # Core zenml materializers
         self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
@@ -494,5 +501,37 @@ class Registry(Mindtrace):
             self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
+        except ImportError:
+            pass
+        
+        try:
+            import transformers
+            self.register_materializer("transformers.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
+            self.register_materializer("transformers.modeling_utils.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
+        except ImportError:
+            pass
+
+        # (Optional) NumPy materializers
+        try:
+            import numpy
+            self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
+        except ImportError:
+            pass
+
+        # (Optional) Pillow materializers
+        try:
+            from PIL import Image
+            self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
+        except ImportError:
+            pass
+
+        # (Optional) PyTorch materializers
+        try:
+            import torch
+            self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
+            self.register_materializer("torch.nn.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
+            self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
         except ImportError:
             pass
