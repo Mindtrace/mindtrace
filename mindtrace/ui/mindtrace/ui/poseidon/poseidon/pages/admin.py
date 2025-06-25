@@ -22,45 +22,134 @@ def admin_content():
             # Page header
             rx.box(
                 rx.heading(
-                    "Admin & Security",
+                    "Admin Dashboard",
                     **content_variants["page_title"]
                 ),
                 rx.text(
-                    "User management, system configuration, and audit trails",
+                    "Organization management, user administration, and system configuration",
                     **content_variants["page_subtitle"]
                 ),
                 **content_variants["page_header"]
             ),
             
-            # User Management card
+            # Admin cards grid
             rx.box(
+                # User Management card
+                rx.link(
+                    rx.box(
+                        rx.vstack(
+                            rx.text("👥", font_size=TYPOGRAPHY["font_sizes"]["4xl"]),
+                            rx.heading(
+                                "User Management",
+                                font_size=TYPOGRAPHY["font_sizes"]["xl"],
+                                font_weight=TYPOGRAPHY["font_weights"]["semibold"],
+                                color=COLORS["text"],
+                            ),
+                            rx.text(
+                                "Manage user accounts, roles, and project assignments",
+                                color=COLORS["text_muted"],
+                                font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                                text_align="center",
+                            ),
+                            rx.text(
+                                "Manage Users →",
+                                color=COLORS["primary"],
+                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                            ),
+                            spacing="3",
+                            align="center",
+                        ),
+                        **card_variants["feature"],
+                    ),
+                    href="/user-management",
+                    text_decoration="none",
+                ),
+                
+                # Organization Settings card
                 rx.box(
                     rx.vstack(
-                        rx.text("👥", font_size=TYPOGRAPHY["font_sizes"]["4xl"]),
+                        rx.text("🏢", font_size=TYPOGRAPHY["font_sizes"]["4xl"]),
                         rx.heading(
-                            "User Management",
+                            "Organization Settings",
                             font_size=TYPOGRAPHY["font_sizes"]["xl"],
                             font_weight=TYPOGRAPHY["font_weights"]["semibold"],
                             color=COLORS["text"],
                         ),
                         rx.text(
-                            "Manage user accounts, roles, and permissions",
+                            "Configure organization preferences and limits",
                             color=COLORS["text_muted"],
                             font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                            text_align="center",
                         ),
-                        rx.link(
-                            "Manage Users →",
-                            href="#",
+                        rx.text(
+                            "Configure →",
                             color=COLORS["primary"],
                             font_weight=TYPOGRAPHY["font_weights"]["medium"],
                         ),
                         spacing="3",
-                        align="start",
+                        align="center",
                     ),
-                    **card_variants["feature"]
+                    **card_variants["feature"],
                 ),
-                max_width="400px",
-                margin_bottom=SPACING["xl"],
+                
+                # Project Management card
+                rx.box(
+                    rx.vstack(
+                        rx.text("📋", font_size=TYPOGRAPHY["font_sizes"]["4xl"]),
+                        rx.heading(
+                            "Project Management",
+                            font_size=TYPOGRAPHY["font_sizes"]["xl"],
+                            font_weight=TYPOGRAPHY["font_weights"]["semibold"],
+                            color=COLORS["text"],
+                        ),
+                        rx.text(
+                            "Create and manage inspection projects",
+                            color=COLORS["text_muted"],
+                            font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                            text_align="center",
+                        ),
+                        rx.text(
+                            "Manage Projects →",
+                            color=COLORS["primary"],
+                            font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                        ),
+                        spacing="3",
+                        align="center",
+                    ),
+                    **card_variants["feature"],
+                ),
+                
+                # Analytics card
+                rx.box(
+                    rx.vstack(
+                        rx.text("📊", font_size=TYPOGRAPHY["font_sizes"]["4xl"]),
+                        rx.heading(
+                            "Analytics & Reports",
+                            font_size=TYPOGRAPHY["font_sizes"]["xl"],
+                            font_weight=TYPOGRAPHY["font_weights"]["semibold"],
+                            color=COLORS["text"],
+                        ),
+                        rx.text(
+                            "View system usage and performance metrics",
+                            color=COLORS["text_muted"],
+                            font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                            text_align="center",
+                        ),
+                        rx.text(
+                            "View Reports →",
+                            color=COLORS["primary"],
+                            font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                        ),
+                        spacing="3",
+                        align="center",
+                    ),
+                    **card_variants["feature"],
+                ),
+                
+                display="grid",
+                grid_template_columns="repeat(auto-fit, minmax(300px, 1fr))",
+                gap=SPACING["xl"],
+                margin_bottom=SPACING["2xl"],
             ),
             
             # Admin info section
@@ -72,15 +161,63 @@ def admin_content():
                     margin_bottom=SPACING["md"],
                 ),
                 rx.box(
-                    rx.text(
-                        f"Logged in as: {AuthState.user_display_name}",
-                        color=COLORS["text"],
-                        font_weight=TYPOGRAPHY["font_weights"]["medium"],
-                    ),
-                    rx.text(
-                        f"Role: {AuthState.role_display}",
-                        color=COLORS["text_muted"],
-                        font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                    rx.vstack(
+                        rx.hstack(
+                            rx.text(
+                                "Admin:",
+                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                color=COLORS["text"],
+                                min_width="120px",
+                            ),
+                            rx.text(
+                                AuthState.user_display_name,
+                                color=COLORS["text_muted"],
+                            ),
+                            spacing="4",
+                            align="center",
+                        ),
+                        rx.hstack(
+                            rx.text(
+                                "Organization:",
+                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                color=COLORS["text"],
+                                min_width="120px",
+                            ),
+                            rx.text(
+                                AuthState.user_organization_id,
+                                color=COLORS["text_muted"],
+                                font_family="monospace",
+                            ),
+                            spacing="4",
+                            align="center",
+                        ),
+                        rx.hstack(
+                            rx.text(
+                                "Roles:",
+                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                color=COLORS["text"],
+                                min_width="120px",
+                            ),
+                            rx.foreach(
+                                AuthState.user_org_roles,
+                                lambda role: rx.text(
+                                    role,
+                                    padding="2px 6px",
+                                    background=COLORS["primary"],
+                                    color="white",
+                                    border_radius=SIZING["border_radius"],
+                                    font_size=TYPOGRAPHY["font_sizes"]["xs"],
+                                    font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                    margin="1px",
+                                    display="inline-block",
+                                ),
+                            ),
+                            spacing="4",
+                            align="center",
+                        ),
+                        spacing="3",
+                        align="stretch",
+                        width="100%",
                     ),
                     **card_variants["default"]
                 ),

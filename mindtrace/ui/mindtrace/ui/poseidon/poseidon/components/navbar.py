@@ -102,11 +102,20 @@ def sidebar() -> rx.Component:
                     nav_item("Profile", "/profile", "👤"),
                 ]),
                 
+                # Super Admin section (conditional)
+                rx.cond(
+                    AuthState.is_super_admin,
+                    nav_section("SUPER ADMIN", [
+                        nav_item("System Management", "/super-admin", "🔧"),
+                    ]),
+                ),
+                
                 # Admin section (conditional)
                 rx.cond(
                     AuthState.is_admin,
                     nav_section("ADMIN", [
                         nav_item("Admin Panel", "/admin", "⚙️"),
+                        nav_item("User Management", "/user-management", "👥"),
                     ]),
                 ),
                 
@@ -146,7 +155,7 @@ def header() -> rx.Component:
                         color=COLORS["text"],
                     ),
                     rx.text(
-                        AuthState.role_display,
+                        AuthState.org_role_display,
                         font_size=TYPOGRAPHY["font_sizes"]["sm"],
                         color=COLORS["text_muted"],
                     ),

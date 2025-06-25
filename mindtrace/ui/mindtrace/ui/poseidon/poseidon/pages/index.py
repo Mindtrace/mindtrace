@@ -105,12 +105,21 @@ def index() -> rx.Component:
                             "/profile"
                         ),
                         rx.cond(
-                            AuthState.is_admin,
+                            AuthState.is_super_admin,
                             simple_nav_card(
-                                "Admin Panel",
-                                "System administration",
-                                "⚙️",
-                                "/admin"
+                                "Super Admin",
+                                "System-wide management",
+                                "🔧",
+                                "/super-admin"
+                            ),
+                            rx.cond(
+                                AuthState.is_admin,
+                                simple_nav_card(
+                                    "Admin Panel",
+                                    "Organization administration",
+                                    "⚙️",
+                                    "/admin"
+                                ),
                             ),
                         ),
                         display="grid",

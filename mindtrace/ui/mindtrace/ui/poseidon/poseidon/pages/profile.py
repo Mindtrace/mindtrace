@@ -26,7 +26,7 @@ def profile_content():
                     **content_variants["page_title"]
                 ),
                 rx.text(
-                    "Manage your account information and preferences",
+                    "Manage your account information and permissions",
                     **content_variants["page_subtitle"]
                 ),
                 **content_variants["page_header"]
@@ -76,52 +76,19 @@ def profile_content():
                         ),
                         rx.hstack(
                             rx.text(
-                                "Role:",
+                                "Organization ID:",
                                 font_weight=TYPOGRAPHY["font_weights"]["medium"],
                                 color=COLORS["text"],
                                 min_width="120px",
                             ),
                             rx.text(
-                                AuthState.role_display,
-                                color=COLORS["primary"],
-                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                AuthState.user_organization_id,
+                                color=COLORS["text_muted"],
+                                font_family="monospace",
+                                font_size=TYPOGRAPHY["font_sizes"]["sm"],
                             ),
                             spacing="4",
                             align="center",
-                        ),
-                        rx.cond(
-                            AuthState.has_project,
-                            rx.hstack(
-                                rx.text(
-                                    "Project:",
-                                    font_weight=TYPOGRAPHY["font_weights"]["medium"],
-                                    color=COLORS["text"],
-                                    min_width="120px",
-                                ),
-                                rx.text(
-                                    AuthState.user_project,
-                                    color=COLORS["text_muted"],
-                                ),
-                                spacing="4",
-                                align="center",
-                            ),
-                        ),
-                        rx.cond(
-                            AuthState.has_organization,
-                            rx.hstack(
-                                rx.text(
-                                    "Organization:",
-                                    font_weight=TYPOGRAPHY["font_weights"]["medium"],
-                                    color=COLORS["text"],
-                                    min_width="120px",
-                                ),
-                                rx.text(
-                                    AuthState.user_organization,
-                                    color=COLORS["text_muted"],
-                                ),
-                                spacing="4",
-                                align="center",
-                            ),
                         ),
                         spacing="4",
                         align="stretch",
@@ -129,6 +96,87 @@ def profile_content():
                     ),
                     
                     spacing="6",
+                    align="start",
+                    width="100%",
+                ),
+                **card_variants["default"],
+                max_width="600px",
+                margin_bottom=SPACING["xl"],
+            ),
+            
+            # Organization Roles card
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Organization Roles",
+                        font_size=TYPOGRAPHY["font_sizes"]["lg"],
+                        color=COLORS["text"],
+                        margin_bottom=SPACING["md"],
+                    ),
+                    rx.cond(
+                        AuthState.user_org_roles,
+                        rx.foreach(
+                            AuthState.user_org_roles,
+                            lambda role: rx.text(
+                                role,
+                                padding="4px 8px",
+                                background=rx.cond(role == "org_admin", COLORS["primary"], COLORS["text_muted"]),
+                                color="white",
+                                border_radius=SIZING["border_radius"],
+                                font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                                font_weight=TYPOGRAPHY["font_weights"]["medium"],
+                                margin="2px",
+                            ),
+                        ),
+                        rx.text(
+                            "No organization roles assigned",
+                            color=COLORS["text_muted"],
+                            font_style="italic",
+                        ),
+                    ),
+                    spacing="4",
+                    align="start",
+                    width="100%",
+                ),
+                **card_variants["default"],
+                max_width="600px",
+                margin_bottom=SPACING["xl"],
+            ),
+            
+            # Project Assignments card
+            rx.box(
+                rx.vstack(
+                    rx.heading(
+                        "Project Assignments",
+                        font_size=TYPOGRAPHY["font_sizes"]["lg"],
+                        color=COLORS["text"],
+                        margin_bottom=SPACING["md"],
+                    ),
+                    rx.cond(
+                        AuthState.has_projects,
+                        rx.foreach(
+                            AuthState.project_assignments_display,
+                            lambda assignment_text: rx.box(
+                                rx.text(
+                                    assignment_text,
+                                    color=COLORS["text"],
+                                    font_family="monospace",
+                                    font_size=TYPOGRAPHY["font_sizes"]["sm"],
+                                ),
+                                padding=SPACING["md"],
+                                border=f"{SIZING['border_width']} solid {COLORS['border']}",
+                                border_radius=SIZING["border_radius"],
+                                background=COLORS["surface"],
+                                margin_bottom="3",
+                            ),
+                        ),
+                        rx.text(
+                            "No project assignments",
+                            color=COLORS["text_muted"],
+                            font_style="italic",
+                        ),
+                    ),
+                    spacing="4",
                     align="start",
                     width="100%",
                 ),
