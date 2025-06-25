@@ -39,6 +39,22 @@ T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', o
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
 
 
+class DowngradeGunicornSigterm(logging.Filter):
+    """Downgrade gunicorn SIGTERM logs to INFO level.
+
+    As all gunicorn logs are ERROR level, this filter is used to downgrade the SIGTERM logs to INFO level, as it is 
+    expected behavior for when killing a service.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        if (
+            record.name == "gunicorn.error" and
+            "was sent SIGTERM" in record.getMessage()
+        ):
+            record.levelname = "INFO"
+            record.levelno = logging.INFO
+        return True
+
+
 class Service(Mindtrace):
     """Base class for all Mindtrace services."""
 
@@ -57,6 +73,7 @@ class Service(Mindtrace):
         description: str | None = None,
         terms_of_service: str | None = None,
         license_info: str | None = None,
+        **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -72,7 +89,7 @@ class Service(Mindtrace):
         Warning: Services should be created via the ServiceClass.launch() method. The __init__ method here should be
         considered private internal use.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self.id, self.pid_file = self._generate_id_and_pid_file()
 
@@ -82,17 +99,12 @@ class Service(Mindtrace):
         # 3. Default URL from config
         self._url = self.build_url(url=url, host=host, port=port)
 
-        """
-        self.logger = default_logger(
-            name=self.unique_name,
-            stream_level=logging.INFO,
-            file_level=logging.DEBUG,
-            file_name=self.default_log_file(),
-        )
-        """
-
         description = ifnone(description, default=f"{self.name} server.")
         version_str = "Mindtrace " + version("mindtrace-services")
+
+        # Patch Gunicorn logger to downgrade SIGTERM logs to INFO level
+        gunicorn_logger = logging.getLogger("gunicorn.error")
+        gunicorn_logger.addFilter(DowngradeGunicornSigterm())
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
@@ -119,8 +131,6 @@ class Service(Mindtrace):
         self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda _ = None: {"server_id": self.id}), schema=ServerIDSchema())
         self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda _ = None: {"pid_file": self.pid_file}), schema=PIDFileSchema())
         self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
-
-
 
 
     @classmethod
