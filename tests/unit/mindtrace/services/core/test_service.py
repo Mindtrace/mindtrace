@@ -678,6 +678,73 @@ class TestServiceCleanupMethods:
         finally:
             Service._active_servers = original_servers
 
+    @patch('mindtrace.services.core.service.psutil.Process')
+    def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
+        """Test _cleanup_server with parent terminate NoSuchProcess exception (covers lines 335-336)."""
+        # Setup mock process
+        mock_process = Mock()
+        mock_process.pid = 1234
+        
+        # Setup psutil mock
+        mock_parent = Mock()
+        mock_parent.children.return_value = []  # No children
+        # Make parent.terminate() raise NoSuchProcess
+        mock_parent.terminate.side_effect = psutil.NoSuchProcess(1234)
+        mock_parent.wait.return_value = None  # This won't be called due to exception
+        mock_psutil_process.return_value = mock_parent
+        
+        # Setup active servers
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        original_servers = Service._active_servers.copy()
+        Service._active_servers[test_uuid] = mock_process
+        
+        try:
+            # Should handle NoSuchProcess exception gracefully
+            Service._cleanup_server(test_uuid)
+            
+            # Should attempt to terminate parent (which raises NoSuchProcess)
+            mock_parent.terminate.assert_called_once()
+            # Should not call wait since terminate raised exception
+            mock_parent.wait.assert_not_called()
+            # Should still remove from active servers
+            assert test_uuid not in Service._active_servers
+            
+        finally:
+            Service._active_servers = original_servers
+
+    @patch('mindtrace.services.core.service.psutil.Process')
+    def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
+        """Test _cleanup_server with parent wait NoSuchProcess exception (covers lines 335-336)."""
+        # Setup mock process
+        mock_process = Mock()
+        mock_process.pid = 1234
+        
+        # Setup psutil mock
+        mock_parent = Mock()
+        mock_parent.children.return_value = []  # No children
+        mock_parent.terminate.return_value = None
+        # Make parent.wait() raise NoSuchProcess
+        mock_parent.wait.side_effect = psutil.NoSuchProcess(1234)
+        mock_psutil_process.return_value = mock_parent
+        
+        # Setup active servers
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        original_servers = Service._active_servers.copy()
+        Service._active_servers[test_uuid] = mock_process
+        
+        try:
+            # Should handle NoSuchProcess exception gracefully
+            Service._cleanup_server(test_uuid)
+            
+            # Should call both terminate and wait
+            mock_parent.terminate.assert_called_once()
+            mock_parent.wait.assert_called_once_with(timeout=5)
+            # Should still remove from active servers
+            assert test_uuid not in Service._active_servers
+            
+        finally:
+            Service._active_servers = original_servers
+
     def test_cleanup_all_servers(self):
         """Test _cleanup_all_servers method (covers lines 345-346)."""
         # Setup multiple mock servers
