@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Any, Type
+from typing import Any, Dict, Type
 from uuid import UUID
 
 from mindtrace.core import TaskSchema
@@ -47,3 +47,12 @@ class ExecuteSchema(TaskSchema):
     name: str = "execute"
     input_schema: Type[ExecuteInput] = ExecuteInput
     output_schema: Type[ExecuteOutput] = ExecuteOutput
+
+
+class SchemaOutput(BaseModel):
+    schemas: Dict[str, Dict[str, Any]]  # {capability_name: {input: ..., output: ...}}
+
+
+class SchemaSchema(TaskSchema):
+    name: str = "schema"
+    output_schema: Type[SchemaOutput] = SchemaOutput

@@ -22,6 +22,8 @@ from mindtrace.services.mcp.types import (
     ExecuteSchema, 
     ExecuteInput, 
     ExecuteOutput,
+    SchemaOutput,
+    SchemaSchema,
 )
 from mindtrace.services.mcp.mcp_service import MCPService
 

@@ -12,7 +12,9 @@ from mindtrace.services import (
     ExecuteOutput, 
     ExecuteSchema, 
     IdentityOutput, 
-    IdentitySchema, 
+    IdentitySchema,
+    SchemaOutput,
+    SchemaSchema,
     Service
 )
 
@@ -25,6 +27,7 @@ class MCPService(Service):
         self.add_endpoint("identity", self.identity, schema=IdentitySchema())
         self.add_endpoint("capabilities", self.capabilities, schema=CapabilitiesSchema())
         self.add_endpoint("execute", self.execute, schema=ExecuteSchema())
+        self.add_endpoint("schema", self.schema, schema=SchemaSchema())
 
     def identity(self):
         return IdentityOutput(
@@ -56,3 +59,14 @@ class MCPService(Service):
         
         result = pipeline.run(data.inputs or {})
         return ExecuteOutput(output=result)
+
+    def schema(self, _ = None):
+        return SchemaOutput(schemas={
+            name: {
+                "input": task.input_schema.model_json_schema() if task.input_schema else None,
+                "output": task.output_schema.model_json_schema() if task.output_schema else None,
+            }
+            for name, task in self._endpoints.items()
+            if name not in {"identity", "capabilities", "execute"}
+        })
+
