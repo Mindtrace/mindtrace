@@ -99,14 +99,25 @@ if [ "$RUN_STRESS" = true ]; then
     PROJECT_ROOT=$(pwd)
     STRESS_TEST_PATH="$PROJECT_ROOT/tests/stress"
     
-    cd mindtrace
-    
     # For stress tests, use coverage only if other tests are also running
     if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
+        # Copy coverage data to mindtrace directory for proper combining
+        if [ -f .coverage ]; then
+            cp .coverage mindtrace/
+        fi
+        
+        cd mindtrace
+        
         # Include coverage to combine with other test results
-        pytest -rs -s --cov=mindtrace --cov-append --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
-
+        pytest -rs -s --cov=mindtrace --cov-report term-missing --cov-append --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
+        
+        # Copy the combined coverage data back to project root
+        if [ -f .coverage ]; then
+            cp .coverage ../
+        fi
     else
+        cd mindtrace
+        
         # Stress tests only - skip coverage for performance testing
         pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
     fi
