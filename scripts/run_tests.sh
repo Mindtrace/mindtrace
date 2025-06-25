@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Check for docker compose v2, fallback to v1
+if command -v docker &> /dev/null && docker compose version &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
+    DOCKER_COMPOSE_CMD="docker-compose"
+fi
+
 # Default test path
 TEST_PATH="tests"
 IS_INTEGRATION=false
@@ -27,7 +34,7 @@ done
 # Start MinIO container for integration tests or when running all tests
 if [ "$IS_INTEGRATION" = true ] || [ "$TEST_PATH" = "tests" ]; then
     echo "Starting MinIO container..."
-    docker-compose -f tests/docker-compose.yml up -d
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
     # Wait for MinIO to be healthy
     echo "Waiting for MinIO to be ready..."
@@ -46,7 +53,7 @@ TEST_EXIT_CODE=$?
 # Stop MinIO container only if it was started
 if [ "$IS_INTEGRATION" = true ] || [ "$TEST_PATH" = "tests" ]; then
     echo "Stopping MinIO container..."
-    docker-compose -f tests/docker-compose.yml down
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
 fi
 
 # Exit with the test exit code
