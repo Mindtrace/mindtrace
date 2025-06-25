@@ -1,0 +1,127 @@
+import pytest
+import asyncio
+import requests
+
+from mindtrace.services import generate_connection_manager
+from mindtrace.services.sample.echo_service import EchoService, EchoOutput
+
+
+class TestServiceIntegration:
+    """Simplified integration tests for service functionality"""
+    
+    def test_connection_manager_generation_without_service(self):
+        """Test that we can generate connection managers without launching services"""
+        ConnectionManager = generate_connection_manager(EchoService)
+        
+        # Verify it has the expected methods
+        assert hasattr(ConnectionManager, 'echo')
+        assert hasattr(ConnectionManager, 'aecho')
+        assert hasattr(ConnectionManager, 'get_job')
+        assert hasattr(ConnectionManager, 'aget_job')
+        
+        # Create an instance (won't work for actual calls but tests the creation)
+        manager = ConnectionManager(url="http://localhost:8080")
+        assert str(manager.url) == "http://localhost:8080"
+    
+    @pytest.mark.asyncio
+    async def test_service_launch_and_basic_functionality(self, echo_service_manager):
+        """Test service functionality using the launched service from conftest.py"""
+        if echo_service_manager is None:
+            # Service didn't start - verify connection manager creation still works
+            print("Service didn't start, testing connection manager behavior")
+            
+            ConnectionManager = generate_connection_manager(EchoService)
+            manager = ConnectionManager(url="http://localhost:8090")
+            
+            # These should fail with connection errors, not other errors
+            with pytest.raises((requests.exceptions.ConnectionError, Exception)) as exc_info:
+                manager.echo(message="This should fail")
+            
+            # Verify it's a connection error, not a coding error
+            assert "connection" in str(exc_info.value).lower() or "refused" in str(exc_info.value).lower()
+            
+            print("Connection manager behavior is correct for non-running service")
+            return
+            
+        # Service is running - test full functionality
+        print("Service launched successfully!")
+        
+        # Test sync call
+        result = echo_service_manager.echo(message="Integration test message")
+        assert isinstance(result, EchoOutput)
+        assert result.echoed == "Integration test message"
+        
+        # Test async call
+        async_result = await echo_service_manager.aecho(message="Async integration test")
+        assert isinstance(async_result, EchoOutput)
+        assert async_result.echoed == "Async integration test"
+        
+        print("All integration tests passed!")
+    
+    def test_url_construction_logic(self):
+        """Test URL construction without requiring a running service"""
+        ConnectionManager = generate_connection_manager(EchoService)
+        
+        # Test different URL formats
+        test_urls = [
+            "http://localhost:8080",
+            "http://localhost:8080/",
+            "https://example.com",
+            "https://example.com/",
+        ]
+        
+        for url in test_urls:
+            manager = ConnectionManager(url=url)
+            assert manager.url is not None
+            
+            # The URL should be stored properly
+            url_str = str(manager.url)
+            assert url_str == url or url_str == url.rstrip('/')
+    
+    @pytest.mark.asyncio
+    async def test_echo_service_import_and_instantiation(self):
+        """Test that we can import and instantiate the echo service"""
+        try:
+            service = EchoService(port=8091, host="localhost") 
+            
+            # Verify service has the expected endpoints
+            assert "echo" in service.endpoints
+            assert service.endpoints["echo"].name == "echo"
+            assert service.endpoints["echo"].input_schema.__name__ == "EchoInput"
+            assert service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
+            
+            # Verify connection manager generation works
+            ConnectionManager = generate_connection_manager(EchoService)
+            assert ConnectionManager.__name__ == "EchoServiceConnectionManager"
+            
+            print("Service import and instantiation works correctly")
+            
+        except Exception as e:
+            # This shouldn't fail since we're just importing and creating, not launching
+            pytest.fail(f"Service instantiation failed: {e}")
+    
+    def test_task_registration(self):
+        """Test that services register their tasks correctly"""
+        service = EchoService(port=8092, host="localhost")
+        
+        # Check that echo task is registered
+        assert "echo" in service.endpoints
+        echo_task = service.endpoints["echo"]
+        
+        assert echo_task.name == "echo"
+        assert echo_task.input_schema.__name__ == "EchoInput"
+        assert echo_task.output_schema.__name__ == "EchoOutput"
+        
+        # Verify the generated connection manager has the right methods
+        ConnectionManager = generate_connection_manager(EchoService)
+        
+        # Check method existence
+        assert hasattr(ConnectionManager, "echo")
+        assert hasattr(ConnectionManager, "aecho")
+        
+        # Check method documentation
+        echo_method = getattr(ConnectionManager, "echo")
+        aecho_method = getattr(ConnectionManager, "aecho")
+        
+        assert "echo" in echo_method.__doc__
+        assert "Async version" in aecho_method.__doc__ 

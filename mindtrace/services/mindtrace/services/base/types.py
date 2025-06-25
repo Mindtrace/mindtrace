@@ -10,11 +10,11 @@ from mindtrace.core import TaskSchema
 
 
 class ServerStatus(Enum):
-    Down = "Down"
-    Launching = "Launching"
-    FailedToLaunch = "FailedToLaunch"
-    Available = "Available"
-    Stopping = "Stopping"
+    DOWN = "Down"
+    LAUNCHING = "Launching"
+    FAILED_TO_LAUNCH = "FailedToLaunch"
+    AVAILABLE = "Available"
+    STOPPING = "Stopping"
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Heartbeat:
             IDs.
     """
 
-    status: ServerStatus = ServerStatus.Down
+    status: ServerStatus = ServerStatus.DOWN
     server_id: UUID | None = None
     message: str | None = None
     details: Any = None
@@ -55,7 +55,7 @@ class EndpointsOutput(BaseModel):
 
 
 class EndpointsSchema(TaskSchema):
-    name: Literal["endpoints"] = "endpoints"
+    name: str = "endpoints"
     output_schema: Type[EndpointsOutput] = EndpointsOutput
 
 
@@ -64,7 +64,7 @@ class StatusOutput(BaseModel):
 
 
 class StatusSchema(TaskSchema):
-    name: Literal["status"] = "status"
+    name: str = "status"
     output_schema: Type[StatusOutput] = StatusOutput
 
 
@@ -73,7 +73,7 @@ class HeartbeatOutput(BaseModel):
 
 
 class HeartbeatSchema(TaskSchema):
-    name: Literal["heartbeat"] = "heartbeat"
+    name: str = "heartbeat"
     output_schema: Type[HeartbeatOutput] = HeartbeatOutput
 
 
@@ -82,7 +82,7 @@ class ServerIDOutput(BaseModel):
 
 
 class ServerIDSchema(TaskSchema):
-    name: Literal["server_id"] = "server_id"
+    name: str = "server_id"
     output_schema: Type[ServerIDOutput] = ServerIDOutput
 
 
@@ -91,7 +91,7 @@ class PIDFileOutput(BaseModel):
 
 
 class PIDFileSchema(TaskSchema):
-    name: Literal["pid_file"] = "pid_file"
+    name: str = "pid_file"
     output_schema: Type[PIDFileOutput] = PIDFileOutput
 
 
@@ -100,5 +100,5 @@ class ShutdownOutput(BaseModel):
 
 
 class ShutdownSchema(TaskSchema):
-    name: Literal["shutdown"] = "shutdown"
+    name: str = "shutdown"
     output_schema: Type[ShutdownOutput] = ShutdownOutput
