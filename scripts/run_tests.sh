@@ -7,12 +7,6 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-# Check for docker compose v2, fallback to v1
-if command -v docker &> /dev/null && docker compose version &> /dev/null; then
-    DOCKER_COMPOSE_CMD="docker compose"
-else
-    DOCKER_COMPOSE_CMD="docker-compose"
-fi
 
 # Initialize test suite flags
 RUN_UNIT=false
