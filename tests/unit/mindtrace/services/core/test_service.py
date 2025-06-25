@@ -1,10 +1,18 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+import os
+import requests
+import uuid
+from uuid import UUID
+import psutil
+
 from pydantic import BaseModel
 from fastapi import HTTPException
+from urllib3.util.url import parse_url
+
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import Service, generate_connection_manager
+from mindtrace.services import generate_connection_manager, ServerStatus, Service
 
 
 class SampleInput(BaseModel):
@@ -88,470 +96,596 @@ class TestServiceClass:
             service.add_endpoint("dummy", dummy_handler)
 
 
-class TestGenerateConnectionManager:
-    """Test the generate_connection_manager function"""
+class TestServiceInitialization:
+    """Test Service initialization and ID generation."""
     
-    def test_connection_manager_generation(self):
-        """Test that connection manager is generated with correct methods"""
-        ConnectionManager = generate_connection_manager(SampleService)
+    @patch('mindtrace.services.core.service.Path')
+    def test_generate_id_and_pid_file_default(self, mock_path):
+        """Test _generate_id_and_pid_file with default parameters."""
+        mock_path.return_value.parent.mkdir = Mock()
         
-        # Check class name
-        assert ConnectionManager.__name__ == "SampleServiceConnectionManager"
+        with patch('mindtrace.services.core.service.uuid.uuid1') as mock_uuid:
+            test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+            mock_uuid.return_value = test_uuid
+            
+            unique_id, pid_file = Service._generate_id_and_pid_file()
+            
+            assert unique_id == test_uuid
+            assert str(test_uuid) in pid_file
+            assert "Service" in pid_file
+            mock_path.return_value.parent.mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    @patch('mindtrace.services.core.service.Path')
+    def test_generate_id_and_pid_file_with_unique_id(self, mock_path):
+        """Test _generate_id_and_pid_file with provided unique_id."""
+        mock_path.return_value.parent.mkdir = Mock()
         
-        # Check that methods exist
-        manager_instance = Mock()
-        manager_instance.__class__ = ConnectionManager
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        unique_id, pid_file = Service._generate_id_and_pid_file(unique_id=test_uuid)
         
-        # Sync methods
-        assert hasattr(ConnectionManager, "test_task")
-        assert hasattr(ConnectionManager, "echo")
-        assert hasattr(ConnectionManager, "get_job")
+        assert unique_id == test_uuid
+        assert str(test_uuid) in pid_file
+
+    @patch('mindtrace.services.core.service.Path')
+    def test_generate_id_and_pid_file_with_pid_file(self, mock_path):
+        """Test _generate_id_and_pid_file with provided pid_file."""
+        mock_path.return_value.parent.mkdir = Mock()
         
-        # Async methods
-        assert hasattr(ConnectionManager, "atest_task")
-        assert hasattr(ConnectionManager, "aecho")
-        assert hasattr(ConnectionManager, "aget_job")
-    
-    def test_method_names_and_docs(self):
-        """Test that generated methods have correct names and documentation"""
-        ConnectionManager = generate_connection_manager(SampleService)
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        test_pid_file = f"/tmp/Service_{test_uuid}_pid.txt"
         
-        # Test sync method
-        test_method = getattr(ConnectionManager, "test_task")
-        assert test_method.__name__ == "test_task"
-        assert "test_task" in test_method.__doc__
-        assert "/test_task" in test_method.__doc__
+        unique_id, pid_file = Service._generate_id_and_pid_file(pid_file=test_pid_file)
         
-        # Test async method
-        atest_method = getattr(ConnectionManager, "atest_task")
-        assert atest_method.__name__ == "atest_task"
-        assert "Async version" in atest_method.__doc__
-        assert "test_task" in atest_method.__doc__
+        assert unique_id == test_uuid
+        assert pid_file == test_pid_file
+
+    @patch('mindtrace.services.core.service.Path')
+    def test_generate_id_and_pid_file_mismatch_error(self, mock_path):
+        """Test _generate_id_and_pid_file raises error when unique_id not in pid_file."""
+        mock_path.return_value.parent.mkdir = Mock()
+        
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        wrong_pid_file = "/tmp/Service_different-uuid_pid.txt"
+        
+        with pytest.raises(ValueError, match="unique_id .* not found in pid_file"):
+            Service._generate_id_and_pid_file(unique_id=test_uuid, pid_file=wrong_pid_file)
+
+    def test_server_id_to_pid_file(self):
+        """Test _server_id_to_pid_file method."""
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        
+        with patch.object(Service, 'config', {'MINDTRACE_SERVER_PIDS_DIR_PATH': '/tmp/pids'}):
+            pid_file = Service._server_id_to_pid_file(test_uuid)
+            
+            expected = f"/tmp/pids/Service_{test_uuid}_pid.txt"
+            assert pid_file == expected
+
+    def test_pid_file_to_server_id(self):
+        """Test _pid_file_to_server_id method."""
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        pid_file = f"/tmp/pids/Service_{test_uuid}_pid.txt"
+        
+        extracted_uuid = Service._pid_file_to_server_id(pid_file)
+        assert extracted_uuid == test_uuid
 
 
-class TestSyncMethods:
-    """Test synchronous method functionality"""
+class TestServiceStatusAndConnection:
+    """Test Service status checking and connection methods."""
     
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_sync_method_success(self, mock_post):
-        """Test successful sync method call"""
-        # Setup mock response
+    @patch('mindtrace.services.core.service.requests.request')
+    def test_status_at_host_available(self, mock_request):
+        """Test status_at_host when service is available."""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "result": "Processed: test message",
-            "processed_count": 2
-        }
-        mock_post.return_value = mock_response
+        mock_response.json.return_value = {"status": "Available"}
+        mock_request.return_value = mock_response
         
-        # Create connection manager and instance
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
+        status = Service.status_at_host("http://localhost:8000")
         
-        # Call the method
-        result = ConnectionManager.test_task(manager, message="test message", count=1)
+        assert status == ServerStatus.AVAILABLE
+        mock_request.assert_called_once_with("POST", "http://localhost:8000/status", timeout=60)
+
+    @patch('mindtrace.services.core.service.requests.request')
+    def test_status_at_host_connection_error(self, mock_request):
+        """Test status_at_host when connection fails."""
+        mock_request.side_effect = requests.exceptions.ConnectionError()
         
-        # Verify the call
-        mock_post.assert_called_once_with(
-            "http://localhost:8000/test_task",
-            json={"message": "test message", "count": 1},
-            timeout=30
-        )
+        status = Service.status_at_host("http://localhost:8000")
         
-        # Verify the result
-        assert isinstance(result, SampleOutput)
-        assert result.result == "Processed: test message"
-        assert result.processed_count == 2
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_sync_method_non_validating(self, mock_post):
-        """Test non-validating sync method call"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"job_id": "123", "status": "pending"}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Call without output validation
-        result = ConnectionManager.test_task(manager, validate_output=False, message="test", count=1)
-        
-        # Verify the call was made
-        mock_post.assert_called_once_with(
-            "http://localhost:8000/test_task",
-            json={"message": "test", "count": 1},
-            timeout=30
-        )
-        
-        # Should return raw result, not parsed as SampleOutput
-        assert result == {"job_id": "123", "status": "pending"}
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_sync_method_error(self, mock_post):
-        """Test sync method error handling"""
+        assert status == ServerStatus.DOWN
+
+    @patch('mindtrace.services.core.service.requests.request')
+    def test_status_at_host_bad_status_code(self, mock_request):
+        """Test status_at_host when response has bad status code."""
         mock_response = Mock()
         mock_response.status_code = 500
-        mock_response.text = "Internal Server Error"
-        mock_post.return_value = mock_response
+        mock_request.return_value = mock_response
         
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
+        status = Service.status_at_host("http://localhost:8000")
         
-        # Should raise HTTPException
+        assert status == ServerStatus.DOWN
+
+    @patch.object(Service, 'status_at_host')
+    @patch.object(Service, 'default_url')
+    def test_connect_success_with_default_manager(self, mock_default_url, mock_status_at_host):
+        """Test connect method success with default connection manager."""
+        mock_default_url.return_value = parse_url("http://localhost:8000")
+        mock_status_at_host.return_value = ServerStatus.AVAILABLE
+        
+        with patch('mindtrace.services.core.service.generate_connection_manager') as mock_generate:
+            mock_manager_class = Mock()
+            mock_manager_instance = Mock()
+            mock_manager_class.return_value = mock_manager_instance
+            mock_generate.return_value = mock_manager_class
+            
+            result = Service.connect()
+            
+            assert result == mock_manager_instance
+            mock_generate.assert_called_once_with(Service)
+            mock_manager_class.assert_called_once_with(url=mock_default_url.return_value)
+
+    @patch.object(Service, 'status_at_host')
+    def test_connect_success_with_custom_manager(self, mock_status_at_host):
+        """Test connect method success with custom connection manager."""
+        mock_status_at_host.return_value = ServerStatus.AVAILABLE
+        
+        # Set up custom client interface
+        mock_client_interface = Mock()
+        mock_manager_instance = Mock()
+        mock_client_interface.return_value = mock_manager_instance
+        Service._client_interface = mock_client_interface
+        
+        try:
+            result = Service.connect(url="http://localhost:8000")
+            
+            assert result == mock_manager_instance
+            mock_client_interface.assert_called_once_with(url=parse_url("http://localhost:8000"))
+        finally:
+            # Clean up
+            Service._client_interface = None
+
+    @patch.object(Service, 'status_at_host')
+    def test_connect_failure(self, mock_status_at_host):
+        """Test connect method when service is not available."""
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        
         with pytest.raises(HTTPException) as exc_info:
-            ConnectionManager.test_task(manager, message="test", count=1)
+            Service.connect(url="http://localhost:8000")
         
-        assert exc_info.value.status_code == 500
-        assert exc_info.value.detail == "Internal Server Error"
-    
-    @patch('mindtrace.services.core.utils.httpx.get')
-    def test_get_job_success(self, mock_get):
-        """Test get_job method success"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"job_id": "123", "status": "completed", "result": "done"}
-        mock_get.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        result = ConnectionManager.get_job(manager, "123")
-        
-        mock_get.assert_called_once_with("http://localhost:8000/job/123", timeout=10)
-        assert result == {"job_id": "123", "status": "completed", "result": "done"}
-    
-    @patch('mindtrace.services.core.utils.httpx.get')
-    def test_get_job_not_found(self, mock_get):
-        """Test get_job method when job not found"""
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_get.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        result = ConnectionManager.get_job(manager, "nonexistent")
-        
-        assert result is None
+        assert exc_info.value.status_code == 503
+        assert "Server failed to connect" in str(exc_info.value.detail)
 
 
-class TestAsyncMethods:
-    """Test asynchronous method functionality"""
+class TestServiceProperties:
+    """Test Service properties and methods."""
+    
+    def test_endpoints_property(self):
+        """Test endpoints property returns correct endpoints."""
+        service = SampleService()
+        endpoints = service.endpoints
+        
+        assert isinstance(endpoints, dict)
+        assert "test_task" in endpoints
+        assert "echo" in endpoints
+        assert "status" in endpoints
+
+    def test_status_property(self):
+        """Test status property returns current status."""
+        service = SampleService()
+        
+        # Default status should be AVAILABLE after initialization
+        assert service.status == ServerStatus.AVAILABLE
+
+    def test_heartbeat_method(self):
+        """Test heartbeat method returns proper Heartbeat object."""
+        service = SampleService()
+        heartbeat = service.heartbeat()
+        
+        assert heartbeat.status == service.status
+        assert heartbeat.server_id == service.id
+        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.details is None
+
+
+class TestServiceUrlBuilding:
+    """Test Service URL building functionality."""
+    
+    @patch.object(Service, 'default_url')
+    def test_build_url_with_explicit_url_string(self, mock_default_url):
+        """Test build_url with explicit URL string."""
+        result = Service.build_url(url="http://example.com:9000")
+        
+        assert str(result) == "http://example.com:9000/"
+        mock_default_url.assert_not_called()
+
+    @patch.object(Service, 'default_url')
+    def test_build_url_with_explicit_url_object(self, mock_default_url):
+        """Test build_url with explicit URL object."""
+        url_obj = parse_url("http://example.com:9000")
+        result = Service.build_url(url=url_obj)
+        
+        assert result == url_obj
+        mock_default_url.assert_not_called()
+
+    @patch.object(Service, 'default_url')
+    def test_build_url_with_host_port(self, mock_default_url):
+        """Test build_url with host and port parameters."""
+        mock_default_url.return_value = parse_url("http://localhost:8000")
+        
+        result = Service.build_url(host="192.168.1.1", port=9000)
+        
+        assert str(result) == "http://192.168.1.1:9000/"
+
+    @patch.object(Service, 'default_url')
+    def test_build_url_with_host_only(self, mock_default_url):
+        """Test build_url with host only (uses default port)."""
+        mock_default_url.return_value = parse_url("http://localhost:8000")
+        
+        result = Service.build_url(host="192.168.1.1")
+        
+        assert str(result) == "http://192.168.1.1:8000/"
+
+    @patch.object(Service, 'default_url')
+    def test_build_url_with_port_only(self, mock_default_url):
+        """Test build_url with port only (uses default host)."""
+        mock_default_url.return_value = parse_url("http://localhost:8000")
+        
+        result = Service.build_url(port=9000)
+        
+        assert str(result) == "http://localhost:9000/"
+
+    @patch.object(Service, 'default_url')
+    def test_build_url_defaults(self, mock_default_url):
+        """Test build_url with no parameters (uses defaults)."""
+        mock_default_url.return_value = parse_url("http://localhost:8000")
+        
+        result = Service.build_url()
+        
+        assert result == mock_default_url.return_value
+        mock_default_url.assert_called_once()
+
+    @patch.object(Service, 'config', {'MINDTRACE_DEFAULT_HOST_URLS': {'Service': 'http://service.example.com:8080'}})
+    def test_default_url_service_specific(self):
+        """Test default_url returns service-specific URL from config."""
+        result = Service.default_url()
+        
+        assert str(result) == "http://service.example.com:8080"
+
+    @patch.object(Service, 'config', {'MINDTRACE_DEFAULT_HOST_URLS': {'ServerBase': 'http://base.example.com:8080'}})
+    def test_default_url_server_base(self):
+        """Test default_url returns ServerBase URL when service-specific not found."""
+        result = Service.default_url()
+        
+        assert str(result) == "http://base.example.com:8080"
+
+    @patch.object(Service, 'config', {'MINDTRACE_DEFAULT_HOST_URLS': {}})
+    def test_default_url_fallback(self):
+        """Test default_url returns fallback URL when no config found."""
+        result = Service.default_url()
+        
+        assert str(result) == "http://localhost:8000"
+
+
+class TestServiceMethods:
+    """Test additional Service methods."""
+    
+    def test_register_connection_manager(self):
+        """Test register_connection_manager method."""
+        mock_manager = Mock()
+        
+        # Clean up any existing client interface
+        original_interface = Service._client_interface
+        
+        try:
+            Service.register_connection_manager(mock_manager)
+            assert Service._client_interface == mock_manager
+        finally:
+            # Restore original state
+            Service._client_interface = original_interface
+
+    @patch.object(Service, 'config', {'MINDTRACE_DEFAULT_LOG_DIR': '/tmp/logs'})
+    def test_default_log_file(self):
+        """Test default_log_file method."""
+        result = Service.default_log_file()
+        
+        expected = "/tmp/logs/Service_logs.txt"
+        assert result == expected
+
+    def test_add_endpoint_with_custom_methods(self):
+        """Test add_endpoint with custom HTTP methods."""
+        service = Service()
+        
+        def test_handler():
+            return {"test": "response"}
+        
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+        
+        with patch.object(service.app, 'add_api_route') as mock_add_route:
+            service.add_endpoint("test", test_handler, schema=test_schema, methods=["GET", "POST"])
+            
+            # Verify the endpoint was added with custom methods
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            assert call_args[1]["methods"] == ["GET", "POST"]
+
+    def test_add_endpoint_with_api_route_kwargs(self):
+        """Test add_endpoint with additional API route kwargs."""
+        service = Service()
+        
+        def test_handler():
+            return {"test": "response"}
+        
+        test_schema = TaskSchema(name="test", input_schema=None, output_schema=None)
+        
+        with patch.object(service.app, 'add_api_route') as mock_add_route:
+            service.add_endpoint(
+                "test", 
+                test_handler, 
+                schema=test_schema,
+                api_route_kwargs={"tags": ["test"], "summary": "Test endpoint"}
+            )
+            
+            # Verify the kwargs were passed through
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            assert call_args[1]["tags"] == ["test"]
+            assert call_args[1]["summary"] == "Test endpoint"
+
+
+class TestServiceShutdown:
+    """Test Service shutdown functionality."""
+    
+    @patch('mindtrace.services.core.service.os.kill')
+    def test_shutdown_method(self, mock_kill):
+        """Test shutdown static method."""
+        with patch('mindtrace.services.core.service.os.getppid', return_value=1234):
+            with patch('mindtrace.services.core.service.os.getpid', return_value=5678):
+                response = Service.shutdown()
+                
+                # Should kill parent process first, then self
+                assert mock_kill.call_count == 2
+                mock_kill.assert_any_call(1234, 15)  # SIGTERM = 15
+                mock_kill.assert_any_call(5678, 15)
+                
+                # Should return 200 response
+                assert response.status_code == 200
+                assert "shutting down" in response.body.decode().lower()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_success(self):
+        """Test shutdown_cleanup method success."""
+        service = SampleService()
+        
+        # Should not raise any exceptions
+        await service.shutdown_cleanup()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleanup_with_exception(self):
+        """Test shutdown_cleanup method handles exceptions."""
+        service = SampleService()
+        
+        # Mock logger to raise exception
+        with patch.object(service, 'logger') as mock_logger:
+            mock_logger.debug.side_effect = Exception("Logger error")
+            
+            # Should not raise the exception, but log a warning
+            await service.shutdown_cleanup()
+            
+            mock_logger.warning.assert_called_once()
+
+
+class TestServiceLifespan:
+    """Test Service FastAPI lifespan functionality."""
     
     @pytest.mark.asyncio
-    @patch('mindtrace.services.core.utils.httpx.AsyncClient')
-    async def test_async_method_success(self, mock_client_class):
-        """Test successful async method call"""
-        # Setup mock async client
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "result": "Processed: async test",
-            "processed_count": 4
+    async def test_lifespan_context_manager(self):
+        """Test FastAPI lifespan context manager (covers lines 98-101)."""
+        service = SampleService()
+        
+        # Get the lifespan function from the FastAPI app
+        lifespan_func = service.app.router.lifespan_context
+        
+        # Mock the logger and shutdown_cleanup
+        with patch.object(service, 'logger') as mock_logger:
+            with patch.object(service, 'shutdown_cleanup', new_callable=AsyncMock) as mock_cleanup:
+                # Test the lifespan context manager
+                async with lifespan_func(service.app):
+                    # Verify startup logging
+                    mock_logger.info.assert_called_with(f"Server {service.id} starting up.")
+                
+                # After exiting context, shutdown should be called
+                mock_cleanup.assert_called_once()
+                # Verify shutdown logging
+                assert mock_logger.info.call_count == 2
+                shutdown_call = mock_logger.info.call_args_list[1]
+                assert f"Server {service.id} shut down." in str(shutdown_call)
+
+
+class TestServiceLaunchExceptionHandling:
+    """Test Service launch method exception handling."""
+    
+    @patch.object(Service, 'status_at_host')
+    @patch.object(Service, 'build_url')
+    def test_launch_runtime_error_handling(self, mock_build_url, mock_status_at_host):
+        """Test launch method RuntimeError handling (covers lines 234-240)."""
+        mock_build_url.return_value = parse_url("http://localhost:8000")
+        # Make status_at_host raise RuntimeError
+        mock_status_at_host.side_effect = RuntimeError("Connection failed")
+        
+        # Create a mock logger and patch it at the class level
+        mock_logger = Mock()
+        with patch.object(type(Service), 'logger', mock_logger, create=True):
+            with pytest.raises(RuntimeError, match="Connection failed"):
+                Service.launch()
+            
+            # Should log warning about service already running
+            mock_logger.warning.assert_called_once()
+            warning_call = mock_logger.warning.call_args[0][0]
+            assert "Another service is already running" in warning_call
+            assert "New service was NOT launched" in warning_call
+
+    @patch.object(Service, 'status_at_host')
+    @patch.object(Service, 'build_url')
+    @patch('mindtrace.services.core.service.subprocess.Popen')
+    @patch('mindtrace.services.core.service.uuid.uuid1')
+    @patch('mindtrace.services.core.service.atexit.register')
+    @patch('mindtrace.services.core.service.signal.signal')
+    def test_launch_blocking_keyboard_interrupt(self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host):
+        """Test launch method blocking with KeyboardInterrupt (covers lines 290-299)."""
+        # Setup mocks
+        mock_build_url.return_value = parse_url("http://localhost:8000")
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        mock_uuid.return_value = test_uuid
+        
+        # Mock process that raises KeyboardInterrupt on wait
+        mock_process = Mock()
+        mock_process.wait.side_effect = KeyboardInterrupt("User interrupted")
+        mock_popen.return_value = mock_process
+        
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+        
+        try:
+            with patch.object(Service, '_cleanup_server') as mock_cleanup:
+                with pytest.raises(KeyboardInterrupt):
+                    Service.launch(block=True, wait_for_launch=False)
+                
+                # Should call cleanup on KeyboardInterrupt
+                mock_cleanup.assert_called_with(test_uuid)
+                
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, 'status_at_host')
+    @patch.object(Service, 'build_url')
+    @patch('mindtrace.services.core.service.subprocess.Popen')
+    @patch('mindtrace.services.core.service.uuid.uuid1')
+    @patch('mindtrace.services.core.service.atexit.register')
+    @patch('mindtrace.services.core.service.signal.signal')
+    def test_launch_blocking_finally_cleanup(self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host):
+        """Test launch method blocking finally block (covers lines 290-299)."""
+        # Setup mocks
+        mock_build_url.return_value = parse_url("http://localhost:8000")
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        mock_uuid.return_value = test_uuid
+        
+        # Mock process that completes normally
+        mock_process = Mock()
+        mock_process.wait.return_value = None
+        mock_popen.return_value = mock_process
+        
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+        
+        try:
+            with patch.object(Service, '_cleanup_server') as mock_cleanup:
+                result = Service.launch(block=True, wait_for_launch=False)
+                
+                # Should call cleanup in finally block
+                mock_cleanup.assert_called_with(test_uuid)
+                assert result is None  # No connection manager when wait_for_launch=False
+                
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+
+class TestServiceCleanupMethods:
+    """Test Service cleanup methods with process handling."""
+    
+    @patch('mindtrace.services.core.service.psutil.Process')
+    def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
+        """Test _cleanup_server with child NoSuchProcess exception (covers lines 328-331)."""
+        # Setup mock process
+        mock_process = Mock()
+        mock_process.pid = 1234
+        
+        # Setup psutil mock
+        mock_parent = Mock()
+        mock_child = Mock()
+        mock_child.terminate.side_effect = psutil.NoSuchProcess(1235)  # Child process not found
+        mock_parent.children.return_value = [mock_child]
+        mock_parent.terminate.return_value = None
+        mock_parent.wait.return_value = None
+        mock_psutil_process.return_value = mock_parent
+        
+        # Setup active servers
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        original_servers = Service._active_servers.copy()
+        Service._active_servers[test_uuid] = mock_process
+        
+        try:
+            # Should handle NoSuchProcess exception gracefully
+            Service._cleanup_server(test_uuid)
+            
+            # Should still clean up the parent and remove from active servers
+            mock_parent.terminate.assert_called_once()
+            mock_parent.wait.assert_called_once_with(timeout=5)
+            assert test_uuid not in Service._active_servers
+            
+        finally:
+            Service._active_servers = original_servers
+
+    @patch('mindtrace.services.core.service.psutil.Process')
+    def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
+        """Test _cleanup_server with parent NoSuchProcess exception (covers lines 335-338)."""
+        # Setup mock process
+        mock_process = Mock()
+        mock_process.pid = 1234
+        
+        # Setup psutil mock - the Process constructor itself raises NoSuchProcess
+        mock_psutil_process.side_effect = psutil.NoSuchProcess(1234)  # Process not found
+        
+        # Setup active servers
+        test_uuid = UUID('12345678-1234-5678-1234-567812345678')
+        original_servers = Service._active_servers.copy()
+        Service._active_servers[test_uuid] = mock_process
+        
+        try:
+            mock_logger = Mock()
+            with patch.object(type(Service), 'logger', mock_logger, create=True):
+                # Should handle NoSuchProcess exception gracefully
+                Service._cleanup_server(test_uuid)
+                
+                # Should log debug message about process already terminated
+                mock_logger.debug.assert_called_with("Process already terminated.")
+                # Should still remove from active servers
+                assert test_uuid not in Service._active_servers
+                
+        finally:
+            Service._active_servers = original_servers
+
+    def test_cleanup_all_servers(self):
+        """Test _cleanup_all_servers method (covers lines 345-346)."""
+        # Setup multiple mock servers
+        test_uuid1 = UUID('12345678-1234-5678-1234-567812345678')
+        test_uuid2 = UUID('87654321-4321-8765-4321-876543218765')
+        mock_process1 = Mock()
+        mock_process2 = Mock()
+        
+        original_servers = Service._active_servers.copy()
+        Service._active_servers = {
+            test_uuid1: mock_process1,
+            test_uuid2: mock_process2
         }
-        mock_client.post.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        # Create connection manager and instance
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Call the async method
-        result = await ConnectionManager.atest_task(manager, message="async test", count=2)
-        
-        # Verify the async call
-        mock_client.post.assert_called_once_with(
-            "http://localhost:8000/test_task",
-            json={"message": "async test", "count": 2},
-            timeout=30
-        )
-        
-        # Verify the result
-        assert isinstance(result, SampleOutput)
-        assert result.result == "Processed: async test"
-        assert result.processed_count == 4
-    
-    @pytest.mark.asyncio
-    @patch('mindtrace.services.core.utils.httpx.AsyncClient')
-    async def test_async_method_error(self, mock_client_class):
-        """Test async method error handling"""
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 400
-        mock_response.text = "Bad Request"
-        mock_client.post.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Should raise HTTPException
-        with pytest.raises(HTTPException) as exc_info:
-            await ConnectionManager.atest_task(manager, message="test", count=1)
-        
-        assert exc_info.value.status_code == 400
-        assert exc_info.value.detail == "Bad Request"
-    
-    @pytest.mark.asyncio
-    @patch('mindtrace.services.core.utils.httpx.AsyncClient')
-    async def test_aget_job_success(self, mock_client_class):
-        """Test async get_job method"""
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"job_id": "456", "status": "running"}
-        mock_client.get.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        result = await ConnectionManager.aget_job(manager, "456")
-        
-        mock_client.get.assert_called_once_with("http://localhost:8000/job/456")
-        assert result == {"job_id": "456", "status": "running"}
-    
-    @pytest.mark.asyncio
-    @patch('mindtrace.services.core.utils.httpx.AsyncClient')
-    async def test_aget_job_not_found(self, mock_client_class):
-        """Test async get_job method when job not found"""
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_client.get.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        result = await ConnectionManager.aget_job(manager, "nonexistent")
-        
-        assert result is None
-
-
-class TestInputValidation:
-    """Test input validation through Pydantic schemas"""
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_input_validation_success(self, mock_post):
-        """Test that input validation works correctly"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Valid input
-        ConnectionManager.test_task(manager, message="test", count=5)
-        
-        # Check that the payload was properly validated and serialized
-        call_args = mock_post.call_args
-        expected_payload = {"message": "test", "count": 5}
-        assert call_args[1]["json"] == expected_payload
-    
-    def test_input_validation_error(self):
-        """Test that input validation raises appropriate errors"""
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Missing required field should raise validation error
-        with pytest.raises(Exception):  # Pydantic validation error
-            ConnectionManager.test_task(manager, count=5)  # missing 'message'
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_input_validation_disabled(self, mock_post):
-        """Test that input validation can be disabled"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # With validate_input=False, raw kwargs should be sent
-        ConnectionManager.test_task(manager, validate_input=False, message="test", extra_field="value")
-        
-        # Check that raw kwargs were passed through without validation
-        call_args = mock_post.call_args
-        expected_payload = {"message": "test", "extra_field": "value"}
-        assert call_args[1]["json"] == expected_payload
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_input_validation_enabled_default(self, mock_post):
-        """Test that input validation is enabled by default"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # With default validate_input=True, should validate through schema
-        ConnectionManager.test_task(manager, message="test", count=5)
-        
-        # Check that the payload was validated and serialized (count gets default value)
-        call_args = mock_post.call_args
-        expected_payload = {"message": "test", "count": 5}
-        assert call_args[1]["json"] == expected_payload
-
-
-class TestMultipleTasks:
-    """Test handling of services with multiple tasks"""
-    
-    def test_multiple_tasks_registered(self):
-        """Test that multiple tasks are properly registered"""
-        ConnectionManager = generate_connection_manager(SampleService)
-        
-        # Both tasks should be available
-        assert hasattr(ConnectionManager, "test_task")
-        assert hasattr(ConnectionManager, "echo")
-        assert hasattr(ConnectionManager, "atest_task")
-        assert hasattr(ConnectionManager, "aecho")
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_different_tasks_different_endpoints(self, mock_post):
-        """Test that different tasks call different endpoints"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8000"
-        manager.__class__ = ConnectionManager
-        
-        # Call test_task
-        ConnectionManager.test_task(manager, message="test1", count=1)
-        first_call = mock_post.call_args
-        
-        mock_post.reset_mock()
-        
-        # Call echo
-        ConnectionManager.echo(manager, message="test2", count=2)
-        second_call = mock_post.call_args
-        
-        # Should call different endpoints
-        assert first_call[0][0] == "http://localhost:8000/test_task"
-        assert second_call[0][0] == "http://localhost:8000/echo"
-        
-        # Should have different payloads
-        assert first_call[1]["json"]["message"] == "test1"
-        assert second_call[1]["json"]["message"] == "test2"
-
-
-class TestUrlConstruction:
-    """Test URL construction and the fix for double slash issues"""
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_url_construction_with_trailing_slash(self, mock_post):
-        """Test URL construction with trailing slash in base URL"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8080/"  # with trailing slash
-        manager.__class__ = ConnectionManager
-        
-        ConnectionManager.test_task(manager, message="test", count=1)
-        
-        # Should strip trailing slash to avoid double slash
-        called_url = mock_post.call_args[0][0]
-        assert called_url == "http://localhost:8080/test_task"
-        assert "//" not in called_url.replace("://", "")
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_url_construction_without_trailing_slash(self, mock_post):
-        """Test URL construction without trailing slash in base URL"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        manager = Mock()
-        manager.url = "http://localhost:8080"  # without trailing slash
-        manager.__class__ = ConnectionManager
-        
-        ConnectionManager.test_task(manager, message="test", count=1)
-        
-        # Should work correctly with no trailing slash
-        called_url = mock_post.call_args[0][0]
-        assert called_url == "http://localhost:8080/test_task"
-    
-    @patch('mindtrace.services.core.utils.httpx.post')
-    def test_url_construction_various_formats(self, mock_post):
-        """Test URL construction with various URL formats"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "test", "processed_count": 1}
-        mock_post.return_value = mock_response
-        
-        ConnectionManager = generate_connection_manager(SampleService)
-        
-        test_urls = [
-            "http://localhost:8080/",
-            "http://localhost:8080",
-            "https://example.com/",
-            "https://example.com",
-            "http://192.168.1.1:3000/",
-            "http://192.168.1.1:3000",
-        ]
-        
-        for url in test_urls:
-            mock_post.reset_mock()
-            
-            manager = Mock()
-            manager.url = url
-            manager.__class__ = ConnectionManager
-            
-            ConnectionManager.test_task(manager, message="test", count=1)
-            
-            # Extract the URL that was called
-            called_url = mock_post.call_args[0][0]
-            
-            # Should always result in single slash between host and path
-            expected_base = url.rstrip('/')
-            expected_url = f"{expected_base}/test_task"
-            
-            assert called_url == expected_url, f"URL {url} resulted in {called_url}, expected {expected_url}"
-            # Ensure no double slashes (excluding protocol://)
-            assert "//" not in called_url.replace("://", ""), f"Double slash found in {called_url}"
+        try:
+            with patch.object(Service, '_cleanup_server') as mock_cleanup_server:
+                # Call cleanup all servers
+                Service._cleanup_all_servers()
+                
+                # Should call _cleanup_server for each active server
+                assert mock_cleanup_server.call_count == 2
+                mock_cleanup_server.assert_any_call(test_uuid1)
+                mock_cleanup_server.assert_any_call(test_uuid2)
+                
+        finally:
+            Service._active_servers = original_servers
 
 
 
