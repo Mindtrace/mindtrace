@@ -526,6 +526,24 @@ class TestServiceLaunchExceptionHandling:
 
     @patch.object(Service, 'status_at_host')
     @patch.object(Service, 'build_url')
+    def test_launch_service_already_running_http_exception(self, mock_build_url, mock_status_at_host):
+        """Test launch method HTTPException when service already running (covers line 234)."""
+        mock_build_url.return_value = parse_url("http://localhost:8000")
+        # Make status_at_host return AVAILABLE (service already running)
+        mock_status_at_host.return_value = ServerStatus.AVAILABLE
+        
+        with pytest.raises(HTTPException) as exc_info:
+            Service.launch()
+        
+        # Should raise HTTPException with status 400
+        assert exc_info.value.status_code == 400
+        assert "already running" in exc_info.value.detail
+        assert "Service" in exc_info.value.detail
+        assert "http://localhost:8000" in exc_info.value.detail
+        assert "ServerStatus.AVAILABLE" in exc_info.value.detail
+
+    @patch.object(Service, 'status_at_host')
+    @patch.object(Service, 'build_url')
     @patch('mindtrace.services.core.service.subprocess.Popen')
     @patch('mindtrace.services.core.service.uuid.uuid1')
     @patch('mindtrace.services.core.service.atexit.register')
