@@ -57,6 +57,92 @@ class TestServiceIntegration:
         assert async_result.echoed == "Async integration test"
         
         print("All integration tests passed!")
+
+    @pytest.mark.asyncio
+    async def test_default_service_endpoints(self, echo_service_manager):
+        """Test all default Service endpoints (sync and async versions)"""
+        if echo_service_manager is None:
+            # Service didn't start - verify connection manager has the methods but they fail appropriately
+            print("Service didn't start, testing default endpoint method existence")
+            
+            ConnectionManager = generate_connection_manager(EchoService)
+            manager = ConnectionManager(url="http://localhost:8090")
+            
+            # Verify all default endpoint methods exist
+            default_endpoints = ['endpoints', 'status', 'heartbeat', 'server_id', 'pid_file', 'shutdown']
+            for endpoint in default_endpoints:
+                assert hasattr(manager, endpoint), f"Missing sync method: {endpoint}"
+                assert hasattr(manager, f"a{endpoint}"), f"Missing async method: a{endpoint}"
+            
+            print("All default endpoint methods exist on connection manager")
+            return
+            
+        # Service is running - test all default endpoints
+        print("Testing default service endpoints with running service")
+        
+        # Test endpoints endpoint (sync)
+        endpoints_result = echo_service_manager.endpoints()
+        assert isinstance(endpoints_result, dict)
+        assert "echo" in endpoints_result  # Our custom endpoint
+        
+        # Default endpoints should also be present
+        default_endpoint_names = ["endpoints", "status", "heartbeat", "server_id", "pid_file", "shutdown"]
+        for endpoint_name in default_endpoint_names:
+            assert endpoint_name in endpoints_result, f"Missing default endpoint: {endpoint_name}"
+        
+        # Test endpoints endpoint (async)
+        aendpoints_result = await echo_service_manager.aendpoints()
+        assert isinstance(aendpoints_result, dict)
+        assert aendpoints_result == endpoints_result  # Should be the same
+        
+        # Test status endpoint (sync)
+        status_result = echo_service_manager.status()
+        assert isinstance(status_result, dict)
+        assert "status" in status_result
+        assert status_result["status"] in ["running", "ready", "healthy"]  # Common status values
+        
+        # Test status endpoint (async)
+        astatus_result = await echo_service_manager.astatus()
+        assert isinstance(astatus_result, dict)
+        assert "status" in astatus_result
+        
+        # Test heartbeat endpoint (sync)
+        heartbeat_result = echo_service_manager.heartbeat()
+        assert isinstance(heartbeat_result, dict)
+        assert "timestamp" in heartbeat_result or "heartbeat" in heartbeat_result
+        
+        # Test heartbeat endpoint (async)
+        aheartbeat_result = await echo_service_manager.aheartbeat()
+        assert isinstance(aheartbeat_result, dict)
+        assert "timestamp" in aheartbeat_result or "heartbeat" in aheartbeat_result
+        
+        # Test server_id endpoint (sync)
+        server_id_result = echo_service_manager.server_id()
+        assert isinstance(server_id_result, dict)
+        assert "server_id" in server_id_result or "id" in server_id_result
+        
+        # Test server_id endpoint (async)
+        aserver_id_result = await echo_service_manager.aserver_id()
+        assert isinstance(aserver_id_result, dict)
+        assert "server_id" in aserver_id_result or "id" in aserver_id_result
+        
+        # Test pid_file endpoint (sync)
+        pid_file_result = echo_service_manager.pid_file()
+        assert isinstance(pid_file_result, dict)
+        # PID file might be None if not configured, that's okay
+        assert "pid_file" in pid_file_result or "pid" in pid_file_result
+        
+        # Test pid_file endpoint (async)
+        apid_file_result = await echo_service_manager.apid_file()
+        assert isinstance(apid_file_result, dict)
+        assert "pid_file" in apid_file_result or "pid" in apid_file_result
+        
+        # Note: Not testing shutdown endpoint as it would terminate the service
+        # But we can verify the method exists
+        assert hasattr(echo_service_manager, 'shutdown'), "Missing shutdown method"
+        assert hasattr(echo_service_manager, 'ashutdown'), "Missing ashutdown method"
+        
+        print("All default service endpoints tested successfully!")
     
     def test_url_construction_logic(self):
         """Test URL construction without requiring a running service"""
