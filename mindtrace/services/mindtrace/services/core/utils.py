@@ -4,12 +4,12 @@ import httpx
 from fastapi import HTTPException
 
 if TYPE_CHECKING:
-    from mindtrace.services import ServerBase
+    from mindtrace.services import Service
 from mindtrace.core import Mindtrace
 from mindtrace.services.core.connection_manager import ConnectionManager
 
 
-def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
+def add_endpoint(app, path, self: Optional["Service"], **kwargs):
     """Register a new endpoint.
 
     This decorator method is functionally identical as calling add_endpoint on a Service instance. It is useful when
@@ -61,7 +61,7 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     """Register a connection manager for a server class.
 
     This decorator is used to register a connection manager for a server class. The connection manager is used to
-    communicate with the server. The connection manager must be a subclass of ConnectionManagerBase.
+    communicate with the server. The connection manager must be a subclass of ConnectionManager.
 
     Args:
         connection_manager: The connection manager class.
@@ -69,9 +69,9 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     Example::
 
         import requests
-        from mindtrace.services import ConnectionManagerBase, ServerBase
+        from mindtrace.services import ConnectionManager, Service
 
-        class MyConnectionManager(ConnectionManagerBase):
+        class MyConnectionManager(ConnectionManager):
             def __init__(self, url):
                 super().__init__(url)
 
@@ -80,7 +80,7 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
                 return json.loads(response.content)["sum"]
 
         @register_connection_manager(MyConnectionManager)
-        class MyServer(ServerBase):
+        class MyService(Service):
             def __init__(self):
                 super().__init__()
                 self.add_endpoint("add", self.add)
@@ -88,7 +88,7 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
             def add(self, arg1, arg2):
                 return {"sum": arg1 + arg2}
 
-        cm = MyServer.launch()  # Returns a MyConnectionManager instance, NOT a MyServer instance
+        cm = MyService.launch()  # Returns a MyConnectionManager instance, NOT a MyServer instance
         sum = cm.add(1, 2)  # Calls add method in MyConnectionManager
 
     """
