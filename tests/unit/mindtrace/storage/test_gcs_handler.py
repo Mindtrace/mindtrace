@@ -226,6 +226,21 @@ def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
+def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_to_filename.side_effect = [Exception("Download failed"), None]
+    
+    files = [
+        ("remote/file1.txt", str(tmp_path / "file1.txt")),
+        ("remote/file2.txt", str(tmp_path / "file2.txt"))
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    with pytest.raises(RuntimeError, match="Failed to download"):
+        h.download_batch(files, on_error="raise")
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
 def test_upload_folder(mock_client_cls, tmp_path):
     _, bucket, blob = _prepare_client(mock_client_cls)
     
@@ -469,3 +484,16 @@ def test_ctor_with_existing_credentials_file(mock_client_cls, mock_creds_from_fi
     # Should not raise
     GCSStorageHandler("bucket", credentials_path=str(creds_file))
     mock_creds_from_file.assert_called_once_with(str(creds_file))
+
+# --- _sanitize_blob_path ---
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_sanitize_blob_path_normal_and_error(mock_client_cls):
+    mock_client, bucket, blob = _prepare_client(mock_client_cls)
+    handler = GCSStorageHandler("bucket")
+    # Normal case: gs://my-bucket/path/to/file.txt
+    assert handler._sanitize_blob_path("gs://bucket/path/to/file.txt") == "path/to/file.txt"
+    # Normal case: just a relative path
+    assert handler._sanitize_blob_path("some/relative/path.txt") == "some/relative/path.txt"
+    # Error case: bucket name mismatch
+    with pytest.raises(ValueError, match="initialized bucket name 'bucket' is not in the path"):
+        handler._sanitize_blob_path("gs://other-bucket/path/to/file.txt")
