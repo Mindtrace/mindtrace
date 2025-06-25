@@ -3,8 +3,8 @@ from typing import Optional, Type, TYPE_CHECKING
 import httpx
 from fastapi import HTTPException
 
-if TYPE_CHECKING:
-    from mindtrace.services import Service
+if TYPE_CHECKING:  # pragma: no cover
+    from mindtrace.services import Service  
 from mindtrace.core import Mindtrace
 from mindtrace.services.core.connection_manager import ConnectionManager
 
