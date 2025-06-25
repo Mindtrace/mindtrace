@@ -40,8 +40,8 @@ class StorageHandler(MindtraceABC, ABC):
         metadata: Optional[Dict[str, str]] = None,
         max_workers: int = 4,
         on_error: str = "raise",
-    ) -> Union[List[str], BulkOperationResult]:
-        """Upload multiple files. Returns list of remote URLs or BulkOperationResult."""
+    ) -> BulkOperationResult:
+        """Upload multiple files. Returns BulkOperationResult with succeeded/failed lists."""
         if on_error not in ("raise", "skip"):
             raise ValueError("on_error must be 'raise' or 'skip'")
             
@@ -64,9 +64,7 @@ class StorageHandler(MindtraceABC, ABC):
                     else:  # skip
                         failures.append((f"{local_path} -> {remote_path}", str(e)))
         
-        if on_error == "skip":
-            return BulkOperationResult(succeeded=results, failed=failures)
-        return results
+        return BulkOperationResult(succeeded=results, failed=failures)
 
     def download_batch(
         self,
@@ -74,8 +72,8 @@ class StorageHandler(MindtraceABC, ABC):
         max_workers: int = 4,
         skip_if_exists: bool = False,
         on_error: str = "raise",
-    ) -> Optional[BulkOperationResult]:
-        """Download multiple files. Takes list of (remote_path, local_path) tuples."""
+    ) -> BulkOperationResult:
+        """Download multiple files. Returns BulkOperationResult with succeeded/failed lists."""
         if on_error not in ("raise", "skip"):
             raise ValueError("on_error must be 'raise' or 'skip'")
             
@@ -90,32 +88,27 @@ class StorageHandler(MindtraceABC, ABC):
                 else:
                     files_to_download.append((remote_path, local_path))
         
-        if not files_to_download:
-            if on_error == "skip":
-                return BulkOperationResult(succeeded=skipped_files, failed=[])
-            return None
-            
         succeeded = skipped_files[:]
         failures = []
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_file = {
-                executor.submit(self.download, remote_path, local_path, skip_if_exists): (remote_path, local_path)
-                for remote_path, local_path in files_to_download
-            }
-            for future in as_completed(future_to_file):
-                remote_path, local_path = future_to_file[future]
-                try:
-                    future.result()
-                    succeeded.append(local_path)
-                except Exception as e:
-                    if on_error == "raise":
-                        raise RuntimeError(f"Failed to download {remote_path} -> {local_path}: {e}")
-                    else:  # skip
-                        failures.append((f"{remote_path} -> {local_path}", str(e)))
+        if files_to_download:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_file = {
+                    executor.submit(self.download, remote_path, local_path, skip_if_exists): (remote_path, local_path)
+                    for remote_path, local_path in files_to_download
+                }
+                for future in as_completed(future_to_file):
+                    remote_path, local_path = future_to_file[future]
+                    try:
+                        future.result()
+                        succeeded.append(local_path)
+                    except Exception as e:
+                        if on_error == "raise":
+                            raise RuntimeError(f"Failed to download {remote_path} -> {local_path}: {e}")
+                        else:  # skip
+                            failures.append((f"{remote_path} -> {local_path}", str(e)))
         
-        if on_error == "skip":
-            return BulkOperationResult(succeeded=succeeded, failed=failures)
+        return BulkOperationResult(succeeded=succeeded, failed=failures)
 
     def upload_folder(
         self,
@@ -126,8 +119,8 @@ class StorageHandler(MindtraceABC, ABC):
         metadata: Optional[Dict[str, str]] = None,
         max_workers: int = 4,
         on_error: str = "raise",
-    ) -> Union[List[str], BulkOperationResult]:
-        """Upload entire folder recursively."""
+    ) -> BulkOperationResult:
+        """Upload entire folder recursively. Returns BulkOperationResult with succeeded/failed lists."""
         import fnmatch
         
         local_path = Path(local_folder)
@@ -159,8 +152,8 @@ class StorageHandler(MindtraceABC, ABC):
         max_workers: int = 4,
         skip_if_exists: bool = False,
         on_error: str = "raise",
-    ) -> Optional[BulkOperationResult]:
-        """Download all objects with given prefix to local folder."""
+    ) -> BulkOperationResult:
+        """Download all objects with given prefix to local folder. Returns BulkOperationResult with succeeded/failed lists."""
         remote_objects = self.list_objects(prefix=remote_prefix)
         
         files_to_download = []
