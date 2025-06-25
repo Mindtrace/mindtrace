@@ -65,10 +65,9 @@ def setup_logger(
         child_log_path = os.path.join("modules", f"{name}.log")
         
     if log_dir:
-        log_dir_expanded = os.path.expanduser(str(log_dir))
-        log_file_path = os.path.join(log_dir_expanded, child_log_path)
+        log_file_path = os.path.join(log_dir, child_log_path)
     else:
-        log_file_path = os.path.join(os.path.expanduser(default_config["MINDTRACE_LOGGER_DIR"]), child_log_path)
+        log_file_path = os.path.join(default_config["MINDTRACE_LOGGER_DIR"], child_log_path)
     
     os.makedirs(Path(log_file_path).parent, exist_ok=True)
     file_handler = RotatingFileHandler(

@@ -1,3 +1,5 @@
+import os
+
 class Config(dict):
     """Template Config class."""
     
@@ -17,4 +19,8 @@ class Config(dict):
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
+        # Expand ~ only if it is at the start of the string
+        for k, v in default_config.items():
+            if isinstance(v, str) and v.startswith("~/"):
+                default_config[k] = os.path.expanduser(v)
         super().__init__(default_config)
