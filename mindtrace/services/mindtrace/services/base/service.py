@@ -142,7 +142,8 @@ class Service(Mindtrace):
 
     @classmethod
     def _server_id_to_pid_file(cls, server_id: UUID) -> str:
-        return os.path.join(cls.config["MINDTRACE_SERVER_PIDS_DIR_PATH"], f"{cls.__name__}_{server_id}_pid.txt")
+        dir_path = os.path.expanduser(cls.config["MINDTRACE_SERVER_PIDS_DIR_PATH"])
+        return os.path.join(dir_path, f"{cls.__name__}_{server_id}_pid.txt")
 
     @classmethod
     def _pid_file_to_server_id(cls, pid_file: str) -> UUID:
