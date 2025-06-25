@@ -8,7 +8,10 @@ throughput and performance characteristics under stress conditions.
 import asyncio
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+import json
 import logging
+from pathlib import Path
 from statistics import mean, median, stdev
 import sys
 import time
@@ -601,6 +604,31 @@ class TestEchoServiceThroughput:
         if best_config:
             print(f"\nBest configuration: {best_config} worker(s) with {best_throughput:.1f} req/sec")
         
+        # Save results to file
+        results_dir = Path("stress_test_results")
+        results_dir.mkdir(exist_ok=True)
+        
+        summary_results = {
+            'test_name': 'multi_worker_concurrent_throughput',
+            'test_config': {
+                'client_workers': client_workers,
+                'requests_per_worker': requests_per_worker,
+                'total_requests': total_requests,
+                'worker_configs': worker_configs
+            },
+            'worker_results': results,
+            'best_config': best_config,
+            'best_throughput': best_throughput,
+            'summary': {
+                'configurations_tested': len([r for r in results.values() if r is not None]),
+                'failed_configurations': len([r for r in results.values() if r is None])
+            }
+        }
+        
+        filename = results_dir / f"multi_worker_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        self.save_results(summary_results, filename)
+        print(f"\nResults saved to: {filename}")
+        
         # Assertions
         assert len([r for r in results.values() if r is not None]) > 0, "No tests completed successfully"
         
@@ -817,16 +845,56 @@ class TestEchoServiceThroughput:
             # Analyze results
             if overall_efficiency >= 80:
                 print(f"Excellent scaling efficiency! Workers provide clear benefits.")
+                efficiency_rating = "excellent"
             elif overall_efficiency >= 60:
                 print(f"Good scaling efficiency. Workers help with concurrent load.")
+                efficiency_rating = "good"
             elif overall_efficiency >= 40:
-                print(f" Moderate scaling efficiency. Some bottlenecks present.")
+                print(f"Moderate scaling efficiency. Some bottlenecks present.")
+                efficiency_rating = "moderate"
             else:
                 print(f"Poor scaling efficiency. Significant bottlenecks detected.")
                 print("   Possible causes:")
                 print("   - Connection pooling limitations")
                 print("   - Shared resource contention")
                 print("   - Network/HTTP overhead still dominates")
+                efficiency_rating = "poor"
+        
+        # Save results to file
+        results_dir = Path("stress_test_results")
+        results_dir.mkdir(exist_ok=True)
+        
+        summary_results = {
+            'test_name': 'delayed_processing_multi_worker_throughput',
+            'test_config': {
+                'client_workers': client_workers,
+                'requests_per_worker': requests_per_worker,
+                'total_requests': total_requests,
+                'processing_delay_ms': processing_delay * 1000,
+                'worker_configs': worker_configs
+            },
+            'worker_results': results,
+            'scaling_analysis': {
+                'best_config': best_config,
+                'best_throughput': best_throughput,
+                'max_scaling': max_scaling if best_config and baseline_throughput else None,
+                'theoretical_max': theoretical_max if best_config and baseline_throughput else None,
+                'overall_efficiency': overall_efficiency if best_config and baseline_throughput else None,
+                'efficiency_rating': efficiency_rating if best_config and baseline_throughput else None,
+                'expected_min_rt_ms': expected_min_rt if best_config and baseline_throughput else None,
+                'actual_min_rt_ms': actual_min_rt if best_config and baseline_throughput else None,
+                'overhead_ms': overhead_ms if best_config and baseline_throughput else None
+            },
+            'summary': {
+                'configurations_tested': len([r for r in results.values() if r is not None]),
+                'failed_configurations': len([r for r in results.values() if r is None]),
+                'delay_working': min(r['avg_response_time'] for r in results.values() if r is not None) >= processing_delay * 0.9 if results else False
+            }
+        }
+        
+        filename = results_dir / f"delayed_processing_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        self.save_results(summary_results, filename)
+        print(f"\nResults saved to: {filename}")
         
         # Assertions
         assert len([r for r in results.values() if r is not None]) > 0, "No tests completed successfully"
@@ -884,3 +952,68 @@ class TestEchoServiceThroughput:
         print(f"\nBaseline analysis:")
         print(f"   - High overhead (>50ms) suggests connection management issues")
         print(f"   - Low efficiency (<80%) indicates HTTP client bottlenecks")
+        
+        # Save results to file
+        results_dir = Path("stress_test_results")
+        results_dir.mkdir(exist_ok=True)
+        
+        baseline_results = []
+        for delay in test_delays:
+            # Recalculate for saving
+            response_times = []
+            for i in range(5):
+                request_start = time.time()
+                try:
+                    response = echo_service_manager.echo(message=test_message, delay=delay)
+                    request_end = time.time()
+                    assert response.echoed == test_message
+                    response_times.append(request_end - request_start)
+                except Exception:
+                    continue
+            
+            if response_times:
+                avg_response_time = mean(response_times) * 1000
+                expected_time = delay * 1000
+                overhead = avg_response_time - expected_time
+                efficiency = (expected_time / avg_response_time * 100) if avg_response_time > 0 else 0
+                
+                baseline_results.append({
+                    'delay_ms': delay * 1000,
+                    'expected_ms': expected_time,
+                    'actual_ms': avg_response_time,
+                    'overhead_ms': overhead,
+                    'efficiency_pct': efficiency,
+                    'raw_response_times': response_times
+                })
+        
+        summary_results = {
+            'test_name': 'single_request_baseline',
+            'test_config': {
+                'test_delays_ms': [d * 1000 for d in test_delays],
+                'requests_per_delay': 5
+            },
+            'baseline_results': baseline_results,
+            'analysis': {
+                'avg_overhead_ms': mean([r['overhead_ms'] for r in baseline_results]) if baseline_results else 0,
+                'avg_efficiency_pct': mean([r['efficiency_pct'] for r in baseline_results]) if baseline_results else 0,
+                'has_connection_issues': any(r['overhead_ms'] > 50 for r in baseline_results),
+                'has_efficiency_issues': any(r['efficiency_pct'] < 80 for r in baseline_results)
+            }
+        }
+        
+        filename = results_dir / f"baseline_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        self.save_results(summary_results, filename)
+        print(f"\nResults saved to: {filename}")
+
+    def save_results(self, results, filename):
+        """
+        Save stress test results to a JSON file for tracking performance over time and comparing configurations.
+        """
+        timestamp = datetime.now().isoformat()
+        results_with_timestamp = {
+            'timestamp': timestamp,
+            'results': results
+        }
+        with open(filename, 'w') as f:
+            json.dump(results_with_timestamp, f)
+
