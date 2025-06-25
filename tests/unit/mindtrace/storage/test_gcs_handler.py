@@ -1,11 +1,12 @@
 # tests/test_gcs_handler.py
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 from google.api_core.exceptions import NotFound
 
 from mindtrace.storage import GCSStorageHandler
+from mindtrace.storage.base import BulkOperationResult
 
 
 def _prepare_client(mock_client_cls, *, bucket_exists: bool = True):
@@ -75,12 +76,258 @@ def test_download_creates_parent_dirs_and_invokes_api(mock_client_cls, tmp_path)
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
+def test_download_with_skip_if_exists(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("already here")
+
+    h = GCSStorageHandler("bucket")
+    h.download("remote/file.txt", str(existing_file), skip_if_exists=True)
+    
+    # Should not call download API since file exists
+    blob.download_to_filename.assert_not_called()
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
 def test_delete_is_idempotent(mock_client_cls):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.delete.side_effect = NotFound("not there")
 
     GCSStorageHandler("bucket").delete("ghost.txt")  # should not raise
     blob.delete.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Bulk Operations
+# ---------------------------------------------------------------------------
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_batch_success(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    # Create test files
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file1.write_text("content1")
+    file2.write_text("content2")
+    
+    files = [
+        (str(file1), "remote/file1.txt"),
+        (str(file2), "remote/file2.txt")
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.upload_batch(files, metadata={"batch": "test"})
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 2
+    assert len(result.failed) == 0
+    assert all(uri.startswith("gs://bucket/") for uri in result.succeeded)
+    assert blob.upload_from_filename.call_count == 2
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_batch_with_error_raise(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_filename.side_effect = Exception("Upload failed")
+    
+    file1 = tmp_path / "file1.txt"
+    file1.write_text("content")
+    
+    h = GCSStorageHandler("bucket")
+    with pytest.raises(RuntimeError, match="Failed to upload"):
+        h.upload_batch([(str(file1), "remote/file1.txt")])
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_batch_with_error_skip(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    file1 = tmp_path / "file1.txt"
+    file2 = tmp_path / "file2.txt"
+    file1.write_text("content1")
+    file2.write_text("content2")
+    
+    # First upload fails, second succeeds
+    blob.upload_from_filename.side_effect = [Exception("Upload failed"), None]
+    
+    files = [
+        (str(file1), "remote/file1.txt"),
+        (str(file2), "remote/file2.txt")
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.upload_batch(files, on_error="skip")
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 1
+    assert len(result.failed) == 1
+    assert "Upload failed" in result.failed[0][1]
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_batch_success(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    files = [
+        ("remote/file1.txt", str(tmp_path / "file1.txt")),
+        ("remote/file2.txt", str(tmp_path / "file2.txt"))
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.download_batch(files)
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 2
+    assert len(result.failed) == 0
+    assert blob.download_to_filename.call_count == 2
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_batch_with_skip_if_exists(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    # Create one existing file
+    existing_file = tmp_path / "existing.txt"
+    existing_file.write_text("already here")
+    
+    files = [
+        ("remote/existing.txt", str(existing_file)),
+        ("remote/new.txt", str(tmp_path / "new.txt"))
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.download_batch(files, skip_if_exists=True)
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 2  # 1 skipped + 1 downloaded
+    assert len(result.failed) == 0
+    assert blob.download_to_filename.call_count == 1  # Only new file downloaded
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_to_filename.side_effect = [Exception("Download failed"), None]
+    
+    files = [
+        ("remote/file1.txt", str(tmp_path / "file1.txt")),
+        ("remote/file2.txt", str(tmp_path / "file2.txt"))
+    ]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.download_batch(files, on_error="skip")
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 1
+    assert len(result.failed) == 1
+    assert "Download failed" in result.failed[0][1]
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_folder(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    # Create folder structure
+    folder = tmp_path / "test_folder"
+    folder.mkdir()
+    (folder / "file1.txt").write_text("content1")
+    (folder / "subdir").mkdir()
+    (folder / "subdir" / "file2.txt").write_text("content2")
+    (folder / "file.log").write_text("log content")
+    
+    h = GCSStorageHandler("bucket")
+    result = h.upload_folder(
+        str(folder),
+        "remote/prefix",
+        include_patterns=["*.txt"],
+        exclude_patterns=["*.log"]
+    )
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 2  # Only .txt files, not .log
+    assert len(result.failed) == 0
+    assert blob.upload_from_filename.call_count == 2
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_folder_with_error_skip(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    blob.upload_from_filename.side_effect = [Exception("Upload failed"), None]
+    
+    folder = tmp_path / "test_folder"
+    folder.mkdir()
+    (folder / "file1.txt").write_text("content1")
+    (folder / "file2.txt").write_text("content2")
+    
+    h = GCSStorageHandler("bucket")
+    result = h.upload_folder(str(folder), on_error="skip")
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 1
+    assert len(result.failed) == 1
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_folder(mock_client_cls, tmp_path):
+    mock_client, bucket, blob = _prepare_client(mock_client_cls)
+    
+    # Mock list_blobs to return objects
+    mock_blob1 = MagicMock()
+    mock_blob1.name = "prefix/file1.txt"
+    mock_blob2 = MagicMock()
+    mock_blob2.name = "prefix/subdir/file2.txt"
+    mock_client.list_blobs.return_value = [mock_blob1, mock_blob2]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.download_folder("prefix/", str(tmp_path / "local"))
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 2
+    assert len(result.failed) == 0
+    assert blob.download_to_filename.call_count == 2
+    mock_client.list_blobs.assert_called_once_with("bucket", prefix="prefix/", max_results=None)
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_download_folder_with_error_skip(mock_client_cls, tmp_path):
+    mock_client, bucket, blob = _prepare_client(mock_client_cls)
+    blob.download_to_filename.side_effect = [Exception("Download failed"), None]
+    
+    mock_blob1 = MagicMock()
+    mock_blob1.name = "prefix/file1.txt"
+    mock_blob2 = MagicMock()
+    mock_blob2.name = "prefix/file2.txt"
+    mock_client.list_blobs.return_value = [mock_blob1, mock_blob2]
+    
+    h = GCSStorageHandler("bucket")
+    result = h.download_folder("prefix/", str(tmp_path / "local"), on_error="skip")
+    
+    assert isinstance(result, BulkOperationResult)
+    assert len(result.succeeded) == 1
+    assert len(result.failed) == 1
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_upload_folder_nonexistent_folder(mock_client_cls, tmp_path):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    h = GCSStorageHandler("bucket")
+    with pytest.raises(ValueError, match="does not exist or is not a directory"):
+        h.upload_folder(str(tmp_path / "nonexistent"))
+
+
+@patch("mindtrace.storage.gcs.storage.Client")
+def test_bulk_operations_invalid_on_error_param(mock_client_cls):
+    _, bucket, blob = _prepare_client(mock_client_cls)
+    
+    h = GCSStorageHandler("bucket")
+    with pytest.raises(ValueError, match="on_error must be"):
+        h.upload_batch([], on_error="invalid")
+    
+    with pytest.raises(ValueError, match="on_error must be"):
+        h.download_batch([], on_error="invalid")
 
 
 # ---------------------------------------------------------------------------
@@ -221,4 +468,4 @@ def test_ctor_with_existing_credentials_file(mock_client_cls, mock_creds_from_fi
     mock_creds_from_file.return_value = MagicMock(name="Credentials")
     # Should not raise
     GCSStorageHandler("bucket", credentials_path=str(creds_file))
-    mock_creds_from_file.assert_called_once_with(str(creds_file)) 
+    mock_creds_from_file.assert_called_once_with(str(creds_file))
