@@ -54,7 +54,7 @@ class GCSStorageHandler(StorageHandler):
         bucket.create()
 
     def _sanitize_blob_path(self, blob_path: str) -> str:
-        if blob_path.startswith("gs://") and self.bucket_name not in blob_path:
+        if blob_path.startswith("gs://") and not blob_path.startswith(f"gs://{self.bucket_name}/"):
             raise ValueError(
                 f"given absolute path, initialized bucket name {self.bucket_name!r} is not in the path {blob_path!r}"
             )
