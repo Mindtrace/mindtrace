@@ -247,7 +247,7 @@ class Service(Mindtrace):
         launch_command = [
             "python",
             "-m",
-            "mindtrace.services.base.launcher",
+            "mindtrace.services.core.launcher",
             "-s",
             cls.unique_name,
             "-w",

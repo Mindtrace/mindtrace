@@ -7,11 +7,12 @@ from urllib.parse import urljoin
 from uuid import UUID
 
 from fastapi import HTTPException
+import httpx
 import requests
 from urllib3.util.url import parse_url, Url
 
 from mindtrace.core import Mindtrace, ifnone, Timeout
-from mindtrace.services.base.types import Heartbeat, ServerStatus, ShutdownOutput
+from mindtrace.services.core.types import Heartbeat, ServerStatus, ShutdownOutput, StatusOutput
 
 
 
@@ -97,9 +98,7 @@ class ConnectionManager(Mindtrace):
         
         Returns:
             StatusOutput with the current server status.
-        """
-        from mindtrace.services.base.types import ServerStatus, StatusOutput
-        
+        """        
         try:
             response = requests.post(urljoin(str(self.url), "status"), timeout=10)
             if response.status_code != 200:
@@ -119,9 +118,6 @@ class ConnectionManager(Mindtrace):
         Returns:
             StatusOutput with the current server status.
         """
-        from mindtrace.services.base.types import ServerStatus, StatusOutput
-        import httpx
-        
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(urljoin(str(self.url), "status"))

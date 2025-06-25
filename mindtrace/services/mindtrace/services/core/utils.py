@@ -6,7 +6,7 @@ from fastapi import HTTPException
 if TYPE_CHECKING:
     from mindtrace.services import ServerBase
 from mindtrace.core import Mindtrace
-from mindtrace.services.base.connection_manager import ConnectionManager
+from mindtrace.services.core.connection_manager import ConnectionManager
 
 
 def add_endpoint(app, path, self: Optional["ServerBase"], **kwargs):
