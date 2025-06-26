@@ -1,7 +1,9 @@
 [project]
 name = "mindtrace-core"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "pillow>=11.2.1",
+]
 
 [tool.setuptools]
 packages = ["mindtrace.core"]
