@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: Print UV version
+        run: |
+          uv --version
+
+      - name: Sync dependencies
+        run: |
+          uv sync
+
+      - name: Ensure ds-run is installed
+        run: |
+          uv tool install ds-run
+
+      - name: Show ds-run version
+        run: |
+          ds --version
+
+      - name: Show Docker Compose version
+        run: |
+          docker compose version || docker-compose version
+
+      - name: Run tests
+        env:
+          PY_COLORS: "1"
+        run: |
+          ds test
