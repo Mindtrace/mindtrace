@@ -1,11 +1,11 @@
+from typing import Annotated, Optional
+
 import pytest
-from pydantic import BaseModel
-from mindtrace.database import MindtraceDocument
-from mindtrace.database import DocumentNotFoundError, DuplicateInsertError
 from beanie import Indexed, PydanticObjectId
+from pydantic import BaseModel
 from pymongo.errors import OperationFailure
-from typing import Optional
-from typing import Annotated
+
+from mindtrace.database import DocumentNotFoundError, DuplicateInsertError, MindtraceDocument
 
 class UserDoc(MindtraceDocument):
     name: str
@@ -161,6 +161,27 @@ async def test_get_raw_model(mongo_backend):
     await raw_model.find(raw_model.age < 30).update({"$set": {"age": 26}})
     updated_bob = await raw_model.find_one(raw_model.name == "Bob")
     assert updated_bob.age == 26
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
+async def test_document_update(mongo_backend):
+    """Test document update operations."""
+    user = UserCreate(name="Alice", age=30, email="alice@test.com")
+    inserted = await mongo_backend.insert(user)
+    
+    # Update using raw model
+    raw_model = mongo_backend.get_raw_model()
+    await raw_model.find_one(raw_model.id == inserted.id).update({"$set": {"age": 31}})
+    
+    updated = await mongo_backend.get(str(inserted.id))
+    assert updated.age == 31
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)
+async def test_document_not_found(mongo_backend):
+    """Test handling of non-existent document retrieval."""
+    with pytest.raises(DocumentNotFoundError):
+        await mongo_backend.get("507f1f77bcf86cd799439011")  # Random ObjectId
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mongo_backend", [UserDoc], indirect=True)

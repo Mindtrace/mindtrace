@@ -4,6 +4,7 @@ version = "0.1.0"
 dependencies = [
     "beanie>=1.29.0",
     "mindtrace-core",
+    "redis>=4.0.0",
     "redis-om>=0.3.5",
     "motor>=3.3.0",
 ]
