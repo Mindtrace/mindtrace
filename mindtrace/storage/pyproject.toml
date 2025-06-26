@@ -1,12 +1,12 @@
 [project]
-name = "mindtrace-core"
+name = "mindtrace-storage"
 version = "0.1.0"
 dependencies = [
-    "pillow>=11.2.1",
+    "google-cloud-storage",
 ]
 
 [tool.setuptools]
-packages = ["mindtrace.core"]
+packages = ["mindtrace.storage"]
 
 [tool.setuptools.package-dir]
 "" = "."
