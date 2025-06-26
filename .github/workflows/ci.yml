@@ -59,4 +59,5 @@ jobs:
         env:
           PY_COLORS: "1"
         run: |
+          . .venv/bin/activate
           pwd && ls -calF && which python3 && which pytest
