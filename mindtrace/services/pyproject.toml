@@ -6,12 +6,6 @@ dependencies = [
     "structlog>=24.4.0",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.services"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
