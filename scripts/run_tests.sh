@@ -50,7 +50,7 @@ fi
 # Start MinIO container if running integration tests or all tests
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Starting docker containers..."
-    docker-compose -f tests/docker-compose.yml up -d
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
     # Wait for MinIO to be healthy
     echo "Waiting for docker containers to be ready..."
@@ -78,7 +78,7 @@ if [ "$RUN_UNIT" = true ]; then
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ]; then
             echo "Stopping docker containers..."
-            docker-compose -f tests/docker-compose.yml down
+            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         fi
         exit $OVERALL_EXIT_CODE
     fi
@@ -94,7 +94,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         OVERALL_EXIT_CODE=1
         # Stop docker containers if they were started
         echo "Stopping docker containers..."
-        docker-compose -f tests/docker-compose.yml down
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         exit $OVERALL_EXIT_CODE
     fi
 fi
@@ -139,7 +139,7 @@ if [ "$RUN_STRESS" = true ]; then
         # Stop docker containers if they were started
         if [ "$RUN_INTEGRATION" = true ]; then
             echo "Stopping docker containers..."
-            docker-compose -f tests/docker-compose.yml down
+            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         fi
         exit $OVERALL_EXIT_CODE
     fi
@@ -148,7 +148,7 @@ fi
 # Stop docker containers if they were started
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Stopping docker containers..."
-    docker-compose -f tests/docker-compose.yml down
+    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
 fi
 
 # Exit with overall status
