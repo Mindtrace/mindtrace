@@ -138,9 +138,14 @@ class TimerCollection:
                 time.sleep(1)
             # stops "Timer 2"
             with tc.start('Timer 3'):
-                time.sleep(1)
+                time.sleep(2)
             # stops "Timer 3"
         # stops "Timer 1"
+
+        print(tc)
+            # Timer 1: 3.000s
+            # Timer 2: 1.000s
+            # Timer 3: 2.000s
 
     """
 
