@@ -613,9 +613,15 @@ def test_str_without_rich(registry, test_config):
     # Save a test object
     registry.save("test:config", test_config, version="1.0.0")
     
-    # Mock the import of rich to raise ImportError
+    # Mock the import of rich to raise ImportError only for 'rich'
+    import builtins
+    real_import = builtins.__import__
+    def fake_import(name, *args, **kwargs):
+        if name == "rich" or name.startswith("rich."):
+            raise ImportError("No module named 'rich'")
+        return real_import(name, *args, **kwargs)
     from unittest.mock import patch
-    with patch('builtins.__import__', side_effect=ImportError("No module named 'rich'")):
+    with patch('builtins.__import__', side_effect=fake_import):
         # Get string representation
         output = registry.__str__(color=True)  # Even with color=True, should fall back to plain text
         
