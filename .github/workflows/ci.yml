@@ -41,7 +41,7 @@ jobs:
 
       - name: Sync dependencies
         run: |
-          uv sync
+          uv sync --dev --all-extras
 
       - name: Ensure ds-run is installed
         run: |
@@ -60,3 +60,4 @@ jobs:
           PY_COLORS: "1"
         run: |
           ds test
+        shell: bash
