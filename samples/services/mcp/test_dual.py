@@ -11,7 +11,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--host", type=str, default="localhost", help="Host address.")
     parser.add_argument("--port", type=int, default=8000, help="Port number.")
-    parser.add_argument("--path", type=str, default="/rpc", help="MCP path (for MCP mode only).")
+    parser.add_argument("--path", type=str, default="/mcp", help="MCP path (for MCP mode only).")
     parser.add_argument("--block", action="store_true", help="Block process after launch.")
     args = parser.parse_args()
 
