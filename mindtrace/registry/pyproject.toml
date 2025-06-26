@@ -8,12 +8,6 @@ dependencies = [
     "zenml>=0.82.1",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.registry"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
