@@ -31,17 +31,17 @@ class MCPService(Service):
         super().__init__(**kwargs)
         
         # Register MCP-specific endpoints
-        self.add_endpoint("identity", self.identity, schema=IdentitySchema())
-        self.add_endpoint("capabilities", self.capabilities, schema=CapabilitiesSchema())
-        self.add_endpoint("execute", self.execute, schema=ExecuteSchema())
-        self.add_endpoint("schema", self.schema, schema=SchemaSchema())
-        self.add_endpoint("state", self.state, schema=StateSchema())
+        self.add_endpoint("/identity", self.identity, schema=IdentitySchema())
+        self.add_endpoint("/capabilities", self.capabilities, schema=CapabilitiesSchema())
+        self.add_endpoint("/execute", self.execute, schema=ExecuteSchema())
+        self.add_endpoint("/schema", self.schema, schema=SchemaSchema())
+        self.add_endpoint("/state", self.state, schema=StateSchema())
 
     def add_endpoint(self, path, func, *args, **kwargs):
         super().add_endpoint(path, func, *args, **kwargs)
-        # Only add to MCP if it's initialized
-        if self.mcp is not None:
-            self.mcp.tool(name=path)(func)
+        # Normalize tool name by removing leading slash for MCP
+        tool_name = path.lstrip('/')
+        self.mcp.tool(name=tool_name)(func)
 
     def identity(self):
         return IdentityOutput(
