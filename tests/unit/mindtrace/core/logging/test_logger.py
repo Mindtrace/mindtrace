@@ -64,6 +64,32 @@ class TestLogger:
         assert "Debug message" in content
 
 
+    def test_get_logger_returns_configured_logger_no_name(self, tmp_path):
+        logger = get_logger(
+            name="",
+            log_dir=tmp_path,
+            logger_level=logging.DEBUG,
+            stream_level=logging.ERROR,
+            file_level=logging.DEBUG,
+            file_mode="w",
+            propagate=True,
+            max_bytes=1024,
+            backup_count=1
+        )
+        assert logger.name == "mindtrace"
+        # Should have both StreamHandler and RotatingFileHandler
+        handler_types = {type(h) for h in logger.handlers}
+        assert logging.StreamHandler in handler_types
+        assert any("RotatingFileHandler" in str(type(h)) for h in logger.handlers)
+        # Log file should exist
+        log_file = tmp_path / "mindtrace.log"
+        assert log_file.exists()
+        logger.debug("Debug message")
+        with open(log_file) as f:
+            content = f.read()
+        assert "Debug message" in content 
+
+
 class TestGetLoggerNameValidation:
     """Tests for the name validation and default assignment functionality in get_logger."""
 

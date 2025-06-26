@@ -54,7 +54,7 @@ def main():
         "--server_class",
         type=str,
         nargs="?",
-        default="mindtrace.services.base.serve.Service",
+        default="mindtrace.services.core.serve.Service",
         help="Server class to launch",
     )
     parser.add_argument("-w", "--num_workers", type=int, default=1, help="Number of workers")
