@@ -125,11 +125,11 @@ class Service(Mindtrace):
         )
         #self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
 
-        self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda _ = None: {"endpoints": list(self._endpoints.keys())}), schema=EndpointsSchema())
-        self.add_endpoint(path="/status", func=named_lambda("status", lambda _ = None: {"status": self.status.value}), schema=StatusSchema())
-        self.add_endpoint(path="/heartbeat", func=named_lambda("heartbeat", lambda _ = None: {"heartbeat": self.heartbeat()}), schema=HeartbeatSchema())
-        self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda _ = None: {"server_id": self.id}), schema=ServerIDSchema())
-        self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda _ = None: {"pid_file": self.pid_file}), schema=PIDFileSchema())
+        self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda t = None: {"endpoints": list(self._endpoints.keys())}), schema=EndpointsSchema())
+        self.add_endpoint(path="/status", func=named_lambda("status", lambda t = None: {"status": self.status.value}), schema=StatusSchema())
+        self.add_endpoint(path="/heartbeat", func=named_lambda("heartbeat", lambda t = None: {"heartbeat": self.heartbeat()}), schema=HeartbeatSchema())
+        self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda t = None: {"server_id": self.id}), schema=ServerIDSchema())
+        self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda t = None: {"pid_file": self.pid_file}), schema=PIDFileSchema())
         self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
 
 
@@ -363,7 +363,7 @@ class Service(Mindtrace):
             cls._cleanup_server(server_id)
 
     @staticmethod
-    def shutdown(_ = None) -> fastapi.Response:
+    def shutdown(t = None) -> fastapi.Response:
         """HTTP endpoint to shut down the server."""
         os.kill(os.getppid(), signal.SIGTERM)  # kill the parent gunicorn process as it will respawn us otherwise
         os.kill(os.getpid(), signal.SIGTERM)  # kill ourselves as well

@@ -1,6 +1,8 @@
+from dataclasses import asdict
 from typing import Any, Literal, Type
 from uuid import UUID
 
+from fastmcp import FastMCP
 from pydantic import BaseModel
 
 from mindtrace.core import named_lambda, TaskSchema
@@ -15,7 +17,9 @@ from mindtrace.services import (
     IdentitySchema,
     SchemaOutput,
     SchemaSchema,
-    Service
+    Service,
+    StateOutput,
+    StateSchema,
 )
 
 
@@ -23,11 +27,21 @@ class MCPService(Service):
     """Service class extended with MCP-compatible endpoints."""
 
     def __init__(self, **kwargs):
+        self.mcp = FastMCP(name="MCPService")
         super().__init__(**kwargs)
+        
+        # Register MCP-specific endpoints
         self.add_endpoint("identity", self.identity, schema=IdentitySchema())
         self.add_endpoint("capabilities", self.capabilities, schema=CapabilitiesSchema())
         self.add_endpoint("execute", self.execute, schema=ExecuteSchema())
         self.add_endpoint("schema", self.schema, schema=SchemaSchema())
+        self.add_endpoint("state", self.state, schema=StateSchema())
+
+    def add_endpoint(self, path, func, *args, **kwargs):
+        super().add_endpoint(path, func, *args, **kwargs)
+        # Only add to MCP if it's initialized
+        if self.mcp is not None:
+            self.mcp.tool(name=path)(func)
 
     def identity(self):
         return IdentityOutput(
@@ -60,7 +74,7 @@ class MCPService(Service):
         result = pipeline.run(data.inputs or {})
         return ExecuteOutput(output=result)
 
-    def schema(self, _ = None):
+    def schema(self, t = None):
         return SchemaOutput(schemas={
             name: {
                 "input": task.input_schema.model_json_schema() if task.input_schema else None,
@@ -70,3 +84,16 @@ class MCPService(Service):
             if name not in {"identity", "capabilities", "execute"}
         })
 
+    def state(self, t = None):
+        return StateOutput(
+            status=self.status.value,
+            server_id=str(self.id),
+            num_endpoints=len(self._endpoints),
+            details={
+                "heartbeat": asdict(self.heartbeat()),
+            }
+        )
+
+    def run_mcp_server(self, host="localhost", port=8080, path="/mcp"):
+        """Run the MCP server using FastMCP's HTTP transport"""
+        self.mcp.run(transport="http", host=host, port=port, path=path)

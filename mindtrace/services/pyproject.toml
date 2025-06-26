@@ -2,7 +2,13 @@
 name = "mindtrace-services"
 version = "0.1.0"
 dependencies = [
+    "fastmcp>=2.9.0",
     "gunicorn>=23.0.0",
+    "langchain>=0.3.26",
+    "langchain-mcp-adapters>=0.1.7",
+    "langchain-ollama>=0.3.3",
+    "langgraph>=0.4.10",
+    "mcp>=1.9.4",
     "mindtrace-core",
     "structlog>=24.4.0",
     "uvicorn>=0.34.3",

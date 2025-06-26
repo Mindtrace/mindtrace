@@ -56,3 +56,15 @@ class SchemaOutput(BaseModel):
 class SchemaSchema(TaskSchema):
     name: str = "schema"
     output_schema: Type[SchemaOutput] = SchemaOutput
+
+
+class StateOutput(BaseModel):
+    status: str
+    server_id: str
+    num_endpoints: int
+    details: Dict[str, Any]
+
+
+class StateSchema(TaskSchema):
+    name: str = "state"
+    output_schema: Type[StateOutput] = StateOutput
