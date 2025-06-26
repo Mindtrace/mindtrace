@@ -11,9 +11,7 @@ from mindtrace.services.core.types import (
     ShutdownSchema, 
     StatusSchema, 
 )
-from mindtrace.services.core.utils import generate_connection_manager
-from mindtrace.services.core.service import Service
-from mindtrace.services.mcp.types import (
+from mindtrace.services.core.mcp_types import (
     Capability, 
     CapabilitiesSchema, 
     CapabilitiesOutput, 
@@ -27,7 +25,9 @@ from mindtrace.services.mcp.types import (
     StateOutput,
     StateSchema,
 )
-from mindtrace.services.mcp.mcp_service import MCPService
+from mindtrace.services.core.utils import generate_connection_manager
+from mindtrace.services.core.service import Service
+
 
 __all__ = [
     "CapabilitiesSchema",
@@ -38,7 +38,6 @@ __all__ = [
     "Heartbeat",
     "HeartbeatSchema",
     "IdentitySchema",
-    "MCPService",
     "PIDFileSchema",
     "ServerIDSchema",
     "Service",
@@ -46,4 +45,5 @@ __all__ = [
     "ShutdownOutput",
     "ShutdownSchema",
     "StatusSchema",
+    "Pipeline"
 ]

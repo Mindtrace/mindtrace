@@ -19,6 +19,7 @@ import fastapi
 from fastapi import FastAPI, HTTPException
 from urllib3.util.url import parse_url, Url
 
+from fastmcp import FastMCP
 from mindtrace.core import ifnone, ifnone_url, Mindtrace, named_lambda, TaskSchema, Timeout
 from mindtrace.services import ( 
     ConnectionManager,
@@ -32,11 +33,22 @@ from mindtrace.services import (
     ServerStatus, 
     ShutdownOutput,
     ShutdownSchema,
-    StatusSchema, 
+    StatusSchema,
+    IdentitySchema,
+    CapabilitiesSchema,
+    ExecuteSchema,
+    SchemaSchema,
+    StateSchema,
+    IdentityOutput,
+    CapabilitiesOutput,
+    ExecuteOutput,
+    SchemaOutput,
+    StateOutput,
+    Capability
 )
 
-T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
-C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
+T = TypeVar("T", bound="Service")
+C = TypeVar("C", bound="ConnectionManager")
 
 
 class DowngradeGunicornSigterm(logging.Filter):
@@ -69,6 +81,7 @@ class Service(Mindtrace):
         url: str | Url | None = None,
         host: str | None = None,
         port: int | None = None,
+        enable_mcp: bool = False,
         summary: str | None = None,
         description: str | None = None,
         terms_of_service: str | None = None,
@@ -99,6 +112,9 @@ class Service(Mindtrace):
         # 3. Default URL from config
         self._url = self.build_url(url=url, host=host, port=port)
 
+        self.enable_mcp = enable_mcp
+        
+
         description = ifnone(description, default=f"{self.name} server.")
         version_str = "Mindtrace " + version("mindtrace-services")
 
@@ -123,6 +139,7 @@ class Service(Mindtrace):
             license_info=license_info,
             lifespan=lifespan,
         )
+        self.mcp = FastMCP(name=self.name) if enable_mcp else None
         #self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
 
         self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda t = None: {"endpoints": list(self._endpoints.keys())}), schema=EndpointsSchema())
@@ -132,6 +149,12 @@ class Service(Mindtrace):
         self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda t = None: {"pid_file": self.pid_file}), schema=PIDFileSchema())
         self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
 
+        if self.enable_mcp:
+            self.add_endpoint("/identity", self.identity, schema=IdentitySchema())
+            self.add_endpoint("/capabilities", self.capabilities, schema=CapabilitiesSchema())
+            self.add_endpoint("/execute", self.execute, schema=ExecuteSchema())
+            self.add_endpoint("/schema", self.schema, schema=SchemaSchema())
+            self.add_endpoint("/state", self.state, schema=StateSchema())
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -460,3 +483,88 @@ class Service(Mindtrace):
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
+
+        if self.enable_mcp and self.mcp:
+            self.mcp.tool(name=path)(func)
+
+    def identity(self):
+        return IdentityOutput(name=self.name, version=self.app.version, uuid=self.id, description=self.app.description)
+
+    def capabilities(self):
+        caps = []
+        for endpoint, schema in self._endpoints.items():
+            if endpoint in {"identity", "capabilities", "execute", "schema", "state"}:
+                continue
+            caps.append(Capability(
+                name=endpoint,
+                description=schema.name,
+                input_type=schema.input_schema.__name__ if schema.input_schema else None,
+                output_type=schema.output_schema.__name__ if schema.output_schema else None,
+            ))
+        return CapabilitiesOutput(capabilities=caps)
+
+    def execute(self, data):
+        pipeline = self._endpoints.get(data.capability)
+        if pipeline is None:
+            raise fastapi.HTTPException(status_code=404, detail=f"Unknown capability: {data.capability}")
+        result = pipeline.run(data.inputs or {})
+        return ExecuteOutput(output=result)
+
+    def schema(self, t=None):
+        return SchemaOutput(schemas={
+            name: {
+                "input": task.input_schema.model_json_schema() if task.input_schema else None,
+                "output": task.output_schema.model_json_schema() if task.output_schema else None,
+            }
+            for name, task in self._endpoints.items()
+            if name not in {"identity", "capabilities", "execute", "schema", "state"}
+        })
+
+    def state(self, t=None):
+        return StateOutput(
+            status=self.status.value,
+            server_id=str(self.id),
+            num_endpoints=len(self._endpoints),
+            details={"heartbeat": self.heartbeat().__dict__},
+        )
+
+
+    @classmethod
+    def launch_mcp(
+        cls: Type[T],
+        *,
+        host: str = "localhost",
+        port: int = 8080,
+        path: str = "/rpc",
+        block: bool = True,
+        **kwargs,
+    ):
+        server_id = uuid.uuid1()
+        init_params = json.dumps({"host": host, "port": port, "path": path, "enable_mcp": True, **kwargs})
+
+        launch_command = [
+            "python",
+            "-m",
+            "mindtrace.services.core.mcp_launcher",
+            "--server_class",
+            cls.unique_name,
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--path",
+            path,
+            "--init-params",
+            init_params,
+        ]
+        cls.logger.warning(f"Launching MCP server: {launch_command}")
+        process = subprocess.Popen(launch_command)
+
+        if block:
+            try:
+                process.wait()
+            except KeyboardInterrupt:
+                process.terminate()
+                process.wait()
+
+        return process
