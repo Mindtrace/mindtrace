@@ -57,7 +57,7 @@ class AuthState(rx.State):
     @rx.var
     def is_admin(self) -> bool:
         """Check if user is organization admin"""
-        return self.has_org_role("org_admin")
+        return self.has_org_role("admin")
     
     @rx.var
     def is_super_admin(self) -> bool:

@@ -1,9 +1,26 @@
 """Pages for the Reflex app."""
 
 from .index import index
-from .login import login_page
-from .register import register_page
-from .profile import profile_page
-from .admin import admin_page
 
-__all__ = ["index", "login_page", "register_page", "profile_page", "admin_page"] 
+# Import from subfolders
+from .auth import login_page, register_page, register_admin_page, register_super_admin_page
+from .dashboards import admin_page, super_admin_dashboard_page
+from .management import user_management_page, organization_management_page
+from .user import profile_page
+
+__all__ = [
+    "index", 
+    # Auth pages
+    "login_page", 
+    "register_page", 
+    "register_admin_page",
+    "register_super_admin_page",
+    # Dashboard pages
+    "admin_page",
+    "super_admin_dashboard_page",
+    # Management pages
+    "user_management_page",
+    "organization_management_page",
+    # User pages
+    "profile_page",
+] 

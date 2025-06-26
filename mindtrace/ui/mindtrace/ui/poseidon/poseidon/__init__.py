@@ -12,6 +12,18 @@ separated concerns for better maintainability.
 """
 
 from . import state
-from .pages import index, login, register
+from .pages import (
+    index,
+    login_page, register_page, register_admin_page, register_super_admin_page,
+    admin_page, super_admin_dashboard_page,
+    user_management_page, organization_management_page,
+    profile_page,
+)
 
-__all__ = ["state", "index", "login", "register"] 
+__all__ = [
+    "state", "index",
+    "login_page", "register_page", "register_admin_page", "register_super_admin_page",
+    "admin_page", "super_admin_dashboard_page",
+    "user_management_page", "organization_management_page",
+    "profile_page",
+] 

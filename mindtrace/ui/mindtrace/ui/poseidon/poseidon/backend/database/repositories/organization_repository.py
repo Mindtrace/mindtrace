@@ -33,6 +33,12 @@ class OrganizationRepository:
         return await backend.find({"is_active": True})
     
     @staticmethod
+    async def get_all() -> List[Organization]:
+        """Get all organizations (active and inactive)"""
+        await backend.initialize()
+        return await backend.find({})
+    
+    @staticmethod
     async def update_settings(org_id: str, settings: dict) -> Optional[Organization]:
         """Update organization settings"""
         await backend.initialize()
@@ -73,4 +79,28 @@ class OrganizationRepository:
     async def get_organizations_by_plan(plan: str) -> List[Organization]:
         """Get organizations by subscription plan"""
         await backend.initialize()
-        return await backend.find({"subscription_plan": plan, "is_active": True}) 
+        return await backend.find({"subscription_plan": plan, "is_active": True})
+    
+    @staticmethod
+    async def update_organization(org_id: str, update_data: dict) -> Optional[Organization]:
+        """Update organization with arbitrary data"""
+        await backend.initialize()
+        org = await backend.get(org_id)
+        if org:
+            for key, value in update_data.items():
+                if hasattr(org, key):
+                    setattr(org, key, value)
+            org.update_timestamp()
+            return await backend.update(org_id, org)
+        return None
+    
+    @staticmethod
+    async def activate_organization(org_id: str) -> Optional[Organization]:
+        """Activate organization"""
+        await backend.initialize()
+        org = await backend.get(org_id)
+        if org:
+            org.is_active = True
+            org.update_timestamp()
+            return await backend.update(org_id, org)
+        return None 

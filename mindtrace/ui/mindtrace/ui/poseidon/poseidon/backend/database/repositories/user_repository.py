@@ -35,7 +35,19 @@ class UserRepository:
     
     @staticmethod
     async def get_by_organization(organization_id: str) -> List[User]:
-        """Get all users in an organization"""
+        """Get all users in an organization (both active and inactive)"""
+        await backend.initialize()
+        return await backend.find({"organization_id": organization_id})
+    
+    @staticmethod
+    async def get_all_users() -> List[User]:
+        """Get all users across all organizations (super admin only)"""
+        await backend.initialize()
+        return await backend.find({})
+    
+    @staticmethod
+    async def get_active_by_organization(organization_id: str) -> List[User]:
+        """Get only active users in an organization"""
         await backend.initialize()
         return await backend.find({"organization_id": organization_id, "is_active": True})
     
@@ -45,7 +57,7 @@ class UserRepository:
         await backend.initialize()
         return await backend.find({
             "organization_id": organization_id,
-            "org_roles": {"$in": ["org_admin"]},
+            "org_roles": {"$in": ["admin"]},
             "is_active": True
         })
     
@@ -66,7 +78,7 @@ class UserRepository:
         if user:
             user.add_project_assignment(project_id, roles)
             user.update_timestamp()
-            return await backend.update(user_id, user.dict())
+            return await backend.update(user_id, user)
         return None
     
     @staticmethod
@@ -77,7 +89,7 @@ class UserRepository:
         if user:
             user.remove_project_assignment(project_id)
             user.update_timestamp()
-            return await backend.update(user_id, user.dict())
+            return await backend.update(user_id, user)
         return None
     
     @staticmethod
@@ -88,7 +100,7 @@ class UserRepository:
         if user:
             user.org_roles = roles
             user.update_timestamp()
-            return await backend.update(user_id, user.dict())
+            return await backend.update(user_id, user)
         return None
     
     @staticmethod
@@ -99,7 +111,7 @@ class UserRepository:
         if user:
             user.is_active = False
             user.update_timestamp()
-            return await backend.update(user_id, user.dict())
+            return await backend.update(user_id, user)
         return None
     
     @staticmethod
@@ -110,7 +122,7 @@ class UserRepository:
         if user:
             user.is_active = True
             user.update_timestamp()
-            return await backend.update(user_id, user.dict())
+            return await backend.update(user_id, user)
         return None
     
     @staticmethod

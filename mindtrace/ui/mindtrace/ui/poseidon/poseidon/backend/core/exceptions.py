@@ -8,5 +8,8 @@ class UserAlreadyExistsError(BackendError):
 class UserNotFoundError(BackendError):
     pass
 
+class OrganizationNotFoundError(BackendError):
+    pass
+
 class InvalidCredentialsError(BackendError):
     pass 

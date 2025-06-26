@@ -9,7 +9,7 @@ class User(MindtraceDocument):
     organization_id: str  # Required - primary tenant
     
     # Organization-level roles
-    org_roles: List[str] = ["member"]  # org_admin, member, viewer
+    org_roles: List[str] = ["user"]  # admin, user, super_admin
     
     # Project assignments with roles
     project_assignments: List[Dict] = []  # {project_id: str, roles: List[str]}

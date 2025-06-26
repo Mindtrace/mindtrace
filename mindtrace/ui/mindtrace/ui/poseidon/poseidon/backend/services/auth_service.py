@@ -139,7 +139,7 @@ class AuthService:
             email=email,
             password=password,
             organization_id=organization_id,
-            org_roles=["org_admin"]
+            org_roles=["admin"]
         )
     
     @staticmethod

@@ -124,6 +124,15 @@ class UserManagementService:
         return await UserRepository.get_by_organization(organization_id)
     
     @staticmethod
+    async def get_all_users() -> List:
+        """Get all users across all organizations (super admin only).
+        
+        Returns:
+            List of all users in the system
+        """
+        return await UserRepository.get_all_users()
+    
+    @staticmethod
     async def get_project_users(project_id: str, admin_organization_id: str) -> List:
         """Get all users assigned to a project.
         
@@ -147,16 +156,18 @@ class UserManagementService:
         
         Args:
             user_id: ID of user to deactivate
-            admin_organization_id: Organization ID of admin making the request
+            admin_organization_id: Organization ID of admin making the request (None for super admin)
             
         Returns:
             dict: Success response
         """
-        # Get user and validate organization
+        # Get user
         user = await UserRepository.get_by_id(user_id)
-        if not user or user.organization_id != admin_organization_id:
+        if not user:
+            raise ValueError("Access denied: User not found.")
+        # If org_id is provided, check org match (for regular admins)
+        if admin_organization_id is not None and user.organization_id != admin_organization_id:
             raise ValueError("Access denied: User not found in your organization.")
-        
         # Deactivate user
         updated_user = await UserRepository.deactivate_user(user_id)
         return {"success": True, "user": updated_user}
@@ -167,19 +178,67 @@ class UserManagementService:
         
         Args:
             user_id: ID of user to activate
-            admin_organization_id: Organization ID of admin making the request
+            admin_organization_id: Organization ID of admin making the request (None for super admin)
             
         Returns:
             dict: Success response
         """
-        # Get user and validate organization
+        # Get user
         user = await UserRepository.get_by_id(user_id)
-        if not user or user.organization_id != admin_organization_id:
+        if not user:
+            raise ValueError("Access denied: User not found.")
+        # If org_id is provided, check org match (for regular admins)
+        if admin_organization_id is not None and user.organization_id != admin_organization_id:
             raise ValueError("Access denied: User not found in your organization.")
-        
         # Activate user
         updated_user = await UserRepository.activate_user(user_id)
         return {"success": True, "user": updated_user}
+    
+    @staticmethod
+    async def create_user_in_organization(
+        username: str,
+        email: str,
+        password: str,
+        admin_organization_id: str,
+        org_roles: List[str] = None
+    ) -> dict:
+        """Create a new user in the organization.
+        
+        Args:
+            username: Username for the new user
+            email: Email for the new user
+            password: Password for the new user
+            admin_organization_id: Organization ID where user will be created
+            org_roles: Optional organization roles (defaults to ["member"])
+            
+        Returns:
+            dict: Success response with created user data
+        """
+        # Default to user role if no roles specified
+        if not org_roles:
+            org_roles = ["user"]
+        
+        # Create user data
+        user_data = {
+            "username": username,
+            "email": email,
+            "password": password,
+            "organization_id": admin_organization_id,
+            "org_roles": org_roles,
+            "is_active": True
+        }
+        
+        # Create the user
+        from poseidon.backend.services.auth_service import AuthService
+        result = await AuthService.register_user(
+            username=username,
+            email=email,
+            password=password,
+            organization_id=admin_organization_id,
+            org_roles=org_roles
+        )
+        
+        return {"success": True, "message": "User created successfully", "user": result}
     
     @staticmethod
     async def check_user_permission(
