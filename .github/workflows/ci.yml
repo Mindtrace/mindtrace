@@ -6,12 +6,10 @@ on:
     branches:
       - dev
       - main
-      - feature/ci-test
   push:
     branches:
       - dev
       - main
-      - feature/ci-test
     tags:
       - "v*"
 
