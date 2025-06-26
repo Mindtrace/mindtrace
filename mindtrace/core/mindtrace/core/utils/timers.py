@@ -1,7 +1,7 @@
 """Utility class for simple Timer and TimerCollection classes."""
 
 import time
-from typing import Dict, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from tqdm import tqdm
 
@@ -112,14 +112,19 @@ class TimerCollection:
 
     """
 
-    def __init__(self):
+    def __init__(self, timers: List[str] | None = None):
         self._timers: Dict[str, Timer] = {}
+
+    def add_timer(self, name: str):
+        """Add a timer with the given name. If the timer already exists, it will be replaced."""
+        self._timers[name] = Timer()
 
     def start(self, name: str):
         """Start the timer with the given name. If the timer does not exist, it will be created."""
         if name not in self._timers:
-            self._timers[name] = Timer()
+            self.add_timer(name)
         self._timers[name].start()
+        return self._timers[name]
 
     def stop(self, name: str):
         """Stop the timer with the given name.
@@ -169,6 +174,15 @@ class TimerCollection:
     def names(self):
         """Get the names of all timers."""
         return self._timers.keys()
+
+    def __enter__(self):
+        """Enter the context manager."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager."""
+        self.stop()
+        return False
 
     def __str__(self):
         """Print each timer to the nearest microsecond."""
