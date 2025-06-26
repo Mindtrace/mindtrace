@@ -3,7 +3,16 @@ name = "mindtrace-ui"
 version = "0.1.0"
 dependencies = [
     "numpy",
-    "mindtrace-core"
+    "mindtrace-core",
+    # Reflex dependencies for Poseidon app
+    "reflex>=0.4.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.27.1",
+    "sqlmodel>=0.0.16",
+    "python-multipart>=0.0.9",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.9.1",
 ]
 
 [tool.setuptools]
@@ -11,6 +20,9 @@ packages = ["mindtrace.ui"]
 
 [tool.setuptools.package-dir]
 "" = "."
+
+[tool.dstool.scripts]
+poseidon-dev = "cd mindtrace/ui && reflex run"
 
 [build-system]
 requires = ["setuptools"]
