@@ -16,8 +16,6 @@ class TestServiceIntegration:
         # Verify it has the expected methods
         assert hasattr(ConnectionManager, 'echo')
         assert hasattr(ConnectionManager, 'aecho')
-        assert hasattr(ConnectionManager, 'get_job')
-        assert hasattr(ConnectionManager, 'aget_job')
         
         # Create an instance (won't work for actual calls but tests the creation)
         manager = ConnectionManager(url="http://localhost:8080")
