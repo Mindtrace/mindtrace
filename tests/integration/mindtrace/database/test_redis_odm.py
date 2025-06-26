@@ -1,10 +1,10 @@
+from typing import List
+
 import pytest
 from pydantic import BaseModel
 from redis_om import Field
-from typing import List
 
-from mindtrace.database import RedisMindtraceODMBackend, MindtraceRedisDocument
-from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
+from mindtrace.database import DocumentNotFoundError, DuplicateInsertError, MindtraceRedisDocument, RedisMindtraceODMBackend
 
 REDIS_URL = "redis://localhost:6379"
 
