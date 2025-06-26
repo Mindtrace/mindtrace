@@ -56,6 +56,55 @@ def add_endpoint(app, path, self: Optional["Service"], **kwargs):
 
     return wrapper
 
+def make_method(endpoint_path, input_schema, output_schema):
+    def method(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
+        if validate_input:
+            payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+        else:
+            payload = kwargs
+        res = httpx.post(
+            str(self.url).rstrip('/') + endpoint_path,
+            json=payload,
+            timeout=30
+        )
+        if res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+        
+        # Handle empty responses (e.g., from shutdown endpoint)
+        try:
+            result = res.json()
+        except:
+            result = {"success": True}  # Default response for empty content
+            
+        if not validate_output:
+            return result  # raw result dict
+        return output_schema(**result) if output_schema is not None else result
+    
+    async def amethod(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
+        if validate_input:
+            payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+        else:
+            payload = kwargs
+        async with httpx.AsyncClient(timeout=30) as client:
+            res = await client.post(
+                str(self.url).rstrip('/') + endpoint_path,
+                json=payload,
+                timeout=30
+            )
+        if res.status_code != 200:
+            raise HTTPException(res.status_code, res.text)
+        
+        # Handle empty responses (e.g., from shutdown endpoint)
+        try:
+            result = res.json()
+        except:
+            result = {"success": True}  # Default response for empty content
+            
+        if not validate_output:
+            return result  # raw result dict
+        return output_schema(**result) if output_schema is not None else result
+    
+    return method, amethod
 
 def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     """Register a connection manager for a server class.
@@ -127,55 +176,6 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
             
         endpoint_path = f"/{endpoint_name}"
 
-        def make_method(endpoint_path, input_schema, output_schema):
-            def method(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
-                if validate_input:
-                    payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
-                else:
-                    payload = kwargs
-                res = httpx.post(
-                    str(self.url).rstrip('/') + endpoint_path,
-                    json=payload,
-                    timeout=30
-                )
-                if res.status_code != 200:
-                    raise HTTPException(res.status_code, res.text)
-                
-                # Handle empty responses (e.g., from shutdown endpoint)
-                try:
-                    result = res.json()
-                except:
-                    result = {"success": True}  # Default response for empty content
-                    
-                if not validate_output:
-                    return result  # raw result dict
-                return output_schema(**result) if output_schema is not None else result
-            
-            async def amethod(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
-                if validate_input:
-                    payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
-                else:
-                    payload = kwargs
-                async with httpx.AsyncClient(timeout=30) as client:
-                    res = await client.post(
-                        str(self.url).rstrip('/') + endpoint_path,
-                        json=payload,
-                        timeout=30
-                    )
-                if res.status_code != 200:
-                    raise HTTPException(res.status_code, res.text)
-                
-                # Handle empty responses (e.g., from shutdown endpoint)
-                try:
-                    result = res.json()
-                except:
-                    result = {"success": True}  # Default response for empty content
-                    
-                if not validate_output:
-                    return result  # raw result dict
-                return output_schema(**result) if output_schema is not None else result
-            
-            return method, amethod
 
         method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
         

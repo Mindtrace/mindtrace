@@ -11,6 +11,7 @@ This script shows how to:
 
 import asyncio
 import time
+from mindtrace.services.sample.echo_service_explicit_manager import EchoServiceWithManager
 from mindtrace.services.sample.echo_service import EchoService
 from mindtrace.services import generate_connection_manager, ServerStatus
 
@@ -20,13 +21,13 @@ def sync_example():
     print("Launching EchoService...")
     
     # Launch the service on a specific port
-    connection_manager = EchoService.launch(
+    connection_manager = EchoServiceWithManager.launch(
         port=8080, 
         host="localhost",
         wait_for_launch=True,  # Wait for service to be ready
         timeout=30
     )
-    
+
     print("Service launched successfully!")
     print(f"Service URL: {connection_manager.url}")
     

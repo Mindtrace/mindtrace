@@ -11,7 +11,7 @@ import psutil
 import requests
 import signal
 import subprocess
-from typing import Type, TypeVar
+from typing import Type, TypeVar, Generic, ClassVar
 import uuid
 from uuid import UUID
 
@@ -37,12 +37,12 @@ T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', o
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
 
 
-class Service(Mindtrace):
+class Service(Generic[C], Mindtrace):
     """Base class for all Mindtrace services."""
 
     _status = ServerStatus.DOWN
     _endpoints: dict[str, TaskSchema] = {}
-    _client_interface: Type[C] | None = None
+    _client_interface: ClassVar[Type[C] | None] = None
     _active_servers: dict[UUID, psutil.Process] = {}
 
     def __init__(
@@ -170,7 +170,7 @@ class Service(Mindtrace):
         return status
 
     @classmethod
-    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> C:
+    def connect(cls: Type["Service[C]"], url: str | Url | None = None, timeout: int = 60) -> C:
         """Connect to an existing service.
 
         The returned connection manager is determined by the registered connection manager for the service. If one has
@@ -189,14 +189,14 @@ class Service(Mindtrace):
         host_status = cls.status_at_host(url, timeout=timeout)
         if host_status == ServerStatus.AVAILABLE:
             if cls._client_interface is None:
-                return generate_connection_manager(cls)(url=url)
+                return generate_connection_manager(cls)(url=url)  # type: ignore
             else:
                 return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
 
     @classmethod
     def launch(
-        cls: Type[T],
+        cls: Type["Service[C]"],
         *,
         url: str | Url | None = None,
         host: str | None = None,
@@ -207,7 +207,7 @@ class Service(Mindtrace):
         timeout: int = 60,
         progress_bar: bool = True,
         **kwargs,
-    ):
+    ) -> C:
         """Launch a new server instance.
 
         The server can be configured through either explicit URL parameters or through kwargs. All kwargs are passed
