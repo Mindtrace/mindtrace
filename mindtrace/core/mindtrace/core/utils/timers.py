@@ -78,6 +78,23 @@ class Timer:
         return f"{self.duration():.3f}s"
 
 
+class TimerContext:
+    """Context manager for individual timers in a TimerCollection."""
+    
+    def __init__(self, timer_collection: "TimerCollection", name: str):
+        self.timer_collection = timer_collection
+        self.name = name
+
+    def __enter__(self):
+        """Enter the context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and stop the specific timer."""
+        self.timer_collection.stop(self.name)
+        return False  # Don't suppress exceptions
+
+
 class TimerCollection:
     """Utility class for timing multiple operations.
 
@@ -110,6 +127,21 @@ class TimerCollection:
             # Timer 2: 0.000s
             # Timer 3: 0.000s
 
+    Context Manager Example::
+
+        import time
+        from mindtrace.core import TimerCollection
+
+        tc = TimerCollection()
+        with tc.start('Timer 1'):
+            with tc.start('Timer 2'):
+                time.sleep(1)
+            # stops "Timer 2"
+            with tc.start('Timer 3'):
+                time.sleep(1)
+            # stops "Timer 3"
+        # stops "Timer 1"
+
     """
 
     def __init__(self, timers: List[str] | None = None):
@@ -124,7 +156,7 @@ class TimerCollection:
         if name not in self._timers:
             self.add_timer(name)
         self._timers[name].start()
-        return self._timers[name]
+        return TimerContext(self, name)
 
     def stop(self, name: str):
         """Stop the timer with the given name.
@@ -174,15 +206,6 @@ class TimerCollection:
     def names(self):
         """Get the names of all timers."""
         return self._timers.keys()
-
-    def __enter__(self):
-        """Enter the context manager."""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exit the context manager."""
-        self.stop()
-        return False
 
     def __str__(self):
         """Print each timer to the nearest microsecond."""
