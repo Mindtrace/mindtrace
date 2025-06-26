@@ -1,27 +1,32 @@
 from abc import abstractmethod
-from typing import Any
+from typing import Type, Any, Set
 
+from zenml.enums import ArtifactType
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, MindtraceABC
+from mindtrace.core import Mindtrace, MindtraceMeta
 
 
-class ArchiverMeta(type(Mindtrace), type(BaseMaterializer)):
+class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
+    """Meta class for Archiver."""
     pass
 
 
 class Archiver(Mindtrace, BaseMaterializer, metaclass=ArchiverMeta):
-    ASSOCIATED_TYPES = (Any, )  # List of types that can be archived
-    ASSOCIATED_ARTIFACT_TYPES = (Any, )  # List of artifact types that can be archived
+    """Base Archiver class for handling data persistence."""
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    # Required by BaseMaterializer
+    ASSOCIATED_TYPES: Set[Type] = {Any}
+    ASSOCIATED_ARTIFACT_TYPE: ArtifactType = ArtifactType.DATA
+
+    def __init__(self, uri: str, *args, **kwargs):
+        super().__init__(uri=uri, *args, **kwargs)
+        self.logger.debug(f"Archiver initialized at: {uri}")
 
     @abstractmethod
     def save(self, data: Any):
-        raise NotImplementedError("Archiver save method not implemented")
+        raise NotImplementedError("Subclasses must implement save().")
 
-    @classmethod
     @abstractmethod
-    def load(cls, data: Any):
-        raise NotImplementedError("Archiver load method not implemented")
+    def load(self, data_type: Type[Any]) -> Any:
+        raise NotImplementedError("Subclasses must implement load().")
