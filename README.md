@@ -53,6 +53,32 @@ Each layer only depends on modules in lower levels.
 
 ---
 
+
+## 🛠️ Build
+
+Building wheels and source distributions, from the root of the repo:  
+```bash
+uv build --all-packages
+ls dist/
+```
+For building only wheels:  
+```bash
+uv build --all-packages --wheel
+ls dist/
+```
+They may then be installed in a new venv (the entire `mindtrace` package or any submodule `mindtrace-core`) via:  
+```bash
+uv pip install mindtrace --find-links /path/to/dist
+# or
+uv pip install /path/to/dist/mindtrace.whl
+```
+Note: You may need to use `uv pip install --force-reinstall` in case you encounter `ModuleNotFoundError`.  
+Checking the installation:  
+```bash
+uv run python -c "from mindtrace.core import Mindtrace; print('OK')"
+```
+
+
 ## 🛠️ Usage Examples
 
 Installing the full Mindtrace package:
