@@ -63,6 +63,16 @@ class Timer:
         """Reset and start the timer."""
         self.reset()
         self.start()
+    
+    def __enter__(self):
+        """Enter the context manager."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and stop the timer."""
+        self.stop()
+        return False  # Don't suppress exceptions
 
     def __str__(self):
         return f"{self.duration():.3f}s"
