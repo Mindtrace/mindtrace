@@ -8,12 +8,6 @@ dependencies = [
     "mindtrace-services",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.datalake"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
