@@ -36,7 +36,7 @@ class ContextListener(Mindtrace):
                 self.y = 0
 
         my_context = MyContext()
-        my_context.add_listener(ContextListener(autolog=["x", "y"]))
+        my_context.subscribe(ContextListener(autolog=["x", "y"]))
 
         my_context.x = 1
         my_context.y = 2
