@@ -189,25 +189,5 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
         amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
         setattr(ServiceConnectionManager, f"a{endpoint_name}", amethod)
 
-    def get_job(self, job_id: str):
-        res = httpx.get(str(self.url).rstrip('/') + f"/job/{job_id}", timeout=10)
-        if res.status_code == 404:
-            return None
-        elif res.status_code != 200:
-            raise HTTPException(res.status_code, res.text)
-        return res.json()
-    
-    async def aget_job(self, job_id: str):
-        async with httpx.AsyncClient(timeout=10) as client:
-            res = await client.get(str(self.url).rstrip('/') + f"/job/{job_id}")
-        if res.status_code == 404:
-            return None
-        elif res.status_code != 200:
-            raise HTTPException(res.status_code, res.text)
-        return res.json()
-    
-    setattr(ServiceConnectionManager, "get_job", get_job)
-    setattr(ServiceConnectionManager, "aget_job", aget_job)
-
     ServiceConnectionManager.__name__ = class_name
     return ServiceConnectionManager

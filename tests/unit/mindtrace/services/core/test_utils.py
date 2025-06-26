@@ -223,9 +223,7 @@ class TestGenerateConnectionManager:
         assert hasattr(ConnectionManagerClass, "atest_endpoint")
         assert hasattr(ConnectionManagerClass, "ano_input_endpoint")
         
-        # Verify get_job methods exist
-        assert hasattr(ConnectionManagerClass, "get_job")
-        assert hasattr(ConnectionManagerClass, "aget_job")
+
 
     def test_generate_connection_manager_method_documentation(self, mock_service_class):
         """Test that generated methods have proper documentation."""
@@ -469,87 +467,6 @@ class TestGenerateConnectionManager:
         assert result == {"raw": "response"}
 
     @patch('mindtrace.services.core.utils.httpx')
-    def test_get_job_method_success(self, mock_httpx, mock_service_class):
-        """Test get_job method success."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock response
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"job_id": "123", "status": "completed"}
-        mock_httpx.get.return_value = mock_response
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        result = manager.get_job("123")
-        
-        mock_httpx.get.assert_called_once_with(
-            "http://test.com/job/123",
-            timeout=10
-        )
-        assert result == {"job_id": "123", "status": "completed"}
-
-    @patch('mindtrace.services.core.utils.httpx')
-    def test_get_job_method_not_found(self, mock_httpx, mock_service_class):
-        """Test get_job method with 404 response."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock 404 response
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_httpx.get.return_value = mock_response
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        result = manager.get_job("nonexistent")
-        
-        assert result is None
-
-    @patch('mindtrace.services.core.utils.httpx')
-    def test_get_job_method_error(self, mock_httpx, mock_service_class):
-        """Test get_job method with error response."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock error response
-        mock_response = Mock()
-        mock_response.status_code = 500
-        mock_response.text = "Server Error"
-        mock_httpx.get.return_value = mock_response
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        with pytest.raises(HTTPException) as exc_info:
-            manager.get_job("123")
-        
-        assert exc_info.value.status_code == 500
-        assert exc_info.value.detail == "Server Error"
-
-    @patch('mindtrace.services.core.utils.httpx')
-    @pytest.mark.asyncio
-    async def test_aget_job_method_success(self, mock_httpx, mock_service_class):
-        """Test async get_job method success."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock async client and response
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"job_id": "async123", "status": "running"}
-        mock_client.get.return_value = mock_response
-        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        result = await manager.aget_job("async123")
-        
-        mock_client.get.assert_called_once_with("http://test.com/job/async123")
-        assert result == {"job_id": "async123", "status": "running"}
-
-    @patch('mindtrace.services.core.utils.httpx')
     def test_generated_method_no_input_schema_with_validate_input_false(self, mock_httpx, mock_service_class):
         """Test method generation with no input schema and validate_input=False."""
         mock_service_class, mock_service, _, mock_endpoint2 = mock_service_class
@@ -687,50 +604,6 @@ class TestGenerateConnectionManager:
         # Should return raw result without calling output schema
         assert result == {"raw": "async_response_data"}
         mock_endpoint1.output_schema.assert_not_called()
-
-    @patch('mindtrace.services.core.utils.httpx')
-    @pytest.mark.asyncio
-    async def test_aget_job_method_not_found(self, mock_httpx, mock_service_class):
-        """Test async get_job method with 404 response."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock async client with 404 response
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 404
-        mock_client.get.return_value = mock_response
-        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        result = await manager.aget_job("nonexistent")
-        
-        assert result is None
-
-    @patch('mindtrace.services.core.utils.httpx')
-    @pytest.mark.asyncio
-    async def test_aget_job_method_error(self, mock_httpx, mock_service_class):
-        """Test async get_job method with error response."""
-        mock_service_class, _, _, _ = mock_service_class
-        
-        # Setup mock async client with error response
-        mock_client = AsyncMock()
-        mock_response = Mock()
-        mock_response.status_code = 503
-        mock_response.text = "Service Unavailable"
-        mock_client.get.return_value = mock_response
-        mock_httpx.AsyncClient.return_value.__aenter__.return_value = mock_client
-        
-        ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url="http://test.com")
-        
-        with pytest.raises(HTTPException) as exc_info:
-            await manager.aget_job("123")
-        
-        assert exc_info.value.status_code == 503
-        assert exc_info.value.detail == "Service Unavailable"
-
 
 class TestTypeCheckingImport:
     """Test suite to cover the TYPE_CHECKING import block."""
