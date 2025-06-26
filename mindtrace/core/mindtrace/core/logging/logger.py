@@ -65,7 +65,7 @@ def setup_logger(
         child_log_path = os.path.join("modules", f"{name}.log")
         
     if log_dir:
-        log_file_path = os.path.join(log_dir,child_log_path)
+        log_file_path = os.path.join(log_dir, child_log_path)
     else:
         log_file_path = os.path.join(default_config["MINDTRACE_LOGGER_DIR"], child_log_path)
     
