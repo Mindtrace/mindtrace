@@ -15,6 +15,10 @@ on:
     tags:
       - "v*"
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -60,4 +64,3 @@ jobs:
           PY_COLORS: "1"
         run: |
           ds test
-        shell: bash
