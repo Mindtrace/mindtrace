@@ -4,6 +4,7 @@ import requests
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.sample.echo_service import EchoService, EchoOutput
+from mindtrace.services.core.types import EndpointsOutput, StatusOutput, HeartbeatOutput, ServerIDOutput, PIDFileOutput
 
 
 class TestServiceIntegration:
@@ -80,60 +81,60 @@ class TestServiceIntegration:
         
         # Test endpoints endpoint (sync)
         endpoints_result = echo_service_manager.endpoints()
-        assert isinstance(endpoints_result, dict)
-        assert "echo" in endpoints_result  # Our custom endpoint
+        assert isinstance(endpoints_result, EndpointsOutput)
+        assert "echo" in endpoints_result.endpoints  # Our custom endpoint
         
         # Default endpoints should also be present
         default_endpoint_names = ["endpoints", "status", "heartbeat", "server_id", "pid_file", "shutdown"]
         for endpoint_name in default_endpoint_names:
-            assert endpoint_name in endpoints_result, f"Missing default endpoint: {endpoint_name}"
+            assert endpoint_name in endpoints_result.endpoints, f"Missing default endpoint: {endpoint_name}"
         
         # Test endpoints endpoint (async)
         aendpoints_result = await echo_service_manager.aendpoints()
-        assert isinstance(aendpoints_result, dict)
-        assert aendpoints_result == endpoints_result  # Should be the same
+        assert isinstance(aendpoints_result, EndpointsOutput)
+        assert aendpoints_result.endpoints == endpoints_result.endpoints  # Should be the same
         
         # Test status endpoint (sync)
         status_result = echo_service_manager.status()
-        assert isinstance(status_result, dict)
-        assert "status" in status_result
-        assert status_result["status"] in ["running", "ready", "healthy"]  # Common status values
+        assert isinstance(status_result, StatusOutput)
+        assert status_result.status.value in ["Available", "Down"]  # ServerStatus enum values
         
         # Test status endpoint (async)
         astatus_result = await echo_service_manager.astatus()
-        assert isinstance(astatus_result, dict)
-        assert "status" in astatus_result
+        assert isinstance(astatus_result, StatusOutput)
+        assert astatus_result.status == status_result.status
         
         # Test heartbeat endpoint (sync)
         heartbeat_result = echo_service_manager.heartbeat()
-        assert isinstance(heartbeat_result, dict)
-        assert "timestamp" in heartbeat_result or "heartbeat" in heartbeat_result
+        assert isinstance(heartbeat_result, HeartbeatOutput)
+        assert heartbeat_result.heartbeat is not None
+        assert heartbeat_result.heartbeat.status is not None
         
         # Test heartbeat endpoint (async)
         aheartbeat_result = await echo_service_manager.aheartbeat()
-        assert isinstance(aheartbeat_result, dict)
-        assert "timestamp" in aheartbeat_result or "heartbeat" in aheartbeat_result
+        assert isinstance(aheartbeat_result, HeartbeatOutput)
+        assert aheartbeat_result.heartbeat is not None
         
         # Test server_id endpoint (sync)
         server_id_result = echo_service_manager.server_id()
-        assert isinstance(server_id_result, dict)
-        assert "server_id" in server_id_result or "id" in server_id_result
+        assert isinstance(server_id_result, ServerIDOutput)
+        assert server_id_result.server_id is not None
         
         # Test server_id endpoint (async)
         aserver_id_result = await echo_service_manager.aserver_id()
-        assert isinstance(aserver_id_result, dict)
-        assert "server_id" in aserver_id_result or "id" in aserver_id_result
+        assert isinstance(aserver_id_result, ServerIDOutput)
+        assert aserver_id_result.server_id == server_id_result.server_id
         
         # Test pid_file endpoint (sync)
         pid_file_result = echo_service_manager.pid_file()
-        assert isinstance(pid_file_result, dict)
+        assert isinstance(pid_file_result, PIDFileOutput)
         # PID file might be None if not configured, that's okay
-        assert "pid_file" in pid_file_result or "pid" in pid_file_result
+        assert pid_file_result.pid_file is not None
         
         # Test pid_file endpoint (async)
         apid_file_result = await echo_service_manager.apid_file()
-        assert isinstance(apid_file_result, dict)
-        assert "pid_file" in apid_file_result or "pid" in apid_file_result
+        assert isinstance(apid_file_result, PIDFileOutput)
+        assert apid_file_result.pid_file == pid_file_result.pid_file
         
         # Note: Not testing shutdown endpoint as it would terminate the service
         # But we can verify the method exists
