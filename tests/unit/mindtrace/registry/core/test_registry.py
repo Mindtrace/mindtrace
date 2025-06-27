@@ -962,9 +962,7 @@ def test_register_default_materializers_without_transformers():
 
 def test_register_default_materializers_with_transformers():
     """Test _register_default_materializers when transformers package is available."""
-    try:
-        import transformers
-    except ImportError:
+    if check_libs(["transformers"]):
         pytest.skip("Required libraries not installed: transformers. Skipping test.")
 
     with TemporaryDirectory() as temp_dir:
@@ -1070,13 +1068,12 @@ def test_pytorch_module():
 @pytest.mark.slow
 def test_huggingface_model():
     """Test saving and loading HuggingFace pretrained models."""
-    try:
-        import datasets  # Required by the HuggingFace materializer
-        import torch
-        from transformers import AutoModel
-    except ImportError:
-        missing_libs = check_libs(["transformers", "torch", "datasets"])
+    missing_libs = check_libs(["transformers", "torch", "datasets"]) # datasets required by the HuggingFace materializer
+    if missing_libs: 
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    import torch
+    from transformers import AutoModel
 
     # Set random seeds for reproducibility
     torch.manual_seed(42)
@@ -1238,12 +1235,10 @@ def test_pillow_image():
 @pytest.mark.slow
 def test_huggingface_dataset():
     """Test saving and loading a HuggingFace dataset."""
-    try:
-        import datasets
-        import transformers
-    except ImportError:
-        missing_libs = check_libs(["datasets", "transformers"])
+    missing_libs = check_libs(["datasets", "transformers"])
+    if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+    import datasets
 
     # Create a small test dataset
     dataset = datasets.Dataset.from_dict({
