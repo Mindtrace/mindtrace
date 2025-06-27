@@ -144,7 +144,7 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
                 # Handle empty responses (e.g., from shutdown endpoint)
                 try:
                     result = res.json()
-                except:
+                except Exception:
                     result = {"success": True}  # Default response for empty content
                     
                 if not validate_output:
@@ -168,7 +168,7 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
                 # Handle empty responses (e.g., from shutdown endpoint)
                 try:
                     result = res.json()
-                except:
+                except Exception:
                     result = {"success": True}  # Default response for empty content
                     
                 if not validate_output:
