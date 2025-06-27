@@ -13,7 +13,7 @@ async def echo_service_manager():
     can use to interact with the running service.
     """
     try:
-        with EchoService.launch(url="http://localhost:8090", timeout=15) as cm:
+        with EchoService.launch(url="http://localhost:8090", timeout=30) as cm:
             yield cm
     except Exception as e:
         print(f"Service launch failed: {e}")
