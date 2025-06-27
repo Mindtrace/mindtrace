@@ -74,10 +74,17 @@ test = """
     # Run only integration tests
     # ds test --integration
 
-    # Run specific test file or function
-    # ds test tests/unit/mindtrace/registry/backends/test_minio_registry_backend.py::test_register_materializer
+    # Run specific test file or function (note the colon after 'test')
+    # ds test: tests/integration/mindtrace/services/test_simple_integration.py::TestServiceIntegration::test_url_construction_logic
 
-    bash scripts/run_tests.sh ${@:- --maxfail=1 --slow-last}
+    # Run specific test directories (note the colon after 'test')
+    # ds test: tests/unit
+    # ds test: tests/integration/mindtrace/services
+
+    # Run multiple test paths (note the colon after 'test')
+    # ds test: tests/unit tests/integration/mindtrace/services
+
+    bash scripts/run_tests.sh ${@:-}
 """
 
 [tool.ruff]
