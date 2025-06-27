@@ -1,4 +1,3 @@
-import pytest
 import pytest_asyncio
 
 from mindtrace.services.sample.echo_service import EchoService
@@ -8,7 +7,7 @@ from mindtrace.services.sample.echo_service import EchoService
 async def echo_service_manager():
     """
     Launch EchoService and provide a connection manager for testing.
-    
+
     This fixture uses the EchoService.launch context manager to properly
     start and stop the service, yielding a connection manager that tests
     can use to interact with the running service.

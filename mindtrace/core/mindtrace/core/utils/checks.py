@@ -1,4 +1,5 @@
 from typing import Any, Iterable
+
 from urllib3.util.url import Url, parse_url
 
 
@@ -6,9 +7,11 @@ def ifnone(val: Any, default: Any) -> Any:
     """Return the given value if it is not None, else return the default."""
     return val if val is not None else default
 
+
 def first_not_none(vals: Iterable, default: Any = None):
     """Returns the first not-None value in the given iterable, else returns the default."""
     return next((item for item in vals if item is not None), default)
+
 
 def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     """Wraps ifnone to always return a URL.
@@ -23,6 +26,7 @@ def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     return ifnone(
         parse_url(url) if isinstance(url, str) else url, parse_url(default) if isinstance(default, str) else default
     )
+
 
 def check_libs(required_libs: list[str]) -> list[str]:
     """Check if all required libraries are available."""

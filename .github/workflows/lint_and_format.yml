@@ -30,16 +30,16 @@ jobs:
       uses: chartboost/ruff-action@v1
       with:
         src: ${{ matrix.directory }}
-        version: 0.8.6
+        version: 0.12.1
 
     - name: Run Ruff Format Check
       id: ruff-format
       continue-on-error: true
       uses: chartboost/ruff-action@v1
       with:
-        args: format --check
+        args: format --check --diff
         src:  ${{ matrix.directory }}
-        version: 0.8.6
+        version: 0.12.1
 
     - name: Check Ruff results
       run: |

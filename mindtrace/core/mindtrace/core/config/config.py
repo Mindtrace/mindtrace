@@ -1,8 +1,9 @@
 import os
 
+
 class Config(dict):
     """Template Config class."""
-    
+
     def __init__(self, **kwargs):
         default_config = {
             "MINDTRACE_TEMP_DIR": "~/.cache/mindtrace/temp",
