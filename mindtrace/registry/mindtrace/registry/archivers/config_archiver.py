@@ -3,14 +3,14 @@ from pathlib import Path
 from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
-from zenml.materializers import BuiltInMaterializer
 
 from mindtrace.core import Config
-from mindtrace.registry import Archiver
+from mindtrace.registry.core.archiver import Archiver
 
 
 class ConfigArchiver(Archiver):
     """Archiver for mindtrace.core.Config objects."""
+
     ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (Config,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 

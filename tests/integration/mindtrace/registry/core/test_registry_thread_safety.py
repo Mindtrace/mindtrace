@@ -1,19 +1,15 @@
 """Integration tests for thread safety with Minio backend."""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
-from pathlib import Path
-import pytest
 import tempfile
-import time
-from typing import Dict, Any, List
 import uuid
+from pathlib import Path
 
+import pytest
 from minio import Minio
 from minio.error import S3Error
 
 from mindtrace.core import Config
-from mindtrace.registry import Registry, MinioRegistryBackend
+from mindtrace.registry import MinioRegistryBackend, Registry
 
 
 @pytest.fixture
@@ -24,7 +20,7 @@ def minio_client():
         endpoint=config["MINDTRACE_MINIO_ENDPOINT"],
         access_key=config["MINDTRACE_MINIO_ACCESS_KEY"],
         secret_key=config["MINDTRACE_MINIO_SECRET_KEY"],
-        secure=False
+        secure=False,
     )
     return client
 
@@ -60,7 +56,7 @@ def registry(temp_dir, test_bucket):
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket=test_bucket,
-        secure=False
+        secure=False,
     )
     return Registry(backend=backend)
 

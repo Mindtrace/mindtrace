@@ -25,7 +25,7 @@ def setup_logger(
     file_mode: str = "a",
     propagate: bool = False,
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
-    backup_count: int = 5
+    backup_count: int = 5,
 ) -> Logger:
     """Configure and initialize logging for Mindtrace components programmatically.
 
@@ -63,18 +63,15 @@ def setup_logger(
         child_log_path = f"{name}.log"
     else:
         child_log_path = os.path.join("modules", f"{name}.log")
-        
+
     if log_dir:
         log_file_path = os.path.join(log_dir, child_log_path)
     else:
         log_file_path = os.path.join(default_config["MINDTRACE_LOGGER_DIR"], child_log_path)
-    
+
     os.makedirs(Path(log_file_path).parent, exist_ok=True)
     file_handler = RotatingFileHandler(
-        filename=str(log_file_path),
-        maxBytes=max_bytes,
-        backupCount=backup_count,
-        mode=file_mode
+        filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
     )
     file_handler.setLevel(file_level)
     file_handler.setFormatter(default_formatter())
@@ -83,7 +80,7 @@ def setup_logger(
     return logger
 
 
-def get_logger(name: str = 'mindtrace', **kwargs) -> logging.Logger:
+def get_logger(name: str = "mindtrace", **kwargs) -> logging.Logger:
     """
     Create or retrieve a named logger instance.
 

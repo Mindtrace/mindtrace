@@ -2,7 +2,7 @@
 
 import pytest
 
-from mindtrace.core.utils.dynamic import dynamic_instantiation, instantiate_target, get_class
+from mindtrace.core.utils.dynamic import dynamic_instantiation, get_class, instantiate_target
 
 
 class TestDynamicInstantiation:

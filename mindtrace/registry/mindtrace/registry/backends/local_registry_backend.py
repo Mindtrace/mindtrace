@@ -1,26 +1,25 @@
 import json
-import os
-import time
-from pathlib import Path
 import platform
 import shutil
-from tempfile import TemporaryDirectory
+import time
+from pathlib import Path
 from typing import Dict, List
+
 import yaml
 
 # Import appropriate locking mechanism based on OS
-if platform.system() == 'Windows':
+if platform.system() == "Windows":
     import msvcrt
 else:
     import fcntl
 
-from mindtrace.registry import RegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 
 class LocalRegistryBackend(RegistryBackend):
     """A simple local filesystem-based registry backend.
 
-    All object directories and registry files are stored under a configurable base directory. The backend provides 
+    All object directories and registry files are stored under a configurable base directory. The backend provides
     methods for uploading, downloading, and managing object files and metadata.
     """
 
@@ -36,7 +35,7 @@ class LocalRegistryBackend(RegistryBackend):
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = self._uri / "registry_metadata.json"
         self.logger.debug(f"Initializing LocalBackend with uri: {self._uri}")
-        
+
     @property
     def uri(self) -> Path:
         """The resolved base directory path for the backend."""
@@ -72,7 +71,7 @@ class LocalRegistryBackend(RegistryBackend):
 
     def push(self, name: str, version: str, local_path: str):
         """Upload a local directory to the remote backend.
-        
+
         Args:
             name: Name of the object.
             version: Version string.
@@ -112,10 +111,10 @@ class LocalRegistryBackend(RegistryBackend):
 
         # Cleanup parent if empty
         parent = target.parent
-        
+
         # Use a lock file for the parent directory
         lock_path = self._lock_path(f"{name}@parent")
-        with open(lock_path, 'w') as f:
+        with open(lock_path, "w") as f:
             if self._acquire_file_lock(f):
                 try:
                     if parent.exists() and not any(parent.iterdir()):
@@ -287,7 +286,7 @@ class LocalRegistryBackend(RegistryBackend):
     def _acquire_file_lock(self, file_obj) -> bool:
         """Acquire a file lock using the appropriate mechanism for the OS."""
         try:
-            if platform.system() == 'Windows':
+            if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
@@ -301,7 +300,7 @@ class LocalRegistryBackend(RegistryBackend):
     def _release_file_lock(self, file_obj) -> None:
         """Release a file lock using the appropriate mechanism for the OS."""
         try:
-            if platform.system() == 'Windows':
+            if platform.system() == "Windows":
                 # Windows: Unlock the file
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
             else:
@@ -313,7 +312,7 @@ class LocalRegistryBackend(RegistryBackend):
     def _acquire_shared_lock(self, file_obj) -> bool:
         """Acquire a shared (read) lock using the appropriate mechanism for the OS."""
         try:
-            if platform.system() == 'Windows':
+            if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
@@ -327,28 +326,28 @@ class LocalRegistryBackend(RegistryBackend):
 
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using atomic file operations.
-        
-        Uses platform-specific file locking mechanisms to ensure atomic operations. The lock file contains both the 
+
+        Uses platform-specific file locking mechanisms to ensure atomic operations. The lock file contains both the
         lock_id and expiration time in JSON format.
-        
+
         Args:
             key: The key to acquire the lock for.
             lock_id: The ID of the lock to acquire.
             timeout: The timeout in seconds for the lock.
             shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
-            
+
         Returns:
             True if the lock was acquired, False otherwise.
         """
         lock_path = self._lock_path(key)
-        
+
         try:
             # Create lock file if it doesn't exist
             if not lock_path.exists():
                 lock_path.touch()
-            
+
             # Open the lock file for reading and writing
-            with open(lock_path, 'r+') as f:
+            with open(lock_path, "r+") as f:
                 # For shared locks, we need to check if there's an exclusive lock first
                 if shared:
                     try:
@@ -361,7 +360,7 @@ class LocalRegistryBackend(RegistryBackend):
                     except (json.JSONDecodeError, IOError):
                         # Invalid content, we can proceed
                         pass
-                
+
                 # Try to acquire the appropriate type of file lock
                 if shared:
                     if not self._acquire_shared_lock(f):
@@ -369,7 +368,7 @@ class LocalRegistryBackend(RegistryBackend):
                 else:
                     if not self._acquire_file_lock(f):
                         return False
-                
+
                 try:
                     # For exclusive locks, check if there are any active shared locks
                     if not shared:
@@ -383,32 +382,28 @@ class LocalRegistryBackend(RegistryBackend):
                         except (json.JSONDecodeError, IOError):
                             # Invalid content, we can proceed
                             pass
-                    
+
                     # Write our lock information
                     f.seek(0)
                     f.truncate()
-                    metadata = {
-                        "lock_id": lock_id,
-                        "expires_at": time.time() + timeout,
-                        "shared": shared
-                    }
+                    metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
                     f.write(json.dumps(metadata))
-                    
+
                     # Keep the file locked
                     return True
-                    
+
                 except Exception as e:
                     self._release_file_lock(f)  # Release lock on error
                     self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
                     return False
-                
+
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
             return False
 
     def release_lock(self, key: str, lock_id: str) -> bool:
         """Release a lock by verifying ownership and removing the file.
-        
+
         Uses platform-specific file locking to ensure atomic operations during release.
 
         Args:
@@ -419,16 +414,16 @@ class LocalRegistryBackend(RegistryBackend):
             True if the lock was released, False otherwise.
         """
         lock_path = self._lock_path(key)
-        
+
         try:
             if not lock_path.exists():
                 return True
-                
-            with open(lock_path, 'r+') as f:
+
+            with open(lock_path, "r+") as f:
                 # Try to acquire an exclusive file lock
                 if not self._acquire_file_lock(f):
                     return False
-                
+
                 try:
                     # Verify lock ownership
                     try:
@@ -439,23 +434,23 @@ class LocalRegistryBackend(RegistryBackend):
                     except (json.JSONDecodeError, IOError):
                         self._release_file_lock(f)  # Release lock on error
                         return False
-                    
+
                     # Remove the lock file
                     lock_path.unlink()
                     return True
-                    
+
                 except Exception as e:
                     self._release_file_lock(f)  # Release lock on any other error
                     self.logger.error(f"Error releasing lock for {key}: {e}")
                     return False
-                
+
         except Exception as e:
             self.logger.error(f"Error releasing lock for {key}: {e}")
             return False
 
     def check_lock(self, key: str) -> tuple[bool, str | None]:
         """Check if a key is currently locked.
-        
+
         Uses platform-specific file locking to ensure atomic read operations.
 
         Args:
@@ -465,17 +460,17 @@ class LocalRegistryBackend(RegistryBackend):
             Tuple containing a boolean indicating if the key is locked and the lock ID if it is, or None if it is not.
         """
         lock_path = self._lock_path(key)
-        
+
         try:
             if not lock_path.exists():
                 return False, None
-                
-            with open(lock_path, 'r') as f:
+
+            with open(lock_path, "r") as f:
                 # Try to acquire a shared file lock
                 if not self._acquire_shared_lock(f):
                     # File is locked by someone else
                     return True, None
-                
+
                 try:
                     # Check if lock is expired
                     try:
@@ -485,10 +480,10 @@ class LocalRegistryBackend(RegistryBackend):
                         return True, metadata.get("lock_id")
                     except (json.JSONDecodeError, IOError):
                         return False, None
-                    
+
                 finally:
                     self._release_file_lock(f)
-                
+
         except Exception as e:
             self.logger.error(f"Error checking lock for {key}: {e}")
             return False, None
@@ -496,10 +491,10 @@ class LocalRegistryBackend(RegistryBackend):
     def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
         """Overwrite an object.
 
-        This method supports saving objects to a temporary source location first, and then moving it to a target 
+        This method supports saving objects to a temporary source location first, and then moving it to a target
         object in a single atomic operation.
-        
-        After the overwrite method completes, the source object should be deleted, and the target object should be 
+
+        After the overwrite method completes, the source object should be deleted, and the target object should be
         updated to be the new source version.
 
         Args:
@@ -511,40 +506,40 @@ class LocalRegistryBackend(RegistryBackend):
         # Get the source and target paths
         source_path = self._full_path(self._object_key(source_name, source_version))
         target_path = self._full_path(self._object_key(target_name, target_version))
-        
+
         # Get the source and target metadata paths
         source_meta_path = self.uri / f"_meta_{source_name.replace(':', '_')}@{source_version}.yaml"
         target_meta_path = self.uri / f"_meta_{target_name.replace(':', '_')}@{target_version}.yaml"
-        
+
         self.logger.debug(f"Overwriting {target_name}@{target_version} with {source_name}@{source_version}")
-        
+
         try:
             # If target exists, delete it first
             if target_path.exists():
                 shutil.rmtree(target_path)
             if target_meta_path.exists():
                 target_meta_path.unlink()
-            
+
             # Move source to target using atomic rename
             source_path.rename(target_path)
-            
+
             # Move metadata file
             if source_meta_path.exists():
                 source_meta_path.rename(target_meta_path)
-            
+
             # Update metadata to reflect new name/version
             if target_meta_path.exists():
-                with open(target_meta_path, 'r') as f:
+                with open(target_meta_path, "r") as f:
                     metadata = yaml.safe_load(f)
-            
+
                 # Update the path in metadata
                 metadata["path"] = str(target_path)
-            
-                with open(target_meta_path, 'w') as f:
+
+                with open(target_meta_path, "w") as f:
                     yaml.safe_dump(metadata, f)
-            
+
             self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
-            
+
         except Exception as e:
             self.logger.error(f"Error during overwrite operation: {e}")
             # Cleanup any partial state
