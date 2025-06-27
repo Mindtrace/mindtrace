@@ -2,7 +2,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from mindtrace.registry import RegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 T = TypeVar("T")
 

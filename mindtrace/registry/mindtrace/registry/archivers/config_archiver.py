@@ -6,7 +6,7 @@ from zenml.enums import ArtifactType
 from zenml.materializers import BuiltInMaterializer
 
 from mindtrace.core import Config
-from mindtrace.registry import Archiver
+from mindtrace.registry.core.archiver import Archiver
 
 
 class ConfigArchiver(Archiver):
