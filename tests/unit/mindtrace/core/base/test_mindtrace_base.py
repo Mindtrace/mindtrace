@@ -901,7 +901,7 @@ class TestMindtraceSyncWrapper:
                 
                 # Verify return statement preserves the exact same object/value
                 assert result == expected_result
-                assert type(result) == type(expected_result)
+                assert type(result) is type(expected_result)
                 
                 # Verify suffix logging occurred
                 assert mock_log.call_count == 2

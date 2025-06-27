@@ -184,7 +184,7 @@ def test_save_and_load_basic_types(registry, test_basic_types):
         
         # Verify the loaded value matches the original
         assert loaded_value == value
-        assert type(loaded_value) == type(value)
+        assert type(loaded_value) is type(value)
 
 def test_save_and_load_container_types(registry, test_container_types):
     """Test saving and loading container types."""
@@ -201,7 +201,7 @@ def test_save_and_load_container_types(registry, test_container_types):
         
         # Verify the loaded value matches the original
         assert loaded_value == value
-        assert type(loaded_value) == type(value)
+        assert type(loaded_value) is type(value)
 
 def test_save_and_load_bytes(registry, test_bytes):
     """Test saving and loading bytes."""
