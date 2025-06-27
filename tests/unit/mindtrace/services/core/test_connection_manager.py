@@ -1,8 +1,7 @@
 """Unit tests for the ConnectionManager class."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from uuid import UUID, uuid4
+from unittest.mock import AsyncMock, Mock, patch
+from uuid import uuid4
 
 import httpx
 import pytest

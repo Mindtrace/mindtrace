@@ -1,9 +1,7 @@
-import logging
 import os
 import shutil
 import tempfile
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -141,7 +139,6 @@ def test_info(registry, test_config):
 @pytest.mark.slow
 def test_concurrent_operations(registry, test_config):
     """Test concurrent operations with distributed locking."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     
@@ -202,7 +199,6 @@ def test_materializer_registration(registry):
 @pytest.mark.slow
 def test_concurrent_save_operations(registry, test_config):
     """Test concurrent save operations with distributed locking."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     
@@ -230,7 +226,6 @@ def test_concurrent_save_operations(registry, test_config):
 @pytest.mark.slow
 def test_concurrent_load_operations(registry, test_config):
     """Test concurrent load operations with shared locks."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     
@@ -252,7 +247,6 @@ def test_concurrent_load_operations(registry, test_config):
 @pytest.mark.slow
 def test_concurrent_save_load_race(registry, test_config):
     """Test race conditions between save and load operations."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     
@@ -286,7 +280,6 @@ def test_concurrent_save_load_race(registry, test_config):
 @pytest.mark.slow
 def test_concurrent_delete_operations(registry, test_config):
     """Test concurrent delete operations with distributed locking."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     
@@ -371,7 +364,6 @@ def test_dict_like_interface_versioned(registry, test_config):
 @pytest.mark.slow
 def test_concurrent_dict_operations(registry, test_config):
     """Test concurrent dictionary-like operations."""
-    import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
     

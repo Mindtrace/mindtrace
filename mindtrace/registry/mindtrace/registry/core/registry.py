@@ -1,5 +1,4 @@
 import shutil
-import time
 import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path, PosixPath
@@ -9,8 +8,8 @@ from typing import Any, Dict, List, Type
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Config, Mindtrace, first_not_none, ifnone, instantiate_target
-from mindtrace.registry import ConfigArchiver, LocalRegistryBackend, RegistryBackend
+from mindtrace.core import Mindtrace, first_not_none, ifnone, instantiate_target
+from mindtrace.registry import LocalRegistryBackend, RegistryBackend
 
 
 class LockTimeoutError(Exception):

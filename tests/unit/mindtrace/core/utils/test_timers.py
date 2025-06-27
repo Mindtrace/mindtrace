@@ -1,10 +1,8 @@
 """Unit tests for mindtrace.core.utils.timers module."""
 
-import time
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from tqdm import tqdm
 
 from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
