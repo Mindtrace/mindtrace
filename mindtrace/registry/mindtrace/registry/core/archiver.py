@@ -9,6 +9,7 @@ from mindtrace.core import Mindtrace, MindtraceMeta
 
 class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
     """Meta class for Archiver."""
+
     pass
 
 

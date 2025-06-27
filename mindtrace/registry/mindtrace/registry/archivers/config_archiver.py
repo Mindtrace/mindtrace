@@ -10,6 +10,7 @@ from mindtrace.registry.core.archiver import Archiver
 
 class ConfigArchiver(Archiver):
     """Archiver for mindtrace.core.Config objects."""
+
     ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (Config,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 

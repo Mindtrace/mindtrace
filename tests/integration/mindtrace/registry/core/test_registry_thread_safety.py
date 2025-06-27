@@ -20,7 +20,7 @@ def minio_client():
         endpoint=config["MINDTRACE_MINIO_ENDPOINT"],
         access_key=config["MINDTRACE_MINIO_ACCESS_KEY"],
         secret_key=config["MINDTRACE_MINIO_SECRET_KEY"],
-        secure=False
+        secure=False,
     )
     return client
 
@@ -56,7 +56,7 @@ def registry(temp_dir, test_bucket):
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket=test_bucket,
-        secure=False
+        secure=False,
     )
     return Registry(backend=backend)
 

@@ -6,7 +6,7 @@ from mindtrace.core import EventBus
 
 class ObservableContext:
     """A class decorator that allows listeners to subscribe to changes in the class properties.
-    
+
     Example::
 
         from mindtrace.core import ContextListener, ObservableContext
@@ -32,7 +32,7 @@ class ObservableContext:
 
     def __init__(self, vars: List[str] | Dict[str, Type]):
         """Initialize the observable context.
-        
+
         Args:
             vars: A list of variable names to be made observable, or a dictionary of variable names and their types.
         """
@@ -43,8 +43,10 @@ class ObservableContext:
         elif isinstance(vars, dict):
             self.vars = list(vars.keys())
         else:
-            raise ValueError(f"Invalid vars argument: {vars}, vars must be a str variable name, list of variable names "
-                "or a dictionary of variable names and their types.")
+            raise ValueError(
+                f"Invalid vars argument: {vars}, vars must be a str variable name, list of variable names "
+                "or a dictionary of variable names and their types."
+            )
 
     def __call__(self, cls):
         cls._observable_vars = self.vars
@@ -58,16 +60,8 @@ class ObservableContext:
                 old = getattr(self, name, None)
                 setattr(self, name, value)
                 if old != value:
-                    self._event_bus.emit(
-                        "context_updated", 
-                        source=self.__class__.__name__, 
-                        var=var, old=old, 
-                        new=value)
-                    self._event_bus.emit(
-                        f"{var}_changed", 
-                        source=self.__class__.__name__, 
-                        old=old, 
-                        new=value)
+                    self._event_bus.emit("context_updated", source=self.__class__.__name__, var=var, old=old, new=value)
+                    self._event_bus.emit(f"{var}_changed", source=self.__class__.__name__, old=old, new=value)
 
             setattr(cls, var_name, property(getter, setter))
 
@@ -87,7 +81,7 @@ class ObservableContext:
             Args:
                 target: A callable or an object with `context_updated` and/or `{var}_changed` methods.
                 event_name: The name of the event to subscribe to. May be omitted if the target is an object.
-            
+
             Returns:
                 Uuid: The subscription ID.
             """
@@ -106,9 +100,12 @@ class ObservableContext:
                         self._event_bus.subscribe(getattr(target, attr), f"{var}_changed")
                         num_subscriptions += 1
                 if num_subscriptions == 0:
-                    raise ValueError("Listener did not subscribe to any observable variables. Must subscribe to at "
-                        f"least one of: context_updated, {', '
-                        .join([f'{var}_changed' for var in self.__class__._observable_vars])}.")
+                    raise ValueError(
+                        "Listener did not subscribe to any observable variables. Must subscribe to at "
+                        f"least one of: context_updated, {
+                            ', '.join([f'{var}_changed' for var in self.__class__._observable_vars])
+                        }."
+                    )
 
         def unsubscribe(self, target, event_name: str | None = None):
             """Unsubscribe a handler or listener object from context events.

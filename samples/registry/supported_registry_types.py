@@ -24,8 +24,7 @@ def main():
     # Register materializer for our custom Pydantic model
     # Use the actual type of the model for registration
     registry.register_materializer(
-        f"{ExampleModel.__module__}.{ExampleModel.__name__}",
-        "zenml.materializers.PydanticMaterializer"
+        f"{ExampleModel.__module__}.{ExampleModel.__name__}", "zenml.materializers.PydanticMaterializer"
     )
 
     # 1. Basic Python types
@@ -78,12 +77,12 @@ def main():
     # Create a temporary file
     temp_file = Path("temp_example.txt")
     temp_file.write_text("This is a test file")
-    
+
     # Save the file path
     registry.save("example:file", temp_file)
     loaded_file = registry.load("example:file")
     print(f"Loaded file path: {loaded_file}")
-    
+
     # Clean up
     temp_file.unlink()
 
@@ -96,7 +95,7 @@ def main():
 
     # 4. PIL Images
     # Create a simple image
-    image = Image.new('RGB', (100, 100), color='red')
+    image = Image.new("RGB", (100, 100), color="red")
     registry.save("example:image", image)
     loaded_image = registry.load("example:image")
     print(f"Loaded image size: {loaded_image.size}")
@@ -109,10 +108,7 @@ def main():
     print(f"Loaded PyTorch model: {loaded_model}")
 
     # Create a PyTorch dataset
-    dataset = torch.utils.data.TensorDataset(
-        torch.randn(100, 10),
-        torch.randint(0, 2, (100,))
-    )
+    dataset = torch.utils.data.TensorDataset(torch.randn(100, 10), torch.randint(0, 2, (100,)))
     registry.save("example:pytorch:dataset", dataset)
     loaded_dataset = registry.load("example:pytorch:dataset")
     print(f"Loaded PyTorch dataset length: {len(loaded_dataset)}")
@@ -125,10 +121,7 @@ def main():
     print(f"Loaded Hugging Face model: {type(loaded_hf_model)}")
 
     # Create a simple dataset
-    hf_dataset = Dataset.from_dict({
-        "text": ["Hello", "World"],
-        "label": [0, 1]
-    })
+    hf_dataset = Dataset.from_dict({"text": ["Hello", "World"], "label": [0, 1]})
     registry.save("example:huggingface:dataset", hf_dataset)
     loaded_hf_dataset = registry.load("example:huggingface:dataset")
     print(f"Loaded Hugging Face dataset: {loaded_hf_dataset}")
@@ -145,7 +138,7 @@ def main():
         model_batch_size=32,
         model_learning_rate=1e-4,
         training_epochs=10,
-        training_early_stopping=True
+        training_early_stopping=True,
     )
     registry.save("example:config", config)
     loaded_config = registry.load("example:config")
@@ -156,6 +149,7 @@ def main():
     for obj_name in registry.list_objects():
         versions = registry.list_versions(obj_name)
         print(f"{obj_name}: {versions}")
+
 
 if __name__ == "__main__":
     main()

@@ -100,15 +100,17 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
     return wrapper
 
 
-def generate_connection_manager(service_cls, protected_methods: list[str] = ['shutdown', 'ashutdown', 'status', 'astatus']):
+def generate_connection_manager(
+    service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
+):
     """Generates a dedicated ConnectionManager class with one method per endpoint.
-    
+
     Args:
         service_cls: The service class to generate a connection manager for.
         protected_methods: A list of methods that should not be overridden by dynamic methods.
-        
+
     Returns:
-        A ConnectionManager class with one method per endpoint.        
+        A ConnectionManager class with one method per endpoint.
     """
 
     class_name = f"{service_cls.__name__}ConnectionManager"
@@ -118,13 +120,13 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
 
     # Create a temporary service instance to get the endpoints
     temp_service = service_cls()
-        
+
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
         # Skip if this would override an existing method in ConnectionManager
         if endpoint_name in protected_methods:
             continue
-            
+
         endpoint_path = f"/{endpoint_name}"
 
         def make_method(endpoint_path, input_schema, output_schema):
@@ -133,57 +135,49 @@ def generate_connection_manager(service_cls, protected_methods: list[str] = ['sh
                     payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(
-                    str(self.url).rstrip('/') + endpoint_path,
-                    json=payload,
-                    timeout=30
-                )
+                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
-                
+
                 # Handle empty responses (e.g., from shutdown endpoint)
                 try:
                     result = res.json()
                 except Exception:
                     result = {"success": True}  # Default response for empty content
-                    
+
                 if not validate_output:
                     return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
-            
+
             async def amethod(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
                 if validate_input:
                     payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
                 async with httpx.AsyncClient(timeout=30) as client:
-                    res = await client.post(
-                        str(self.url).rstrip('/') + endpoint_path,
-                        json=payload,
-                        timeout=30
-                    )
+                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
-                
+
                 # Handle empty responses (e.g., from shutdown endpoint)
                 try:
                     result = res.json()
                 except Exception:
                     result = {"success": True}  # Default response for empty content
-                    
+
                 if not validate_output:
                     return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
-            
+
             return method, amethod
 
         method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
-        
+
         # Set up sync method
         method.__name__ = endpoint_name
         method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
         setattr(ServiceConnectionManager, endpoint_name, method)
-        
+
         # Set up async method
         amethod.__name__ = f"a{endpoint_name}"
         amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"

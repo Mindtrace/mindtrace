@@ -7,12 +7,12 @@ from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.registry import LockTimeoutError, Registry
 
 __all__ = [
-    "Archiver", 
-    "ConfigArchiver", 
-    "LocalRegistryBackend", 
+    "Archiver",
+    "ConfigArchiver",
+    "LocalRegistryBackend",
     "LockTimeoutError",
-    "GCPRegistryBackend", 
-    "MinioRegistryBackend", 
-    "Registry", 
-    "RegistryBackend"
+    "GCPRegistryBackend",
+    "MinioRegistryBackend",
+    "Registry",
+    "RegistryBackend",
 ]
