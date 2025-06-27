@@ -2000,8 +2000,6 @@ def test_update_with_existing_objects(registry):
 @pytest.mark.slow
 def test_distributed_lock_save_concurrent(registry):
     """Test that concurrent saves are properly serialized using distributed locks."""
-    import threading
-    import time
     from concurrent.futures import ThreadPoolExecutor
     
     # Create a test object
@@ -2030,8 +2028,6 @@ def test_distributed_lock_save_concurrent(registry):
 
 def test_distributed_lock_save_conflict(registry):
     """Test that saving to the same version is properly prevented by locks."""
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
 
     from mindtrace.registry.core.registry import LockTimeoutError
 
@@ -2068,8 +2064,6 @@ def test_distributed_lock_save_conflict(registry):
 
 def test_distributed_lock_load_concurrent(registry):
     """Test that concurrent loads work correctly with shared locks."""
-    import threading
-    from concurrent.futures import ThreadPoolExecutor
     
     # Create and save a test object
     test_obj = Config(
@@ -2098,8 +2092,6 @@ def test_distributed_lock_load_concurrent(registry):
 @pytest.mark.slow
 def test_distributed_lock_save_load_race(registry):
     """Test that save and load operations are properly synchronized."""
-    import threading
-    import time
     from concurrent.futures import ThreadPoolExecutor
 
     test_obj1 = Config(

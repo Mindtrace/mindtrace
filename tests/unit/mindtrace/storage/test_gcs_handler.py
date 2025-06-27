@@ -226,7 +226,7 @@ def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
 
 
 @patch("mindtrace.storage.gcs.storage.Client")
-def test_download_batch_with_error_skip(mock_client_cls, tmp_path):
+def test_download_batch_with_error_raise(mock_client_cls, tmp_path):
     _, bucket, blob = _prepare_client(mock_client_cls)
     blob.download_to_filename.side_effect = [Exception("Download failed"), None]
     
