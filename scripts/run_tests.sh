@@ -67,7 +67,7 @@ echo "No specific test paths provided, using suite-based logic"
 RUN_UNIT=false
 RUN_INTEGRATION=false
 RUN_STRESS=false
-RUN_ALL=true  # Default to running all tests
+RUN_ALL=true  # Default to running unit and integration tests (but not stress)
 
 # Parse command line arguments for suite flags
 while [[ $# -gt 0 ]]; do
@@ -95,11 +95,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If no specific flags were provided, run all tests
+# If no specific flags were provided, run unit and integration tests (but not stress)
 if [ "$RUN_ALL" = true ]; then
     RUN_UNIT=true
     RUN_INTEGRATION=true
-    RUN_STRESS=true
+    # RUN_STRESS remains false - only runs when explicitly requested
 fi
 
 # Start MinIO container if running integration tests or all tests
