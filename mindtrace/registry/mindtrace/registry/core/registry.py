@@ -1,16 +1,17 @@
+import shutil
+import time
+import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path, PosixPath
-import shutil
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
-import uuid
-import time
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Config, ifnone, instantiate_target, first_not_none, Mindtrace
+from mindtrace.core import Config, Mindtrace, first_not_none, ifnone, instantiate_target
 from mindtrace.registry import ConfigArchiver, LocalRegistryBackend, RegistryBackend
+
 
 class LockTimeoutError(Exception):
     """Exception raised when a lock cannot be acquired within the timeout period."""
