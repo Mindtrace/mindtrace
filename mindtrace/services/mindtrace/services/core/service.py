@@ -21,7 +21,16 @@ from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.types import EndpointsSchema, Heartbeat, HeartbeatSchema, PIDFileSchema, ServerIDSchema, ServerStatus, ShutdownSchema, StatusSchema
+from mindtrace.services.core.types import (
+    EndpointsSchema,
+    Heartbeat,
+    HeartbeatSchema,
+    PIDFileSchema,
+    ServerIDSchema,
+    ServerStatus,
+    ShutdownSchema,
+    StatusSchema,
+)
 from mindtrace.services.core.utils import generate_connection_manager
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
