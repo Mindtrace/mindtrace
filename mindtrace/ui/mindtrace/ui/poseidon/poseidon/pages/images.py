@@ -30,7 +30,7 @@ def image_card(image: rx.Var[ImageDict]) -> rx.Component:
         rx.vstack(
             rx.box(
                 rx.image(
-                    src=image.gcp_path,
+                    src=image.presigned_url,
                     alt=image.filename,
                     width="100%",
                     height="200px",
@@ -137,7 +137,7 @@ def image_modal() -> rx.Component:
                 rx.hstack(
                     rx.box(
                         rx.image(
-                            src=ImageState.selected_image.gcp_path,
+                            src=ImageState.selected_image.presigned_url,
                             alt=ImageState.selected_image.filename,
                             max_width="600px",
                             max_height="500px",

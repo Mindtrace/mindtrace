@@ -2,11 +2,13 @@ import reflex as rx
 from poseidon.backend.database.repositories.image_repository import ImageRepository
 from typing import List, Optional
 from dataclasses import dataclass
+from poseidon.backend.cloud.gcs import presign_url
 
 @dataclass
 class ImageDict:
     filename: str = ""
     gcp_path: str = ""
+    presigned_url: str = ""
     file_size: Optional[int] = None
     content_type: Optional[str] = None
     width: Optional[int] = None
@@ -50,6 +52,7 @@ class ImageState(rx.State):
             return ImageDict(
                 filename=str(data.get("filename", "")),
                 gcp_path=str(data.get("gcp_path", "")),
+                presigned_url=str(data.get("presigned_url", "")),
                 file_size=int(data.get("file_size")) if data.get("file_size") is not None else None,
                 content_type=str(data.get("content_type")) if data.get("content_type") else None,
                 width=int(data.get("width")) if data.get("width") is not None else None,
@@ -91,6 +94,11 @@ class ImageState(rx.State):
             image_list = []
             for img in result["images"]:
                 converted_img = self._safe_convert_to_image_dict(img)
+                # Generate presigned URL if gcp_path exists and doesn't already start with http
+                if converted_img.gcp_path and not converted_img.gcp_path.startswith(("http://", "https://")):
+                    converted_img.presigned_url = self.get_presigned_url(converted_img.gcp_path)
+                else:
+                    converted_img.presigned_url = converted_img.gcp_path
                 image_list.append(converted_img)
             
             self.images = image_list
@@ -144,4 +152,5 @@ class ImageState(rx.State):
         """Get presigned URL for GCP image path - now returns actual URLs"""
         if gcp_path.startswith(("http://", "https://")):
             return gcp_path
-        return f"https://via.placeholder.com/400x300?text={gcp_path.split('/')[-1]}" 
+        presigned_url = presign_url(gcp_path)
+        return presigned_url
