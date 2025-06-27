@@ -1,5 +1,6 @@
 """Unit tests for mindtrace.core.utils.lambdas module."""
-
+# ruff: noqa: E731
+# assigning lambdas to variables is useful in this test file and this test file only
 from typing import Callable
 from types import FunctionType
 
