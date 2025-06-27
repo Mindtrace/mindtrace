@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Type, TypeVar, List
+from typing import Type, TypeVar, List, Optional, Dict
 from beanie import init_beanie, Document
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import DuplicateKeyError
@@ -45,21 +45,73 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
             raise DocumentNotFoundError(f"Object with id {id} not found")
         return doc
 
-    async def delete(self, id: str):
+    async def get_by_id(self, id: str) -> Optional[ModelType]:
+        """Get document by ID, returns None if not found"""
+        await self.initialize()
+        return await self.model_cls.get(id)
+
+    async def update(self, id: str, update_data: Dict) -> Optional[ModelType]:
+        """Update document by ID"""
+        await self.initialize()
+        doc = await self.model_cls.get(id)
+        if not doc:
+            return None
+        
+        for key, value in update_data.items():
+            if hasattr(doc, key):
+                setattr(doc, key, value)
+        
+        await doc.save()
+        return doc
+
+    async def delete(self, id: str) -> bool:
+        """Delete document by ID, returns True if deleted, False if not found"""
         await self.initialize()
         doc = await self.model_cls.get(id)
         if doc:
             await doc.delete()
+            return True
+        return False
+
+    async def count(self, query: Optional[Dict] = None) -> int:
+        """Count documents matching query"""
+        await self.initialize()
+        if query:
+            return await self.model_cls.find(query).count()
         else:
-            raise DocumentNotFoundError(f"Object with id {id} not found")
+            return await self.model_cls.find_all().count()
 
     async def all(self) -> List[ModelType]:
         await self.initialize()
         return await self.model_cls.find_all().to_list()
 
-    async def find(self, *args, **kwargs):
+    async def find(self, query: Optional[Dict] = None, skip: int = 0, limit: Optional[int] = None, sort: Optional[List] = None) -> List[ModelType]:
+        """Find documents with pagination and sorting support"""
         await self.initialize()
-        return await self.model_cls.find(*args, **kwargs).to_list()
+        
+        if query:
+            find_query = self.model_cls.find(query)
+        else:
+            find_query = self.model_cls.find_all()
+        
+        if skip > 0:
+            find_query = find_query.skip(skip)
+        
+        if limit:
+            find_query = find_query.limit(limit)
+        
+        if sort:
+            # Beanie expects sort tuples directly, not as a dictionary
+            # Convert [("created_at", -1)] to the format Beanie expects
+            for sort_item in sort:
+                if isinstance(sort_item, tuple) and len(sort_item) == 2:
+                    field, direction = sort_item
+                    if direction == -1:
+                        find_query = find_query.sort(f"-{field}")  # Descending
+                    else:
+                        find_query = find_query.sort(field)  # Ascending
+        
+        return await find_query.to_list()
 
     async def aggregate(self, pipeline: list):
         await self.initialize()

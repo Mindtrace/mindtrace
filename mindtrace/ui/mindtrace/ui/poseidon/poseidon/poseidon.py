@@ -16,6 +16,7 @@ from poseidon.pages.login import login_page
 from poseidon.pages.register import register_page
 from poseidon.pages.profile import profile_page
 from poseidon.pages.admin import admin_page
+from poseidon.pages.images import images_page
 from poseidon.styles.theme import theme_config
 from poseidon.styles.styles import styles
 
@@ -31,5 +32,6 @@ app.add_page(login_page, route="/login", title="MindTrace - Login")
 app.add_page(register_page, route="/register", title="MindTrace - Register")
 app.add_page(profile_page, route="/profile", title="MindTrace - Profile")
 app.add_page(admin_page, route="/admin", title="MindTrace - Admin")
+app.add_page(images_page, route="/images", title="MindTrace - Image Gallery")
 
 # Add your main/data viewer page here as needed 
