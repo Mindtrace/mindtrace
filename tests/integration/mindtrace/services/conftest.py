@@ -16,6 +16,5 @@ async def echo_service_manager():
         with EchoService.launch(url="http://localhost:8090", timeout=15) as cm:
             yield cm
     except Exception as e:
-        # If service launch fails, yield None so tests can handle gracefully
         print(f"Service launch failed: {e}")
-        yield None
+        raise
