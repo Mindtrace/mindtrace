@@ -1,11 +1,12 @@
 import json
 import os
-import time
-from pathlib import Path
 import platform
 import shutil
+import time
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Dict, List
+
 import yaml
 
 # Import appropriate locking mechanism based on OS
@@ -14,7 +15,7 @@ if platform.system() == 'Windows':
 else:
     import fcntl
 
-from mindtrace.registry import RegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 
 class LocalRegistryBackend(RegistryBackend):

@@ -1,20 +1,20 @@
 import io
 import json
 import os
-from pathlib import Path
 import tempfile
 import time
-from typing import Dict, List, TypeVar
 import uuid
-import yaml
+from pathlib import Path
+from typing import Dict, List, TypeVar
 
+import yaml
 from minio import Minio
 from minio.api import CopySource
 from minio.error import S3Error
 from pydantic import BaseModel
 
 from mindtrace.core import ifnone
-from mindtrace.registry import RegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 T = TypeVar("T")
 
