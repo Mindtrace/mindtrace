@@ -1,6 +1,6 @@
+import uuid
 from collections import defaultdict
 from typing import Callable, Dict, Union
-import uuid
 
 
 class EventBus:
