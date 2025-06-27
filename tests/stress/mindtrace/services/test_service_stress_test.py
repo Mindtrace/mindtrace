@@ -285,7 +285,7 @@ class TestEchoServiceThroughput:
                         batch_response_times.append(request_end - request_start)
                         batch_successful += 1
                         
-                    except Exception as e:
+                    except Exception:
                         batch_failed += 1
                 
                 # Record results in time bucket (10-second buckets)
@@ -396,7 +396,7 @@ class TestEchoServiceThroughput:
                         response_times.append(request_end - request_start)
                         successful += 1
                         
-                    except Exception as e:
+                    except Exception:
                         failed += 1
                     
                     pbar.update(1)

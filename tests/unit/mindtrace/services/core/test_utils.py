@@ -40,7 +40,7 @@ class TestAddEndpoint:
             mock_autolog.return_value = test_func
             
             # Apply decorator
-            result = decorator(test_func)
+            _ = decorator(test_func)
             
             # Verify Mindtrace.autolog was called correctly
             mock_mindtrace.autolog.assert_called_once_with(self=mock_server)
@@ -301,7 +301,7 @@ class TestGenerateConnectionManager:
         
         # Create instance and call method
         manager = ConnectionManagerClass(url="http://test.com")
-        result = manager.test_endpoint(test_param="value")
+        _ = manager.test_endpoint(test_param="value")
         
         # Verify httpx call
         mock_httpx.post.assert_called_once_with(
@@ -343,7 +343,7 @@ class TestGenerateConnectionManager:
         
         # Create instance and call async method
         manager = ConnectionManagerClass(url="http://test.com")
-        result = await manager.atest_endpoint(async_param="value")
+        _ = await manager.atest_endpoint(async_param="value")
         
         # Verify async client call
         mock_client.post.assert_called_once_with(
@@ -395,7 +395,7 @@ class TestGenerateConnectionManager:
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
         manager = ConnectionManagerClass(url="http://test.com")
         
-        result = manager.no_input_endpoint(raw_param="value")
+        _ = manager.no_input_endpoint(raw_param="value")
         
         # Should pass kwargs directly as payload (but since input_schema is None, it creates empty payload)
         mock_httpx.post.assert_called_once_with(
@@ -422,7 +422,7 @@ class TestGenerateConnectionManager:
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
         manager = ConnectionManagerClass(url="http://test.com")
         
-        result = manager.test_endpoint()
+        _ = manager.test_endpoint()
         
         # Should call output schema with default success response
         mock_endpoint1.output_schema.assert_called_once_with(success=True)
@@ -484,7 +484,7 @@ class TestGenerateConnectionManager:
         manager = ConnectionManagerClass(url="http://test.com")
         
         # Call with validate_input=False and kwargs
-        result = manager.no_input_endpoint(validate_input=False, raw_param="value")
+        _ = manager.no_input_endpoint(validate_input=False, raw_param="value")
         
         # Should pass kwargs directly as payload
         mock_httpx.post.assert_called_once_with(
@@ -515,7 +515,7 @@ class TestGenerateConnectionManager:
         manager = ConnectionManagerClass(url="http://test.com")
         
         # Call async method with validate_input=False and kwargs
-        result = await manager.ano_input_endpoint(validate_input=False, async_param="value")
+        _ = await manager.ano_input_endpoint(validate_input=False, async_param="value")
         
         # Should pass kwargs directly as payload
         mock_client.post.assert_called_once_with(
@@ -572,7 +572,7 @@ class TestGenerateConnectionManager:
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
         manager = ConnectionManagerClass(url="http://test.com")
         
-        result = await manager.atest_endpoint()
+        _ = await manager.atest_endpoint()
         
         # Should call output schema with default success response
         mock_endpoint1.output_schema.assert_called_once_with(success=True)

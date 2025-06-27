@@ -224,7 +224,7 @@ class TestConnectionManagerShutdown:
                     nonlocal connection_error_verified
                     # This should raise ConnectionError("Server still responding") from line 65
                     try:
-                        result = check_func()
+                        _ = check_func()
                         # If check_func returns without exception, that's unexpected in this test
                         pytest.fail("Expected ConnectionError('Server still responding') to be raised")
                     except ConnectionError as e:

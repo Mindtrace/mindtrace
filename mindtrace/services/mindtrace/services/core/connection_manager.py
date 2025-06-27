@@ -58,7 +58,7 @@ class ConnectionManager(Mindtrace):
         def check_server_down():
             """Check if server is down by trying to connect to status endpoint."""
             try:
-                test_response = requests.post(urljoin(str(self.url), "status"), timeout=2)
+                _ = requests.post(urljoin(str(self.url), "status"), timeout=2)
                 # If we get any response, server is still up - raise exception to retry
                 raise ConnectionError("Server still responding")
             except requests.exceptions.ConnectionError:

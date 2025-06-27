@@ -124,7 +124,7 @@ class TestLauncher:
         mock_instantiate.return_value = mock_server
 
         # Create launcher
-        launcher = Launcher(options)
+        _ = Launcher(options)
 
         # Verify server instantiation with empty init params
         mock_instantiate.assert_called_once_with("test.Server")
