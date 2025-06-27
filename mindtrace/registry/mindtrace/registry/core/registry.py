@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Type
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, first_not_none, ifnone, instantiate_target
+from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target
 from mindtrace.registry import LocalRegistryBackend, RegistryBackend
 
 
@@ -709,45 +709,30 @@ class Registry(Mindtrace):
         self.register_materializer("mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver")
 
         # (Optional) Huggingface materializers
-        try:
-            import datasets
+        if not check_libs(["datasets"]):
             self.register_materializer("datasets.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.dataset_dict.DatasetDict", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
             self.register_materializer("datasets.arrow_dataset.Dataset", "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer")
-        except ImportError:
-            pass
         
-        try:
-            import transformers
+        if not check_libs(["transformers"]):
             self.register_materializer("transformers.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
             self.register_materializer("transformers.modeling_utils.PreTrainedModel", "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer")
-        except ImportError:
-            pass
 
         # (Optional) NumPy materializers
-        try:
-            import numpy
+        if not check_libs(["numpy"]):
             self.register_materializer("numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer")
-        except ImportError:
-            pass
 
         # (Optional) Pillow materializers
-        try:
-            from PIL import Image
+        if not check_libs(["PIL"]):
             self.register_materializer("PIL.Image.Image", "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer")
-        except ImportError:
-            pass
 
         # (Optional) PyTorch materializers
-        try:
-            import torch
+        if not check_libs(["torch"]):
             self.register_materializer("torch.utils.data.dataset.Dataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
             self.register_materializer("torch.utils.data.dataset.TensorDataset", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
             self.register_materializer("torch.utils.data.dataloader.DataLoader", "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer")
             self.register_materializer("torch.nn.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
             self.register_materializer("torch.nn.modules.module.Module", "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer")
-        except ImportError:
-            pass
 
     ### Dictionary-like interface methods ###
 
