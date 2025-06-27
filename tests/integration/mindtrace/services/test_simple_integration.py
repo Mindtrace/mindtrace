@@ -147,7 +147,7 @@ class TestServiceIntegration:
     def test_connection_timeout(self):
         """Test that a launch that fails raises TimeoutError"""
         with pytest.raises(TimeoutError):
-            EchoService.launch(url="http://localhost:8090", timeout=1)
+            EchoService.launch(url="http://localhost:8090", timeout=0.01)
 
     @pytest.mark.asyncio
     async def test_echo_service_import_and_instantiation(self):
