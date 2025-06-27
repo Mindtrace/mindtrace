@@ -246,7 +246,7 @@ class TestGetLoggerNameValidation:
         
         # Should respect the kwargs that were passed
         assert logger.level == logging.WARNING
-        assert logger.propagate == False  # Should override the default True
+        assert logger.propagate is False  # Should override the default True
         
         # Verify handlers have correct levels
         for handler in logger.handlers:
