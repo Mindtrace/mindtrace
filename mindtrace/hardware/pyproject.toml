@@ -1,0 +1,11 @@
+[project]
+name = "mindtrace-hardware"
+version = "0.1.0"
+dependencies = [
+    "mindtrace-core",
+    "mindtrace-services",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

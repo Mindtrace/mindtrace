@@ -1,0 +1,20 @@
+[project]
+name = "mindtrace-apps"
+version = "0.1.0"
+dependencies = [
+    "mindtrace-core",
+    "mindtrace-registry",
+    "mindtrace-database",
+    "mindtrace-services",
+    "mindtrace-datalake",
+    "mindtrace-models",
+    "mindtrace-cluster",
+    "mindtrace-jobs",
+    "mindtrace-hardware",
+    "mindtrace-ui",
+    "mindtrace-automation"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

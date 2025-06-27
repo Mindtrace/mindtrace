@@ -1,0 +1,11 @@
+[project]
+name = "mindtrace-ui"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "mindtrace-core"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

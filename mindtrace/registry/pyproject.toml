@@ -1,0 +1,13 @@
+[project]
+name = "mindtrace-registry"
+version = "0.1.0"
+dependencies = [
+    "mindtrace-core",
+    "minio>=7.2.15",
+    "pydantic>=2.11.1",
+    "zenml>=0.82.1",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
