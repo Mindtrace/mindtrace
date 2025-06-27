@@ -1,5 +1,6 @@
 from mindtrace.core import Mindtrace
 
+
 class MyClass(Mindtrace):
     def __init__(self):
         super().__init__()

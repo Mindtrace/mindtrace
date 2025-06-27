@@ -1,18 +1,17 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import os
-import requests
 import uuid
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import UUID
-import psutil
 
-from pydantic import BaseModel
+import psutil
+import pytest
+import requests
 from fastapi import HTTPException
+from pydantic import BaseModel
 from urllib3.util.url import parse_url
 
-
 from mindtrace.core import TaskSchema
-from mindtrace.services import generate_connection_manager, ServerStatus, Service
+from mindtrace.services import ServerStatus, Service, generate_connection_manager
 
 
 class SampleInput(BaseModel):

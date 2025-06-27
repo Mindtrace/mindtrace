@@ -1,15 +1,16 @@
 import json
-from unittest.mock import Mock, MagicMock, patch, call, AsyncMock
-import pytest
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+
 import httpx
+import pytest
 from fastapi import HTTPException
 
+from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.utils import (
     add_endpoint,
-    register_connection_manager,
     generate_connection_manager,
+    register_connection_manager,
 )
-from mindtrace.services.core.connection_manager import ConnectionManager
 
 
 class TestAddEndpoint:

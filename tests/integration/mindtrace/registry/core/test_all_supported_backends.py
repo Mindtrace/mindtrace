@@ -1,13 +1,14 @@
 import logging
 import os
-import pytest
-from pathlib import Path
-import tempfile
 import shutil
+import tempfile
 import uuid
+from pathlib import Path
+
+import pytest
 
 from mindtrace.core import Config
-from mindtrace.registry import Registry, LocalRegistryBackend, MinioRegistryBackend
+from mindtrace.registry import LocalRegistryBackend, MinioRegistryBackend, Registry
 
 # Backend configurations
 BACKENDS = {
@@ -141,8 +142,8 @@ def test_info(registry, test_config):
 def test_concurrent_operations(registry, test_config):
     """Test concurrent operations with distributed locking."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     # Save initial object
     registry.save("test:concurrent", test_config, version="1.0.0")
@@ -202,8 +203,8 @@ def test_materializer_registration(registry):
 def test_concurrent_save_operations(registry, test_config):
     """Test concurrent save operations with distributed locking."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     def save_with_delay(i):
         time.sleep(0.1)  # Add delay to increase chance of race condition
@@ -230,8 +231,8 @@ def test_concurrent_save_operations(registry, test_config):
 def test_concurrent_load_operations(registry, test_config):
     """Test concurrent load operations with shared locks."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     # Save initial object
     registry.save("test:concurrent-load", test_config, version="1.0.0")
@@ -252,8 +253,8 @@ def test_concurrent_load_operations(registry, test_config):
 def test_concurrent_save_load_race(registry, test_config):
     """Test race conditions between save and load operations."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     # Save initial object
     registry.save("test:race", test_config, version="1.0.0")
@@ -286,8 +287,8 @@ def test_concurrent_save_load_race(registry, test_config):
 def test_concurrent_delete_operations(registry, test_config):
     """Test concurrent delete operations with distributed locking."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     # Save multiple versions
     for i in range(5):
@@ -371,8 +372,8 @@ def test_dict_like_interface_versioned(registry, test_config):
 def test_concurrent_dict_operations(registry, test_config):
     """Test concurrent dictionary-like operations."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
     
     def set_item(i):
         time.sleep(0.1)

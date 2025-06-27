@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from datasets import Dataset
 import numpy as np
+import torch
+from datasets import Dataset
 from PIL import Image
 from pydantic import BaseModel
-import torch
 from transformers import AutoModel
 
 from mindtrace.core import Config

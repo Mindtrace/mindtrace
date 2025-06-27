@@ -1,6 +1,6 @@
 # tests/test_gcs_handler.py
 from datetime import datetime
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from google.api_core.exceptions import NotFound

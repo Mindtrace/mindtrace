@@ -1,21 +1,20 @@
 import importlib
 import json
 import os
-from pathlib import Path
 import platform
-import pytest
 import shutil
 import sys
 import time
-from typing import Generator
-from unittest.mock import patch, MagicMock, mock_open
 import uuid
+from pathlib import Path
+from typing import Generator
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
 import yaml
 
-
-from mindtrace.core import Config 
-from mindtrace.registry import LocalRegistryBackend
-from mindtrace.registry import Registry
+from mindtrace.core import Config
+from mindtrace.registry import LocalRegistryBackend, Registry
 
 # Import platform-specific modules safely
 if platform.system() != 'Windows':

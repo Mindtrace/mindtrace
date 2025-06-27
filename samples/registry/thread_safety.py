@@ -4,11 +4,11 @@ This script shows how to safely use the Registry class in a multi-threaded envir
 loads, and mixed operations.
 """
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 import tempfile
 import time
-from typing import List, Dict, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, List
 
 from mindtrace.registry import Registry
 

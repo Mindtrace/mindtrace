@@ -1,9 +1,10 @@
 """Unit test methods for mindtrace.core.utils.checks utility module."""
 
 from unittest.mock import patch
+
 from urllib3.util.url import parse_url
 
-from mindtrace.core import ifnone, check_libs
+from mindtrace.core import check_libs, ifnone
 from mindtrace.core.utils.checks import ifnone_url
 
 
