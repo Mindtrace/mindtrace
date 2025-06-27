@@ -84,19 +84,44 @@ class Mindtrace(metaclass=MindtraceMeta):
     def __init__(
         self,
         suppress: bool = False,
-        **logger_kwargs
+        **kwargs
     ):
         """
         Initialize the Mindtrace object.
 
         Args:
             suppress (bool): Whether to suppress exceptions in context manager use.
-            **logger_kwargs: Keyword arguments passed to `get_logger`.
-                e.g., propagate=True, file_level=logging.INFO
+            **kwargs: Additional keyword arguments. Logger-related kwargs are passed to `get_logger`.
+                Valid logger kwargs: log_dir, logger_level, stream_level, file_level, 
+                file_mode, propagate, max_bytes, backup_count
         """
+        # Initialize parent classes first (cooperative inheritance)
+        try:
+            super().__init__(**kwargs)
+        except TypeError as e:
+            # If parent classes don't accept some kwargs, try without logger-specific ones
+            logger_param_names = {
+                'log_dir', 'logger_level', 'stream_level', 'file_level', 
+                'file_mode', 'propagate', 'max_bytes', 'backup_count'
+            }
+            remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
+            try:
+                super().__init__(**remaining_kwargs)
+            except TypeError:
+                # If that still fails, try with no kwargs
+                super().__init__()
+        
+        # Set Mindtrace-specific attributes
         self.suppress = suppress        
         self.config = Config()
 
+        # Filter logger-specific kwargs for logger setup
+        logger_param_names = {
+            'log_dir', 'logger_level', 'stream_level', 'file_level', 
+            'file_mode', 'propagate', 'max_bytes', 'backup_count'
+        }
+        logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
+        
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)
 
@@ -311,7 +336,7 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     pass
 
 
-class MindtraceABC(Mindtrace, metaclass=MindtraceABCMeta):
+class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     """Abstract base class combining Mindtrace class functionality with ABC support.
 
     This class enables creating abstract classes that also have access to all Mindtrace features
@@ -336,4 +361,5 @@ class MindtraceABC(Mindtrace, metaclass=MindtraceABCMeta):
         would fail due to metaclass conflicts. MindtraceABC resolves this by using the CombinedABCMeta.
     """
 
-    pass
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
