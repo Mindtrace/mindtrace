@@ -6,14 +6,13 @@ from typing import List
 from urllib.parse import urljoin
 from uuid import UUID
 
-from fastapi import HTTPException
 import httpx
 import requests
-from urllib3.util.url import parse_url, Url
+from fastapi import HTTPException
+from urllib3.util.url import Url, parse_url
 
-from mindtrace.core import Mindtrace, ifnone, Timeout
+from mindtrace.core import Mindtrace, Timeout, ifnone
 from mindtrace.services.core.types import Heartbeat, ServerStatus, ShutdownOutput, StatusOutput
-
 
 
 class ConnectionManager(Mindtrace):
