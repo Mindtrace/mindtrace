@@ -1,8 +1,7 @@
 import logging
-from abc import abstractmethod
 from typing import Any
 
-from mindtrace.core import Mindtrace, ifnone
+from mindtrace.core import Mindtrace
 
 
 class ContextListener(Mindtrace):

@@ -1,4 +1,3 @@
-import pytest
 import pytest_asyncio
 
 from mindtrace.services.sample.echo_service import EchoService

@@ -1,6 +1,5 @@
 """Unit test methods for mindtrace.core.observables.event_bus module."""
 
-import pytest
 
 from mindtrace.core import EventBus
 

@@ -7,8 +7,7 @@ loads, and mixed operations.
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from mindtrace.registry import Registry
 

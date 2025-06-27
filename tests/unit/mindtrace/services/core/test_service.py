@@ -1,6 +1,4 @@
-import os
-import uuid
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import psutil
@@ -11,7 +9,7 @@ from pydantic import BaseModel
 from urllib3.util.url import parse_url
 
 from mindtrace.core import TaskSchema
-from mindtrace.services import ServerStatus, Service, generate_connection_manager
+from mindtrace.services import ServerStatus, Service
 
 
 class SampleInput(BaseModel):

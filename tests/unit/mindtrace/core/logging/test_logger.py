@@ -1,10 +1,7 @@
 import logging
-import os
-import shutil
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from mindtrace.core.logging.logger import get_logger, setup_logger
 

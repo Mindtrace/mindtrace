@@ -1,8 +1,6 @@
 """Client-side helper class for communicating with any ServerBase server."""
 
 import asyncio
-import json
-from typing import List
 from urllib.parse import urljoin
 from uuid import UUID
 
@@ -12,7 +10,7 @@ from fastapi import HTTPException
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, Timeout, ifnone
-from mindtrace.services.core.types import Heartbeat, ServerStatus, ShutdownOutput, StatusOutput
+from mindtrace.services.core.types import ServerStatus, ShutdownOutput, StatusOutput
 
 
 class ConnectionManager(Mindtrace):

@@ -1,8 +1,7 @@
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
-from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import MindtraceABC
 

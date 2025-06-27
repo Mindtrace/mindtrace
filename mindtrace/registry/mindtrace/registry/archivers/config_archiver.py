@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
-from zenml.materializers import BuiltInMaterializer
 
 from mindtrace.core import Config
 from mindtrace.registry.core.archiver import Archiver

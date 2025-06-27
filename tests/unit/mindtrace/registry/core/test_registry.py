@@ -1,17 +1,13 @@
-import json
 import re
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Type
 from unittest.mock import patch
 
 import pytest
 from minio import S3Error
 from pydantic import BaseModel
-from zenml.materializers.base_materializer import BaseMaterializer
 
 from mindtrace.core import Config, check_libs
 from mindtrace.registry import LocalRegistryBackend, LockTimeoutError, Registry

@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import uuid
@@ -6,7 +5,6 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
-import yaml
 from minio import Minio
 from minio.error import S3Error
 

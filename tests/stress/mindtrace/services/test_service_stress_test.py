@@ -5,7 +5,6 @@ This module tests the EchoService under high load to determine its maximum
 throughput and performance characteristics under stress conditions.
 """
 
-import asyncio
 import json
 import logging
 import sys
@@ -15,7 +14,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from statistics import mean, median, stdev
+from statistics import mean, median
 
 import pytest
 from tqdm import tqdm

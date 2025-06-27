@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from google.api_core import exceptions as gexc
 from google.cloud import storage

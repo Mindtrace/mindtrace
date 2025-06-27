@@ -8,13 +8,12 @@ import time
 import uuid
 from pathlib import Path
 from typing import Generator
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 
 from mindtrace.core import Config
-from mindtrace.registry import LocalRegistryBackend, Registry
+from mindtrace.registry import LocalRegistryBackend
 
 # Import platform-specific modules safely
 if platform.system() != 'Windows':

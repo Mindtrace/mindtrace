@@ -4,7 +4,7 @@ import logging
 import traceback
 from abc import ABC, ABCMeta
 from functools import wraps
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 from mindtrace.core.config import Config
 from mindtrace.core.logging.logger import get_logger

@@ -3,7 +3,6 @@
 import logging
 from unittest.mock import MagicMock
 
-import pytest
 
 from mindtrace.core import ContextListener, ObservableContext
 
