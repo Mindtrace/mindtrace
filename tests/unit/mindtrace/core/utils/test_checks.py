@@ -35,24 +35,25 @@ def test_first_not_none():
 
 def test_check_libs():
     # Test when all libraries are available
-    with patch('builtins.__import__') as mock_import:
+    with patch("builtins.__import__") as mock_import:
         mock_import.return_value = None
-        assert check_libs(['numpy', 'pandas']) == []
+        assert check_libs(["numpy", "pandas"]) == []
 
     # Test when some libraries are missing
-    with patch('builtins.__import__') as mock_import:
+    with patch("builtins.__import__") as mock_import:
+
         def mock_import_side_effect(name, *args, **kwargs):
-            if name == 'numpy':
+            if name == "numpy":
                 return None
             raise ImportError(f"No module named '{name}'")
-        
+
         mock_import.side_effect = mock_import_side_effect
-        assert check_libs(['numpy', 'missing_lib']) == ['missing_lib']
+        assert check_libs(["numpy", "missing_lib"]) == ["missing_lib"]
 
     # Test when all libraries are missing
-    with patch('builtins.__import__') as mock_import:
+    with patch("builtins.__import__") as mock_import:
         mock_import.side_effect = ImportError("No module named 'missing_lib'")
-        assert check_libs(['missing_lib1', 'missing_lib2']) == ['missing_lib1', 'missing_lib2']
+        assert check_libs(["missing_lib1", "missing_lib2"]) == ["missing_lib1", "missing_lib2"]
 
 
 def test_ifnone_url():
@@ -61,32 +62,32 @@ def test_ifnone_url():
     result = ifnone_url("http://example.com", "http://default.com")
     assert str(result) == "http://example.com"
     assert result.host == "example.com"
-    
+
     # Test with None URL and string default
     result = ifnone_url(None, "http://default.com")
     assert str(result) == "http://default.com"
     assert result.host == "default.com"
-    
+
     # Test with string URL and Url object default
     default_url = parse_url("http://default.com")
     result = ifnone_url("http://example.com", default_url)
     assert str(result) == "http://example.com"
     assert result.host == "example.com"
-    
+
     # Test with None URL and Url object default
     default_url = parse_url("http://default.com")
     result = ifnone_url(None, default_url)
     assert str(result) == "http://default.com"
     assert result.host == "default.com"
     assert result is default_url  # Should return the same object
-    
+
     # Test with Url object URL and string default
     url = parse_url("http://example.com")
     result = ifnone_url(url, "http://default.com")
     assert str(result) == "http://example.com"
     assert result.host == "example.com"
     assert result is url  # Should return the same object
-    
+
     # Test with Url object URL and Url object default
     url = parse_url("http://example.com")
     default_url = parse_url("http://default.com")
@@ -94,7 +95,7 @@ def test_ifnone_url():
     assert str(result) == "http://example.com"
     assert result.host == "example.com"
     assert result is url  # Should return the same object
-    
+
     # Test with None URL and None default (edge case)
     result = ifnone_url(None, None)
     assert result is None

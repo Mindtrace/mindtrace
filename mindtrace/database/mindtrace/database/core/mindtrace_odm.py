@@ -1,4 +1,3 @@
-
 from pydantic import BaseModel
 
 from mindtrace.core import Mindtrace, ifnone

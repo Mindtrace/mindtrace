@@ -131,11 +131,7 @@ class MinioRegistryBackend(RegistryBackend):
                 data = json.dumps({"materializers": {}}).encode()
                 data_io = io.BytesIO(data)
                 self.client.put_object(
-                    self.bucket,
-                    str(self._metadata_path),
-                    data_io,
-                    len(data),
-                    content_type="application/json"
+                    self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
                 )
             else:
                 # Re-raise other S3 errors
@@ -170,9 +166,9 @@ class MinioRegistryBackend(RegistryBackend):
                 self.logger.debug(f"Uploading file {file} to {obj_key}")
                 self.client.fput_object(self.bucket, obj_key, str(file))
                 uploaded_files.append(obj_key)
-        
+
         self.logger.debug(f"Upload complete. Files uploaded: {uploaded_files}")
-        
+
         # Verify upload
         try:
             objects = list(self.client.list_objects(self.bucket, prefix=remote_key))
@@ -202,14 +198,14 @@ class MinioRegistryBackend(RegistryBackend):
         downloaded_files = []
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
             # Skip directory markers
-            if obj.object_name.endswith('/'):
+            if obj.object_name.endswith("/"):
                 continue
-                
+
             # Get the relative path by removing the remote_key prefix
-            relative_path = obj.object_name[len(remote_key):].lstrip('/')
+            relative_path = obj.object_name[len(remote_key) :].lstrip("/")
             if not relative_path:  # Skip if it's the root directory
                 continue
-                
+
             dest_path = local_path / relative_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             self.logger.debug(f"Downloading {obj.object_name} to {dest_path}")
@@ -217,7 +213,7 @@ class MinioRegistryBackend(RegistryBackend):
             downloaded_files.append(str(dest_path))
 
         self.logger.debug(f"Download complete. Files downloaded: {downloaded_files}")
-        
+
         # Verify download
         try:
             local_files = list(local_path.rglob("*"))
@@ -237,7 +233,6 @@ class MinioRegistryBackend(RegistryBackend):
 
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
             self.client.remove_object(self.bucket, obj.object_name)
- 
 
     def save_metadata(self, name: str, version: str, metadata: dict):
         """Save object metadata to MinIO.
@@ -250,18 +245,12 @@ class MinioRegistryBackend(RegistryBackend):
         self.validate_object_name(name)
         meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
-        
+
         # Convert metadata to bytes and wrap in BytesIO
         data = json.dumps(metadata).encode()
         data_io = io.BytesIO(data)
-        
-        self.client.put_object(
-            self.bucket,
-            meta_path,
-            data_io,
-            len(data),
-            content_type="application/json"
-        )
+
+        self.client.put_object(self.bucket, meta_path, data_io, len(data), content_type="application/json")
 
     def fetch_metadata(self, name: str, version: str) -> dict:
         """Fetch object metadata from MinIO.
@@ -275,7 +264,7 @@ class MinioRegistryBackend(RegistryBackend):
         """
         meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Loading metadata from: {meta_path}")
-        
+
         response = self.client.get_object(self.bucket, meta_path)
         metadata = json.loads(response.data.decode())
 
@@ -329,11 +318,7 @@ class MinioRegistryBackend(RegistryBackend):
 
             # Save updated metadata
             self.client.put_object(
-                self.bucket,
-                str(self._metadata_path),
-                data_io,
-                len(data),
-                content_type="application/json"
+                self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
             )
         except Exception as e:
             self.logger.error(f"Error registering materializer for {object_class}: {e}")
@@ -364,7 +349,7 @@ class MinioRegistryBackend(RegistryBackend):
             # Re-raise any other errors
             self.logger.error(f"Error getting registered materializer for {object_class}: {e}")
             raise
-        
+
     def registered_materializers(self) -> Dict[str, str]:
         """Get all registered materializers.
 
@@ -460,18 +445,18 @@ class MinioRegistryBackend(RegistryBackend):
 
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using Minio's object locking features.
-        
+
         Args:
             key: The key to acquire the lock for.
             lock_id: The ID of the lock to acquire.
             timeout: The timeout in seconds for the lock.
             shared: Whether to acquire a shared (read) lock. If False, acquires an exclusive (write) lock.
-            
+
         Returns:
             True if the lock was acquired, False otherwise.
         """
         lock_key = self._lock_key(key)
-        
+
         try:
             # Check if lock exists and is not expired
             try:
@@ -487,45 +472,35 @@ class MinioRegistryBackend(RegistryBackend):
             except Exception:
                 # Lock doesn't exist or is invalid, we can proceed
                 pass
-            
+
             # Create lock metadata
-            metadata = {
-                "lock_id": lock_id,
-                "expires_at": time.time() + timeout,
-                "shared": shared
-            }
-            
+            metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
+
             # Convert metadata to bytes and wrap in BytesIO
             data = json.dumps(metadata).encode()
             data_io = io.BytesIO(data)
-            
+
             # Upload lock file with metadata
-            self.client.put_object(
-                self.bucket,
-                lock_key,
-                data_io,
-                len(data),
-                content_type="application/json"
-            )
-            
+            self.client.put_object(self.bucket, lock_key, data_io, len(data), content_type="application/json")
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
             return False
 
     def release_lock(self, key: str, lock_id: str) -> bool:
         """Release a lock by verifying ownership and removing the lock object.
-        
+
         Args:
             key: The key to unlock
             lock_id: The lock ID that was used to acquire the lock
-            
+
         Returns:
             True if lock was released, False otherwise
         """
         lock_key = self._lock_key(key)
-        
+
         try:
             # Verify lock ownership
             try:
@@ -537,37 +512,37 @@ class MinioRegistryBackend(RegistryBackend):
                 if e.code == "NoSuchKey":
                     return True  # Lock doesn't exist
                 raise  # Unexpected error
-            
+
             # Remove the lock
             self.client.remove_object(self.bucket, lock_key)
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error releasing lock for {key}: {e}")
             return False
 
     def check_lock(self, key: str) -> tuple[bool, str | None]:
         """Check if a key is currently locked.
-        
+
         Args:
             key: The key to check
-            
+
         Returns:
             Tuple of (is_locked, lock_id). If locked, lock_id will be the current lock holder's ID.
             If not locked, lock_id will be None.
         """
         lock_key = self._lock_key(key)
-        
+
         try:
             response = self.client.get_object(self.bucket, lock_key)
             lock_data = json.loads(response.data.decode())
-            
+
             # Check if lock is expired
             if time.time() > lock_data.get("expires_at", 0):
                 return False, None
-                
+
             return True, lock_data.get("lock_id")
-            
+
         except S3Error as e:
             if e.code == "NoSuchKey":
                 return False, None
@@ -576,10 +551,10 @@ class MinioRegistryBackend(RegistryBackend):
     def overwrite(self, source_name: str, source_version: str, target_name: str, target_version: str):
         """Overwrite an object.
 
-        This method supports saving objects to a temporary source location first, and then moving it to a target 
+        This method supports saving objects to a temporary source location first, and then moving it to a target
         object in a single atomic operation.
-        
-        After the overwrite method completes, the source object should be deleted, and the target object should be 
+
+        After the overwrite method completes, the source object should be deleted, and the target object should be
         updated to be the new source version.
 
         Args:
@@ -592,20 +567,20 @@ class MinioRegistryBackend(RegistryBackend):
             # Get the source and target object keys
             source_key = self._object_key(source_name, source_version)
             target_key = self._object_key(target_name, target_version)
-            
+
             # Get the source and target metadata keys
             source_meta_key = f"_meta_{source_name.replace(':', '_')}@{source_version}.json"
             target_meta_key = f"_meta_{target_name.replace(':', '_')}@{target_version}.json"
-            
+
             self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
-            
+
             # List source objects before any operations
             try:
                 source_objects = list(self.client.list_objects(self.bucket, prefix=source_key, recursive=True))
             except Exception as e:
                 self.logger.error(f"Error listing source objects: {e}")
                 raise
-            
+
             # If target exists, delete it first
             try:
                 target_objects = list(self.client.list_objects(self.bucket, prefix=target_key, recursive=True))
@@ -618,63 +593,55 @@ class MinioRegistryBackend(RegistryBackend):
                     self.logger.error(f"Error deleting target objects: {e}")
                     raise
                 self.logger.debug("No existing target objects to delete")
-            
+
             # Copy all objects from source to target
             if not source_objects:
                 raise ValueError(f"No source objects found for {source_name}@{source_version}")
-                
+
             for obj in source_objects:
                 # Skip directory markers (objects ending with /)
-                if obj.object_name.endswith('/'):
+                if obj.object_name.endswith("/"):
                     continue
-                    
+
                 # Create target object name by replacing source prefix with target prefix
                 target_obj_name = obj.object_name.replace(source_key, target_key)
                 self.logger.debug(f"Copying {obj.object_name} to {target_obj_name}")
-                
+
                 # Copy the object
-                self.client.copy_object(
-                    self.bucket,
-                    target_obj_name,
-                    CopySource(self.bucket, obj.object_name)
-                )
-            
+                self.client.copy_object(self.bucket, target_obj_name, CopySource(self.bucket, obj.object_name))
+
             # Copy metadata file if it exists
             try:
                 self.logger.debug(f"Copying metadata from {source_meta_key} to {target_meta_key}")
                 source_meta = self.client.get_object(self.bucket, source_meta_key)
                 metadata = json.loads(source_meta.data.decode())
-                
+
                 # Update the path in metadata
                 metadata["path"] = f"s3://{self.bucket}/{target_key}"
-                
+
                 # Save updated metadata
                 data = json.dumps(metadata).encode()
                 data_io = io.BytesIO(data)
                 self.client.put_object(
-                    self.bucket,
-                    target_meta_key,
-                    data_io,
-                    len(data),
-                    content_type="application/json"
+                    self.bucket, target_meta_key, data_io, len(data), content_type="application/json"
                 )
             except S3Error as e:
                 if e.code == "NoSuchKey":
                     raise ValueError(f"No source metadata found for {source_name}@{source_version}")
                 raise
-            
+
             # Delete source objects
             for obj in source_objects:
                 # Skip directory markers
-                if obj.object_name.endswith('/'):
+                if obj.object_name.endswith("/"):
                     continue
                 self.client.remove_object(self.bucket, obj.object_name)
-            
+
             # Delete source metadata
             self.client.remove_object(self.bucket, source_meta_key)
-            
+
             self.logger.debug(f"Successfully completed overwrite operation for {target_name}@{target_version}")
-            
+
         except Exception as e:
             self.logger.error(f"Error during overwrite operation: {e}")
             raise e

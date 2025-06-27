@@ -5,12 +5,12 @@ from typing import Callable, Dict, Union
 
 class EventBus:
     """A simple event bus that allows for subscribing to and emitting events.
-    
+
     Example::
 
         from mindtrace.core import EventBus
 
-        bus = EventBus()    
+        bus = EventBus()
 
         def handler(**kwargs):
             print(kwargs)
@@ -34,7 +34,7 @@ class EventBus:
 
     def subscribe(self, handler: Callable, event_name: str) -> str:
         """Subscribe to an event.
-        
+
         Args:
             handler: The handler to call when the event is emitted.
             event_name: The name of the event to subscribe to.
@@ -48,7 +48,7 @@ class EventBus:
 
     def unsubscribe(self, handler_or_id: Union[Callable, str], event_name: str):
         """Unsubscribe from an event.
-        
+
         Args:
             handler_or_id: The handler or ID to unsubscribe from.
             event_name: The name of the event to unsubscribe from.

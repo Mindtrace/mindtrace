@@ -25,11 +25,11 @@ class ConnectionManager(Mindtrace):
     def shutdown(self, block: bool = True):
         """Shutdown the server.
 
-        This method sends a shutdown request to the server. If block=True, it will also poll the server until it 
+        This method sends a shutdown request to the server. If block=True, it will also poll the server until it
         becomes unavailable, ensuring the shutdown process is complete.
 
         Args:
-            block: If True, waits for the server to actually shut down. If False, returns immediately after sending 
+            block: If True, waits for the server to actually shut down. If False, returns immediately after sending
             the shutdown request.
 
         Example::
@@ -42,7 +42,7 @@ class ConnectionManager(Mindtrace):
             # Wait for shutdown to complete
             cm.shutdown(block=True)
             assert cm.status == ServerStatus.Down
-            
+
             # Or send shutdown command and return immediately
             cm.shutdown(block=False)
         """
@@ -50,11 +50,11 @@ class ConnectionManager(Mindtrace):
         response = requests.request("POST", urljoin(str(self.url), "shutdown"), timeout=60)
         if response.status_code != 200:
             raise HTTPException(response.status_code, response.content)
-        
+
         # If not blocking, return immediately after sending the shutdown request
         if not block:
             return ShutdownOutput(shutdown=True)
-        
+
         def check_server_down():
             """Check if server is down by trying to connect to status endpoint."""
             try:
@@ -67,7 +67,7 @@ class ConnectionManager(Mindtrace):
             except requests.exceptions.Timeout:
                 # Timeout - server might be shutting down, this is what we want
                 return True
-        
+
         timeout_handler = Timeout(
             timeout=30,
             retry_delay=0.2,
@@ -79,7 +79,7 @@ class ConnectionManager(Mindtrace):
         except TimeoutError:
             self.logger.error(f"Server at {self.url} did not shut down within timeout period.")
             raise TimeoutError(f"Server at {self.url} did not shut down within timeout period.")
-        
+
         return ShutdownOutput(shutdown=True)
 
     async def ashutdown(self, block: bool = True):
@@ -90,44 +90,44 @@ class ConnectionManager(Mindtrace):
 
     def status(self):
         """Get the status of the server.
-        
+
         Returns ServerStatus.DOWN if the server is unreachable, otherwise returns the actual status.
-        
+
         Returns:
             StatusOutput with the current server status.
-        """        
+        """
         try:
             response = requests.post(urljoin(str(self.url), "status"), timeout=10)
             if response.status_code != 200:
                 return StatusOutput(status=ServerStatus.DOWN)
-            
+
             result = response.json()
             return StatusOutput(**result)
-            
+
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.RequestException):
             return StatusOutput(status=ServerStatus.DOWN)
 
     async def astatus(self):
         """Async get the status of the server.
-        
+
         Returns ServerStatus.DOWN if the server is unreachable, otherwise returns the actual status.
-        
+
         Returns:
             StatusOutput with the current server status.
         """
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(urljoin(str(self.url), "status"))
-            
+
             if response.status_code != 200:
                 return StatusOutput(status=ServerStatus.DOWN)
-            
+
             result = response.json()
             return StatusOutput(**result)
-            
+
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError):
             return StatusOutput(status=ServerStatus.DOWN)
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.logger.debug(f"Shutting down {self.name} Server.")
         try:

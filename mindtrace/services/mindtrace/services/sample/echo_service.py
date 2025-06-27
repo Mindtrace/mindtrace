@@ -8,7 +8,7 @@ from mindtrace.services import Service
 
 class EchoInput(BaseModel):
     message: str
-    delay: float = 0.0 
+    delay: float = 0.0
 
 
 class EchoOutput(BaseModel):

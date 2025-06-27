@@ -197,7 +197,7 @@ class Timeout:
         from urllib3.util.url import parse_url, Url
         from mindtrace.core import Timeout
         from mindtrace.services import Service
-        
+
         def get_server_status(url: Url):
             # The following request may fail for two categories of reasons:
             #   1. The server has not launched yet: Will raise a ConnectionError, we should retry.

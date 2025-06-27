@@ -12,13 +12,13 @@ class GCPRegistryBackend(RegistryBackend):  # pragma: no cover
         super().__init__(**kwargs)
 
     def push(self, name: str, object: T, version: str | None = None):
-        raise NotImplementedError("Registry push method not implemented")  
+        raise NotImplementedError("Registry push method not implemented")
 
     def pull(self, name: str, version: str | None = None) -> T:
-        raise NotImplementedError("Registry pull method not implemented")  
+        raise NotImplementedError("Registry pull method not implemented")
 
     def delete(self, name: str, version: str | None = None):
-        raise NotImplementedError("Registry delete method not implemented")  
+        raise NotImplementedError("Registry delete method not implemented")
 
     def info(self, name: str = None, version: str = "latest") -> BaseModel:
-        raise NotImplementedError("Registry info method not implemented")  
+        raise NotImplementedError("Registry info method not implemented")
