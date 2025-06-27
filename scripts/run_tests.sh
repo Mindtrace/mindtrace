@@ -7,6 +7,61 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+# Check if any arguments are test paths
+SPECIFIC_PATHS=()
+PYTEST_ARGS=()
+NEEDS_DOCKER=false
+
+# Parse all arguments
+for arg in "$@"; do
+    if [[ "$arg" == tests/* ]]; then
+        SPECIFIC_PATHS+=("$arg")
+        echo "Detected specific test path: $arg"
+        # Check if any path requires docker containers
+        if [[ "$arg" == tests/integration/* ]]; then
+            NEEDS_DOCKER=true
+        fi
+    else
+        PYTEST_ARGS+=("$arg")
+    fi
+done
+
+# If specific paths are provided, run just those paths and exit
+if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
+    echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
+    
+    # Start docker containers if any integration tests are included
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Starting docker containers for integration tests..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
+
+        # Wait for MinIO to be healthy
+        echo "Waiting for docker containers to be ready..."
+        until curl -s http://localhost:9000/minio/health/live > /dev/null; do
+            sleep 1
+        done
+    fi
+    
+    # Clear any existing coverage data
+    coverage erase
+    
+    # Run pytest on the specific paths with coverage
+    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
+    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
+    EXIT_CODE=$?
+    
+    # Stop docker containers if they were started
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Stopping docker containers..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+    fi
+    
+    echo "Exiting with code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+# If we get here, no specific paths were provided, so use the original suite-based logic
+echo "No specific test paths provided, using suite-based logic"
 
 # Initialize test suite flags
 RUN_UNIT=false
@@ -14,7 +69,7 @@ RUN_INTEGRATION=false
 RUN_STRESS=false
 RUN_ALL=true  # Default to running all tests
 
-# Parse command line arguments
+# Parse command line arguments for suite flags
 while [[ $# -gt 0 ]]; do
     case $1 in
         --unit)
