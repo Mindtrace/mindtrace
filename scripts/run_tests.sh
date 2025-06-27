@@ -7,23 +7,49 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-# Check if any arguments are test paths
+# Initialize variables
 SPECIFIC_PATHS=()
 PYTEST_ARGS=()
 NEEDS_DOCKER=false
+RUN_UNIT=false
+RUN_INTEGRATION=false
+RUN_STRESS=false
+RUN_ALL=true
 
-# Parse all arguments
-for arg in "$@"; do
-    if [[ "$arg" == tests/* ]]; then
-        SPECIFIC_PATHS+=("$arg")
-        echo "Detected specific test path: $arg"
-        # Check if any path requires docker containers
-        if [[ "$arg" == tests/integration/* ]]; then
-            NEEDS_DOCKER=true
-        fi
-    else
-        PYTEST_ARGS+=("$arg")
-    fi
+# Parse all arguments in a single pass
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --unit)
+            RUN_UNIT=true
+            RUN_ALL=false
+            shift
+            ;;
+        --integration)
+            RUN_INTEGRATION=true
+            RUN_ALL=false
+            shift
+            ;;
+        --stress)
+            RUN_STRESS=true
+            RUN_ALL=false
+            shift
+            ;;
+        tests/*)
+            # Specific test path provided
+            SPECIFIC_PATHS+=("$1")
+            echo "Detected specific test path: $1"
+            # Check if any path requires docker containers
+            if [[ "$1" == tests/integration/* ]]; then
+                NEEDS_DOCKER=true
+            fi
+            shift
+            ;;
+        *)
+            # Pass all other arguments to pytest
+            PYTEST_ARGS+=("$1")
+            shift
+            ;;
+    esac
 done
 
 # If specific paths are provided, run just those paths and exit
@@ -60,40 +86,8 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     exit $EXIT_CODE
 fi
 
-# If we get here, no specific paths were provided, so use the original suite-based logic
+# If we get here, no specific paths were provided, so use suite-based logic
 echo "No specific test paths provided, using suite-based logic"
-
-# Initialize test suite flags
-RUN_UNIT=false
-RUN_INTEGRATION=false
-RUN_STRESS=false
-RUN_ALL=true  # Default to running unit and integration tests (but not stress)
-
-# Parse command line arguments for suite flags
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --unit)
-            RUN_UNIT=true
-            RUN_ALL=false
-            shift
-            ;;
-        --integration)
-            RUN_INTEGRATION=true
-            RUN_ALL=false
-            shift
-            ;;
-        --stress)
-            RUN_STRESS=true
-            RUN_ALL=false
-            shift
-            ;;
-        *)
-            # Pass all other arguments to pytest
-            PYTEST_ARGS+=("$1")
-            shift
-            ;;
-    esac
-done
 
 # If no specific flags were provided, run unit and integration tests (but not stress)
 if [ "$RUN_ALL" = true ]; then
@@ -102,7 +96,7 @@ if [ "$RUN_ALL" = true ]; then
     # RUN_STRESS remains false - only runs when explicitly requested
 fi
 
-# Start MinIO container if running integration tests or all tests
+# Start MinIO container if running integration tests
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Starting docker containers..."
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
