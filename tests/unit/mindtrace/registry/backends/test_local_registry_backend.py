@@ -866,10 +866,10 @@ def test_overwrite_metadata_error_handling(backend, temp_dir, monkeypatch):
     assert "Simulated rename error" in str(exc_info.value)
     
     # Verify that the source metadata still exists (rollback worked)
-    assert (backend.uri / f"_meta_test_source@1.0.0.yaml").exists()
+    assert (backend.uri / "_meta_test_source@1.0.0.yaml").exists()
     
     # Verify that the target metadata doesn't exist (rollback worked)
-    assert not (backend.uri / f"_meta_test_source@2.0.0.yaml").exists()
+    assert not (backend.uri / "_meta_test_source@2.0.0.yaml").exists()
 
 def test_overwrite_updates_metadata_path(backend, temp_dir):
     """Test that overwrite updates the path in metadata correctly."""

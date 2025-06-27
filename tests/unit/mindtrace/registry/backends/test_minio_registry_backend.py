@@ -1198,9 +1198,9 @@ def test_pull_skips_directory_markers(backend, monkeypatch, tmp_path):
     backend.pull("test:object", "1.0.0", str(tmp_path))
 
     # Only files, not directory markers, should be downloaded
-    assert f"objects/test:object/1.0.0/file1.txt" in downloaded
-    assert f"objects/test:object/1.0.0/subdir/file2.txt" in downloaded
-    assert f"objects/test:object/1.0.0/10/data.json" in downloaded
+    assert "objects/test:object/1.0.0/file1.txt" in downloaded
+    assert "objects/test:object/1.0.0/subdir/file2.txt" in downloaded
+    assert "objects/test:object/1.0.0/10/data.json" in downloaded
     # Directory markers should NOT be downloaded
     assert not any(obj.endswith('/') for obj in downloaded)
     assert len(downloaded) == 3

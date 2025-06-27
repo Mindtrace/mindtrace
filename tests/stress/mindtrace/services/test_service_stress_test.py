@@ -86,7 +86,7 @@ class TestEchoServiceThroughput:
         median_response_time = median(response_times) if response_times else 0
         p95_response_time = sorted(response_times)[int(0.95 * len(response_times))] if response_times else 0
         
-        print(f"\nSequential throughput test completed:")
+        print("\nSequential throughput test completed:")
         print(f"   - Total requests: {iterations}")
         print(f"   - Successful: {successful_requests}")
         print(f"   - Failed: {failed_requests}")
@@ -221,7 +221,7 @@ class TestEchoServiceThroughput:
         p95_response_time = sorted(results['response_times'])[int(0.95 * len(results['response_times']))] if results['response_times'] else 0
         p99_response_time = sorted(results['response_times'])[int(0.99 * len(results['response_times']))] if results['response_times'] else 0
         
-        print(f"\nConcurrent throughput test completed:")
+        print("\nConcurrent throughput test completed:")
         print(f"   - Total requests: {total_requests}")
         print(f"   - Concurrent workers: {max_workers}")
         print(f"   - Successful: {results['successful']}")
@@ -318,7 +318,7 @@ class TestEchoServiceThroughput:
         total_time = time.time() - start_time
         overall_rps = total_successful / total_time
         
-        print(f"\nSustained load test completed:")
+        print("\nSustained load test completed:")
         print(f"   - Duration: {total_time:.1f}s")
         print(f"   - Total requests: {total_successful + total_failed}")
         print(f"   - Successful: {total_successful}")
@@ -327,7 +327,7 @@ class TestEchoServiceThroughput:
         print(f"   - Overall RPS: {overall_rps:.1f}")
         
         # Performance over time analysis
-        print(f"   - Performance over time:")
+        print("   - Performance over time:")
         for bucket in sorted(time_buckets.keys()):
             if time_buckets[bucket]:
                 bucket_avg = mean(time_buckets[bucket]) * 1000
@@ -370,7 +370,7 @@ class TestEchoServiceThroughput:
         requests_per_message = 100
         results_by_payload = {}
         
-        print(f"\nStarting variable payload throughput test")
+        print("\nStarting variable payload throughput test")
         
         for i, test_message in enumerate(test_messages):
             message_size = len(test_message)
@@ -419,7 +419,7 @@ class TestEchoServiceThroughput:
                 'response_times': response_times
             }
         
-        print(f"\nVariable payload throughput test completed:")
+        print("\nVariable payload throughput test completed:")
         for payload_name, results in results_by_payload.items():
             success_rate = (results['successful'] / requests_per_message) * 100
             print(f"   - {payload_name} (~{results['size']} chars):")
@@ -449,7 +449,7 @@ class TestEchoServiceThroughput:
         worker_configs = [1, 2, 4]  # Number of server workers to test
         results = {}
         
-        print(f"\nTesting concurrent throughput with different server worker configurations")
+        print("\nTesting concurrent throughput with different server worker configurations")
         print(f"Client load: {client_workers} workers × {requests_per_worker} requests = {total_requests} total")
         
         for num_server_workers in worker_configs:
@@ -578,7 +578,7 @@ class TestEchoServiceThroughput:
                 results[num_server_workers] = None
         
         # Summary comparison
-        print(f"\nMulti-worker performance comparison:")
+        print("\nMulti-worker performance comparison:")
         print(f"{'Workers':<8} {'Throughput':<12} {'Avg RT':<10} {'P95 RT':<10} {'Success':<8}")
         print("-" * 55)
         
@@ -653,7 +653,7 @@ class TestEchoServiceThroughput:
         worker_configs = [1, 2, 4]
         results = {}
         
-        print(f"\nTesting delayed processing concurrent throughput with different server worker configurations")
+        print("\nTesting delayed processing concurrent throughput with different server worker configurations")
         print(f"Client load: {client_workers} workers × {requests_per_worker} requests = {total_requests} total")
         print(f"Simulated processing delay: {processing_delay*1000:.0f}ms per request")
         
@@ -785,7 +785,7 @@ class TestEchoServiceThroughput:
                 results[num_server_workers] = None
         
         # Summary comparison with scaling analysis
-        print(f"\nDelayed processing multi-worker performance comparison:")
+        print("\nDelayed processing multi-worker performance comparison:")
         print(f"{'Workers':<8} {'Throughput':<12} {'Scaling':<10} {'Efficiency':<12} {'Avg RT':<10} {'Success':<8}")
         print("-" * 75)
         
@@ -826,7 +826,7 @@ class TestEchoServiceThroughput:
             theoretical_max = best_config
             overall_efficiency = (max_scaling / theoretical_max) * 100
             
-            print(f"\nDelayed processing scaling analysis:")
+            print("\nDelayed processing scaling analysis:")
             print(f"   - Best configuration: {best_config} worker(s) with {best_throughput:.1f} req/sec")
             print(f"   - Maximum scaling achieved: {max_scaling:.1f}x")
             print(f"   - Theoretical maximum: {theoretical_max:.0f}x")
@@ -843,16 +843,16 @@ class TestEchoServiceThroughput:
             
             # Analyze results
             if overall_efficiency >= 80:
-                print(f"Excellent scaling efficiency! Workers provide clear benefits.")
+                print("Excellent scaling efficiency! Workers provide clear benefits.")
                 efficiency_rating = "excellent"
             elif overall_efficiency >= 60:
-                print(f"Good scaling efficiency. Workers help with concurrent load.")
+                print("Good scaling efficiency. Workers help with concurrent load.")
                 efficiency_rating = "good"
             elif overall_efficiency >= 40:
-                print(f"Moderate scaling efficiency. Some bottlenecks present.")
+                print("Moderate scaling efficiency. Some bottlenecks present.")
                 efficiency_rating = "moderate"
             else:
-                print(f"Poor scaling efficiency. Significant bottlenecks detected.")
+                print("Poor scaling efficiency. Significant bottlenecks detected.")
                 print("   Possible causes:")
                 print("   - Connection pooling limitations")
                 print("   - Shared resource contention")
@@ -917,7 +917,7 @@ class TestEchoServiceThroughput:
         test_delays = [0.0, 0.05, 0.1, 0.2]  # 0ms, 50ms, 100ms, 200ms
         test_message = "Baseline test"
         
-        print(f"\nTesting single request baseline performance:")
+        print("\nTesting single request baseline performance:")
         print(f"{'Delay':<8} {'Expected':<10} {'Actual':<10} {'Overhead':<10} {'Efficiency':<10}")
         print("-" * 55)
         
@@ -948,9 +948,9 @@ class TestEchoServiceThroughput:
             else:
                 print(f"{delay*1000:<8.0f} {'FAILED':<10}")
         
-        print(f"\nBaseline analysis:")
-        print(f"   - High overhead (>50ms) suggests connection management issues")
-        print(f"   - Low efficiency (<80%) indicates HTTP client bottlenecks")
+        print("\nBaseline analysis:")
+        print("   - High overhead (>50ms) suggests connection management issues")
+        print("   - Low efficiency (<80%) indicates HTTP client bottlenecks")
         
         # Save results to file
         results_dir = Path("stress_test_results")

@@ -37,17 +37,17 @@ def sync_example():
         
         # Basic echo call
         result1 = connection_manager.echo(message="Hello, World!")
-        print(f"Sent: 'Hello, World!'")
+        print("Sent: 'Hello, World!'")
         print(f"Received: '{result1.echoed}'")
         
         # Another call with different message
         result2 = connection_manager.echo(message="Sync mode is working!")
-        print(f"Sent: 'Sync mode is working!'")
+        print("Sent: 'Sync mode is working!'")
         print(f"Received: '{result2.echoed}'")
         
         # Raw output call (returns raw dict instead of validated object)
         job_result = connection_manager.echo(message="Raw output call", validate_output=False)
-        print(f"Sent (raw output): 'Raw output call'")
+        print("Sent (raw output): 'Raw output call'")
         print(f"Raw result: {job_result}")
         
     except Exception as e:
@@ -84,7 +84,7 @@ async def async_example():
         
         # Basic async echo call
         result1 = await connection_manager.aecho(message="Hello, Async World!")
-        print(f"Sent: 'Hello, Async World!'")
+        print("Sent: 'Hello, Async World!'")
         print(f"Received: '{result1.echoed}'")
         
         # Multiple concurrent calls
@@ -109,7 +109,7 @@ async def async_example():
             message="Async raw output call", 
             validate_output=False
         )
-        print(f"Sent (async raw output): 'Async raw output call'")
+        print("Sent (async raw output): 'Async raw output call'")
         print(f"Raw result: {job_result}")
         
     except Exception as e:
