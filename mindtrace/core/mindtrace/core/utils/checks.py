@@ -1,4 +1,5 @@
 from typing import Any, Iterable
+
 from urllib3.util.url import Url, parse_url
 
 

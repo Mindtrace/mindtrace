@@ -1,9 +1,9 @@
 """Mindtrace class. Provides unified configuration, logging and context management."""
-from abc import ABC, ABCMeta
-from functools import wraps
+import inspect
 import logging
 import traceback
-import inspect
+from abc import ABC, ABCMeta
+from functools import wraps
 from typing import Callable, Optional, Union
 
 from mindtrace.core.config import Config
