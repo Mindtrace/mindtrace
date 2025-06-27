@@ -2234,7 +2234,7 @@ def test_save_temp_version_move_error(registry, test_config):
         assert not registry.has_object("test:config", "1.0.0")
         
         # Verify that object-specific metadata was not created
-        meta_path = registry.backend.uri / f"_meta_test:config@1.0.0.yaml"
+        meta_path = registry.backend.uri / "_meta_test:config@1.0.0.yaml"
         assert not meta_path.exists()
     
 def test_save_temp_cleanup_warning(registry, test_config, caplog):
