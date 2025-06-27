@@ -1,122 +1,105 @@
-"""Simple home page component.
+"""
+Simple home page component.
 
 Provides a clean welcome page with:
-- Welcome header
-- Simple navigation options
+- Welcome header using unified Poseidon UI components
+- Navigation options using unified navigation cards
 - Clean modern styling
 """
 
 import reflex as rx
-from poseidon.components.navbar import sidebar, header
-from poseidon.styles.styles import (
-    COLORS, TYPOGRAPHY, SIZING, SPACING,
-    card_variants, content_variants
-)
+from poseidon.components import sidebar, app_header, navigation_action_card, page_header, page_container, card_grid
 from poseidon.state.auth import AuthState
 
 
-def simple_nav_card(title: str, description: str, icon: str, link: str) -> rx.Component:
-    """Create a simple navigation card.
-    
-    Args:
-        title: Card title
-        description: Card description
-        icon: Emoji icon
-        link: Navigation link
-        
-    Returns:
-        Simple styled navigation card
-    """
-    return rx.link(
-        rx.box(
-            rx.vstack(
-                rx.text(
-                    icon,
-                    font_size=TYPOGRAPHY["font_sizes"]["3xl"],
-                    margin_bottom=SPACING["sm"],
-                ),
-                rx.heading(
-                    title,
-                    font_size=TYPOGRAPHY["font_sizes"]["lg"],
-                    font_weight=TYPOGRAPHY["font_weights"]["semibold"],
-                    color=COLORS["text"],
-                    margin_bottom=SPACING["xs"],
-                ),
-                rx.text(
-                    description,
-                    color=COLORS["text_muted"],
-                    font_size=TYPOGRAPHY["font_sizes"]["sm"],
-                    text_align="center",
-                ),
-                spacing="2",
-                align="center",
-            ),
-            **card_variants["feature"],
-        ),
-        href=link,
-        text_decoration="none",
-    )
-
-
 def index() -> rx.Component:
-    """Simple home page with clean layout.
-    
-    Returns:
-        Clean home page with basic navigation
     """
-    return rx.fragment(
-        # Sidebar navigation
-        sidebar(),
-        
-        # Header
-        header(),
-        
-        # Main content area
-        rx.box(
-            # Welcome section
+    Simple home page with clean layout using unified Poseidon UI components.
+    All state and event logic is handled in the page/state, not in the components.
+    """
+    return rx.box(
+        # Conditional sidebar - only show for authenticated users
+        rx.cond(
+            AuthState.is_authenticated,
             rx.box(
-                rx.heading(
-                    "Welcome to Poseidon Toolkit",
-                    **content_variants["page_title"]
-                ),
-                rx.text(
-                    "Your industrial AI platform for intelligent automation",
-                    **content_variants["page_subtitle"]
-                ),
-                **content_variants["page_header"]
+                sidebar(),
+                position="fixed",
+                left="0",
+                top="0",
+                width="240px",
+                height="100vh",
+                z_index="1000",
             ),
-            
-            # Simple navigation cards for authenticated users
+        ),
+        # Conditional header - only show for authenticated users
+        rx.cond(
+            AuthState.is_authenticated,
+            rx.box(
+                app_header(),
+                position="fixed",
+                top="0",
+                left="240px",
+                right="0",
+                height="60px",
+                z_index="999",
+            ),
+        ),
+        # Main content area with conditional margin and unified layout
+        rx.box(
+            # Welcome section using unified page_header
+            page_header(
+                title="Welcome to Poseidon Toolkit",
+                description="Your industrial AI platform for intelligent automation",
+                margin_bottom="3rem",
+            ),
+            # Navigation cards for authenticated users
             rx.cond(
                 AuthState.is_authenticated,
                 rx.vstack(
                     rx.text(
                         f"Hello, {AuthState.current_username}!",
-                        font_size=TYPOGRAPHY["font_sizes"]["lg"],
-                        color=COLORS["text"],
-                        font_weight=TYPOGRAPHY["font_weights"]["medium"],
-                        margin_bottom=SPACING["lg"],
+                        size="5",
+                        color=rx.color("slate", 12),
+                        weight="medium",
+                        margin_bottom="2rem",
                     ),
-                    rx.box(
-                        simple_nav_card(
-                            "Profile",
-                            "View and manage your account",
-                            "👤",
-                            "/profile"
+                    card_grid(
+                        rx.link(
+                            navigation_action_card(
+                                title="Profile",
+                                description="View and manage your account settings",
+                                icon="👤",
+                            ),
+                            href="/profile",
+                            text_decoration="none",
                         ),
                         rx.cond(
-                            AuthState.is_admin,
-                            simple_nav_card(
-                                "Admin Panel",
-                                "System administration",
-                                "⚙️",
-                                "/admin"
+                            AuthState.is_super_admin,
+                            rx.link(
+                                navigation_action_card(
+                                    title="Super Admin",
+                                    description="System-wide management and configuration",
+                                    icon="🔧",
+                                ),
+                                href="/super-admin-dashboard",
+                                text_decoration="none",
+                            ),
+                            rx.cond(
+                                AuthState.is_admin,
+                                rx.link(
+                                    navigation_action_card(
+                                        title="Admin Panel",
+                                        description="Organization administration and user management",
+                                        icon="⚙️",
+                                    ),
+                                    href="/admin",
+                                    text_decoration="none",
+                                ),
                             ),
                         ),
-                        display="grid",
-                        grid_template_columns="repeat(auto-fit, minmax(250px, 1fr))",
-                        gap=SPACING["lg"],
-                        max_width="600px",
+                        min_card_width="280px",
+                        max_width="700px",
+                        justify_content="center",
                     ),
                     spacing="6",
                     align="center",
@@ -125,36 +108,52 @@ def index() -> rx.Component:
                 rx.vstack(
                     rx.text(
                         "Please sign in to access your workspace",
-                        color=COLORS["text_muted"],
-                        font_size=TYPOGRAPHY["font_sizes"]["lg"],
-                        margin_bottom=SPACING["lg"],
+                        color=rx.color("slate", 11),
+                        size="4",
+                        margin_bottom="2rem",
                     ),
-                    rx.box(
-                        simple_nav_card(
-                            "Sign In",
-                            "Access your account",
-                            "🔑",
-                            "/login"
+                    card_grid(
+                        rx.link(
+                            navigation_action_card(
+                                title="Sign In",
+                                description="Access your account and workspace",
+                                icon="🔑",
+                            ),
+                            href="/login",
+                            text_decoration="none",
                         ),
-                        simple_nav_card(
-                            "Register",
-                            "Create new account",
-                            "📝",
-                            "/register"
+                        rx.link(
+                            navigation_action_card(
+                                title="Register",
+                                description="Create a new account to get started",
+                                icon="📝",
+                            ),
+                            href="/register",
+                            text_decoration="none",
                         ),
-                        display="grid",
-                        grid_template_columns="repeat(auto-fit, minmax(250px, 1fr))",
-                        gap=SPACING["lg"],
-                        max_width="600px",
+                        min_card_width="280px",
+                        max_width="700px",
+                        justify_content="center",
                     ),
                     spacing="6",
                     align="center",
                 ),
             ),
-            
-            **content_variants["container"]
+            # Conditional styling - adjust margin based on auth status
+            margin_left=rx.cond(AuthState.is_authenticated, "16rem", "0"),
+            margin_top=rx.cond(AuthState.is_authenticated, "60px", "0"),
+            padding="2rem",
+            min_height="100vh",
+            background=rx.color("gray", 1),
+            display="flex",
+            flex_direction="column",
+            align_items="center",
+            justify_content="center",
         ),
-        
+        # Overall container
+        width="100%",
+        height="100vh",
+        position="relative",
         # Initialize auth check
         on_mount=AuthState.check_auth,
     ) 

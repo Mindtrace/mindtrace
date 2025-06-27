@@ -45,27 +45,26 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
             raise DocumentNotFoundError(f"Object with id {id} not found")
         return doc
 
-    async def get_by_id(self, id: str) -> Optional[ModelType]:
-        """Get document by ID, returns None if not found"""
-        await self.initialize()
-        return await self.model_cls.get(id)
-
-    async def update(self, id: str, update_data: Dict) -> Optional[ModelType]:
-        """Update document by ID"""
+    async def update(self, id: str, obj: BaseModel) -> ModelType:
         await self.initialize()
         doc = await self.model_cls.get(id)
         if not doc:
-            return None
+            raise DocumentNotFoundError(f"Object with id {id} not found")
         
+        # Update the document with new data
+        update_data = obj.model_dump(exclude_unset=True)
         for key, value in update_data.items():
-            if hasattr(doc, key):
-                setattr(doc, key, value)
+            setattr(doc, key, value)
         
-        await doc.save()
-        return doc
+        try:
+            await doc.save()
+            return doc
+        except DuplicateKeyError as e:
+            raise DuplicateInsertError(f"Duplicate key error during update: {str(e)}")
+        except Exception as e:
+            raise Exception(f"Update failed: {str(e)}")
 
-    async def delete(self, id: str) -> bool:
-        """Delete document by ID, returns True if deleted, False if not found"""
+    async def delete(self, id: str):
         await self.initialize()
         doc = await self.model_cls.get(id)
         if doc:
