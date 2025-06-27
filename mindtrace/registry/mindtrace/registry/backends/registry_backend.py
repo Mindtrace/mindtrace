@@ -2,7 +2,6 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Dict, List
 
-
 from mindtrace.core import MindtraceABC
 
 

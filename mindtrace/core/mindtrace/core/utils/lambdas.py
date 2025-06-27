@@ -1,5 +1,6 @@
 from typing import Callable
 
+
 def named_lambda(name: str, lambda_func: Callable) -> Callable:
     """Assigns a name to the given lambda function.
 

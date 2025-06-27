@@ -2,7 +2,6 @@ import logging
 import tempfile
 from pathlib import Path
 
-
 from mindtrace.core.logging.logger import get_logger, setup_logger
 
 
