@@ -389,8 +389,10 @@ def test_signed_url_and_metadata(mock_client_cls):
 @patch("mindtrace.storage.gcs.storage.Client")
 def test_list_objects_returns_names(mock_client_cls):
     mock_client, _, _ = _prepare_client(mock_client_cls)
-    mock_blob1 = MagicMock(name="Blob1"); mock_blob1.name = "a.txt"
-    mock_blob2 = MagicMock(name="Blob2"); mock_blob2.name = "b.txt"
+    mock_blob1 = MagicMock(name="Blob1")
+    mock_blob1.name = "a.txt"
+    mock_blob2 = MagicMock(name="Blob2")
+    mock_blob2.name = "b.txt"
     mock_client.list_blobs.return_value = [mock_blob1, mock_blob2]
     h = GCSStorageHandler("bucket")
     assert h.list_objects() == ["a.txt", "b.txt"]
