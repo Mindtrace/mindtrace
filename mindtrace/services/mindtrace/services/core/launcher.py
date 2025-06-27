@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import os
 from argparse import RawTextHelpFormatter
 from pathlib import Path
 

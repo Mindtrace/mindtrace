@@ -1,7 +1,7 @@
 import json
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Literal, Type
+from typing import Any, Type
 from uuid import UUID
 
 from pydantic import BaseModel

@@ -1,7 +1,5 @@
-import json
-from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 
