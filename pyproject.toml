@@ -17,15 +17,18 @@ dependencies = [
   "mindtrace-apps>=0.1.0",
   "mindtrace-ui>=0.1.0",
   "mindtrace-datalake>=0.1.0",
+  "mindtrace-storage>=0.1.0",
 ]
 
 [tool.uv]
 dev-dependencies = [
     "pytest-cov>=6.1.1",
+    "pytest-asyncio>=1.0.0",
     "pytest>=8.3.5",
     "fastapi>=0.115.0",
     "httpx>=0.27.2",
     "pre-commit>=4.2.0",
+    "pytest-asyncio>=1.0.0",
 ]
 
 [tool.uv.sources]
@@ -41,6 +44,7 @@ mindtrace-automation = { workspace = true }
 mindtrace-registry = { workspace = true }
 mindtrace-ui = { workspace = true }
 mindtrace-datalake = { workspace = true }
+mindtrace-storage = { workspace = true }
 
 [tool.uv.workspace]
 members = [
@@ -56,6 +60,7 @@ members = [
   "mindtrace/registry",
   "mindtrace/ui",
   "mindtrace/datalake",
+  "mindtrace/storage",
 ]
 
 [tool.ds.scripts]
@@ -148,3 +153,11 @@ docstring-code-format = false
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mindtrace*"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
