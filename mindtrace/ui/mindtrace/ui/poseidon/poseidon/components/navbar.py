@@ -57,6 +57,7 @@ def sidebar() -> rx.Component:
     navigation_sections = [
         ("NAVIGATION", [
             nav_item("Dashboard", "/", "📊"),
+            nav_item("Image Gallery", "/images", "🖼️"),
         ]),
         ("DATA & ANALYTICS", [
             nav_item("Data Management Hub", "/data", "📁"),
@@ -100,6 +101,12 @@ def sidebar() -> rx.Component:
                 # User profile section
                 nav_section("USER", [
                     nav_item("Profile", "/profile", "👤"),
+                ]),
+                
+                # Main navigation
+                nav_section("NAVIGATION", [
+                    nav_item("Dashboard", "/", "📊"),
+                    nav_item("Image Gallery", "/images", "🖼️"),
                 ]),
                 
                 # Admin section (conditional)
