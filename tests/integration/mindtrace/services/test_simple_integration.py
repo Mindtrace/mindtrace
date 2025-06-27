@@ -144,11 +144,6 @@ class TestServiceIntegration:
             url_str = str(manager.url)
             assert url_str == url or url_str == url.rstrip("/")
 
-    def test_connection_timeout(self):
-        """Test that a launch that fails raises TimeoutError"""
-        with pytest.raises(TimeoutError):
-            EchoService.launch(url="http://localhost:8090", timeout=0.01)
-
     @pytest.mark.asyncio
     async def test_echo_service_import_and_instantiation(self):
         """Test that we can import and instantiate the echo service"""

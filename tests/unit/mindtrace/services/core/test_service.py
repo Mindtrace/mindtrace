@@ -571,6 +571,22 @@ class TestServiceLaunchExceptionHandling:
             Service._active_servers = original_servers
 
     @patch.object(Service, "status_at_host")
+    def test_launch_connect_raises(self, mock_status_at_host):
+        """Test that Service.launch() times out if it takes too long to launch"""
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        from time import sleep
+
+        from mindtrace.services.core.launcher import Launcher
+
+        def fake_run(*args, **kwargs):
+            sleep(30)
+            Launcher.run(*args, *kwargs)
+
+        with patch("mindtrace.services.core.launcher.Launcher.run", side_effect=fake_run):
+            with pytest.raises(TimeoutError):
+                Service.launch(timeout=1)
+
+    @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     @patch("mindtrace.services.core.service.subprocess.Popen")
     @patch("mindtrace.services.core.service.uuid.uuid1")
