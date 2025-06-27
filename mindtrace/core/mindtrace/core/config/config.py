@@ -1,5 +1,6 @@
 import os
 
+
 class Config(dict):
     """Template Config class."""
     

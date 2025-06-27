@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple, Union, NamedTuple
 from pathlib import Path
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 from mindtrace.core import MindtraceABC
 

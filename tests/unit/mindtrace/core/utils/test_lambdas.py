@@ -1,7 +1,8 @@
 """Unit tests for mindtrace.core.utils.lambdas module."""
 
-import pytest
 from types import FunctionType
+
+import pytest
 
 from mindtrace.core.utils.lambdas import named_lambda
 

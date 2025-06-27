@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from mindtrace.core import ifnone, Mindtrace
+from mindtrace.core import Mindtrace, ifnone
 from mindtrace.database import LocalMindtraceODMBackend, MindtraceODMBackend
 
 

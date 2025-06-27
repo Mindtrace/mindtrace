@@ -1,17 +1,17 @@
 """Unit tests for the ConnectionManager class."""
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import UUID, uuid4
+
+import httpx
+import pytest
+import requests
+from fastapi import HTTPException
 from urllib3.util.url import parse_url
 
-import requests
-import httpx
-from fastapi import HTTPException
-
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.types import ServerStatus, StatusOutput, ShutdownOutput
+from mindtrace.services.core.types import ServerStatus, ShutdownOutput, StatusOutput
 
 
 class TestConnectionManagerInitialization:

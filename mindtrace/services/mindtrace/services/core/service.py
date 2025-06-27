@@ -1,36 +1,36 @@
 """Service base class. Provides unified methods for all Mindtrace (micro)services."""
 
 import atexit
-from contextlib import asynccontextmanager
-from importlib.metadata import version
 import json
 import logging
 import os
-from pathlib import Path
-import psutil
-import requests
 import signal
 import subprocess
-from typing import Type, TypeVar
 import uuid
+from contextlib import asynccontextmanager
+from importlib.metadata import version
+from pathlib import Path
+from typing import Type, TypeVar
 from uuid import UUID
 
 import fastapi
+import psutil
+import requests
 from fastapi import FastAPI, HTTPException
-from urllib3.util.url import parse_url, Url
+from urllib3.util.url import Url, parse_url
 
-from mindtrace.core import ifnone, ifnone_url, Mindtrace, named_lambda, TaskSchema, Timeout
-from mindtrace.services import ( 
+from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from mindtrace.services import (
     ConnectionManager,
-    EndpointsSchema, 
-    generate_connection_manager,
-    Heartbeat, 
+    EndpointsSchema,
+    Heartbeat,
     HeartbeatSchema,
     PIDFileSchema,
     ServerIDSchema,
-    ServerStatus, 
+    ServerStatus,
     ShutdownSchema,
-    StatusSchema, 
+    StatusSchema,
+    generate_connection_manager,
 )
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.

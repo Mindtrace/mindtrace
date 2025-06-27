@@ -1,13 +1,8 @@
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
-from mindtrace.services.sample.echo_service import (
-    EchoService,
-    EchoInput,
-    EchoOutput,
-    EchoTaskSchema,
-    echo_task
-)
+import pytest
+
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService, EchoTaskSchema, echo_task
 
 
 class TestEchoInput:

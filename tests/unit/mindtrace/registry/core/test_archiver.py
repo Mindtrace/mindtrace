@@ -1,5 +1,6 @@
+from typing import Any, Type
+
 import pytest
-from typing import Type, Any
 
 from mindtrace.registry import Archiver
 
