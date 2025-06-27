@@ -46,6 +46,6 @@ app.add_page(organization_management_page, route="/organization-management", tit
 # User routes
 app.add_page(profile_page, route="/profile", title="MindTrace - Profile")
 app.add_page(admin_page, route="/admin", title="MindTrace - Admin")
-app.add_page(images_page, route="/images", title="MindTrace - Image Gallery")
+app.add_page(images_page, route="/image-viewer", title="MindTrace - Image Viewer")
 
 # Add your main/data viewer page here as needed 
