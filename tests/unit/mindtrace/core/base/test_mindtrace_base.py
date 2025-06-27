@@ -1,9 +1,10 @@
 """Tests for the Mindtrace base classes."""
 
-import pytest
 import logging
-from unittest.mock import Mock, patch
 from abc import abstractmethod
+from unittest.mock import Mock, patch
+
+import pytest
 
 from mindtrace.core.base.mindtrace_base import Mindtrace, MindtraceABC, MindtraceMeta
 

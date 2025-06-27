@@ -1,22 +1,23 @@
 import json
 from uuid import UUID, uuid4
+
 import pytest
 
 from mindtrace.services.core.types import (
-    ServerStatus,
-    Heartbeat,
     EndpointsOutput,
     EndpointsSchema,
-    StatusOutput,
-    StatusSchema,
+    Heartbeat,
     HeartbeatOutput,
     HeartbeatSchema,
-    ServerIDOutput,
-    ServerIDSchema,
     PIDFileOutput,
     PIDFileSchema,
+    ServerIDOutput,
+    ServerIDSchema,
+    ServerStatus,
     ShutdownOutput,
     ShutdownSchema,
+    StatusOutput,
+    StatusSchema,
 )
 
 

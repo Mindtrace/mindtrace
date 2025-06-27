@@ -11,8 +11,9 @@ This script shows how to:
 
 import asyncio
 import time
+
+from mindtrace.services import ServerStatus, generate_connection_manager
 from mindtrace.services.sample.echo_service import EchoService
-from mindtrace.services import generate_connection_manager, ServerStatus
 
 
 def sync_example():

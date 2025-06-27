@@ -4,6 +4,7 @@ Simple EchoService example showing basic sync and async usage.
 """
 
 import asyncio
+
 from mindtrace.services.sample.echo_service import EchoService
 
 

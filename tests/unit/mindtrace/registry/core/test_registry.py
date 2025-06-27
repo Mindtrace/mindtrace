@@ -1,19 +1,19 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
-from pathlib import Path
-import pytest
 import re
-from tempfile import TemporaryDirectory
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Type
 from unittest.mock import patch
 
+import pytest
 from minio import S3Error
 from pydantic import BaseModel
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import check_libs, Config 
+from mindtrace.core import Config, check_libs
 from mindtrace.registry import LocalRegistryBackend, LockTimeoutError, Registry
 
 
@@ -812,8 +812,8 @@ def test_register_default_materializers_without_datasets():
     """Test _register_default_materializers when datasets package is not available."""
     with TemporaryDirectory() as temp_dir:
         # Mock the import to raise ImportError only for datasets
-        from unittest.mock import patch
         import builtins
+        from unittest.mock import patch
         original_import = builtins.__import__
         
         def mock_import(name, *args, **kwargs):
@@ -844,8 +844,8 @@ def test_register_default_materializers_without_numpy():
     """Test _register_default_materializers when numpy package is not available."""
     with TemporaryDirectory() as temp_dir:
         # Mock the import to raise ImportError only for numpy
-        from unittest.mock import patch
         import builtins
+        from unittest.mock import patch
         original_import = builtins.__import__
         
         def mock_import(name, *args, **kwargs):
@@ -874,8 +874,8 @@ def test_register_default_materializers_without_pillow():
     """Test _register_default_materializers when Pillow package is not available."""
     with TemporaryDirectory() as temp_dir:
         # Mock the import to raise ImportError only for PIL
-        from unittest.mock import patch
         import builtins
+        from unittest.mock import patch
         original_import = builtins.__import__
         
         def mock_import(name, *args, **kwargs):
@@ -904,8 +904,8 @@ def test_register_default_materializers_without_pytorch():
     """Test _register_default_materializers when PyTorch package is not available."""
     with TemporaryDirectory() as temp_dir:
         # Mock the import to raise ImportError only for torch
-        from unittest.mock import patch
         import builtins
+        from unittest.mock import patch
         original_import = builtins.__import__
         
         def mock_import(name, *args, **kwargs):
@@ -937,8 +937,8 @@ def test_register_default_materializers_without_transformers():
     """Test _register_default_materializers when transformers package is not available."""
     with TemporaryDirectory() as temp_dir:
         # Mock the import to raise ImportError only for transformers
-        from unittest.mock import patch
         import builtins
+        from unittest.mock import patch
         original_import = builtins.__import__
         
         def mock_import(name, *args, **kwargs):
@@ -1075,9 +1075,9 @@ def test_pytorch_module():
 def test_huggingface_model():
     """Test saving and loading HuggingFace pretrained models."""
     try:
-        from transformers import AutoModel
-        import torch
         import datasets  # Required by the HuggingFace materializer
+        import torch
+        from transformers import AutoModel
     except ImportError:
         missing_libs = check_libs(["transformers", "torch", "datasets"])
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
@@ -1155,7 +1155,7 @@ def test_pytorch_dataset_and_dataloader():
     """Test saving and loading PyTorch datasets and dataloaders."""
     try:
         import torch
-        from torch.utils.data import TensorDataset, DataLoader
+        from torch.utils.data import DataLoader, TensorDataset
     except ImportError:
         missing_libs = check_libs(["torch"])
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
@@ -1198,8 +1198,8 @@ def test_pytorch_dataset_and_dataloader():
 def test_pillow_image():
     """Test saving and loading Pillow images."""
     try:
-        from PIL import Image
         import numpy as np
+        from PIL import Image
     except ImportError:
         missing_libs = check_libs(["PIL", "numpy"])
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
@@ -2032,6 +2032,7 @@ def test_distributed_lock_save_conflict(registry):
     """Test that saving to the same version is properly prevented by locks."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
+
     from mindtrace.registry.core.registry import LockTimeoutError
 
     test_obj = Config(
@@ -2098,8 +2099,8 @@ def test_distributed_lock_load_concurrent(registry):
 def test_distributed_lock_save_load_race(registry):
     """Test that save and load operations are properly synchronized."""
     import threading
-    from concurrent.futures import ThreadPoolExecutor
     import time
+    from concurrent.futures import ThreadPoolExecutor
 
     test_obj1 = Config(
         MINDTRACE_TEMP_DIR="/custom/temp/dir1",

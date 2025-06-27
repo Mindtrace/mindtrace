@@ -1,9 +1,10 @@
-import pytest
 import asyncio
+
+import pytest
 import requests
 
 from mindtrace.services import generate_connection_manager
-from mindtrace.services.sample.echo_service import EchoService, EchoOutput
+from mindtrace.services.sample.echo_service import EchoOutput, EchoService
 
 
 class TestServiceIntegration:

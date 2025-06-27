@@ -1,19 +1,19 @@
 """Integration tests for thread safety with Minio backend."""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
-from pathlib import Path
-import pytest
 import tempfile
 import time
-from typing import Dict, Any, List
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, List
 
+import pytest
 from minio import Minio
 from minio.error import S3Error
 
 from mindtrace.core import Config
-from mindtrace.registry import Registry, MinioRegistryBackend
+from mindtrace.registry import MinioRegistryBackend, Registry
 
 
 @pytest.fixture

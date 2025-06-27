@@ -1,7 +1,7 @@
 import logging
+
 import pytest
 from _pytest.mark import Mark
-
 
 empty_mark = Mark('', [], {})
 

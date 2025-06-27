@@ -6,16 +6,16 @@ throughput and performance characteristics under stress conditions.
 """
 
 import asyncio
+import json
+import logging
+import sys
+import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-import json
-import logging
 from pathlib import Path
 from statistics import mean, median, stdev
-import sys
-import time
-import threading
 
 import pytest
 from tqdm import tqdm
