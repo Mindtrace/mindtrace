@@ -1,5 +1,6 @@
 """Unit tests for mindtrace.core.utils.lambdas module."""
 
+from typing import Callable
 from types import FunctionType
 
 import pytest
@@ -210,7 +211,7 @@ class TestNamedLambda:
     def test_named_lambda_integration_example(self):
         """Test integration example similar to the docstring example."""
         # Simulate the example from the docstring
-        def run_command(command: callable, data):
+        def run_command(command: Callable, data):
             """Simulate a function that needs the command name."""
             result = command(*data) if isinstance(data, tuple) else command(data)
             return f"Executed '{command.__name__}' with result: {result}"

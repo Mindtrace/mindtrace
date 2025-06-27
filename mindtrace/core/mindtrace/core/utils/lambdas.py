@@ -1,4 +1,6 @@
-def named_lambda(name: str, lambda_func: callable) -> callable:
+from typing import Callable
+
+def named_lambda(name: str, lambda_func: Callable) -> Callable:
     """Assigns a name to the given lambda function.
 
     This method is useful when passing lambda functions to other functions that require a name attribute. For example,
@@ -20,7 +22,7 @@ def named_lambda(name: str, lambda_func: callable) -> callable:
                 def __init__(self):
                     super().__init__()
 
-                def run_command(self, command: callable, data: Any):  # cannot control the name of the command
+                def run_command(self, command: Callable, data: Any):  # cannot control the name of the command
                     return Mindtrace.autolog(command(data))()
 
             hyper_runner = HyperRunner()
