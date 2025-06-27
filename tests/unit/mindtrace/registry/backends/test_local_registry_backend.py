@@ -825,7 +825,6 @@ def test_check_lock_expired(backend):
 
 def test_overwrite_metadata_error_handling(backend, temp_dir, monkeypatch):
     """Test error handling during metadata operations in overwrite."""
-    import os
     
     # Create source metadata and directory
     source_meta = {
