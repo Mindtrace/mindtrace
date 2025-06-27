@@ -159,7 +159,7 @@ class TestMindtrace:
     def test_context_manager_exception_handling(self):
         """Test context manager exception handling."""
         with pytest.raises(ValueError):
-            with Mindtrace() as mt:
+            with Mindtrace() as _:
                 raise ValueError("Test exception")
 
     def test_context_manager_exception_suppression(self):
@@ -168,7 +168,7 @@ class TestMindtrace:
             mock_logger = Mock()
             mock_get_logger.return_value = mock_logger
             
-            with Mindtrace(suppress=True) as mt:
+            with Mindtrace(suppress=True) as _:
                 raise ValueError("Test exception")
             # Exception should be suppressed, so no exception should be raised
             
@@ -349,7 +349,7 @@ class TestMindtrace:
             instance = TestClass()
             
             with patch.object(instance.logger, 'error') as mock_error, \
-                 patch.object(instance.logger, 'log') as mock_log:
+                 patch.object(instance.logger, 'log') as _:
                 
                 # This should trigger the async version
                 with pytest.raises(ConnectionError, match="Async test error"):

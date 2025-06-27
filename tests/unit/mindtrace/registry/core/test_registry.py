@@ -1981,7 +1981,6 @@ def test_update_with_existing_objects(registry):
         source_reg.save("test:int", 2, version="2.0.0")
         
         # Save a different object with the same name to target registry
-        different_config = Config(MINDTRACE_TEMP_DIR="/different/dir")
         registry.save("test:int", 3, version="1.0.0")
         
         # Attempt to update with source registry

@@ -458,7 +458,7 @@ def test_ctor_invalid_credentials_path(tmp_path):
 @patch("mindtrace.storage.gcs.storage.Client")
 def test_ctor_custom_location_storage_class(mock_client_cls):
     _, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=False)
-    h = GCSStorageHandler(
+    _ = GCSStorageHandler(
         "bucket",
         create_if_missing=True,
         location="EU",
@@ -472,7 +472,7 @@ def test_ctor_custom_location_storage_class(mock_client_cls):
 @patch("mindtrace.storage.gcs.storage.Client")
 def test_ensure_bucket_when_exists(mock_client_cls):
     _, bucket, _ = _prepare_client(mock_client_cls, bucket_exists=True)
-    h = GCSStorageHandler("bucket")
+    _ = GCSStorageHandler("bucket")
     # _ensure_bucket should return early, not call create
     bucket.create.assert_not_called()
 

@@ -99,7 +99,7 @@ class Mindtrace(metaclass=MindtraceMeta):
         # Initialize parent classes first (cooperative inheritance)
         try:
             super().__init__(**kwargs)
-        except TypeError as e:
+        except TypeError:
             # If parent classes don't accept some kwargs, try without logger-specific ones
             logger_param_names = {
                 'log_dir', 'logger_level', 'stream_level', 'file_level', 

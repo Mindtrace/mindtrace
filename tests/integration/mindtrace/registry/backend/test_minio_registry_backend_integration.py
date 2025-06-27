@@ -283,7 +283,7 @@ def test_init_creates_bucket(minio_client):
     assert not minio_client.bucket_exists(bucket_name)
     
     # Create backend with the new bucket name
-    backend = MinioRegistryBackend(
+    _ = MinioRegistryBackend(
         uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
         endpoint="localhost:9000",
         access_key="minioadmin",
@@ -304,7 +304,7 @@ def test_init_creates_bucket(minio_client):
 def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     """Test backend initialization handles errors when checking metadata file."""
     # Create a backend with valid credentials
-    backend = MinioRegistryBackend(
+    _ = MinioRegistryBackend(
         uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
         endpoint="localhost:9000",
         access_key="minioadmin",
