@@ -60,24 +60,6 @@ class TestServiceIntegration:
     @pytest.mark.asyncio
     async def test_default_service_endpoints(self, echo_service_manager):
         """Test all default Service endpoints (sync and async versions)"""
-        if echo_service_manager is None:
-            # Service didn't start - verify connection manager has the methods but they fail appropriately
-            print("Service didn't start, testing default endpoint method existence")
-            
-            ConnectionManager = generate_connection_manager(EchoService)
-            manager = ConnectionManager(url="http://localhost:8090")
-            
-            # Verify all default endpoint methods exist
-            default_endpoints = ['endpoints', 'status', 'heartbeat', 'server_id', 'pid_file', 'shutdown']
-            for endpoint in default_endpoints:
-                assert hasattr(manager, endpoint), f"Missing sync method: {endpoint}"
-                assert hasattr(manager, f"a{endpoint}"), f"Missing async method: a{endpoint}"
-            
-            print("All default endpoint methods exist on connection manager")
-            return
-            
-        # Service is running - test all default endpoints
-        print("Testing default service endpoints with running service")
         
         # Test endpoints endpoint (sync)
         endpoints_result = echo_service_manager.endpoints()
