@@ -1,0 +1,14 @@
+[project]
+name = "mindtrace-cluster"
+version = "0.1.0"
+dependencies = [
+    "mindtrace-core",
+    "mindtrace-jobs",
+    "mindtrace-registry",
+    "mindtrace-database",
+    "mindtrace-services",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,53 @@
+name: Task
+description: Template for defining and tracking tasks with clear ownership, effort, and outcomes.
+title: "[Task] <Title of the task>"
+labels: ["task"]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done and why it matters. Include any relevant context or links.
+      placeholder: |
+        e.g. Add async support to autolog decorator for FastAPI endpoints.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Define what “done” looks like. List specific conditions to meet.
+      placeholder: |
+        - Function works for sync and async cases
+        - Tests cover all new paths
+        - No regressions or lint errors
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this task?
+      options:
+        - High (blocking release or critical path)
+        - Medium (important but not urgent)
+        - Low (cleanup or optional enhancement)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: story_points
+    attributes:
+      label: Estimated Effort (Story Points)
+      description: Rough effort estimate. Use the guide below.
+      options:
+        - 1 (0.5 day)
+        - 2 (1 day)
+        - 3 (2 days)
+        - 5 (3–4 days)
+        - 8 (1 week or more)
+    validations:
+      required: true
