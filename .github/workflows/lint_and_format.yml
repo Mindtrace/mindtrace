@@ -1,0 +1,54 @@
+name: Ruff Lint and Format Check
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+  workflow_dispatch:
+
+jobs:
+  lint-and-format-check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: ['mindtrace/', 'tests/']
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Run Ruff Check
+      id: ruff-check
+      continue-on-error: true
+      uses: chartboost/ruff-action@v1
+      with:
+        src: ${{ matrix.directory }}
+        version: 0.8.6
+
+    - name: Run Ruff Format Check
+      id: ruff-format
+      continue-on-error: true
+      uses: chartboost/ruff-action@v1
+      with:
+        args: format --check
+        src:  ${{ matrix.directory }}
+        version: 0.8.6
+
+    - name: Check Ruff results
+      run: |
+        if [ ${{ steps.ruff-check.outcome }} == 'failure' ]; then
+          echo "Ruff found linting issues in ${{ matrix.directory }}. Please fix these issues manually."
+          exit 1
+        fi
+        if [ ${{ steps.ruff-format.outcome }} == 'failure' ]; then
+          echo "Ruff found formatting issues in ${{ matrix.directory }}. Please fix these issues manually."
+          exit 1
+        fi
+        echo "Ruff check passed. Code in ${{ matrix.directory }} is properly linted and formatted."
