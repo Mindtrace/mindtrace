@@ -25,7 +25,7 @@ class ImageDict:
 class ImageState(rx.State):
     images: List[ImageDict] = []
     current_page: int = 1
-    page_size: int = 24
+    page_size: int = 12
     total_pages: int = 0
     total_count: int = 0
     is_loading: bool = False

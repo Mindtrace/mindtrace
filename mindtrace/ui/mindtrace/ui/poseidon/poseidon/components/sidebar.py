@@ -15,7 +15,8 @@ ACTIVE_ITEM = ClientStateVar.create("active_item", "")
 
 # Poseidon Navigation Structure - Only implemented sections
 POSEIDON_USER_NAV = [
-    {"name": "Profile", "href": "/profile", "icon": "👤"}
+    {"name": "Profile", "href": "/profile", "icon": "👤"},
+    {"name": "Image Viewer", "href": "/image-viewer", "icon": "🔍"},
 ]
 
 POSEIDON_ADMIN_NAV = [

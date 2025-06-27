@@ -1,17 +1,124 @@
 """
-Image gallery page for authenticated users.
+Image-related components for the Poseidon UI.
 """
+
 import reflex as rx
-from poseidon.components.image_components import (
-    image_card, pagination_controls, image_modal, search_bar, 
-    COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants,button_variants,card_variants
-)
-from poseidon.components import (
-    sidebar, app_header, authentication_required_component, page_container
-)
-from poseidon.state.auth import AuthState
 from poseidon.state.images import ImageState, ImageDict
 
+# Define common style constants directly within the component file
+COLORS = {
+    "primary": "#6366F1",  # Indigo 500
+    "secondary": "#8B5CF6", # Violet 500
+    "accent": "#EC4899",    # Pink 500
+    "text": "#1F2937",      # Gray 900
+    "text_muted": "#6B7280", # Gray 500
+    "background": "#F9FAFB", # Gray 50
+    "white": "#FFFFFF",
+    "border": "#E5E7EB",    # Gray 200
+    "success": "#10B981",   # Green 500
+    "error": "#EF4444",     # Red 500
+    "warning": "#F59E0B",   # Amber 500
+    "info": "#3B82F6",      # Blue 500
+}
+
+TYPOGRAPHY = {
+    "font_sizes": {
+        "xs": "0.75rem",
+        "sm": "0.875rem",
+        "base": "1rem",
+        "lg": "1.125rem",
+        "xl": "1.25rem",
+        "2xl": "1.5rem",
+        "3xl": "1.875rem",
+        "4xl": "2.25rem",
+    },
+    "font_weights": {
+        "light": "300",
+        "normal": "400",
+        "medium": "500",
+        "semibold": "600",
+        "bold": "700",
+        "extrabold": "800",
+    },
+}
+
+SIZING = {
+    "border_radius": "0.5rem",
+    "max_width": "1200px",
+}
+
+SPACING = {
+    "xs": "0.25rem",
+    "sm": "0.5rem",
+    "md": "1rem",
+    "lg": "1.5rem",
+    "xl": "2rem",
+    "2xl": "3rem",
+    "3xl": "4rem",
+}
+
+# Component variants (simplified for common use)
+card_variants = {
+    "base": {
+        "background": COLORS["white"],
+        "border_radius": SIZING["border_radius"],
+        "box_shadow": "0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06)",
+        "padding": SPACING["md"],
+    },
+    "feature": {
+        "background": COLORS["white"],
+        "border_radius": SIZING["border_radius"],
+        "box_shadow": "0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08)",
+        "padding": SPACING["md"],
+        "transition": "all 0.2s ease-in-out",
+    },
+}
+
+button_variants = {
+    "primary": {
+        "background": COLORS["primary"],
+        "color": COLORS["white"],
+        "border_radius": SIZING["border_radius"],
+        "_hover": {"background": "#4F46E5"}, # Indigo 600
+    },
+    "secondary": {
+        "background": COLORS["secondary"],
+        "color": COLORS["white"],
+        "border_radius": SIZING["border_radius"],
+        "_hover": {"background": "#7C3AED"}, # Violet 600
+    },
+    "ghost": {
+        "background": "transparent",
+        "color": COLORS["text_muted"],
+        "_hover": {"background": COLORS["background"]},
+    },
+}
+
+content_variants = {
+    "page_title": {
+        "font_size": TYPOGRAPHY["font_sizes"]["3xl"],
+        "font_weight": TYPOGRAPHY["font_weights"]["bold"],
+        "color": COLORS["text"],
+        "margin_bottom": SPACING["xs"],
+    },
+    "page_subtitle": {
+        "font_size": TYPOGRAPHY["font_sizes"]["lg"],
+        "color": COLORS["text_muted"],
+        "margin_bottom": SPACING["lg"],
+    },
+    "page_header": {
+        "padding_bottom": SPACING["md"],
+        "border_bottom": f"1px solid {COLORS['border']}",
+        "margin_bottom": SPACING["lg"],
+    },
+    "container": {
+        "max_width": SIZING["max_width"],
+        "width": "100%",
+        "padding": SPACING["lg"],
+        "margin_x": "auto",
+        "min_height": "calc(100vh - 60px)", # Account for header height
+    },
+}
 
 def image_card(image: rx.Var[ImageDict]) -> rx.Component:
     """Create an image card component"""
@@ -294,102 +401,4 @@ def search_bar() -> rx.Component:
         ),
         spacing="2",
         align="center",
-    )
-
-def image_gallery_content() -> rx.Component:
-    """Image gallery content using unified Poseidon UI components."""
-    return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        
-        # Main content using page_container
-        page_container(
-            # Page header
-            rx.box(
-                rx.heading("Image Viewer", **content_variants["page_title"]),
-                rx.text("Browse and manage your image collection", **content_variants["page_subtitle"]),
-                **content_variants["page_header"]
-            ),
-            
-            # Search and filters
-            search_bar(),
-            
-            # Image grid
-            rx.cond(
-                ImageState.is_loading,
-                rx.box(
-                    rx.spinner(size="3"),
-                    rx.text("Loading images...", margin_left=SPACING["sm"], color=COLORS["text_muted"]),
-                    display="flex",
-                    align_items="center",
-                    justify_content="center",
-                    padding=SPACING["xl"],
-                ),
-                rx.cond(
-                    ImageState.images.length() > 0,
-                    rx.vstack(
-                        rx.box(
-                            rx.foreach(ImageState.images, image_card),
-                            display="grid",
-                            grid_template_columns="repeat(auto-fill, minmax(250px, 1fr))",
-                            gap=SPACING["md"],
-                            padding=SPACING["md"],
-                            width="100%",
-                        ),
-                        pagination_controls(),
-                        spacing="4",
-                        width="100%",
-                    ),
-                    rx.box(
-                        rx.text(
-                            rx.cond(ImageState.search_query, "No images found", "No images available"),
-                            color=COLORS["text_muted"],
-                            font_size=TYPOGRAPHY["font_sizes"]["lg"],
-                        ),
-                        padding=SPACING["xl"],
-                        text_align="center",
-                    ),
-                ),
-            ),
-            
-            margin_top="60px",  # Account for header
-        ),
-        
-        # Image modal
-        image_modal(),
-        
-        width="100%",
-        min_height="100vh",
-        position="relative",
-        
-        # Load images on mount
-        on_mount=lambda: ImageState.load_images(1),
-    )
-
-
-def images_page() -> rx.Component:
-    """Image gallery page with authentication protection."""
-    return rx.cond(
-        AuthState.is_authenticated,
-        image_gallery_content(),
-        authentication_required_component(),
     )
