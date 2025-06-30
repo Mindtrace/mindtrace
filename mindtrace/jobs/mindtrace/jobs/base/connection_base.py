@@ -10,14 +10,18 @@ class BrokerConnectionBase(MindtraceABC):
     @abstractmethod
     def connect(self):
         raise NotImplementedError
+
     @abstractmethod
     def is_connected(self) -> bool:
         raise NotImplementedError
+
     @abstractmethod
     def close(self):
         raise NotImplementedError
+
     def __enter__(self):
         self.connect()
         return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()

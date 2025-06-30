@@ -5,10 +5,9 @@ import pydantic
 from mindtrace.core import MindtraceABC
 
 class OrchestratorBackend(MindtraceABC):
-    """
-    Abstract base class for orchestrator backends.
-    Defines the interface that all backend implementations must follow
-    for queue management operations.
+    """Abstract base class for orchestrator backends.
+    
+    Defines the interface that all backend implementations must follow for queue management operations.
     """
     
     def __init__(self):
@@ -16,59 +15,67 @@ class OrchestratorBackend(MindtraceABC):
     
     @abstractmethod
     def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
-        """
-        Declare a queue
+        """Declare a queue
+        
         Args:
             queue_name: Name of the queue to declare
         """
         pass
+    
     @abstractmethod
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
-        """
-        Publish a message to the specified queue
+        """Publish a message to the specified queue
+        
         Args:
             queue_name: Name of the queue to publish to
             message: Pydantic model to publish
         """
         pass
+    
     @abstractmethod
     def receive_message(
         self, queue_name: str, **kwargs
     ) -> Optional[dict]:
-        """
-        Receive a message from the specified queue
+        """Receive a message from the specified queue
+        
         Args:
             queue_name: Name of the queue to receive from
+        
         Returns:
             Dict if message available, None if queue is empty
         """
         pass
+    
     @abstractmethod
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
-        """
-        Remove all messages from the specified queue
+        """Remove all messages from the specified queue
+        
         Args:
             queue_name: Name of the queue to clean
         """
         pass
+    
     @abstractmethod
     def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
-        """
-        Delete the specified queue
+        """Delete the specified queue
+        
         Args:
             queue_name: Name of the queue to delete
         """
         pass
+    
     @abstractmethod
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
-        """
-        Count the number of messages in the specified queue
+        """Count the number of messages in the specified queue
+        
         Args:
             queue_name: Name of the queue to count
+        
         Returns:
             Number of messages in the queue
         """
         pass
+    
     @abstractmethod
     def move_to_dlq(
         self,
@@ -80,9 +87,12 @@ class OrchestratorBackend(MindtraceABC):
     ):
         """Move a failed message to a dead letter queue"""
         pass
+
     def declare_exchange(self, **kwargs):
         raise NotImplementedError
+
     def delete_exchange(self, **kwargs):
         raise NotImplementedError
+
     def count_exchanges(self, **kwargs):
         raise NotImplementedError
