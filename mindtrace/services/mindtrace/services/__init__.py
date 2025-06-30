@@ -11,14 +11,19 @@ from mindtrace.services.core.types import (
     StatusSchema,
 )
 from mindtrace.services.core.utils import generate_connection_manager
+from mindtrace.services.gateway.types import AppConfig, RegisterAppTaskSchema
+from mindtrace.services.gateway.gateway import Gateway
 
 __all__ = [
+    "AppConfig",
     "ConnectionManager",
     "EndpointsSchema",
+    "Gateway",
     "generate_connection_manager",
     "Heartbeat",
     "HeartbeatSchema",
     "PIDFileSchema",
+    "RegisterAppTaskSchema",
     "ServerIDSchema",
     "Service",
     "ServerStatus",
