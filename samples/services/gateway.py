@@ -8,8 +8,10 @@ Gateway Service example showing how to:
 """
 
 import asyncio
+import httpx
 import requests
 
+from mindtrace.core import ifnone_url
 from mindtrace.services import Gateway, AppConfig
 from mindtrace.services.sample.echo_service import EchoService, EchoInput
 
@@ -47,7 +49,7 @@ def sync_gateway_example():
         print(f"Gateway forwarded result 2: {result2}")
 
         # Test Gateway's built-in endpoints
-        status_response = requests.post(f"{gateway_url}/status")
+        status_response = requests.post(f"{gateway_url}/status")  # Equivalent to gateway_cm.status()
         print(f"Gateway status: {status_response.json()}")
 
     finally:
@@ -75,7 +77,7 @@ def proxy_connection_manager_example():
         result = gateway_cm.register_app(
             name="echo", 
             url="http://localhost:8098/", 
-            connection_manager=echo_cm  # This is the key - providing the connection manager
+            connection_manager=echo_cm  # Provide the connection manager to the Gateway to enable ProxyConnectionManager functionality
         )
         print(f"EchoService registered with Gateway: {result}")
         print(f"Registered apps: {gateway_cm.registered_apps}")
@@ -87,7 +89,7 @@ def proxy_connection_manager_example():
         direct_result = echo_cm.echo(message="Direct call to EchoService")
         print(f"Direct call result: {direct_result.echoed}")
         
-        # Proxied call through Gateway (same API, different routing!)
+        # Proxied call through Gateway (same API, but routes through the Gateway)
         proxy_result = gateway_cm.echo.echo(message="Proxied call through Gateway")
         print(f"Proxied call result: {proxy_result}")
         
@@ -161,7 +163,6 @@ async def async_gateway_example():
 
 async def make_async_request(gateway_url: str, payload: dict):
     """Helper function to make async HTTP requests."""
-    import httpx
     async with httpx.AsyncClient() as client:
         response = await client.post(f"{gateway_url}/echo/echo", json=payload)
         return response.json()
