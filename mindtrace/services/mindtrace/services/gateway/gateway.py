@@ -38,7 +38,7 @@ class Gateway(Service):
 
     def register_app(self, payload: AppConfig):
         """Register a FastAPI app with the gateway."""
-        self.registered_routers[payload.name] = payload.url
+        self.registered_routers[payload.name] = str(payload.url)
 
         async def forwarder(request: Request, path: str = Path(...)):
             return await self.forward_request(request, payload.name, path)

@@ -5,6 +5,7 @@ import json
 import httpx
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from urllib3.util.url import parse_url
 
 from mindtrace.services.gateway.gateway import Gateway
 from mindtrace.services.gateway.types import AppConfig
@@ -65,6 +66,24 @@ class TestGateway:
             mock_add_route.assert_called_once()
             call_args = mock_add_route.call_args
             assert call_args[0][0] == '/test-service/{path:path}'
+            assert call_args[1]['methods'] == ["GET", "POST", "PUT", "DELETE", "PATCH"]
+
+    def test_register_app_with_url_object(self, gateway):
+        """Test the register_app method with Url object instead of string."""
+        # Create AppConfig with Url object
+        url_obj = parse_url("http://localhost:8002/")
+        app_config = AppConfig(name="url-service", url=url_obj)
+        
+        with patch.object(gateway.app, 'add_api_route') as mock_add_route:
+            gateway.register_app(app_config)
+            
+            # Test that the app is registered with string conversion
+            assert gateway.registered_routers['url-service'] == 'http://localhost:8002/'
+            
+            # Test that the API route is added
+            mock_add_route.assert_called_once()
+            call_args = mock_add_route.call_args
+            assert call_args[0][0] == '/url-service/{path:path}'
             assert call_args[1]['methods'] == ["GET", "POST", "PUT", "DELETE", "PATCH"]
 
     @pytest.mark.asyncio
