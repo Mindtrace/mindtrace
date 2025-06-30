@@ -149,7 +149,7 @@ class TimerCollection:
 
     """
 
-    def __init__(self, timers: List[str] | None = None):
+    def __init__(self):
         self._timers: Dict[str, Timer] = {}
 
     def add_timer(self, name: str):
