@@ -11,11 +11,12 @@ class ProxyConnectionManager:
     """A proxy that forwards requests through the gateway instead of directly through the wrapped connection manager."""
 
     def __init__(self, gateway_url: str | Url, app_name: str, original_cm: ConnectionManager):
-        """
-        Parameters:
+        """Initializes the ProxyConnectionManager.
+
+        Args:
             gateway_url: The base URL of the gateway.
             app_name: The registered app name.
-            original_cm: The original connection manager.
+            original_cm: The original connection manager.        
         """
         object.__setattr__(self, "gateway_url", str(gateway_url).rstrip("/"))  # Ensure no trailing slash
         object.__setattr__(self, "app_name", app_name)
