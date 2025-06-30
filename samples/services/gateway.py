@@ -4,6 +4,7 @@ Gateway Service example showing how to:
 1. Launch a Gateway service
 2. Register other services with the Gateway
 3. Make requests through the Gateway to registered services
+4. Use ProxyConnectionManager for transparent service routing
 """
 
 import asyncio
@@ -48,6 +49,62 @@ def sync_gateway_example():
         # Test Gateway's built-in endpoints
         status_response = requests.post(f"{gateway_url}/status")
         print(f"Gateway status: {status_response.json()}")
+
+    finally:
+        # Clean up in reverse order
+        echo_cm.shutdown()
+        gateway_cm.shutdown()
+        print("Services shut down successfully!")
+
+
+def proxy_connection_manager_example():
+    """Example demonstrating the ProxyConnectionManager functionality."""
+    print("\nStarting ProxyConnectionManager example...")
+
+    # Launch Gateway service on port 8097
+    gateway_cm = Gateway.launch(port=8097, wait_for_launch=True, timeout=15)
+    print("Gateway launched successfully!")
+
+    # Launch EchoService on port 8098 
+    echo_cm = EchoService.launch(port=8098, wait_for_launch=True, timeout=15)
+    print("EchoService launched successfully!")
+
+    try:
+        # Register the EchoService with the Gateway INCLUDING the connection manager
+        # This enables the ProxyConnectionManager functionality
+        result = gateway_cm.register_app(
+            name="echo", 
+            url="http://localhost:8098/", 
+            connection_manager=echo_cm  # This is the key - providing the connection manager
+        )
+        print(f"EchoService registered with Gateway: {result}")
+        print(f"Registered apps: {gateway_cm.registered_apps}")
+
+        # Now we can use the proxy! This looks like direct service access but routes through Gateway
+        print("\n--- Testing ProxyConnectionManager ---")
+        
+        # Direct call to echo service (for comparison)
+        direct_result = echo_cm.echo(message="Direct call to EchoService")
+        print(f"Direct call result: {direct_result.echoed}")
+        
+        # Proxied call through Gateway (same API, different routing!)
+        proxy_result = gateway_cm.echo.echo(message="Proxied call through Gateway")
+        print(f"Proxied call result: {proxy_result}")
+        
+        # Test that the proxy preserves the original service's methods
+        print(f"Echo service has 'echo' method: {hasattr(echo_cm, 'echo')}")
+        print(f"Gateway proxy has 'echo' method: {hasattr(gateway_cm.echo, 'echo')}")
+        
+        # Test gateway service status methods work normally
+        gateway_status = gateway_cm.status()
+        print(f"Gateway status: {gateway_status}")
+        
+        # Test that we can access the original service through the proxy
+        try:
+            proxy_status = gateway_cm.echo.status()
+            print(f"Echo service status via proxy: {proxy_status}")
+        except Exception as e:
+            print(f"Proxy status call failed (expected for echo service): {e}")
 
     finally:
         # Clean up in reverse order
@@ -124,10 +181,11 @@ def multiple_services_example():
     print("Multiple EchoServices launched!")
 
     try:
-        # Register both services with different names
-        gateway_cm.register_app(name="echo1", url="http://localhost:8095/")
-        gateway_cm.register_app(name="echo2", url="http://localhost:8096/")
-        print("Both services registered with Gateway!")
+        # Register both services with different names - with ProxyConnectionManager
+        result1 = gateway_cm.register_app(name="echo1", url="http://localhost:8095/", connection_manager=echo_cm1)
+        result2 = gateway_cm.register_app(name="echo2", url="http://localhost:8096/", connection_manager=echo_cm2)
+        print(f"Both services registered with Gateway!")
+        print(f"Registration results: {result1}, {result2}")
 
         # Make requests to different registered services through the same Gateway
         gateway_url = "http://localhost:8094"
@@ -141,6 +199,13 @@ def multiple_services_example():
         response2 = requests.post(f"{gateway_url}/echo2/echo",
                                  json={"message": "Hello to service 2!"})
         print(f"Service 2 response: {response2.json()}")
+
+        # Test ProxyConnectionManager for both services
+        print("\n--- Testing Multiple Proxy Connections ---")
+        proxy_result1 = gateway_cm.echo1.echo(message="Proxy call to service 1")
+        proxy_result2 = gateway_cm.echo2.echo(message="Proxy call to service 2")
+        print(f"Proxy result 1: {proxy_result1}")
+        print(f"Proxy result 2: {proxy_result2}")
 
         # Check Gateway endpoints
         endpoints_response = requests.post(f"{gateway_url}/endpoints")
@@ -157,6 +222,9 @@ def multiple_services_example():
 if __name__ == "__main__":
     # Run sync example
     sync_gateway_example()
+    
+    # Run ProxyConnectionManager example
+    proxy_connection_manager_example()
     
     # Run async example
     asyncio.run(async_gateway_example())
