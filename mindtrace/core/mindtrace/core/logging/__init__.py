@@ -1,2 +1,2 @@
-from mindtrace.core.mindtrace.core.logging.logger import Logger
+from mindtrace.core.logging.logger import Logger
 

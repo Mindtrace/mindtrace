@@ -7,7 +7,7 @@ from mindtrace.jobs.orchestrator import Orchestrator
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
-from mindtrace.jobs.utils.checks import ifnone
+from mindtrace.jobs.utils.checks import job_from_schema
 
 __all__ = [
     'BackendType',
@@ -21,7 +21,7 @@ __all__ = [
     'JobSchema',
     'BackendType',
     'ExecutionStatus',
-    'ifnone',
+    'job_from_schema',
     'LocalConsumerBackend',
     'RedisConsumerBackend',
     'RabbitMQConsumerBackend',
