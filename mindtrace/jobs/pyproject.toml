@@ -3,6 +3,7 @@ name = "mindtrace-jobs"
 version = "0.1.0"
 dependencies = [
     "mindtrace-core",
+    "pika>=1.3.2",
 ]
 
 [tool.setuptools]
