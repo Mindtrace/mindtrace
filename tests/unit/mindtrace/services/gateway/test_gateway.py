@@ -483,3 +483,53 @@ class TestGatewayEdgeCases:
                 headers={},
                 content=b''
             )
+
+    @pytest.mark.asyncio
+    async def test_forward_request_url_construction_with_trailing_slash(self, gateway):
+        """Test URL construction when app URL has trailing slash."""
+        gateway.registered_routers['test-service'] = 'http://localhost:8001/'
+        
+        mock_request = Mock(spec=Request)
+        mock_request.method = 'POST'
+        mock_request.headers = {}
+        mock_request.body = AsyncMock(return_value=b'{}')
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {'result': 'success'}
+        mock_response.status_code = 200
+        
+        with patch.object(gateway.client, 'request', return_value=mock_response) as mock_client_request:
+            await gateway.forward_request(mock_request, 'test-service', 'echo')
+            
+            # Should construct URL correctly without double slash
+            mock_client_request.assert_called_once_with(
+                'POST',
+                'http://localhost:8001/echo',  # Correct: no double slash
+                headers={},
+                content=b'{}'
+            )
+
+    @pytest.mark.asyncio
+    async def test_forward_request_url_construction_without_trailing_slash(self, gateway):
+        """Test URL construction when app URL has no trailing slash."""
+        gateway.registered_routers['test-service'] = 'http://localhost:8001'  # No trailing slash
+        
+        mock_request = Mock(spec=Request)
+        mock_request.method = 'POST'
+        mock_request.headers = {}
+        mock_request.body = AsyncMock(return_value=b'{}')
+        
+        mock_response = Mock()
+        mock_response.json.return_value = {'result': 'success'}
+        mock_response.status_code = 200
+        
+        with patch.object(gateway.client, 'request', return_value=mock_response) as mock_client_request:
+            await gateway.forward_request(mock_request, 'test-service', 'echo')
+            
+            # Should construct URL correctly by adding the missing slash
+            mock_client_request.assert_called_once_with(
+                'POST',
+                'http://localhost:8001/echo',  # Correct: slash added between URL and path
+                headers={},
+                content=b'{}'
+            )

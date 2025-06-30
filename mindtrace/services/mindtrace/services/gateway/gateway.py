@@ -56,7 +56,11 @@ class Gateway(Service):
             raise HTTPException(status_code=404, detail=f"App '{app_name}' not found")
 
         app_url = self.registered_routers[app_name]
-        url = f"{app_url}{path}"
+        # Ensure proper URL construction with correct path separator
+        if app_url.endswith('/'):
+            url = f"{app_url}{path}"
+        else:
+            url = f"{app_url}/{path}"
         method = request.method
         headers = dict(request.headers)
         content = await request.body()
