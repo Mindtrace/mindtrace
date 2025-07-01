@@ -779,3 +779,38 @@ class TestServiceCleanupMethods:
 
         finally:
             Service._active_servers = original_servers
+
+
+class TestServiceGlobalEndpointPollution:
+    """Test for global endpoint pollution due to class-level _endpoints."""
+    def test_no_global_endpoint_pollution(self):
+        from mindtrace.services.sample.echo_service import EchoService
+        from mindtrace.services.core.utils import generate_connection_manager
+
+        # Ensure clean state
+        if hasattr(Service, '_endpoints'):
+            Service._endpoints.clear()
+        if hasattr(EchoService, '_endpoints'):
+            EchoService._endpoints.clear()
+
+        # Create EchoService instance
+        echo_service = EchoService()
+        echo_endpoints = list(echo_service._endpoints.keys())
+        # Should contain 'echo' and system endpoints
+        assert 'echo' in echo_endpoints
+        # Create a regular Service instance
+        regular_service = Service()
+        service_endpoints = list(regular_service._endpoints.keys())
+        # Should NOT contain 'echo'
+        assert 'echo' not in service_endpoints, (
+            f"Global pollution detected: Service._endpoints contains: {service_endpoints}")
+
+        # Generate connection managers
+        EchoCM = generate_connection_manager(EchoService)
+        ServiceCM = generate_connection_manager(Service)
+        echo_methods = [attr for attr in dir(EchoCM) if not attr.startswith('_') and callable(getattr(EchoCM, attr))]
+        service_methods = [attr for attr in dir(ServiceCM) if not attr.startswith('_') and callable(getattr(ServiceCM, attr))]
+        # EchoCM should have 'echo', ServiceCM should NOT
+        assert 'echo' in echo_methods
+        assert 'echo' not in service_methods, (
+            f"Global pollution detected: Service connection manager has methods: {service_methods}")
