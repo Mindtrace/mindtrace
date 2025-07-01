@@ -803,9 +803,9 @@ class TestServiceGlobalEndpointPollution:
         regular_service = Service()
         service_endpoints = list(regular_service._endpoints.keys())
         # Should NOT contain 'echo'
-        assert (
-            "echo" not in service_endpoints
-        ), f"Global pollution detected: Service._endpoints contains: {service_endpoints}"
+        assert "echo" not in service_endpoints, (
+            f"Global pollution detected: Service._endpoints contains: {service_endpoints}"
+        )
 
         # Generate connection managers
         EchoCM = generate_connection_manager(EchoService)
@@ -816,6 +816,6 @@ class TestServiceGlobalEndpointPollution:
         ]
         # EchoCM should have 'echo', ServiceCM should NOT
         assert "echo" in echo_methods
-        assert (
-            "echo" not in service_methods
-        ), f"Global pollution detected: Service connection manager has methods: {service_methods}"
+        assert "echo" not in service_methods, (
+            f"Global pollution detected: Service connection manager has methods: {service_methods}"
+        )
