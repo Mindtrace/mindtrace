@@ -770,5 +770,329 @@ async def test_camera_integration_scenario():
                 assert await proxy.check_connection()
 
 
+class TestRetryLogic:
+    """Test suite for proxy-level retry logic."""
+    
+    @pytest.mark.asyncio
+    async def test_capture_retry_on_capture_error(self, camera_manager):
+        """Test retry logic when camera capture fails with CameraCaptureError."""
+        # Initialize camera
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail twice then succeed
+        original_capture = camera._camera.capture
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise CameraCaptureError("Buffer underrun")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after retries
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 3  # Should have tried 3 times
+    
+    @pytest.mark.asyncio
+    async def test_capture_retry_on_connection_error(self, camera_manager):
+        """Test retry logic when camera capture fails with CameraConnectionError."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail with connection error twice then succeed
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise CameraConnectionError("Network timeout")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after retries
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 3
+    
+    @pytest.mark.asyncio
+    async def test_capture_retry_on_timeout_error(self, camera_manager):
+        """Test retry logic when camera capture fails with CameraTimeoutError."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail with timeout error twice then succeed
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise CameraTimeoutError("Image acquisition timeout")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after retries
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 3
+    
+    @pytest.mark.asyncio
+    async def test_capture_failure_after_all_retries(self, camera_manager):
+        """Test that capture fails after exhausting all retry attempts."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to always fail
+        async def mock_capture():
+            raise CameraCaptureError("Persistent buffer error")
+        
+        camera._camera.capture = mock_capture
+        
+        # Should fail after all retries
+        with pytest.raises(CameraCaptureError, match="Capture failed after 3 attempts for camera"):
+            await camera.capture()
+    
+    @pytest.mark.asyncio
+    async def test_non_retryable_errors_fail_immediately(self, camera_manager):
+        """Test that non-retryable errors fail immediately without retries."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail with non-retryable error
+        async def mock_capture():
+            raise CameraNotFoundError("Camera not found")
+        
+        camera._camera.capture = mock_capture
+        
+        # Should fail immediately
+        with pytest.raises(CameraNotFoundError):
+            await camera.capture()
+    
+    @pytest.mark.asyncio
+    async def test_capture_returns_false_treated_as_error(self, camera_manager):
+        """Test that capture returning (False, None) is treated as an error and retried."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to return False twice then True
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return False, None
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after retries
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 3
+    
+    @pytest.mark.asyncio
+    async def test_capture_returns_none_treated_as_error(self, camera_manager):
+        """Test that capture returning (True, None) is treated as an error and retried."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to return None image twice then valid image
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return True, None
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after retries
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 3
+    
+    @pytest.mark.asyncio
+    async def test_retry_with_different_delays(self, camera_manager):
+        """Test that different error types use different retry delays."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail with different error types
+        call_count = 0
+        start_time = None
+        
+        async def mock_capture():
+            nonlocal call_count, start_time
+            call_count += 1
+            
+            if call_count == 1:
+                if start_time is None:
+                    start_time = asyncio.get_event_loop().time()
+                raise CameraCaptureError("Fast retry error")
+            elif call_count == 2:
+                raise CameraConnectionError("Slow retry error")
+            else:
+                return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Capture and measure timing
+        start = asyncio.get_event_loop().time()
+        image = await camera.capture()
+        end = asyncio.get_event_loop().time()
+        
+        assert image is not None
+        assert call_count == 3
+        
+        # Should have taken at least the sum of delays
+        # First retry: 0.1s, second retry: 0.5s = 0.6s minimum
+        assert (end - start) >= 0.5  # Allow some tolerance
+    
+    @pytest.mark.asyncio
+    async def test_retry_logging(self, camera_manager, caplog):
+        """Test that retry attempts are properly logged."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail twice then succeed
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise CameraCaptureError("Test error")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Capture and check logs
+        image = await camera.capture()
+        
+        # Should have warning logs for retries
+        retry_logs = [log for log in caplog.records if "retry" in log.message.lower()]
+        assert len(retry_logs) == 2  # Two retry attempts
+        
+        # Check that logs mention the camera name
+        for log in retry_logs:
+            assert "MockDaheng:test_camera" in log.message
+    
+    @pytest.mark.asyncio
+    async def test_retry_with_custom_retry_count(self, camera_manager):
+        """Test retry logic with custom retry count from camera configuration."""
+        # Create camera with custom retry count
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Set custom retry count
+        camera._camera.retrieve_retry_count = 5
+        
+        # Mock the camera to fail 4 times then succeed
+        call_count = 0
+        
+        async def mock_capture():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 4:
+                raise CameraCaptureError("Test error")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        camera._camera.capture = mock_capture
+        
+        # Should succeed after 5 attempts
+        image = await camera.capture()
+        assert image is not None
+        assert call_count == 5
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_capture_with_retry(self, camera_manager):
+        """Test that retry logic works correctly with concurrent captures."""
+        await camera_manager.initialize_camera("MockDaheng:test_camera")
+        camera = camera_manager.get_camera("MockDaheng:test_camera")
+        
+        # Mock the camera to fail occasionally
+        call_counts = [0, 0, 0]
+        
+        async def mock_capture(camera_id):
+            call_counts[camera_id] += 1
+            if call_counts[camera_id] <= 1:
+                raise CameraCaptureError(f"Error for camera {camera_id}")
+            return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+        
+        # Create multiple camera proxies for concurrent testing
+        cameras = []
+        for i in range(3):
+            # Create a new camera instance for each proxy
+            from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
+            mock_cam = MockDahengCamera(f"mock_cam_{i}", None)
+            await mock_cam.initialize()
+            
+            # Override the capture method with proper closure
+            async def create_capture_func(camera_id):
+                async def capture_func():
+                    return await mock_capture(camera_id)
+                return capture_func
+            
+            mock_cam.capture = await create_capture_func(i)
+            
+            # Create proxy
+            from mindtrace.hardware.cameras.camera_manager import CameraProxy
+            proxy = CameraProxy(mock_cam, f"MockDaheng:test_camera_{i}")
+            cameras.append(proxy)
+        
+        # Capture concurrently
+        tasks = [camera.capture() for camera in cameras]
+        images = await asyncio.gather(*tasks)
+        
+        # All should succeed
+        for i, image in enumerate(images):
+            assert image is not None
+            assert call_counts[i] == 2  # Should have tried twice each
+        
+        # Cleanup
+        for camera in cameras:
+            await camera._camera.close()
+    
+    @pytest.mark.asyncio
+    async def test_batch_capture_with_retry(self, camera_manager):
+        """Test that batch capture works correctly with retry logic."""
+        # Initialize multiple cameras
+        camera_names = ["MockDaheng:test_camera_1", "MockDaheng:test_camera_2"]
+        await camera_manager.initialize_cameras(camera_names)
+        
+        # Mock cameras to fail occasionally
+        for camera_name in camera_names:
+            camera = camera_manager.get_camera(camera_name)
+            call_count = 0
+            
+            async def mock_capture():
+                nonlocal call_count
+                call_count += 1
+                if call_count <= 1:
+                    raise CameraCaptureError("Test error")
+                return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+            
+            camera._camera.capture = mock_capture
+        
+        # Batch capture
+        results = await camera_manager.batch_capture(camera_names)
+        
+        # All should succeed
+        for camera_name in camera_names:
+            assert camera_name in results
+            assert results[camera_name] is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"]) 
