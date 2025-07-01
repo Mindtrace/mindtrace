@@ -150,24 +150,99 @@ class CameraProxy:
     # Core Operations
     async def capture(self, save_path: Optional[str] = None) -> Any:
         """
-        Capture image from camera.
+        Capture image from camera with advanced retry logic.
+        
+        This method uses sophisticated retry logic with exponential backoff
+        to handle different types of errors appropriately:
+        - Capture errors: Fast retry (0.1s base delay)
+        - Connection errors: Slower retry (0.5s base delay)
+        - Timeout errors: Moderate retry (0.3s base delay)
         
         Args:
             save_path: Optional path to save image
             
         Returns:
             Captured image as numpy array
+            
+        Raises:
+            CameraCaptureError: If capture fails after all retries
+            CameraConnectionError: If connection fails after all retries
+            CameraTimeoutError: If timeout occurs after all retries
         """
         async with self._lock:
-            success, image = await self._camera.capture()
-            if not success or image is None:
-                raise CameraCaptureError(f"Capture failed for camera '{self._full_name}'")
+            # Get retry count from the camera
+            retry_count = self._camera.retrieve_retry_count
             
-            if save_path:
-                os.makedirs(os.path.dirname(save_path), exist_ok=True)
-                cv2.imwrite(save_path, image)
+            for attempt in range(retry_count):
+                try:
+                    # Call the actual capture method
+                    success, image = await self._camera.capture()
+                    
+                    if success and image is not None:
+                        # Save image if path provided
+                        if save_path:
+                            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                            cv2.imwrite(save_path, image)
+                        return image
+                    else:
+                        # Capture returned False or None - treat as capture error
+                        raise CameraCaptureError(f"Capture returned failure for camera '{self._full_name}'")
+                        
+                except CameraCaptureError as e:
+                    # Fast retry for capture-specific errors (e.g., buffer issues, timing)
+                    delay = 0.1 * (2 ** attempt)
+                    self._camera.logger.warning(
+                        f"Capture retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
+                    )
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(delay)
+                    else:
+                        self._camera.logger.error(f"Capture failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        raise CameraCaptureError(f"Capture failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        
+                except CameraConnectionError as e:
+                    # Slower retry for network/connection issues (e.g., GigE camera network glitches)
+                    delay = 0.5 * (2 ** attempt)
+                    self._camera.logger.warning(
+                        f"Network retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
+                    )
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(delay)
+                    else:
+                        self._camera.logger.error(f"Connection failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        raise CameraConnectionError(f"Connection failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        
+                except CameraTimeoutError as e:
+                    # Moderate retry for timeout issues
+                    delay = 0.3 * (2 ** attempt)
+                    self._camera.logger.warning(
+                        f"Timeout retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
+                    )
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(delay)
+                    else:
+                        self._camera.logger.error(f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        raise CameraTimeoutError(f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        
+                except (CameraNotFoundError, CameraInitializationError, CameraConfigurationError) as e:
+                    # These errors are not retryable - fail immediately
+                    self._camera.logger.error(f"Non-retryable error for camera '{self._full_name}': {e}")
+                    raise
+                    
+                except Exception as e:
+                    # Unexpected errors - log and retry with moderate delay
+                    delay = 0.2 * (2 ** attempt)
+                    self._camera.logger.warning(
+                        f"Unexpected error retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
+                    )
+                    if attempt < retry_count - 1:
+                        await asyncio.sleep(delay)
+                    else:
+                        self._camera.logger.error(f"Unexpected error failed after {retry_count} attempts for camera '{self._full_name}': {e}")
+                        raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts: {e}")
             
-            return image
+            # This should never be reached, but just in case
+            raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts")
     
     async def configure(self, **settings) -> bool:
         """
