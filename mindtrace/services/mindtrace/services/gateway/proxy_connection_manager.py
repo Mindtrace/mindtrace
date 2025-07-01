@@ -181,7 +181,8 @@ class ProxyConnectionManager:
         internal_attrs = {
             "gateway_url", "app_name", "original_cm", "_service_endpoints", 
             "_generate_proxy_methods", "_extract_service_endpoints", 
-            "_infer_endpoints_from_methods", "_create_proxy_method"
+            "_infer_endpoints_from_methods", "_create_proxy_method",
+            "__class__", "__dict__"
         }
         
         if attr_name in internal_attrs:
@@ -224,4 +225,6 @@ class ProxyConnectionManager:
     def __getattr__(self, attr_name):
         """Fallback for attribute access when __getattribute__ doesn't find it."""
         # This should rarely be called due to our __getattribute__ implementation
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{attr_name}'")
+        # Use object.__getattribute__ to avoid recursion when accessing __class__
+        class_name = object.__getattribute__(self, "__class__").__name__
+        raise AttributeError(f"'{class_name}' object has no attribute '{attr_name}'")
