@@ -119,7 +119,7 @@ class ProxyConnectionManager:
                 
                 # Parse response
                 try:
-                    result = response.json()
+                    result = await response.json()
                 except Exception:
                     result = {"success": True}  # Default for empty responses
                 
