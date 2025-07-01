@@ -390,6 +390,57 @@ class TestGatewayErrorScenarios:
         response = requests.post(f"{gateway_url}/echoer/echo", json={"delay": 0.0})
         assert response.status_code == 422  # Missing 'message' field
 
+    @pytest.mark.asyncio
+    async def test_gateway_url_construction_trailing_slash(self, gateway_manager, echo_service_for_gateway):
+        """Test Gateway URL construction logic for trailing slash handling."""
+        # Register service with URL that ends with trailing slash
+        service_url_with_slash = str(echo_service_for_gateway.url).rstrip('/') + '/'
+        gateway_manager.register_app("echoer_slash", service_url_with_slash)
+        
+        # Test that requests work correctly with trailing slash in service URL
+        gateway_url = str(gateway_manager.url).rstrip('/')
+        response = requests.post(f"{gateway_url}/echoer_slash/echo", json={"message": "trailing slash test", "delay": 0.0})
+        assert response.status_code == 200
+        assert response.json()["echoed"] == "trailing slash test"
+
+    @pytest.mark.asyncio
+    async def test_gateway_url_construction_no_trailing_slash(self, gateway_manager, echo_service_for_gateway):
+        """Test Gateway URL construction logic for no trailing slash handling."""
+        # Register service with URL that doesn't end with trailing slash
+        service_url_without_slash = str(echo_service_for_gateway.url).rstrip('/')
+        gateway_manager.register_app("echoer_no_slash", service_url_without_slash)
+        
+        # Test that requests work correctly without trailing slash in service URL
+        gateway_url = str(gateway_manager.url).rstrip('/')
+        response = requests.post(f"{gateway_url}/echoer_no_slash/echo", json={"message": "no trailing slash test", "delay": 0.0})
+        assert response.status_code == 200
+        assert response.json()["echoed"] == "no trailing slash test"
+
+    @pytest.mark.asyncio
+    async def test_gateway_network_error_handling(self, gateway_manager):
+        """Test Gateway error handling when network errors occur."""
+        # Register a service that doesn't exist to trigger network error
+        gateway_cm = Gateway.connect(url=gateway_manager.url)
+        gateway_cm.register_app("bad_service", "http://localhost:9999")
+        
+        # Try to access the unavailable service - this should trigger httpx.RequestError
+        gateway_url = str(gateway_manager.url).rstrip('/')
+        response = requests.post(f"{gateway_url}/bad_service/echo", json={"message": "test"})
+        
+        # Should get 500 error due to network failure (httpx.RequestError)
+        assert response.status_code == 500
+        assert "All connection attempts failed" in response.text
+
+    @pytest.mark.asyncio
+    async def test_gateway_connect_unavailable_service(self):
+        """Test Gateway.connect when service is not available."""
+        # Try to connect to a non-existent gateway
+        with pytest.raises(Exception) as exc_info:
+            Gateway.connect(url="http://localhost:9999", timeout=1)
+        
+        # Should raise an exception due to service unavailability
+        assert "Server failed to connect" in str(exc_info.value)
+
 
 class TestGatewayPerformance:
     """Test Gateway performance characteristics."""
