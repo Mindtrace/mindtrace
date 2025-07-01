@@ -389,7 +389,12 @@ class TestCameraManager:
         
         if mock_cameras:
             camera_name = mock_cameras[0]
-            camera_proxy = await manager.get_camera(camera_name)
+            
+            # Initialize the camera first
+            await manager.initialize_camera(camera_name)
+            
+            # Then get the camera proxy
+            camera_proxy = manager.get_camera(camera_name)
             
             assert camera_proxy is not None
             assert camera_proxy.name == camera_name
@@ -429,11 +434,13 @@ class TestCameraManager:
         mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]  # Limit to 3 for testing
         
         if len(mock_cameras) >= 2:
-            # Initialize cameras
-            camera_proxies = []
-            for camera_name in mock_cameras:
-                proxy = await manager.get_camera(camera_name)
-                camera_proxies.append(proxy)
+            # Initialize cameras in batch
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0  # No cameras should fail
+            
+            # Get camera proxies
+            camera_proxies_dict = manager.get_cameras(mock_cameras)
+            camera_proxies = list(camera_proxies_dict.values())
             
             # Test batch configuration
             configurations = {}
@@ -467,7 +474,13 @@ class TestCameraManager:
             
             mock_cameras = [cam for cam in cameras if "Mock" in cam]
             if mock_cameras:
-                camera_proxy = await manager.get_camera(mock_cameras[0])
+                camera_name = mock_cameras[0]
+                
+                # Initialize the camera first
+                await manager.initialize_camera(camera_name)
+                
+                # Then get the camera proxy
+                camera_proxy = manager.get_camera(camera_name)
                 assert camera_proxy is not None
                 
                 image = await camera_proxy.capture()
@@ -533,9 +546,9 @@ class TestCameraErrorHandling:
         """Test camera not found error handling."""
         manager = camera_manager
         
-        # Try to get a non-existent camera
+        # Try to initialize a non-existent camera
         with pytest.raises(CameraNotFoundError):
-            await manager.get_camera("NonExistent:fake_camera")
+            await manager.initialize_camera("NonExistent:fake_camera")
     
     @pytest.mark.asyncio
     async def test_configuration_file_errors(self, mock_daheng_camera):
@@ -572,11 +585,13 @@ class TestCameraPerformance:
         mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
         
         if len(mock_cameras) >= 2:
-            # Initialize cameras
-            camera_proxies = []
-            for camera_name in mock_cameras:
-                proxy = await manager.get_camera(camera_name)
-                camera_proxies.append(proxy)
+            # Initialize cameras in batch
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0  # No cameras should fail
+            
+            # Get camera proxies
+            camera_proxies_dict = manager.get_cameras(mock_cameras)
+            camera_proxies = list(camera_proxies_dict.values())
             
             # Capture images concurrently
             tasks = [proxy.capture() for proxy in camera_proxies]
@@ -720,11 +735,13 @@ async def test_camera_integration_scenario():
         mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
         
         if len(mock_cameras) >= 2:
-            # Initialize cameras
-            camera_proxies = []
-            for camera_name in mock_cameras:
-                proxy = await manager.get_camera(camera_name)
-                camera_proxies.append(proxy)
+            # Initialize cameras in batch
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0  # No cameras should fail
+            
+            # Get camera proxies
+            camera_proxies_dict = manager.get_cameras(mock_cameras)
+            camera_proxies = list(camera_proxies_dict.values())
             
             # Configure cameras for production
             configurations = {}

@@ -41,8 +41,8 @@ from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.core.exceptions import (
     CameraError, CameraNotFoundError, CameraInitializationError,
-    CameraCaptureError, CameraConfigurationError, SDKNotAvailableError,
-    CameraTimeoutError
+    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
+    SDKNotAvailableError, CameraTimeoutError
 )
 
 # Backend discovery and lazy loading
@@ -456,20 +456,28 @@ class CameraManager(Mindtrace):
         except Exception as e:
             raise CameraInitializationError(f"Failed to create camera '{backend}:{device_name}': {e}")
     
-    async def get_camera(self, camera_name: str, **kwargs) -> CameraProxy:
+    async def initialize_camera(
+        self, 
+        camera_name: str, 
+        test_connection: bool = True, 
+        **kwargs
+    ) -> None:
         """
-        Get or create camera instance.
+        Initialize a single camera with optional connection testing.
         
         Args:
             camera_name: Full camera name "Backend:device_name"
+            test_connection: Whether to test camera by capturing a test image
             **kwargs: Camera configuration parameters
             
-        Returns:
-            CameraProxy instance ready for use
+        Raises:
+            CameraInitializationError: If camera initialization fails
+            CameraConnectionError: If connection test fails
+            ValueError: If camera is already initialized
         """
-        # Return existing camera if already initialized
+        # Check if already initialized
         if camera_name in self._cameras:
-            return self._cameras[camera_name]
+            raise ValueError(f"Camera '{camera_name}' is already initialized")
         
         # Parse and validate camera name
         backend, device_name = self._parse_camera_name(camera_name)
@@ -483,13 +491,127 @@ class CameraManager(Mindtrace):
         except Exception as e:
             raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
         
+        # Test camera connection by attempting to capture
+        if test_connection:
+            self.logger.info(f"Testing connection for camera '{camera_name}'...")
+            try:
+                success = await camera.check_connection()
+                if not success:
+                    # Try actual capture as additional test
+                    success, test_image = await camera.capture()
+                    if not success or test_image is None:
+                        await camera.close()  # Clean up before raising
+                        raise CameraConnectionError(
+                            f"Camera '{camera_name}' failed connection test - could not capture test image"
+                        )
+                
+                self.logger.info(f"Camera '{camera_name}' passed connection test")
+                
+            except Exception as e:
+                await camera.close()  # Clean up before raising
+                if isinstance(e, CameraConnectionError):
+                    raise
+                raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
+        
         # Create proxy and store
         proxy = CameraProxy(camera, camera_name)
         self._cameras[camera_name] = proxy
         
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
-        return proxy
     
+    async def initialize_cameras(
+        self, 
+        camera_names: List[str], 
+        test_connections: bool = True,
+        **kwargs
+    ) -> List[str]:
+        """
+        Initialize multiple cameras with optional connection testing.
+        
+        Args:
+            camera_names: List of camera names to initialize
+            test_connections: Whether to test camera connections
+            **kwargs: Camera configuration parameters
+            
+        Returns:
+            List of camera names that failed to initialize
+        """
+        failed_cameras = []
+        
+        self.logger.info(f"Initializing {len(camera_names)} cameras...")
+        
+        for camera_name in camera_names:
+            try:
+                # Skip if already initialized
+                if camera_name in self._cameras:
+                    self.logger.info(f"Camera '{camera_name}' already initialized")
+                    continue
+                
+                # Initialize camera with connection testing
+                await self.initialize_camera(camera_name, test_connection=test_connections, **kwargs)
+                self.logger.info(f"Camera '{camera_name}' initialized successfully")
+                
+            except (CameraInitializationError, CameraConnectionError, ValueError) as e:
+                self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
+                failed_cameras.append(camera_name)
+                
+                # Clean up any partial initialization
+                if camera_name in self._cameras:
+                    try:
+                        await self.close_camera(camera_name)
+                    except Exception:
+                        pass  # Already failed, ignore cleanup errors
+                        
+            except Exception as e:
+                self.logger.error(f"Unexpected error initializing camera '{camera_name}': {e}")
+                failed_cameras.append(camera_name)
+        
+        if failed_cameras:
+            self.logger.warning(f"Failed to initialize cameras: {failed_cameras}")
+        else:
+            self.logger.info("All cameras initialized successfully")
+            
+        return failed_cameras
+
+    def get_camera(self, camera_name: str) -> CameraProxy:
+        """
+        Get an initialized camera by name.
+        
+        Args:
+            camera_name: Full camera name "Backend:device_name"
+            
+        Returns:
+            CameraProxy instance
+            
+        Raises:
+            KeyError: If camera is not initialized
+        """
+        if camera_name not in self._cameras:
+            raise KeyError(f"Camera '{camera_name}' is not initialized. Use initialize_camera() first.")
+        
+        return self._cameras[camera_name]
+
+    def get_cameras(self, camera_names: List[str]) -> Dict[str, CameraProxy]:
+        """
+        Get multiple initialized cameras by name.
+        
+        Args:
+            camera_names: List of camera names to retrieve
+            
+        Returns:
+            Dictionary mapping camera names to CameraProxy instances.
+            Only includes successfully retrieved cameras.
+        """
+        cameras = {}
+        
+        for camera_name in camera_names:
+            try:
+                cameras[camera_name] = self.get_camera(camera_name)
+            except KeyError as e:
+                self.logger.warning(f"Could not retrieve camera '{camera_name}': {e}")
+        
+        return cameras
+
     def get_active_cameras(self) -> List[str]:
         """Get names of currently active cameras."""
         return list(self._cameras.keys())
@@ -528,7 +650,7 @@ class CameraManager(Mindtrace):
         # Execute all configurations in parallel
         async def configure_camera(camera_name: str, settings: Dict[str, Any]) -> Tuple[str, bool]:
             try:
-                camera = await self.get_camera(camera_name)
+                camera = self.get_camera(camera_name)  # Now synchronous retrieval
                 success = await camera.configure(**settings)
                 return camera_name, success
             except Exception as e:
@@ -565,7 +687,7 @@ class CameraManager(Mindtrace):
         
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
             try:
-                camera = await self.get_camera(camera_name)
+                camera = self.get_camera(camera_name)  # Now synchronous retrieval
                 image = await camera.capture()
                 return camera_name, image
             except Exception as e:
@@ -604,9 +726,9 @@ class CameraManager(Mindtrace):
 
 
 # Convenience functions for quick access
-async def get_camera(camera_name: str, **kwargs) -> CameraProxy:
+async def initialize_and_get_camera(camera_name: str, **kwargs) -> CameraProxy:
     """
-    Quick access function to get a single camera.
+    Quick access function to initialize and get a single camera.
     
     Args:
         camera_name: Camera name "Backend:device_name" 
@@ -616,7 +738,8 @@ async def get_camera(camera_name: str, **kwargs) -> CameraProxy:
         CameraProxy instance
     """
     manager = CameraManager()
-    return await manager.get_camera(camera_name, **kwargs)
+    await manager.initialize_camera(camera_name, **kwargs)
+    return manager.get_camera(camera_name)
 
 
 def discover_all_cameras(include_mocks: bool = False) -> List[str]:
