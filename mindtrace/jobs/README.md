@@ -2,7 +2,30 @@
 
 A job queue system that works with different backends (local, Redis, RabbitMQ).
 
-## What's Included
+## Backends
+- Local
+- Redis
+- RabbitMQ
+
+**Setup Redis:**
+```bash
+# Local installation
+redis-server
+
+# Using Docker
+docker run -d --name redis -p 6379:6379 redis:latest
+
+# Test connection
+redis-cli ping 
+```
+
+### RabbitMQ Backend
+
+**Setup RabbitMQ:**
+```bash
+# Using Docker (recommended)
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 -e RABBITMQ_DEFAULT_USER=user -e RABBITMQ_DEFAULT_PASS=password rabbitmq:3-management
+```
 
 **Core Components:**
 - `Consumer` - Base class for processing jobs
@@ -10,24 +33,20 @@ A job queue system that works with different backends (local, Redis, RabbitMQ).
 - `Job`, `JobSchema` - Job data structures
 - `LocalClient`, `RedisClient`, `RabbitMQClient` - Backend implementations
 
-**Backends:**
-- **Local**
-- **Redis**
-- **RabbitMQ**
 
 ## Architecture 
 
 ```mermaid
 graph TD
-    Consumer["Your Consumer<br/>ObjectDetection('object_detection')"] 
+    Consumer["Your Consumer<br/>MathsConsumer('maths_operations')"] 
     Orchestrator["Orchestrator"]
-    Schema["Job Schema<br/>(object_detection)"]
+    Schema["Job Schema<br/>(maths_operations)"]
     Job["Job Instance"]
-    Queue["Queue<br/>(object_detection)"]
+    Queue["Queue<br/>(maths_operations)"]
     
     LocalClient["LocalClient"]
-    RedisClient["RedisClient"] 
-    RabbitMQClient["RabbitMQClient"]
+    RedisClient["RedisClient<br/>(requires Redis server)"] 
+    RabbitMQClient["RabbitMQClient<br/>(requires RabbitMQ server)"]
     
     Consumer --> Orchestrator
     Schema --> Orchestrator
@@ -51,46 +70,53 @@ from pydantic import BaseModel
 orchestrator = Orchestrator(LocalClient())
 
 # Define your job input/output models (inherit from BaseModel directly)
-class ObjectDetectionInput(BaseModel):
-    image_path: str = "/default/path.jpg"
-    model_name: str = "yolo"
-    confidence_threshold: float = 0.5
+class MathsInput(BaseModel):
+    operation: str = "add"
+    a: float = 2.0
+    b: float = 1.0
 
-class ObjectDetectionOutput(BaseModel):
-    objects: list = []
-    confidence: float = 0.0
+class MathsOutput(BaseModel):
+    result: float = 0.0
+    operation_performed: str = ""
 
-schema = JobSchema(name="object_detection", input=ObjectDetectionInput(), output=ObjectDetectionOutput())
+schema = JobSchema(name="maths_operations", input=MathsInput(), output=MathsOutput())
 orchestrator.register(schema)
 
 # Create a consumer
-class ObjectDetection(Consumer):
+class MathsConsumer(Consumer):
     def run(self, job_dict: dict) -> dict:
         # Access input data from the dict
         input_data = job_dict.get('input_data', {})
-        image_path = input_data.get('image_path')
-        model_name = input_data.get('model_name')
-        confidence = input_data.get('confidence_threshold')
+        operation = input_data.get('operation', 'add')
+        a = input_data.get('a')
+        b = input_data.get('b')
         
         # Your processing logic here
-        detected_objects = self.detect_objects(image_path, model_name, confidence)
+        if operation == "add":
+            result = a + b
+        elif operation == "multiply":
+            result = a * b
+        elif operation == "power":
+            result = a ** b
+        else:
+            raise ValueError(f"Unknown operation: {operation}")
         
         return {
-            "objects": detected_objects,
-            "confidence": 0.95
+            "result": result,
+            "operation_performed": f"{operation}({a}, {b}) = {result}"
         }
 
 # Connect and consume jobs
-consumer = ObjectDetection("object_detection")
+consumer = MathsConsumer("maths_operations")
 consumer.connect(orchestrator)
 
 # Add a job to the queue
-job = job_from_schema(schema, ObjectDetectionInput(
-    image_path="/path/to/image.jpg",
-    model_name="yolo",
-    confidence_threshold=0.8
+job = job_from_schema(schema, MathsInput(
+    operation="multiply",
+    a=7.0,
+    b=3.0
 ))
-orchestrator.publish("object_detection", job)
+orchestrator.publish("maths_operations", job)
 
 # Process jobs
 consumer.consume(num_messages=1)
@@ -102,11 +128,10 @@ consumer.consume(num_messages=1)
 ```python
 from mindtrace.jobs import RedisClient
 
-# Requires Redis server running
 redis_backend = RedisClient(host="localhost", port=6379, db=0)
 orchestrator = Orchestrator(redis_backend)
 
-consumer = ObjectDetection("object_detection")
+consumer = MathsConsumer("maths_operations")
 consumer.connect(orchestrator)
 consumer.consume()
 ```
@@ -115,7 +140,6 @@ consumer.consume()
 ```python
 from mindtrace.jobs import RabbitMQClient
 
-# Requires RabbitMQ server running
 rabbitmq_backend = RabbitMQClient(
     host="localhost", 
     port=5672, 
@@ -124,9 +148,58 @@ rabbitmq_backend = RabbitMQClient(
 )
 orchestrator = Orchestrator(rabbitmq_backend)
 
-consumer = ObjectDetection("object_detection")
+consumer = MathsConsumer("maths_operations")
 consumer.connect(orchestrator)
 consumer.consume()
+```
+
+## Backend Switching
+
+The job system supports seamless switching between backends without changing your consumer code:
+
+```python
+# Development: Use local backend
+backend = LocalClient()
+
+# Testing: Switch to Redis
+backend = RedisClient(host="localhost", port=6379, db=0)
+
+# Production: Switch to RabbitMQ  
+backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+
+# Same orchestrator and consumer code works with any backend
+orchestrator = Orchestrator(backend)
+consumer = MathsConsumer("maths_operations")
+consumer.connect(orchestrator)
+consumer.consume()
+```
+
+## Automatic Backend Detection
+
+When you connect a consumer, the orchestrator automatically detects the backend type and creates the appropriate consumer backend:
+
+```python
+consumer = MathsConsumer("maths_operations")
+consumer.connect(orchestrator)  # Automatically detects backend type
+```
+
+**Implementation:**
+
+1. The `Orchestrator` detects its backend type using `type(self.backend).__name__`
+2. Creates the corresponding consumer backend:
+   - `LocalClient` → `LocalConsumerBackend`
+   - `RedisClient` → `RedisConsumerBackend`  
+   - `RabbitMQClient` → `RabbitMQConsumerBackend`
+
+```python
+def create_consumer_backend_for_schema(self, schema: JobSchema) -> ConsumerBackendBase:
+    backend_type = type(self.backend).__name__
+    if backend_type == "LocalClient":
+        return LocalConsumerBackend(queue_name, self)
+    elif backend_type == "RedisClient":
+        return RedisConsumerBackend(queue_name, self, poll_timeout=5)
+    elif backend_type == "RabbitMQClient":
+        return RabbitMQConsumerBackend(queue_name, self, prefetch_count=1)
 ```
 
 ## Priority Queues
@@ -146,7 +219,8 @@ orchestrator.publish("priority_tasks", background_job, priority=1)
 
 ### Redis Priority Queue
 ```python
-redis_backend = RedisClient()
+# REQUIRES: Redis server running
+redis_backend = RedisClient(host="localhost", port=6379, db=0)
 orchestrator = Orchestrator(redis_backend)
 redis_backend.declare_queue("redis_priority", queue_type="priority")
 
@@ -157,7 +231,8 @@ orchestrator.publish("redis_priority", normal_job, priority=50)
 
 ### RabbitMQ Priority Queue
 ```python
-rabbitmq_backend = RabbitMQClient()
+# REQUIRES: RabbitMQ server running
+rabbitmq_backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
 orchestrator = Orchestrator(rabbitmq_backend)
 # RabbitMQ supports max priority 0-255
 rabbitmq_backend.declare_queue("rabbitmq_priority", max_priority=255)
