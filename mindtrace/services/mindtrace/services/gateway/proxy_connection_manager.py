@@ -189,12 +189,9 @@ class ProxyConnectionManager:
             return object.__getattribute__(self, attr_name)
 
         # Check if this is a dynamically created proxy method (stored in instance __dict__)
-        try:
-            instance_dict = object.__getattribute__(self, "__dict__")
-            if attr_name in instance_dict:
-                return object.__getattribute__(self, attr_name)
-        except AttributeError:
-            pass
+        instance_dict = object.__getattribute__(self, "__dict__")
+        if attr_name in instance_dict:
+            return object.__getattribute__(self, attr_name)
 
         # For all other attributes, route through the gateway
         # This includes properties, methods, and any other attributes

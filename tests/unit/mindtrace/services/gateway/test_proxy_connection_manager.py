@@ -843,3 +843,57 @@ def test_sync_proxy_method_output_validation_error(mock_post):
     
     # Should get the raw result (not wrapped in output schema due to validation failure)
     assert result == {"result": "success"}
+
+@patch('requests.get')
+@patch('requests.post')
+def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
+    """Test __getattribute__ when both GET and POST requests fail (line 220)."""
+    # Mock both GET and POST to return non-200 status codes
+    mock_get_response = Mock()
+    mock_get_response.status_code = 404
+    mock_get.return_value = mock_get_response
+    
+    mock_post_response = Mock()
+    mock_post_response.status_code = 500
+    mock_post_response.text = "Internal Server Error"
+    mock_post.return_value = mock_post_response
+    
+    dummy_cm = DummyCM()
+    dummy_cm._service_endpoints = {"test": DummySchema}
+    
+    proxy_cm = ProxyConnectionManager(
+        gateway_url="http://gateway", app_name="app", original_cm=dummy_cm
+    )
+    
+    # Use object.__getattribute__ to call the ProxyConnectionManager's __getattribute__ method directly
+    # This will trigger the gateway request path, and both GET and POST will fail
+    with pytest.raises(AttributeError, match="Gateway request failed for 'some_property': 500 - Internal Server Error"):
+        ProxyConnectionManager.__getattribute__(proxy_cm, 'some_property')
+    
+    # Verify both GET and POST were called
+    mock_get.assert_called_once_with("http://gateway/app/some_property", timeout=60)
+    mock_post.assert_called_once_with("http://gateway/app/some_property", timeout=60)
+
+def test_getattribute_line_195_proxy_method_access():
+    """Test that line 195 is executed when accessing proxy methods from instance dict."""
+    dummy_cm = DummyCM()
+    dummy_cm._service_endpoints = {"test_method": DummySchema}
+    
+    proxy_cm = ProxyConnectionManager(
+        gateway_url="http://gateway", app_name="app", original_cm=dummy_cm
+    )
+    
+    # Verify the proxy method was created and is in instance dict
+    instance_dict = object.__getattribute__(proxy_cm, "__dict__")
+    assert "test_method" in instance_dict
+    assert "atest_method" in instance_dict
+    
+    # Access the proxy method - this should hit line 195
+    sync_method = proxy_cm.test_method
+    async_method = proxy_cm.atest_method
+    
+    # Verify we got the actual methods
+    assert callable(sync_method)
+    assert callable(async_method)
+    assert sync_method.__name__ == "test_method"
+    assert async_method.__name__ == "atest_method"
