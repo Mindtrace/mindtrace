@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch, AsyncMock
 import httpx
 import pytest
 import requests
+from urllib3.util.url import Url
 
 from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 from mindtrace.services.core.connection_manager import ConnectionManager

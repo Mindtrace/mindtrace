@@ -407,23 +407,18 @@ class TestProxyConnectionManagerIntegration:
 
     def test_proxy_method_call_no_args(self, proxy_cm):
         """Test method call with no arguments through proxy."""
-        with patch('requests.post') as mock_post:
+        with patch('requests.get') as mock_get:
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {'status': 'ok'}
-            mock_post.return_value = mock_response
+            mock_get.return_value = mock_response
             
-            # Get the dynamically created method directly from instance dict to avoid __getattribute__
-            instance_dict = object.__getattribute__(proxy_cm, "__dict__")
-            status_method = instance_dict["status"]
+            # Test calling a no-arg method (status method should use GET since it has no required params)
+            result = proxy_cm.status()
             
-            # Test calling a no-arg method
-            result = status_method()
-            
-            # Verify POST was used (all proxy methods use POST)
-            mock_post.assert_called_once_with(
+            # Verify GET was used for no-arg method
+            mock_get.assert_called_once_with(
                 "http://localhost:8090/test-service/status",
-                json={},
                 timeout=60
             )
 

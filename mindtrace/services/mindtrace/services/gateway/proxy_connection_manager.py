@@ -108,13 +108,13 @@ class ProxyConnectionManager:
         """Create a proxy method for a specific endpoint."""
         
         if is_async:
-            async def proxy_method(validate_input: bool = True, validate_output: bool = False, **kwargs):
+            async def proxy_method(validate_input: bool = True, validate_output: bool = True, **kwargs):
                 return await self._make_async_request(endpoint_name, task_schema, validate_input, validate_output, **kwargs)
             
             proxy_method.__name__ = f'a{endpoint_name}'
             proxy_method.__doc__ = f"Async version: Calls the `{endpoint_name}` endpoint through the gateway"
         else:
-            def proxy_method(validate_input: bool = True, validate_output: bool = False, **kwargs):
+            def proxy_method(validate_input: bool = True, validate_output: bool = True, **kwargs):
                 return self._make_sync_request(endpoint_name, task_schema, validate_input, validate_output, **kwargs)
             
             proxy_method.__name__ = endpoint_name

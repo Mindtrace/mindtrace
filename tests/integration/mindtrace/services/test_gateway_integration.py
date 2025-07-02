@@ -396,8 +396,8 @@ class TestGatewayErrorScenarios:
             result1 = enhanced_cm.echo1.echo(message="Hello from echo1!")
             result2 = enhanced_cm.echo2.echo(message="Hello from echo2!")
             
-            assert result1["echoed"] == "Hello from echo1!"
-            assert result2["echoed"] == "Hello from echo2!"
+            assert result1.echoed == "Hello from echo1!"
+            assert result2.echoed == "Hello from echo2!"
 
 
 class TestGatewayErrorHandling:
@@ -517,7 +517,7 @@ class TestGatewayPerformance:
             return await loop.run_in_executor(
                 None,
                 lambda: requests.post(
-                    f"{str(gateway_manager.url).rstrip('/')}/echo/echo",
+                    f"{str(gateway_manager.url).rstrip('/')}/echoer/echo",
                     json={"message": message},
                     timeout=10
                 )
@@ -597,11 +597,11 @@ class TestGatewayComplexScenarios:
             
             # Test different method calls
             echo_result = proxy.echo(message="Hello World!")
-            assert echo_result["echoed"] == "Hello World!"
+            assert echo_result.echoed == "Hello World!"
             
             # Test with different parameters
             echo_result2 = proxy.echo(message="Test Message", delay=0.0)
-            assert echo_result2["echoed"] == "Test Message"
+            assert echo_result2.echoed == "Test Message"
             
             # Test status method (if available)
             try:
@@ -765,8 +765,8 @@ class TestGatewayAppDiscovery:
             result1 = enhanced_cm1.shared_echo.echo(message="From CM1")
             result2 = enhanced_cm2.shared_echo.echo(message="From CM2")
             
-            assert result1["echoed"] == "From CM1"
-            assert result2["echoed"] == "From CM2"
+            assert result1.echoed == "From CM1"
+            assert result2.echoed == "From CM2"
 
     @pytest.mark.asyncio
     async def test_connection_manager_sync_failure_graceful_handling(self):
