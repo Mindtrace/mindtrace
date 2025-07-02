@@ -7,6 +7,7 @@ The Mindtrace Hardware Component provides a unified interface for managing indus
 This component offers:
 - **Unified Configuration System**: Single configuration for all hardware components
 - **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with mock implementations
+- **Network Bandwidth Management**: Intelligent concurrent capture limiting for GigE cameras
 - **Multiple PLC Backends**: Support for Allen Bradley PLCs with LogixDriver, SLCDriver, and CIPDriver
 - **Async Operations**: Thread-safe asynchronous operations for both cameras and PLCs
 - **Graceful Error Handling**: Comprehensive exception system with detailed error messages
@@ -167,7 +168,8 @@ The `CameraManager` class provides a comprehensive async interface for managing 
 from mindtrace.hardware.cameras.camera_manager import CameraManager
 
 async def modern_camera_usage():
-    async with CameraManager(include_mocks=True) as manager:
+    # Initialize with network bandwidth management (important for GigE cameras)
+    async with CameraManager(include_mocks=True, max_concurrent_captures=2) as manager:
         # Discover cameras
         cameras = manager.discover_cameras()
         
@@ -187,6 +189,10 @@ async def modern_camera_usage():
         # Get camera information
         info = await camera_proxy.get_sensor_info()
         print(f"Camera info: {info}")
+        
+        # Check network bandwidth management info
+        bandwidth_info = manager.get_network_bandwidth_info()
+        print(f"Bandwidth management: {bandwidth_info}")
 ```
 
 ### Backend Discovery and Management
@@ -279,6 +285,57 @@ async def batch_operations():
         images = await manager.batch_capture(cameras)
         for camera_name, image in images.items():
             print(f"Captured from {camera_name}: {image.shape}")
+```
+
+### Network Bandwidth Management
+
+The camera manager includes intelligent network bandwidth management to prevent network saturation when using multiple GigE cameras:
+
+```python
+async def bandwidth_management_example():
+    # Initialize with conservative bandwidth management
+    manager = CameraManager(include_mocks=True, max_concurrent_captures=1)
+    
+    try:
+        cameras = manager.discover_cameras()[:4]
+        await manager.initialize_cameras(cameras)
+        
+        # Get bandwidth management information
+        bandwidth_info = manager.get_network_bandwidth_info()
+        print(f"Current settings: {bandwidth_info}")
+        
+        # Batch capture with bandwidth limiting
+        # Only 1 camera will capture at a time, preventing network saturation
+        results = await manager.batch_capture(cameras)
+        
+        # Dynamically adjust bandwidth limits
+        manager.set_max_concurrent_captures(2)  # Allow 2 concurrent captures
+        print(f"Updated limit: {manager.get_max_concurrent_captures()}")
+        
+        # HDR capture also respects bandwidth limits
+        hdr_results = await manager.batch_capture_hdr(
+            camera_names=cameras[:2],
+            exposure_levels=3,
+            return_images=False
+        )
+        
+    finally:
+        await manager.close_all_cameras()
+
+# Different bandwidth management strategies
+async def bandwidth_strategies():
+    # Conservative: Ensures no network saturation (recommended for critical applications)
+    conservative_manager = CameraManager(max_concurrent_captures=1)
+    
+    # Balanced: Allows some concurrency while managing bandwidth (recommended for most applications)
+    balanced_manager = CameraManager(max_concurrent_captures=2)
+    
+    # Aggressive: Higher concurrency (only for high-bandwidth networks)
+    aggressive_manager = CameraManager(max_concurrent_captures=3)
+    
+    # Get recommended settings
+    info = balanced_manager.get_network_bandwidth_info()
+    print(f"Recommended settings: {info['recommended_settings']}")
 ```
 
 ### Advanced Camera Control
@@ -454,6 +511,9 @@ camera_settings.exposure_time               # float = 1000.0
 camera_settings.white_balance               # str = "auto"
 camera_settings.gain                        # float = 1.0
 
+# Network bandwidth management settings
+camera_settings.max_concurrent_captures     # int = 2 (important for GigE cameras)
+
 # OpenCV-specific settings
 camera_settings.opencv_default_width        # int = 1280
 camera_settings.opencv_default_height       # int = 720
@@ -512,6 +572,9 @@ export MINDTRACE_HW_CAMERA_MOCK_COUNT="25"
 export MINDTRACE_HW_CAMERA_ENHANCEMENT_GAMMA="2.2"
 export MINDTRACE_HW_CAMERA_ENHANCEMENT_CONTRAST="1.2"
 
+# Network bandwidth management (critical for GigE cameras)
+export MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES="2"
+
 # OpenCV specific settings
 export MINDTRACE_HW_CAMERA_OPENCV_WIDTH="1280"
 export MINDTRACE_HW_CAMERA_OPENCV_HEIGHT="720"
@@ -545,6 +608,7 @@ Create a `hardware_config.json` file for persistent configuration:
     "exposure_time": 1000.0,
     "white_balance": "auto",
     "gain": 1.0,
+    "max_concurrent_captures": 2,
     "opencv_default_width": 1280,
     "opencv_default_height": 720,
     "opencv_default_fps": 30,
@@ -766,14 +830,18 @@ from mindtrace.hardware.cameras.camera_manager import CameraManager
 from mindtrace.hardware.plcs.plc_manager import PLCManager
 
 async def industrial_automation():
-    # Initialize managers
-    async with CameraManager() as camera_manager:
+    # Initialize managers with network bandwidth management
+    async with CameraManager(max_concurrent_captures=2) as camera_manager:
         plc_manager = PLCManager()
         
         try:
-            # Setup cameras
+            # Setup cameras with bandwidth management
             cameras = camera_manager.discover_cameras()
             inspection_camera = await camera_manager.get_camera(cameras[0])
+            
+            # Check bandwidth management status
+            bandwidth_info = camera_manager.get_network_bandwidth_info()
+            print(f"Network bandwidth management: {bandwidth_info}")
             
             # Setup PLCs
             await plc_manager.register_plc("ProductionPLC", "AllenBradley", "192.168.1.100", plc_type="logix")
@@ -793,7 +861,7 @@ async def industrial_automation():
                 # Wait for part detection
                 part_detected = await plc_manager.read_tag("ProductionPLC", "PartDetector_Sensor")
                 if part_detected:
-                    # Capture image for quality inspection
+                    # Capture image for quality inspection (respects bandwidth limits)
                     image = await inspection_camera.capture(f"inspection_cycle_{cycle}.jpg")
                     print(f"Captured inspection image: {image.shape}")
                     
@@ -884,21 +952,29 @@ async def testing_setup():
     os.environ['MINDTRACE_HW_CAMERA_MOCK_ENABLED'] = 'true'
     os.environ['MINDTRACE_HW_PLC_MOCK_ENABLED'] = 'true'
     
-    # Initialize with mock backends
-    async with CameraManager(include_mocks=True) as camera_manager:
+    # Initialize with mock backends and bandwidth management
+    async with CameraManager(include_mocks=True, max_concurrent_captures=3) as camera_manager:
         plc_manager = PLCManager(backends=["MockAllenBradley"])
         
         try:
-            # Test camera functionality
+            # Test camera functionality with bandwidth management
             cameras = camera_manager.discover_cameras()
             print(f"Mock cameras available: {cameras}")
             
-            # Test image capture
+            # Check bandwidth management info
+            bandwidth_info = camera_manager.get_network_bandwidth_info()
+            print(f"Bandwidth management: {bandwidth_info}")
+            
+            # Test image capture (respects bandwidth limits)
             for camera_name in cameras[:2]:
                 camera = await camera_manager.get_camera(camera_name)
                 await camera.configure(image_enhancement=True)
                 image = await camera.capture()
                 print(f"Mock image captured from {camera_name}: {image.shape}")
+            
+            # Test batch capture with bandwidth management
+            batch_results = await camera_manager.batch_capture(cameras[:3])
+            print(f"Batch capture results: {len(batch_results)} images")
             
             # Test PLC functionality
             await plc_manager.register_plc("TestPLC", "192.168.1.100", plc_type="auto")
@@ -995,6 +1071,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 - **MockDahengCamera Tests**: Initialization, connection, capture, configuration
 - **MockBaslerCamera Tests**: Basler-specific features and serial connections
 - **CameraManager Tests**: Backend registration, discovery, batch operations
+- **Network Bandwidth Management Tests**: Concurrent capture limiting, dynamic adjustment, bandwidth info
 - **Error Handling Tests**: Timeout, connection, and configuration errors
 - **Performance Tests**: Concurrent capture, rapid sequences, resource cleanup
 - **Configuration Tests**: Persistence, validation, trigger modes

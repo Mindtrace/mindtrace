@@ -26,6 +26,7 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE: Default camera exposure time
     - MINDTRACE_HW_CAMERA_WHITE_BALANCE: Default camera white balance mode
     - MINDTRACE_HW_CAMERA_TIMEOUT: Camera capture timeout in seconds
+    - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES: Maximum concurrent captures for network bandwidth management
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
     - MINDTRACE_HW_CAMERA_OPENCV_HEIGHT: OpenCV default frame height
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
@@ -64,6 +65,7 @@ class CameraSettings:
         exposure_time: Exposure time in microseconds
         white_balance: White balance mode (auto, off, once)
         gain: Camera gain value
+        max_concurrent_captures: Maximum number of concurrent captures across all cameras (network bandwidth management)
         
         # OpenCV-specific settings (actively used)
         opencv_default_width: OpenCV default frame width
@@ -95,6 +97,7 @@ class CameraSettings:
     exposure_time: float = 1000.0
     white_balance: str = "auto"
     gain: float = 1.0
+    max_concurrent_captures: int = 2  # Network bandwidth management for GigE cameras
     
     # OpenCV-specific settings
     opencv_default_width: int = 1280
@@ -323,6 +326,10 @@ class HardwareConfigManager:
         
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_CONTRAST"):
             self._config.cameras.enhancement_contrast = float(env_val)
+        
+        # Network bandwidth management
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
+            self._config.cameras.max_concurrent_captures = int(env_val)
         
         # Camera backends
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DAHENG_ENABLED"):
