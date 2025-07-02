@@ -388,24 +388,185 @@ class CameraProxy:
     
     # Status and Info
     async def check_connection(self) -> bool:
-        """Verify camera connection and functionality."""
+        """Check if camera is connected and responding."""
         return await self._camera.check_connection()
     
     async def get_sensor_info(self) -> Dict[str, Any]:
-        """Get sensor information."""
-        width_range = await self._camera.get_width_range()
-        height_range = await self._camera.get_height_range()
+        """
+        Get sensor information and capabilities.
         
+        Returns:
+            Dictionary with sensor information
+        """
+        # This would need to be implemented per backend
+        # For now, return basic info
         return {
-            "width_range": (width_range[0], width_range[1]),
-            "height_range": (height_range[0], height_range[1]),
-            "current_roi": self.get_roi(),
-            "pixel_format": self.get_pixel_format(),
-            "available_formats": self.get_available_pixel_formats()
+            "name": self._full_name,
+            "backend": self._backend,
+            "device_name": self._device_name,
+            "connected": self.is_connected
         }
     
+    async def capture_hdr(
+        self, 
+        save_path_pattern: Optional[str] = None,
+        exposure_levels: int = 3,
+        exposure_multiplier: float = 2.0,
+        return_images: bool = True
+    ) -> Union[List[Any], bool]:
+        """
+        Capture HDR (High Dynamic Range) images with multiple exposure levels.
+        
+        This method captures multiple images at different exposure levels to create
+        HDR imagery. It temporarily modifies the camera's exposure settings and
+        restores the original exposure when complete.
+        
+        Args:
+            save_path_pattern: Optional path pattern for saving images. Use {} for exposure placeholder.
+                              Example: "hdr_image_{}.jpg" will save as "hdr_image_1000.jpg", etc.
+            exposure_levels: Number of different exposure levels to capture (default: 3)
+            exposure_multiplier: Multiplier between exposure levels (default: 2.0)
+            return_images: Whether to return the captured images (default: True)
+            
+        Returns:
+            If return_images=True: List of captured images as numpy arrays
+            If return_images=False: True if all captures successful, False otherwise
+            
+        Raises:
+            CameraCaptureError: If HDR capture fails
+            CameraConnectionError: If camera connection fails
+            CameraConfigurationError: If exposure settings are invalid
+            
+        Example:
+            # Capture 5 exposure levels with 1.5x multiplier
+            images = await camera.capture_hdr(
+                save_path_pattern="hdr_{}.jpg",
+                exposure_levels=5,
+                exposure_multiplier=1.5
+            )
+            
+            # Just capture without returning images
+            success = await camera.capture_hdr(
+                save_path_pattern="hdr_{}.jpg",
+                return_images=False
+            )
+        """
+        async with self._lock:
+            try:
+                # Get current exposure to restore later
+                original_exposure = await self._camera.get_exposure()
+                
+                # Get exposure range to validate settings
+                exposure_range = await self._camera.get_exposure_range()
+                min_exposure, max_exposure = exposure_range[0], exposure_range[1]
+                
+                # Calculate exposure levels
+                # Use geometric progression centered around current exposure
+                base_exposure = original_exposure
+                
+                # Create exposure levels: under-exposed, normal, over-exposed, etc.
+                exposures = []
+                for i in range(exposure_levels):
+                    # Center the progression around the middle index
+                    center_index = (exposure_levels - 1) / 2
+                    multiplier = exposure_multiplier ** (i - center_index)
+                    exposure = base_exposure * multiplier
+                    
+                    # Clamp to valid range
+                    exposure = max(min_exposure, min(max_exposure, exposure))
+                    exposures.append(exposure)
+                
+                # Remove duplicates and sort
+                exposures = sorted(list(set(exposures)))
+                
+                self._camera.logger.info(
+                    f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}"
+                )
+                
+                captured_images = []
+                successful_captures = 0
+                
+                for i, exposure in enumerate(exposures):
+                    try:
+                        # Set exposure for this capture
+                        success = await self._camera.set_exposure(exposure)
+                        if not success:
+                            self._camera.logger.warning(
+                                f"Failed to set exposure {exposure} for HDR capture {i+1}/{len(exposures)}"
+                            )
+                            continue
+                        
+                        # Small delay to let exposure settle
+                        await asyncio.sleep(0.1)
+                        
+                        # Capture image
+                        save_path = None
+                        if save_path_pattern:
+                            save_path = save_path_pattern.format(exposure=int(exposure))
+                        
+                        # Call the underlying camera's capture method directly to avoid deadlock
+                        success, image = await self._camera.capture()
+                        
+                        if success and image is not None:
+                            # Save image if path provided
+                            if save_path and save_path.strip():
+                                save_dir = os.path.dirname(save_path)
+                                if save_dir:  # Only create directory if it's not empty
+                                    os.makedirs(save_dir, exist_ok=True)
+                                cv2.imwrite(save_path, image)
+                            
+                            if return_images:
+                                captured_images.append(image)
+                            successful_captures += 1
+                            
+                            self._camera.logger.debug(
+                                f"HDR capture {i+1}/{len(exposures)} successful at exposure {exposure}μs"
+                            )
+                        else:
+                            self._camera.logger.warning(
+                                f"HDR capture {i+1}/{len(exposures)} failed at exposure {exposure}μs"
+                            )
+                            
+                    except Exception as e:
+                        self._camera.logger.warning(
+                            f"HDR capture {i+1}/{len(exposures)} failed at exposure {exposure}μs: {e}"
+                        )
+                        continue
+                
+                # Restore original exposure
+                try:
+                    await self._camera.set_exposure(original_exposure)
+                    self._camera.logger.debug(f"Restored original exposure {original_exposure}μs")
+                except Exception as e:
+                    self._camera.logger.warning(f"Failed to restore original exposure: {e}")
+                
+                # Check results
+                if successful_captures == 0:
+                    raise CameraCaptureError(f"HDR capture failed - no successful captures from camera '{self._full_name}'")
+                
+                if successful_captures < len(exposures):
+                    self._camera.logger.warning(
+                        f"HDR capture partially successful: {successful_captures}/{len(exposures)} captures succeeded"
+                    )
+                
+                self._camera.logger.info(
+                    f"HDR capture completed for camera '{self._full_name}': {successful_captures}/{len(exposures)} successful"
+                )
+                
+                if return_images:
+                    return captured_images
+                else:
+                    return successful_captures == len(exposures)
+                    
+            except (CameraCaptureError, CameraConnectionError, CameraConfigurationError):
+                # Re-raise camera-specific errors
+                raise
+            except Exception as e:
+                self._camera.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
+                raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
+
     async def close(self):
-        """Close camera connection."""
+        """Close camera and release resources."""
         await self._camera.close()
 
 
@@ -778,6 +939,72 @@ class CameraManager(Mindtrace):
             else:
                 camera_name, image = result
                 results[camera_name] = image
+        
+        return results
+    
+    async def batch_capture_hdr(
+        self, 
+        camera_names: List[str],
+        save_path_pattern: Optional[str] = None,
+        exposure_levels: int = 3,
+        exposure_multiplier: float = 2.0,
+        return_images: bool = True
+    ) -> Dict[str, Union[List[Any], bool]]:
+        """
+        Capture HDR images from multiple cameras simultaneously.
+        
+        Args:
+            camera_names: List of camera names to capture HDR from
+            save_path_pattern: Optional path pattern. Use {camera} and {exposure} placeholders.
+                              Example: "hdr_{camera}_{exposure}.jpg"
+            exposure_levels: Number of different exposure levels to capture
+            exposure_multiplier: Multiplier between exposure levels
+            return_images: Whether to return the captured images
+            
+        Returns:
+            Dict mapping camera names to HDR capture results
+            
+        Example:
+            # Capture HDR from multiple cameras
+            results = await manager.batch_capture_hdr(
+                ["Daheng:cam1", "Basler:cam2"],
+                save_path_pattern="hdr_{camera}_{exposure}.jpg",
+                exposure_levels=5
+            )
+        """
+        results = {}
+        
+        async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Union[List[Any], bool]]:
+            try:
+                camera = self.get_camera(camera_name)
+                
+                # Format save path for this camera
+                camera_save_pattern = None
+                if save_path_pattern:
+                    # Replace {camera} placeholder with camera name (sanitized)
+                    safe_camera_name = camera_name.replace(":", "_")
+                    camera_save_pattern = save_path_pattern.replace("{camera}", safe_camera_name)
+                
+                result = await camera.capture_hdr(
+                    save_path_pattern=camera_save_pattern,
+                    exposure_levels=exposure_levels,
+                    exposure_multiplier=exposure_multiplier,
+                    return_images=return_images
+                )
+                return camera_name, result
+            except Exception as e:
+                self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
+                return camera_name, [] if return_images else False
+        
+        tasks = [capture_hdr_from_camera(name) for name in camera_names]
+        hdr_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for result in hdr_results:
+            if isinstance(result, Exception):
+                self.logger.error(f"HDR capture task failed: {result}")
+            else:
+                camera_name, hdr_result = result
+                results[camera_name] = hdr_result
         
         return results
     
