@@ -14,7 +14,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
         self.queues = [queue_name] if queue_name else []
     
     def consume(self, num_messages: int = 0, *, queues: str | list[str] | None = None, block: bool = True, **kwargs) -> None:
-        """Consume messages from Redis queue(s) with timeout handling."""
+        """Consume messages from Redis queue(s)."""
         if not self.run_method:
             raise RuntimeError("No run method set.")
         
@@ -27,15 +27,16 @@ class RedisConsumerBackend(ConsumerBackendBase):
             while num_messages == 0 or messages_consumed < num_messages:
                 for queue in queues:
                     try:
-                        # Use the configured poll timeout for blocking operations
-                        message = self.orchestrator.receive_message(queue, block=True, timeout=self.poll_timeout)
+                        message = self.orchestrator.receive_message(queue, block=block, timeout=self.poll_timeout)
                         if message:
                             self.logger.debug(f"Received message from queue '{queue}': processing {messages_consumed + 1}")
-                            self.process_message(message)
-                            messages_consumed += 1
+                            if self.process_message(message):
+                                messages_consumed += 1
+                        elif not block: 
+                            return
                     except Exception as e:
                         self.logger.debug(f"No message available in queue '{queue}' or error occurred: {e}")
-                        if block is False:
+                        if not block: 
                             return
                         time.sleep(1)
         except KeyboardInterrupt:

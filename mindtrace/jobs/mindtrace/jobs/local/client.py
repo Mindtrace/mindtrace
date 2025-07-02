@@ -63,7 +63,7 @@ class LocalClient(OrchestratorBackend):
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues[queue_name]
         message_dict = message.model_dump()
-        if "job_id" not in message_dict:
+        if "job_id" not in message_dict or message_dict["job_id"] is None:
             message_dict["job_id"] = str(uuid.uuid1())
         body = json.dumps(message_dict)
         if (
@@ -79,8 +79,7 @@ class LocalClient(OrchestratorBackend):
     ) -> Optional[dict]:
         """Retrieve a message from the specified queue.
         Returns the message as a dict.
-        Raises:
-            queue.Empty (Exception) if the requested queue is empty.
+        Returns None if queue is empty.
         """
         block = kwargs.get("block", True)
         timeout = kwargs.get("timeout", None)

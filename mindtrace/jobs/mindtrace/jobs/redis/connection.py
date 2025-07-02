@@ -14,6 +14,8 @@ class RedisConnection(BrokerConnectionBase):
         port: int | None = None,
         db: int | None = None,
         password: str | None = None,
+        socket_timeout: float | None = None,
+        socket_connect_timeout: float | None = None,
     ):
         """
         Initialize the Redis connection.
@@ -22,12 +24,16 @@ class RedisConnection(BrokerConnectionBase):
             port: The Redis server port.
             db: The Redis database number.
             password: The password for the Redis server (if any).
+            socket_timeout: Timeout for socket operations (in seconds).
+            socket_connect_timeout: Timeout for socket connect (in seconds).
         """
         super().__init__()
         self.host = ifnone(host, default="localhost")
         self.port = ifnone(port, default=6379)
         self.db = ifnone(db, default=0)
         self.password = password  # Use password if provided, None otherwise
+        self.socket_timeout = ifnone(socket_timeout, default=5.0)
+        self.socket_connect_timeout = ifnone(socket_connect_timeout, default=2.0)
         self.connection = None
         self.name = "RedisConnection"
         try:
@@ -39,7 +45,13 @@ class RedisConnection(BrokerConnectionBase):
         retries = 0
         while retries < max_tries:
             try:
-                conn_params = {"host": self.host, "port": self.port, "db": self.db}
+                conn_params = {
+                    "host": self.host,
+                    "port": self.port,
+                    "db": self.db,
+                    "socket_timeout": self.socket_timeout,
+                    "socket_connect_timeout": self.socket_connect_timeout,
+                }
                 if self.password:
                     conn_params["password"] = self.password
                 self.connection = redis.Redis(**conn_params)
@@ -52,7 +64,7 @@ class RedisConnection(BrokerConnectionBase):
                     raise redis.ConnectionError("Ping failed.")
             except redis.ConnectionError:
                 retries += 1
-                wait_time = 2**retries
+                wait_time = min(2**retries, 30)  # Cap wait time at 30 seconds
                 self.logger.debug(
                     f"{self.name} failed to connect to Redis, retrying in {wait_time} seconds..."
                 )

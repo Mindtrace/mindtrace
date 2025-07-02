@@ -115,4 +115,71 @@ class TestOrchestrator:
         assert isinstance(received_job, dict)
         assert received_job["schema_name"] == "redis_integration_schema"
         
-        redis_client.delete_queue(queue_name) 
+        redis_client.delete_queue(queue_name)
+
+    def test_orchestrator_delete_queue(self, unique_queue_name):
+        """Test orchestrator delete_queue method - covers line 65."""
+        client = LocalClient()
+        orchestrator = Orchestrator(client)
+        
+        queue_name = unique_queue_name("delete_test")
+        client.declare_queue(queue_name)
+        
+        # Verify queue exists
+        assert queue_name in client.queues
+        
+        # Delete queue through orchestrator
+        orchestrator.delete_queue(queue_name)
+        
+        # Verify queue is deleted
+        assert queue_name not in client.queues
+
+    def test_orchestrator_create_consumer_backend_rabbitmq(self):
+        """Test creating RabbitMQ consumer backend - covers lines 107-110."""
+        from mindtrace.jobs.rabbitmq.client import RabbitMQClient
+        from mindtrace.jobs.types.job_specs import JobSchema
+        from .conftest import SampleJobInput, SampleJobOutput
+        
+        # Create a mock class that inherits the name properly
+        class MockRabbitMQClient:
+            pass
+        
+        MockRabbitMQClient.__name__ = "RabbitMQClient"
+        rabbitmq_client = MockRabbitMQClient()
+        orchestrator = Orchestrator(rabbitmq_client)
+        
+        # Create a test schema
+        test_schema = JobSchema(
+            name="test_rabbitmq_job",
+            input=SampleJobInput(),
+            output=SampleJobOutput()
+        )
+        
+        # This should create a RabbitMQConsumerBackend (lines 107-110)
+        consumer_backend = orchestrator.create_consumer_backend_for_schema(test_schema)
+        
+        # Verify it's the correct type
+        from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+        assert isinstance(consumer_backend, RabbitMQConsumerBackend)
+        assert consumer_backend.queue_name == "test_rabbitmq_job"
+
+    def test_orchestrator_create_consumer_backend_unknown_type(self):
+        """Test creating consumer backend with unknown backend type."""
+        from mindtrace.jobs.types.job_specs import JobSchema
+        from .conftest import SampleJobInput, SampleJobOutput
+        
+        # Create a mock backend with unknown type
+        unknown_backend = MagicMock()
+        unknown_backend.__class__.__name__ = "UnknownBackend"
+        
+        orchestrator = Orchestrator(unknown_backend)
+        
+        test_schema = JobSchema(
+            name="test_unknown_job",
+            input=SampleJobInput(),
+            output=SampleJobOutput()
+        )
+        
+        # Should raise ValueError for unknown backend type
+        with pytest.raises(ValueError, match="Unknown backend type: UnknownBackend"):
+            orchestrator.create_consumer_backend_for_schema(test_schema) 

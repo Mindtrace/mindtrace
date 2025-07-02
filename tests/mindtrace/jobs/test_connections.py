@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 from mindtrace.jobs.redis.connection import RedisConnection
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
+import redis
 
 
 
@@ -38,19 +39,69 @@ class TestBrokerConnectionBase:
 @pytest.mark.redis
 class TestRedisConnection:
     
-    def test_connection_lifecycle(self):
-        connection = RedisConnection(host="localhost", port=6379, db=0)
+    @patch('mindtrace.jobs.redis.connection.redis.Redis')
+    def test_connection_lifecycle(self, mock_redis):
+        # Setup mock
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis.return_value = mock_redis_instance
         
+        # Create connection
+        connection = RedisConnection(
+            host="localhost",
+            port=6379,
+            db=0,
+            socket_timeout=5.0,
+            socket_connect_timeout=2.0
+        )
+        
+        # Test initial state (should be connected from __init__)
+        assert connection.is_connected() is True
+        
+        # Test close
         connection.close()
         assert connection.is_connected() is False
         
+        # Test reconnect
         connection.connect()
         assert connection.is_connected() is True
         
+        # Test final close
         connection.close()
         assert connection.is_connected() is False
+        
+        # Verify Redis was initialized with timeouts
+        mock_redis.assert_called_with(
+            host="localhost",
+            port=6379,
+            db=0,
+            socket_timeout=5.0,
+            socket_connect_timeout=2.0
+        )
     
-    def test_context_manager(self):
+    @patch('mindtrace.jobs.redis.connection.redis.Redis')
+    def test_connection_failure(self, mock_redis):
+        # Setup mock to simulate connection failure
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.side_effect = redis.ConnectionError("Simulated failure")
+        mock_redis.return_value = mock_redis_instance
+        
+        # Create connection (should fail)
+        connection = RedisConnection(host="localhost", port=6379, db=0)
+        assert connection.is_connected() is False
+        
+        # Try to connect (should fail)
+        with pytest.raises(redis.ConnectionError):
+            connection.connect(max_tries=1)
+    
+    @patch('mindtrace.jobs.redis.connection.redis.Redis')
+    def test_context_manager(self, mock_redis):
+        # Setup mock
+        mock_redis_instance = Mock()
+        mock_redis_instance.ping.return_value = True
+        mock_redis.return_value = mock_redis_instance
+        
+        # Create and test context manager
         connection = RedisConnection(host="localhost", port=6379, db=0)
         connection.close()
         
@@ -108,7 +159,13 @@ class TestMockedConnections:
         
         connection = RedisConnection(host="localhost", port=6379, db=0)
         
-        mock_redis.assert_called_with(host="localhost", port=6379, db=0)
+        mock_redis.assert_called_with(
+            host="localhost",
+            port=6379,
+            db=0,
+            socket_timeout=5.0,
+            socket_connect_timeout=2.0
+        )
         assert connection.connection is mock_redis_instance
         assert connection.is_connected() is True
     
@@ -130,3 +187,20 @@ class TestMockedConnections:
         
         assert connection.connection is mock_conn_instance
         assert connection.is_connected() is True 
+
+    def test_connection_lifecycle(self):
+        connection = RabbitMQConnection(
+            host="localhost", 
+            port=5672, 
+            username="user", 
+            password="password"
+        )
+        
+        connection.close()
+        assert connection.is_connected() is False
+        
+        connection.connect()
+        assert connection.is_connected() is True
+        
+        connection.close()
+        assert connection.is_connected() is False 
