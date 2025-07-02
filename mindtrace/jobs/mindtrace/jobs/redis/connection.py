@@ -35,7 +35,6 @@ class RedisConnection(BrokerConnectionBase):
         self.socket_timeout = ifnone(socket_timeout, default=5.0)
         self.socket_connect_timeout = ifnone(socket_connect_timeout, default=2.0)
         self.connection = None
-        self.name = "RedisConnection"
         try:
             self.connect(max_tries=1)
         except redis.ConnectionError as e:
