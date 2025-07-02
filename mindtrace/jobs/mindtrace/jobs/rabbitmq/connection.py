@@ -27,7 +27,8 @@ class RabbitMQConnection(BrokerConnectionBase):
         self.username = ifnone(username, default="user")
         self.password = ifnone(password, default="password")
         self.connection = None
-        self.name = "RabbitMQConnection"
+
+        
     def connect(self):
         """Connect to the RabbitMQ server."""
         retries = 0
