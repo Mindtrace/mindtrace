@@ -564,7 +564,7 @@ class CameraProxy:
             except Exception as e:
                 self._camera.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
-
+    
     async def close(self):
         """Close camera and release resources."""
         await self._camera.close()
@@ -578,12 +578,15 @@ class CameraManager(Mindtrace):
     management, async operations, and comprehensive error handling.
     """
     
-    def __init__(self, include_mocks: bool = False):
+    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int = None):
         """
         Initialize camera manager.
         
         Args:
             include_mocks: Include mock cameras in discovery
+            max_concurrent_captures: Maximum number of concurrent captures across all cameras
+                                    (important for network bandwidth management, especially for GigE cameras).
+                                    If None, uses value from configuration system.
         """
         super().__init__()
         
@@ -591,7 +594,21 @@ class CameraManager(Mindtrace):
         self._include_mocks = include_mocks
         self._discovered_backends = self._discover_all_backends()
         
-        self.logger.info(f"CameraManager initialized. Available backends: {self._discovered_backends}")
+        # Get max_concurrent_captures from config if not provided
+        if max_concurrent_captures is None:
+            from mindtrace.hardware.core.config import get_hardware_config
+            config = get_hardware_config()
+            max_concurrent_captures = config.get_config().cameras.max_concurrent_captures
+        
+        # Network bandwidth management - global semaphore to limit concurrent captures
+        # This prevents network saturation when multiple GigE cameras capture simultaneously
+        # Typical GigE bandwidth: 125 MB/s, high-res image: ~6MB, so limit concurrent captures
+        self._capture_semaphore = asyncio.Semaphore(max_concurrent_captures)
+        
+        self.logger.info(
+            f"CameraManager initialized. Available backends: {self._discovered_backends}, "
+            f"max_concurrent_captures={max_concurrent_captures}"
+        )
     
     def _discover_all_backends(self) -> List[str]:
         """Discover all available camera backends."""
@@ -847,10 +864,58 @@ class CameraManager(Mindtrace):
                 self.logger.warning(f"Could not retrieve camera '{camera_name}': {e}")
         
         return cameras
-
+    
     def get_active_cameras(self) -> List[str]:
         """Get names of currently active cameras."""
         return list(self._cameras.keys())
+    
+    def get_max_concurrent_captures(self) -> int:
+        """
+        Get the current maximum number of concurrent captures.
+        
+        Returns:
+            Current maximum concurrent captures limit
+        """
+        return self._capture_semaphore._value
+    
+    def set_max_concurrent_captures(self, max_captures: int) -> None:
+        """
+        Set the maximum number of concurrent captures allowed.
+        
+        This is important for network bandwidth management, especially for GigE cameras.
+        Typical values:
+        - 1: Conservative, ensures no network saturation
+        - 2: Balanced, allows some concurrency while managing bandwidth
+        - 3+: Aggressive, may cause network issues with many high-res cameras
+        
+        Args:
+            max_captures: Maximum number of concurrent captures
+        """
+        if max_captures < 1:
+            raise ValueError("max_captures must be at least 1")
+        
+        # Create new semaphore with updated limit
+        self._capture_semaphore = asyncio.Semaphore(max_captures)
+        self.logger.info(f"Max concurrent captures set to {max_captures}")
+    
+    def get_network_bandwidth_info(self) -> Dict[str, Any]:
+        """
+        Get information about network bandwidth management.
+        
+        Returns:
+            Dictionary with bandwidth management information
+        """
+        return {
+            "max_concurrent_captures": self.get_max_concurrent_captures(),
+            "active_cameras": len(self._cameras),
+            "gige_cameras": len([cam for cam in self._cameras.keys() if "Basler" in cam or "Daheng" in cam]),
+            "bandwidth_management_enabled": True,
+            "recommended_settings": {
+                "conservative": 1,  # For critical applications
+                "balanced": 2,      # For most applications  
+                "aggressive": 3     # Only for high-bandwidth networks
+            }
+        }
     
     async def close_camera(self, camera_name: str) -> None:
         """Close and remove specific camera."""
@@ -911,7 +976,10 @@ class CameraManager(Mindtrace):
     
     async def batch_capture(self, camera_names: List[str]) -> Dict[str, Any]:
         """
-        Capture from multiple cameras simultaneously.
+        Capture from multiple cameras with network bandwidth management.
+        
+        Uses a global semaphore to limit concurrent captures to prevent network saturation,
+        especially important for GigE cameras where bandwidth is limited.
         
         Args:
             camera_names: List of camera names to capture from
@@ -923,9 +991,11 @@ class CameraManager(Mindtrace):
         
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
             try:
-                camera = self.get_camera(camera_name)  # Now synchronous retrieval
-                image = await camera.capture()
-                return camera_name, image
+                # Acquire semaphore to limit concurrent captures (network bandwidth management)
+                async with self._capture_semaphore:
+                    camera = self.get_camera(camera_name)
+                    image = await camera.capture()
+                    return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
                 return camera_name, None
@@ -976,22 +1046,24 @@ class CameraManager(Mindtrace):
         
         async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Union[List[Any], bool]]:
             try:
-                camera = self.get_camera(camera_name)
-                
-                # Format save path for this camera
-                camera_save_pattern = None
-                if save_path_pattern:
-                    # Replace {camera} placeholder with camera name (sanitized)
-                    safe_camera_name = camera_name.replace(":", "_")
-                    camera_save_pattern = save_path_pattern.replace("{camera}", safe_camera_name)
-                
-                result = await camera.capture_hdr(
-                    save_path_pattern=camera_save_pattern,
-                    exposure_levels=exposure_levels,
-                    exposure_multiplier=exposure_multiplier,
-                    return_images=return_images
-                )
-                return camera_name, result
+                # Acquire semaphore to limit concurrent captures (network bandwidth management)
+                async with self._capture_semaphore:
+                    camera = self.get_camera(camera_name)
+                    
+                    # Format save path for this camera
+                    camera_save_pattern = None
+                    if save_path_pattern:
+                        # Replace {camera} placeholder with camera name (sanitized)
+                        safe_camera_name = camera_name.replace(":", "_")
+                        camera_save_pattern = save_path_pattern.replace("{camera}", safe_camera_name)
+                    
+                    result = await camera.capture_hdr(
+                        save_path_pattern=camera_save_pattern,
+                        exposure_levels=exposure_levels,
+                        exposure_multiplier=exposure_multiplier,
+                        return_images=return_images
+                    )
+                    return camera_name, result
             except Exception as e:
                 self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
                 return camera_name, [] if return_images else False
@@ -1044,15 +1116,16 @@ async def initialize_and_get_camera(camera_name: str, **kwargs) -> CameraProxy:
     return manager.get_camera(camera_name)
 
 
-def discover_all_cameras(include_mocks: bool = False) -> List[str]:
+def discover_all_cameras(include_mocks: bool = False, max_concurrent_captures: int = 2) -> List[str]:
     """
     Quick function to discover all cameras.
     
     Args:
         include_mocks: Include mock cameras in discovery
+        max_concurrent_captures: Maximum concurrent captures for network bandwidth management
         
     Returns:
         List of available camera names
     """
-    manager = CameraManager(include_mocks=include_mocks)
+    manager = CameraManager(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
     return manager.discover_cameras() 

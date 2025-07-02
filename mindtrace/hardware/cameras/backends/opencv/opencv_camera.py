@@ -587,16 +587,42 @@ class OpenCVCamera(BaseCamera):
         self.initialized = False
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
 
+    async def is_exposure_control_supported(self) -> bool:
+        """
+        Check if exposure control is supported for this camera.
+        Tries to set and restore the exposure value, and checks if it changes.
+        Returns:
+            True if exposure control is supported, False otherwise
+        """
+        if not self.initialized or not self.cap or not self.cap.isOpened():
+            return False
+        try:
+            original = self.cap.get(cv2.CAP_PROP_EXPOSURE)
+            # Try to set to a different value within the valid range
+            exposure_range = await self.get_exposure_range()
+            test_value = original - 1 if original > exposure_range[0] else original + 1
+            # Clamp test_value to range
+            test_value = max(min(test_value, exposure_range[1]), exposure_range[0])
+            if abs(test_value - original) < 1e-3:
+                test_value = original + 1 if (original + 1) <= exposure_range[1] else original - 1
+            success = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(test_value))
+            if not success:
+                return False
+            new_value = self.cap.get(cv2.CAP_PROP_EXPOSURE)
+            # Restore original
+            self.cap.set(cv2.CAP_PROP_EXPOSURE, float(original))
+            # If the value actually changed, exposure control is supported
+            return abs(new_value - test_value) < 1e-2
+        except Exception:
+            return False
+
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set camera exposure time.
-        
         Args:
             exposure: Exposure value (OpenCV uses log scale, typically -13 to -1)
-            
         Returns:
             True if exposure was set successfully
-            
         Raises:
             CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If exposure value is invalid
@@ -604,14 +630,16 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
-        
+        # Check if exposure control is supported
+        if not await self.is_exposure_control_supported():
+            self.logger.warning(f"Exposure control is not supported for camera '{self.camera_name}'. Skipping set_exposure.")
+            return False
         try:
             exposure_range = await self.get_exposure_range()
             if exposure < exposure_range[0] or exposure > exposure_range[1]:
                 raise CameraConfigurationError(
                     f"Exposure {exposure} outside valid range {exposure_range} for camera '{self.camera_name}'"
                 )
-            
             success = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
             if success:
                 self._exposure = float(exposure)
@@ -624,7 +652,6 @@ class OpenCVCamera(BaseCamera):
             else:
                 self.logger.warning(f"Failed to set exposure to {exposure} for camera '{self.camera_name}'")
                 return False
-                
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
