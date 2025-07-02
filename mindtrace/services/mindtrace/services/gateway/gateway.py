@@ -1,10 +1,11 @@
-from typing import Type
+from typing import Type, List, Dict, Any
 
-import httpx
 from fastapi import HTTPException, Request, Path
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import httpx
 from urllib3.util.url import Url
+from pydantic import BaseModel
 
 from mindtrace.core import ifnone_url, TaskSchema
 from mindtrace.services import (
@@ -18,11 +19,41 @@ from mindtrace.services import (
 )
 
 
+class AppInfo(BaseModel):
+    """Information about a registered app."""
+    name: str
+    url: str
+    endpoints: Dict[str, Dict[str, Any]]  # endpoint_name -> {input_schema, output_schema, ...}
+
+
+class ListAppsResponse(BaseModel):
+    """Response model for list_apps endpoint."""
+    apps: List[str]
+
+
+class ListAppsWithSchemasResponse(BaseModel):
+    """Enhanced response model for list_apps_with_schemas endpoint."""
+    apps: List[AppInfo]
+
+
+class ListAppsTaskSchema(TaskSchema):
+    """Schema for listing registered apps."""
+    name: str = "list_apps"
+    output_schema: BaseModel = ListAppsResponse
+
+
+class ListAppsWithSchemasTaskSchema(TaskSchema):
+    """Schema for listing registered apps with their endpoints and schemas."""
+    name: str = "list_apps_with_schemas"
+    output_schema: BaseModel = ListAppsWithSchemasResponse
+
+
 class Gateway(Service):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.registered_routers = {}
+        self.registered_app_info = {}  # Used for apps that provide schemas (i.e. mindtrace-derived apps)
         self.client = httpx.AsyncClient()
 
         # Enable CORS for the gateway
@@ -35,10 +66,29 @@ class Gateway(Service):
         )
 
         self.add_endpoint("/register_app", func=self.register_app, schema=RegisterAppTaskSchema(), methods=["POST"])
+        self.add_endpoint("/list_apps", func=self.list_apps, schema=ListAppsTaskSchema(), methods=["POST"])
+        self.add_endpoint("/list_apps_with_schemas", func=self.list_apps_with_schemas, schema=ListAppsWithSchemasTaskSchema(), methods=["POST"])
 
     def register_app(self, payload: AppConfig):
         """Register a FastAPI app with the gateway."""
         self.registered_routers[payload.name] = str(payload.url)
+        
+        # Try to fetch endpoint information from the registered service
+        try:
+            endpoints_info = self._fetch_service_endpoints(str(payload.url))
+            self.registered_app_info[payload.name] = {
+                "name": payload.name,
+                "url": str(payload.url),
+                "endpoints": endpoints_info
+            }
+        except Exception as e:
+            # If we can't fetch endpoints, store basic info
+            self.logger.warning(f"Could not fetch endpoints for {payload.name}: {e}")
+            self.registered_app_info[payload.name] = {
+                "name": payload.name,
+                "url": str(payload.url),
+                "endpoints": {}
+            }
 
         async def forwarder(request: Request, path: str = Path(...)):
             return await self.forward_request(request, payload.name, path)
@@ -48,6 +98,88 @@ class Gateway(Service):
             forwarder,
             methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
         )
+
+    def _fetch_service_endpoints(self, service_url: str) -> Dict[str, Dict[str, Any]]:
+        """Fetch endpoint information from a registered service."""
+        import requests
+        
+        try:
+            # Try to get endpoints from the service
+            response = requests.post(f"{service_url.rstrip('/')}/endpoints", timeout=10)
+            if response.status_code == 200:
+                endpoints_data = response.json()
+                endpoints_list = endpoints_data.get("endpoints", [])
+                
+                # Try to get detailed schema information from the service
+                # First, try the new detailed_endpoints endpoint if it exists
+                try:
+                    schema_response = requests.post(f"{service_url.rstrip('/')}/detailed_endpoints", timeout=10)
+                    if schema_response.status_code == 200:
+                        detailed_endpoints = schema_response.json().get("endpoints", {})
+                        
+                        # Build endpoints info with schema details
+                        endpoints_info = {}
+                        for endpoint_name in endpoints_list:
+                            # Skip system endpoints for cleaner output
+                            if endpoint_name in ["status", "heartbeat", "endpoints", "detailed_endpoints", "server_id", "pid_file", "shutdown"]:
+                                continue
+                            
+                            if endpoint_name in detailed_endpoints:
+                                endpoint_detail = detailed_endpoints[endpoint_name]
+                                endpoints_info[endpoint_name] = {
+                                    "name": endpoint_name,
+                                    "path": f"/{endpoint_name}",
+                                    "methods": ["POST"],  # Default assumption
+                                    "input_schema": endpoint_detail.get("input_schema"),
+                                    "output_schema": endpoint_detail.get("output_schema")
+                                }
+                            else:
+                                # Fallback for endpoints without detailed info
+                                endpoints_info[endpoint_name] = {
+                                    "name": endpoint_name,
+                                    "path": f"/{endpoint_name}",
+                                    "methods": ["POST"],
+                                    "input_schema": None,
+                                    "output_schema": None
+                                }
+                        
+                        return endpoints_info
+                except Exception:
+                    # Fall back to basic endpoint info if detailed_endpoints fails
+                    pass
+                
+                # Fallback: basic endpoint information without schemas
+                endpoints_info = {}
+                for endpoint_name in endpoints_list:
+                    # Skip system endpoints for cleaner output
+                    if endpoint_name in ["status", "heartbeat", "endpoints", "detailed_endpoints", "server_id", "pid_file", "shutdown"]:
+                        continue
+                    
+                    endpoints_info[endpoint_name] = {
+                        "name": endpoint_name,
+                        "path": f"/{endpoint_name}",
+                        "methods": ["POST"],  # Default assumption
+                        "input_schema": None,
+                        "output_schema": None
+                    }
+                
+                return endpoints_info
+        except Exception as e:
+            self.logger.debug(f"Failed to fetch endpoints from {service_url}: {e}")
+        
+        return {}
+
+    def list_apps(self) -> Dict[str, List[str]]:
+        """Return list of currently registered apps."""
+        return {"apps": list(self.registered_routers.keys())}
+
+    def list_apps_with_schemas(self) -> Dict[str, List[AppInfo]]:
+        """Return detailed information about registered apps including their endpoints and schemas."""
+        apps_info = []
+        for app_name, app_info in self.registered_app_info.items():
+            apps_info.append(AppInfo(**app_info))
+        
+        return {"apps": apps_info}
 
     async def forward_request(self, request: Request, app_name: str, path: str):
         """Forward the request to the registered app."""
@@ -89,6 +221,21 @@ class Gateway(Service):
             # Add enhanced functionality to the instance
             base_cm._registered_apps = {}
             
+            # Sync with existing apps on the Gateway
+            try:
+                existing_apps_response = base_cm.list_apps()
+                # Handle both dict and Pydantic model responses
+                if hasattr(existing_apps_response, 'apps'):
+                    existing_apps = existing_apps_response.apps
+                else:
+                    existing_apps = existing_apps_response.get("apps", [])
+                for app_name in existing_apps:
+                    # Create placeholder entries for existing apps (without connection managers)
+                    base_cm._registered_apps[app_name] = None
+            except Exception as e:
+                # If syncing fails, continue with empty registry
+                pass
+            
             # Store original methods if they exist
             original_register_app = getattr(base_cm, 'register_app', None)
             original_aregister_app = getattr(base_cm, 'aregister_app', None)
@@ -107,6 +254,9 @@ class Gateway(Service):
                     )
                     base_cm._registered_apps[name] = proxy_cm
                     setattr(base_cm, name, proxy_cm)
+                else:
+                    # Register without proxy (basic registration)
+                    base_cm._registered_apps[name] = None
                 
                 return result
             
@@ -124,19 +274,36 @@ class Gateway(Service):
                     )
                     base_cm._registered_apps[name] = proxy_cm
                     setattr(base_cm, name, proxy_cm)
+                else:
+                    # Register without proxy (basic registration)
+                    base_cm._registered_apps[name] = None
                 
                 return result
+            
+            def enhanced_registered_apps():
+                """Enhanced registered_apps method that returns detailed app information with schemas."""
+                try:
+                    # Call the new list_apps_with_schemas endpoint
+                    response = base_cm.list_apps_with_schemas()
+                    if hasattr(response, 'apps'):
+                        return response.apps
+                    else:
+                        return response.get("apps", [])
+                except Exception as e:
+                    # Fallback to basic list if enhanced endpoint fails
+                    try:
+                        basic_response = base_cm.list_apps()
+                        if hasattr(basic_response, 'apps'):
+                            return basic_response.apps
+                        else:
+                            return basic_response.get("apps", [])
+                    except Exception:
+                        return list(base_cm._registered_apps.keys())
             
             # Add enhanced methods to the instance
             base_cm.register_app = enhanced_register_app
             base_cm.aregister_app = enhanced_aregister_app
-            
-            # Add registered_apps as a dynamic property
-            def get_registered_apps(self):
-                return list(self._registered_apps.keys())
-            
-            # Create a property descriptor and bind it to the instance
-            base_cm.__class__.registered_apps = property(get_registered_apps)
+            base_cm.registered_apps = enhanced_registered_apps
             
             return base_cm
         

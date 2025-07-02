@@ -125,6 +125,9 @@ def generate_connection_manager(
     ServiceConnectionManager._service_class = service_cls
     ServiceConnectionManager._service_endpoints = temp_service._endpoints
 
+    # Store service endpoints in the connection manager class for ProxyConnectionManager access
+    ServiceConnectionManager._service_endpoints = temp_service._endpoints
+
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
         # Skip if this would override an existing method in ConnectionManager
