@@ -666,8 +666,13 @@ class TestGatewayAppDiscovery:
             else:
                 assert "echo-shared" in apps2
             
-            # However, second CM won't have the proxy attribute since it doesn't have the connection manager
-            assert not hasattr(enhanced_cm2, "echo-shared")
+            # With our new implementation, second CM automatically gets proxy attributes for existing apps
+            assert hasattr(enhanced_cm2, "echo-shared")
+            
+            # Test that the automatically created proxy works
+            result = enhanced_cm2.__getattribute__("echo-shared").echo(message="Auto-proxy test!")
+            # Note: The result will be a dict since it uses a synthetic connection manager
+            assert result["echoed"] == "Auto-proxy test!"
             
             # Step 3: Second CM can register the same app with its own connection manager
             echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)

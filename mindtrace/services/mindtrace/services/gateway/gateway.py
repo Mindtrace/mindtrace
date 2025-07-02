@@ -206,6 +206,30 @@ class Gateway(Service):
             raise HTTPException(status_code=500, detail=str(e))
 
     @classmethod
+    def _create_synthetic_connection_manager(cls, service_url: str, endpoints: Dict[str, Dict[str, Any]]):
+        """Create a synthetic connection manager based on endpoint schema information."""
+        from mindtrace.services.core.connection_manager import ConnectionManager
+        
+        # Create a basic connection manager instance
+        synthetic_cm = ConnectionManager(url=service_url)
+        
+        # Add methods based on the endpoint information
+        for endpoint_name, endpoint_info in endpoints.items():
+            # Create a method that matches the endpoint signature
+            def make_endpoint_method(name):
+                def endpoint_method(*args, **kwargs):
+                    # This method won't actually be called since the proxy will intercept
+                    # But it needs to exist for the proxy to detect it
+                    return {"endpoint": name, "args": args, "kwargs": kwargs}
+                endpoint_method.__name__ = name
+                return endpoint_method
+            
+            # Add the method to the synthetic connection manager
+            setattr(synthetic_cm, endpoint_name, make_endpoint_method(endpoint_name))
+        
+        return synthetic_cm
+
+    @classmethod
     def connect(cls: Type["Gateway"], url: str | Url | None = None, timeout: int = 60):
         """Connect to an existing Gateway service with enhanced connection manager."""
         url = ifnone_url(url, default=cls.default_url())
@@ -221,20 +245,51 @@ class Gateway(Service):
             # Add enhanced functionality to the instance
             base_cm._registered_apps = {}
             
-            # Sync with existing apps on the Gateway
+            # Sync with existing apps on the Gateway and create proxy connection managers
             try:
-                existing_apps_response = base_cm.list_apps()
+                # Get detailed app information with schemas
+                existing_apps_response = base_cm.list_apps_with_schemas()
                 # Handle both dict and Pydantic model responses
                 if hasattr(existing_apps_response, 'apps'):
                     existing_apps = existing_apps_response.apps
                 else:
                     existing_apps = existing_apps_response.get("apps", [])
-                for app_name in existing_apps:
-                    # Create placeholder entries for existing apps (without connection managers)
-                    base_cm._registered_apps[app_name] = None
+                
+                for app_info in existing_apps:
+                    app_name = app_info.name if hasattr(app_info, 'name') else app_info
+                    app_url = app_info.url if hasattr(app_info, 'url') else None
+                    app_endpoints = app_info.endpoints if hasattr(app_info, 'endpoints') else {}
+                    
+                    if app_url and app_endpoints:
+                        # Create a synthetic connection manager based on the schema information
+                        synthetic_cm = cls._create_synthetic_connection_manager(app_url, app_endpoints)
+                        
+                        # Create proxy connection manager
+                        proxy_cm = ProxyConnectionManager(
+                            gateway_url=base_cm.url,
+                            app_name=app_name,
+                            original_cm=synthetic_cm
+                        )
+                        base_cm._registered_apps[app_name] = proxy_cm
+                        setattr(base_cm, app_name, proxy_cm)
+                    else:
+                        # Fallback: create placeholder entry for apps without detailed info
+                        base_cm._registered_apps[app_name] = None
+                        
             except Exception as e:
-                # If syncing fails, continue with empty registry
-                pass
+                # If detailed sync fails, try basic sync
+                try:
+                    basic_apps_response = base_cm.list_apps()
+                    if hasattr(basic_apps_response, 'apps'):
+                        basic_apps = basic_apps_response.apps
+                    else:
+                        basic_apps = basic_apps_response.get("apps", [])
+                    for app_name in basic_apps:
+                        # Create placeholder entries for existing apps (without connection managers)
+                        base_cm._registered_apps[app_name] = None
+                except Exception:
+                    # If all syncing fails, continue with empty registry
+                    pass
             
             # Store original methods if they exist
             original_register_app = getattr(base_cm, 'register_app', None)
