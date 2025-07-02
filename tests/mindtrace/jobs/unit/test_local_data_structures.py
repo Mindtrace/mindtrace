@@ -55,7 +55,6 @@ class TestLocalPriorityQueue:
         """Test priority ordering."""
         pq = LocalPriorityQueue()
         
-        # Add items with different priorities
         items = [
             ("low", 1),
             ("medium", 5),
@@ -66,7 +65,6 @@ class TestLocalPriorityQueue:
         for item, priority in items:
             pq.push(item, priority)
         
-        # Should pop in priority order (highest first)
         assert pq.pop() == "highest"
         assert pq.pop() == "high"
         assert pq.pop() == "medium"
@@ -77,11 +75,9 @@ class TestLocalPriorityQueue:
         """Test items with same priority."""
         pq = LocalPriorityQueue()
         
-        # Add items with same priority
         pq.push("first", 1)
         pq.push("second", 1)
         
-        # Should maintain FIFO order within same priority
         assert pq.qsize() == 2
         assert pq.pop() == "first"
         assert pq.pop() == "second"
@@ -113,6 +109,32 @@ class TestLocalPriorityQueue:
         assert pq.clean() == 3
         assert pq.empty()
         assert pq.clean() == 0  # Clean empty queue
+
+    def test_priority_queue_size_tracking(self):
+        """Test qsize reflects current number of items for LocalPriorityQueue."""
+        pq = LocalPriorityQueue()
+        assert pq.qsize() == 0
+
+        pq.push("item1", 1)
+        pq.push("item2", 2)
+        assert pq.qsize() == 2
+
+        pq.pop()
+        assert pq.qsize() == 1
+
+        pq.pop()
+        assert pq.qsize() == 0
+
+    def test_negative_priority_ordering(self):
+        """Items with negative priority should dequeue after positive/zero priorities (highest first)."""
+        pq = LocalPriorityQueue()
+        pq.push("negative", -10)
+        pq.push("zero", 0)
+        pq.push("positive", 10)
+
+        assert pq.pop() == "positive"  # highest priority
+        assert pq.pop() == "zero"
+        assert pq.pop() == "negative"  # negative priority last
 
 
 class TestLocalStack:

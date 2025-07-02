@@ -113,7 +113,6 @@ class TestBrokerConnectionBase:
     
     def test_abstract_methods(self):
         """Test that abstract methods raise NotImplementedError."""
-        # Create a minimal concrete class that doesn't implement all methods
         class PartialConnection(BrokerConnectionBase):
             def connect(self):
                 super().connect()
@@ -182,7 +181,6 @@ class TestConsumerBackendBase:
     
     def test_abstract_methods(self):
         """Test that abstract methods raise NotImplementedError."""
-        # Create a minimal concrete class that doesn't implement all methods
         class PartialConsumer(ConsumerBackendBase):
             def consume(self, num_messages: int = 0, **kwargs):
                 super().consume()
@@ -210,12 +208,10 @@ class TestOrchestratorBackend:
         orchestrator = MockOrchestrator()
         queue_name = "test_queue"
         
-        # Test declare
         result = orchestrator.declare_queue(queue_name)
         assert result["status"] == "created"
         assert result["queue"] == queue_name
         
-        # Test publish and count
         class TestMessage(pydantic.BaseModel):
             data: str
         
@@ -224,18 +220,15 @@ class TestOrchestratorBackend:
         assert msg_id == "message_id"
         assert orchestrator.count_queue_messages(queue_name) == 1
         
-        # Test receive
         received = orchestrator.receive_message(queue_name)
         assert received == message
         assert orchestrator.count_queue_messages(queue_name) == 0
         
-        # Test clean
         orchestrator.publish(queue_name, message)
         result = orchestrator.clean_queue(queue_name)
         assert result["status"] == "cleaned"
         assert orchestrator.count_queue_messages(queue_name) == 0
         
-        # Test delete
         result = orchestrator.delete_queue(queue_name)
         assert result["status"] == "deleted"
         assert queue_name not in orchestrator.queues
@@ -258,7 +251,6 @@ class TestOrchestratorBackend:
     
     def test_abstract_methods(self):
         """Test that abstract methods raise NotImplementedError."""
-        # Create a minimal concrete class that doesn't implement all methods
         class PartialOrchestrator(OrchestratorBackend):
             def declare_queue(self, queue_name: str, **kwargs):
                 super().declare_queue(queue_name, **kwargs)
@@ -304,8 +296,6 @@ class TestOrchestratorBackend:
 
     def test_exchange_methods(self):
         """Test that exchange methods raise NotImplementedError by default."""
-        # Exchange methods are RabbitMQ-specific and should raise NotImplementedError
-        # in the base class
         orchestrator = MockOrchestrator()
         
         with pytest.raises(NotImplementedError):

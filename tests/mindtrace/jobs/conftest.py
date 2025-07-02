@@ -54,6 +54,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "integration: mark test as integration test"
     )
+    config.addinivalue_line(
+        "markers", "unit: mark test as unit test not requiring external services"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -65,4 +68,13 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.rabbitmq)
         
         if "orchestrator" in item.name.lower() or "Orchestrator" in str(item.cls):
-            item.add_marker(pytest.mark.integration) 
+            item.add_marker(pytest.mark.integration)
+
+        # Automatically classify remaining tests as unit tests if they have not been
+        # explicitly marked as integration, redis, or rabbitmq.
+        if (
+            item.get_closest_marker("redis") is None
+            and item.get_closest_marker("rabbitmq") is None
+            and item.get_closest_marker("integration") is None
+        ):
+            item.add_marker(pytest.mark.unit) 

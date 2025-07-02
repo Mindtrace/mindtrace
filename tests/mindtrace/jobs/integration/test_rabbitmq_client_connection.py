@@ -11,7 +11,7 @@ from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 
 
-pytestmark = pytest.mark.rabbitmq  # ensure these tests are only executed when RabbitMQ is available
+pytestmark = pytest.mark.rabbitmq  
 
 
 class DummyModel(pydantic.BaseModel):
@@ -23,7 +23,7 @@ def rabbitmq_connection():
     conn = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
     try:
         conn.connect()
-    except Exception:  # pragma: no cover – skip tests if broker not reachable
+    except Exception:  
         pytest.skip("RabbitMQ broker not available on localhost:5672 with user/password credentials")
     yield conn
     conn.close()
@@ -33,7 +33,6 @@ def rabbitmq_connection():
 def rabbitmq_client(rabbitmq_connection):
     client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
     yield client
-    # cleanup any declared resources that may have been left over
     try:
         client.channel.close()
     except Exception:
@@ -86,13 +85,11 @@ class TestRabbitMQConnection:
     def test_get_channel_when_not_connected(self):
         """Test get_channel returns None when not connected."""
         conn = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
-        # Don't connect
         assert conn.get_channel() is None
 
     def test_close_when_not_connected(self):
         """Test close when not connected (should not crash)."""
         conn = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
-        # Don't connect, just try to close
         conn.close()  # Should not crash
         assert not conn.is_connected()
 
@@ -100,17 +97,13 @@ class TestRabbitMQConnection:
 class TestRabbitMQClient:
     def test_exchange_and_queue_declaration(self, rabbitmq_client):
         exchange = unique_name("ex"); queue = unique_name("q")
-        # declare exchange first time -> success
         result1 = rabbitmq_client.declare_exchange(exchange=exchange)
         assert result1["status"] == "success"
-        # second call – already exists branch
         result2 = rabbitmq_client.declare_exchange(exchange=exchange)
         assert "already exists" in result2["message"]
 
-        # queue declaration bound to exchange
         res_q1 = rabbitmq_client.declare_queue(queue, exchange=exchange)
         assert res_q1["status"] == "success"
-        # declaring again hits already-exists branch
         res_q2 = rabbitmq_client.declare_queue(queue)
         assert "already exists" in res_q2["message"]
 
@@ -119,7 +112,6 @@ class TestRabbitMQClient:
         def raise_error(*args, **kwargs):
             raise Exception("test error")
         
-        # Mock to force error in declare_exchange
         monkeypatch.setattr(rabbitmq_client.channel, "exchange_declare", raise_error)
         
         with pytest.raises(RuntimeError, match="Could not declare exchange"):
@@ -150,7 +142,6 @@ class TestRabbitMQClient:
         def raise_unexpected(*args, **kwargs):
             raise Exception("unexpected error")
         
-        # Force queue_declare to fail with unexpected error
         original_queue_declare = rabbitmq_client.channel.queue_declare
         def patched_queue_declare(*args, **kwargs):
             if kwargs.get("passive"):
@@ -158,11 +149,9 @@ class TestRabbitMQClient:
             else:
                 raise Exception("unexpected error")
         
-        # Mock exchange_declare to succeed for the passive check
         def patched_exchange_declare(*args, **kwargs):
             return True  # Simulate success
             
-        # Mock get_channel to return the same channel
         def patched_get_channel():
             return rabbitmq_client.channel
         
@@ -185,11 +174,9 @@ class TestRabbitMQClient:
         msg = rabbitmq_client.receive_message(queue_name, block=True, timeout=2)
         assert msg == payload.model_dump()
 
-        # queue should now be empty – receive non-blocking should say no message
         empty_resp = rabbitmq_client.receive_message(queue_name, block=False)
         assert empty_resp["status"] == "error"
 
-        # cleanup helpers
         rabbitmq_client.clean_queue(queue_name)
         assert rabbitmq_client.count_queue_messages(queue_name) == 0
         rabbitmq_client.delete_queue(queue_name)
@@ -200,28 +187,24 @@ class TestRabbitMQClient:
         rabbitmq_client.declare_queue(queue_name, force=True)
         payload = DummyModel(value="fail")
 
-        # Test UnroutableError
         def raise_unroutable(*args, **kwargs):
             raise pika.exceptions.UnroutableError("no route")
         monkeypatch.setattr(rabbitmq_client.channel, "basic_publish", raise_unroutable)
         with pytest.raises(pika.exceptions.UnroutableError):
             rabbitmq_client.publish(queue_name, payload)
 
-        # Test ChannelClosedByBroker
         def raise_channel_closed(*args, **kwargs):
             raise pika.exceptions.ChannelClosedByBroker(404, "NOT_FOUND")
         monkeypatch.setattr(rabbitmq_client.channel, "basic_publish", raise_channel_closed)
         with pytest.raises(pika.exceptions.ChannelClosedByBroker):
             rabbitmq_client.publish(queue_name, payload)
 
-        # Test ConnectionClosedByBroker
         def raise_connection_closed(*args, **kwargs):
             raise pika.exceptions.ConnectionClosedByBroker(320, "CONNECTION_FORCED")
         monkeypatch.setattr(rabbitmq_client.channel, "basic_publish", raise_connection_closed)
         with pytest.raises(pika.exceptions.ConnectionClosedByBroker):
             rabbitmq_client.publish(queue_name, payload)
 
-        # Test generic Exception
         def raise_generic(*args, **kwargs):
             raise Exception("generic error")
         monkeypatch.setattr(rabbitmq_client.channel, "basic_publish", raise_generic)
@@ -234,7 +217,6 @@ class TestRabbitMQClient:
         start = time.time()
         resp = rabbitmq_client.receive_message(queue_name, block=True, timeout=0.5)
         elapsed = time.time() - start
-        # should respect timeout and return error dict
         assert elapsed >= 0.5
         assert resp["status"] == "error"
 
@@ -243,11 +225,9 @@ class TestRabbitMQClient:
         queue_name = unique_name("reconn_q")
         rabbitmq_client.declare_queue(queue_name, force=True)
         
-        # Simulate disconnected state
         rabbitmq_client.connection.connection = None
         rabbitmq_client.channel = None
         
-        # Should reconnect automatically
         resp = rabbitmq_client.receive_message(queue_name, block=False)
         assert resp["status"] == "error"  # No message, but connection worked
 
@@ -271,7 +251,6 @@ class TestRabbitMQClient:
         """Test error handling when channel operations fail."""
         queue_name = unique_name("err_clean_q")
         
-        # Test clean_queue error
         def raise_channel_error(*args, **kwargs):
             raise pika.exceptions.ChannelClosedByBroker(404, "NOT_FOUND")
         
@@ -279,22 +258,18 @@ class TestRabbitMQClient:
         with pytest.raises(ConnectionError, match="Could not clean queue"):
             rabbitmq_client.clean_queue(queue_name)
 
-        # Test delete_queue error
         monkeypatch.setattr(rabbitmq_client.channel, "queue_delete", raise_channel_error)
         with pytest.raises(ConnectionError, match="Could not delete queue"):
             rabbitmq_client.delete_queue(queue_name)
 
-        # Test count_queue_messages error
         monkeypatch.setattr(rabbitmq_client.channel, "queue_declare", raise_channel_error)
         with pytest.raises(ConnectionError, match="Could not count messages"):
             rabbitmq_client.count_queue_messages(queue_name)
 
-        # Test count_exchanges error
         monkeypatch.setattr(rabbitmq_client.channel, "exchange_declare", raise_channel_error)
         with pytest.raises(ConnectionError, match="Could not count exchanges"):
             rabbitmq_client.count_exchanges(exchange="test")
 
-        # Test delete_exchange error
         monkeypatch.setattr(rabbitmq_client.channel, "exchange_delete", raise_channel_error)
         with pytest.raises(ConnectionError, match="Could not delete exchange"):
             rabbitmq_client.delete_exchange(exchange="test")
@@ -302,7 +277,6 @@ class TestRabbitMQClient:
     def test_move_to_dlq(self, rabbitmq_client):
         """Test move_to_dlq method (currently a pass)."""
         payload = DummyModel(value="test")
-        # Should not raise any errors
         rabbitmq_client.move_to_dlq("source", "dlq", payload, "error details")
 
     def test_declare_queue_force_create_exchange(self, rabbitmq_client):
@@ -310,12 +284,10 @@ class TestRabbitMQClient:
         queue = unique_name("force_q")
         new_exchange = unique_name("new_ex")
         
-        # This should create the exchange since force=True
         result = rabbitmq_client.declare_queue(queue, exchange=new_exchange, force=True)
         assert result["status"] == "success"
         assert "newly declared exchange" in result["message"]
         
-        # Clean up
         rabbitmq_client.delete_queue(queue)
         rabbitmq_client.delete_exchange(exchange=new_exchange)
 
@@ -350,10 +322,8 @@ class TestRabbitMQClient:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                # First call (passive check) raises ChannelClosedByBroker
                 raise pika.exceptions.ChannelClosedByBroker(404, "NOT_FOUND")
             else:
-                # Second call (actual declaration) raises generic exception
                 raise Exception("inner exception")
         
         monkeypatch.setattr(rabbitmq_client.channel, "exchange_declare", side_effect)
@@ -365,14 +335,11 @@ class TestRabbitMQClient:
     def test_move_to_dlq_coverage(self, rabbitmq_client):
         """Test move_to_dlq method to ensure it's covered."""
         payload = DummyModel(value="test")
-        # This method currently just passes, but we want to cover it
         result = rabbitmq_client.move_to_dlq("source", "dlq", payload, "error details")
-        # Since it's a pass statement, it should return None
         assert result is None
 
     def test_receive_message_successful_non_blocking(self, rabbitmq_client, monkeypatch):
         """Test successful message retrieval in non-blocking mode."""
-        # Create a mock method frame and body
         mock_method_frame = mock.Mock()
         mock_header_frame = mock.Mock()
         test_message = {"id": "test123", "data": "test_data"}
