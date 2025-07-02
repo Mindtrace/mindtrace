@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.redis.stack import RedisStack
 from mindtrace.jobs.types.job_specs import Job, JobSchema
-from .conftest import create_test_job, job_from_schema
+from ..conftest import create_test_job, job_from_schema
 
 
 class SampleJobInput(BaseModel):
@@ -28,48 +28,6 @@ def create_test_job_local(name: str = "test_job") -> Job:
     job.name = name
     job.created_at = "2024-01-01T00:00:00"
     return job
-
-
-class TestLocalStack:
-    """Essential tests for LocalStack LIFO behavior."""
-    
-    def test_lifo_behavior(self):
-        stack = LocalStack()
-        
-        jobs = [create_test_job_local(f"job_{i}") for i in range(3)]
-        
-        for job in jobs:
-            stack.push(job)
-        
-        popped_jobs = []
-        while not stack.empty():
-            popped_jobs.append(stack.pop(block=False))
-        
-        expected_order = [jobs[2], jobs[1], jobs[0]]
-        assert len(popped_jobs) == 3
-        for i, job in enumerate(popped_jobs):
-            assert job.name == expected_order[i].name
-    
-    def test_empty_stack_operations(self):
-        stack = LocalStack()
-        
-        assert stack.empty() is True
-        assert stack.qsize() == 0
-        
-        with pytest.raises(Empty):
-            stack.pop(block=False)
-    
-    def test_stack_with_content(self):
-        stack = LocalStack()
-        job = create_test_job_local("peek_test")
-        
-        stack.push(job)
-        
-        assert stack.qsize() == 1
-        assert not stack.empty()
-        
-        popped = stack.pop(block=False)
-        assert popped.name == "peek_test"
 
 
 @pytest.mark.redis

@@ -65,19 +65,16 @@ class TestRabbitMQConsumerBackend:
 
     def test_consume_finite_messages(self, consumer_backend, mock_orchestrator, mock_run_method):
         """Test consuming a finite number of messages."""
-        # Setup mock to return messages then None
         messages = [{"id": "1", "data": "msg1"}, {"id": "2", "data": "msg2"}, None]
         mock_orchestrator.receive_message.side_effect = messages
         
         consumer_backend.consume(num_messages=2)
         
-        # Should have called receive_message twice and processed 2 messages
         assert mock_orchestrator.receive_message.call_count == 2
         assert mock_run_method.call_count == 2
 
     def test_consume_finite_messages_multiple_queues(self, consumer_backend, mock_orchestrator, mock_run_method):
         """Test consuming finite messages from multiple queues."""
-        # Setup messages for different queues - each queue gets called until it returns None
         call_count = 0
         def side_effect(queue):
             nonlocal call_count
@@ -92,7 +89,6 @@ class TestRabbitMQConsumerBackend:
         
         consumer_backend.consume(num_messages=1, queues=["queue1", "queue2"])
         
-        # Should process 1 message from each queue (2 messages total)
         assert mock_orchestrator.receive_message.call_count == 2
         assert mock_run_method.call_count == 2
 
@@ -100,14 +96,12 @@ class TestRabbitMQConsumerBackend:
         """Test finite consumption with error during receive."""
         mock_orchestrator.receive_message.side_effect = Exception("receive error")
         
-        # Should not raise exception, just log and stop
         consumer_backend.consume(num_messages=2)
         
         assert mock_run_method.call_count == 0  # No messages processed due to error
 
     def test_consume_infinite_messages(self, consumer_backend, mock_orchestrator, mock_run_method):
         """Test infinite message consumption with KeyboardInterrupt."""
-        # Setup mock to return a few messages then raise KeyboardInterrupt
         call_count = 0
         def side_effect(*args):
             nonlocal call_count
@@ -122,12 +116,10 @@ class TestRabbitMQConsumerBackend:
         
         consumer_backend.consume(num_messages=0)  # Infinite consumption
         
-        # Should have processed 3 messages before KeyboardInterrupt
         assert mock_run_method.call_count == 3
 
     def test_consume_infinite_with_error(self, consumer_backend, mock_orchestrator, mock_run_method):
         """Test infinite consumption with error handling."""
-        # Setup to return one message, then error, then KeyboardInterrupt
         call_count = 0
         def side_effect(*args):
             nonlocal call_count
@@ -144,7 +136,6 @@ class TestRabbitMQConsumerBackend:
         
         consumer_backend.consume(num_messages=0)
         
-        # Should have processed 1 message, then continued despite error
         assert mock_run_method.call_count == 1
 
     def test_process_message_dict_success(self, consumer_backend, mock_run_method):
@@ -175,15 +166,12 @@ class TestRabbitMQConsumerBackend:
 
     def test_consume_until_empty(self, consumer_backend, mock_orchestrator, mock_run_method):
         """Test consume_until_empty functionality."""
-        # Mock the consume method to avoid infinite recursion
         import unittest.mock
         with unittest.mock.patch.object(consumer_backend, 'consume') as mock_consume:
-            # Setup: queue has 2 messages initially, then 1, then 0
             mock_orchestrator.count_queue_messages.side_effect = [2, 1, 0]
             
             consumer_backend.consume_until_empty()
             
-            # Should have checked queue count 3 times and called consume 2 times
             assert mock_orchestrator.count_queue_messages.call_count == 3
             assert mock_consume.call_count == 2
 
@@ -191,14 +179,10 @@ class TestRabbitMQConsumerBackend:
         """Test consume_until_empty with multiple queues."""
         import unittest.mock
         with unittest.mock.patch.object(consumer_backend, 'consume') as mock_consume:
-            # Setup: alternate between queues having messages
             call_count = 0
             def count_side_effect(queue):
                 nonlocal call_count
                 call_count += 1
-                # First call: both queues have messages
-                # Second call: queue1 empty, queue2 has message  
-                # Third call: both empty
                 if call_count <= 2:
                     return 1 if queue == "queue2" else 0
                 return 0
@@ -207,7 +191,6 @@ class TestRabbitMQConsumerBackend:
             
             consumer_backend.consume_until_empty(queues=["queue1", "queue2"])
             
-            # Should check both queues and call consume once
             assert mock_orchestrator.count_queue_messages.call_count >= 2
             assert mock_consume.call_count == 1
 
@@ -217,7 +200,6 @@ class TestRabbitMQConsumerBackend:
         
         consumer_backend.consume(num_messages=1, queues="single_queue")
         
-        # Should convert string to list and process
         mock_orchestrator.receive_message.assert_called_with("single_queue")
 
     def test_consume_until_empty_with_string_queues(self, consumer_backend, mock_orchestrator):

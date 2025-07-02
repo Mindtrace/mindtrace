@@ -39,11 +39,9 @@ class TestRabbitMQConsumerBackend:
 
     def test_consume_finite_messages(self, mock_orchestrator, consumer_backend):
         """Test consuming a finite number of messages."""
-        # Setup mock run method
         run_method = MagicMock(return_value={"status": "success"})
         consumer_backend.run_method = run_method
 
-        # Setup mock messages
         messages = [
             {"id": "1", "data": "test1"},
             {"id": "2", "data": "test2"},
@@ -51,10 +49,8 @@ class TestRabbitMQConsumerBackend:
         ]
         mock_orchestrator.receive_message.side_effect = messages
 
-        # Consume messages
         consumer_backend.consume(num_messages=3)
 
-        # Verify
         assert mock_orchestrator.receive_message.call_count == 3
         assert run_method.call_count == 3
         run_method.assert_any_call({"id": "1", "data": "test1"})
@@ -63,11 +59,9 @@ class TestRabbitMQConsumerBackend:
 
     def test_consume_infinite_messages_with_interrupt(self, mock_orchestrator, consumer_backend):
         """Test consuming messages indefinitely with keyboard interrupt."""
-        # Setup mock run method
         run_method = MagicMock(return_value={"status": "success"})
         consumer_backend.run_method = run_method
 
-        # Setup mock messages that will raise KeyboardInterrupt after 2 messages
         messages = [
             {"id": "1", "data": "test1"},
             {"id": "2", "data": "test2"},
@@ -75,10 +69,8 @@ class TestRabbitMQConsumerBackend:
         ]
         mock_orchestrator.receive_message.side_effect = messages
 
-        # Consume messages
         consumer_backend.consume()  # No num_messages means infinite
 
-        # Verify
         assert mock_orchestrator.receive_message.call_count == 3
         assert run_method.call_count == 2
         run_method.assert_any_call({"id": "1", "data": "test1"})
@@ -122,7 +114,6 @@ class TestRabbitMQConsumerBackend:
         run_method = MagicMock(return_value={"status": "success"})
         consumer_backend.run_method = run_method
 
-        # Setup messages for different queues
         queue1_msgs = [{"id": "q1_1", "data": "test1"}, None]
         queue2_msgs = [{"id": "q2_1", "data": "test2"}, None]
         
@@ -135,7 +126,6 @@ class TestRabbitMQConsumerBackend:
 
         mock_orchestrator.receive_message.side_effect = side_effect
 
-        # Consume from multiple queues
         consumer_backend.consume(num_messages=2, queues=["queue1", "queue2"])
 
         assert run_method.call_count == 2
@@ -147,13 +137,11 @@ class TestRabbitMQConsumerBackend:
         run_method = MagicMock(return_value={"status": "success"})
         consumer_backend.run_method = run_method
 
-        # Setup messages that will be consumed
         messages = [
             {"id": "1", "data": "test1"},
             {"id": "2", "data": "test2"}
         ]
         
-        # Track how many times receive_message is called
         receive_call_count = 0
         
         def receive_side_effect(queue_name):
@@ -165,27 +153,21 @@ class TestRabbitMQConsumerBackend:
 
         mock_orchestrator.receive_message.side_effect = receive_side_effect
         
-        # Track how many times count_queue_messages is called
         count_call_count = 0
         
         def count_side_effect(queue_name):
             nonlocal count_call_count
             count_call_count += 1
-            # Return the number of remaining messages
             return len(messages)
 
         mock_orchestrator.count_queue_messages.side_effect = count_side_effect
 
-        # Consume until empty
         consumer_backend.consume_until_empty()
 
-        # Verify messages were processed
         assert run_method.call_count == 2
         run_method.assert_any_call({"id": "1", "data": "test1"})
         run_method.assert_any_call({"id": "2", "data": "test2"})
         
-        # Verify that count_queue_messages was called multiple times 
-        # (at least once per loop iteration)
         assert mock_orchestrator.count_queue_messages.call_count >= 2
 
     def test_error_handling_during_consumption(self, mock_orchestrator, consumer_backend):
@@ -204,7 +186,6 @@ class TestRabbitMQConsumerBackend:
         ]
         mock_orchestrator.receive_message.side_effect = messages
 
-        # Should continue processing despite errors
         consumer_backend.consume(num_messages=3)
 
         assert run_method.call_count == 3

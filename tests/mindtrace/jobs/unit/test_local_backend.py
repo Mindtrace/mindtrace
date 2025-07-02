@@ -1,7 +1,7 @@
 import pytest
 import time
 from mindtrace.jobs.local.client import LocalClient
-from .conftest import create_test_job
+from ..conftest import create_test_job
 
 
 class TestLocalBroker:
@@ -20,7 +20,6 @@ class TestLocalBroker:
         result2 = self.broker.declare_queue(queue_name, queue_type="fifo")
         assert result2["status"] == "success"
         
-        # Cleanup
         self.broker.delete_queue(queue_name)
     
     def test_queue_types(self):
@@ -39,7 +38,6 @@ class TestLocalBroker:
         result = self.broker.declare_queue(priority_queue, queue_type="priority")
         assert result["status"] == "success"
         
-        # Cleanup
         self.broker.delete_queue(fifo_queue)
         self.broker.delete_queue(stack_queue)
         self.broker.delete_queue(priority_queue)
@@ -67,7 +65,6 @@ class TestLocalBroker:
         count = self.broker.count_queue_messages(queue_name)
         assert count == 0
         
-        # Cleanup
         self.broker.delete_queue(queue_name)
     
     def test_clean_queue(self):
@@ -85,7 +82,6 @@ class TestLocalBroker:
         assert result["status"] == "success"
         assert self.broker.count_queue_messages(queue_name) == 0
         
-        # Cleanup
         self.broker.delete_queue(queue_name)
     
     def test_delete_queue(self):

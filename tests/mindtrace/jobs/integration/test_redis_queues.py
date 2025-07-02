@@ -1,6 +1,7 @@
 import pytest
 import time
 import threading
+import uuid
 from queue import Empty
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.redis.priority import RedisPriorityQueue
@@ -12,7 +13,7 @@ class TestRedisQueue:
     
     def setup_method(self):
         """Set up a fresh queue for each test."""
-        self.queue_name = f"test_queue_{int(time.time())}"
+        self.queue_name = f"test_queue_{uuid.uuid4().hex}"
         self.queue = RedisQueue(self.queue_name, host="localhost", port=6379, db=0)
 
     def test_push_and_pop(self):
@@ -35,10 +36,8 @@ class TestRedisQueue:
         thread = threading.Thread(target=delayed_push)
         thread.start()
         
-        # This should wait and get the item
         assert self.queue.pop(block=True, timeout=1) == "delayed"
         
-        # This should timeout and raise Empty
         with pytest.raises(Empty):
             self.queue.pop(block=True, timeout=0.1)
 
@@ -69,7 +68,7 @@ class TestRedisPriorityQueue:
     
     def setup_method(self):
         """Set up a fresh priority queue for each test."""
-        self.queue_name = f"test_pqueue_{int(time.time())}"
+        self.queue_name = f"test_pqueue_{uuid.uuid4().hex}"
         self.queue = RedisPriorityQueue(self.queue_name, host="localhost", port=6379, db=0)
 
     def test_push_and_pop_with_priority(self):
@@ -91,10 +90,8 @@ class TestRedisPriorityQueue:
         thread = threading.Thread(target=delayed_push)
         thread.start()
         
-        # This should wait and get the item
         assert self.queue.pop(block=True, timeout=1) == "delayed"
         
-        # This should timeout and raise Empty
         with pytest.raises(Empty):
             self.queue.pop(block=True, timeout=0.1)
 
@@ -102,12 +99,10 @@ class TestRedisPriorityQueue:
 
     def test_same_priority_deterministic(self):
         """Test that items with same priority maintain deterministic order."""
-        # The implementation uses a small random tie-breaker
         self.queue.push("A", priority=1)
         self.queue.push("B", priority=1)
         self.queue.push("C", priority=1)
         
-        # Items should come out in a deterministic order
         items = [
             self.queue.pop(block=False),
             self.queue.pop(block=False),
@@ -143,23 +138,19 @@ class TestRedisPriorityQueue:
         thread = threading.Thread(target=delayed_push)
         thread.start()
         
-        # This should wait indefinitely until the item arrives
         assert self.queue.pop(block=True, timeout=None) == "delayed"
         
         thread.join()
 
     def test_blocking_pop_immediate_item(self):
         """Test blocking pop when item is immediately available."""
-        # Push an item first
         self.queue.push("immediate", priority=1)
         
-        # Pop should return immediately since item is available
         result = self.queue.pop(block=True, timeout=None)
         assert result == "immediate"
 
     def test_blocking_pop_timeout_zero(self):
         """Test blocking pop with zero timeout."""
-        # This should immediately raise Empty since queue is empty and timeout is 0
         with pytest.raises(Empty):
             self.queue.pop(block=True, timeout=0.1)
 
@@ -174,7 +165,7 @@ class TestRedisStack:
     
     def setup_method(self):
         """Set up a fresh stack for each test."""
-        self.stack_name = f"test_stack_{int(time.time())}"
+        self.stack_name = f"test_stack_{uuid.uuid4().hex}"
         self.stack = RedisStack(self.stack_name, host="localhost", port=6379, db=0)
 
     def test_blocking_pop_with_timeout(self):
@@ -186,10 +177,8 @@ class TestRedisStack:
         thread = threading.Thread(target=delayed_push)
         thread.start()
         
-        # This should wait and get the item
         assert self.stack.pop(block=True, timeout=1) == "delayed"
         
-        # This should timeout and raise Empty
         with pytest.raises(Empty):
             self.stack.pop(block=True, timeout=0.1)
 
@@ -223,23 +212,19 @@ class TestRedisStack:
         thread = threading.Thread(target=delayed_push)
         thread.start()
         
-        # This should wait indefinitely until the item arrives
         assert self.stack.pop(block=True, timeout=None) == "delayed"
         
         thread.join()
 
     def test_blocking_pop_immediate_item(self):
         """Test blocking pop when item is immediately available."""
-        # Push an item first
         self.stack.push("immediate")
         
-        # Pop should return immediately since item is available
         result = self.stack.pop(block=True, timeout=None)
         assert result == "immediate"
 
     def test_blocking_pop_timeout_zero(self):
         """Test blocking pop with zero timeout."""
-        # This should immediately raise Empty since stack is empty and timeout is 0
         with pytest.raises(Empty):
             self.stack.pop(block=True, timeout=0.1)
 
