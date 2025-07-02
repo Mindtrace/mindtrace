@@ -77,7 +77,6 @@ def setup_backend(backend_type: str):
             print("Local backend ready")
         elif backend_type == "redis":
             backend = RedisClient(host="localhost", port=6379, db=0)
-            # Use a short timeout for the ping
             try:
                 backend.redis.ping()
                 print("Redis connection verified")
@@ -108,11 +107,6 @@ def setup_backend(backend_type: str):
         
         return backend
     except Exception as e:
-        if backend:
-            try:
-                backend.close()
-            except:
-                pass  # Ignore cleanup errors
         raise
 
 
@@ -258,18 +252,6 @@ def main():
     except Exception as e:
         print(f"Error: {e}")
         return 1
-    finally:
-        # Clean up resources
-        if orchestrator and hasattr(orchestrator, 'close'):
-            try:
-                orchestrator.close()
-            except:
-                pass
-        if backend and hasattr(backend, 'close'):
-            try:
-                backend.close()
-            except:
-                pass
 
     return 0
 
