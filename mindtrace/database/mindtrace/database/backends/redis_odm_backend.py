@@ -1,5 +1,4 @@
 from pydantic import BaseModel
-import redis_om
 
 from mindtrace.database import MindtraceODMBackend
 

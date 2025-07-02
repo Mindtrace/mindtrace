@@ -8,12 +8,6 @@ dependencies = [
     "redis>=5.3.0",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.jobs"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
