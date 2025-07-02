@@ -263,4 +263,14 @@ class TestConsumer:
         
         concrete_consumer = ConcreteWorker("test_consumer_jobs")
         result = concrete_consumer.run({"test": "data"})
-        assert result["result"] == "concrete_implementation" 
+        assert result["result"] == "concrete_implementation"
+
+    def test_double_connect_raises(self):
+        """Ensure connect raises RuntimeError if called twice on same Consumer."""
+        class DummyWorker(Consumer):
+            def run(self, job_dict):
+                return {}
+        dummy = DummyWorker("test_consumer_jobs")
+        dummy.connect(self.orchestrator)
+        with pytest.raises(RuntimeError):
+            dummy.connect(self.orchestrator) 
