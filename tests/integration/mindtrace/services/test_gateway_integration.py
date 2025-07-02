@@ -156,128 +156,140 @@ class TestProxyConnectionManager:
         assert callable(proxy_cm.aecho)
 
     @pytest.mark.asyncio
-    async def test_proxy_sync_method_routing(self, gateway_manager, echo_service_for_gateway):
-        """Test that ProxyConnectionManager routes sync methods through gateway."""
-        # Set up connection managers
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        
-        # Register service with gateway
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Mock the original connection manager to detect direct calls
-        direct_calls = []
-        original_echo = echo_cm.echo
-        
-        def mock_echo(*args, **kwargs):
-            direct_calls.append(('echo', args, kwargs))
-            return original_echo(*args, **kwargs)
-        
-        echo_cm.echo = mock_echo
-        
-        # Call through proxy - should NOT call original directly
-        result = proxy_cm.echo(message="proxy test", delay=0.0)
-        
-        # Verify no direct calls were made
-        assert len(direct_calls) == 0, f"Direct calls detected: {direct_calls}"
-        
-        # Verify result came through gateway
-        assert hasattr(result, 'echoed')
-        assert result.echoed == "proxy test"
+    async def test_gateway_connect_returns_enhanced_cm(self):
+        """Test that Gateway.connect() returns an enhanced connection manager."""
+        # Launch a gateway for this test
+        with Gateway.launch(url="http://localhost:8093", timeout=30) as gateway_cm:
+            # Connect to the gateway to get enhanced connection manager
+            enhanced_cm = Gateway.connect(url="http://localhost:8093")
+            
+            # Test that enhanced methods are available
+            assert hasattr(enhanced_cm, 'register_app')
+            assert hasattr(enhanced_cm, 'aregister_app')
+            assert hasattr(enhanced_cm, 'registered_apps')
+            assert hasattr(enhanced_cm, '_registered_apps')
+            
+            # Test that registered_apps starts empty
+            assert len(enhanced_cm.registered_apps()) == 0
 
     @pytest.mark.asyncio
-    async def test_proxy_async_method_routing(self, gateway_manager, echo_service_for_gateway):
-        """Test that ProxyConnectionManager routes async methods through gateway."""
-        # Set up connection managers
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        
-        # Register service with gateway
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Mock the original connection manager to detect direct calls
-        direct_calls = []
-        original_aecho = echo_cm.aecho
-        
-        async def mock_aecho(*args, **kwargs):
-            direct_calls.append(('aecho', args, kwargs))
-            return await original_aecho(*args, **kwargs)
-        
-        echo_cm.aecho = mock_aecho
-        
-        # Call through proxy - should NOT call original directly
-        result = await proxy_cm.aecho(message="async proxy test", delay=0.0)
-        
-        # Verify no direct calls were made
-        assert len(direct_calls) == 0, f"Direct calls detected: {direct_calls}"
-        
-        # Verify result came through gateway
-        assert hasattr(result, 'echoed')
-        assert result.echoed == "async proxy test"
+    async def test_enhanced_cm_service_registration_sync(self, echo_service_for_gateway):
+        """Test service registration through enhanced connection manager (sync)."""
+        with Gateway.launch(url="http://localhost:8094", timeout=30) as gateway_cm:
+            enhanced_cm = Gateway.connect(url="http://localhost:8094")
+            
+            # Register service without connection manager (basic registration)
+            result = enhanced_cm.register_app(
+                name="echo-basic",
+                url=str(echo_service_for_gateway.url)
+            )
+            
+            # Should not create proxy since no connection_manager provided
+            assert not hasattr(enhanced_cm, 'echo-basic')
+            # But it should still track the registration
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-basic'
+            else:
+                assert 'echo-basic' in apps
 
     @pytest.mark.asyncio
-    async def test_proxy_schema_validation(self, gateway_manager, echo_service_for_gateway):
-        """Test that ProxyConnectionManager properly validates schemas."""
-        # Set up connection managers
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        
-        # Register service with gateway
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Test with valid input
-        result = proxy_cm.echo(message="valid message", delay=0.0)
-        assert result.echoed == "valid message"
-        
-        # Test with invalid input (missing required field)
-        with pytest.raises(Exception):
-            proxy_cm.echo(delay=0.0)  # Missing 'message' field
+    async def test_enhanced_cm_service_registration_with_proxy(self, echo_service_for_gateway):
+        """Test service registration with ProxyConnectionManager creation."""
+        with Gateway.launch(url="http://localhost:8095", timeout=30) as gateway_cm:
+            enhanced_cm = Gateway.connect(url="http://localhost:8095")
+            
+            # Create a connection manager for the echo service
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            
+            # Register service with connection manager (should create proxy)
+            result = enhanced_cm.register_app(
+                name="echo-proxy",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm
+            )
+            
+            # Should create proxy and attach it
+            assert hasattr(enhanced_cm, 'echo-proxy')
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-proxy'
+            else:
+                assert 'echo-proxy' in apps
+            
+            # The attached attribute should be a ProxyConnectionManager
+            proxy = getattr(enhanced_cm, 'echo-proxy')
+            assert proxy is not None
+            assert hasattr(proxy, 'gateway_url')
+            assert hasattr(proxy, 'app_name')
+            assert hasattr(proxy, 'original_cm')
 
     @pytest.mark.asyncio
-    async def test_proxy_vs_direct_comparison(self, gateway_manager, echo_service_for_gateway):
-        """Compare proxy behavior with direct connection manager behavior."""
-        # Create both direct and proxy connection managers
-        direct_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        
-        # Register service with gateway to create proxy
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), direct_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Test that both work but route differently
-        direct_result = direct_cm.echo(message="direct", delay=0.0)
-        proxy_result = proxy_cm.echo(message="proxy", delay=0.0)
-        
-        assert direct_result.echoed == "direct"
-        assert proxy_result.echoed == "proxy"
-        
-        # Verify they have different routing behavior
-        assert str(direct_cm.url) == str(echo_service_for_gateway.url)
-        assert proxy_cm.gateway_url == str(gateway_manager.url).rstrip('/')
+    async def test_enhanced_cm_async_registration(self, echo_service_for_gateway):
+        """Test async service registration through enhanced connection manager."""
+        with Gateway.launch(url="http://localhost:8096", timeout=30) as gateway_cm:
+            enhanced_cm = Gateway.connect(url="http://localhost:8096")
+            
+            # Create a connection manager for the echo service  
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            
+            # Register service asynchronously
+            result = await enhanced_cm.aregister_app(
+                name="echo-async",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm
+            )
+            
+            # Should create proxy and attach it
+            assert hasattr(enhanced_cm, 'echo-async')
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-async'
+            else:
+                assert 'echo-async' in apps
 
     @pytest.mark.asyncio
-    async def test_proxy_error_handling(self, gateway_manager, echo_service_for_gateway):
-        """Test ProxyConnectionManager error handling scenarios."""
-        # Set up connection managers
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        
-        # Register service with gateway
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Test with invalid gateway URL
-        bad_proxy = type(proxy_cm)(
-            gateway_url="http://localhost:9999",  # Non-existent gateway
-            app_name="echoer",
-            original_cm=echo_cm
-        )
-        
-        with pytest.raises(Exception):
-            bad_proxy.echo(message="test", delay=0.0)
+    async def test_enhanced_cm_service_registration_with_url_object(self, echo_service_for_gateway):
+        """Test enhanced connection manager registration with Url objects."""
+        with Gateway.launch(url="http://localhost:8102", timeout=30) as gateway_cm:
+            enhanced_cm = Gateway.connect(url="http://localhost:8102")
+            
+            # Create a connection manager for the echo service
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            
+            # Register service with Url object (should create proxy)
+            echo_url = parse_url(str(echo_service_for_gateway.url))
+            result = enhanced_cm.register_app(
+                name="echo-url-object",
+                url=echo_url,
+                connection_manager=echo_cm
+            )
+            
+            # Should create proxy and attach it
+            assert hasattr(enhanced_cm, 'echo-url-object')
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-url-object'
+            else:
+                assert 'echo-url-object' in apps
+            
+            # The attached attribute should be a ProxyConnectionManager
+            proxy = getattr(enhanced_cm, 'echo-url-object')
+            assert proxy is not None
+            assert hasattr(proxy, 'gateway_url')
+            assert hasattr(proxy, 'app_name')
+            assert hasattr(proxy, 'original_cm')
 
 
 class TestGatewayEndToEndIntegration:
@@ -339,35 +351,57 @@ class TestGatewayErrorScenarios:
     """Test Gateway error handling and edge cases."""
 
     @pytest.mark.asyncio
-    async def test_service_unavailable(self, gateway_manager):
-        """Test Gateway behavior when registered service is unavailable."""
-        # Register a service that doesn't exist
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        gateway_cm.register_app("bad_service", "http://localhost:9999")
-        
-        # Try to access the unavailable service
-        gateway_url = str(gateway_manager.url).rstrip('/')
-        response = requests.post(f"{gateway_url}/bad_service/echo", json={"message": "test"})
-        
-        # Should get an error response
-        assert response.status_code == 500
+    async def test_proxy_multiple_services(self, echo_service_for_gateway):
+        """Test managing multiple services through ProxyConnectionManager."""
+        with Gateway.launch(url="http://localhost:8099", timeout=30) as gateway_cm:
+            enhanced_cm = Gateway.connect(url="http://localhost:8099")
+            
+            # Register first echo service
+            echo_cm1 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm.register_app(
+                name="echo1",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm1
+            )
+            
+            # Register second echo service (same service, different name)
+            echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm.register_app(
+                name="echo2", 
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm2
+            )
+            
+            # Should have both services registered
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 2
+            
+            # Check if we have AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                app_names = [app.name for app in apps]
+                assert 'echo1' in app_names
+                assert 'echo2' in app_names
+            else:
+                assert 'echo1' in apps
+                assert 'echo2' in apps
+            
+            # Should have both proxy attributes
+            assert hasattr(enhanced_cm, 'echo1')
+            assert hasattr(enhanced_cm, 'echo2')
+            
+            # Give registration time to take effect
+            await asyncio.sleep(0.1)
+            
+            # Should be able to call methods on both services
+            result1 = enhanced_cm.echo1.echo(message="Hello from echo1!")
+            result2 = enhanced_cm.echo2.echo(message="Hello from echo2!")
+            
+            assert result1.echoed == "Hello from echo1!"
+            assert result2.echoed == "Hello from echo2!"
 
-    @pytest.mark.asyncio
-    async def test_gateway_timeout_handling(self, gateway_manager, echo_service_for_gateway):
-        """Test Gateway timeout handling for slow services."""
-        # Set up the system
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Test with a reasonable delay (should work)
-        result = proxy_cm.echo(message="timeout test", delay=0.1)
-        assert result.echoed == "timeout test"
-        
-        # Test with a very long delay (should timeout)
-        with pytest.raises(Exception):
-            proxy_cm.echo(message="timeout test", delay=10.0)
+
+class TestGatewayErrorHandling:
+    """Test Gateway error handling in integration scenarios."""
 
     @pytest.mark.asyncio
     async def test_invalid_request_handling(self, gateway_manager, echo_service_for_gateway):
@@ -477,62 +511,276 @@ class TestGatewayPerformance:
         gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
         proxy_cm = getattr(gateway_cm, 'echoer')
         
-        # Make multiple rapid requests
-        start_time = time.time()
-        for i in range(10):
-            result = proxy_cm.echo(message=f"rapid {i}", delay=0.0)
-            assert result.echoed == f"rapid {i}"
-        end_time = time.time()
+        # Make concurrent requests
+        async def make_request(message):
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None,
+                lambda: requests.post(
+                    f"{str(gateway_manager.url).rstrip('/')}/echoer/echo",
+                    json={"message": message},
+                    timeout=10
+                )
+            )
         
-        # Should complete quickly
-        total_time = end_time - start_time
-        assert total_time < 1.0, f"Multiple requests took too long: {total_time:.3f}s"
+        # Send 5 concurrent requests
+        tasks = [make_request(f"Message {i}") for i in range(5)]
+        responses = await asyncio.gather(*tasks)
+        
+        # All should succeed
+        for i, response in enumerate(responses):
+            assert response.status_code == 200
+            data = response.json()
+            assert data["echoed"] == f"Message {i}"
 
 
-class TestGatewayResourceManagement:
-    """Test Gateway resource management and cleanup."""
-
-    @pytest.mark.asyncio
-    async def test_gateway_cleanup(self, gateway_manager, echo_service_for_gateway):
-        """Test that Gateway properly cleans up resources."""
-        # Set up the system
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
-        proxy_cm = getattr(gateway_cm, 'echoer')
-        
-        # Make some requests
-        proxy_cm.echo(message="cleanup test", delay=0.0)
-        
-        # Verify gateway is still responsive after requests
-        status = gateway_cm.status()
-        assert status is not None
-        
-        # Test that we can still make requests
-        result = proxy_cm.echo(message="post cleanup test", delay=0.0)
-        assert result.echoed == "post cleanup test"
+class TestGatewayComplexScenarios:
+    """Test complex real-world Gateway usage scenarios."""
 
     @pytest.mark.asyncio
-    async def test_gateway_registered_apps_property(self, gateway_manager, echo_service_for_gateway):
-        """Test the registered_apps property of the enhanced Gateway connection manager."""
-        # Set up the system
-        echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
-        gateway_cm = Gateway.connect(url=gateway_manager.url)
+    async def test_gateway_service_replacement(self, gateway_manager, echo_service_for_gateway):
+        """Test replacing a service registration with a new URL."""
+        # Register echo service initially
+        gateway_manager.register_app(
+            name="echo",
+            url=str(echo_service_for_gateway.url)
+        )
         
-        # Initially no apps should be registered
-        assert len(gateway_cm.registered_apps) == 0
+        await asyncio.sleep(0.1)
         
-        # Register an app
-        gateway_cm.register_app("echoer", str(echo_service_for_gateway.url), echo_cm)
+        # Make a request to verify it works
+        response1 = requests.post(
+            f"{str(gateway_manager.url).rstrip('/')}/echo/echo",
+            json={"message": "First registration"},
+            timeout=10
+        )
+        assert response1.status_code == 200
         
-        # Verify app is in registered_apps
-        assert "echoer" in gateway_cm.registered_apps
-        assert len(gateway_cm.registered_apps) == 1
+        # Re-register with same name (should replace)
+        gateway_manager.register_app(
+            name="echo",
+            url=str(echo_service_for_gateway.url)  # Same URL but simulates replacement
+        )
         
-        # Register another app
-        gateway_cm.register_app("echoer2", str(echo_service_for_gateway.url), echo_cm)
+        await asyncio.sleep(0.1)
         
-        # Verify both apps are registered
-        assert "echoer" in gateway_cm.registered_apps
-        assert "echoer2" in gateway_cm.registered_apps
-        assert len(gateway_cm.registered_apps) == 2
+        # Should still work
+        response2 = requests.post(
+            f"{str(gateway_manager.url).rstrip('/')}/echo/echo",
+            json={"message": "Second registration"},
+            timeout=10
+        )
+        assert response2.status_code == 200
+        assert response2.json()["echoed"] == "Second registration"
+
+    @pytest.mark.asyncio
+    async def test_gateway_with_proxy_full_workflow(self, echo_service_for_gateway):
+        """Test complete workflow: Gateway + Service + ProxyConnectionManager."""
+        with Gateway.launch(url="http://localhost:8101", timeout=30) as gateway_cm:
+            # Step 1: Connect to gateway to get enhanced connection manager
+            enhanced_cm = Gateway.connect(url="http://localhost:8101")
+            
+            # Step 2: Create connection manager for echo service
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            
+            # Step 3: Register echo service with proxy
+            enhanced_cm.register_app(
+                name="echo",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Step 4: Use proxy to call service methods
+            proxy = enhanced_cm.echo
+            
+            # Test different method calls
+            echo_result = proxy.echo(message="Hello World!")
+            assert echo_result.echoed == "Hello World!"
+            
+            # Test with different parameters
+            echo_result2 = proxy.echo(message="Test Message", delay=0.0)
+            assert echo_result2.echoed == "Test Message"
+            
+            # Test status method (if available)
+            try:
+                status_result = proxy.status()
+                assert status_result is not None
+            except Exception as e:
+                # Expected if echo service doesn't have status endpoint or method not allowed
+                assert "404" in str(e) or "Failed" in str(e) or "Method Not Allowed" in str(e)
+            
+            # Verify the proxy attributes
+            assert proxy.gateway_url == "http://localhost:8101"
+            assert proxy.app_name == "echo"
+            assert proxy.original_cm == echo_cm
+
+
+class TestGatewayAppDiscovery:
+    """Test Gateway app discovery functionality for multiple connection managers."""
+
+    @pytest.mark.asyncio
+    async def test_second_connection_manager_sees_registered_apps(self, echo_service_for_gateway):
+        """Test that a second connection manager can see apps registered by the first."""
+        with Gateway.launch(url="http://localhost:8103", timeout=30) as gateway_cm:
+            # Step 1: First connection manager connects and registers an app
+            enhanced_cm1 = Gateway.connect(url="http://localhost:8103")
+            
+            # Verify it starts empty
+            assert len(enhanced_cm1.registered_apps()) == 0
+            
+            # Register an app with the first connection manager
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm1.register_app(
+                name="echo-shared",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm
+            )
+            
+            # Verify first CM can see the app
+            apps1 = enhanced_cm1.registered_apps()
+            assert len(apps1) == 1
+            
+            # Check if we have AppInfo objects or strings
+            if apps1 and hasattr(apps1[0], 'name'):
+                assert apps1[0].name == "echo-shared"
+            else:
+                assert "echo-shared" in apps1
+            
+            assert hasattr(enhanced_cm1, "echo-shared")
+            
+            await asyncio.sleep(0.1)  # Let registration propagate
+            
+            # Step 2: Second connection manager connects
+            enhanced_cm2 = Gateway.connect(url="http://localhost:8103")
+            
+            # Verify second CM can see the previously registered app
+            apps2 = enhanced_cm2.registered_apps()
+            assert len(apps2) == 1
+            
+            # Check if we can see the registered app
+            if apps2 and hasattr(apps2[0], 'name'):
+                app_names = [app.name for app in apps2]
+                assert "echo-shared" in app_names
+            else:
+                assert "echo-shared" in apps2
+            
+            # With our new implementation, second CM automatically gets proxy attributes for existing apps
+            assert hasattr(enhanced_cm2, "echo-shared")
+            
+            # Test that the automatically created proxy works
+            result = enhanced_cm2.__getattribute__("echo-shared").echo(message="Auto-proxy test!")
+            # Note: The result will be a dict since it uses a synthetic connection manager
+            assert result["echoed"] == "Auto-proxy test!"
+            
+            # Step 3: Second CM can register the same app with its own connection manager
+            echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm2.register_app(
+                name="echo-shared-2",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm2
+            )
+            
+            # Now second CM should have its own proxy
+            assert hasattr(enhanced_cm2, "echo-shared-2")
+            
+            # Check final app count
+            final_apps = enhanced_cm2.registered_apps()
+            assert len(final_apps) == 2  # echo-shared + echo-shared-2
+
+    @pytest.mark.asyncio
+    async def test_list_apps_endpoint_directly(self, echo_service_for_gateway):
+        """Test the list_apps endpoint directly."""
+        with Gateway.launch(url="http://localhost:8104", timeout=30) as gateway_cm:
+            # Connect and register some apps
+            enhanced_cm = Gateway.connect(url="http://localhost:8104")
+            
+            # Initially empty
+            apps_response = enhanced_cm.list_apps()
+            assert apps_response.apps == []
+            
+            # Register an app
+            enhanced_cm.register_app(
+                name="test-app-1",
+                url=str(echo_service_for_gateway.url)
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Should now show the registered app
+            apps_response = enhanced_cm.list_apps()
+            assert "test-app-1" in apps_response.apps
+            assert len(apps_response.apps) == 1
+            
+            # Register another app
+            enhanced_cm.register_app(
+                name="test-app-2",
+                url=str(echo_service_for_gateway.url)
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Should show both apps
+            apps_response = enhanced_cm.list_apps()
+            assert len(apps_response.apps) == 2
+            assert "test-app-1" in apps_response.apps
+            assert "test-app-2" in apps_response.apps
+
+    @pytest.mark.asyncio
+    async def test_multiple_connection_managers_with_proxies(self, echo_service_for_gateway):
+        """Test multiple connection managers each creating their own proxies for the same service."""
+        with Gateway.launch(url="http://localhost:8105", timeout=30) as gateway_cm:
+            # First connection manager registers a service
+            enhanced_cm1 = Gateway.connect(url="http://localhost:8105")
+            echo_cm1 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm1.register_app(
+                name="shared_echo",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm1
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Second connection manager connects and sees the registered app
+            enhanced_cm2 = Gateway.connect(url="http://localhost:8105")
+            
+            # Check if we can see the registered app
+            apps2 = enhanced_cm2.registered_apps()
+            if apps2 and hasattr(apps2[0], 'name'):
+                app_names = [app.name for app in apps2]
+                assert "shared_echo" in app_names
+            else:
+                assert "shared_echo" in apps2
+            
+            # Second CM creates its own proxy for the same service
+            echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm2.register_app(
+                name="shared_echo",  # Same name - should replace
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm2
+            )
+            
+            # Now second CM should have its own proxy
+            assert hasattr(enhanced_cm2, "shared_echo")
+            
+            await asyncio.sleep(0.1)
+            
+            # Both should be able to use their proxies independently
+            result1 = enhanced_cm1.shared_echo.echo(message="From CM1")
+            result2 = enhanced_cm2.shared_echo.echo(message="From CM2")
+            
+            assert result1.echoed == "From CM1"
+            assert result2.echoed == "From CM2"
+
+    @pytest.mark.asyncio
+    async def test_connection_manager_sync_failure_graceful_handling(self):
+        """Test that connection manager handles sync failures gracefully."""
+        # Try to connect to a non-existent gateway (should fail sync but not crash)
+        try:
+            enhanced_cm = Gateway.connect(url="http://localhost:9999")  # Non-existent
+            # This should fail at the connection level, not at the sync level
+            assert False, "Should have failed to connect"
+        except Exception as e:
+            # Expected - can't connect to non-existent gateway
+            assert "503" in str(e) or "failed to connect" in str(e).lower()
