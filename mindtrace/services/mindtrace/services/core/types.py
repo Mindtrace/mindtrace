@@ -59,6 +59,15 @@ class EndpointsSchema(TaskSchema):
     output_schema: Type[EndpointsOutput] = EndpointsOutput
 
 
+class DetailedEndpointsOutput(BaseModel):
+    endpoints: dict[str, dict[str, Any]]
+
+
+class DetailedEndpointsSchema(TaskSchema):
+    name: str = "detailed_endpoints"
+    output_schema: Type[DetailedEndpointsOutput] = DetailedEndpointsOutput
+
+
 class StatusOutput(BaseModel):
     status: ServerStatus
 

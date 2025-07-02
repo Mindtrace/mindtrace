@@ -30,6 +30,7 @@ from mindtrace.services.core.types import (
     ServerStatus,
     ShutdownSchema,
     StatusSchema,
+    DetailedEndpointsSchema,
 )
 from mindtrace.services.core.utils import generate_connection_manager
 
@@ -113,6 +114,11 @@ class Service(Mindtrace):
             path="/endpoints",
             func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
             schema=EndpointsSchema(),
+        )
+        self.add_endpoint(
+            path="/detailed_endpoints",
+            func=named_lambda("detailed_endpoints", lambda: self.get_detailed_endpoints()),
+            schema=DetailedEndpointsSchema(),
         )
         self.add_endpoint(
             path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema()
@@ -454,3 +460,15 @@ class Service(Mindtrace):
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
+
+    def get_detailed_endpoints(self):
+        """Return detailed schema information for all endpoints."""
+        endpoints_detail = {}
+        for endpoint_name, task_schema in self._endpoints.items():
+            # Convert schema information to serializable format
+            endpoints_detail[endpoint_name] = {
+                "name": task_schema.name,
+                "input_schema": task_schema.input_schema.model_json_schema() if task_schema.input_schema else None,
+                "output_schema": task_schema.output_schema.model_json_schema() if task_schema.output_schema else None,
+            }
+        return {"endpoints": endpoints_detail}
