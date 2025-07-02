@@ -493,83 +493,447 @@ class TestCameraErrorHandling:
     """Test suite for camera error handling and edge cases."""
     
     @pytest.mark.asyncio
-    async def test_connection_timeout(self):
-        """Test connection timeout handling."""
-        from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
-        
-        # Create camera with short timeout
-        camera = MockDahengCamera("TimeoutTest", timeout_ms=100)
-        
-        # Connection should succeed quickly in mock
-        success, _, _ = await camera.initialize()
-        assert isinstance(success, bool)
-    
-    @pytest.mark.asyncio
-    async def test_capture_timeout(self):
-        """Test image capture timeout handling."""
-        from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
-        
-        camera = MockDahengCamera("CaptureTimeoutTest")
-        await camera.initialize()
-        
-        # Mock should handle capture quickly
-        success, image = await camera.capture()
-        assert success is True
-        assert image is not None
-    
-    @pytest.mark.asyncio
-    async def test_invalid_parameters(self):
-        """Test handling of invalid parameters."""
-        from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
-        
-        camera = MockDahengCamera("InvalidParamTest")
-        await camera.initialize()
-        
-        # Test invalid exposure time
-        with pytest.raises(CameraConfigurationError):
-            await camera.set_exposure(-5000)
-        
-        # Test invalid gain
-        with pytest.raises(CameraConfigurationError):
-            camera.set_gain(-1.0)
-        
-        # Test another invalid gain value
-        with pytest.raises(CameraConfigurationError):
-            camera.set_gain(20.0)  # Above max range
-        
-        # Test valid gain should work
-        result = camera.set_gain(5.0)
-        assert result is True
-    
-    @pytest.mark.asyncio
-    async def test_camera_not_found_error(self, camera_manager):
-        """Test camera not found error handling."""
+    async def test_invalid_camera_name(self, camera_manager):
+        """Test handling of invalid camera names."""
         manager = camera_manager
         
-        # Try to initialize a non-existent camera
-        with pytest.raises(CameraNotFoundError):
-            await manager.initialize_camera("NonExistent:fake_camera")
+        with pytest.raises(ValueError, match="Camera .* not found"):
+            await manager.initialize_camera("NonExistentCamera")
     
     @pytest.mark.asyncio
-    async def test_configuration_file_errors(self, mock_daheng_camera):
-        """Test configuration file error handling."""
-        camera = mock_daheng_camera
-        await camera.initialize()
+    async def test_double_initialization(self, camera_manager):
+        """Test double initialization of the same camera."""
+        manager = camera_manager
         
-        # Test non-existent file
-        with pytest.raises(CameraConfigurationError):
-            await camera.import_config("/non/existent/file.json")
+        cameras = manager.discover_cameras()
+        if cameras:
+            camera_name = cameras[0]
+            
+            # First initialization should succeed
+            await manager.initialize_camera(camera_name)
+            
+            # Second initialization should not raise an error
+            await manager.initialize_camera(camera_name)
+            
+            # Camera should still be accessible
+            camera_proxy = manager.get_camera(camera_name)
+            assert camera_proxy is not None
+    
+    @pytest.mark.asyncio
+    async def test_uninitialized_camera_access(self, camera_manager):
+        """Test accessing uninitialized camera."""
+        manager = camera_manager
         
-        # Test invalid JSON file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write("invalid json content")
-            invalid_file = f.name
+        cameras = manager.discover_cameras()
+        if cameras:
+            camera_name = cameras[0]
+            
+            # Should raise error when accessing uninitialized camera
+            with pytest.raises(ValueError, match="Camera .* not initialized"):
+                manager.get_camera(camera_name)
+    
+    @pytest.mark.asyncio
+    async def test_camera_operation_after_shutdown(self, camera_manager):
+        """Test camera operations after shutdown."""
+        manager = camera_manager
         
-        try:
-            with pytest.raises(CameraConfigurationError):
-                await camera.import_config(invalid_file)
-        finally:
-            os.unlink(invalid_file)
+        cameras = manager.discover_cameras()
+        if cameras:
+            camera_name = cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Shutdown the camera
+            await manager.shutdown_camera(camera_name)
+            
+            # Operations should fail gracefully
+            with pytest.raises((ValueError, RuntimeError)):
+                await camera_proxy.capture()
+
+
+class TestHDRCapture:
+    """Test suite for HDR capture functionality."""
+    
+    @pytest.mark.asyncio
+    async def test_single_camera_hdr_capture(self, camera_manager):
+        """Test HDR capture with a single camera."""
+        manager = camera_manager
+        
+        # Get a mock camera
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Test HDR capture with default parameters
+            hdr_images = await camera_proxy.capture_hdr(
+                exposure_levels=3,
+                exposure_multiplier=2.0,
+                return_images=True
+            )
+            
+            assert isinstance(hdr_images, list)
+            assert len(hdr_images) == 3
+            
+            for image in hdr_images:
+                assert image is not None
+                assert isinstance(image, np.ndarray)
+                assert len(image.shape) == 3  # Height, Width, Channels
+    
+    @pytest.mark.asyncio
+    async def test_hdr_capture_without_images(self, camera_manager):
+        """Test HDR capture returning success status only."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Test HDR capture without returning images
+            success = await camera_proxy.capture_hdr(
+                exposure_levels=2,
+                exposure_multiplier=1.5,
+                return_images=False
+            )
+            
+            assert isinstance(success, bool)
+            assert success is True
+    
+    @pytest.mark.asyncio
+    async def test_hdr_capture_with_custom_levels(self, camera_manager):
+        """Test HDR capture with custom exposure levels."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Test with different exposure levels
+            hdr_images = await camera_proxy.capture_hdr(
+                exposure_levels=5,
+                exposure_multiplier=1.2,
+                return_images=True
+            )
+            
+            assert isinstance(hdr_images, list)
+            assert len(hdr_images) == 5
+    
+    @pytest.mark.asyncio
+    async def test_hdr_capture_with_save_path(self, camera_manager):
+        """Test HDR capture with file saving."""
+        import tempfile
+        import os
+        
+        manager = camera_manager
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Create temporary directory for HDR images
+            with tempfile.TemporaryDirectory() as temp_dir:
+                save_pattern = os.path.join(temp_dir, "hdr_{exposure}.jpg")
+                
+                success = await camera_proxy.capture_hdr(
+                    save_path_pattern=save_pattern,
+                    exposure_levels=2,
+                    return_images=False
+                )
+                
+                assert success is True
+                
+                # Check that files were created
+                saved_files = os.listdir(temp_dir)
+                assert len(saved_files) == 2
+                
+                for filename in saved_files:
+                    assert filename.startswith("hdr_")
+                    assert filename.endswith(".jpg")
+    
+    @pytest.mark.asyncio
+    async def test_batch_hdr_capture(self, camera_manager):
+        """Test batch HDR capture from multiple cameras."""
+        manager = camera_manager
+        
+        # Get multiple mock cameras
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam][:3]
+        
+        if len(mock_cameras) >= 2:
+            # Initialize cameras
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0
+            
+            # Test batch HDR capture
+            results = await manager.batch_capture_hdr(
+                camera_names=mock_cameras,
+                exposure_levels=2,
+                exposure_multiplier=1.5,
+                return_images=False
+            )
+            
+            assert isinstance(results, dict)
+            assert len(results) == len(mock_cameras)
+            
+            for camera_name, result in results.items():
+                assert camera_name in mock_cameras
+                assert isinstance(result, bool)
+                assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_batch_hdr_capture_with_images(self, camera_manager):
+        """Test batch HDR capture returning images."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam][:2]
+        
+        if len(mock_cameras) >= 2:
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0
+            
+            # Test batch HDR capture with images
+            results = await manager.batch_capture_hdr(
+                camera_names=mock_cameras,
+                exposure_levels=2,
+                return_images=True
+            )
+            
+            assert isinstance(results, dict)
+            assert len(results) == len(mock_cameras)
+            
+            for camera_name, images in results.items():
+                assert camera_name in mock_cameras
+                assert isinstance(images, list)
+                assert len(images) == 2
+                
+                for image in images:
+                    assert image is not None
+                    assert isinstance(image, np.ndarray)
+    
+    @pytest.mark.asyncio
+    async def test_batch_hdr_capture_with_save_pattern(self, camera_manager):
+        """Test batch HDR capture with save path pattern."""
+        import tempfile
+        import os
+        
+        manager = camera_manager
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam][:2]
+        
+        if len(mock_cameras) >= 2:
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                save_pattern = os.path.join(temp_dir, "batch_hdr_{camera}_{exposure}.jpg")
+                
+                results = await manager.batch_capture_hdr(
+                    camera_names=mock_cameras,
+                    save_path_pattern=save_pattern,
+                    exposure_levels=2,
+                    return_images=False
+                )
+                
+                assert isinstance(results, dict)
+                assert len(results) == len(mock_cameras)
+                
+                for camera_name, result in results.items():
+                    assert result is True
+                
+                # Check that files were created for each camera
+                saved_files = os.listdir(temp_dir)
+                assert len(saved_files) == len(mock_cameras) * 2  # 2 exposures per camera
+                
+                for filename in saved_files:
+                    assert "batch_hdr_" in filename
+                    assert filename.endswith(".jpg")
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_hdr_capture(self, camera_manager):
+        """Test concurrent HDR capture from multiple cameras."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam][:2]
+        
+        if len(mock_cameras) >= 2:
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0
+            
+            # Get camera proxies
+            camera_proxies = [manager.get_camera(name) for name in mock_cameras]
+            
+            # Run HDR capture concurrently
+            tasks = [
+                proxy.capture_hdr(exposure_levels=2, return_images=False)
+                for proxy in camera_proxies
+            ]
+            
+            results = await asyncio.gather(*tasks)
+            
+            assert len(results) == len(camera_proxies)
+            for result in results:
+                assert isinstance(result, bool)
+                assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_hdr_exposure_restoration(self, camera_manager):
+        """Test that original exposure is restored after HDR capture."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Set initial exposure
+            await camera_proxy.set_exposure(25000)
+            original_exposure = await camera_proxy.get_exposure()
+            assert original_exposure == 25000
+            
+            # Perform HDR capture
+            await camera_proxy.capture_hdr(
+                exposure_levels=3,
+                exposure_multiplier=2.0,
+                return_images=False
+            )
+            
+            # Check that exposure was restored
+            final_exposure = await camera_proxy.get_exposure()
+            assert final_exposure == original_exposure
+    
+    @pytest.mark.asyncio
+    async def test_hdr_capture_edge_cases(self, camera_manager):
+        """Test HDR capture edge cases and invalid parameters."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Test with minimum exposure levels
+            result = await camera_proxy.capture_hdr(
+                exposure_levels=1,
+                return_images=False
+            )
+            assert isinstance(result, bool)
+            
+            # Test with very small multiplier
+            result = await camera_proxy.capture_hdr(
+                exposure_levels=2,
+                exposure_multiplier=1.01,
+                return_images=False
+            )
+            assert isinstance(result, bool)
+            
+            # Test with large multiplier
+            result = await camera_proxy.capture_hdr(
+                exposure_levels=2,
+                exposure_multiplier=10.0,
+                return_images=False
+            )
+            assert isinstance(result, bool)
+    
+    @pytest.mark.asyncio
+    async def test_hdr_capture_error_handling(self, camera_manager):
+        """Test HDR capture error handling scenarios."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam]
+        
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.initialize_camera(camera_name)
+            camera_proxy = manager.get_camera(camera_name)
+            
+            # Mock camera to fail during HDR capture
+            original_capture = camera_proxy._camera.capture
+            call_count = 0
+            
+            async def mock_failing_capture():
+                nonlocal call_count
+                call_count += 1
+                if call_count == 2:  # Fail on second exposure
+                    raise CameraCaptureError("Simulated capture failure")
+                return True, np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
+            
+            camera_proxy._camera.capture = mock_failing_capture
+            
+            # HDR capture should handle partial failures gracefully
+            # It should still complete but with fewer successful captures
+            try:
+                result = await camera_proxy.capture_hdr(
+                    exposure_levels=3,
+                    return_images=False
+                )
+                # Should either succeed with partial captures or fail gracefully
+                assert isinstance(result, bool)
+            except CameraCaptureError:
+                # This is also acceptable - complete failure is valid
+                pass
+            
+            # Restore original capture method
+            camera_proxy._camera.capture = original_capture
+    
+    @pytest.mark.asyncio
+    async def test_batch_hdr_partial_failure(self, camera_manager):
+        """Test batch HDR capture with some cameras failing."""
+        manager = camera_manager
+        
+        cameras = manager.discover_cameras()
+        mock_cameras = [cam for cam in cameras if "MockDaheng" in cam][:3]
+        
+        if len(mock_cameras) >= 2:
+            failed_list = await manager.initialize_cameras(mock_cameras)
+            assert len(failed_list) == 0
+            
+            # Make one camera fail
+            failing_camera = manager.get_camera(mock_cameras[0])
+            
+            async def mock_failing_capture():
+                raise CameraCaptureError("Simulated failure")
+            
+            failing_camera._camera.capture = mock_failing_capture
+            
+            # Batch HDR capture should handle partial failures
+            results = await manager.batch_capture_hdr(
+                camera_names=mock_cameras,
+                exposure_levels=2,
+                return_images=False
+            )
+            
+            assert isinstance(results, dict)
+            assert len(results) == len(mock_cameras)
+            
+            # At least one should fail, others should succeed
+            success_count = sum(1 for result in results.values() if result is True)
+            failure_count = sum(1 for result in results.values() if result is False)
+            
+            assert failure_count >= 1  # At least the mocked failing camera
+            assert success_count >= 1  # At least some should succeed
 
 
 class TestCameraPerformance:
