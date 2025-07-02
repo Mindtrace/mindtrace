@@ -17,6 +17,8 @@ dependencies = [
   "mindtrace-apps>=0.1.0",
   "mindtrace-ui>=0.1.0",
   "mindtrace-datalake>=0.1.0",
+  "pytest>=8.4.1",
+  "pytest-cov>=6.2.1",
 ]
 
 [tool.uv.sources]
@@ -48,3 +50,7 @@ members = [
   "mindtrace/ui",
   "mindtrace/datalake",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mindtrace*"]

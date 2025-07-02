@@ -69,36 +69,51 @@ class MathsConsumer(Consumer):
 def setup_backend(backend_type: str):
     """Set up the appropriate backend based on the type."""
     print(f"Setting up {backend_type} backend...")
-
-    if backend_type == "local":
-        backend = LocalClient()
-        print("Local backend ready")
-        return backend
-    elif backend_type == "redis":
-        backend = RedisClient(host="localhost", port=6379, db=0)
-        try:
-            backend.redis.ping()
-            print("Redis connection verified")
-        except Exception as e:
-            print(f"Redis connection failed: {e}")
-            raise
-        return backend
-    elif backend_type == "rabbitmq":
-        backend = RabbitMQClient(
-            host="localhost", port=5672, username="user", password="password"
-        )
-        try:
-            if backend.connection.is_connected():
+    
+    backend = None
+    try:
+        if backend_type == "local":
+            backend = LocalClient()
+            print("Local backend ready")
+        elif backend_type == "redis":
+            backend = RedisClient(host="localhost", port=6379, db=0)
+            # Use a short timeout for the ping
+            try:
+                backend.redis.ping()
+                print("Redis connection verified")
+            except Exception as e:
+                print(f"Redis connection failed: {e}")
+                if backend:
+                    backend.close()
+                raise
+        elif backend_type == "rabbitmq":
+            backend = RabbitMQClient(
+                host="localhost",
+                port=5672,
+                username="user",
+                password="password"
+            )
+            # Use a short timeout for connection check
+            try:
+                if not backend.connection.is_connected():
+                    backend.connection.connect()
                 print("RabbitMQ connection verified")
-            else:
-                print("RabbitMQ connection failed")
-                raise ConnectionError("RabbitMQ connection is not active")
-        except Exception as e:
-            print(f"RabbitMQ connection failed: {e}")
-            raise
+            except Exception as e:
+                print(f"RabbitMQ connection failed: {e}")
+                if backend:
+                    backend.close()
+                raise
+        else:
+            raise ValueError(f"Unknown backend type: {backend_type}")
+        
         return backend
-    else:
-        raise ValueError(f"Unknown backend type: {backend_type}")
+    except Exception as e:
+        if backend:
+            try:
+                backend.close()
+            except:
+                pass  # Ignore cleanup errors
+        raise
 
 
 def demo_basic_operations(orchestrator: Orchestrator):
@@ -230,6 +245,8 @@ def main():
     args = parser.parse_args()
     print(f"Using backend: {args.backend}")
 
+    backend = None
+    orchestrator = None
     try:
         backend = setup_backend(args.backend)
         orchestrator = Orchestrator(backend)
@@ -238,9 +255,21 @@ def main():
         demo_consumers(orchestrator)
         demo_priority(orchestrator)
 
-
     except Exception as e:
         print(f"Error: {e}")
+        return 1
+    finally:
+        # Clean up resources
+        if orchestrator and hasattr(orchestrator, 'close'):
+            try:
+                orchestrator.close()
+            except:
+                pass
+        if backend and hasattr(backend, 'close'):
+            try:
+                backend.close()
+            except:
+                pass
 
     return 0
 

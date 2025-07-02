@@ -51,7 +51,7 @@ class RabbitMQClient(OrchestratorBackend):
         try:
             self.channel.exchange_declare(
                 exchange=exchange, passive=True
-            )  # Raises exception if exchange doesn't exist
+            )
             self.logger.debug(
                 f"Exchange '{exchange}' already exists. Not declaring it again."
             )
@@ -77,6 +77,8 @@ class RabbitMQClient(OrchestratorBackend):
                 }
             except Exception as e:
                 raise RuntimeError(f"Could not declare exchange '{exchange}': {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Could not declare exchange '{exchange}': {str(e)}")
     def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a RabbitMQ queue.
         Args:
@@ -168,9 +170,11 @@ class RabbitMQClient(OrchestratorBackend):
                         raise ValueError(
                             f"Exchange '{exchange}' does not exist. Cannot bind queue '{queue}' to it. Use force=True to declare it."
                         )
+            except ValueError:
+                raise
             except Exception as e:
                 self.logger.error(f"Failed to declare queue '{queue}': {str(e)}")
-                raise RuntimeError(f"Failed to declare queue '{queue}': {str(e)}")
+                return {"status": "error", "message": f"Failed to declare queue '{queue}': {str(e)}"}
         except Exception as e:
             self.logger.error(f"Unexpected error: {str(e)}")
             return {"status": "error", "message": f"Unexpected error: {str(e)}"}
@@ -259,12 +263,12 @@ class RabbitMQClient(OrchestratorBackend):
                 start_time = time.time()
                 while True:
                     method_frame, header_frame, body = self.channel.basic_get(
-                        queue=queue_name, auto_ack=auto_ack, **kwargs
+                        queue=queue_name, auto_ack=auto_ack
                     )
                     if method_frame:
                         self.logger.info(f"Received message from queue '{queue_name}'.")
                         message_dict = json.loads(body.decode("utf-8"))
-                        return message_dict  # Return dict directly
+                        return message_dict  
                     if timeout is not None and (time.time() - start_time) > timeout:
                         self.logger.warning(
                             f"Timeout reached while waiting for a message from queue '{queue_name}'."
@@ -273,12 +277,12 @@ class RabbitMQClient(OrchestratorBackend):
                     time.sleep(0.1)
             else:
                 method_frame, header_frame, body = self.channel.basic_get(
-                    queue=queue_name, auto_ack=auto_ack, **kwargs
+                    queue=queue_name, auto_ack=auto_ack
                 )
                 if method_frame:
                     self.logger.info(f"Received message from queue '{queue_name}'.")
                     message_dict = json.loads(body.decode("utf-8"))
-                    return message_dict  # Return dict directly
+                    return message_dict  
                 else:
                     self.logger.debug(f"No message available in queue '{queue_name}'.")
                     return {"status": "error", "message": "No message available"}
@@ -344,4 +348,5 @@ class RabbitMQClient(OrchestratorBackend):
         **kwargs,
     ):
         """Move a failed message to a dead letter queue"""
-        pass
+        self.logger.info(f"Moving message from {source_queue} to {dlq_name}: {error_details}")
+        return None

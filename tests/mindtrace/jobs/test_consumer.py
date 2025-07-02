@@ -242,4 +242,62 @@ class TestConsumer:
         
         assert consumer.received_message is not None
         assert consumer.received_message["input_data"]["data"] == "test_input"
-        assert consumer.received_message["input_data"]["param1"] == "value1" 
+        assert consumer.received_message["input_data"]["param1"] == "value1"
+
+    def test_consumer_unregistered_job_type(self):
+        """Test consumer connecting with unregistered job type."""
+        class UnregisteredWorker(Consumer):
+            def run(self, job_dict):
+                return {"result": "processed"}
+        
+        consumer = UnregisteredWorker("nonexistent_job_type")
+        
+        # Should raise ValueError for unregistered job type
+        with pytest.raises(ValueError, match="No schema registered for job type: nonexistent_job_type"):
+            consumer.connect(self.orchestrator)
+
+    def test_consumer_not_connected_consume(self):
+        """Test calling consume before connecting."""
+        class DisconnectedWorker(Consumer):
+            def run(self, job_dict):
+                return {"result": "processed"}
+        
+        consumer = DisconnectedWorker("test_consumer_jobs")
+        
+        # Should raise RuntimeError when not connected
+        with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
+            consumer.consume(num_messages=1)
+
+    def test_consumer_not_connected_consume_until_empty(self):
+        """Test calling consume_until_empty before connecting."""
+        class DisconnectedWorker(Consumer):
+            def run(self, job_dict):
+                return {"result": "processed"}
+        
+        consumer = DisconnectedWorker("test_consumer_jobs")
+        
+        # Should raise RuntimeError when not connected
+        with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
+            consumer.consume_until_empty()
+
+    def test_abstract_run_method(self):
+        """Test that Consumer is abstract and run method must be implemented."""
+        # Direct instantiation should work but run method is abstract
+        consumer = Consumer("test_consumer_jobs")
+        
+        # The run method should be abstract - calling it directly should just pass (covers line 74)
+        # Since the base implementation has 'pass', it won't raise an error, just returns None
+        result = consumer.run({"test": "data"})
+        assert result is None  # The base implementation just passes, returns None
+        
+        # Check that it's marked as abstract
+        assert hasattr(consumer.run, '__isabstractmethod__')
+        
+        # Test that a concrete class with run method works
+        class ConcreteWorker(Consumer):
+            def run(self, job_dict):
+                return {"result": "concrete_implementation"}
+        
+        concrete_consumer = ConcreteWorker("test_consumer_jobs")
+        result = concrete_consumer.run({"test": "data"})
+        assert result["result"] == "concrete_implementation" 

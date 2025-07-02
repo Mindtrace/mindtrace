@@ -20,7 +20,7 @@ class OrchestratorBackend(MindtraceABC):
         Args:
             queue_name: Name of the queue to declare
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
@@ -30,7 +30,7 @@ class OrchestratorBackend(MindtraceABC):
             queue_name: Name of the queue to publish to
             message: Pydantic model to publish
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def receive_message(
@@ -44,7 +44,7 @@ class OrchestratorBackend(MindtraceABC):
         Returns:
             Dict if message available, None if queue is empty
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
@@ -53,7 +53,7 @@ class OrchestratorBackend(MindtraceABC):
         Args:
             queue_name: Name of the queue to clean
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
@@ -62,7 +62,7 @@ class OrchestratorBackend(MindtraceABC):
         Args:
             queue_name: Name of the queue to delete
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
@@ -74,7 +74,7 @@ class OrchestratorBackend(MindtraceABC):
         Returns:
             Number of messages in the queue
         """
-        pass
+        raise NotImplementedError
     
     @abstractmethod
     def move_to_dlq(
@@ -86,13 +86,16 @@ class OrchestratorBackend(MindtraceABC):
         **kwargs,
     ):
         """Move a failed message to a dead letter queue"""
-        pass
+        raise NotImplementedError
 
     def declare_exchange(self, **kwargs):
+        """Declare an exchange. Only implemented in RabbitMQ backend."""
         raise NotImplementedError
 
     def delete_exchange(self, **kwargs):
+        """Delete an exchange. Only implemented in RabbitMQ backend."""
         raise NotImplementedError
 
     def count_exchanges(self, **kwargs):
+        """Count the number of exchanges. Only implemented in RabbitMQ backend."""
         raise NotImplementedError

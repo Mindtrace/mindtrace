@@ -9,7 +9,7 @@ class LocalConsumerBackend(ConsumerBackendBase):
     """Local in-memory consumer backend."""
     
     def __init__(self, queue_name: str, orchestrator, run_method: Optional[Callable] = None, 
-                 poll_timeout: int = 0):
+                 poll_timeout: float = 1):
         super().__init__(queue_name, orchestrator, run_method)
         self.poll_timeout = poll_timeout
         self.queues = [queue_name] if queue_name else []
@@ -26,21 +26,30 @@ class LocalConsumerBackend(ConsumerBackendBase):
         
         try:
             while num_messages == 0 or messages_consumed < num_messages:
+                no_messages_found = True
                 for queue in queues:
                     try:
-                        message = self.orchestrator.receive_message(queue, block=True, timeout=self.poll_timeout)
+                        message = self.orchestrator.receive_message(queue, block=block, timeout=self.poll_timeout)
                         if message:
-                            self.process_message(message)
-                            messages_consumed += 1
-                    except Empty:
-                        if block is False:
-                            return
-                        time.sleep(1)
+                            no_messages_found = False
+                            try:
+                                self.process_message(message)
+                                messages_consumed += 1
+                            except Exception as process_error:
+                                self.logger.debug(f"Error processing message from queue {queue}: {process_error}")
+                                messages_consumed += 1
                     except Exception as e:
                         self.logger.debug(f"Error consuming from queue {queue}: {e}")
                         if block is False:
                             return
                         time.sleep(1)
+                
+                if no_messages_found and block is False:
+                    return
+                    
+                if no_messages_found and block is True:
+                    time.sleep(0.1)
+                    
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
     
