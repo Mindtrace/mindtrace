@@ -244,6 +244,7 @@ class Gateway(Service):
             
             # Add enhanced functionality to the instance
             base_cm._registered_apps = {}
+            base_cm._manually_registered_apps = set()  # Track apps registered by this CM
             
             # Sync with existing apps on the Gateway and create proxy connection managers
             try:
@@ -260,6 +261,7 @@ class Gateway(Service):
                     app_url = app_info.url if hasattr(app_info, 'url') else None
                     app_endpoints = app_info.endpoints if hasattr(app_info, 'endpoints') else {}
                     
+                    # For initial sync, all apps are from other connection managers, so create synthetic proxies
                     if app_url and app_endpoints:
                         # Create a synthetic connection manager based on the schema information
                         synthetic_cm = cls._create_synthetic_connection_manager(app_url, app_endpoints)
@@ -300,6 +302,9 @@ class Gateway(Service):
                 # Call the original method to register with Gateway
                 result = original_register_app(name=name, url=url, **kwargs) if original_register_app else None
                 
+                # Track that this app was registered by this connection manager
+                base_cm._manually_registered_apps.add(name)
+                
                 if connection_manager:
                     # Create proxy and attach as attribute
                     proxy_cm = ProxyConnectionManager(
@@ -319,6 +324,9 @@ class Gateway(Service):
                 """Async version of enhanced register_app."""
                 # Call the original async method
                 result = await original_aregister_app(name=name, url=url, **kwargs) if original_aregister_app else None
+                
+                # Track that this app was registered by this connection manager
+                base_cm._manually_registered_apps.add(name)
                 
                 if connection_manager:
                     # Create proxy and attach as attribute
@@ -355,10 +363,110 @@ class Gateway(Service):
                     except Exception:
                         return list(base_cm._registered_apps.keys())
             
+            def reconnect():
+                """Reconnect to the Gateway and refresh the app list."""
+                # Clear existing registered apps
+                base_cm._registered_apps.clear()
+                
+                # Remove existing app attributes (but preserve methods and internal attributes)
+                attrs_to_remove = []
+                for attr_name in dir(base_cm):
+                    if not attr_name.startswith('_') and hasattr(base_cm, attr_name):
+                        attr_value = getattr(base_cm, attr_name)
+                        # Remove if it's a ProxyConnectionManager
+                        if hasattr(attr_value, 'gateway_url') and hasattr(attr_value, 'app_name'):
+                            attrs_to_remove.append(attr_name)
+                
+                for attr_name in attrs_to_remove:
+                    delattr(base_cm, attr_name)
+                
+                # Re-sync with existing apps on the Gateway
+                try:
+                    # Get detailed app information with schemas
+                    existing_apps_response = base_cm.list_apps_with_schemas()
+                    # Handle both dict and Pydantic model responses
+                    if hasattr(existing_apps_response, 'apps'):
+                        existing_apps = existing_apps_response.apps
+                    else:
+                        existing_apps = existing_apps_response.get("apps", [])
+                    
+                    for app_info in existing_apps:
+                        app_name = app_info.name if hasattr(app_info, 'name') else app_info
+                        app_url = app_info.url if hasattr(app_info, 'url') else None
+                        app_endpoints = app_info.endpoints if hasattr(app_info, 'endpoints') else {}
+                        
+                        # Check if this app was manually registered by this connection manager
+                        if app_name in base_cm._manually_registered_apps:
+                            # This was registered by this CM, don't create synthetic proxy (respect original choice)
+                            base_cm._registered_apps[app_name] = None
+                        elif app_url and app_endpoints:
+                            # This was registered by another CM, create a synthetic proxy
+                            synthetic_cm = cls._create_synthetic_connection_manager(app_url, app_endpoints)
+                            
+                            # Create proxy connection manager
+                            proxy_cm = ProxyConnectionManager(
+                                gateway_url=base_cm.url,
+                                app_name=app_name,
+                                original_cm=synthetic_cm
+                            )
+                            base_cm._registered_apps[app_name] = proxy_cm
+                            setattr(base_cm, app_name, proxy_cm)
+                        else:
+                            # Fallback: create placeholder entry for apps without detailed info
+                            base_cm._registered_apps[app_name] = None
+                            
+                except Exception as e:
+                    # If detailed sync fails, try basic sync
+                    try:
+                        basic_apps_response = base_cm.list_apps()
+                        if hasattr(basic_apps_response, 'apps'):
+                            basic_apps = basic_apps_response.apps
+                        else:
+                            basic_apps = basic_apps_response.get("apps", [])
+                        for app_name in basic_apps:
+                            # Create placeholder entries for existing apps (without connection managers)
+                            base_cm._registered_apps[app_name] = None
+                    except Exception:
+                        # If all syncing fails, continue with empty registry
+                        pass
+
+            # Store original __getattribute__ method
+            original_getattribute = base_cm.__class__.__getattribute__
+            
+            def enhanced_getattribute(self, name):
+                """Enhanced __getattribute__ that reconnects and retries on AttributeError for connection manager attributes."""
+                try:
+                    return original_getattribute(self, name)
+                except AttributeError as e:
+                    # If this looks like an app name (not starting with _, not a known method), try reconnecting
+                    if (not name.startswith('_') and 
+                        not hasattr(type(self), name) and 
+                        not hasattr(self.__class__, name)):
+                        
+                        # Check if this app was registered by this connection manager without a proxy
+                        # If so, don't create a synthetic proxy (respect the original registration choice)
+                        if name in self._registered_apps and self._registered_apps[name] is None:
+                            # This app was registered by this CM without a connection manager, don't create proxy
+                            raise e
+                        
+                        # Try reconnecting to refresh the app list
+                        try:
+                            self.reconnect()
+                            # Try accessing the attribute again after reconnect
+                            return original_getattribute(self, name)
+                        except Exception:
+                            # If reconnect fails or attribute still doesn't exist, raise original error
+                            pass
+                    
+                    # Re-raise the original AttributeError
+                    raise e
+            
             # Add enhanced methods to the instance
             base_cm.register_app = enhanced_register_app
             base_cm.aregister_app = enhanced_aregister_app
             base_cm.registered_apps = enhanced_registered_apps
+            base_cm.reconnect = reconnect
+            base_cm.__class__.__getattribute__ = enhanced_getattribute
             
             return base_cm
         
