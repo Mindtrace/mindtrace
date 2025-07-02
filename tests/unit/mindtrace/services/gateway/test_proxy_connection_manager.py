@@ -239,23 +239,23 @@ class TestProxyConnectionManagerMethodProxying:
             assert result == {"heartbeat": "ok"}
 
     def test_method_with_positional_args(self, proxy):
-        """Test method call with positional arguments."""
+        """Test method call with positional arguments should use empty payload."""
         with patch('requests.post') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {"echoed": "hello"}
+            mock_response.json.return_value = {"echoed": ""}
             mock_post.return_value = mock_response
             
-            # Call method with positional argument
+            # Call method with positional argument - should be ignored for robustness
             result = proxy.echo("hello")
             
-            # Should use first positional argument as payload
+            # Should use empty dict as payload since positional args are not supported
             mock_post.assert_called_once_with(
                 "http://localhost:8090/test-service/echo",
-                json="hello",
+                json={},
                 timeout=60
             )
-            assert result == {"echoed": "hello"}
+            assert result == {"echoed": ""}
 
     def test_method_with_no_args_but_required_params(self, proxy):
         """Test method call with no args provided but method has required params."""
@@ -343,7 +343,7 @@ class TestProxyConnectionManagerErrorHandling:
             with pytest.raises(RuntimeError) as exc_info:
                 proxy.echo(message="test")
             
-            assert "Gateway proxy request failed: Internal Server Error" in str(exc_info.value)
+            assert "Gateway proxy request failed for 'echo': 500 - Internal Server Error" in str(exc_info.value)
 
     def test_network_error(self, proxy):
         """Test handling of network errors."""

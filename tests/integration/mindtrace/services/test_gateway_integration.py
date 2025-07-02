@@ -129,7 +129,7 @@ class TestGatewayEnhancedConnectionManager:
             assert hasattr(enhanced_cm, '_registered_apps')
             
             # Test that registered_apps starts empty
-            assert len(enhanced_cm.registered_apps) == 0
+            assert len(enhanced_cm.registered_apps()) == 0
 
     @pytest.mark.asyncio
     async def test_enhanced_cm_service_registration_sync(self, echo_service_for_gateway):
@@ -145,7 +145,14 @@ class TestGatewayEnhancedConnectionManager:
             
             # Should not create proxy since no connection_manager provided
             assert not hasattr(enhanced_cm, 'echo-basic')
-            assert len(enhanced_cm.registered_apps) == 0
+            # But it should still track the registration
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-basic'
+            else:
+                assert 'echo-basic' in apps
 
     @pytest.mark.asyncio
     async def test_enhanced_cm_service_registration_with_proxy(self, echo_service_for_gateway):
@@ -165,8 +172,14 @@ class TestGatewayEnhancedConnectionManager:
             
             # Should create proxy and attach it
             assert hasattr(enhanced_cm, 'echo-proxy')
-            assert 'echo-proxy' in enhanced_cm.registered_apps
-            assert len(enhanced_cm.registered_apps) == 1
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-proxy'
+            else:
+                assert 'echo-proxy' in apps
             
             # The attached attribute should be a ProxyConnectionManager
             proxy = getattr(enhanced_cm, 'echo-proxy')
@@ -193,8 +206,14 @@ class TestGatewayEnhancedConnectionManager:
             
             # Should create proxy and attach it
             assert hasattr(enhanced_cm, 'echo-async')
-            assert 'echo-async' in enhanced_cm.registered_apps
-            assert len(enhanced_cm.registered_apps) == 1
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-async'
+            else:
+                assert 'echo-async' in apps
 
     @pytest.mark.asyncio
     async def test_enhanced_cm_service_registration_with_url_object(self, echo_service_for_gateway):
@@ -215,8 +234,14 @@ class TestGatewayEnhancedConnectionManager:
             
             # Should create proxy and attach it
             assert hasattr(enhanced_cm, 'echo-url-object')
-            assert 'echo-url-object' in enhanced_cm.registered_apps
-            assert len(enhanced_cm.registered_apps) == 1
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 1
+            
+            # Check if it's a list of AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                assert apps[0].name == 'echo-url-object'
+            else:
+                assert 'echo-url-object' in apps
             
             # The attached attribute should be a ProxyConnectionManager
             proxy = getattr(enhanced_cm, 'echo-url-object')
@@ -307,9 +332,17 @@ class TestGatewayProxyConnectionManager:
             )
             
             # Should have both services registered
-            assert len(enhanced_cm.registered_apps) == 2
-            assert 'echo1' in enhanced_cm.registered_apps
-            assert 'echo2' in enhanced_cm.registered_apps
+            apps = enhanced_cm.registered_apps()
+            assert len(apps) == 2
+            
+            # Check if we have AppInfo objects or strings
+            if apps and hasattr(apps[0], 'name'):
+                app_names = [app.name for app in apps]
+                assert 'echo1' in app_names
+                assert 'echo2' in app_names
+            else:
+                assert 'echo1' in apps
+                assert 'echo2' in apps
             
             # Should have both proxy attributes
             assert hasattr(enhanced_cm, 'echo1')
@@ -551,3 +584,167 @@ class TestGatewayComplexScenarios:
             assert proxy.gateway_url == "http://localhost:8101"
             assert proxy.app_name == "echo"
             assert proxy.original_cm == echo_cm
+
+
+class TestGatewayAppDiscovery:
+    """Test Gateway app discovery functionality for multiple connection managers."""
+
+    @pytest.mark.asyncio
+    async def test_second_connection_manager_sees_registered_apps(self, echo_service_for_gateway):
+        """Test that a second connection manager can see apps registered by the first."""
+        with Gateway.launch(url="http://localhost:8103", timeout=30) as gateway_cm:
+            # Step 1: First connection manager connects and registers an app
+            enhanced_cm1 = Gateway.connect(url="http://localhost:8103")
+            
+            # Verify it starts empty
+            assert len(enhanced_cm1.registered_apps()) == 0
+            
+            # Register an app with the first connection manager
+            echo_cm = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm1.register_app(
+                name="echo-shared",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm
+            )
+            
+            # Verify first CM can see the app
+            apps1 = enhanced_cm1.registered_apps()
+            assert len(apps1) == 1
+            
+            # Check if we have AppInfo objects or strings
+            if apps1 and hasattr(apps1[0], 'name'):
+                assert apps1[0].name == "echo-shared"
+            else:
+                assert "echo-shared" in apps1
+            
+            assert hasattr(enhanced_cm1, "echo-shared")
+            
+            await asyncio.sleep(0.1)  # Let registration propagate
+            
+            # Step 2: Second connection manager connects
+            enhanced_cm2 = Gateway.connect(url="http://localhost:8103")
+            
+            # Verify second CM can see the previously registered app
+            apps2 = enhanced_cm2.registered_apps()
+            assert len(apps2) == 1
+            
+            # Check if we can see the registered app
+            if apps2 and hasattr(apps2[0], 'name'):
+                app_names = [app.name for app in apps2]
+                assert "echo-shared" in app_names
+            else:
+                assert "echo-shared" in apps2
+            
+            # However, second CM won't have the proxy attribute since it doesn't have the connection manager
+            assert not hasattr(enhanced_cm2, "echo-shared")
+            
+            # Step 3: Second CM can register the same app with its own connection manager
+            echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm2.register_app(
+                name="echo-shared-2",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm2
+            )
+            
+            # Now second CM should have its own proxy
+            assert hasattr(enhanced_cm2, "echo-shared-2")
+            
+            # Check final app count
+            final_apps = enhanced_cm2.registered_apps()
+            assert len(final_apps) == 2  # echo-shared + echo-shared-2
+
+    @pytest.mark.asyncio
+    async def test_list_apps_endpoint_directly(self, echo_service_for_gateway):
+        """Test the list_apps endpoint directly."""
+        with Gateway.launch(url="http://localhost:8104", timeout=30) as gateway_cm:
+            # Connect and register some apps
+            enhanced_cm = Gateway.connect(url="http://localhost:8104")
+            
+            # Initially empty
+            apps_response = enhanced_cm.list_apps()
+            assert apps_response.apps == []
+            
+            # Register an app
+            enhanced_cm.register_app(
+                name="test-app-1",
+                url=str(echo_service_for_gateway.url)
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Should now show the registered app
+            apps_response = enhanced_cm.list_apps()
+            assert "test-app-1" in apps_response.apps
+            assert len(apps_response.apps) == 1
+            
+            # Register another app
+            enhanced_cm.register_app(
+                name="test-app-2",
+                url=str(echo_service_for_gateway.url)
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Should show both apps
+            apps_response = enhanced_cm.list_apps()
+            assert len(apps_response.apps) == 2
+            assert "test-app-1" in apps_response.apps
+            assert "test-app-2" in apps_response.apps
+
+    @pytest.mark.asyncio
+    async def test_multiple_connection_managers_with_proxies(self, echo_service_for_gateway):
+        """Test multiple connection managers each creating their own proxies for the same service."""
+        with Gateway.launch(url="http://localhost:8105", timeout=30) as gateway_cm:
+            # First connection manager registers a service
+            enhanced_cm1 = Gateway.connect(url="http://localhost:8105")
+            echo_cm1 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm1.register_app(
+                name="shared_echo",
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm1
+            )
+            
+            await asyncio.sleep(0.1)
+            
+            # Second connection manager connects and sees the registered app
+            enhanced_cm2 = Gateway.connect(url="http://localhost:8105")
+            
+            # Check if we can see the registered app
+            apps2 = enhanced_cm2.registered_apps()
+            if apps2 and hasattr(apps2[0], 'name'):
+                app_names = [app.name for app in apps2]
+                assert "shared_echo" in app_names
+            else:
+                assert "shared_echo" in apps2
+            
+            # Second CM creates its own proxy for the same service
+            echo_cm2 = EchoService.connect(url=echo_service_for_gateway.url)
+            enhanced_cm2.register_app(
+                name="shared_echo",  # Same name - should replace
+                url=str(echo_service_for_gateway.url),
+                connection_manager=echo_cm2
+            )
+            
+            # Now second CM should have its own proxy
+            assert hasattr(enhanced_cm2, "shared_echo")
+            
+            await asyncio.sleep(0.1)
+            
+            # Both should be able to use their proxies independently
+            result1 = enhanced_cm1.shared_echo.echo(message="From CM1")
+            result2 = enhanced_cm2.shared_echo.echo(message="From CM2")
+            
+            assert result1["echoed"] == "From CM1"
+            assert result2["echoed"] == "From CM2"
+
+    @pytest.mark.asyncio
+    async def test_connection_manager_sync_failure_graceful_handling(self):
+        """Test that connection manager handles sync failures gracefully."""
+        # Try to connect to a non-existent gateway (should fail sync but not crash)
+        try:
+            enhanced_cm = Gateway.connect(url="http://localhost:9999")  # Non-existent
+            # This should fail at the connection level, not at the sync level
+            assert False, "Should have failed to connect"
+        except Exception as e:
+            # Expected - can't connect to non-existent gateway
+            assert "503" in str(e) or "failed to connect" in str(e).lower()

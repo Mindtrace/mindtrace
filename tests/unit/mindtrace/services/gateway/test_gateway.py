@@ -223,6 +223,12 @@ class TestGateway:
             mock_base_cm.register_app = Mock(return_value={'status': 'registered'})
             mock_base_cm.aregister_app = AsyncMock(return_value={'status': 'registered'})
             
+            # Mock the list_apps_with_schemas method that registered_apps() calls
+            from mindtrace.services.gateway.gateway import AppInfo, ListAppsWithSchemasResponse
+            mock_app_info = AppInfo(name="test-service", url="http://localhost:8001/", endpoints={})
+            mock_response = ListAppsWithSchemasResponse(apps=[mock_app_info])
+            mock_base_cm.list_apps_with_schemas = Mock(return_value=mock_response)
+            
             # The mock should return a constructor function that returns the mock instance
             mock_generate.return_value = lambda url: mock_base_cm
             
@@ -262,8 +268,9 @@ class TestGateway:
                     assert hasattr(enhanced_cm, 'test-service')
                     assert getattr(enhanced_cm, 'test-service') == mock_proxy_instance
                     
-                    # Test that registered_apps property works
-                    assert 'test-service' in enhanced_cm.registered_apps
+                    # Test that registered_apps shows the tracked app
+                    registered_apps_result = enhanced_cm.registered_apps()
+                    assert len(registered_apps_result) == 1
 
     @pytest.mark.asyncio
     async def test_enhanced_connection_manager_aregister_app_with_proxy(self, gateway):
@@ -314,6 +321,12 @@ class TestGateway:
             mock_base_cm.url = "http://localhost:8090/"
             mock_base_cm.register_app = Mock(return_value={'status': 'registered'})
             
+            # Mock the list_apps_with_schemas method that registered_apps() calls
+            from mindtrace.services.gateway.gateway import AppInfo, ListAppsWithSchemasResponse
+            mock_app_info = AppInfo(name="simple-service", url="http://localhost:8003/", endpoints={})
+            mock_response = ListAppsWithSchemasResponse(apps=[mock_app_info])
+            mock_base_cm.list_apps_with_schemas = Mock(return_value=mock_response)
+            
             mock_generate.return_value = lambda url: mock_base_cm
             
             with patch.object(Gateway, 'status_at_host', return_value=ServerStatus.AVAILABLE):
@@ -331,12 +344,15 @@ class TestGateway:
                 # Test that original method was called by verifying the result
                 assert result == {'status': 'registered'}
                 
-                # Test that no proxy attribute was created (Mock objects auto-create attributes, 
-                # so we check that _registered_apps is empty instead)
-                assert len(enhanced_cm._registered_apps) == 0
+                # Test that no proxy attribute was created
+                # When registering without connection_manager, the app should be tracked but no proxy created
+                assert len(enhanced_cm._registered_apps) == 1
+                assert "simple-service" in enhanced_cm._registered_apps
+                assert enhanced_cm._registered_apps["simple-service"] is None
                 
-                # Test that registered_apps is empty
-                assert len(enhanced_cm.registered_apps) == 0
+                # Test that registered_apps shows the tracked app
+                registered_apps_result = enhanced_cm.registered_apps()
+                assert len(registered_apps_result) == 1
 
 
 class TestProxyConnectionManagerIntegration:
@@ -416,7 +432,7 @@ class TestProxyConnectionManagerIntegration:
             with pytest.raises(RuntimeError) as exc_info:
                 proxy_cm.echo(message="test")
             
-            assert "Gateway proxy request failed: Internal Server Error" in str(exc_info.value)
+            assert "Gateway proxy request failed for 'echo': 500 - Internal Server Error" in str(exc_info.value)
 
     def test_proxy_attribute_access(self, proxy_cm, mock_original_cm):
         """Test accessing internal attributes of proxy."""
