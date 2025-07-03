@@ -31,6 +31,12 @@ dev-dependencies = [
     "pytest-asyncio>=1.0.0",
 ]
 
+[project.optional-dependencies]
+cameras-basler = ["mindtrace-hardware[cameras-basler]"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]"] 
+cameras-all = ["mindtrace-hardware[cameras-all]"]
+hardware-all = ["mindtrace-hardware[hardware-all]"]
+
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-services = { workspace = true }

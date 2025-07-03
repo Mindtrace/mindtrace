@@ -336,30 +336,9 @@ class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     pass
 
 
-class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
-    """Abstract base class combining Mindtrace class functionality with ABC support.
-
-    This class enables creating abstract classes that also have access to all Mindtrace features
-    such as logging, configuration, and context management. Use this class instead of
-    Mindtrace when you need to define abstract methods or properties in your class.
-
-    Example:
-        from mindtrace.core import MindtraceABC
-        from abc import abstractmethod
-
-        class MyAbstractService(MindtraceABC):
-            def __init__(self):
-                super().__init__()
-
-            @abstractmethod
-            def process_data(self, data):
-                '''Must be implemented by concrete subclasses.'''
-                pass
-
-    Note:
-        Without this class, attempting to create a class that inherits from both Mindtrace class and ABC
-        would fail due to metaclass conflicts. MindtraceABC resolves this by using the CombinedABCMeta.
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class MindtraceABC(ABC, metaclass=MindtraceABCMeta):
+    """Base class for Mindtrace-derived abstract classes."""
+    
+    def __init__(self):
+        self.config = Config()
+        self.logger = Logger()
