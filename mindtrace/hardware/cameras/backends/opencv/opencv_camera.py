@@ -30,11 +30,13 @@ Usage:
     
     # Initialize camera
     camera = OpenCVCamera("0", width=1280, height=720, img_quality_enhancement=True)
+    success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
     
-    # Configure and capture
-    camera.set_exposure(-5)
-    success, image = camera.capture()
-    camera.close()
+    if success:
+        # Configure and capture
+        await camera.set_exposure(-5)
+        success, image = await camera.capture()
+        await camera.close()
 
 Configuration:
     All parameters are configurable via the hardware configuration system:

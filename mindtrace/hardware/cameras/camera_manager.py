@@ -181,7 +181,10 @@ class CameraProxy:
                     if success and image is not None:
                         # Save image if path provided
                         if save_path:
-                            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+                            # Only create directory if the path contains a directory component
+                            dirname = os.path.dirname(save_path)
+                            if dirname:  # Only create directory if there is one
+                                os.makedirs(dirname, exist_ok=True)
                             cv2.imwrite(save_path, image)
                         return image
                     else:
