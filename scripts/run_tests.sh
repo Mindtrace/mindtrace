@@ -7,14 +7,16 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-
-# Initialize test suite flags
+# Initialize variables
+SPECIFIC_PATHS=()
+PYTEST_ARGS=()
+NEEDS_DOCKER=false
 RUN_UNIT=false
 RUN_INTEGRATION=false
 RUN_STRESS=false
-RUN_ALL=true  # Default to running all tests
+RUN_ALL=true
 
-# Parse command line arguments
+# Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
     case $1 in
         --unit)
@@ -32,6 +34,16 @@ while [[ $# -gt 0 ]]; do
             RUN_ALL=false
             shift
             ;;
+        tests/*)
+            # Specific test path provided
+            SPECIFIC_PATHS+=("$1")
+            echo "Detected specific test path: $1"
+            # Check if any path requires docker containers
+            if [[ "$1" == tests/integration/* ]]; then
+                NEEDS_DOCKER=true
+            fi
+            shift
+            ;;
         *)
             # Pass all other arguments to pytest
             PYTEST_ARGS+=("$1")
@@ -40,14 +52,51 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If no specific flags were provided, run all tests
+# If specific paths are provided, run just those paths and exit
+if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
+    echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
+    
+    # Start docker containers if any integration tests are included
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Starting docker containers for integration tests..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
+
+        # Wait for MinIO to be healthy
+        echo "Waiting for docker containers to be ready..."
+        until curl -s http://localhost:9000/minio/health/live > /dev/null; do
+            sleep 1
+        done
+    fi
+    
+    # Clear any existing coverage data
+    coverage erase
+    
+    # Run pytest on the specific paths with coverage
+    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
+    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
+    EXIT_CODE=$?
+    
+    # Stop docker containers if they were started
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Stopping docker containers..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+    fi
+    
+    echo "Exiting with code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+# If we get here, no specific paths were provided, so use suite-based logic
+echo "No specific test paths provided, using suite-based logic"
+
+# If no specific flags were provided, run unit and integration tests (but not stress)
 if [ "$RUN_ALL" = true ]; then
     RUN_UNIT=true
     RUN_INTEGRATION=true
-    RUN_STRESS=true
+    # RUN_STRESS remains false - only runs when explicitly requested
 fi
 
-# Start MinIO container if running integration tests or all tests
+# Start MinIO container if running integration tests
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Starting docker containers..."
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d

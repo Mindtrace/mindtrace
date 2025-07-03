@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from google.api_core import exceptions as gexc
 from google.cloud import storage
@@ -41,14 +41,10 @@ class GCSStorageHandler(StorageHandler):
         if credentials_path:
             if not os.path.exists(credentials_path):
                 raise FileNotFoundError(credentials_path)
-            creds = service_account.Credentials.from_service_account_file(
-                credentials_path
-            )
+            creds = service_account.Credentials.from_service_account_file(credentials_path)
 
         # Client ------------------------------------------------------------
-        self.client: storage.Client = storage.Client(
-            project=project_id, credentials=creds
-        )
+        self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
         self.bucket_name = bucket_name
         self._ensure_bucket(create_if_missing, location, storage_class)
 
@@ -117,7 +113,7 @@ class GCSStorageHandler(StorageHandler):
         """
         if skip_if_exists and os.path.exists(local_path):
             return
-            
+
         blob = self._bucket().blob(self._sanitize_blob_path(remote_path))
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
         blob.download_to_filename(local_path)
@@ -148,12 +144,7 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             List of blob names (paths) in the bucket.
         """
-        return [
-            b.name
-            for b in self.client.list_blobs(
-                self.bucket_name, prefix=prefix, max_results=max_results
-            )
-        ]
+        return [b.name for b in self.client.list_blobs(self.bucket_name, prefix=prefix, max_results=max_results)]
 
     def exists(self, remote_path: str) -> bool:
         """Check if a blob exists in the bucket.
@@ -185,7 +176,6 @@ class GCSStorageHandler(StorageHandler):
             method=method,
             version="v4",
         )
-    
 
     def get_object_metadata(self, remote_path: str) -> Dict[str, Any]:
         """Get metadata for a blob in the bucket.

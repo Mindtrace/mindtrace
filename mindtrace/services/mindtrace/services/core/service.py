@@ -1,37 +1,37 @@
 """Service base class. Provides unified methods for all Mindtrace (micro)services."""
 
 import atexit
-from contextlib import asynccontextmanager
-from importlib.metadata import version
 import json
 import logging
 import os
-from pathlib import Path
-import psutil
-import requests
 import signal
 import subprocess
-from typing import Type, TypeVar
 import uuid
+from contextlib import asynccontextmanager
+from importlib.metadata import version
+from pathlib import Path
+from typing import Type, TypeVar
 from uuid import UUID
 
 import fastapi
+import psutil
+import requests
 from fastapi import FastAPI, HTTPException
-from urllib3.util.url import parse_url, Url
+from urllib3.util.url import Url, parse_url
 
-from mindtrace.core import ifnone, ifnone_url, Mindtrace, named_lambda, TaskSchema, Timeout
-from mindtrace.services import ( 
-    ConnectionManager,
-    EndpointsSchema, 
-    generate_connection_manager,
-    Heartbeat, 
+from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.types import (
+    EndpointsSchema,
+    Heartbeat,
     HeartbeatSchema,
     PIDFileSchema,
     ServerIDSchema,
-    ServerStatus, 
+    ServerStatus,
     ShutdownSchema,
-    StatusSchema, 
+    StatusSchema,
 )
+from mindtrace.services.core.utils import generate_connection_manager
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -109,12 +109,28 @@ class Service(Mindtrace):
             license_info=license_info,
             lifespan=lifespan,
         )
-        self.add_endpoint(path="/endpoints", func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}), schema=EndpointsSchema())
-        self.add_endpoint(path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema())
-        self.add_endpoint(path="/heartbeat", func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}), schema=HeartbeatSchema())
-        self.add_endpoint(path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema())
-        self.add_endpoint(path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema())
-        self.add_endpoint(path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG})
+        self.add_endpoint(
+            path="/endpoints",
+            func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
+            schema=EndpointsSchema(),
+        )
+        self.add_endpoint(
+            path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema()
+        )
+        self.add_endpoint(
+            path="/heartbeat",
+            func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}),
+            schema=HeartbeatSchema(),
+        )
+        self.add_endpoint(
+            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
+        )
+        self.add_endpoint(
+            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema()
+        )
+        self.add_endpoint(
+            path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
+        )
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -430,7 +446,7 @@ class Service(Mindtrace):
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         autolog_kwargs = ifnone(autolog_kwargs, default={})
-        
+
         self._endpoints[path] = schema
         self.app.add_api_route(
             "/" + path,

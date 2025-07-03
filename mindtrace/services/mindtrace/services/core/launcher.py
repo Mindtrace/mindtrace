@@ -1,8 +1,7 @@
 import argparse
-from argparse import RawTextHelpFormatter
 import json
 import logging
-import os
+from argparse import RawTextHelpFormatter
 from pathlib import Path
 
 from gunicorn.app.base import BaseApplication

@@ -1,6 +1,4 @@
 import time
-from typing import Literal
-
 
 from pydantic import BaseModel
 
@@ -10,7 +8,7 @@ from mindtrace.services import Service
 
 class EchoInput(BaseModel):
     message: str
-    delay: float = 0.0 
+    delay: float = 0.0
 
 
 class EchoOutput(BaseModel):
