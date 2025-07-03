@@ -58,7 +58,10 @@ mindtrace/hardware/
 Install the base hardware component:
 
 ```bash
-pip install mindtrace-hardware
+# quick clone and install
+git clone https://github.com/mindtrace-ai/mindtrace.git
+cd mindtrace
+uv sync --extra cameras-all
 ```
 
 ### Camera Backend Setup
@@ -102,9 +105,10 @@ async def camera_example():
         cameras = manager.discover_cameras()
         print(f"Found cameras: {cameras}")
         
-        # Get a camera using the new CameraProxy interface
+        # Initialize and get a camera using the proper pattern
         if cameras:
-            camera_proxy = await manager.get_camera(cameras[0])
+            await manager.initialize_camera(cameras[0])
+            camera_proxy = manager.get_camera(cameras[0])
             
             # Capture image
             image = await camera_proxy.capture()
@@ -173,8 +177,9 @@ async def modern_camera_usage():
         # Discover cameras
         cameras = manager.discover_cameras()
         
-        # Get camera proxy for unified interface
-        camera_proxy = await manager.get_camera(cameras[0])
+        # Initialize and get camera proxy for unified interface
+        await manager.initialize_camera(cameras[0])
+        camera_proxy = manager.get_camera(cameras[0])
         
         # Use camera through proxy
         image = await camera_proxy.capture()
@@ -210,6 +215,30 @@ cameras = manager.discover_cameras()
 print(f"All cameras: {cameras}")
 ```
 
+### Convenience Functions
+
+For quick single-camera operations, you can use the convenience function:
+
+```python
+from mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
+
+async def quick_camera_access():
+    # Initialize and get camera in one step
+    camera = await initialize_and_get_camera(
+        "MockDaheng:test_camera",
+        exposure=20000,
+        gain=1.5,
+        trigger_mode="continuous"
+    )
+    
+    # Use camera immediately
+    image = await camera.capture()
+    print(f"Captured image: {image.shape}")
+    
+    # Note: Remember to properly close the camera when done
+    await camera.close()
+```
+
 ### Camera Discovery and Setup
 
 ```python
@@ -218,16 +247,18 @@ async def camera_setup():
         # Discover cameras
         cameras = manager.discover_cameras()
         
-        # Get specific camera
-        camera = await manager.get_camera('Daheng:cam1')
+        # Initialize and get specific camera
+        await manager.initialize_camera('Daheng:cam1')
+        camera = manager.get_camera('Daheng:cam1')
         
-        # Get camera with configuration
-        camera = await manager.get_camera(
+        # Initialize camera with configuration during initialization
+        await manager.initialize_camera(
             'Basler:serial123',
             exposure=20000,
             gain=2.0,
             trigger_mode="continuous"
         )
+        camera = manager.get_camera('Basler:serial123')
         
         # Check active cameras
         active = manager.get_active_cameras()
@@ -239,7 +270,9 @@ async def camera_setup():
 ```python
 async def image_operations():
     async with CameraManager() as manager:
-        camera = await manager.get_camera('Daheng:cam1')
+        # Initialize camera first
+        await manager.initialize_camera('Daheng:cam1')
+        camera = manager.get_camera('Daheng:cam1')
         
         # Basic capture
         image = await camera.capture()
@@ -273,6 +306,9 @@ async def batch_operations():
     async with CameraManager(include_mocks=True) as manager:
         cameras = manager.discover_cameras()[:3]  # Get first 3 cameras
         
+        # Initialize all cameras first
+        await manager.initialize_cameras(cameras)
+        
         # Batch configuration
         configurations = {
             cameras[0]: {"exposure": 15000, "gain": 1.0},
@@ -298,6 +334,8 @@ async def bandwidth_management_example():
     
     try:
         cameras = manager.discover_cameras()[:4]
+        
+        # Initialize all cameras first
         await manager.initialize_cameras(cameras)
         
         # Get bandwidth management information
@@ -343,7 +381,9 @@ async def bandwidth_strategies():
 ```python
 async def advanced_control():
     async with CameraManager() as manager:
-        camera = await manager.get_camera('Basler:serial123')
+        # Initialize camera first
+        await manager.initialize_camera('Basler:serial123')
+        camera = manager.get_camera('Basler:serial123')
         
         # Exposure control
         exposure_range = await camera.get_exposure_range()
@@ -814,8 +854,6 @@ except PLCConnectionError:
     print("PLC connection failed")
 except PLCTagNotFoundError as e:
     print(f"Tag not found: {e}")
-except PLCTagReadError as e:
-    print(f"Tag read failed: {e}")
 except PLCTimeoutError:
     print("PLC operation timed out")
 ```
@@ -837,7 +875,8 @@ async def industrial_automation():
         try:
             # Setup cameras with bandwidth management
             cameras = camera_manager.discover_cameras()
-            inspection_camera = await camera_manager.get_camera(cameras[0])
+            await camera_manager.initialize_camera(cameras[0])
+            inspection_camera = camera_manager.get_camera(cameras[0])
             
             # Check bandwidth management status
             bandwidth_info = camera_manager.get_network_bandwidth_info()
@@ -961,16 +1000,23 @@ async def testing_setup():
             cameras = camera_manager.discover_cameras()
             print(f"Mock cameras available: {cameras}")
             
+            # Initialize cameras first
+            await camera_manager.initialize_cameras(cameras[:2])
+            
             # Check bandwidth management info
             bandwidth_info = camera_manager.get_network_bandwidth_info()
             print(f"Bandwidth management: {bandwidth_info}")
             
             # Test image capture (respects bandwidth limits)
             for camera_name in cameras[:2]:
-                camera = await camera_manager.get_camera(camera_name)
+                camera = camera_manager.get_camera(camera_name)
                 await camera.configure(image_enhancement=True)
                 image = await camera.capture()
                 print(f"Mock image captured from {camera_name}: {image.shape}")
+            
+            # Initialize third camera for batch capture test
+            if len(cameras) > 2:
+                await camera_manager.initialize_camera(cameras[2])
             
             # Test batch capture with bandwidth management
             batch_results = await camera_manager.batch_capture(cameras[:3])

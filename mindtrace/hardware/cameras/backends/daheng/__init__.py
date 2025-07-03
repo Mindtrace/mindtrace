@@ -22,13 +22,17 @@ Usage:
     # Real camera
     if DAHENG_AVAILABLE:
         camera = DahengCamera("camera_name")
-        success, image = camera.capture()
-        camera.close()
+        success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
+        if success:
+            success, image = await camera.capture()
+            await camera.close()
     
     # Mock camera (always available)
     mock_camera = MockDahengCamera("mock_cam_0")
-    success, image = mock_camera.capture()
-    mock_camera.close()
+    success, cam_obj, remote_obj = await mock_camera.initialize()  # Initialize first
+    if success:
+        success, image = await mock_camera.capture()
+        await mock_camera.close()
 """
 
 # Try to import real Daheng camera implementation

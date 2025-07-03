@@ -20,8 +20,10 @@ Usage:
     # USB camera (index 0)
     if OPENCV_AVAILABLE:
         camera = OpenCVCamera("0")
-        success, image = camera.capture()
-        camera.close()
+        success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
+        if success:
+            success, image = await camera.capture()
+            await camera.close()
 """
 
 # Try to import OpenCV camera implementation
