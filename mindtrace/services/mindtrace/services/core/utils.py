@@ -120,6 +120,10 @@ def generate_connection_manager(
 
     # Create a temporary service instance to get the endpoints
     temp_service = service_cls()
+    
+    # Store service class and endpoints
+    ServiceConnectionManager._service_class = service_cls
+    ServiceConnectionManager._service_endpoints = temp_service._endpoints
 
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
