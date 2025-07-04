@@ -140,7 +140,7 @@ def demo_consumers(orchestrator: Orchestrator):
     maths_consumer = MathsConsumer()
 
     print("Connecting consumer...")
-    maths_consumer.connect(orchestrator)
+    maths_consumer.connect_to_orchestrator(orchestrator)
 
     print("Processing maths jobs...")
     maths_consumer.consume(num_messages=3, block=False)
@@ -210,7 +210,7 @@ def demo_priority(orchestrator: Orchestrator):
         time.sleep(2)
 
         consumer = MathsConsumer()
-        consumer.connect(orchestrator)
+        consumer.connect_to_orchestrator(orchestrator)
         consumer.consume(num_messages=3, queues=[priority_queue], block=False)
 
         orchestrator.clean_queue(priority_queue)

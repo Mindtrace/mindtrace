@@ -34,7 +34,7 @@ class TestConsumerIntegration:
                 return {"result": "redis_processed"}
         
         consumer = RedisTestWorker("redis_test_consumer_jobs")
-        consumer.connect(orchestrator)
+        consumer.connect_to_orchestrator(orchestrator)
         
         test_job = create_test_job("redis_consumer_job")
         orchestrator.publish(redis_queue, test_job)

@@ -22,7 +22,7 @@ class Consumer(Mindtrace):
         self.job_schema: Optional[JobSchema] = None
         self.queue_name: Optional[str] = None
     
-    def connect(self, orchestrator: Orchestrator) -> None:
+    def connect_to_orchestrator(self, orchestrator: Orchestrator) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
         if self.orchestrator:
             raise RuntimeError("Consumer already connected.")
