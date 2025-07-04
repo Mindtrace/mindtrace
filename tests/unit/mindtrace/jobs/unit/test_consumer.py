@@ -38,7 +38,7 @@ class TestConsumer:
                 return {"result": f"processed_{task_data}"}
         
         consumer = TestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator)
         
         test_job = create_test_job("consumer_test_job")
         job_id = self.orchestrator.publish(self.test_queue, test_job)
@@ -68,7 +68,7 @@ class TestConsumer:
                 return {"result": "success"}
         
         consumer = ErrorProneWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator)
         
         success_job = create_test_job("success_job")
         fail_job = create_test_job("fail_job", input_data_str='fail_me')
@@ -103,7 +103,7 @@ class TestConsumer:
                 return {"result": "multi_queue_processed"}
         
         consumer = MultiQueueWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator)
         
         job1 = create_test_job("queue1_job")
         job2 = create_test_job("queue2_job")
@@ -130,7 +130,7 @@ class TestConsumer:
                 return {"result": f"processed_{self.processed_count}"}
         
         consumer = EmptyTestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator)
         
         job_count = 5
         for i in range(job_count):
@@ -169,7 +169,7 @@ class TestConsumer:
                 return {"result": "structure_verified"}
         
         consumer = StructureTestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator)
         
         test_job = create_test_job("structure_test_job")
         self.orchestrator.publish(self.test_queue, test_job)
@@ -189,7 +189,7 @@ class TestConsumer:
         consumer = UnregisteredWorker("nonexistent_job_type")
         
         with pytest.raises(ValueError, match="No schema registered for job type: nonexistent_job_type"):
-            consumer.connect(self.orchestrator)
+            consumer.connect_to_orchestrator(self.orchestrator)
 
     def test_consumer_not_connected_consume(self):
         """Test calling consume before connecting."""
@@ -236,6 +236,6 @@ class TestConsumer:
             def run(self, job_dict):
                 return {}
         dummy = DummyWorker("test_consumer_jobs")
-        dummy.connect(self.orchestrator)
+        dummy.connect_to_orchestrator(self.orchestrator)
         with pytest.raises(RuntimeError):
-            dummy.connect(self.orchestrator) 
+            dummy.connect_to_orchestrator(self.orchestrator) 
