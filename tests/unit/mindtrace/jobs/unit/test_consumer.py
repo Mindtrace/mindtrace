@@ -19,8 +19,8 @@ class TestConsumer:
         
         self.test_schema = JobSchema(
             name="test_consumer_jobs",
-            input=SampleJobInput(),
-            output=SampleJobOutput()
+            input=SampleJobInput,
+            output=SampleJobOutput
         )
         self.test_queue = self.orchestrator.register(self.test_schema)
     
@@ -33,8 +33,8 @@ class TestConsumer:
             
             def run(self, job_dict):
                 self.processed_jobs.append(job_dict)
-                input_data = job_dict.get('input_data', {})
-                task_data = input_data.get('data', 'unknown')
+                payload = job_dict.get('payload', {})
+                task_data = payload.get('data', 'unknown')
                 return {"result": f"processed_{task_data}"}
         
         consumer = TestWorker("test_consumer_jobs")
@@ -49,7 +49,7 @@ class TestConsumer:
         processed_job = consumer.processed_jobs[0]
         assert isinstance(processed_job, dict)
         assert processed_job["id"] == test_job.id
-        assert processed_job["input_data"]["data"] == "test_input"
+        assert processed_job["payload"]["data"] == "test_input"
     
     def test_consumer_error_handling(self):
         """Test consumer error handling with failing jobs."""
@@ -60,8 +60,8 @@ class TestConsumer:
                 self.errors = []
             
             def run(self, job_dict):
-                input_data = job_dict.get('input_data', {})
-                if input_data.get('data') == 'fail_me':
+                payload = job_dict.get('payload', {})
+                if payload.get('data') == 'fail_me':
                     raise Exception("Simulated processing error")
                 
                 self.processed_jobs.append(job_dict)
@@ -71,8 +71,7 @@ class TestConsumer:
         consumer.connect(self.orchestrator)
         
         success_job = create_test_job("success_job")
-        fail_job = create_test_job("fail_job")
-        fail_job.input_data['data'] = 'fail_me'
+        fail_job = create_test_job("fail_job", input_data_str='fail_me')
         
         self.orchestrator.publish(self.test_queue, success_job)
         self.orchestrator.publish(self.test_queue, fail_job)
@@ -89,8 +88,8 @@ class TestConsumer:
         """Test consumer consuming from multiple queues."""
         schema2 = JobSchema(
             name="test_consumer_jobs_2",
-            input=SampleJobInput(),
-            output=SampleJobOutput()
+            input=SampleJobInput,
+            output=SampleJobOutput
         )
         queue2 = self.orchestrator.register(schema2)
         
@@ -159,13 +158,13 @@ class TestConsumer:
                 
                 assert isinstance(job_dict, dict)
                 
-                required_fields = ["id", "name", "schema_name", "payload", "input_data"]
+                required_fields = ["id", "name", "schema_name", "payload"]
                 for field in required_fields:
                     assert field in job_dict, f"Missing required field: {field}"
                 
-                assert isinstance(job_dict["input_data"], dict)
-                assert "data" in job_dict["input_data"]
-                assert "param1" in job_dict["input_data"]
+                assert isinstance(job_dict["payload"], dict)
+                assert "data" in job_dict["payload"]
+                assert "param1" in job_dict["payload"]
                 
                 return {"result": "structure_verified"}
         
@@ -178,8 +177,8 @@ class TestConsumer:
         consumer.consume(num_messages=1)
         
         assert consumer.received_message is not None
-        assert consumer.received_message["input_data"]["data"] == "test_input"
-        assert consumer.received_message["input_data"]["param1"] == "value1"
+        assert consumer.received_message["payload"]["data"] == "test_input"
+        assert consumer.received_message["payload"]["param1"] == "value1"
 
     def test_consumer_unregistered_job_type(self):
         """Test consumer connecting with unregistered job type."""

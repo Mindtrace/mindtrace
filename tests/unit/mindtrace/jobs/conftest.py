@@ -18,12 +18,15 @@ class SampleJobOutput(BaseModel):
     timestamp: str = "2024-01-01T00:00:00"
 
 
-def create_test_job(name: str = "test_job", schema_name: str = "default_schema") -> Job:
-    test_input = SampleJobInput()
+def create_test_job(name: str = "test_job", schema_name: str = "default_schema", input_data_str: str | None = None) -> Job:
+    if input_data_str is None:
+        test_input = SampleJobInput()
+    else:
+        test_input = SampleJobInput(data=input_data_str)
     schema = JobSchema(
         name=schema_name,
-        input=test_input,
-        output=SampleJobOutput()
+        input=SampleJobInput,
+        output=SampleJobOutput,
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
