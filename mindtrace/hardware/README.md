@@ -61,7 +61,7 @@ Install the base hardware component:
 
 ```bash
 # quick clone and install
-git clone https://github.com/mindtrace-ai/mindtrace.git
+git clone https://github.com/Mindtrace/mindtrace.git
 cd mindtrace
 uv sync --extra cameras-all
 ```
