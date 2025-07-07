@@ -36,13 +36,9 @@ maths_schema = JobSchema(
 
 class MathsConsumer(Consumer):
     """Consumer for processing maths operations."""
-
-    def __init__(self):
-        super().__init__("maths_operations")
-
     def run(self, job_dict: dict) -> dict:
         """Process a maths job."""
-        input_data = job_dict.get("input_data", {})
+        input_data = job_dict.get("payload", {})
         operation = input_data.get("operation", "add")
         a = input_data.get("a")
         b = input_data.get("b")
@@ -78,12 +74,12 @@ def setup_backend(backend_type: str):
         elif backend_type == "redis":
             backend = RedisClient(host="localhost", port=6379, db=0)
             try:
-                backend.redis.ping()
+                backend.connection.connection.ping()
                 print("Redis connection verified")
             except Exception as e:
                 print(f"Redis connection failed: {e}")
                 if backend:
-                    backend.close()
+                    backend.connection.connection.close()
                 raise
         elif backend_type == "rabbitmq":
             backend = RabbitMQClient(
@@ -100,7 +96,7 @@ def setup_backend(backend_type: str):
             except Exception as e:
                 print(f"RabbitMQ connection failed: {e}")
                 if backend:
-                    backend.close()
+                    backend.connection.close()
                 raise
         else:
             raise ValueError(f"Unknown backend type: {backend_type}")
@@ -140,7 +136,7 @@ def demo_consumers(orchestrator: Orchestrator):
     maths_consumer = MathsConsumer()
 
     print("Connecting consumer...")
-    maths_consumer.connect_to_orchestrator(orchestrator)
+    maths_consumer.connect_to_orchestrator(orchestrator, "maths_operations")
 
     print("Processing maths jobs...")
     maths_consumer.consume(num_messages=3, block=False)
@@ -210,7 +206,7 @@ def demo_priority(orchestrator: Orchestrator):
         time.sleep(2)
 
         consumer = MathsConsumer()
-        consumer.connect_to_orchestrator(orchestrator)
+        consumer.connect_to_orchestrator(orchestrator, priority_queue)
         consumer.consume(num_messages=3, queues=[priority_queue], block=False)
 
         orchestrator.clean_queue(priority_queue)

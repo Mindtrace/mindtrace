@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 from abc import abstractmethod
-from typing import Optional, Callable
+from typing import TYPE_CHECKING
 
 from mindtrace.core import MindtraceABC
+
+if TYPE_CHECKING:
+    from mindtrace.jobs.consumers.consumer import Consumer
 
 class ConsumerBackendBase(MindtraceABC):
     """Base class for consumer backends that handle message consumption."""
@@ -10,13 +14,11 @@ class ConsumerBackendBase(MindtraceABC):
     def __init__(
         self,
         queue_name: str,
-        orchestrator,
-        run_method: Optional[Callable] = None,
+        consumer_frontend: "Consumer",
     ):
         super().__init__()
         self.queue_name = queue_name
-        self.orchestrator = orchestrator
-        self.run_method = run_method
+        self.consumer_frontend = consumer_frontend
     
     @abstractmethod
     def consume(self, num_messages: int = 0, **kwargs) -> None:
@@ -33,6 +35,3 @@ class ConsumerBackendBase(MindtraceABC):
         """Process a single message using the stored run method."""
         raise NotImplementedError
     
-    def set_run_method(self, run_method: Callable) -> None:
-        """Set the consumer run method."""
-        self.run_method = run_method
