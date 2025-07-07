@@ -18,37 +18,39 @@ This component offers:
 
 ```
 mindtrace/hardware/
-├── core/
-│   ├── config.py          # Unified hardware configuration system
-│   └── exceptions.py      # Hardware-specific exception hierarchy
-├── cameras/
-│   ├── camera_manager.py  # Main camera management interface
-│   ├── backends/
-│   │   ├── base.py        # Abstract base camera class
-│   │   ├── daheng/        # Daheng camera implementation + mock
-│   │   │   ├── daheng_camera.py
-│   │   │   └── mock_daheng.py
-│   │   ├── basler/        # Basler camera implementation + mock
-│   │   │   ├── basler_camera.py
-│   │   │   └── mock_basler.py
-│   │   └── opencv/        # OpenCV camera implementation
-│   │       └── opencv_camera.py
-├── plcs/
-│   ├── plc_manager.py     # Main PLC management interface
-│   ├── backends/
-│   │   ├── base.py        # Abstract base PLC class
-│   │   └── allen_bradley/ # Allen Bradley PLC implementation + mock
-│   │       ├── allen_bradley_plc.py
-│   │       └── mock_allen_bradley.py
-├── sensors/               # Sensor implementations (future)
-├── actuators/             # Actuator implementations (future)
-├── tests/                 # Comprehensive test suite
-│   └── unit/
-│       ├── cameras/
-│       │   └── test_cameras.py
-│       └── plcs/
-│           └── test_plcs.py
-└── README.md             # This file
+└── mindtrace/
+    └── hardware/
+        ├── __init__.py        # Lazy imports for CameraManager and PLCManager
+        ├── core/
+        │   ├── config.py      # Unified hardware configuration system
+        │   └── exceptions.py  # Hardware-specific exception hierarchy
+        ├── cameras/
+        │   ├── camera_manager.py  # Main camera management interface
+        │   ├── backends/
+        │   │   ├── base.py        # Abstract base camera class
+        │   │   ├── daheng/        # Daheng camera implementation + mock
+        │   │   │   ├── daheng_camera.py
+        │   │   │   └── mock_daheng.py
+        │   │   ├── basler/        # Basler camera implementation + mock
+        │   │   │   ├── basler_camera.py
+        │   │   │   └── mock_basler.py
+        │   │   └── opencv/        # OpenCV camera implementation
+        │   │       └── opencv_camera.py
+        ├── plcs/
+        │   ├── plc_manager.py     # Main PLC management interface
+        │   ├── backends/
+        │   │   ├── base.py        # Abstract base PLC class
+        │   │   └── allen_bradley/ # Allen Bradley PLC implementation + mock
+        │   │       ├── allen_bradley_plc.py
+        │   │       └── mock_allen_bradley.py
+        ├── sensors/               # Sensor implementations (future)
+        ├── actuators/             # Actuator implementations (future)
+        └── tests/                 # Comprehensive test suite
+            └── unit/
+                ├── cameras/
+                │   └── test_cameras.py
+                └── plcs/
+                    └── test_plcs.py
 ```
 
 ## 🚀 Quick Start
@@ -96,7 +98,7 @@ mindtrace-uninstall-basler
 
 ```python
 import asyncio
-from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.mindtrace.hardware import CameraManager
 
 async def camera_example():
     # Initialize camera manager with mock support for testing
@@ -129,7 +131,7 @@ asyncio.run(camera_example())
 
 ```python
 import asyncio
-from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.mindtrace.hardware import PLCManager
 
 async def plc_example():
     # Initialize PLC manager
@@ -169,7 +171,7 @@ The `CameraManager` class provides a comprehensive async interface for managing 
 ### Modern Camera Management with CameraProxy
 
 ```python
-from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.mindtrace.hardware import CameraManager
 
 async def modern_camera_usage():
     # Initialize with network bandwidth management (important for GigE cameras)
@@ -220,7 +222,7 @@ print(f"All cameras: {cameras}")
 For quick single-camera operations, you can use the convenience function:
 
 ```python
-from mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
+from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
 
 async def quick_camera_access():
     # Initialize and get camera in one step
@@ -422,10 +424,10 @@ The `PLCManager` class provides a comprehensive async interface for managing PLC
 ### Initialization and Backend Management
 
 ```python
-from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.mindtrace.hardware import PLCManager
 
 # Initialize with specific backends
-manager = PLCManager(backends=["AllenBradley"])
+manager = PLCManager()
 
 # Register additional backends
 success = manager.register_backend("AllenBradley")
@@ -499,20 +501,20 @@ results = await manager.write_tags("ProductionPLC", [
 
 ```python
 # Batch read from multiple PLCs
-batch_results = await manager.batch_read({
-    "ProductionPLC": ["Motor1_Speed", "Conveyor_Status"],
-    "PackagingPLC": ["N7:0", "B3:0"]
-})
+batch_results = await manager.read_tags_batch([
+    ("ProductionPLC", ["Motor1_Speed", "Conveyor_Status"]),
+    ("PackagingPLC", ["N7:0", "B3:0"])
+])
 # Returns: {
 #     'ProductionPLC': {'Motor1_Speed': 1500.0, 'Conveyor_Status': True},
 #     'PackagingPLC': {'N7:0': 1500, 'B3:0': True}
 # }
 
 # Batch write to multiple PLCs
-batch_results = await manager.batch_write({
-    "ProductionPLC": [("Pump1_Command", True), ("Motor1_Speed", 1600.0)],
-    "PackagingPLC": [("N7:1", 2200), ("B3:1", False)]
-})
+batch_results = await manager.write_tags_batch([
+    ("ProductionPLC", [("Pump1_Command", True), ("Motor1_Speed", 1600.0)]),
+    ("PackagingPLC", [("N7:1", 2200), ("B3:1", False)])
+])
 ```
 
 ### PLC Information and Diagnostics
@@ -538,7 +540,7 @@ tag_info = await manager.get_tag_info("ProductionPLC", "Motor1_Speed")
 The camera configuration has been streamlined to include only actively used settings:
 
 ```python
-from mindtrace.hardware.core.config import get_hardware_config
+from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
 
 config = get_hardware_config()
 camera_settings = config.get_config().cameras
@@ -788,7 +790,7 @@ The component provides a clean, hierarchical exception system based on actual us
 
 ### Base Exceptions
 ```python
-from mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
     HardwareError,              # Base for all hardware errors
     HardwareOperationError,     # General hardware operation failures
     HardwareTimeoutError,       # Timeout operations
@@ -798,7 +800,7 @@ from mindtrace.hardware.core.exceptions import (
 
 ### Camera Exceptions
 ```python
-from mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
     CameraError,                # Base camera error
     CameraNotFoundError,        # Camera discovery failures
     CameraInitializationError,  # Camera initialization failures
@@ -811,7 +813,7 @@ from mindtrace.hardware.core.exceptions import (
 
 ### PLC Exceptions
 ```python
-from mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
     PLCError,                   # Base PLC error
     PLCNotFoundError,           # PLC discovery failures
     PLCConnectionError,         # PLC connection issues
@@ -864,8 +866,7 @@ except PLCTimeoutError:
 
 ```python
 import asyncio
-from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.mindtrace.hardware import CameraManager, PLCManager
 
 async def industrial_automation():
     # Initialize managers with network bandwidth management
@@ -923,10 +924,10 @@ asyncio.run(industrial_automation())
 
 ```python
 import asyncio
-from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.mindtrace.hardware import PLCManager
 
 async def multi_plc_coordination():
-    manager = PLCManager(backends=["AllenBradley"])
+    manager = PLCManager()
     
     # Register multiple PLCs
     plc_configs = [
@@ -945,13 +946,13 @@ async def multi_plc_coordination():
     # Coordinate production between PLCs
     while True:
         # Read status from all PLCs
-        batch_read_data = {
-            "ProductionPLC": ["Production_Ready", "Part_Count"],
-            "PackagingPLC": ["N7:0", "B3:0"],  # SLC addressing
-            "QualityPLC": ["Parameter:10"]      # CIP addressing
-        }
+        batch_read_data = [
+            ("ProductionPLC", ["Production_Ready", "Part_Count"]),
+            ("PackagingPLC", ["N7:0", "B3:0"]),  # SLC addressing
+            ("QualityPLC", ["Parameter:10"])      # CIP addressing
+        ]
         
-        results = await manager.batch_read(batch_read_data)
+        results = await manager.read_tags_batch(batch_read_data)
         
         # Coordination logic
         production_ready = results["ProductionPLC"]["Production_Ready"]
@@ -960,13 +961,13 @@ async def multi_plc_coordination():
         
         if production_ready and packaging_ready and quality_status == 1:
             # Start coordinated operation
-            batch_write_data = {
-                "ProductionPLC": [("Start_Production", True)],
-                "PackagingPLC": [("B3:1", True)],
-                "QualityPLC": [("Parameter:11", 1)]
-            }
+            batch_write_data = [
+                ("ProductionPLC", [("Start_Production", True)]),
+                ("PackagingPLC", [("B3:1", True)]),
+                ("QualityPLC", [("Parameter:11", 1)])
+            ]
             
-            write_results = await manager.batch_write(batch_write_data)
+            write_results = await manager.write_tags_batch(batch_write_data)
             print(f"Coordinated start: {write_results}")
         
         await asyncio.sleep(1)
@@ -983,8 +984,7 @@ except KeyboardInterrupt:
 ```python
 import asyncio
 import os
-from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.plcs.plc_manager import PLCManager
+from mindtrace.hardware.mindtrace.hardware import CameraManager, PLCManager
 
 async def testing_setup():
     # Enable mock backends for testing
@@ -993,7 +993,7 @@ async def testing_setup():
     
     # Initialize with mock backends and bandwidth management
     async with CameraManager(include_mocks=True, max_concurrent_captures=3) as camera_manager:
-        plc_manager = PLCManager(backends=["MockAllenBradley"])
+        plc_manager = PLCManager()
         
         try:
             # Test camera functionality with bandwidth management
@@ -1055,7 +1055,7 @@ asyncio.run(testing_setup())
 The hardware component uses a well-organized test structure:
 
 ```
-mindtrace/hardware/tests/
+mindtrace/hardware/mindtrace/hardware/tests/
 ├── __init__.py                 # Main test package
 └── unit/                       # Unit tests only
     ├── cameras/               # Camera-specific tests
@@ -1071,18 +1071,24 @@ mindtrace/hardware/tests/
 
 ```bash
 # Run all hardware unit tests
+cd mindtrace/hardware/
 pytest mindtrace/hardware/tests/unit/
 
+
 # Run all camera unit tests
+cd mindtrace/hardware/
 pytest mindtrace/hardware/tests/unit/cameras/
 
 # Run all PLC unit tests
+cd mindtrace/hardware/
 pytest mindtrace/hardware/tests/unit/plcs/
 
 # Run specific camera tests
+cd mindtrace/hardware/
 pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py
 
 # Run specific PLC tests
+cd mindtrace/hardware/
 pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py
 
 # Run with coverage
@@ -1113,7 +1119,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 
 ### Test Categories
 
-#### Camera Unit Tests (`unit/cameras/test_cameras.py`)
+#### Camera Unit Tests (`mindtrace/hardware/tests/unit/cameras/test_cameras.py`)
 - **MockDahengCamera Tests**: Initialization, connection, capture, configuration
 - **MockBaslerCamera Tests**: Basler-specific features and serial connections
 - **CameraManager Tests**: Backend registration, discovery, batch operations
@@ -1122,7 +1128,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 - **Performance Tests**: Concurrent capture, rapid sequences, resource cleanup
 - **Configuration Tests**: Persistence, validation, trigger modes
 
-#### PLC Unit Tests (`unit/plcs/test_plcs.py`)
+#### PLC Unit Tests (`mindtrace/hardware/tests/unit/plcs/test_plcs.py`)
 - **MockAllenBradleyPLC Tests**: Initialization, connection, auto-detection
 - **LogixDriver Tests**: Tag operations, writing, discovery
 - **SLCDriver Tests**: Data files, timers, counters, I/O operations
@@ -1133,7 +1139,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 
 ### Adding New Hardware Components
 
-1. Create a new directory under `mindtrace/hardware/`
+1. Create a new directory under `mindtrace/hardware/mindtrace/hardware/`
 2. Implement the component following the established patterns
 3. Add configuration options to `core/config.py`
 4. Add appropriate exceptions to `core/exceptions.py`
