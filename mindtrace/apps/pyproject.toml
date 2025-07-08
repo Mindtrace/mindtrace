@@ -15,12 +15,6 @@ dependencies = [
     "mindtrace-automation"
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.apps"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

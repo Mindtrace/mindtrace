@@ -1,13 +1,12 @@
-from abc import abstractmethod
 import logging
 from typing import Any
 
-from mindtrace.core import ifnone, Mindtrace
+from mindtrace.core import Mindtrace
 
 
 class ContextListener(Mindtrace):
     """A context listener that can subscribe to a ObservableContext.
-    
+
     The ContextListener class provides two main benefits:
 
     1. Deriving from Mindtrace, it provides for uniform logging of events.
@@ -36,19 +35,19 @@ class ContextListener(Mindtrace):
                 self.y = 0
 
         my_context = MyContext()
-        my_context.add_listener(ContextListener(autolog=["x", "y"]))
+        my_context.subscribe(ContextListener(autolog=["x", "y"]))
 
         my_context.x = 1
         my_context.y = 2
 
         # Logs:
         # [MyContext] x changed: 0 → 1
-        # [MyContext] y changed: 0 → 2  
+        # [MyContext] y changed: 0 → 2
     """
 
     def __init__(self, autolog: list[str] = None, log_level: int = logging.ERROR, logger: Any = None, **kwargs):
         """Initialize the context listener.
-        
+
         Args:
             autolog: A list of variables to log automatically.
             log_level: The log level to use for the logger.
@@ -70,4 +69,5 @@ class ContextListener(Mindtrace):
     def _make_auto_logger(self, varname: str, log_level: int):
         def _logger(source: str, old: Any, new: Any):
             self.logger.log(log_level, f"[{source}] {varname} changed: {old} → {new}")
+
         return _logger

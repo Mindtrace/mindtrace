@@ -1,13 +1,11 @@
 [project]
 name = "mindtrace-core"
 version = "0.1.0"
-dependencies = []
-
-[tool.setuptools]
-packages = ["mindtrace.core"]
-
-[tool.setuptools.package-dir]
-"" = "."
+dependencies = [
+    "pillow>=11.2.1",
+    "pydantic>=2.11.1",
+    "tqdm>=4.67.1",
+]
 
 [build-system]
 requires = ["setuptools"]

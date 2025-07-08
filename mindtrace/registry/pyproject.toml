@@ -3,15 +3,10 @@ name = "mindtrace-registry"
 version = "0.1.0"
 dependencies = [
     "mindtrace-core",
+    "minio>=7.2.15",
     "pydantic>=2.11.1",
     "zenml>=0.82.1",
 ]
-
-[tool.setuptools]
-packages = ["mindtrace.registry"]
-
-[tool.setuptools.package-dir]
-"" = "."
 
 [build-system]
 requires = ["setuptools"]

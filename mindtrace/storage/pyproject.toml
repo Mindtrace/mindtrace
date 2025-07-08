@@ -1,0 +1,10 @@
+[project]
+name = "mindtrace-storage"
+version = "0.1.0"
+dependencies = [
+    "google-cloud-storage",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

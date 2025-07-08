@@ -11,12 +11,6 @@ dependencies = [
     "mindtrace-cluster"
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.automation"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
