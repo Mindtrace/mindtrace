@@ -1,8 +1,65 @@
 """
-Abstract base class for PLC implementations.
+Abstract base classes for PLC implementations.
 
-Defines the interface that all PLC backends must implement to ensure
-consistent behavior across different PLC manufacturers and protocols.
+This module defines the interface that all PLC backends must implement,
+providing a consistent API for PLC operations across different manufacturers
+and communication protocols.
+
+Features:
+    - Abstract base class with comprehensive async PLC interface
+    - Consistent async pattern matching camera backends
+    - Type-safe method signatures with full type hints
+    - Configuration system integration
+    - Resource management and cleanup
+    - Default implementations for optional features
+    - Standardized constructor signature across all backends
+    - Retry logic with exponential backoff
+    - Connection management and monitoring
+
+Usage:
+    This is an abstract base class and cannot be instantiated directly.
+    PLC backends should inherit from BasePLC and implement all
+    abstract methods.
+
+Example:
+    class MyPLCBackend(BasePLC):
+        async def initialize(self) -> Tuple[bool, Any, Any]:
+            # Implementation here
+            pass
+        
+        async def connect(self) -> bool:
+            # Implementation here
+            pass
+        
+        async def read_tag(self, tags: Union[str, List[str]]) -> Dict[str, Any]:
+            # Implementation here
+            pass
+        
+        # ... implement other abstract methods
+
+Backend Requirements:
+    All PLC backends must implement the following abstract methods:
+    - initialize(): Establish initial connection and setup
+    - connect(): Connect to the PLC
+    - disconnect(): Disconnect from the PLC
+    - is_connected(): Check connection status
+    - read_tag(): Read tag values from PLC
+    - write_tag(): Write tag values to PLC
+    - get_all_tags(): List all available tags
+    - get_tag_info(): Get detailed tag information
+    - get_available_plcs(): Static method for PLC discovery
+    - get_backend_info(): Static method for backend information
+
+Error Handling:
+    Backends should raise appropriate exceptions from the PLC exception hierarchy:
+    - PLCError: Base exception for all PLC-related errors
+    - PLCNotFoundError: PLC not found during discovery
+    - PLCConnectionError: Connection establishment or maintenance failures
+    - PLCInitializationError: PLC initialization failures
+    - PLCCommunicationError: Communication protocol errors
+    - PLCTagError: Tag-related operation errors
+    - PLCTimeoutError: Operation timeout errors
+    - PLCConfigurationError: Configuration-related errors
 """
 
 import asyncio

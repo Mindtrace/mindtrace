@@ -1,8 +1,97 @@
 """
-PLC Manager for Mindtrace hardware system.
+Modern PLC Manager for Mindtrace Hardware System
 
-Provides unified interface for managing PLCs from different manufacturers
-with support for discovery, registration, and batch operations.
+A comprehensive PLC management system that provides unified access to
+multiple PLC backends with async operations, proper resource management,
+and batch processing capabilities.
+
+Key Features:
+    - Automatic PLC discovery and registration
+    - Unified interface for different PLC manufacturers
+    - Async operations with proper error handling
+    - Batch tag read/write operations
+    - Connection management and monitoring
+    - Thread-safe operations with proper locking
+    - Comprehensive configuration management
+    - Integrated logging and status reporting
+
+Supported Backends:
+    - Allen-Bradley: ControlLogix, CompactLogix PLCs (pycomm3)
+    - Siemens: S7-300, S7-400, S7-1200, S7-1500 PLCs (python-snap7)
+    - Modbus: Modbus TCP/RTU devices (pymodbus)
+    - Mock backends for testing and development
+
+Requirements:
+    - pycomm3: Allen-Bradley PLC communication
+    - python-snap7: Siemens PLC communication  
+    - pymodbus: Modbus device communication
+    - asyncio: Async operations support
+
+Installation:
+    pip install pycomm3 python-snap7 pymodbus
+
+Usage:
+    # Simple usage with discovery
+    async with PLCManager() as manager:
+        plcs = await manager.discover_plcs()
+        await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
+        await manager.connect_plc("PLC1")
+        
+        # Read tags
+        values = await manager.read_tag("PLC1", ["Tag1", "Tag2"])
+        
+        # Write tags
+        await manager.write_tag("PLC1", [("Tag1", 100), ("Tag2", 200)])
+    
+    # Batch operations
+    async with PLCManager() as manager:
+        # Register multiple PLCs
+        await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
+        await manager.register_plc("PLC2", "Siemens", "192.168.1.101")
+        
+        # Connect all PLCs
+        results = await manager.connect_all_plcs()
+        
+        # Batch read from multiple PLCs
+        read_requests = [
+            ("PLC1", ["Temperature", "Pressure"]),
+            ("PLC2", ["Speed", "Position"])
+        ]
+        values = await manager.read_tags_batch(read_requests)
+
+Configuration:
+    All parameters are configurable via the hardware configuration system:
+    - MINDTRACE_HW_PLC_AUTO_DISCOVERY: Enable automatic PLC discovery
+    - MINDTRACE_HW_PLC_CONNECTION_TIMEOUT: Connection timeout in seconds
+    - MINDTRACE_HW_PLC_READ_TIMEOUT: Tag read timeout in seconds
+    - MINDTRACE_HW_PLC_WRITE_TIMEOUT: Tag write timeout in seconds
+    - MINDTRACE_HW_PLC_RETRY_COUNT: Number of retry attempts
+    - MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS: Maximum concurrent connections
+    - MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED: Enable Allen-Bradley backend
+    - MINDTRACE_HW_PLC_SIEMENS_ENABLED: Enable Siemens backend
+    - MINDTRACE_HW_PLC_MODBUS_ENABLED: Enable Modbus backend
+
+Error Handling:
+    The module uses a comprehensive exception hierarchy for precise error reporting:
+    - PLCError: Base exception for all PLC-related errors
+    - PLCNotFoundError: PLC not found during discovery or registration
+    - PLCConnectionError: Connection establishment or maintenance failures
+    - PLCInitializationError: PLC initialization failures
+    - PLCCommunicationError: Communication protocol errors
+    - PLCTagError: Tag-related operation errors
+    - PLCTagReadError: Tag read operation failures
+    - PLCTagWriteError: Tag write operation failures
+    - HardwareOperationError: General hardware operation failures
+
+Thread Safety:
+    All PLC operations are thread-safe. Multiple PLCs can be operated
+    simultaneously from different threads without interference.
+
+Performance Notes:
+    - PLC discovery may take several seconds depending on network size
+    - Batch operations are more efficient than individual tag operations
+    - Connection pooling is used for optimal performance
+    - Consider PLC-specific optimizations for production use
 """
 
 import asyncio
@@ -25,16 +114,58 @@ from mindtrace.hardware.core.exceptions import (
 
 class PLCManager(Mindtrace):
     """
-    Unified PLC management system.
+    Unified PLC management system for industrial automation.
     
-    Manages PLCs from different manufacturers and provides a consistent
-    interface for PLC operations including discovery, connection management,
-    and tag operations.
+    This manager provides a comprehensive interface for managing PLCs from different
+    manufacturers with support for discovery, registration, connection management,
+    and batch tag operations. It handles multiple PLC backends transparently and
+    provides thread-safe operations with proper error handling.
+    
+    The manager supports:
+    - Automatic PLC discovery across multiple backends
+    - Dynamic PLC registration and connection management
+    - Batch tag read/write operations for optimal performance
+    - Connection monitoring and automatic reconnection
+    - Comprehensive error handling and logging
+    - Thread-safe operations with proper resource management
+    
+    Supported PLC Types:
+    - Allen-Bradley: ControlLogix, CompactLogix, MicroLogix PLCs
+    - Siemens: S7-300, S7-400, S7-1200, S7-1500 PLCs (Future)
+    - Modbus: Modbus TCP/RTU devices (Future)
+    - Mock PLCs: For testing and development
     
     Attributes:
-        plcs: Dictionary of registered PLC instances
-        config: Hardware configuration manager
-        logger: Centralized logger instance
+        plcs: Dictionary mapping PLC names to PLC instances
+        config: Hardware configuration manager instance
+        logger: Centralized logger for PLC operations
+        
+    Example:
+        # Basic usage
+        async with PLCManager() as manager:
+            # Discover available PLCs
+            discovered = await manager.discover_plcs()
+            
+            # Register and connect to a PLC
+            await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
+            await manager.connect_plc("PLC1")
+            
+            # Read and write tags
+            values = await manager.read_tag("PLC1", ["Temperature", "Pressure"])
+            await manager.write_tag("PLC1", [("Setpoint", 75.0)])
+        
+        # Batch operations
+        async with PLCManager() as manager:
+            # Register multiple PLCs
+            await manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
+            await manager.register_plc("PLC2", "AllenBradley", "192.168.1.101")
+            
+            # Batch read from multiple PLCs
+            read_requests = [
+                ("PLC1", ["Temperature", "Pressure"]),
+                ("PLC2", ["Speed", "Position"])
+            ]
+            results = await manager.read_tags_batch(read_requests)
     """
     
     def __init__(self):

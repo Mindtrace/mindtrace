@@ -21,11 +21,11 @@ Configuration:
     Settings can be customized via:
     
     1. Environment Variables:
-       - MINDTRACE_CAMERA_IP_RANGE: IP range for firewall rules (default: 192.168.50.0/24)
-       - MINDTRACE_FIREWALL_RULE_NAME: Name for firewall rules (default: "Allow Camera Network")
-       - MINDTRACE_FIREWALL_TIMEOUT: Timeout for firewall operations (default: 30s)
-       - MINDTRACE_NETWORK_TIMEOUT: General network timeout (default: 30s)
-       - MINDTRACE_NETWORK_RETRY_COUNT: Network retry attempts (default: 3)
+       - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE: IP range for firewall rules (default: 192.168.50.0/24)
+       - MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME: Name for firewall rules (default: "Allow Camera Network")
+       - MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT: Timeout for firewall operations (default: 30s)
+       - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS: General network timeout (default: 30s)
+       - MINDTRACE_HW_NETWORK_RETRY_COUNT: Network retry attempts (default: 3)
     
     2. Configuration File (hardware_config.json):
        {
@@ -64,6 +64,7 @@ from typing import List, Optional, Tuple
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
 from mindtrace.hardware.cameras.setup.setup_daheng import install_daheng_sdk, uninstall_daheng_sdk
+from mindtrace.hardware.core.config import get_hardware_config
 
 
 class CameraSystemSetup(Mindtrace):
@@ -79,12 +80,15 @@ class CameraSystemSetup(Mindtrace):
         # Initialize base class first
         super().__init__()
         
+        # Get hardware configuration
+        self.hardware_config = get_hardware_config()
+        
         self.platform = platform.system()
         
         self.logger.info(f"Initializing camera system setup for {self.platform}")
-        self.logger.debug(f"Camera IP range: {self.config.network.camera_ip_range}")
-        self.logger.debug(f"Firewall rule name: {self.config.network.firewall_rule_name}")
-        self.logger.debug(f"Network timeout: {self.config.network.timeout_seconds}s")
+        self.logger.debug(f"Camera IP range: {self.hardware_config.get_config().network.camera_ip_range}")
+        self.logger.debug(f"Firewall rule name: {self.hardware_config.get_config().network.firewall_rule_name}")
+        self.logger.debug(f"Network timeout: {self.hardware_config.get_config().network.timeout_seconds}s")
     
     def install_all_sdks(self, release_version: str = "v1.0-stable") -> bool:
         """
@@ -181,7 +185,7 @@ class CameraSystemSetup(Mindtrace):
             True if firewall configuration successful, False otherwise
         """
         # Use provided IP range or fall back to config default
-        target_ip_range = ip_range or self.config.network.camera_ip_range
+        target_ip_range = ip_range or self.hardware_config.get_config().network.camera_ip_range
         
         self.logger.info(f"Configuring firewall for camera communication on {target_ip_range}")
         
@@ -211,8 +215,8 @@ class CameraSystemSetup(Mindtrace):
         """
         self.logger.info("Configuring Windows firewall rules")
         
-        rule_name = self.config.network.firewall_rule_name
-        timeout = self.config.network.firewall_timeout
+        rule_name = self.hardware_config.get_config().network.firewall_rule_name
+        timeout = self.hardware_config.get_config().network.firewall_timeout
         
         try:
             # Check if rule already exists
@@ -261,7 +265,7 @@ class CameraSystemSetup(Mindtrace):
         """
         self.logger.info("Configuring Linux UFW firewall rules")
         
-        timeout = self.config.network.firewall_timeout
+        timeout = self.hardware_config.get_config().network.firewall_timeout
         
         try:
             # Check if UFW is installed and active
@@ -339,9 +343,9 @@ Examples:
 
 Network Configuration:
     The script configures firewall rules for GigE Vision camera communication.
-    Default IP range is {setup.config.network.camera_ip_range} (configured via config/env).
-    Default firewall rule name: "{setup.config.network.firewall_rule_name}"
-    Default timeout: {setup.config.network.firewall_timeout}s
+    Default IP range is {setup.hardware_config.get_config().network.camera_ip_range} (configured via config/env).
+    Default firewall rule name: "{setup.hardware_config.get_config().network.firewall_rule_name}"
+    Default timeout: {setup.hardware_config.get_config().network.firewall_timeout}s
     
     Windows: Uses netsh advfirewall commands
     Linux:   Uses UFW (Uncomplicated Firewall)
@@ -366,7 +370,7 @@ Configuration:
     parser.add_argument(
         "--ip-range",
         default=None,  # Will use config default if not specified
-        help=f"IP range to allow in firewall (default: {setup.config.network.camera_ip_range})"
+        help=f"IP range to allow in firewall (default: {setup.hardware_config.get_config().network.camera_ip_range})"
     )
     parser.add_argument(
         "--version",
@@ -385,9 +389,9 @@ Configuration:
     if args.verbose:
         setup.logger.setLevel(logging.DEBUG)
         setup.logger.debug("Verbose logging enabled")
-        setup.logger.debug(f"Using configuration: IP range={setup.config.network.camera_ip_range}, "
-                    f"Rule name='{setup.config.network.firewall_rule_name}', "
-                    f"Timeout={setup.config.network.firewall_timeout}s")
+        setup.logger.debug(f"Using configuration: IP range={setup.hardware_config.get_config().network.camera_ip_range}, "
+                    f"Rule name='{setup.hardware_config.get_config().network.firewall_rule_name}', "
+                    f"Timeout={setup.hardware_config.get_config().network.firewall_timeout}s")
     
     overall_success = True
     

@@ -33,6 +33,21 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_DAHENG_ENABLED: Enable Daheng backend
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
+    - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
+    - MINDTRACE_HW_PATHS_BIN_DIR: Directory for binary installations
+    - MINDTRACE_HW_PATHS_INCLUDE_DIR: Directory for header files
+    - MINDTRACE_HW_PATHS_SHARE_DIR: Directory for shared data files
+    - MINDTRACE_HW_PATHS_CACHE_DIR: Directory for temporary files and cache
+    - MINDTRACE_HW_PATHS_LOG_DIR: Directory for log files
+    - MINDTRACE_HW_PATHS_CONFIG_DIR: Directory for configuration files
+    - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE: IP range for camera network communication
+    - MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME: Name for firewall rules
+    - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS: General network timeout in seconds
+    - MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT: Timeout for firewall operations in seconds
+    - MINDTRACE_HW_NETWORK_RETRY_COUNT: Number of retry attempts for network operations
+    - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
+    - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
+    - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -113,10 +128,10 @@ class CameraSettings:
     
     # Timeout and discovery settings
     timeout_ms: int = 5000
-    max_camera_index: int = 10
+    max_camera_index: int = 1
     
     # Mock settings
-    mock_camera_count: int = 25
+    mock_camera_count: int = 10
     
     # Image enhancement settings
     enhancement_gamma: float = 2.2
@@ -140,6 +155,54 @@ class CameraBackends:
     opencv_enabled: bool = True
     mock_enabled: bool = False
     discovery_timeout: float = 10.0
+
+
+@dataclass
+class PathSettings:
+    """
+    Configuration for installation and library paths.
+    
+    Attributes:
+        lib_dir: Directory for library installations (default: ~/.local/lib)
+        bin_dir: Directory for binary installations (default: ~/.local/bin)
+        include_dir: Directory for header files (default: ~/.local/include)
+        share_dir: Directory for shared data files (default: ~/.local/share)
+        cache_dir: Directory for temporary files and cache (default: ~/.cache/mindtrace)
+        log_dir: Directory for log files (default: ~/.cache/mindtrace/logs)
+        config_dir: Directory for configuration files (default: ~/.config/mindtrace)
+    """
+    lib_dir: str = "~/.local/lib"
+    bin_dir: str = "~/.local/bin"
+    include_dir: str = "~/.local/include"
+    share_dir: str = "~/.local/share"
+    cache_dir: str = "~/.cache/mindtrace"
+    log_dir: str = "~/.cache/mindtrace/logs"
+    config_dir: str = "~/.config/mindtrace"
+
+
+@dataclass
+class NetworkSettings:
+    """
+    Configuration for network settings and firewall management.
+    
+    Attributes:
+        camera_ip_range: IP range for camera network communication (default: 192.168.50.0/24)
+        firewall_rule_name: Name for firewall rules (default: "Allow Camera Network")
+        timeout_seconds: General network timeout in seconds
+        firewall_timeout: Timeout for firewall operations in seconds
+        retry_count: Number of retry attempts for network operations
+        network_interface: Network interface to use for camera communication
+        jumbo_frames_enabled: Enable jumbo frames for GigE camera optimization
+        multicast_enabled: Enable multicast for camera discovery
+    """
+    camera_ip_range: str = "192.168.50.0/24"
+    firewall_rule_name: str = "Allow Camera Network"
+    timeout_seconds: float = 30.0
+    firewall_timeout: float = 30.0
+    retry_count: int = 3
+    network_interface: str = "auto"  # "auto" for automatic detection
+    jumbo_frames_enabled: bool = True
+    multicast_enabled: bool = True
 
 
 @dataclass
@@ -232,6 +295,8 @@ class HardwareConfig:
     Attributes:
         cameras: Camera-specific settings and parameters
         backends: Camera backend availability and configuration
+        paths: Installation and library paths
+        network: Network settings and firewall configuration
         sensors: Sensor component configuration
         actuators: Actuator component configuration
         plcs: PLC component configuration
@@ -239,6 +304,8 @@ class HardwareConfig:
     """
     cameras: CameraSettings = field(default_factory=CameraSettings)
     backends: CameraBackends = field(default_factory=CameraBackends)
+    paths: PathSettings = field(default_factory=PathSettings)
+    network: NetworkSettings = field(default_factory=NetworkSettings)
     sensors: SensorSettings = field(default_factory=SensorSettings)
     actuators: ActuatorSettings = field(default_factory=ActuatorSettings)
     plcs: PLCSettings = field(default_factory=PLCSettings)
@@ -273,9 +340,9 @@ class HardwareConfigManager:
         """Load configuration from environment variables and config file."""
         self._load_from_env()
         
-        if os.path.exists(self.config_file):
+        if os.path.exists(Path(self.config_file).expanduser()):
             try:
-                self._load_from_file(self.config_file)
+                self._load_from_file(str(Path(self.config_file).expanduser()))
                 logger.info("hardware_config_loaded", source="file", file=self.config_file)
             except Exception as e:
                 logger.warning("hardware_config_load_failed", source="file", file=self.config_file, error=str(e))
@@ -346,6 +413,53 @@ class HardwareConfigManager:
         
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DISCOVERY_TIMEOUT"):
             self._config.backends.discovery_timeout = float(env_val)
+        
+        # Path settings
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_LIB_DIR"):
+            self._config.paths.lib_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_BIN_DIR"):
+            self._config.paths.bin_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_INCLUDE_DIR"):
+            self._config.paths.include_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_SHARE_DIR"):
+            self._config.paths.share_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_CACHE_DIR"):
+            self._config.paths.cache_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_LOG_DIR"):
+            self._config.paths.log_dir = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_PATHS_CONFIG_DIR"):
+            self._config.paths.config_dir = env_val
+        
+        # Network settings
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE"):
+            self._config.network.camera_ip_range = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME"):
+            self._config.network.firewall_rule_name = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
+            self._config.network.timeout_seconds = float(env_val)
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
+            self._config.network.firewall_timeout = float(env_val)
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
+            self._config.network.retry_count = int(env_val)
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
+            self._config.network.network_interface = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED"):
+            self._config.network.jumbo_frames_enabled = env_val.lower() == "true"
+        
+        if env_val := os.getenv("MINDTRACE_HW_NETWORK_MULTICAST_ENABLED"):
+            self._config.network.multicast_enabled = env_val.lower() == "true"
         
         # Sensor settings
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_AUTO_DISCOVERY"):
@@ -440,6 +554,16 @@ class HardwareConfigManager:
                 if hasattr(self._config.backends, key):
                     setattr(self._config.backends, key, value)
         
+        if "paths" in config_data:
+            for key, value in config_data["paths"].items():
+                if hasattr(self._config.paths, key):
+                    setattr(self._config.paths, key, value)
+        
+        if "network" in config_data:
+            for key, value in config_data["network"].items():
+                if hasattr(self._config.network, key):
+                    setattr(self._config.network, key, value)
+        
         if "sensors" in config_data:
             for key, value in config_data["sensors"].items():
                 if hasattr(self._config.sensors, key):
@@ -470,9 +594,9 @@ class HardwareConfigManager:
         file_path = config_file or self.config_file
         config_dict = asdict(self._config)
         
-        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(file_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
         
-        with open(file_path, 'w') as f:
+        with open(Path(file_path).expanduser(), 'w') as f:
             json.dump(config_dict, f, indent=2)
         
         logger.info("hardware_config_saved", file=file_path)
@@ -500,6 +624,10 @@ class HardwareConfigManager:
             return asdict(self._config.cameras)
         elif key == "backends":
             return asdict(self._config.backends)
+        elif key == "paths":
+            return asdict(self._config.paths)
+        elif key == "network":
+            return asdict(self._config.network)
         elif key == "sensors":
             return asdict(self._config.sensors)
         elif key == "actuators":

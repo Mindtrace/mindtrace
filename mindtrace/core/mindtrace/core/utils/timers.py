@@ -1,7 +1,7 @@
 """Utility class for simple Timer and TimerCollection classes."""
 
 import time
-from typing import Dict, Optional, Type
+from typing import Dict, List, Optional, Type
 
 from tqdm import tqdm
 
@@ -63,9 +63,36 @@ class Timer:
         """Reset and start the timer."""
         self.reset()
         self.start()
+    
+    def __enter__(self):
+        """Enter the context manager."""
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and stop the timer."""
+        self.stop()
+        return False  # Don't suppress exceptions
 
     def __str__(self):
         return f"{self.duration():.3f}s"
+
+
+class TimerContext:
+    """Context manager for individual timers in a TimerCollection."""
+    
+    def __init__(self, timer_collection: "TimerCollection", name: str):
+        self.timer_collection = timer_collection
+        self.name = name
+
+    def __enter__(self):
+        """Enter the context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit the context manager and stop the specific timer."""
+        self.timer_collection.stop(self.name)
+        return False  # Don't suppress exceptions
 
 
 class TimerCollection:
@@ -100,16 +127,41 @@ class TimerCollection:
             # Timer 2: 0.000s
             # Timer 3: 0.000s
 
+    Context Manager Example::
+
+        import time
+        from mindtrace.core import TimerCollection
+
+        tc = TimerCollection()
+        with tc.start('Timer 1'):
+            with tc.start('Timer 2'):
+                time.sleep(1)
+            # stops "Timer 2"
+            with tc.start('Timer 3'):
+                time.sleep(2)
+            # stops "Timer 3"
+        # stops "Timer 1"
+
+        print(tc)
+            # Timer 1: 3.000s
+            # Timer 2: 1.000s
+            # Timer 3: 2.000s
+
     """
 
     def __init__(self):
         self._timers: Dict[str, Timer] = {}
 
+    def add_timer(self, name: str):
+        """Add a timer with the given name. If the timer already exists, it will be replaced."""
+        self._timers[name] = Timer()
+
     def start(self, name: str):
         """Start the timer with the given name. If the timer does not exist, it will be created."""
         if name not in self._timers:
-            self._timers[name] = Timer()
+            self.add_timer(name)
         self._timers[name].start()
+        return TimerContext(self, name)
 
     def stop(self, name: str):
         """Stop the timer with the given name.
@@ -197,7 +249,7 @@ class Timeout:
         from urllib3.util.url import parse_url, Url
         from mindtrace.core import Timeout
         from mindtrace.services import Service
-        
+
         def get_server_status(url: Url):
             # The following request may fail for two categories of reasons:
             #   1. The server has not launched yet: Will raise a ConnectionError, we should retry.

@@ -38,6 +38,7 @@ from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.core.utils import download_and_extract_zip, download_and_extract_tarball
+from mindtrace.hardware.core.config import get_hardware_config
 
 
 class DahengSDKInstaller(Mindtrace):
@@ -62,8 +63,11 @@ class DahengSDKInstaller(Mindtrace):
         # Initialize base class first
         super().__init__()
         
+        # Get hardware configuration
+        self.hardware_config = get_hardware_config()
+        
         self.release_version = release_version
-        self.daheng_dir = Path(self.config.DIR_PATHS.LIB) / "daheng"
+        self.daheng_dir = Path(self.hardware_config.get_config().paths.lib_dir).expanduser() / "daheng"
         self.platform = platform.system()
         
         # Generate URLs based on version
@@ -113,25 +117,37 @@ class DahengSDKInstaller(Mindtrace):
             self.logger.info(f"Downloading SDK from {self.linux_sdk_url}")
             extracted_dir = download_and_extract_tarball(
                 url=self.linux_sdk_url,
-                save_dir=str(self.daheng_dir)
+                extract_to=str(self.daheng_dir)
             )
             self.logger.info(f"Extracted SDK to {extracted_dir}")
             
             # Find and prepare the installer script
+            # The installer might be directly in the extracted directory or in a subdirectory
             runfile_path = Path(extracted_dir) / "Galaxy_camera.run"
             
             if not runfile_path.exists():
-                self.logger.error(f"Installer script not found: {runfile_path}")
-                return False
+                # Look for the installer in subdirectories
+                for subdir in Path(extracted_dir).iterdir():
+                    if subdir.is_dir():
+                        potential_runfile = subdir / "Galaxy_camera.run"
+                        if potential_runfile.exists():
+                            runfile_path = potential_runfile
+                            self.logger.info(f"Found installer in subdirectory: {runfile_path}")
+                            break
+                else:
+                    self.logger.error(f"Installer script not found in {extracted_dir} or its subdirectories")
+                    self.logger.debug(f"Contents of {extracted_dir}: {list(Path(extracted_dir).iterdir())}")
+                    return False
             
             # Make the installer executable
             self.logger.info("Making installer script executable")
             self._make_executable(runfile_path)
             
-            # Change to extracted directory and run installer
+            # Change to directory containing the installer and run installer
             original_cwd = os.getcwd()
-            os.chdir(extracted_dir)
-            self.logger.debug(f"Changed working directory to {extracted_dir}")
+            installer_dir = runfile_path.parent
+            os.chdir(installer_dir)
+            self.logger.debug(f"Changed working directory to {installer_dir}")
             
             try:
                 self.logger.info("Running Galaxy SDK installer")
@@ -139,7 +155,7 @@ class DahengSDKInstaller(Mindtrace):
                 
                 result = subprocess.run(
                     ["./Galaxy_camera.run"],
-                    cwd=extracted_dir,
+                    cwd=installer_dir,
                     capture_output=False  # Allow user interaction
                 )
                 
@@ -201,7 +217,7 @@ class DahengSDKInstaller(Mindtrace):
             self.logger.info(f"Downloading SDK from {self.windows_sdk_url}")
             extracted_dir = download_and_extract_zip(
                 url=self.windows_sdk_url,
-                save_dir=str(self.daheng_dir)
+                extract_to=str(self.daheng_dir)
             )
             
             # Find the SDK executable

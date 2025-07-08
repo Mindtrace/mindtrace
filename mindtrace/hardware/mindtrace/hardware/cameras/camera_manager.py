@@ -292,106 +292,312 @@ class CameraProxy:
     
     # Exposure Control
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
-        """Set exposure time in microseconds."""
+        """
+        Set camera exposure time.
+        
+        Args:
+            exposure: Exposure time in microseconds
+            
+        Returns:
+            True if exposure was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If exposure value is invalid
+            CameraConnectionError: If camera is not connected
+        """
         async with self._lock:
             return await self._camera.set_exposure(exposure)
     
     async def get_exposure(self) -> float:
-        """Get current exposure time."""
+        """
+        Get current camera exposure time.
+        
+        Returns:
+            Current exposure time in microseconds
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return await self._camera.get_exposure()
     
     async def get_exposure_range(self) -> Tuple[float, float]:
-        """Get exposure range as (min, max)."""
+        """
+        Get camera exposure range.
+        
+        Returns:
+            Tuple of (minimum_exposure, maximum_exposure) in microseconds
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         range_list = await self._camera.get_exposure_range()
         return range_list[0], range_list[1]
     
     # Gain Control
     def set_gain(self, gain: Union[int, float]) -> bool:
-        """Set camera gain."""
+        """
+        Set camera gain value.
+        
+        Args:
+            gain: Gain value (range depends on camera model)
+            
+        Returns:
+            True if gain was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If gain value is invalid
+        """
         return self._camera.set_gain(gain)
     
     def get_gain(self) -> float:
-        """Get current gain."""
+        """
+        Get current camera gain value.
+        
+        Returns:
+            Current gain value
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.get_gain()
     
     def get_gain_range(self) -> Tuple[float, float]:
-        """Get gain range as (min, max)."""
+        """
+        Get camera gain range.
+        
+        Returns:
+            Tuple of (minimum_gain, maximum_gain)
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         range_list = self._camera.get_gain_range()
         return range_list[0], range_list[1]
     
     # ROI Control
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
-        """Set Region of Interest."""
+        """
+        Set camera Region of Interest (ROI).
+        
+        Args:
+            x: X offset in pixels
+            y: Y offset in pixels
+            width: ROI width in pixels
+            height: ROI height in pixels
+            
+        Returns:
+            True if ROI was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If ROI parameters are invalid
+        """
         return self._camera.set_ROI(x, y, width, height)
     
     def get_roi(self) -> Dict[str, int]:
-        """Get current ROI settings."""
+        """
+        Get current Region of Interest settings.
+        
+        Returns:
+            Dictionary with keys: 'x', 'y', 'width', 'height'
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.get_ROI()
     
     def reset_roi(self) -> bool:
-        """Reset ROI to full sensor."""
+        """
+        Reset ROI to full sensor size.
+        
+        Returns:
+            True if ROI was reset successfully, False otherwise
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.reset_ROI()
     
     # Trigger Control  
     async def set_trigger_mode(self, mode: str) -> bool:
-        """Set trigger mode ('continuous' or 'trigger')."""
+        """
+        Set camera trigger mode.
+        
+        Args:
+            mode: Trigger mode ('continuous' for free-running, 'trigger' for external trigger)
+            
+        Returns:
+            True if trigger mode was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If trigger mode is invalid
+            CameraConnectionError: If camera is not connected
+        """
         async with self._lock:
             return await self._camera.set_triggermode(mode)
     
     async def get_trigger_mode(self) -> str:
-        """Get current trigger mode."""
+        """
+        Get current trigger mode.
+        
+        Returns:
+            Current trigger mode ('continuous' or 'trigger')
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return await self._camera.get_triggermode()
     
     # Pixel Format
     def set_pixel_format(self, format: str) -> bool:
-        """Set pixel format."""
+        """
+        Set camera pixel format.
+        
+        Args:
+            format: Pixel format string (e.g., 'BGR8', 'Mono8', 'RGB8')
+            
+        Returns:
+            True if pixel format was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If pixel format is not supported
+        """
         return self._camera.set_pixel_format(format)
     
     def get_pixel_format(self) -> str:
-        """Get current pixel format."""
+        """
+        Get current pixel format.
+        
+        Returns:
+            Current pixel format string
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.get_current_pixel_format()
     
     def get_available_pixel_formats(self) -> List[str]:
-        """Get available pixel formats."""
+        """
+        Get list of available pixel formats.
+        
+        Returns:
+            List of supported pixel format strings
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.get_pixel_format_range()
     
     # White Balance
     async def set_white_balance(self, mode: str) -> bool:
-        """Set white balance mode."""
+        """
+        Set white balance mode.
+        
+        Args:
+            mode: White balance mode ('auto', 'once', 'off', or specific mode)
+            
+        Returns:
+            True if white balance was set successfully, False otherwise
+            
+        Raises:
+            CameraConfigurationError: If white balance mode is invalid
+            CameraConnectionError: If camera is not connected
+        """
         async with self._lock:
             return await self._camera.set_auto_wb_once(mode)
     
     async def get_white_balance(self) -> str:
-        """Get current white balance mode."""
+        """
+        Get current white balance mode.
+        
+        Returns:
+            Current white balance mode string
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return await self._camera.get_wb()
     
     def get_available_white_balance_modes(self) -> List[str]:
-        """Get available white balance modes."""
+        """
+        Get list of available white balance modes.
+        
+        Returns:
+            List of supported white balance mode strings
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+        """
         return self._camera.get_wb_range()
     
     # Image Enhancement
     def set_image_enhancement(self, enabled: bool) -> bool:
-        """Enable/disable image enhancement."""
+        """
+        Enable or disable image quality enhancement.
+        
+        Image enhancement may include gamma correction, contrast adjustment,
+        and color correction depending on the camera backend.
+        
+        Args:
+            enabled: True to enable enhancement, False to disable
+            
+        Returns:
+            True if setting was applied successfully, False otherwise
+        """
         return self._camera.set_image_quality_enhancement(enabled)
     
     def get_image_enhancement(self) -> bool:
-        """Get image enhancement status."""
+        """
+        Get current image enhancement status.
+        
+        Returns:
+            True if image enhancement is enabled, False otherwise
+        """
         return self._camera.get_image_quality_enhancement()
     
     # Configuration Management
     async def save_config(self, path: str) -> bool:
-        """Save camera configuration to file."""
+        """
+        Save current camera configuration to file.
+        
+        Args:
+            path: File path to save configuration to
+            
+        Returns:
+            True if configuration was saved successfully, False otherwise
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+            IOError: If file cannot be written
+        """
         async with self._lock:
             return await self._camera.export_config(path)
     
     async def load_config(self, path: str) -> bool:
-        """Load camera configuration from file."""
+        """
+        Load camera configuration from file.
+        
+        Args:
+            path: File path to load configuration from
+            
+        Returns:
+            True if configuration was loaded successfully, False otherwise
+            
+        Raises:
+            CameraConnectionError: If camera is not connected
+            IOError: If file cannot be read
+            CameraConfigurationError: If configuration is invalid
+        """
         async with self._lock:
             return await self._camera.import_config(path)
     
     # Status and Info
     async def check_connection(self) -> bool:
-        """Check if camera is connected and responding."""
+        """
+        Check if camera is connected and responding.
+        
+        Returns:
+            True if camera is connected and responsive, False otherwise
+        """
         return await self._camera.check_connection()
     
     async def get_sensor_info(self) -> Dict[str, Any]:
@@ -569,8 +775,18 @@ class CameraProxy:
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
     
     async def close(self):
-        """Close camera and release resources."""
-        await self._camera.close()
+        """
+        Close camera connection and release resources.
+        
+        This method safely closes the camera connection, releases any allocated
+        resources, and performs cleanup operations. After calling this method,
+        the camera proxy should not be used for further operations.
+        
+        Raises:
+            CameraConnectionError: If error occurs during cleanup
+        """
+        async with self._lock:
+            await self._camera.close()
 
 
 class CameraManager(Mindtrace):
@@ -651,16 +867,54 @@ class CameraManager(Mindtrace):
         
         return info
     
-    def discover_cameras(self) -> List[str]:
+    def discover_cameras(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
         """
-        Discover all available cameras across all backends.
+        Discover available cameras across specified backends or all backends.
+        
+        Args:
+            backends: Optional backend(s) to discover cameras from. Can be:
+                     - None: Discover from all available backends (default behavior)
+                     - str: Single backend name (e.g., "Basler", "OpenCV", "Daheng")
+                     - List[str]: Multiple backend names (e.g., ["Basler", "Daheng"])
         
         Returns:
             List of camera names in format "Backend:device_name"
+            
+        Examples:
+            # Discover all cameras (existing behavior)
+            all_cameras = manager.discover_cameras()
+            
+            # Discover only Basler cameras
+            basler_cameras = manager.discover_cameras("Basler")
+            
+            # Discover from multiple specific backends
+            cameras = manager.discover_cameras(["Basler", "Daheng"])
         """
         all_cameras = []
         
-        for backend in self._discovered_backends:
+        # Determine which backends to search
+        if backends is None:
+            # Default behavior: search all discovered backends
+            backends_to_search = self._discovered_backends
+        elif isinstance(backends, str):
+            # Single backend specified
+            backends_to_search = [backends]
+        elif isinstance(backends, list):
+            # Multiple backends specified
+            backends_to_search = backends
+        else:
+            raise ValueError(f"Invalid backends parameter: {backends}. Must be None, str, or List[str]")
+        
+        # Validate that specified backends are available
+        for backend in backends_to_search:
+            if backend not in self._discovered_backends:
+                self.logger.warning(f"Backend '{backend}' not available or not discovered. Available backends: {self._discovered_backends}")
+                continue
+        
+        # Filter to only include available backends
+        backends_to_search = [b for b in backends_to_search if b in self._discovered_backends]
+        
+        for backend in backends_to_search:
             try:
                 if backend in ["Daheng", "Basler", "OpenCV"]:
                     available, camera_class = _discover_backend(backend.lower())
@@ -869,7 +1123,12 @@ class CameraManager(Mindtrace):
         return cameras
     
     def get_active_cameras(self) -> List[str]:
-        """Get names of currently active cameras."""
+        """
+        Get names of currently active (initialized) cameras.
+        
+        Returns:
+            List of camera names that are currently initialized and active
+        """
         return list(self._cameras.keys())
     
     def get_max_concurrent_captures(self) -> int:
@@ -893,6 +1152,9 @@ class CameraManager(Mindtrace):
         
         Args:
             max_captures: Maximum number of concurrent captures
+            
+        Raises:
+            ValueError: If max_captures is less than 1
         """
         if max_captures < 1:
             raise ValueError("max_captures must be at least 1")
@@ -906,7 +1168,12 @@ class CameraManager(Mindtrace):
         Get information about network bandwidth management.
         
         Returns:
-            Dictionary with bandwidth management information
+            Dictionary with bandwidth management information including:
+            - max_concurrent_captures: Current limit
+            - active_cameras: Number of active cameras
+            - gige_cameras: Number of GigE cameras (Basler/Daheng)
+            - bandwidth_management_enabled: Always True
+            - recommended_settings: Recommended limits for different scenarios
         """
         return {
             "max_concurrent_captures": self.get_max_concurrent_captures(),
@@ -921,7 +1188,18 @@ class CameraManager(Mindtrace):
         }
     
     async def close_camera(self, camera_name: str) -> None:
-        """Close and remove specific camera."""
+        """
+        Close and remove a specific camera.
+        
+        This method safely closes the camera connection, releases resources,
+        and removes the camera from the active cameras list.
+        
+        Args:
+            camera_name: Name of the camera to close
+            
+        Raises:
+            Exception: If error occurs during camera closure
+        """
         if camera_name in self._cameras:
             try:
                 await self._cameras[camera_name].close()
@@ -932,7 +1210,12 @@ class CameraManager(Mindtrace):
                 raise
     
     async def close_all_cameras(self) -> None:
-        """Close all active cameras."""
+        """
+        Close all active cameras.
+        
+        This method attempts to close all cameras, continuing even if some
+        fail to close properly. Errors are logged but do not stop the process.
+        """
         for camera_name in list(self._cameras.keys()):
             try:
                 await self.close_camera(camera_name)
@@ -1119,16 +1402,34 @@ async def initialize_and_get_camera(camera_name: str, **kwargs) -> CameraProxy:
     return manager.get_camera(camera_name)
 
 
-def discover_all_cameras(include_mocks: bool = False, max_concurrent_captures: int = 2) -> List[str]:
+def discover_all_cameras(
+    include_mocks: bool = False, 
+    max_concurrent_captures: int = 2,
+    backends: Optional[Union[str, List[str]]] = None
+) -> List[str]:
     """
-    Quick function to discover all cameras.
+    Quick function to discover cameras from all or specific backends.
     
     Args:
         include_mocks: Include mock cameras in discovery
         max_concurrent_captures: Maximum concurrent captures for network bandwidth management
+        backends: Optional backend(s) to discover cameras from. Can be:
+                 - None: Discover from all available backends (default)
+                 - str: Single backend name (e.g., "Basler", "OpenCV", "Daheng")
+                 - List[str]: Multiple backend names (e.g., ["Basler", "Daheng"])
         
     Returns:
         List of available camera names
+        
+    Examples:
+        # Discover all cameras
+        all_cameras = discover_all_cameras()
+        
+        # Discover only Basler cameras
+        basler_cameras = discover_all_cameras(backends="Basler")
+        
+        # Discover from multiple backends
+        cameras = discover_all_cameras(backends=["Basler", "Daheng"])
     """
     manager = CameraManager(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
-    return manager.discover_cameras() 
+    return manager.discover_cameras(backends=backends) 

@@ -35,6 +35,7 @@ from typing import List, Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.core.utils import download_and_extract_zip, download_and_extract_tarball
+from mindtrace.hardware.core.config import get_hardware_config
 
 
 class PylonSDKInstaller(Mindtrace):
@@ -68,8 +69,11 @@ class PylonSDKInstaller(Mindtrace):
         # Initialize base class first
         super().__init__()
         
+        # Get hardware configuration
+        self.hardware_config = get_hardware_config()
+        
         self.release_version = release_version
-        self.pylon_dir = Path(self.config.DIR_PATHS.LIB) / "pylon"
+        self.pylon_dir = Path(self.hardware_config.get_config().paths.lib_dir).expanduser() / "pylon"
         self.platform = platform.system()
         
         self.logger.info(f"Initializing Pylon SDK installer for {self.platform}")
@@ -113,8 +117,7 @@ class PylonSDKInstaller(Mindtrace):
             self.logger.info(f"Downloading SDK from {self.LINUX_SDK_URL}")
             extracted_dir = download_and_extract_tarball(
                 url=self.LINUX_SDK_URL,
-                save_dir=str(self.pylon_dir),
-                progress_bar=True
+                extract_to=str(self.pylon_dir)
             )
             self.logger.info(f"Extracted SDK to {extracted_dir}")
             
@@ -212,8 +215,7 @@ class PylonSDKInstaller(Mindtrace):
             self.logger.info(f"Downloading SDK from {self.WINDOWS_SDK_URL}")
             extracted_dir = download_and_extract_zip(
                 url=self.WINDOWS_SDK_URL,
-                save_dir=str(self.pylon_dir),
-                progress_bar=True
+                extract_to=str(self.pylon_dir)
             )
             
             # Find the SDK executable
