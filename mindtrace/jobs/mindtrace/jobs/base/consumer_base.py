@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from mindtrace.core import MindtraceABC
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
 
 class ConsumerBackendBase(MindtraceABC):

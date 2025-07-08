@@ -12,7 +12,7 @@ from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.utils.checks import ifnone
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
 
 class LocalClient(OrchestratorBackend):

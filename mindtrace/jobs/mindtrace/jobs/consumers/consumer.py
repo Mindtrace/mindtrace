@@ -5,7 +5,7 @@ from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.types.job_specs import JobSchema
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: # pragma: no cover
     from mindtrace.jobs.orchestrator import Orchestrator
 from mindtrace.core import instantiate_target
 
@@ -20,7 +20,7 @@ class Consumer(Mindtrace):
     def __init__(self):
         super().__init__()
         self.orchestrator: Optional[Orchestrator] = None
-        self.consumer_backend: Optional[ConsumerBackendBase] = None
+        self.consumer_backend: ConsumerBackendBase = None # type: ignore
         self.job_schema: Optional[JobSchema] = None
         self.queue_name: Optional[str] = None
     

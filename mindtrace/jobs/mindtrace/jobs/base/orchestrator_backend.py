@@ -6,7 +6,7 @@ import pydantic
 from mindtrace.core import MindtraceABC
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 
-if TYPE_CHECKING:
+if TYPE_CHECKING: # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
 
 class OrchestratorBackend(MindtraceABC):
