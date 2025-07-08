@@ -11,10 +11,10 @@ Available Backends:
     - OpenCVCamera: USB cameras and webcams via OpenCV (when available)
 
 Usage:
-from mindtrace.hardware.mindtrace.hardware.cameras.backends import BaseCamera
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.daheng import DahengCamera
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler import BaslerCamera
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
+from mindtrace.hardware.cameras.backends import BaseCamera
+from mindtrace.hardware.cameras.backends.daheng import DahengCamera
+from mindtrace.hardware.cameras.backends.basler import BaslerCamera
+from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
 
 Configuration:
     Camera backends integrate with the Mindtrace configuration system

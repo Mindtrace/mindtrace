@@ -8,8 +8,8 @@ using CIPDriver, LogixDriver, and SLCDriver from pycomm3 library.
 import asyncio
 import time
 from typing import List, Dict, Any, Tuple, Union, Optional
-from mindtrace.hardware.mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCInitializationError,
     PLCCommunicationError,

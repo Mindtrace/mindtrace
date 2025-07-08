@@ -13,19 +13,19 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.mindtrace.hardware.api.dependencies import (
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.api.dependencies import (
     get_camera_manager,
     validate_camera_exists
 )
-from mindtrace.hardware.mindtrace.hardware.models.requests import (
+from mindtrace.hardware.models.requests import (
     GainRequest,
     ROIRequest,
     PixelFormatRequest,
     ImageEnhancementRequest,
     BatchCameraConfigRequest,
 )
-from mindtrace.hardware.mindtrace.hardware.models.responses import (
+from mindtrace.hardware.models.responses import (
     BoolResponse,
     FloatResponse,
     DictResponse,
@@ -34,7 +34,7 @@ from mindtrace.hardware.mindtrace.hardware.models.responses import (
     PixelFormatListResponse,
     BatchOperationResponse,
 )
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import CameraError
+from mindtrace.hardware.core.exceptions import CameraError
 
 
 logger = logging.getLogger(__name__)

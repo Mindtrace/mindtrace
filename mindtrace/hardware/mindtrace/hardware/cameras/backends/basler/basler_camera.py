@@ -25,7 +25,7 @@ Installation:
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler import BaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import BaslerCamera
     
     # Get available cameras
     cameras = BaslerCamera.get_available_cameras()
@@ -84,8 +84,8 @@ except ImportError:
     pylon = None
     genicam = None
 
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.base import BaseCamera
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.core.exceptions import (
     SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
     CameraCaptureError, CameraConfigurationError, CameraConnectionError,
     CameraTimeoutError, HardwareOperationError, HardwareTimeoutError

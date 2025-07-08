@@ -50,7 +50,7 @@ Environment Variables:
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
+    from mindtrace.hardware.core.config import get_hardware_config
     
     config = get_hardware_config()
     camera_settings = config.get_config().cameras

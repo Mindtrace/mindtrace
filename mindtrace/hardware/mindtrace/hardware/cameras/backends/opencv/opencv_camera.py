@@ -23,7 +23,7 @@ Installation:
     pip install opencv-python
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
+    from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
     
     # Discover available cameras
     cameras = OpenCVCamera.get_available_cameras()
@@ -111,8 +111,8 @@ except ImportError:
     OPENCV_AVAILABLE = False
     cv2 = None
 
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.base import BaseCamera
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.core.exceptions import (
     SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
     CameraCaptureError, CameraConfigurationError, CameraConnectionError,
     CameraTimeoutError, HardwareOperationError, HardwareTimeoutError

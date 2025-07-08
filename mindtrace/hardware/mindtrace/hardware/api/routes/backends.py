@@ -9,14 +9,14 @@ from typing import Dict, Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.mindtrace.hardware.api.dependencies import get_camera_manager
-from mindtrace.hardware.mindtrace.hardware.models.responses import (
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.api.dependencies import get_camera_manager
+from mindtrace.hardware.models.responses import (
     ListResponse,
     BackendInfoResponse,
     DictResponse
 )
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import CameraError
+from mindtrace.hardware.core.exceptions import CameraError
 
 
 logger = logging.getLogger(__name__)

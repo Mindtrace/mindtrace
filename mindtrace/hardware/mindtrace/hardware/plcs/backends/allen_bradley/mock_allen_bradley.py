@@ -15,7 +15,7 @@ Components:
     - MockAllenBradleyPLC: Mock PLC implementation
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley import MockAllenBradleyPLC
+    from mindtrace.hardware.plcs.backends.allen_bradley import MockAllenBradleyPLC
     
     # Initialize mock PLC
     plc = MockAllenBradleyPLC("TestPLC", "192.168.1.100", plc_type="logix")
@@ -32,8 +32,8 @@ import time
 import random
 import os
 from typing import List, Dict, Any, Tuple, Union, Optional
-from mindtrace.hardware.mindtrace.hardware.plcs.backends.base import BasePLC
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
     PLCInitializationError,
     PLCCommunicationError,

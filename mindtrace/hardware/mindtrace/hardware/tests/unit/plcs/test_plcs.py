@@ -12,7 +12,7 @@ import asyncio
 from unittest.mock import patch, MagicMock
 from typing import Dict, Any, List
 
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     PLCError,
     PLCNotFoundError,
     PLCInitializationError,
@@ -39,7 +39,7 @@ def event_loop():
 @pytest_asyncio.fixture
 async def mock_plc_manager():
     """Create a PLC manager instance with mock backends."""
-    from mindtrace.hardware.mindtrace.hardware.plcs.plc_manager import PLCManager
+    from mindtrace.hardware.plcs.plc_manager import PLCManager
     
     manager = PLCManager()
     yield manager
@@ -54,7 +54,7 @@ async def mock_plc_manager():
 @pytest_asyncio.fixture
 async def mock_allen_bradley_plc():
     """Create a mock Allen Bradley PLC instance."""
-    from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+    from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
     
     plc = MockAllenBradleyPLC(
         plc_name="TestPLC",
@@ -137,7 +137,7 @@ class TestMockAllenBradleyPLC:
     @pytest.mark.asyncio
     async def test_auto_detection(self):
         """Test PLC type auto-detection."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         # Test different IP addresses for different PLC types
         # Based on the mock logic: last_octet % 3 == 0 -> logix, == 1 -> slc, == 2 -> cip
@@ -160,7 +160,7 @@ class TestLogixDriverFunctionality:
     @pytest.mark.asyncio
     async def test_logix_tag_operations(self, sample_plc_tags):
         """Test Logix-style tag operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("LogixTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -183,7 +183,7 @@ class TestLogixDriverFunctionality:
     @pytest.mark.asyncio
     async def test_logix_tag_writing(self):
         """Test writing to Logix tags."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("LogixWriteTest", "192.168.1.99", plc_type="logix")  # Use 99 for logix
         await plc.connect()
@@ -200,7 +200,7 @@ class TestLogixDriverFunctionality:
     @pytest.mark.asyncio
     async def test_logix_tag_discovery(self):
         """Test Logix tag discovery."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("LogixDiscoveryTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -223,7 +223,7 @@ class TestSLCDriverFunctionality:
     @pytest.mark.asyncio
     async def test_slc_data_file_operations(self):
         """Test SLC data file operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("SLCTest", "192.168.1.101", plc_type="slc")
         await plc.connect()
@@ -248,7 +248,7 @@ class TestSLCDriverFunctionality:
     @pytest.mark.asyncio
     async def test_slc_timer_operations(self):
         """Test SLC timer file operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("SLCTimerTest", "192.168.1.101", plc_type="slc")
         await plc.connect()
@@ -267,7 +267,7 @@ class TestSLCDriverFunctionality:
     @pytest.mark.asyncio
     async def test_slc_counter_operations(self):
         """Test SLC counter file operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("SLCCounterTest", "192.168.1.101", plc_type="slc")
         await plc.connect()
@@ -285,7 +285,7 @@ class TestSLCDriverFunctionality:
     @pytest.mark.asyncio
     async def test_slc_io_operations(self):
         """Test SLC I/O file operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("SLCIOTest", "192.168.1.101", plc_type="slc")
         await plc.connect()
@@ -307,7 +307,7 @@ class TestCIPDriverFunctionality:
     @pytest.mark.asyncio
     async def test_cip_assembly_operations(self):
         """Test CIP assembly object operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("CIPTest", "192.168.1.102", plc_type="cip")
         await plc.connect()
@@ -327,7 +327,7 @@ class TestCIPDriverFunctionality:
     @pytest.mark.asyncio
     async def test_cip_parameter_operations(self):
         """Test CIP parameter object operations (drive parameters)."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("CIPParamTest", "192.168.1.102", plc_type="cip")
         await plc.connect()
@@ -348,7 +348,7 @@ class TestCIPDriverFunctionality:
     @pytest.mark.asyncio
     async def test_cip_identity_operations(self):
         """Test CIP identity object operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("CIPIdentityTest", "192.168.1.102", plc_type="cip")
         await plc.connect()
@@ -383,7 +383,7 @@ class TestPLCManager:
     @pytest.mark.asyncio
     async def test_plc_registration(self, mock_plc_manager):
         """Test PLC registration with manager."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         manager = mock_plc_manager
         
@@ -412,7 +412,7 @@ class TestPLCManager:
     @pytest.mark.asyncio
     async def test_batch_operations(self, mock_plc_manager):
         """Test batch PLC operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         manager = mock_plc_manager
         
@@ -460,7 +460,7 @@ class TestPLCErrorHandling:
     @pytest.mark.asyncio
     async def test_connection_timeout(self):
         """Test connection timeout handling."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         # Create PLC with very short timeout
         plc = MockAllenBradleyPLC("TimeoutTest", "192.168.1.100", 
@@ -473,7 +473,7 @@ class TestPLCErrorHandling:
     @pytest.mark.asyncio
     async def test_tag_read_timeout(self):
         """Test tag read timeout handling."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("ReadTimeoutTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -485,7 +485,7 @@ class TestPLCErrorHandling:
     @pytest.mark.asyncio
     async def test_invalid_tag_operations(self):
         """Test handling of invalid tag operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("InvalidTagTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -501,7 +501,7 @@ class TestPLCErrorHandling:
     @pytest.mark.asyncio
     async def test_connection_recovery(self):
         """Test connection recovery after failure."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("RecoveryTest", "192.168.1.100", plc_type="logix")
         
@@ -527,7 +527,7 @@ class TestPLCPerformance:
     @pytest.mark.asyncio
     async def test_concurrent_tag_reads(self):
         """Test concurrent tag reading from multiple PLCs."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         # Create mock PLCs directly
         plcs = []
@@ -562,7 +562,7 @@ class TestPLCPerformance:
     @pytest.mark.asyncio
     async def test_rapid_tag_sequence(self):
         """Test rapid sequence of tag operations."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("RapidTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -580,7 +580,7 @@ class TestPLCPerformance:
     @pytest.mark.asyncio
     async def test_plc_resource_cleanup(self):
         """Test proper resource cleanup."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         # Connect and disconnect multiple times
         for i in range(5):
@@ -603,7 +603,7 @@ class TestPLCConfiguration:
     @pytest.mark.asyncio
     async def test_plc_info_retrieval(self):
         """Test PLC information retrieval."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("InfoTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -620,7 +620,7 @@ class TestPLCConfiguration:
     @pytest.mark.asyncio
     async def test_tag_info_retrieval(self):
         """Test tag information retrieval."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         plc = MockAllenBradleyPLC("TagInfoTest", "192.168.1.100", plc_type="logix")
         await plc.connect()
@@ -635,7 +635,7 @@ class TestPLCConfiguration:
     @pytest.mark.asyncio
     async def test_different_driver_types(self):
         """Test all three driver types work correctly."""
-        from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         driver_configs = [
             ("192.168.1.100", "logix", "LogixDriver"),
@@ -667,7 +667,7 @@ class TestPLCConfiguration:
 @pytest.mark.asyncio
 async def test_plc_integration_scenario():
     """Integration test simulating real-world PLC usage."""
-    from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+    from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
     
     # Create mock PLCs directly for different stations
     plcs = [

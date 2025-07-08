@@ -96,10 +96,10 @@ Performance Notes:
 
 import asyncio
 from typing import Dict, List, Optional, Any, Tuple, Union
-from mindtrace.hardware.mindtrace.hardware.plcs.backends.base import BasePLC
+from mindtrace.hardware.plcs.backends.base import BasePLC
 from mindtrace.core.base.mindtrace_base import Mindtrace
-from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.config import get_hardware_config
+from mindtrace.hardware.core.exceptions import (
     PLCError,
     PLCNotFoundError,
     PLCConnectionError,
@@ -219,7 +219,7 @@ class PLCManager(Mindtrace):
         # Allen Bradley backend
         if config.plc_backends.allen_bradley_enabled:
             try:
-                from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley import AllenBradleyPLC
+                from mindtrace.hardware.plcs.backends.allen_bradley import AllenBradleyPLC
                 backends["AllenBradley"] = AllenBradleyPLC
             except ImportError as e:
                 self.logger.warning(f"Allen Bradley backend not available: {e}")
@@ -227,7 +227,7 @@ class PLCManager(Mindtrace):
         # Mock Allen Bradley backend for testing
         if config.plc_backends.mock_enabled:
             try:
-                from mindtrace.hardware.mindtrace.hardware.plcs.backends.allen_bradley import MockAllenBradleyPLC
+                from mindtrace.hardware.plcs.backends.allen_bradley import MockAllenBradleyPLC
                 backends["AllenBradley"] = MockAllenBradleyPLC  # Override with mock
                 self.logger.info("Using Mock Allen Bradley backend for testing")
             except ImportError as e:
@@ -236,14 +236,14 @@ class PLCManager(Mindtrace):
         # Future backends can be added here
         # if config.plc_backends.siemens_enabled:
         #     try:
-        #         from mindtrace.hardware.mindtrace.hardware.plcs.backends.siemens import SiemensPLC
+        #         from mindtrace.hardware.plcs.backends.siemens import SiemensPLC
         #         backends["Siemens"] = SiemensPLC
         #     except ImportError as e:
         #         self.logger.warning(f"Siemens backend not available: {e}")
         
         # if config.plc_backends.modbus_enabled:
         #     try:
-        #         from mindtrace.hardware.mindtrace.hardware.plcs.backends.modbus import ModbusPLC
+        #         from mindtrace.hardware.plcs.backends.modbus import ModbusPLC
         #         backends["Modbus"] = ModbusPLC
         #     except ImportError as e:
         #         self.logger.warning(f"Modbus backend not available: {e}")
