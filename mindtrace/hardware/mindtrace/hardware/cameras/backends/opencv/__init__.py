@@ -15,7 +15,7 @@ Installation:
     pip install opencv-python numpy
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
+    from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
     
     # USB camera (index 0)
     if OPENCV_AVAILABLE:

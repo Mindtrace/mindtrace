@@ -10,19 +10,19 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.mindtrace.hardware.api.dependencies import (
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.api.dependencies import (
     get_camera_manager,
     validate_camera_name,
     validate_camera_exists,
     validate_backend_name
 )
-from mindtrace.hardware.mindtrace.hardware.models.requests import (
+from mindtrace.hardware.models.requests import (
     CameraInitializeRequest,
     BatchCameraInitializeRequest,
     CameraQueryRequest
 )
-from mindtrace.hardware.mindtrace.hardware.models.responses import (
+from mindtrace.hardware.models.responses import (
     ListResponse,
     BoolResponse,
     CameraListResponse,
@@ -30,7 +30,7 @@ from mindtrace.hardware.mindtrace.hardware.models.responses import (
     BatchOperationResponse,
     StatusResponse
 )
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import CameraError
+from mindtrace.hardware.core.exceptions import CameraError
 
 
 logger = logging.getLogger(__name__)

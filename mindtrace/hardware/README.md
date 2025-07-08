@@ -98,7 +98,7 @@ mindtrace-uninstall-basler
 
 ```python
 import asyncio
-from mindtrace.hardware.mindtrace.hardware import CameraManager
+from mindtrace.hardware import CameraManager
 
 async def camera_example():
     # Initialize camera manager with mock support for testing
@@ -131,7 +131,7 @@ asyncio.run(camera_example())
 
 ```python
 import asyncio
-from mindtrace.hardware.mindtrace.hardware import PLCManager
+from mindtrace.hardware import PLCManager
 
 async def plc_example():
     # Initialize PLC manager
@@ -171,7 +171,7 @@ The `CameraManager` class provides a comprehensive async interface for managing 
 ### Modern Camera Management with CameraProxy
 
 ```python
-from mindtrace.hardware.mindtrace.hardware import CameraManager
+from mindtrace.hardware import CameraManager
 
 async def modern_camera_usage():
     # Initialize with network bandwidth management (important for GigE cameras)
@@ -222,7 +222,7 @@ print(f"All cameras: {cameras}")
 For quick single-camera operations, you can use the convenience function:
 
 ```python
-from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
+from mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
 
 async def quick_camera_access():
     # Initialize and get camera in one step
@@ -424,7 +424,7 @@ The `PLCManager` class provides a comprehensive async interface for managing PLC
 ### Initialization and Backend Management
 
 ```python
-from mindtrace.hardware.mindtrace.hardware import PLCManager
+from mindtrace.hardware import PLCManager
 
 # Initialize with specific backends
 manager = PLCManager()
@@ -978,7 +978,7 @@ Once the server is running, visit:
 The camera configuration has been streamlined to include only actively used settings:
 
 ```python
-from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
+from mindtrace.hardware.core.config import get_hardware_config
 
 config = get_hardware_config()
 camera_settings = config.get_config().cameras
@@ -1228,7 +1228,7 @@ The component provides a clean, hierarchical exception system based on actual us
 
 ### Base Exceptions
 ```python
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     HardwareError,              # Base for all hardware errors
     HardwareOperationError,     # General hardware operation failures
     HardwareTimeoutError,       # Timeout operations
@@ -1238,7 +1238,7 @@ from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
 
 ### Camera Exceptions
 ```python
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     CameraError,                # Base camera error
     CameraNotFoundError,        # Camera discovery failures
     CameraInitializationError,  # Camera initialization failures
@@ -1251,7 +1251,7 @@ from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
 
 ### PLC Exceptions
 ```python
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     PLCError,                   # Base PLC error
     PLCNotFoundError,           # PLC discovery failures
     PLCConnectionError,         # PLC connection issues
@@ -1304,7 +1304,7 @@ except PLCTimeoutError:
 
 ```python
 import asyncio
-from mindtrace.hardware.mindtrace.hardware import CameraManager, PLCManager
+from mindtrace.hardware import CameraManager, PLCManager
 
 async def industrial_automation():
     # Initialize managers with network bandwidth management
@@ -1362,7 +1362,7 @@ asyncio.run(industrial_automation())
 
 ```python
 import asyncio
-from mindtrace.hardware.mindtrace.hardware import PLCManager
+from mindtrace.hardware import PLCManager
 
 async def multi_plc_coordination():
     manager = PLCManager()
@@ -1422,7 +1422,7 @@ except KeyboardInterrupt:
 ```python
 import asyncio
 import os
-from mindtrace.hardware.mindtrace.hardware import CameraManager, PLCManager
+from mindtrace.hardware import CameraManager, PLCManager
 
 async def testing_setup():
     # Enable mock backends for testing

@@ -37,9 +37,9 @@ import asyncio
 from typing import Dict, List, Optional, Any, Tuple, Union
 import cv2
 
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.core.base.mindtrace_base import Mindtrace
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     CameraError, CameraNotFoundError, CameraInitializationError,
     CameraCaptureError, CameraConfigurationError, CameraConnectionError,
     SDKNotAvailableError, CameraTimeoutError
@@ -65,17 +65,17 @@ def _discover_backend(backend_name: str, logger=None) -> Tuple[bool, Optional[An
     
     try:
         if cache_key == "daheng":
-            from mindtrace.hardware.mindtrace.hardware.cameras.backends.daheng import DahengCamera, DAHENG_AVAILABLE
+            from mindtrace.hardware.cameras.backends.daheng import DahengCamera, DAHENG_AVAILABLE
             cache["available"] = DAHENG_AVAILABLE
             cache["class"] = DahengCamera if DAHENG_AVAILABLE else None
         
         elif cache_key == "basler":
-            from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler import BaslerCamera, BASLER_AVAILABLE
+            from mindtrace.hardware.cameras.backends.basler import BaslerCamera, BASLER_AVAILABLE
             cache["available"] = BASLER_AVAILABLE
             cache["class"] = BaslerCamera if BASLER_AVAILABLE else None
         
         elif cache_key == "opencv":
-            from mindtrace.hardware.mindtrace.hardware.cameras.backends.opencv import OpenCVCamera, OPENCV_AVAILABLE
+            from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera, OPENCV_AVAILABLE
             cache["available"] = OPENCV_AVAILABLE
             cache["class"] = OpenCVCamera if OPENCV_AVAILABLE else None
         
@@ -98,10 +98,10 @@ def _get_mock_camera(backend_name: str):
     """Get mock camera class for backend."""
     try:
         if backend_name.lower() == "daheng":
-            from mindtrace.hardware.mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
+            from mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
             return MockDahengCamera
         elif backend_name.lower() == "basler":
-            from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
+            from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
             return MockBaslerCamera
         else:
             raise CameraInitializationError(f"Mock backend not available for {backend_name}")
@@ -815,7 +815,7 @@ class CameraManager(Mindtrace):
         
         # Get max_concurrent_captures from config if not provided
         if max_concurrent_captures is None:
-            from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
+            from mindtrace.hardware.core.config import get_hardware_config
             config = get_hardware_config()
             max_concurrent_captures = config.get_config().cameras.max_concurrent_captures
         
