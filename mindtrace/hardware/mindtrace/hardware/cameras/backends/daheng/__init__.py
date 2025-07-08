@@ -17,7 +17,7 @@ Installation:
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.daheng import DahengCamera, MockDahengCamera
+    from mindtrace.hardware.cameras.backends.daheng import DahengCamera, MockDahengCamera
     
     # Real camera
     if DAHENG_AVAILABLE:

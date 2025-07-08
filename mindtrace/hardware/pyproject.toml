@@ -16,10 +16,10 @@ dependencies = [
 ]
 
 [project.scripts]
-mindtrace-setup-cameras = "mindtrace.hardware.mindtrace.hardware.cameras.setup.setup_cameras:main"
-mindtrace-setup-basler = "mindtrace.hardware.mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
-mindtrace-setup-daheng = "mindtrace.hardware.mindtrace.hardware.cameras.setup.setup_daheng:install_daheng_sdk"
-mindtrace-uninstall-basler = "mindtrace.hardware.mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
+mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
+mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
+mindtrace-setup-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:install_daheng_sdk"
+mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
 mindtrace-uninstall-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:uninstall_daheng_sdk"
 
 [project.optional-dependencies]
@@ -38,12 +38,6 @@ dev = [
     "black>=23.0",
     "ruff>=0.1.0",
 ]
-
-[tool.setuptools]
-packages = ["mindtrace.hardware"]
-
-[tool.setuptools.package-dir]
-"mindtrace.hardware" = "."
 
 [build-system]
 requires = ["setuptools"]

@@ -18,7 +18,7 @@ Installation:
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler import BaslerCamera, MockBaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import BaslerCamera, MockBaslerCamera
     
     # Real camera
     if BASLER_AVAILABLE:

@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.exceptions import (
     CameraError,
     CameraNotFoundError,
     CameraInitializationError,
@@ -23,8 +23,8 @@ from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
     SDKNotAvailableError,
     CameraTimeoutError,
 )
-from mindtrace.hardware.mindtrace.hardware.models.responses import ErrorResponse
-from mindtrace.hardware.mindtrace.hardware.api.routes import (
+from mindtrace.hardware.models.responses import ErrorResponse
+from mindtrace.hardware.api.routes import (
     backends,
     cameras,
     config_async,

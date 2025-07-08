@@ -43,8 +43,8 @@ from typing import Tuple, Optional, List, Dict, Any, Union
 from pathlib import Path
 
 from mindtrace.core.base.mindtrace_base import MindtraceABC
-from mindtrace.hardware.mindtrace.hardware.core.config import get_camera_config
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.core.config import get_camera_config
+from mindtrace.hardware.core.exceptions import (
     CameraInitializationError, CameraNotFoundError, CameraConnectionError
 )
 

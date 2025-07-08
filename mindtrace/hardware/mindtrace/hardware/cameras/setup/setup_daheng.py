@@ -38,7 +38,7 @@ from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.core.utils import download_and_extract_zip, download_and_extract_tarball
-from mindtrace.hardware.mindtrace.hardware.core.config import get_hardware_config
+from mindtrace.hardware.core.config import get_hardware_config
 
 
 class DahengSDKInstaller(Mindtrace):

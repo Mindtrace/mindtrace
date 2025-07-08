@@ -20,7 +20,7 @@ Components:
     - State persistence for configuration management
 
 Usage:
-    from mindtrace.hardware.mindtrace.hardware.cameras.backends.basler import MockBaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import MockBaslerCamera
     
     # Create mock camera
     camera = MockBaslerCamera("mock_camera_1")
@@ -51,8 +51,8 @@ import numpy as np
 import cv2
 from typing import Optional, List, Tuple, Dict, Any, Union
 
-from mindtrace.hardware.mindtrace.hardware.cameras.backends.base import BaseCamera
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import (
+from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.core.exceptions import (
     SDKNotAvailableError, CameraInitializationError, CameraNotFoundError, CameraCaptureError,
     CameraConfigurationError, CameraConnectionError, CameraTimeoutError,
     HardwareOperationError

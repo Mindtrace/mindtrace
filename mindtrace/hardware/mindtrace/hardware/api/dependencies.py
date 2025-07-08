@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, HTTPException
 
-from mindtrace.hardware.mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.mindtrace.hardware.core.exceptions import CameraError
+from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.core.exceptions import CameraError
 
 
 logger = logging.getLogger(__name__)
@@ -175,7 +175,7 @@ async def validate_camera_exists(
     active_cameras = manager.get_active_cameras()
     if camera not in active_cameras:
         # Import here to avoid circular imports
-        from mindtrace.hardware.mindtrace.hardware.core.exceptions import CameraNotFoundError
+        from mindtrace.hardware.core.exceptions import CameraNotFoundError
         raise CameraNotFoundError(
             f"Camera '{camera}' is not initialized. Use POST /api/v1/cameras/initialize first."
         )
