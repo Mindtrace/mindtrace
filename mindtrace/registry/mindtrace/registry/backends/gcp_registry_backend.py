@@ -2,12 +2,12 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from mindtrace.registry import RegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
 
 T = TypeVar("T")
 
 
-class GCPRegistryBackend(RegistryBackend):
+class GCPRegistryBackend(RegistryBackend):  # pragma: no cover
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 

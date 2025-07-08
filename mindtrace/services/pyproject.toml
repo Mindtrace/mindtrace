@@ -2,15 +2,13 @@
 name = "mindtrace-services"
 version = "0.1.0"
 dependencies = [
+    "fastapi>=0.115.14",
+    "gunicorn>=23.0.0",
+    "httpx>=0.27.2",
     "mindtrace-core",
     "structlog>=24.4.0",
+    "uvicorn>=0.34.3",
 ]
-
-[tool.setuptools]
-packages = ["mindtrace.services"]
-
-[tool.setuptools.package-dir]
-"" = "."
 
 [build-system]
 requires = ["setuptools"]

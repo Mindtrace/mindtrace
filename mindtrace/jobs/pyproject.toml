@@ -5,12 +5,6 @@ dependencies = [
     "mindtrace-core",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.jobs"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
