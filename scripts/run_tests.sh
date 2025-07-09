@@ -7,43 +7,41 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-# Function to check and fix Docker permissions
-check_docker_permissions() {
-    if ! docker info &> /dev/null 2>&1; then
-        echo "❌ Docker permission denied. Attempting to fix..."
-        
-        # Check if user is in docker group
-        if ! groups | grep -q docker; then
-            echo "Adding user to docker group..."
-            sudo usermod -aG docker $USER
-            echo "✅ Added to docker group. You may need to log out/in or run: newgrp docker"
-        fi
-        
-        # Try newgrp docker if available
-        if command -v newgrp &> /dev/null; then
-            echo "Attempting to refresh group membership..."
-            exec newgrp docker -c "$0 $*"
-        fi
-        
-        return 1
-    fi
-    return 0
-}
+# Initialize variables
+SPECIFIC_PATHS=()
+PYTEST_ARGS=()
+NEEDS_DOCKER=false
+RUN_UNIT=false
+RUN_INTEGRATION=false
+RUN_STRESS=false
+RUN_ALL=true
 
-# Default test path
-TEST_PATH="tests"
-IS_INTEGRATION=false
-
-# Parse command line arguments
+# Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
     case $1 in
         --unit)
-            TEST_PATH="tests/unit"
+            RUN_UNIT=true
+            RUN_ALL=false
             shift
             ;;
         --integration)
-            TEST_PATH="tests/integration"
-            IS_INTEGRATION=true
+            RUN_INTEGRATION=true
+            RUN_ALL=false
+            shift
+            ;;
+        --stress)
+            RUN_STRESS=true
+            RUN_ALL=false
+            shift
+            ;;
+        tests/*)
+            # Specific test path provided
+            SPECIFIC_PATHS+=("$1")
+            echo "Detected specific test path: $1"
+            # Check if any path requires docker containers
+            if [[ "$1" == tests/integration/* ]]; then
+                NEEDS_DOCKER=true
+            fi
             shift
             ;;
         *)
@@ -54,27 +52,57 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if we need containers (integration tests or full test suite)
-NEEDS_CONTAINERS=false
-if [ "$IS_INTEGRATION" = true ] || [ "$TEST_PATH" = "tests" ]; then
-    NEEDS_CONTAINERS=true
-fi
+# If specific paths are provided, run just those paths and exit
+if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
+    echo "Running tests for specific paths: ${SPECIFIC_PATHS[*]}"
+    
+    # Start docker containers if any integration tests are included
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Starting docker containers for integration tests..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
-# Start containers only if needed
-if [ "$NEEDS_CONTAINERS" = true ]; then
-    # Check Docker permissions first
-    if ! check_docker_permissions; then
-        echo "❌ Docker is required for integration tests but permission was denied."
-        echo "Please run: sudo usermod -aG docker \$USER && newgrp docker"
-        echo "Or run with sudo for this session."
-        exit 1
+        # Wait for MinIO to be healthy
+        echo "Waiting for docker containers to be ready..."
+        until curl -s http://localhost:9000/minio/health/live > /dev/null; do
+            sleep 1
+        done
     fi
     
-    echo "Starting test containers..."
+    # Clear any existing coverage data
+    coverage erase
+    
+    # Run pytest on the specific paths with coverage
+    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
+    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
+    EXIT_CODE=$?
+    
+    # Stop docker containers if they were started
+    if [ "$NEEDS_DOCKER" = true ]; then
+        echo "Stopping docker containers..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+    fi
+    
+    echo "Exiting with code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi
+
+# If we get here, no specific paths were provided, so use suite-based logic
+echo "No specific test paths provided, using suite-based logic"
+
+# If no specific flags were provided, run unit and integration tests (but not stress)
+if [ "$RUN_ALL" = true ]; then
+    RUN_UNIT=true
+    RUN_INTEGRATION=true
+    # RUN_STRESS remains false - only runs when explicitly requested
+fi
+
+# Start MinIO container if running integration tests
+if [ "$RUN_INTEGRATION" = true ]; then
+    echo "Starting docker containers..."
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
 
-    # Wait for services to be healthy
-    echo "Waiting for MinIO to be ready..."
+    # Wait for MinIO to be healthy
+    echo "Waiting for docker containers to be ready..."
     until curl -s http://localhost:9000/minio/health/live > /dev/null; do
         sleep 1
     done
@@ -90,32 +118,97 @@ if [ "$NEEDS_CONTAINERS" = true ]; then
     done
 fi
 
-# Handle conftest.py conflicts for database tests
-if [ "$TEST_PATH" = "tests" ]; then
-    # Run unit tests first, then integration tests separately to avoid conftest conflicts
-    echo "Running unit tests..."
-    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit
-    UNIT_EXIT_CODE=$?
-    
-    if [ $UNIT_EXIT_CODE -eq 0 ] && [ "$NEEDS_CONTAINERS" = true ]; then
-        echo "Running integration tests..."
-        pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration
-        TEST_EXIT_CODE=$?
-    else
-        TEST_EXIT_CODE=$UNIT_EXIT_CODE
-    fi
-else
-    # Run the tests normally
-    echo "Running tests in $TEST_PATH..."
-    pytest -rs --cov-config=.coveragerc --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$TEST_PATH"
-    TEST_EXIT_CODE=$?
+# Clear any existing coverage data when running with coverage
+if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
+    coverage erase
 fi
 
-# Stop containers only if they were started
-if [ "$NEEDS_CONTAINERS" = true ]; then
-    echo "Stopping test containers..."
+# Track overall exit code
+OVERALL_EXIT_CODE=0
+
+# Run unit tests if requested
+if [ "$RUN_UNIT" = true ]; then
+    echo "Running unit tests..."
+    pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit
+    UNIT_EXIT_CODE=$?
+    if [ $UNIT_EXIT_CODE -ne 0 ]; then
+        echo "Unit tests failed. Stopping test execution."
+        OVERALL_EXIT_CODE=1
+        # Stop docker containers if they were started
+        if [ "$RUN_INTEGRATION" = true ]; then
+            echo "Stopping docker containers..."
+            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        fi
+        exit $OVERALL_EXIT_CODE
+    fi
+fi
+
+# Run integration tests if requested
+if [ "$RUN_INTEGRATION" = true ]; then
+    echo "Running integration tests..."
+    pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration
+    INTEGRATION_EXIT_CODE=$?
+    if [ $INTEGRATION_EXIT_CODE -ne 0 ]; then
+        echo "Integration tests failed. Stopping test execution."
+        OVERALL_EXIT_CODE=1
+        # Stop docker containers if they were started
+        echo "Stopping docker containers..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        exit $OVERALL_EXIT_CODE
+    fi
+fi
+
+# Run stress tests if requested
+if [ "$RUN_STRESS" = true ]; then
+    echo "Running stress tests from mindtrace directory for proper imports..."
+    
+    # Get absolute path for stress tests
+    PROJECT_ROOT=$(pwd)
+    STRESS_TEST_PATH="$PROJECT_ROOT/tests/stress"
+    
+    # For stress tests, use coverage only if other tests are also running
+    if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
+        # Copy coverage data to mindtrace directory for proper combining
+        if [ -f .coverage ]; then
+            cp .coverage mindtrace/
+        fi
+        
+        cd mindtrace
+        
+        # Include coverage to combine with other test results
+        pytest -rs -s --cov=mindtrace --cov-report term-missing --cov-append --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
+        
+        # Copy the combined coverage data back to project root
+        if [ -f .coverage ]; then
+            cp .coverage ../
+        fi
+    else
+        cd mindtrace
+        
+        # Stress tests only - skip coverage for performance testing
+        pytest -rs -s --rootdir="$PROJECT_ROOT" -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "$STRESS_TEST_PATH"
+    fi
+    
+    STRESS_EXIT_CODE=$?
+    cd ..
+    
+    if [ $STRESS_EXIT_CODE -ne 0 ]; then
+        echo "Stress tests failed. Stopping test execution."
+        OVERALL_EXIT_CODE=1
+        # Stop docker containers if they were started
+        if [ "$RUN_INTEGRATION" = true ]; then
+            echo "Stopping docker containers..."
+            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        fi
+        exit $OVERALL_EXIT_CODE
+    fi
+fi
+
+# Stop docker containers if they were started
+if [ "$RUN_INTEGRATION" = true ]; then
+    echo "Stopping docker containers..."
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
 fi
 
-# Exit with the test exit code
-exit $TEST_EXIT_CODE 
+# Exit with overall status
+exit $OVERALL_EXIT_CODE 
