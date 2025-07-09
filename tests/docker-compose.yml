@@ -17,14 +17,17 @@ services:
       retries: 3
 
   redis:
-    image: redis:latest
+    image: redis:redis-stack:latest
     ports:
       - "6379:6379"
+      - "8001:8001"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
+    volumes:
+      - redis_test_data:/data
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -39,6 +42,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_DATABASE=test_db
+    volumes:
+      - mongodb_test_data:/data/db
 
 volumes:
-  minio_data: 
+  minio_data:
+
+  mongodb_test_data:
+  redis_test_data: 
