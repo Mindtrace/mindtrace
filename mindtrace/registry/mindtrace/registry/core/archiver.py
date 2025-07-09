@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Type, Any, Set
+from typing import Any, Set, Type
 
 from zenml.enums import ArtifactType
 from zenml.materializers.base_materializer import BaseMaterializer
@@ -9,6 +9,7 @@ from mindtrace.core import Mindtrace, MindtraceMeta
 
 class ArchiverMeta(MindtraceMeta, type(BaseMaterializer)):
     """Meta class for Archiver."""
+
     pass
 
 

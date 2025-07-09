@@ -10,9 +10,11 @@ class ExampleStr:
     def __init__(self):
         self.x = 0
 
+
 @pytest.fixture
 def example_str():
     return ExampleStr()
+
 
 @ObservableContext(vars=["x", "y"])
 class ExampleList:
@@ -20,15 +22,18 @@ class ExampleList:
         self.x = 0
         self.y = 0
 
+
 @pytest.fixture
 def example_list():
     return ExampleList()
+
 
 @ObservableContext(vars={"x": int, "y": int})
 class ExampleDict:
     def __init__(self):
         self.x = 0
         self.y = 0
+
 
 @pytest.fixture
 def example_dict():
@@ -38,20 +43,28 @@ def example_dict():
 def test_vars_as_str(example_str):
     assert example_str.x == 0
 
+
 def test_vars_as_list(example_list):
     assert example_list.x == 0
     assert example_list.y == 0
+
 
 def test_vars_as_dict(example_dict):
     assert example_dict.x == 0
     assert example_dict.y == 0
 
+
 def test_raise_error_if_vars_is_not_str_list_or_dict():
-    with pytest.raises(ValueError, match="Invalid vars argument: 42, vars must be a str variable name, list of variable names "
-                "or a dictionary of variable names and their types."):
+    with pytest.raises(
+        ValueError,
+        match="Invalid vars argument: 42, vars must be a str variable name, list of variable names "
+        "or a dictionary of variable names and their types.",
+    ):
+
         @ObservableContext(vars=42)
         class Example:
             pass
+
 
 def test_context_listener_called(example_dict):
     results = []
@@ -66,6 +79,7 @@ def test_context_listener_called(example_dict):
     assert example_dict.x == 1
     assert results == [("x", 0, 1), ("y", 0, 2)]
 
+
 def test_specific_variable_handler(example_dict):
     results = []
 
@@ -76,6 +90,7 @@ def test_specific_variable_handler(example_dict):
     example_dict.subscribe(Listener())
     example_dict.x = 5
     assert results == [("x", 0, 5)]
+
 
 def test_function_subscription(example_dict):
     called = []
@@ -91,9 +106,11 @@ def test_function_subscription(example_dict):
     example_dict.x = 20
     assert called == [(0, 10)]
 
+
 def test_raise_error_if_subscribe_with_invalid_args(example_dict):
     with pytest.raises(ValueError):
         example_dict.subscribe("42")
+
 
 def test_unsubscribe(example_dict):
     log = []
@@ -101,6 +118,7 @@ def test_unsubscribe(example_dict):
     class TestListener:
         def context_updated(self, source, var, old, new):
             log.append((var, old, new))
+
         def x_changed(self, source, old, new):
             log.append((source, old, new))
 
@@ -118,12 +136,14 @@ def test_unsubscribe_with_invalid_args(example_dict):
     with pytest.raises(ValueError):
         example_dict.unsubscribe("not a listener")
 
+
 def test_listener_cannot_subscribe_to_unknown_variable(example_dict):
     """Assert that an error is raised if a listener tries to subscribe to a non-observable variable."""
 
     class GoodListener:
         def just_a_method(self, source, old, new):  # Not a reserved event name.
             pass
+
         def context_updated(self, source, var, old, new):  # Still needs to subscribe to at least one event.
             pass
 
