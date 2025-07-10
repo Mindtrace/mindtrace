@@ -472,8 +472,13 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # In an async function
                 await unified_backend.initialize_async()
         """
-        if self.mongo_backend:
-            await self.mongo_backend.initialize()
+        if not self.mongo_backend:
+            raise ValueError(
+                "initialize_async() called but no asynchronous (MongoDB) backend is configured. "
+                "Only synchronous (Redis) backends require no async initialization. "
+                "Use initialize() or initialize_sync() instead."
+            )
+        await self.mongo_backend.initialize()
     
     def initialize_sync(self):
         """
@@ -488,8 +493,13 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # Usually called automatically, but can be called directly
                 unified_backend.initialize_sync()
         """
-        if self.redis_backend:
-            self.redis_backend.initialize()
+        if not self.redis_backend:
+            raise ValueError(
+                "initialize_sync() called but no synchronous (Redis) backend is configured. "
+                "Only asynchronous (MongoDB) backends require no sync initialization. "
+                "Use initialize() or initialize_async() instead."
+            )
+        self.redis_backend.initialize()
     
     def initialize(self):
         """
@@ -509,10 +519,11 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # In an async context - use this instead:
                 # await unified_backend.initialize_async()
         """
-        # Initialize sync backends first
-        self.initialize_sync()
+        # Initialize sync backends first (if configured)
+        if self.redis_backend:
+            self.redis_backend.initialize()
         
-        # Initialize async backends
+        # Initialize async backends (if configured)
         if self.mongo_backend:
             try:
                 # Check if we're already in an async context
@@ -523,7 +534,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 print("Warning: initialize() called from async context. Use await initialize_async() instead.")
             except RuntimeError:
                 # No running loop, safe to use asyncio.run()
-                asyncio.run(self.initialize_async())
+                asyncio.run(self.mongo_backend.initialize())
     
     def _handle_async_call(self, method_name: str, *args, **kwargs):
         """
