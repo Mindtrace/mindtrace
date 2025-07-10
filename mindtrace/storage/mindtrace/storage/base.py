@@ -3,19 +3,20 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple, Union, NamedTuple
 from pathlib import Path
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from mindtrace.core import MindtraceABC
 
 
 class BulkOperationResult(NamedTuple):
     """Result of a bulk operation.
-    
+
     Attributes:
         succeeded: List of successfully processed file paths.
         failed: List of tuples (file_path, error_message) for failed operations.
     """
+
     succeeded: List[str]
     failed: List[Tuple[str, str]]  # (file_path, error_message)
 
@@ -78,10 +79,10 @@ class StorageHandler(MindtraceABC, ABC):
         """
         if on_error not in ("raise", "skip"):
             raise ValueError("on_error must be 'raise' or 'skip'")
-            
+
         results = []
         failures = []
-        
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_file = {
                 executor.submit(self.upload, local_path, remote_path, metadata): (local_path, remote_path)
@@ -97,7 +98,7 @@ class StorageHandler(MindtraceABC, ABC):
                         raise RuntimeError(f"Failed to upload {local_path} -> {remote_path}: {e}")
                     else:  # skip
                         failures.append((f"{local_path} -> {remote_path}", str(e)))
-        
+
         return BulkOperationResult(succeeded=results, failed=failures)
 
     def download_batch(
@@ -118,10 +119,10 @@ class StorageHandler(MindtraceABC, ABC):
         """
         if on_error not in ("raise", "skip"):
             raise ValueError("on_error must be 'raise' or 'skip'")
-            
+
         files_to_download = files
         skipped_files = []
-        
+
         if skip_if_exists:
             files_to_download = []
             for remote_path, local_path in files:
@@ -129,10 +130,10 @@ class StorageHandler(MindtraceABC, ABC):
                     skipped_files.append(local_path)
                 else:
                     files_to_download.append((remote_path, local_path))
-        
+
         succeeded = skipped_files[:]
         failures = []
-        
+
         if files_to_download:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_file = {
@@ -149,7 +150,7 @@ class StorageHandler(MindtraceABC, ABC):
                             raise RuntimeError(f"Failed to download {remote_path} -> {local_path}: {e}")
                         else:  # skip
                             failures.append((f"{remote_path} -> {local_path}", str(e)))
-        
+
         return BulkOperationResult(succeeded=succeeded, failed=failures)
 
     def upload_folder(
@@ -175,7 +176,7 @@ class StorageHandler(MindtraceABC, ABC):
             BulkOperationResult with succeeded and failed uploads.
         """
         import fnmatch
-        
+
         local_path = Path(local_folder)
         if not local_path.exists() or not local_path.is_dir():
             raise ValueError(f"Local folder {local_folder} does not exist or is not a directory")
@@ -184,14 +185,16 @@ class StorageHandler(MindtraceABC, ABC):
         for file_path in local_path.rglob("*"):
             if file_path.is_file():
                 relative_path = file_path.relative_to(local_path)
-                
+
                 # Apply include/exclude patterns
                 should_include = True
                 if include_patterns:
                     should_include = any(fnmatch.fnmatch(str(relative_path), pattern) for pattern in include_patterns)
                 if exclude_patterns and should_include:
-                    should_include = not any(fnmatch.fnmatch(str(relative_path), pattern) for pattern in exclude_patterns)
-                
+                    should_include = not any(
+                        fnmatch.fnmatch(str(relative_path), pattern) for pattern in exclude_patterns
+                    )
+
                 if should_include:
                     remote_path = f"{remote_prefix}/{relative_path}".strip("/")
                     files_to_upload.append((str(file_path), remote_path))
@@ -217,11 +220,11 @@ class StorageHandler(MindtraceABC, ABC):
             BulkOperationResult with succeeded and failed downloads.
         """
         remote_objects = self.list_objects(prefix=remote_prefix)
-        
+
         files_to_download = []
         for remote_path in remote_objects:
             # Remove prefix and create local path
-            relative_path = remote_path[len(remote_prefix):].lstrip("/")
+            relative_path = remote_path[len(remote_prefix) :].lstrip("/")
             local_path = os.path.join(local_folder, relative_path)
             files_to_download.append((remote_path, local_path))
 

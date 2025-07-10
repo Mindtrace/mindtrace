@@ -7,11 +7,11 @@ from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateI
 
 __all__ = [
     "BackendType",
+    "MindtraceODMBackend",
     "DocumentNotFoundError",
     "DuplicateInsertError",
     "LocalMindtraceODMBackend",
     "MindtraceDocument",
-    "MindtraceODMBackend",
     "MindtraceRedisDocument",
     "MongoMindtraceODMBackend",
     "RedisMindtraceODMBackend",

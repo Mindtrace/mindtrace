@@ -17,15 +17,23 @@ dependencies = [
   "mindtrace-apps>=0.1.0",
   "mindtrace-ui>=0.1.0",
   "mindtrace-datalake>=0.1.0",
+  "uvicorn>=0.35.0",
+  "fastapi>=0.115.14",
+  "aiohttp>=3.12.13",
   "mindtrace-storage>=0.1.0",
 ]
+
+[project.optional-dependencies]
+cameras-basler = ["mindtrace-hardware[cameras-basler]"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]"] 
+cameras-all = ["mindtrace-hardware[cameras-all]"]
+hardware-all = ["mindtrace-hardware[hardware-all]"]
 
 [tool.uv]
 dev-dependencies = [
     "pytest-cov>=6.1.1",
+    "pytest-asyncio>=1.0.0",
     "pytest>=8.3.5",
-    "pytest-asyncio>=0.21.0",
-    "fastapi>=0.115.0",
     "httpx>=0.27.2",
     "pre-commit>=4.2.0",
 ]
@@ -73,10 +81,17 @@ test = """
     # Run only integration tests
     # ds test --integration
 
-    # Run specific test file or function
-    # ds test tests/unit/mindtrace/registry/backends/test_minio_registry_backend.py::test_register_materializer
+    # Run specific test file or function (note the colon after 'test')
+    # ds test: tests/integration/mindtrace/services/test_simple_integration.py::TestServiceIntegration::test_url_construction_logic
 
-    bash scripts/run_tests.sh ${@:- --maxfail=1 --slow-last}
+    # Run specific test directories (note the colon after 'test')
+    # ds test: tests/unit
+    # ds test: tests/integration/mindtrace/services
+
+    # Run multiple test paths (note the colon after 'test')
+    # ds test: tests/unit tests/integration/mindtrace/services
+
+    bash scripts/run_tests.sh ${@:-}
 """
 
 [tool.ruff]
