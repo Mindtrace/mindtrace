@@ -17,9 +17,6 @@ dependencies = [
   "mindtrace-apps>=0.1.0",
   "mindtrace-ui>=0.1.0",
   "mindtrace-datalake>=0.1.0",
-  "uvicorn>=0.35.0",
-  "fastapi>=0.115.14",
-  "aiohttp>=3.12.13",
   "mindtrace-storage>=0.1.0",
 ]
 
