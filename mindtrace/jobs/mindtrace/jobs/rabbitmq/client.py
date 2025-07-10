@@ -115,6 +115,8 @@ class RabbitMQClient(OrchestratorBackend):
             force: Force exchange creation if it doesn't exist.
             max_priority: Maximum priority for priority queue (0-255).
         """
+        if "queue_type" in kwargs:
+            self.logger.warning("queue_type is not available for RabbitMQClient. Creating a FIFO queue.")
         queue = queue_name
         exchange = kwargs.get("exchange")
         durable = kwargs.get("durable", True)
