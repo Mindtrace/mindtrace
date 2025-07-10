@@ -34,10 +34,10 @@ class RabbitMQClient(OrchestratorBackend):
         )
         self.connection.connect()
         self.channel = self.connection.get_channel()
-        self._host = host
-        self._port = port
-        self._username = username
-        self._password = password
+        self._host = self.connection.host
+        self._port = self.connection.port
+        self._username = self.connection.username
+        self._password = self.connection.password
         self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
 
     @property
