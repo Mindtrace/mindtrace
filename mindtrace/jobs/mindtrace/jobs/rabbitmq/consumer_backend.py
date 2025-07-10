@@ -30,18 +30,21 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
-        
+        if not self.connection.is_connected():
+            self.connection.connect()
+        channel = self.connection.get_channel()
+        channel.basic_qos(prefetch_count=self.prefetch_count)
         try:
             if num_messages > 0:
-                self._consume_finite_messages(num_messages, queues)
+                self._consume_finite_messages(channel, num_messages, queues)
             else:
-                self._consume_infinite_messages(queues)
+                self._consume_infinite_messages(channel, queues)
         except KeyboardInterrupt:
             self.logger.info("Consumption interrupted by user.")
         finally:
             self.logger.info(f"Stopped consuming messages from queues: {queues}.")
     
-    def _consume_finite_messages(self, num_messages: int, queues: list[str]) -> None:
+    def _consume_finite_messages(self, channel, num_messages: int, queues: list[str], block: bool = True) -> None:
         """Consume a finite number of messages from each queue using polling approach."""
         self.logger.info(f"Consuming up to {num_messages} messages from queues: {queues}.")
         
@@ -49,7 +52,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
             messages_consumed = 0
             while messages_consumed < num_messages:
                 try:
-                    message = self.receive_message(queue)
+                    message = self.receive_message(channel, queue, block=block)
                     if message:
                         self.logger.debug(f"Received message from queue '{queue}': processing {messages_consumed + 1}/{num_messages}")
                         success = self.process_message(message)
@@ -63,7 +66,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     self.logger.error(f"Error during finite consumption from {queue}: {e}\n{traceback.format_exc()}")
                     break
     
-    def _consume_infinite_messages(self, queues: list[str]) -> None:
+    def _consume_infinite_messages(self, channel, queues: list[str]) -> None:
         """Consume messages indefinitely from the specified queues."""
         self.logger.info(f"Started consuming messages indefinitely from queues: {queues}.")
         
@@ -71,7 +74,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         while True:
             for queue in queues:
                 try:
-                    message = self.receive_message(queue)
+                    message = self.receive_message(channel, queue, block=True)
                     if message:
                         processed += 1
                         self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
@@ -112,7 +115,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         self.logger.info(f"Finished draining queues: {queues}. All queues empty.") 
 
     def receive_message(
-        self, queue_name: str, **kwargs
+        self, channel, queue_name: str, **kwargs
     ) -> Optional[dict]:
         """Retrieve a message from a specified RabbitMQ queue.
         This method uses RabbitMQ's basic_get method to fetch a message. It supports blocking behavior by polling until
@@ -126,9 +129,6 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         Returns:
             dict: The message content as a dictionary, or None if no message is available.
         """
-        if not self.connection.is_connected():
-            self.connection.connect()
-        channel = self.connection.get_channel()
         block = kwargs.get("block", False)
         timeout = kwargs.get("timeout", None)
         auto_ack = kwargs.get("auto_ack", True)
