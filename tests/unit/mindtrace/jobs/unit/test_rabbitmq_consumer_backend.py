@@ -82,7 +82,7 @@ def test_receive_message_block_and_timeout(backend):
     with patch.object(backend.connection, 'is_connected', return_value=True), \
          patch.object(backend.connection, 'get_channel', return_value=mock_channel):
         backend.logger = MagicMock()
-        result = backend.receive_message('q', block=True, timeout=0.1)
+        result = backend.receive_message(mock_channel, 'q', block=True, timeout=0.1)
         assert result['status'] == 'error'
         assert 'Timeout' in result['message']
 
@@ -92,7 +92,7 @@ def test_receive_message_non_block(backend):
     with patch.object(backend.connection, 'is_connected', return_value=True), \
          patch.object(backend.connection, 'get_channel', return_value=mock_channel):
         backend.logger = MagicMock()
-        result = backend.receive_message('q', block=False)
+        result = backend.receive_message(mock_channel, 'q', block=False)
         assert result['status'] == 'error'
         assert 'No message' in result['message']
 
@@ -104,12 +104,12 @@ def test_receive_message_success(backend):
     with patch.object(backend.connection, 'is_connected', return_value=True), \
          patch.object(backend.connection, 'get_channel', return_value=mock_channel):
         backend.logger = MagicMock()
-        result = backend.receive_message('q', block=False)
+        result = backend.receive_message(mock_channel, 'q', block=False)
         assert result == {'id': 1}
         backend.logger.info.assert_called()
 
 
-def test_receive_message_success(backend):
+def test_receive_message_success_2(backend):
     mock_channel = MagicMock()
     method_frame = MagicMock()
     body = b'{"id": 1}'
@@ -117,7 +117,7 @@ def test_receive_message_success(backend):
     with patch.object(backend.connection, 'is_connected', return_value=True), \
          patch.object(backend.connection, 'get_channel', return_value=mock_channel):
         backend.logger = MagicMock()
-        result = backend.receive_message('q', block=True, timeout=0.1)
+        result = backend.receive_message(mock_channel, 'q', block=True, timeout=0.1)
         assert result == {'id': 1}
         backend.logger.info.assert_called()
 
@@ -128,4 +128,4 @@ def test_receive_message_exception(backend):
          patch.object(backend.connection, 'get_channel', return_value=mock_channel):
         backend.logger = MagicMock()
         with pytest.raises(RuntimeError):
-            backend.receive_message('q', block=False) 
+            backend.receive_message(mock_channel, 'q', block=False) 
