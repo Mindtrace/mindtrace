@@ -34,9 +34,8 @@ class LocalClient(OrchestratorBackend):
     def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str) -> LocalConsumerBackend:
         return LocalConsumerBackend(queue_name, consumer_frontend, self)
 
-    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
+    def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""
-        queue_type = kwargs.get("queue_type", "fifo")
         with self._lock:
             if queue_name in self.queues:
                 return {

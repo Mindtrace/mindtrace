@@ -58,10 +58,10 @@ class Orchestrator(Mindtrace):
         """
         return self.backend.count_queue_messages(queue_name, **kwargs)
     
-    def register(self, schema: JobSchema) -> str:
+    def register(self, schema: JobSchema, queue_type: str = "fifo") -> str:
         """Register a JobSchema and create a queue for it."""
         queue_name = schema.name
-        self.backend.declare_queue(queue_name)
+        self.backend.declare_queue(queue_name, queue_type=queue_type)
         # TODO: This is in memory and not suitable for production, need a way to store
         # the schema in a database
         self._schema_mapping[schema.name] = {
