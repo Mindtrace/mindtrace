@@ -11,7 +11,11 @@ Provides user authentication interface with:
 
 import reflex as rx
 from poseidon.state.auth import AuthState
-from poseidon.components import login_form, centered_form_layout, redirect_component
+from poseidon.components import (
+    login_form, redirect_component,
+    logo_mindtrace, card_mindtrace, header_mindtrace,
+    link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
+)
 
 
 def login_content() -> rx.Component:
@@ -19,13 +23,46 @@ def login_content() -> rx.Component:
     Modern login form content using unified Poseidon UI components.
     All state and event logic is handled in the page/state, not in the components.
     """
-    return centered_form_layout(
-        login_form(
-            title="Sign in to Poseidon Toolkit",
-            subtitle="Enter your credentials to access your workspace"
-        ),
-        max_width="450px"
-    )
+    return page_layout_mindtrace([
+        card_mindtrace([
+            rx.box(
+                logo_mindtrace(),
+                text_align="center",
+            ),
+            header_mindtrace(
+                "Sign in to your account",
+                "Welcome back! Enter your credentials to access your workspace"
+            ),
+            rx.box(
+                login_form(
+                    title="",
+                    subtitle=""
+                ),
+                style={
+                    "width": "100%",
+                }
+            ),
+            rx.box(
+                rx.vstack(
+                    link_mindtrace(
+                        "Don't have an account? ",
+                        "Sign up",
+                        "/register"
+                    ),
+                    link_mindtrace(
+                        "Need admin access? ",
+                        "Admin Registration",
+                        "/register-admin"
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                padding_top="1rem",
+                margin_top="1rem",
+            ),
+        ]),
+    ])
 
 
 def login_page() -> rx.Component:
@@ -33,8 +70,12 @@ def login_page() -> rx.Component:
     Login page with dynamic rendering - redirects authenticated users.
     Uses unified redirect and form layout components for consistency.
     """
-    return rx.cond(
-        AuthState.is_authenticated,
-        redirect_component("Redirecting to dashboard..."),
-        login_content(),
+    return rx.box(
+        rx.cond(
+            AuthState.is_authenticated,
+            redirect_component("Redirecting to dashboard..."),
+            login_content(),
+        ),
+        # CSS animations and keyframes
+        css_animations_mindtrace(),
     ) 

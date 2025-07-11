@@ -6,21 +6,36 @@ while keeping the exact styling patterns.
 
 import reflex as rx
 from poseidon.state.auth import AuthState
+from .mindtrace_forms import (
+    input_with_label_mindtrace,
+    input_with_hint_mindtrace,
+    select_mindtrace,
+    button_mindtrace,
+)
 
 
-def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False):
-    """Form input with label - keeps Buridan UI styling."""
-    return rx.vstack(
-        rx.text(label, font_size="11px", weight="medium", color_scheme="gray"),
-        rx.input(
-            placeholder=placeholder, 
-            width="100%",
-            type=input_type,
-            name=name,
-            required=required
-        ),
-        width="100%",
-        spacing="2",
+def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
+    """Form input with label - using mindtrace styling. Supports size variants: small, medium, large (default)."""
+    return input_with_label_mindtrace(
+        label=label,
+        placeholder=placeholder,
+        name=name,
+        input_type=input_type,
+        required=required,
+        size=size,
+    )
+
+
+def form_input_with_label_and_hint(label: str, placeholder: str, hint: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
+    """Form input with label and hint - using mindtrace styling. Supports size variants: small, medium, large (default)."""
+    return input_with_hint_mindtrace(
+        label=label,
+        placeholder=placeholder,
+        hint=hint,
+        input_type=input_type,
+        name=name,
+        required=required,
+        size=size,
     )
 
 
@@ -43,16 +58,9 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
         ),
         rx.form(
             rx.vstack(
-                form_input_with_label("Email", "example@company.com", "email", "email", True),
-                form_input_with_label("Password", "Enter your password", "password", "password", True),
-                rx.button(
-                    "Sign In",
-                    width="100%",
-                    cursor="pointer",
-                    variant="surface",
-                    color_scheme="gray",
-                    type="submit",
-                ),
+                form_input_with_label("Email", "example@company.com", "email", "email", True, "medium"),
+                form_input_with_label("Password", "Enter your password", "password", "password", True, "medium"),
+                modern_button("Sign In", "submit", "medium"),
                 # Error display
                 rx.cond(
                     AuthState.error,
@@ -70,7 +78,7 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
             width="100%",
         ),
         width="100%",
-        max_width="21em",
+        # max_width="21em",
         height="100%",
         justify="center",
         align="center",
@@ -98,54 +106,59 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
         ),
         rx.form(
             rx.vstack(
-                rx.hstack(
-                    form_input_with_label("Username", "Enter username", "text", "username", True),
-                    form_input_with_label("Email", "you@company.com", "email", "email", True),
-                    width="100%",
-                    display="flex",
-                ),
-                form_input_with_label("Password", "Create password", "password", "password", True),
+                form_input_with_label("Username", "Enter username", "text", "username", True, "medium"),
+                form_input_with_label("Email", "you@company.com", "email", "email", True, "medium"),
+                form_input_with_label("Password", "Create password", "password", "password", True, "medium"),
                 # Organization selection
-                rx.vstack(
-                    rx.text("Organization", font_size="11px", color_scheme="gray", weight="medium"),
-                    rx.cond(
-                        AuthState.organizations_loaded,
-                        rx.select.root(
-                            rx.select.trigger(
-                                placeholder="Select your organization",
-                                width="100%",
-                            ),
-                            rx.select.content(
-                                rx.foreach(
-                                    AuthState.available_organizations,
-                                    lambda org: rx.select.item(
-                                        org["name"],
-                                        value=org["id"],
-                                    )
-                                ),
-                            ),
-                            name="organization_id",
-                            width="100%",
+                rx.cond(
+                    AuthState.organizations_loaded,
+                    modern_select_field(
+                        "Organization",
+                        "Select your organization",
+                        AuthState.available_organizations,
+                        "organization_id",
+                        True,
+                        "medium"
+                    ),
+                    rx.vstack(
+                        rx.el.label(
+                            "Organization",
+                            style={
+                                "font_size": "0.875rem",
+                                "font_weight": "500",
+                                "color": "rgb(71, 85, 105)",
+                                "margin_bottom": "0.5rem",
+                                "display": "block",
+                                "font_family": '"Inter", system-ui, sans-serif',
+                            }
                         ),
-                        rx.input(
+                        rx.el.input(
                             placeholder="Loading organizations...",
                             disabled=True,
-                            width="100%",
+                            style={
+                                "width": "100%",
+                                "padding": "1rem 1.25rem",
+                                "font_size": "0.95rem",
+                                "font_family": '"Inter", system-ui, sans-serif',
+                                "border_radius": "12px",
+                                "background": "rgba(243, 244, 246, 0.8)",
+                                "border": "2px solid rgba(226, 232, 240, 0.6)",
+                                "outline": "none",
+                                "color": "rgb(107, 114, 128)",
+                                "cursor": "not-allowed",
+                                "backdrop_filter": "blur(10px)",
+                            }
                         ),
+                        width="100%",
+                        spacing="1",
+                        style={
+                            "margin_bottom": "1rem",
+                        }
                     ),
-                    width="100%",
-                    spacing="2",
                 ),
                 # Inject extra fields here (e.g., admin key input)
                 *extra_fields,
-                rx.button(
-                    submit_label,
-                    width="100%",
-                    cursor="pointer",
-                    variant="surface",
-                    color_scheme="gray",
-                    type="submit",
-                ),
+                modern_button(submit_label, "submit", "medium"),
                 # Error display
                 rx.cond(
                     AuthState.error,
@@ -157,13 +170,13 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
                     )
                 ),
                 width="100%",
-                spacing="3",
+                spacing="1",
             ),
             on_submit=on_submit,
             width="100%",
         ),
         width="100%",
-        max_width="21em",
+        # max_width="21em",
         height="100%",
         justify="center",
         align="center",
@@ -297,4 +310,26 @@ def forms_v1():
         height="100%",
         justify="center",
         align="center",
+    )
+
+
+def modern_select_field(label: str, placeholder: str, options, name: str = "", required: bool = False, size: str = "large"):
+    """Modern select field - using mindtrace styling. Supports size variants: small, medium, large (default)."""
+    return select_mindtrace(
+        label=label,
+        placeholder=placeholder,
+        options=options,
+        name=name,
+        required=required,
+        size=size,
+    )
+
+
+def modern_button(text: str, button_type: str = "submit", size: str = "large", **kwargs):
+    """Modern button - using mindtrace styling. Supports size variants: small, medium, large (default)."""
+    return button_mindtrace(
+        text=text,
+        button_type=button_type,
+        size=size,
+        **kwargs
     )
