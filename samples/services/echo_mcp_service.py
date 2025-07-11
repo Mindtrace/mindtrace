@@ -57,7 +57,6 @@ async def mcp_example():
                 print("Available tools:")
                 print("=" * 50)
                 for tool in tools.tools:
-                    print(tool)
                     print(f" - {tool.name}: {tool.description or 'No description'}")
 
                 # # Call your  tool
@@ -65,6 +64,11 @@ async def mcp_example():
                 print("Call Echo tool:")
                 print("=" * 50)
                 result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
+                print("Tool response:", result)
+                print("=" * 50)
+                print("Call Reverse Echo tool:")
+                print("=" * 50)
+                result = await session.call_tool("reverse_message", {"payload": {"message": "Alice"}})
                 print("Tool response:", result)
 
 
