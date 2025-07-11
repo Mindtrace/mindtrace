@@ -19,17 +19,18 @@ def job_from_schema(schema: JobSchema, input_data) -> Job:
     Returns:
         Job: A complete Job instance ready for submission
     """
+    
+    if isinstance(input_data, schema.input):
+        payload = input_data
+    else:
+        payload = schema.input(**input_data)
+
     job = Job(
         id=str(uuid.uuid4()),
         name=schema.name,
         schema_name=schema.name,
-        payload=JobSchema(
-            name=schema.name,
-            input=input_data,
-            output=schema.output
-        ),
+        payload=payload,
         created_at=datetime.now().isoformat()
     )
-    
-    job.input_data = input_data.model_dump()
+
     return job

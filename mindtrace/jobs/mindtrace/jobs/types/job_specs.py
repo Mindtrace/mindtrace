@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel
 
@@ -21,8 +21,8 @@ class ExecutionStatus(str, Enum):
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
     name: str
-    input: BaseModel
-    output: Optional[BaseModel] = None
+    input: type[BaseModel]
+    output: Optional[type[BaseModel]] = None
 
 
 class Job(BaseModel):
@@ -30,7 +30,7 @@ class Job(BaseModel):
     id: str
     name: str
     schema_name: str  # References the JobSchema this job uses
-    payload: JobSchema
+    payload: Any
     status: ExecutionStatus = ExecutionStatus.QUEUED
     created_at: str
     started_at: Optional[str] = None
@@ -38,4 +38,3 @@ class Job(BaseModel):
     error: Optional[str] = None
     entrypoint: Optional[str] = None
     priority: Optional[int] = None
-    input_data: Optional[dict] = None

@@ -29,8 +29,8 @@ class MathsOutput(BaseModel):
 
 maths_schema = JobSchema(
     name="maths_operations",
-    input=MathsInput(operation="add", a=2, b=1),
-    output=MathsOutput(result=0, operation_performed=""),
+    input=MathsInput,
+    output=MathsOutput,
 )
 
 
