@@ -95,6 +95,16 @@ test = """
     bash scripts/run_tests.sh ${@:-}
 """
 
+publish_to_pypi = """
+    # Push all packages to PyPI
+    # First build all packages: uv build --all-packages
+    # ds publish_to_pypi                    # Push to Test PyPI (default)
+    # ds publish_to_pypi testpypi          # Push to Test PyPI (explicit)
+    # ds publish_to_pypi pypi              # Push to production PyPI
+
+    bash scripts/push_to_pypi.sh ${@:-}
+"""
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
