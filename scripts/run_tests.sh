@@ -7,6 +7,38 @@ else
     DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+REQUIRED_PORTS=(6379 5672 9000)
+
+port_in_use() {
+    local port=$1
+    nc -z localhost "$port" >/dev/null 2>&1
+}
+
+start_test_containers() {
+    redis_busy=0; rabbit_busy=0; minio_busy=0
+    port_in_use 6379 && redis_busy=1
+    port_in_use 5672 && rabbit_busy=1
+    port_in_use 9000 && minio_busy=1
+
+    if [ $redis_busy -eq 1 ] && [ $rabbit_busy -eq 1 ] && [ $minio_busy -eq 1 ]; then
+        echo "Detected Redis (6379), RabbitMQ (5672) and MinIO (9000) already accessible."
+        return
+    fi
+
+    if [ $redis_busy -eq 1 ] && [ $rabbit_busy -eq 1 ] && [ $minio_busy -eq 0 ]; then
+        echo "Starting MinIO container..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d minio
+    else
+        echo "Starting redis, rabbitmq and minio containers..."
+        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
+    fi
+
+    echo "Waiting for MinIO to be ready..."
+    until curl -s http://localhost:9000/minio/health/live > /dev/null 2>&1; do
+        sleep 1
+    done
+}
+
 # Initialize variables
 SPECIFIC_PATHS=()
 PYTEST_ARGS=()
@@ -58,14 +90,7 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     
     # Start docker containers if any integration tests are included
     if [ "$NEEDS_DOCKER" = true ]; then
-        echo "Starting docker containers for integration tests..."
-        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
-
-        # Wait for MinIO to be healthy
-        echo "Waiting for docker containers to be ready..."
-        until curl -s http://localhost:9000/minio/health/live > /dev/null; do
-            sleep 1
-        done
+        start_test_containers
     fi
     
     # Clear any existing coverage data
@@ -98,14 +123,7 @@ fi
 
 # Start MinIO container if running integration tests
 if [ "$RUN_INTEGRATION" = true ]; then
-    echo "Starting docker containers..."
-    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
-
-    # Wait for MinIO to be healthy
-    echo "Waiting for docker containers to be ready..."
-    until curl -s http://localhost:9000/minio/health/live > /dev/null; do
-        sleep 1
-    done
+    start_test_containers
 fi
 
 # Clear any existing coverage data when running with coverage
