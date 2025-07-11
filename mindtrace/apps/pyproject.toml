@@ -2,7 +2,7 @@
 name = "mindtrace-apps"
 version = "0.1.0"
 description = "Applications for Mindtrace"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
 ]

@@ -2,7 +2,7 @@
 name = "mindtrace-datalake"
 version = "0.1.0"
 description = "Datalake functionality for Mindtrace"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
 ]
