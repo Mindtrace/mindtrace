@@ -28,7 +28,8 @@ from mindtrace.hardware.models.responses import (
     CameraListResponse,
     CameraInfoResponse,
     BatchOperationResponse,
-    StatusResponse
+    StatusResponse,
+    DictResponse
 )
 from mindtrace.hardware.core.exceptions import CameraError
 

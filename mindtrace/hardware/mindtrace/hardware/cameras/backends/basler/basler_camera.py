@@ -178,6 +178,7 @@ class BaslerCamera(BaseCamera):
         self.converter = None
         self.grabbing_mode = pylon.GrabStrategy_LatestImageOnly
         self.triggermode = self.camera_config.cameras.trigger_mode
+        self._available_exposure_property = None
 
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
 
@@ -355,84 +356,99 @@ class BaslerCamera(BaseCamera):
             # Return reasonable defaults if exposure feature is not available
             return [1.0, 1000000.0]  # 1 μs to 1 second
 
-    async def get_exposure(self) -> float:
-        """
-        Get current exposure time in microseconds.
-        
-        Returns:
-            Current exposure time
-            
-        Raises:
-            CameraConnectionError: If camera is not initialized or accessible
-            HardwareOperationError: If exposure retrieval fails
-        """
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-            
-        try:
-            if not await asyncio.to_thread(self.camera.IsOpen):
-                await asyncio.to_thread(self.camera.Open)
-                
-            exposure = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
-            return exposure
-        except Exception as e:
-            self.logger.warning(f"Exposure not available for camera '{self.camera_name}': {str(e)}")
-            # Return reasonable default if exposure feature is not available
-            return 20000.0  # 20ms default
-
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set the camera exposure time in microseconds.
 
         Args:
-            exposure_value: Exposure time in microseconds
+            exposure: Exposure time in microseconds
 
         Returns:
             True if exposure was set successfully
             
         Raises:
-            CameraConnectionError: If camera is not initialized or accessible
-            CameraConfigurationError: If exposure value is out of range
-            HardwareOperationError: If exposure setting fails
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If exposure setting fails
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
-            
+        
         try:
             min_exp, max_exp = await self.get_exposure_range()
-            
             if exposure < min_exp or exposure > max_exp:
                 raise CameraConfigurationError(
                     f"Exposure {exposure} outside valid range [{min_exp}, {max_exp}] "
                     f"for camera '{self.camera_name}'"
                 )
-                
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
-
-            await asyncio.to_thread(self.camera.ExposureTime.SetValue, exposure)
-            
-            actual_exposure = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
-            success = abs(actual_exposure - exposure) < 0.01 * exposure
-
-            if not success:
-                self.logger.warning(f"Exposure setting verification failed for camera '{self.camera_name}'")
-
-            return success
-            
+                
+            try:
+                prop = getattr(self.camera, self._available_exposure_property, "ExposureTime")
+                # Convert to int64 and ensure it's a valid integer
+                exposure_int = int(exposure)
+                await asyncio.to_thread(prop.SetValue, exposure_int)
+                self.logger.info(f"Set {self._available_exposure_property} to {exposure_int} μs for camera '{self.camera_name}'")
+                return True
+            except Exception as e:
+                self._available_exposure_property = "ExposureTimeRaw"
+                self.logger.warning(f"ExposureTime property not available for camera '{self.camera_name}', using ExposureTimeRaw")
+                prop = getattr(self.camera, "ExposureTimeRaw")
+                
+                # Get the increment value and adjust exposure to be valid
+                try:
+                    inc = await asyncio.to_thread(prop.GetInc)
+                    min_val = await asyncio.to_thread(prop.GetMin)
+                    # Adjust exposure to be valid according to increment
+                    adjusted_exposure = int(round((exposure - min_val) / inc) * inc + min_val)
+                    await asyncio.to_thread(prop.SetValue, adjusted_exposure)
+                    self.logger.info(f"Set ExposureTimeRaw to {adjusted_exposure} μs (adjusted from {exposure}) for camera '{self.camera_name}'")
+                    return True
+                except Exception as e2:
+                    # Fallback: try with original value as int
+                    exposure_int = int(exposure)
+                    await asyncio.to_thread(prop.SetValue, exposure_int)
+                    self.logger.info(f"Set ExposureTimeRaw to {exposure_int} μs for camera '{self.camera_name}'")
+                    return True
+                
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
-            self.logger.warning(f"Exposure setting not available for camera '{self.camera_name}': {str(e)}")
-            # Return True if exposure feature is not available (graceful degradation)
-            return True
+            self.logger.error(f"Exposure setting failed for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set exposure {exposure} on camera '{self.camera_name}': {str(e)}")
+
+    async def get_exposure(self) -> float:
+        """
+        Get the camera exposure time in microseconds.
+        Returns:
+            Current exposure time
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        try:
+            if not await asyncio.to_thread(self.camera.IsOpen):
+                await asyncio.to_thread(self.camera.Open)
+            
+            try:
+                prop = getattr(self.camera, self._available_exposure_property, "ExposureTime")
+                value = await asyncio.to_thread(prop.GetValue)
+                return float(value)
+            except Exception as e:
+                self._available_exposure_property = "ExposureTimeRaw"
+                self.logger.warning (f"ExposureTime property not available for camera '{self.camera_name}', using ExposureTimeRaw")
+                prop = getattr(self.camera, "ExposureTimeRaw")
+                value = await asyncio.to_thread(prop.GetValue)
+                return float(value)
+        except Exception as e:
+            self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
+            return -1.0
 
     async def get_triggermode(self) -> str:
         """
-        Get current trigger mode.
-        
+        Get the camera's current trigger mode.
+
         Returns:
-            "continuous" or "trigger"
+            Current trigger mode ("continuous" or "trigger")
             
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -445,15 +461,11 @@ class BaslerCamera(BaseCamera):
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
                 
-            if await asyncio.to_thread(self.camera.IsGrabbing):
-                await asyncio.to_thread(self.camera.StopGrabbing)
-                
+            # Don't stop grabbing - just check the current state
             trigger_enabled = await asyncio.to_thread(self.camera.TriggerMode.GetValue) == "On"
             trigger_source = await asyncio.to_thread(self.camera.TriggerSource.GetValue) == "Software"
 
             self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
-                
-            await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
             return self.triggermode
             
         except Exception as e:
@@ -492,11 +504,27 @@ class BaslerCamera(BaseCamera):
                 await asyncio.to_thread(self.camera.StopGrabbing)
 
             if triggermode == "continuous":
-                await asyncio.to_thread(self.camera.TriggerMode.SetValue, "Off")
+                # Check if TriggerMode is available before setting
+                if hasattr(self.camera, 'TriggerMode'):
+                    await asyncio.to_thread(self.camera.TriggerMode.SetValue, "Off")
+                else:
+                    self.logger.warning(f"TriggerMode not available for camera '{self.camera_name}', assuming continuous mode")
             else:
-                await asyncio.to_thread(self.camera.TriggerSelector.SetValue, "FrameStart")
+                # Check if trigger features are available
+                if not hasattr(self.camera, 'TriggerMode'):
+                    raise CameraConfigurationError(f"Trigger mode not supported by camera '{self.camera_name}'")
+                
+                if hasattr(self.camera, 'TriggerSelector'):
+                    await asyncio.to_thread(self.camera.TriggerSelector.SetValue, "FrameStart")
+                else:
+                    self.logger.warning(f"TriggerSelector not available for camera '{self.camera_name}'")
+                
                 await asyncio.to_thread(self.camera.TriggerMode.SetValue, "On")
-                await asyncio.to_thread(self.camera.TriggerSource.SetValue, "Software")
+                
+                if hasattr(self.camera, 'TriggerSource'):
+                    await asyncio.to_thread(self.camera.TriggerSource.SetValue, "Software")
+                else:
+                    self.logger.warning(f"TriggerSource not available for camera '{self.camera_name}'")
 
             self.triggermode = triggermode
             await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
@@ -673,8 +701,16 @@ class BaslerCamera(BaseCamera):
                 try:
                     if hasattr(self.camera, 'ExposureTime') and \
                        self.camera.ExposureTime.GetAccessMode() in [genicam.RW, genicam.WO]:
-                        await asyncio.to_thread(self.camera.ExposureTime.SetValue, float(config_data['exposure_time']))
-                        success_count += 1
+                        exposure_value = float(config_data['exposure_time'])
+                        await asyncio.to_thread(self.camera.ExposureTime.SetValue, exposure_value)
+                        
+                        # Verify the setting was applied
+                        actual_exposure = await asyncio.to_thread(self.camera.ExposureTime.GetValue)
+                        if abs(actual_exposure - exposure_value) < 0.01 * exposure_value:
+                            success_count += 1
+                            self.logger.info(f"Exposure time set to {exposure_value} μs for camera '{self.camera_name}'")
+                        else:
+                            self.logger.warning(f"Exposure setting verification failed for camera '{self.camera_name}': requested={exposure_value}, actual={actual_exposure}")
                 except Exception as e:
                     self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
             
@@ -684,8 +720,16 @@ class BaslerCamera(BaseCamera):
                 try:
                     if hasattr(self.camera, 'Gain') and \
                        self.camera.Gain.GetAccessMode() in [genicam.RW, genicam.WO]:
-                        await asyncio.to_thread(self.camera.Gain.SetValue, float(config_data['gain']))
-                        success_count += 1
+                        gain_value = float(config_data['gain'])
+                        await asyncio.to_thread(self.camera.Gain.SetValue, gain_value)
+                        
+                        # Verify the setting was applied
+                        actual_gain = await asyncio.to_thread(self.camera.Gain.GetValue)
+                        if abs(actual_gain - gain_value) < 0.01 * gain_value:
+                            success_count += 1
+                            self.logger.info(f"Gain set to {gain_value} for camera '{self.camera_name}'")
+                        else:
+                            self.logger.warning(f"Gain setting verification failed for camera '{self.camera_name}': requested={gain_value}, actual={actual_gain}")
                 except Exception as e:
                     self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
             
@@ -831,7 +875,10 @@ class BaslerCamera(BaseCamera):
         try:
             import json
             
-            os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
+            # Ensure directory exists if there is a directory part
+            dir_name = os.path.dirname(config_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
             
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
