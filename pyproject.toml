@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
 ]
