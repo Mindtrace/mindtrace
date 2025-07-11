@@ -161,21 +161,6 @@ The Mindtrace Control Protocol (MCP) is a protocol for exposing service function
 ### Example: EchoService with MCP
 See [`sample/echo_mcp.py`](./sample/echo_mcp.py):
 ```python
-class EchoService(Service):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
-
-    def echo(self, payload: EchoInput) -> EchoOutput:
-        if payload.delay > 0:
-            time.sleep(payload.delay)
-        return EchoOutput(echoed=payload.message)
-```
-
-### Running and Using MCP Tools
-You can launch the service and interact with it as follows (see [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)):
-
-```python
 from mindtrace.services.sample.echo_mcp import EchoService
 
 # Launch the service
@@ -187,8 +172,29 @@ result = connection_manager.echo(message="Hello, World!")
 print(result.echoed)
 ```
 
-#### Using the MCP Client
-You can also interact with the service as a set of MCP tools using the provided client:
+### Adding Tools Directly with `add_tool`
+In addition to exposing same class methods as endpoints and tools, you can register standalone functions as MCP tools using `self.add_tool`. These tools will be available via the MCP interface but not as HTTP endpoints.
+
+Example:
+```python
+# Define a tool function
+def reverse_message(payload: EchoInput) -> EchoOutput:
+    """A demo tool that reverses the input message."""
+    reversed_msg = payload.message[::-1]
+    return EchoOutput(echoed=reversed_msg)
+
+class EchoService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+        # Register the reverse_message tool directly
+        self.add_tool("reverse_message", reverse_message)
+```
+
+Now, both `echo` and `reverse_message` are available as MCP tools.
+
+#### Using the MCP Client (with custom tool)
+You can call both the standard and custom tools from the client:
 
 ```python
 from mcp.client.session import ClientSession
@@ -203,17 +209,19 @@ async def mcp_example():
             print("Available tools:", [tool.name for tool in tools.tools])
             # Call the 'echo' tool
             result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
-            print("Tool response:", result)
+            print("Echo tool response:", result)
+            # Call the 'reverse_message' tool
+            result = await session.call_tool("reverse_message", {"payload": {"message": "Alice"}})
+            print("Reverse tool response:", result)
 
 asyncio.run(mcp_example())
 ```
 
 ### Key Points
-- The FastAPI and MCP servers can run independently or be mounted together.
 - Endpoints added with `as_tool=True` are available as both HTTP endpoints and MCP tools.
 - The sample EchoService demonstrates both REST and MCP tool usage.
 - The MCP client allows you to list and call tools programmatically.
 
-For more details, see the sample files:
+For trial purposes, see the sample files:
 - [`sample/echo_mcp.py`](./sample/echo_mcp.py)
 - [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
