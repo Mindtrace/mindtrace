@@ -19,8 +19,8 @@ class TestConsumerIntegration:
         
         redis_test_schema = JobSchema(
             name="redis_test_consumer_jobs",
-            input=SampleJobInput(),
-            output=SampleJobOutput()
+            input=SampleJobInput,
+            output=SampleJobOutput
         )
         redis_queue = orchestrator.register(redis_test_schema)
         

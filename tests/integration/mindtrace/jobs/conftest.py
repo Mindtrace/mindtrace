@@ -22,8 +22,8 @@ def create_test_job(name: str = "test_job", schema_name: str = "default_schema")
     test_input = SampleJobInput()
     schema = JobSchema(
         name=schema_name,
-        input=test_input,
-        output=SampleJobOutput()
+        input=SampleJobInput,
+        output=SampleJobOutput,
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"

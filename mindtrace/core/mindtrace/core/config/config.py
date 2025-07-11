@@ -8,8 +8,10 @@ class Config(dict):
         default_config = {
             "MINDTRACE_TEMP_DIR": "~/.cache/mindtrace/temp",
             "MINDTRACE_DEFAULT_REGISTRY_DIR": "~/.cache/mindtrace/registry",
+            "MINDTRACE_CLUSTER_DEFAULT_REGISTRY_DIR": "~/.cache/mindtrace/cluster/registry",
             "MINDTRACE_DEFAULT_HOST_URLS": {
                 "Service": "http://localhost:8000",
+                "ClusterManager": "http://localhost:8090",
             },
             "MINDTRACE_MINIO_REGISTRY_URI": "~/.cache/mindtrace/minio-registry",
             "MINDTRACE_MINIO_ENDPOINT": "localhost:9000",
