@@ -10,6 +10,7 @@ class Worker(Service, Consumer):
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint("/run", self.run, schema=WorkerRunTaskSchema)
         self.add_endpoint("/connect_to_backend", self.connect_to_backend, schema=ConnectToBackendTaskSchema)
+        self.consume_process = None
 
     def start(self):
         pass
@@ -23,7 +24,8 @@ class Worker(Service, Consumer):
         self.consume_process.start()
         
     def shutdown(self):
-        self.consume_process.kill()
+        if self.consume_process is not None:
+            self.consume_process.kill()
         super().shutdown() 
 
 
