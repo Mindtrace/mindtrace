@@ -4,6 +4,7 @@ import atexit
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import uuid
@@ -16,24 +17,17 @@ from uuid import UUID
 import fastapi
 import psutil
 import requests
-import re
-from fastmcp import FastMCP
 from fastapi import FastAPI, HTTPException
-from urllib3.util.url import Url, parse_url
-
-from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from fastmcp import FastMCP
+from mindtrace.core import (Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url,
+                            named_lambda)
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.types import (
-    EndpointsSchema,
-    Heartbeat,
-    HeartbeatSchema,
-    PIDFileSchema,
-    ServerIDSchema,
-    ServerStatus,
-    ShutdownSchema,
-    StatusSchema,
-)
+from mindtrace.services.core.types import (EndpointsSchema, Heartbeat,
+                                           HeartbeatSchema, PIDFileSchema,
+                                           ServerIDSchema, ServerStatus,
+                                           ShutdownSchema, StatusSchema)
 from mindtrace.services.core.utils import generate_connection_manager
+from urllib3.util.url import Url, parse_url
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -470,4 +464,5 @@ class Service(Mindtrace):
             self.add_tool(tool_name=path, func=func)
 
     def add_tool(self, tool_name, func):
+        """Add a tool to the MCP server."""
         self.mcp.tool(name=tool_name)(func)
