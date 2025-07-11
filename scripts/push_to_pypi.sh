@@ -1,12 +1,22 @@
 #!/bin/bash
 
-# Script to push all mindtrace packages to PyPI using standard pypi credentials
-# Usage: ./scripts/push_to_pypi.sh
+# Script to push all mindtrace packages to PyPI
+# Usage: ./scripts/push_to_pypi.sh [testpypi|pypi]
 # 
-# Requires ~/.pypirc configuration with standard pypi section:
-# [pypi]
-# username = __token__
-# password = pypi-...
+# Defaults to testpypi if no repository specified
+# Requires ~/.pypirc configuration with standard sections:
+# [testpypi]  # For Test PyPI
+# [pypi]      # For production PyPI
+
+# Default to testpypi if no repository specified
+REPOSITORY=${1:-testpypi}
+
+# Validate repository argument
+if [[ "$REPOSITORY" != "testpypi" && "$REPOSITORY" != "pypi" ]]; then
+    print_error "Invalid repository. Use 'testpypi' or 'pypi'"
+    echo "Usage: $0 [testpypi|pypi]"
+    exit 1
+fi
 
 # Don't exit on error - we want to continue with other packages
 
@@ -34,7 +44,7 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-print_status "Pushing packages to PyPI using standard pypi credentials..."
+print_status "Pushing packages to $REPOSITORY..."
 
 # List of all packages 
 PACKAGES=(
@@ -66,12 +76,12 @@ upload_package() {
     if [[ -z "$package" ]]; then
         local package_name="mindtrace"
         local package_pattern="dist/mindtrace-0.1.0*"
-        local repository_name="pypi"
+        local repository_name="$REPOSITORY"
         print_status "Uploading $package_name..."
     else
         local package_name="mindtrace-$package"
         local package_pattern="dist/mindtrace_${package}-0.1.0*"
-        local repository_name="pypi"
+        local repository_name="$REPOSITORY"
         print_status "Uploading $package_name..."
     fi
     
