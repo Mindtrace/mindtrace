@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from mindtrace.database import MindtraceODMBackend
+from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
 
 class LocalMindtraceODMBackend(MindtraceODMBackend):
     """
