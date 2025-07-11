@@ -53,7 +53,7 @@ class ClusterManager(Gateway):
         """
         endpoint_url = f"{self._url}{self._job_registry[job.schema_name]}"
         print(endpoint_url)
-        response = requests.post(endpoint_url, json=job.payload, timeout=60)
+        response = requests.post(endpoint_url, json=job.model_dump(), timeout=60)
 
         if response.status_code != 200:
             raise RuntimeError(f"Gateway proxy request failed: {response.text}")
@@ -62,9 +62,9 @@ class ClusterManager(Gateway):
         try:
             result = response.json()
         except Exception:
-            result = {}
+            result = {"status": "success", "output": {}}
 
-        return cluster_types.JobOutput(status="success", output=result)
+        return cluster_types.JobOutput(**result)
 
     def submit_job(self, job: Job):
         """
