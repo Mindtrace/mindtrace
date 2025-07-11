@@ -142,3 +142,78 @@ stress:      7 passed in 208.89s (0:03:28)
 
 ### TaskSchema
 - Used to define input/output types for endpoints.
+
+## MCP Integration: Exposing Service Endpoints as Tools
+
+### What is MCP?
+The Mindtrace Control Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
+
+### How MCP is Integrated
+- **Mounting MCP on FastAPI:**
+  Each `Service` instance mounts an MCP server on the FastAPI app at `/mcp-server/mcp/`. This allows the same service to be accessed both via REST endpoints and as MCP tools.
+- **Exposing Endpoints as Tools:**
+  When adding an endpoint using `add_endpoint`, you can set `as_tool=True` to expose that endpoint as an MCP tool:
+  ```python
+  self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+  ```
+  This makes the `echo` function available both as a REST endpoint and as an MCP tool.
+
+### Example: EchoService with MCP
+See [`sample/echo_mcp.py`](./sample/echo_mcp.py):
+```python
+class EchoService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+
+    def echo(self, payload: EchoInput) -> EchoOutput:
+        if payload.delay > 0:
+            time.sleep(payload.delay)
+        return EchoOutput(echoed=payload.message)
+```
+
+### Running and Using MCP Tools
+You can launch the service and interact with it as follows (see [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)):
+
+```python
+from mindtrace.services.sample.echo_mcp import EchoService
+
+# Launch the service
+connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
+mcp_url = str(connection_manager.url) + 'mcp-server/mcp/'
+
+# Synchronous call via connection manager
+result = connection_manager.echo(message="Hello, World!")
+print(result.echoed)
+```
+
+#### Using the MCP Client
+You can also interact with the service as a set of MCP tools using the provided client:
+
+```python
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+import asyncio
+
+async def mcp_example():
+    async with streamablehttp_client(mcp_url) as (read, write, session_id):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            print("Available tools:", [tool.name for tool in tools.tools])
+            # Call the 'echo' tool
+            result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
+            print("Tool response:", result)
+
+asyncio.run(mcp_example())
+```
+
+### Key Points
+- The FastAPI and MCP servers can run independently or be mounted together.
+- Endpoints added with `as_tool=True` are available as both HTTP endpoints and MCP tools.
+- The sample EchoService demonstrates both REST and MCP tool usage.
+- The MCP client allows you to list and call tools programmatically.
+
+For more details, see the sample files:
+- [`sample/echo_mcp.py`](./sample/echo_mcp.py)
+- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
