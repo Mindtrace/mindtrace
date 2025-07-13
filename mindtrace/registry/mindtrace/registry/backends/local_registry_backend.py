@@ -435,8 +435,12 @@ class LocalRegistryBackend(RegistryBackend):
                         self._release_file_lock(f)  # Release lock on error
                         return False
 
-                    # Remove the lock file
-                    lock_path.unlink()
+                    # Remove the lock file - use unlink with missing_ok=True to handle race conditions
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        # File was already deleted by another thread, which is fine
+                        pass
                     return True
 
                 except Exception as e:
@@ -536,7 +540,7 @@ class LocalRegistryBackend(RegistryBackend):
                 metadata["path"] = str(target_path)
 
                 with open(target_meta_path, "w") as f:
-                    yaml.safe_dump(metadata, f)
+                    yaml.dump(metadata, f)
 
             self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
 
