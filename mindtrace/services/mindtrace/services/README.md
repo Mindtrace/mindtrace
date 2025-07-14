@@ -146,7 +146,7 @@ stress:      7 passed in 208.89s (0:03:28)
 ## MCP Integration: Exposing Service Endpoints as Tools
 
 ### What is MCP?
-The Mindtrace Control Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
+The Model Context Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
 
 ### How MCP is Integrated
 - **Mounting MCP on FastAPI:**
