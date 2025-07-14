@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.api_core import exceptions as gexc
 from google.cloud import storage
 from google.oauth2 import service_account
+from tqdm import tqdm
 
 from .base import StorageHandler
 
@@ -36,21 +39,16 @@ class GCSStorageHandler(StorageHandler):
             FileNotFoundError: If credentials_path is provided but does not exist.
             google.api_core.exceptions.NotFound: If the bucket does not exist and create_if_missing is False.
         """
-        # Credentials -------------------------------------------------------
         creds = None
         if credentials_path:
             if not os.path.exists(credentials_path):
                 raise FileNotFoundError(credentials_path)
             creds = service_account.Credentials.from_service_account_file(credentials_path)
 
-        # Client ------------------------------------------------------------
         self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
         self.bucket_name = bucket_name
         self._ensure_bucket(create_if_missing, location, storage_class)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
     def _ensure_bucket(self, create: bool, location: str, storage_class: str) -> None:
         """Ensure the GCS bucket exists, creating it if necessary."""
         bucket = self.client.bucket(self.bucket_name)
@@ -81,9 +79,6 @@ class GCSStorageHandler(StorageHandler):
         """Return a fresh Bucket object for the current bucket (thread-safe)."""
         return self.client.bucket(self.bucket_name)
 
-    # ------------------------------------------------------------------
-    # CRUD
-    # ------------------------------------------------------------------
     def upload(
         self,
         local_path: str,
@@ -118,6 +113,58 @@ class GCSStorageHandler(StorageHandler):
         os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
         blob.download_to_filename(local_path)
 
+    def download_files(
+        self, 
+        file_map: Dict[str, Union[str, Path]], 
+        max_workers: int = 4
+    ) -> tuple[Dict[str, str], Dict[str, str]]:
+        """Download multiple files from GCS in parallel.
+
+        Args:
+            file_map: Dictionary mapping GCS blob paths to local paths
+                Example: {"path/to/blob.jpg": "/local/path/image.jpg"}
+            max_workers: Maximum number of concurrent download threads
+
+        Returns:
+            Tuple of (downloaded_paths, errors) where:
+                downloaded_paths: Dict mapping successful GCS paths to local paths
+                errors: Dict mapping failed GCS paths to error messages
+        """
+        downloaded_paths = {}
+        errors = {}
+        total_files = len(file_map)
+
+        def download_single_file(blob_path: str, local_path: Union[str, Path]) -> tuple[str, Union[str, Exception]]:
+            """Download a single file from GCS."""
+            try:
+                local_path_str = str(local_path)
+                os.makedirs(os.path.dirname(local_path_str) or ".", exist_ok=True)
+                self.download(blob_path, local_path_str)
+                return blob_path, local_path_str
+            except Exception as e:
+                return blob_path, str(e)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            with tqdm(total=total_files, desc="Downloading files") as pbar:
+                future_to_path = {
+                    executor.submit(download_single_file, blob_path, local_path): blob_path
+                    for blob_path, local_path in file_map.items()
+                }
+
+                for future in as_completed(future_to_path):
+                    blob_path = future_to_path[future]
+                    try:
+                        result_path, result_value = future.result()
+                        if isinstance(result_value, str) and not result_value.startswith("/") and "Error" in result_value:
+                            errors[result_path] = result_value
+                        else:
+                            downloaded_paths[result_path] = result_value
+                    except Exception as e:
+                        errors[blob_path] = str(e)
+                    pbar.update(1)
+
+        return downloaded_paths, errors
+
     def delete(self, remote_path: str) -> None:
         """Delete a file from GCS.
         Args:
@@ -128,9 +175,6 @@ class GCSStorageHandler(StorageHandler):
         except gexc.NotFound:
             pass  # idempotent delete
 
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
     def list_objects(
         self,
         *,
