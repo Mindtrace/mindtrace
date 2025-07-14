@@ -26,4 +26,4 @@ styles = {
     rx.text: {
         "margin": "0",
     },
-} 
+}
