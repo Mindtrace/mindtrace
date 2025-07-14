@@ -178,7 +178,6 @@ class BaslerCamera(BaseCamera):
         self.converter = None
         self.grabbing_mode = pylon.GrabStrategy_LatestImageOnly
         self.triggermode = self.camera_config.cameras.trigger_mode
-        self._available_exposure_property = None
 
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
 
@@ -329,6 +328,48 @@ class BaslerCamera(BaseCamera):
         self.logger.info(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
         return True
 
+    async def _detect_exposure_nodes(self) -> str:
+        """
+        Detect which exposure property is available for this camera.
+        
+        Returns:
+            The name of the available exposure property ("ExposureTime" or "ExposureTimeRaw")
+            
+        Raises:
+            CameraConfigurationError: If no exposure property is available
+        """
+        try:
+            # First check if ExposureTime exists and is accessible
+            if hasattr(self.camera, 'ExposureTime'):
+                try:
+                    # Test if we can read the current value
+                    await asyncio.to_thread(self.camera.ExposureTime.GetValue)
+                    self.logger.info(f"Using ExposureTime for camera '{self.camera_name}'")
+                    return "ExposureTime"
+                except Exception as e:
+                    self.logger.debug(f"ExposureTime exists but not accessible for camera '{self.camera_name}': {str(e)}")
+            
+            # Check if ExposureTimeRaw exists and is accessible
+            if hasattr(self.camera, 'ExposureTimeRaw'):
+                try:
+                    # Test if we can read the current value
+                    await asyncio.to_thread(self.camera.ExposureTimeRaw.GetValue)
+                    self.logger.info(f"Using ExposureTimeRaw for camera '{self.camera_name}'")
+                    return "ExposureTimeRaw"
+                except Exception as e:
+                    self.logger.debug(f"ExposureTimeRaw exists but not accessible for camera '{self.camera_name}': {str(e)}")
+            
+            # If neither is accessible, try ExposureTime first (more common)
+            if hasattr(self.camera, 'ExposureTime'):
+                self.logger.warning(f"ExposureTime exists but may not be fully functional for camera '{self.camera_name}', trying anyway")
+                return "ExposureTime"
+            
+            raise CameraConfigurationError(f"No exposure property available for camera '{self.camera_name}'")
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting exposure nodes for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to detect exposure nodes: {str(e)}")
+
     async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get the supported exposure time range in microseconds.
@@ -347,8 +388,12 @@ class BaslerCamera(BaseCamera):
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
 
-            min_value = await asyncio.to_thread(self.camera.ExposureTime.GetMin)
-            max_value = await asyncio.to_thread(self.camera.ExposureTime.GetMax)
+            # Use the detected exposure property
+            exposure_prop = await self._detect_exposure_nodes()
+            prop = getattr(self.camera, exposure_prop)
+            
+            min_value = await asyncio.to_thread(prop.GetMin)
+            max_value = await asyncio.to_thread(prop.GetMax)
                 
             return [min_value, max_value]
         except Exception as e:
@@ -383,33 +428,33 @@ class BaslerCamera(BaseCamera):
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
                 
-            try:
-                prop = getattr(self.camera, self._available_exposure_property, "ExposureTime")
-                # Convert to int64 and ensure it's a valid integer
-                exposure_int = int(exposure)
-                await asyncio.to_thread(prop.SetValue, exposure_int)
-                self.logger.info(f"Set {self._available_exposure_property} to {exposure_int} μs for camera '{self.camera_name}'")
-                return True
-            except Exception as e:
-                self._available_exposure_property = "ExposureTimeRaw"
-                self.logger.warning(f"ExposureTime property not available for camera '{self.camera_name}', using ExposureTimeRaw")
-                prop = getattr(self.camera, "ExposureTimeRaw")
-                
-                # Get the increment value and adjust exposure to be valid
+            # Use the detected exposure property
+            exposure_prop = await self._detect_exposure_nodes()
+            prop = getattr(self.camera, exposure_prop)
+            
+            # Convert to int64 and ensure it's a valid integer
+            exposure_int = int(exposure)
+            
+            # For ExposureTimeRaw, we may need to adjust to valid increments
+            if exposure_prop == "ExposureTimeRaw":
                 try:
                     inc = await asyncio.to_thread(prop.GetInc)
                     min_val = await asyncio.to_thread(prop.GetMin)
                     # Adjust exposure to be valid according to increment
                     adjusted_exposure = int(round((exposure - min_val) / inc) * inc + min_val)
                     await asyncio.to_thread(prop.SetValue, adjusted_exposure)
-                    self.logger.info(f"Set ExposureTimeRaw to {adjusted_exposure} μs (adjusted from {exposure}) for camera '{self.camera_name}'")
+                    self.logger.info(f"Set {exposure_prop} to {adjusted_exposure} μs (adjusted from {exposure}) for camera '{self.camera_name}'")
                     return True
-                except Exception as e2:
+                except Exception as e:
                     # Fallback: try with original value as int
-                    exposure_int = int(exposure)
                     await asyncio.to_thread(prop.SetValue, exposure_int)
-                    self.logger.info(f"Set ExposureTimeRaw to {exposure_int} μs for camera '{self.camera_name}'")
+                    self.logger.info(f"Set {exposure_prop} to {exposure_int} μs for camera '{self.camera_name}'")
                     return True
+            else:
+                # For ExposureTime, use the value directly
+                await asyncio.to_thread(prop.SetValue, exposure_int)
+                self.logger.info(f"Set {exposure_prop} to {exposure_int} μs for camera '{self.camera_name}'")
+                return True
                 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -429,16 +474,11 @@ class BaslerCamera(BaseCamera):
             if not await asyncio.to_thread(self.camera.IsOpen):
                 await asyncio.to_thread(self.camera.Open)
             
-            try:
-                prop = getattr(self.camera, self._available_exposure_property, "ExposureTime")
-                value = await asyncio.to_thread(prop.GetValue)
-                return float(value)
-            except Exception as e:
-                self._available_exposure_property = "ExposureTimeRaw"
-                self.logger.warning (f"ExposureTime property not available for camera '{self.camera_name}', using ExposureTimeRaw")
-                prop = getattr(self.camera, "ExposureTimeRaw")
-                value = await asyncio.to_thread(prop.GetValue)
-                return float(value)
+            # Use the detected exposure property
+            exposure_prop = await self._detect_exposure_nodes()
+            prop = getattr(self.camera, exposure_prop)
+            value = await asyncio.to_thread(prop.GetValue)
+            return float(value)
         except Exception as e:
             self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
             return -1.0

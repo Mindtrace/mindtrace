@@ -2,156 +2,120 @@ import reflex as rx
 from poseidon.state.camera import CameraState
 
 
-def camera_config_modal(camera: str) -> rx.Component:
-    """Modular camera configuration modal component with improved layout and value display."""
-
-    # --- NEW: Sync config on open ---
-    def on_open():
-        info = CameraState.camera_info
-        config = {
-            "exposure": info.get("current_exposure", 20000),
-            "gain": info.get("current_gain", 1.0),
-            "width": info.get("width", ""),
-            "height": info.get("height", ""),
-            "pixel_format": info.get("pixel_format", "BGR8"),
-            "mode": info.get("mode", "continuous"),
-            "image_enhancement": info.get("image_enhancement", False),
-        }
-        CameraState.camera_config = config
-
-    # ---
+def camera_config_modal() -> rx.Component:
+    """Simplified camera configuration modal with exposure and gain only."""
+    
     def exposure_slider() -> rx.Component:
-        """Exposure slider with min/max/current value display."""
+        """Simple log-scale exposure slider using state Vars."""
         return rx.vstack(
             rx.hstack(
                 rx.text("Exposure (μs)", font_size="0.95rem", font_weight="600", color="#374151"),
                 rx.hstack(
-                    rx.text("31", font_size="0.85rem", color="#6B7280"),
+                    rx.text(CameraState.exposure_min_value, font_size="0.85rem", color="#6B7280"),
                     rx.text("–", font_size="0.85rem", color="#6B7280"),
-                    rx.text("1000000", font_size="0.85rem", color="#6B7280"),
+                    rx.text(CameraState.exposure_max_value, font_size="0.85rem", color="#6B7280"),
                     spacing="1",
                 ),
                 rx.text("Current:", font_size="0.85rem", color="#6B7280"),
-                rx.cond(
-                    CameraState.camera_config.get("exposure") != None,
-                    rx.text(CameraState.camera_config.get("exposure"), font_size="0.85rem", color="#2563EB", font_weight="600"),
-                    rx.text("N/A", font_size="0.85rem", color="#6B7280"),
-                ),
+                rx.text(CameraState.exposure_display_value, font_size="0.85rem", color="#2563EB", font_weight="600"),
                 spacing="3", align="center", width="100%", justify="between",
             ),
             rx.slider(
-                min_value=31,
-                max_value=1000000,
-                value=[CameraState.camera_config.get("exposure", 31)],
-                on_change=lambda v: CameraState.update_config_value("exposure", v[0]),
+                min_value=0,
+                max_value=100,
+                value=[CameraState.exposure_slider_value],
+                on_change=lambda v: CameraState.set_exposure_from_slider(v[0]),
                 width="100%",
             ),
             spacing="2", align="start", width="100%",
         )
 
     def gain_slider() -> rx.Component:
-        """Gain slider with min/max/current value display."""
+        """Gain slider with dynamic range and current value display."""
+        ranges = CameraState.current_camera_ranges
+        gain_range = ranges.get("gain", [0, 24])
+        min_gain = rx.cond(gain_range.length() > 0, gain_range[0], 0)
+        max_gain = rx.cond(gain_range.length() > 1, gain_range[1], 24)
+        current_gain = CameraState.camera_config.get("gain", 0)
         return rx.vstack(
             rx.hstack(
                 rx.text("Gain", font_size="0.95rem", font_weight="600", color="#374151"),
                 rx.hstack(
-                    rx.text("0", font_size="0.85rem", color="#6B7280"),
+                    rx.text(min_gain, font_size="0.85rem", color="#6B7280"),
                     rx.text("–", font_size="0.85rem", color="#6B7280"),
-                    rx.text("24", font_size="0.85rem", color="#6B7280"),
+                    rx.text(max_gain, font_size="0.85rem", color="#6B7280"),
                     spacing="1",
                 ),
                 rx.text("Current:", font_size="0.85rem", color="#6B7280"),
-                rx.cond(
-                    CameraState.camera_config.get("gain") != None,
-                    rx.text(CameraState.camera_config.get("gain"), font_size="0.85rem", color="#2563EB", font_weight="600"),
-                    rx.text("N/A", font_size="0.85rem", color="#6B7280"),
-                ),
+                rx.text(current_gain, font_size="0.85rem", color="#2563EB", font_weight="600"),
                 spacing="3", align="center", width="100%", justify="between",
             ),
             rx.slider(
-                min_value=0,
-                max_value=24,
-                value=[CameraState.camera_config.get("gain", 0)],
+                min_value=min_gain,
+                max_value=max_gain,
+                value=[current_gain],
                 on_change=lambda v: CameraState.update_config_value("gain", v[0]),
                 width="100%",
             ),
             spacing="2", align="start", width="100%",
         )
 
-    def resolution_inputs() -> rx.Component:
-        """Resolution width and height inputs."""
-        return rx.hstack(
-            rx.vstack(
-                rx.text("Width", font_size="0.95rem", font_weight="600", color="#374151"),
-                rx.input(
-                    placeholder="1920",
-                    value=CameraState.camera_config.get("width", ""),
-                    on_change=lambda value: CameraState.update_config_value("width", value),
-                    border="1px solid #D1D5DB",
-                    border_radius="6px",
-                    padding="0.75rem",
-                    _focus={"border_color": "#374151"},
-                ),
-                spacing="2",
-                align="start",
-                width="100%",
+    def image_display() -> rx.Component:
+        """Image display section for captured images."""
+        return rx.vstack(
+            rx.text(
+                "Captured Image",
+                font_size="1rem",
+                font_weight="600",
+                color="#374151",
+                margin_top="1rem",
             ),
-            rx.vstack(
-                rx.text("Height", font_size="0.95rem", font_weight="600", color="#374151"),
-                rx.input(
-                    placeholder="1080",
-                    value=CameraState.camera_config.get("height", ""),
-                    on_change=lambda value: CameraState.update_config_value("height", value),
-                    border="1px solid #D1D5DB",
-                    border_radius="6px",
-                    padding="0.75rem",
-                    _focus={"border_color": "#374151"},
+            rx.cond(
+                CameraState.capture_image_data,
+                rx.center(
+                    rx.box(
+                        rx.image(
+                            src="data:image/jpeg;base64," + CameraState.capture_image_data,
+                            max_width="100%",
+                            max_height="300px",
+                            border_radius="8px",
+                            border="1px solid #E5E7EB",
+                            alt="Captured camera image",
+                            object_fit="contain",
+                        ),
+                        background="white",
+                        padding="1rem",
+                        border_radius="8px",
+                        box_shadow="0 2px 4px rgba(0, 0, 0, 0.1)",
+                        width="100%",
+                    ),
+                    width="100%",
                 ),
-                spacing="2",
-                align="start",
-                width="100%",
-            ),
-            spacing="4",
-            width="100%",
-        )
-
-    def format_dropdowns() -> rx.Component:
-        """Pixel format and trigger mode dropdowns."""
-        return rx.hstack(
-            rx.vstack(
-                rx.text("Pixel Format", font_size="0.95rem", font_weight="600", color="#374151"),
-                rx.select(
-                    ["BGR8", "RGB8", "MONO8", "MONO16"],
-                    value=CameraState.camera_config.get("pixel_format", "BGR8"),
-                    on_change=lambda value: CameraState.update_config_value("pixel_format", value),
-                    border="1px solid #D1D5DB",
-                    border_radius="6px",
-                    padding="0.75rem",
+                rx.center(
+                    rx.vstack(
+                        rx.text(
+                            "📸",
+                            font_size="2rem",
+                            color="#9CA3AF",
+                        ),
+                        rx.text(
+                            "No image captured yet",
+                            font_size="0.875rem",
+                            color="#6B7280",
+                        ),
+                        spacing="2",
+                        align="center",
+                    ),
+                    padding="2rem",
+                    width="100%",
                 ),
-                spacing="2",
-                align="start",
-                width="100%",
             ),
-            rx.vstack(
-                rx.text("Trigger Mode", font_size="0.95rem", font_weight="600", color="#374151"),
-                rx.select(
-                    ["continuous", "software", "hardware"],
-                    value=CameraState.camera_config.get("mode", "continuous"),
-                    on_change=lambda value: CameraState.update_config_value("mode", value),
-                    border="1px solid #D1D5DB",
-                    border_radius="6px",
-                    padding="0.75rem",
-                ),
-                spacing="2",
-                align="start",
-                width="100%",
-            ),
-            spacing="4",
+            spacing="2",
             width="100%",
         )
 
     def action_buttons() -> rx.Component:
-        """Action buttons with loading states and improved spacing."""
+        """Action buttons with loading states."""
         return rx.hstack(
             rx.dialog.close(
                 rx.button(
@@ -162,17 +126,6 @@ def camera_config_modal(camera: str) -> rx.Component:
                 )
             ),
             rx.cond(
-                CameraState.is_loading,
-                rx.spinner(size="2", color="#3B82F6"),
-                rx.button(
-                    "Save Configuration",
-                    variant="solid",
-                    color_scheme="blue",
-                    cursor="pointer",
-                    on_click=lambda: CameraState.update_camera_config(camera, CameraState.camera_config),
-                )
-            ),
-            rx.cond(
                 CameraState.capture_loading,
                 rx.spinner(size="2", color="#059669"),
                 rx.button(
@@ -180,7 +133,7 @@ def camera_config_modal(camera: str) -> rx.Component:
                     variant="solid",
                     color_scheme="green",
                     cursor="pointer",
-                    on_click=lambda: CameraState.capture_image(camera),
+                    on_click=CameraState.capture_image,
                 )
             ),
             spacing="3",
@@ -189,7 +142,7 @@ def camera_config_modal(camera: str) -> rx.Component:
         )
 
     def camera_header() -> rx.Component:
-        """Header with camera image, name, and status."""
+        """Header with camera icon, name, and status."""
         return rx.hstack(
             rx.box(
                 "📷",
@@ -201,13 +154,13 @@ def camera_config_modal(camera: str) -> rx.Component:
             ),
             rx.vstack(
                 rx.text(
-                    f"{camera}",
+                    CameraState.selected_camera,
                     font_weight="700",
                     font_size="1.2rem",
                     color="#111827",
                 ),
                 rx.text(
-                    CameraState.camera_status_badges.get(camera, "Unknown"),
+                    "Configure camera settings",
                     font_size="0.95rem",
                     color="#6B7280",
                 ),
@@ -225,14 +178,7 @@ def camera_config_modal(camera: str) -> rx.Component:
 
     return rx.dialog.root(
         rx.dialog.trigger(
-            rx.button(
-                "Configure",
-                variant="solid",
-                color_scheme="green",
-                size="2",
-                width="100%",
-                on_click=lambda name=camera: CameraState.open_camera_config(name),
-            ),
+            rx.box(),  # Invisible trigger - modal is controlled by state
         ),
         rx.dialog.content(
             rx.vstack(
@@ -246,23 +192,14 @@ def camera_config_modal(camera: str) -> rx.Component:
                 camera_header(),
                 exposure_slider(),
                 gain_slider(),
-                resolution_inputs(),
-                format_dropdowns(),
-                rx.hstack(
-                    rx.checkbox(
-                        checked=CameraState.camera_config.get("image_enhancement", False),
-                        on_change=lambda value: CameraState.update_config_value("image_enhancement", value),
-                        size="2",
-                    ),
-                    rx.text("Enable Image Enhancement", color="#374151", font_size="0.95rem", font_weight="600"),
-                    spacing="2",
-                    align="center",
-                ),
+                image_display(),
                 action_buttons(),
                 spacing="5",
                 align="stretch",
                 width="100%",
             ),
-            max_width="600px",
+            max_width="500px",
         ),
+        open=CameraState.config_modal_open,
+        on_open_change=lambda open: CameraState.set_config_modal_open(open),
     ) 

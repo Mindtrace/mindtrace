@@ -1,13 +1,13 @@
 import reflex as rx
 from poseidon.state.camera import CameraState
-from poseidon.components.camera_config_modal import camera_config_modal
+from poseidon.components.mindtrace_cards import card_mindtrace
 
 
 def camera_card(camera: str) -> rx.Component:
-    """Modular camera card component with status, info, and actions."""
+    """Simplified camera card using mindtrace card component."""
     
-    def camera_info_section() -> rx.Component:
-        """Camera information display with icon, name, and status."""
+    def camera_header() -> rx.Component:
+        """Camera header with icon, name, and status."""
         return rx.hstack(
             rx.box(
                 "📷",
@@ -59,23 +59,47 @@ def camera_card(camera: str) -> rx.Component:
         )
     
     def action_buttons() -> rx.Component:
-        """Action buttons for camera initialization and configuration."""
+        """Action buttons for camera initialization, deinitialization, and configuration."""
         return rx.vstack(
-            # Initialize button (always visible)
-            rx.button(
-                "Initialize",
-                variant="solid",
-                color_scheme="blue",
-                size="2",
-                on_click=lambda name=camera: CameraState.initialize_camera(name),
-                width="100%",
-                _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
-                transition="all 0.2s ease",
-            ),
-            # Configure button (only if initialized)
+            # Initialize/Deinitialize button (conditional based on status)
             rx.cond(
-                CameraState.camera_statuses.get(camera, "not_initialized") == "initialized",
-                camera_config_modal(camera),
+                CameraState.camera_statuses.get(camera, "not_initialized") == "available",
+                # Camera is available - show Deinitialize button (red)
+                rx.button(
+                    "Deinitialize",
+                    variant="solid",
+                    color_scheme="red",
+                    size="2",
+                    on_click=lambda name=camera: CameraState.close_camera(name),
+                    width="100%",
+                    _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
+                    transition="all 0.2s ease",
+                ),
+                # Camera is not available - show Initialize button (blue)
+                rx.button(
+                    "Initialize",
+                    variant="solid",
+                    color_scheme="blue",
+                    size="2",
+                    on_click=lambda name=camera: CameraState.initialize_camera(name),
+                    width="100%",
+                    _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
+                    transition="all 0.2s ease",
+                ),
+            ),
+            # Configure button (only if available)
+            rx.cond(
+                CameraState.camera_statuses.get(camera, "not_initialized") == "available",
+                rx.button(
+                    "Configure",
+                    variant="solid",
+                    color_scheme="green",
+                    size="2",
+                    width="100%",
+                    on_click=lambda name=camera: CameraState.open_camera_config(name),
+                    _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
+                    transition="all 0.2s ease",
+                ),
                 rx.box(height="40px"),  # Placeholder to maintain consistent card height
             ),
             spacing="2",
@@ -83,27 +107,8 @@ def camera_card(camera: str) -> rx.Component:
             align="stretch",
         )
     
-    return rx.box(
-        rx.vstack(
-            camera_info_section(),
-            action_buttons(),
-            spacing="4",
-            width="100%",
-            align="stretch",
-        ),
-        background="white",
-        border="1px solid #E5E7EB",
-        border_radius="12px",
-        padding="1.5rem",
-        box_shadow="0 1px 3px rgba(0, 0, 0, 0.1)",
-        _hover={
-            "box_shadow": "0 8px 25px rgba(0, 0, 0, 0.15)",
-            "border_color": "#D1D5DB",
-            "transform": "translateY(-2px)",
-        },
-        transition="all 0.3s ease",
+    return card_mindtrace(
+        children=[camera_header(), action_buttons()],
         width="100%",
-        min_height="200px",  # Ensure consistent card height
-        display="flex",
-        flex_direction="column",
+        min_height="200px",
     ) 
