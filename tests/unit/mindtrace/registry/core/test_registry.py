@@ -839,562 +839,71 @@ def test_next_version_first_version(registry):
     assert registry._latest("new:object") is None
 
 
-def test_register_default_materializers_without_datasets():
-    """Test _register_default_materializers when datasets package is not available."""
-    with TemporaryDirectory() as temp_dir:
-        # Mock the import to raise ImportError only for datasets
-        import builtins
-        from unittest.mock import patch
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "datasets":
-                raise ImportError("No module named 'datasets'")
-            return original_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            # Create registry (which will register default materializers)
-            registry = Registry(registry_dir=temp_dir)
-
-            # Get registered materializers
-            materializers = registry.registered_materializers()
-
-            # Verify that datasets materializers are not registered
-            assert "datasets.Dataset" not in materializers
-            assert "datasets.dataset_dict.DatasetDict" not in materializers
-            assert "datasets.arrow_dataset.Dataset" not in materializers
-
-            # Verify that core materializers are still registered
-            assert "builtins.str" in materializers
-            assert "builtins.int" in materializers
-            assert "builtins.float" in materializers
-            assert "builtins.bool" in materializers
-            assert "mindtrace.core.config.config.Config" in materializers
-
-
-def test_register_default_materializers_without_numpy():
-    """Test _register_default_materializers when numpy package is not available."""
-    with TemporaryDirectory() as temp_dir:
-        # Mock the import to raise ImportError only for numpy
-        import builtins
-        from unittest.mock import patch
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "numpy":
-                raise ImportError("No module named 'numpy'")
-            return original_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            # Create registry (which will register default materializers)
-            registry = Registry(registry_dir=temp_dir)
-
-            # Get registered materializers
-            materializers = registry.registered_materializers()
-
-            # Verify that numpy materializer is not registered
-            assert "numpy.ndarray" not in materializers
-
-            # Verify that core materializers are still registered
-            assert "builtins.str" in materializers
-            assert "builtins.int" in materializers
-            assert "builtins.float" in materializers
-            assert "builtins.bool" in materializers
-            assert "mindtrace.core.config.config.Config" in materializers
-
-
-def test_register_default_materializers_without_pillow():
-    """Test _register_default_materializers when Pillow package is not available."""
-    with TemporaryDirectory() as temp_dir:
-        # Mock the import to raise ImportError only for PIL
-        import builtins
-        from unittest.mock import patch
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "PIL":
-                raise ImportError("No module named 'PIL'")
-            return original_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            # Create registry (which will register default materializers)
-            registry = Registry(registry_dir=temp_dir)
-
-            # Get registered materializers
-            materializers = registry.registered_materializers()
-
-            # Verify that Pillow materializer is not registered
-            assert "PIL.Image.Image" not in materializers
-
-            # Verify that core materializers are still registered
-            assert "builtins.str" in materializers
-            assert "builtins.int" in materializers
-            assert "builtins.float" in materializers
-            assert "builtins.bool" in materializers
-            assert "mindtrace.core.config.config.Config" in materializers
-
-
-def test_register_default_materializers_without_pytorch():
-    """Test _register_default_materializers when PyTorch package is not available."""
-    with TemporaryDirectory() as temp_dir:
-        # Mock the import to raise ImportError only for torch
-        import builtins
-        from unittest.mock import patch
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "torch":
-                raise ImportError("No module named 'torch'")
-            return original_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            # Create registry (which will register default materializers)
-            registry = Registry(registry_dir=temp_dir)
-
-            # Get registered materializers
-            materializers = registry.registered_materializers()
-
-            # Verify that PyTorch materializers are not registered
-            assert "torch.utils.data.dataset.Dataset" not in materializers
-            assert "torch.utils.data.dataset.TensorDataset" not in materializers
-            assert "torch.utils.data.dataloader.DataLoader" not in materializers
-            assert "torch.nn.modules.module.Module" not in materializers
-
-            # Verify that core materializers are still registered
-            assert "builtins.str" in materializers
-            assert "builtins.int" in materializers
-            assert "builtins.float" in materializers
-            assert "builtins.bool" in materializers
-            assert "mindtrace.core.config.config.Config" in materializers
-
-
-def test_register_default_materializers_without_transformers():
-    """Test _register_default_materializers when transformers package is not available."""
-    with TemporaryDirectory() as temp_dir:
-        # Mock the import to raise ImportError only for transformers
-        import builtins
-        from unittest.mock import patch
-
-        original_import = builtins.__import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "transformers":
-                raise ImportError("No module named 'transformers'")
-            return original_import(name, *args, **kwargs)
-
-        with patch("builtins.__import__", side_effect=mock_import):
-            # Create registry (which will register default materializers)
-            registry = Registry(registry_dir=temp_dir)
-
-            # Get registered materializers
-            materializers = registry.registered_materializers()
-
-            # Verify that transformers materializers are not registered
-            assert "transformers.PreTrainedModel" not in materializers
-            assert "transformers.modeling_utils.PreTrainedModel" not in materializers
-
-            # Verify that core materializers are still registered
-            assert "builtins.str" in materializers
-            assert "builtins.int" in materializers
-            assert "builtins.float" in materializers
-            assert "builtins.bool" in materializers
-            assert "mindtrace.core.config.config.Config" in materializers
-
-
-def test_register_default_materializers_with_transformers():
-    """Test _register_default_materializers when transformers package is available."""
-    if check_libs(["transformers"]):
-        pytest.skip("Required libraries not installed: transformers. Skipping test.")
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry (which will register default materializers)
-        registry = Registry(registry_dir=temp_dir)
-
-        # Get registered materializers
-        materializers = registry.registered_materializers()
-
-        # Verify that transformers materializers are registered
-        assert "transformers.PreTrainedModel" in materializers
-        assert "transformers.modeling_utils.PreTrainedModel" in materializers
-
-        # Verify the materializer class is correct
-        expected_materializer = (
-            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer"
-        )
-        assert materializers["transformers.PreTrainedModel"] == expected_materializer
-        assert materializers["transformers.modeling_utils.PreTrainedModel"] == expected_materializer
-
-        # Verify that core materializers are still registered
-        assert "builtins.str" in materializers
-        assert "builtins.int" in materializers
-        assert "builtins.float" in materializers
-        assert "builtins.bool" in materializers
-        assert "mindtrace.core.config.config.Config" in materializers
-
-
-# Try to import torch at module level
-try:
-    import torch
-    import torch.nn as nn
-
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-    torch = None
-    nn = None
-
-# Create a simple neural network for testing
-if TORCH_AVAILABLE:
-
-    class SimpleNet(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.conv1 = nn.Conv2d(3, 6, 3)
-            self.pool = nn.MaxPool2d(2, 2)
-            self.conv2 = nn.Conv2d(6, 16, 3)
-            self.fc1 = nn.Linear(16 * 6 * 6, 120)
-            self.fc2 = nn.Linear(120, 84)
-            self.fc3 = nn.Linear(84, 10)
-
-        def forward(self, x):
-            x = self.pool(torch.relu(self.conv1(x)))
-            x = self.pool(torch.relu(self.conv2(x)))
-            x = x.view(-1, 16 * 6 * 6)
-            x = torch.relu(self.fc1(x))
-            x = torch.relu(self.fc2(x))
-            x = self.fc3(x)
-            return x
-else:
-    SimpleNet = None
-
-
-@pytest.mark.slow
-@pytest.mark.skipif(not TORCH_AVAILABLE, reason="Required libraries not installed: torch. Skipping test.")
-def test_pytorch_module():
-    """Test saving and loading PyTorch modules."""
-    # Create and initialize the model
-    model = SimpleNet()
-    model.train()  # Set to training mode
-
-    print(f"Model: {model}")
-    print(f"Model class: {type(model)}")
-
-    # Create some test input
-    test_input = torch.randn(1, 3, 32, 32)
-    original_output = model(test_input)
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Save the model
-        registry.save("test:model", model, version="1.0.0")
-        assert registry.has_object("test:model", "1.0.0")
-
-        # Load the model
-        loaded_model = registry.load("test:model", version="1.0.0")
-        assert isinstance(loaded_model, nn.Module)
-        assert isinstance(loaded_model, SimpleNet)
-
-        # Verify the model structure
-        assert hasattr(loaded_model, "conv1")
-        assert hasattr(loaded_model, "conv2")
-        assert hasattr(loaded_model, "fc1")
-        assert hasattr(loaded_model, "fc2")
-        assert hasattr(loaded_model, "fc3")
-
-        # Verify the model parameters
-        for p1, p2 in zip(model.parameters(), loaded_model.parameters()):
-            assert torch.allclose(p1, p2)
-
-        # Verify the model behavior
-        loaded_model.train()  # Set to training mode
-        loaded_output = loaded_model(test_input)
-        assert torch.allclose(original_output, loaded_output)
-
-
-@pytest.mark.slow
-def test_huggingface_model():
-    """Test saving and loading HuggingFace pretrained models."""
-    missing_libs = check_libs(
-        ["transformers", "torch", "datasets"]
-    )  # datasets required by the HuggingFace materializer
-    if missing_libs:
-        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-
-    import torch
-    from transformers import AutoModel
-
-    # Set random seeds for reproducibility
-    torch.manual_seed(42)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(42)
-
-    # Load a small pretrained model for testing
-    model = AutoModel.from_pretrained("prajjwal1/bert-tiny")
-    model.eval()  # Set to evaluation mode for more stable outputs
-
-    # Create some test input
-    test_input = torch.randint(0, 1000, (1, 10))  # Random token IDs
-    with torch.no_grad():  # Disable gradient computation
-        original_output = model(test_input)
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Save the model
-        registry.save("test:model", model, version="1.0.0")
-        assert registry.has_object("test:model", "1.0.0")
-
-        # Load the model
-        loaded_model = registry.load("test:model", version="1.0.0")
-        assert isinstance(loaded_model, type(model))
-
-        # Print model state information
-        print(f"\nOriginal model mode: {model.training}")
-        print(f"Loaded model mode: {loaded_model.training}")
-
-        # Verify the model parameters
-        param_diffs = []
-        for (name1, p1), (name2, p2) in zip(model.named_parameters(), loaded_model.named_parameters()):
-            assert name1 == name2, f"Parameter names don't match: {name1} vs {name2}"
-            max_diff = torch.max(torch.abs(p1 - p2)).item()
-            mean_diff = torch.mean(torch.abs(p1 - p2)).item()
-            param_diffs.append((name1, max_diff, mean_diff))
-            assert torch.allclose(p1, p2, rtol=1e-4, atol=1e-4), f"Parameters for {name1} differ too much"
-
-        # Print parameter differences
-        print("\nParameter differences:")
-        for name, max_diff, mean_diff in param_diffs:
-            print(f"{name}: max_diff={max_diff:.6f}, mean_diff={mean_diff:.6f}")
-
-        # Set both models to eval mode
-        model.eval()
-        loaded_model.eval()
-
-        # Verify the model behavior
-        with torch.no_grad():
-            loaded_output = loaded_model(test_input)
-
-        # Print output information
-        print(f"\nOriginal output shape: {original_output.last_hidden_state.shape}")
-        print(f"Loaded output shape: {loaded_output.last_hidden_state.shape}")
-        print(
-            f"Max difference: {torch.max(torch.abs(original_output.last_hidden_state - loaded_output.last_hidden_state))}"
-        )
-        print(
-            f"Mean difference: {torch.mean(torch.abs(original_output.last_hidden_state - loaded_output.last_hidden_state))}"
-        )
-        print(
-            f"Original output range: [{torch.min(original_output.last_hidden_state)}, {torch.max(original_output.last_hidden_state)}]"
-        )
-        print(
-            f"Loaded output range: [{torch.min(loaded_output.last_hidden_state)}, {torch.max(loaded_output.last_hidden_state)}]"
-        )
-
-        # Use more lenient tolerances for output comparison
-        assert torch.allclose(
-            original_output.last_hidden_state,
-            loaded_output.last_hidden_state,
-            rtol=0.01,  # 1% relative tolerance
-            atol=0.01,  # 0.01 absolute tolerance
-        )
-
-
-@pytest.mark.slow
-def test_pytorch_dataset_and_dataloader():
-    """Test saving and loading PyTorch datasets and dataloaders."""
-    try:
-        import torch
-        from torch.utils.data import DataLoader, TensorDataset
-    except ImportError:
-        missing_libs = check_libs(["torch"])
-        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-
-    # Create test data
-    data = torch.randn(100, 3, 32, 32)  # 100 random images of size 3x32x32
-    labels = torch.randint(0, 10, (100,))  # 100 random labels
-    dataset = TensorDataset(data, labels)
-    dataloader = DataLoader(dataset, batch_size=10, shuffle=False)  # Disable shuffling for testing
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Test saving and loading dataset
-        registry.save("test:dataset", dataset, version="1.0.0")
-        assert registry.has_object("test:dataset", "1.0.0")
-
-        loaded_dataset = registry.load("test:dataset", version="1.0.0")
-        assert isinstance(loaded_dataset, TensorDataset)
-        assert len(loaded_dataset) == len(dataset)
-        assert torch.allclose(loaded_dataset[0][0], dataset[0][0])  # Compare data
-        assert torch.allclose(loaded_dataset[0][1], dataset[0][1])  # Compare labels
-
-        # Test saving and loading dataloader
-        registry.save("test:dataloader", dataloader, version="1.0.0")
-        assert registry.has_object("test:dataloader", "1.0.0")
-
-        loaded_dataloader = registry.load("test:dataloader", version="1.0.0")
-        assert isinstance(loaded_dataloader, DataLoader)
-        assert loaded_dataloader.batch_size == dataloader.batch_size
-
-        # Compare a few batches
-        for batch_orig, batch_loaded in zip(dataloader, loaded_dataloader):
-            assert torch.allclose(batch_orig[0], batch_loaded[0])  # Compare data
-            assert torch.allclose(batch_orig[1], batch_loaded[1])  # Compare labels
-            break  # Just check first batch
-
-
-@pytest.mark.slow
-def test_pillow_image():
-    """Test saving and loading Pillow images."""
-    try:
-        import numpy as np
-        from PIL import Image
-    except ImportError:
-        missing_libs = check_libs(["PIL", "numpy"])
-        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-
-    # Create test images of different types
-    images = {
-        "rgb": Image.new("RGB", (100, 100), color="red"),
-        "grayscale": Image.new("L", (100, 100), color=128),
-        "rgba": Image.new("RGBA", (100, 100), color=(255, 0, 0, 128)),
-        "with:data": Image.fromarray(np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)),
-    }
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Save and load each image
-        for name, img in images.items():
-            # Save the image
-            registry.save(f"test:{name}", img, version="1.0.0")
-
-            # Verify it exists
-            assert registry.has_object(f"test:{name}", "1.0.0")
-
-            # Load the image
-            loaded_img = registry.load(f"test:{name}", version="1.0.0")
-
-            # Verify it's a PIL Image
-            assert isinstance(loaded_img, Image.Image)
-
-            # Verify the mode
-            assert loaded_img.mode == img.mode
-
-            # Verify the size
-            assert loaded_img.size == img.size
-
-            # Verify the data
-            np.testing.assert_array_equal(np.array(loaded_img), np.array(img))
-
-
-@pytest.mark.slow
-def test_huggingface_dataset():
-    """Test saving and loading a HuggingFace dataset."""
-    missing_libs = check_libs(["datasets", "transformers"])
-    if missing_libs:
-        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    import datasets
-
-    # Create a small test dataset
-    dataset = datasets.Dataset.from_dict({"text": ["Hello", "World"], "label": [0, 1]})
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Save the dataset
-        registry.save("test:dataset", dataset, version="1.0.0")
-
-        # Verify it exists
-        assert registry.has_object("test:dataset", "1.0.0")
-
-        # Load the dataset
-        loaded_dataset = registry.load("test:dataset", version="1.0.0")
-
-        # Verify it's a dataset
-        assert isinstance(loaded_dataset, datasets.Dataset)
-
-        # Verify the data
-        assert loaded_dataset["text"] == ["Hello", "World"]
-        assert loaded_dataset["label"] == [0, 1]
-
-        # Test with DatasetDict
-        dataset_dict = datasets.DatasetDict({"train": dataset, "test": dataset})
-
-        # Save the dataset dict
-        registry.save("test:datasetdict", dataset_dict, version="1.0.0")
-
-        # Load the dataset dict
-        loaded_dict = registry.load("test:datasetdict", version="1.0.0")
-
-        # Verify it's a DatasetDict
-        assert isinstance(loaded_dict, datasets.DatasetDict)
-
-        # Verify the data
-        assert "train" in loaded_dict
-        assert "test" in loaded_dict
-        assert loaded_dict["train"]["text"] == ["Hello", "World"]
-        assert loaded_dict["test"]["text"] == ["Hello", "World"]
-
-
-@pytest.mark.slow
-def test_numpy_array():
-    """Test saving and loading NumPy arrays."""
-    try:
-        import numpy as np
-    except ImportError:
-        missing_libs = check_libs(["numpy"])
-        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-
-    # Create test arrays of different types and shapes
-    arrays = {
-        "1d:int": np.array([1, 2, 3, 4, 5]),
-        "2d:float": np.array([[1.0, 2.0], [3.0, 4.0]]),
-        "3d:bool": np.array([[[True, False], [False, True]], [[True, True], [False, False]]]),
-        "complex": np.array([1 + 2j, 3 + 4j, 5 + 6j]),
-        "structured": np.array([(1, 2.0), (3, 4.0)], dtype=[("x", "i4"), ("y", "f4")]),
-    }
-
-    with TemporaryDirectory() as temp_dir:
-        # Create registry
-        registry = Registry(registry_dir=temp_dir)
-
-        # Save and load each array
-        for name, arr in arrays.items():
-            # Save the array
-            registry.save(f"test:{name}", arr, version="1.0.0")
-
-            # Verify it exists
-            assert registry.has_object(f"test:{name}", "1.0.0")
-
-            # Load the array
-            loaded_arr = registry.load(f"test:{name}", version="1.0.0")
-
-            # Verify it's a numpy array
-            assert isinstance(loaded_arr, np.ndarray)
-
-            # Verify the data type
-            assert loaded_arr.dtype == arr.dtype
-
-            # Verify the shape
-            assert loaded_arr.shape == arr.shape
-
-            # Verify the data
-            np.testing.assert_array_equal(loaded_arr, arr)
-
-            # For structured arrays, also verify field names
-            if arr.dtype.names is not None:
-                assert loaded_arr.dtype.names == arr.dtype.names
+def test_save_temp_version_move_error(registry, test_config):
+    """Test error handling when moving temp version to final version fails."""
+    # Mock the backend's overwrite method to raise an exception
+    with patch.object(registry.backend, "overwrite", side_effect=Exception("Failed to move temp version")):
+        # Attempt to save should raise the exception
+        with pytest.raises(Exception, match="Failed to move temp version"):
+            registry.save("test:config", test_config)
+
+        # Verify that temp version was cleaned up
+        assert not registry.has_object("test:config", "__temp__")
+
+        # Verify that final version was not created
+        assert not registry.has_object("test:config", "1.0.0")
+
+        # Verify that object-specific metadata was not created
+        meta_path = registry.backend.uri / "_meta_test:config@1.0.0.yaml"
+        assert not meta_path.exists()
+
+
+def test_save_temp_cleanup_warning(registry, test_config, caplog):
+    """Test that a warning is logged when there's an error cleaning up temporary files."""
+    # Mock the backend's delete method to raise an exception during cleanup
+    with patch.object(registry.backend, "delete", side_effect=Exception("Failed to delete temp version")):
+        # Save should still succeed since cleanup errors are just logged
+        registry.save("test:config", test_config, version="1.0.0")
+
+        # Verify that the warning was logged
+        assert any("Error cleaning up temp version" in record.message for record in caplog.records)
+        assert any("Failed to delete temp version" in record.message for record in caplog.records)
+
+        # Verify that the object was still saved successfully
+        assert registry.has_object("test:config", "1.0.0")
+        loaded_config = registry.load("test:config", "1.0.0")
+        assert loaded_config == test_config
+
+
+def test_pop_nonexistent_object(registry):
+    """Test that pop raises KeyError when object doesn't exist and no default is provided."""
+    # Test with non-existent object name
+    with pytest.raises(KeyError, match="Object nonexistent does not exist"):
+        registry.pop("nonexistent")
+
+    # Test with non-existent version
+    registry.save("test:obj", "value", version="1.0.0")
+    with pytest.raises(KeyError, match="Object test:obj version 2.0.0 does not exist"):
+        registry.pop("test:obj@2.0.0")
+
+    # Test that default value is returned when provided
+    assert registry.pop("nonexistent", "default") == "default"
+    assert registry.pop("test:obj@2.0.0", "default") == "default"
+
+
+def test_pop_keyerror_handling(registry, test_config):
+    """Test that KeyError is properly handled in pop method."""
+    # Save an object first
+    registry.save("test:config", test_config, version="1.0.0")
+
+    # Mock load to raise KeyError
+    with patch.object(registry, "load", side_effect=KeyError("Object not found")):
+        # Without default, KeyError should be propagated
+        with pytest.raises(KeyError, match="Object not found"):
+            registry.pop("test:config@1.0.0")
+
+        # With default, KeyError should be caught and default returned
+        assert registry.pop("test:config@1.0.0", "default") == "default"
 
 
 def test_dict_like_interface_basic(registry):
@@ -2226,16 +1735,16 @@ def test_distributed_lock_save_load_race(registry):
 
 
 def test_lock_timeout_error(registry):
-    """Test that LockTimeoutError is raised when lock acquisition fails."""
+    """Test that TimeoutError is raised when lock acquisition fails."""
     # Mock the backend's acquire_lock method to simulate failure
     with patch.object(registry.backend, "acquire_lock", return_value=False):
         # Test exclusive lock timeout
-        with pytest.raises(LockTimeoutError, match="Failed to acquire lock for test_key"):
+        with pytest.raises(TimeoutError, match="Timeout of 5 seconds reached"):
             with registry._get_object_lock("test_key", "1.0"):
                 pass
 
         # Test shared lock timeout
-        with pytest.raises(LockTimeoutError, match="Failed to acquire shared lock for test_key"):
+        with pytest.raises(TimeoutError, match="Timeout of 5 seconds reached"):
             with registry._get_object_lock("test_key", "1.0", shared=True):
                 pass
 
@@ -2276,13 +1785,13 @@ def test_lock_timeout_value(registry):
         with registry._get_object_lock("test_key", "1.0"):
             mock_acquire.assert_called_once()
             # timeout is the third positional argument (index 2)
-            assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+            assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
 
         # Reset mock
         mock_acquire.reset_mock()
 
         # Test with modified config timeout
-        original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
         try:
             registry.config["MINDTRACE_LOCK_TIMEOUT"] = 60
             with registry._get_object_lock("test_key", "1.0"):

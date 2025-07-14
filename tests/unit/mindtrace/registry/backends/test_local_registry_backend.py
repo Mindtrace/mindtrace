@@ -14,6 +14,7 @@ import pytest
 
 from mindtrace.core import Config
 from mindtrace.registry import LocalRegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 # Import platform-specific modules safely
 if platform.system() != "Windows":
@@ -371,14 +372,11 @@ class TestCrossPlatformLockOperations:
 
         # Mock platform.system to return current system
         with patch("platform.system", return_value=platform.system()):
-            # Create a lock file
-            lock_path = backend._lock_path(lock_key)
-            lock_path.touch()
-
-            # Test lock acquisition
+            # Test lock acquisition (should succeed when no lock file exists)
             assert backend.acquire_lock(lock_key, lock_id, timeout=30)
 
             # Verify lock file contents
+            lock_path = backend._lock_path(lock_key)
             with open(lock_path, "r") as f:
                 lock_data = json.load(f)
                 assert lock_data["lock_id"] == lock_id
@@ -398,7 +396,8 @@ class TestCrossPlatformLockOperations:
 
             # Mock _acquire_file_lock to simulate failure
             with patch.object(backend, "_acquire_file_lock", return_value=False):
-                assert not backend.acquire_lock(lock_key, lock_id, timeout=30)
+                with pytest.raises(LockAcquisitionError):
+                    backend.acquire_lock(lock_key, lock_id, timeout=30)
 
     def test_release_lock_success(self, backend):
         """Test successful lock release."""
@@ -498,10 +497,8 @@ class TestCrossPlatformLockOperations:
             f.write(json.dumps(metadata))
 
         # Try to acquire a shared lock
-        result = backend.acquire_lock("test_lock", "other_id", timeout=30, shared=True)
-
-        # Verify that lock acquisition failed
-        assert result is False
+        with pytest.raises(LockAcquisitionError):
+            backend.acquire_lock("test_lock", "other_id", timeout=30, shared=True)
 
     def test_acquire_shared_lock_failure_in_acquire_lock(self, backend):
         """Test that acquire_lock returns False when _acquire_shared_lock fails."""
@@ -512,10 +509,8 @@ class TestCrossPlatformLockOperations:
         # Mock _acquire_shared_lock to return False (simulating failure)
         with patch.object(backend, "_acquire_shared_lock", return_value=False):
             # Try to acquire a shared lock
-            result = backend.acquire_lock("test_lock", "test_id", timeout=30, shared=True)
-
-            # Verify that lock acquisition failed
-            assert result is False
+            with pytest.raises(LockAcquisitionError):
+                backend.acquire_lock("test_lock", "test_id", timeout=30, shared=True)
 
     def test_acquire_exclusive_lock_with_active_shared(self, backend):
         """Test that exclusive lock acquisition fails when there are active shared locks."""
@@ -533,13 +528,11 @@ class TestCrossPlatformLockOperations:
             f.write(json.dumps(metadata))
 
         # Try to acquire an exclusive lock
-        result = backend.acquire_lock("test_lock", "exclusive_id", timeout=30, shared=False)
-
-        # Verify that lock acquisition failed
-        assert result is False
+        with pytest.raises(LockAcquisitionError):
+            backend.acquire_lock("test_lock", "exclusive_id", timeout=30, shared=False)
 
     def test_acquire_exclusive_lock_with_invalid_content(self, backend):
-        """Test that exclusive lock acquisition proceeds when lock file has invalid content."""
+        """Test that exclusive lock acquisition fails when lock file has invalid content."""
         # Create a lock file with invalid JSON content
         lock_path = backend._lock_path("test_lock")
         lock_path.touch()
@@ -548,18 +541,9 @@ class TestCrossPlatformLockOperations:
         with open(lock_path, "w") as f:
             f.write("invalid json content")
 
-        # Try to acquire an exclusive lock
-        result = backend.acquire_lock("test_lock", "test_id", timeout=30, shared=False)
-
-        # Verify that lock acquisition succeeded despite invalid content
-        assert result is True
-
-        # Verify that the lock file now contains valid JSON
-        with open(lock_path, "r") as f:
-            metadata = json.loads(f.read())
-            assert metadata["lock_id"] == "test_id"
-            assert metadata["shared"] is False
-            assert "expires_at" in metadata
+        # Try to acquire an exclusive lock - should raise LockAcquisitionError
+        with pytest.raises(LockAcquisitionError):
+            backend.acquire_lock("test_lock", "test_id", timeout=30, shared=False)
 
 
 class TestPlatformSpecificImports:
@@ -703,18 +687,19 @@ def test_release_file_lock_error(backend, caplog):
     assert "Failed to unlock" in caplog.text
 
 
-def test_acquire_lock_inner_exception(backend, caplog):
-    """Test error handling when an exception occurs during lock acquisition inner block."""
-    # Create a lock file
-    lock_path = backend._lock_path("test_lock")
-    lock_path.touch()
+    def test_acquire_lock_inner_exception(backend, caplog):
+        """Test error handling when an exception occurs during lock acquisition inner block."""
+        # Create a lock file
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
 
-    # Mock _release_file_lock to verify it's called
-    with patch.object(backend, "_release_file_lock") as mock_release:
-        # Mock json.dumps to raise an exception during metadata writing
-        with patch("json.dumps", side_effect=Exception("Test error")):
-            # Try to acquire a lock
-            result = backend.acquire_lock("test_lock", "test_id", timeout=30)
+        # Mock _release_file_lock to verify it's called
+        with patch.object(backend, "_release_file_lock") as mock_release:
+            # Mock json.dumps to raise an exception during metadata writing
+            with patch("json.dumps", side_effect=Exception("Test error")):
+                # Try to acquire a lock - should raise LockAcquisitionError
+                with pytest.raises(LockAcquisitionError):
+                    backend.acquire_lock("test_lock", "test_id", timeout=30)
 
             # Verify that lock acquisition failed
             assert result is False
@@ -725,16 +710,17 @@ def test_acquire_lock_inner_exception(backend, caplog):
             mock_release.assert_called_once()
 
 
-def test_acquire_lock_outer_exception(backend, caplog):
-    """Test error handling when an exception occurs during lock acquisition outer block."""
-    # Create a lock file
-    lock_path = backend._lock_path("test_lock")
-    lock_path.touch()
+    def test_acquire_lock_outer_exception(backend, caplog):
+        """Test error handling when an exception occurs during lock acquisition outer block."""
+        # Create a lock file
+        lock_path = backend._lock_path("test_lock")
+        lock_path.touch()
 
-    # Mock file operations to raise an exception before inner block
-    with patch("builtins.open", side_effect=Exception("Test error")):
-        # Try to acquire a lock
-        result = backend.acquire_lock("test_lock", "test_id", timeout=30)
+        # Mock file operations to raise an exception before inner block
+        with patch("builtins.open", side_effect=Exception("Test error")):
+            # Try to acquire a lock - should raise LockAcquisitionError
+            with pytest.raises(LockAcquisitionError):
+                backend.acquire_lock("test_lock", "test_id", timeout=30)
 
         # Verify that lock acquisition failed
         assert result is False
