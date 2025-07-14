@@ -20,6 +20,12 @@ dependencies = [
   "mindtrace-storage>=0.1.0",
 ]
 
+[project.optional-dependencies]
+cameras-basler = ["mindtrace-hardware[cameras-basler]"]
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]"] 
+cameras-all = ["mindtrace-hardware[cameras-all]"]
+hardware-all = ["mindtrace-hardware[hardware-all]"]
+
 [tool.uv]
 dev-dependencies = [
     "pytest-cov>=6.1.1",
