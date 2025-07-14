@@ -1,7 +1,7 @@
 """Utility class for simple Timer and TimerCollection classes."""
 
 import time
-from typing import Dict, List, Optional, Type
+from typing import Dict, Optional, Type
 
 from tqdm import tqdm
 
@@ -63,7 +63,7 @@ class Timer:
         """Reset and start the timer."""
         self.reset()
         self.start()
-    
+
     def __enter__(self):
         """Enter the context manager."""
         self.start()
@@ -80,7 +80,7 @@ class Timer:
 
 class TimerContext:
     """Context manager for individual timers in a TimerCollection."""
-    
+
     def __init__(self, timer_collection: "TimerCollection", name: str):
         self.timer_collection = timer_collection
         self.name = name
