@@ -419,10 +419,8 @@ class LocalRegistryBackend(RegistryBackend):
             # Check if existing lock is expired
             if time.time() > metadata.get("expires_at", 0):
                 # Lock is expired - remove it and retry acquisition
-                try:
-                    lock_path.unlink()
-                except FileNotFoundError:
-                    pass
+                lock_path.unlink()
+
                 # Retry acquisition with the original key
                 return self.acquire_lock(self._get_key_from_path(lock_path), lock_id, timeout, shared)
             

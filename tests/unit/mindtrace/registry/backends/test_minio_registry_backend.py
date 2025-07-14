@@ -1279,3 +1279,47 @@ def test_pull_skips_root_directory_marker(backend, monkeypatch, tmp_path):
     assert f"{remote_key}/file1.txt" in downloaded
     assert remote_key not in downloaded
     assert len(downloaded) == 1
+
+
+def test_acquire_lock_unexpected_s3error(backend, monkeypatch, caplog):
+    """Test that acquire_lock returns False on unexpected S3Error (not 'NoSuchKey')."""
+    from minio.error import S3Error
+
+    # Mock get_object to raise an S3Error with a code other than 'NoSuchKey'
+    def mock_get_object(*args, **kwargs):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/_lock_test-key",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="_lock_test-key",
+        )
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    with caplog.at_level("ERROR"):
+        result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+        assert result is False
+        assert any("Error acquiring shared lock for test-key" in record.message for record in caplog.records)
+
+
+def test_acquire_lock_generic_exception(backend, monkeypatch):
+    """Test that acquire_lock proceeds when get_object raises a generic Exception (lines 483-485)."""
+    
+    # Mock get_object to raise a generic Exception (not S3Error or LockAcquisitionError)
+    def mock_get_object(*args, **kwargs):
+        raise Exception("Generic error during lock check")
+
+    # Mock put_object to succeed
+    def mock_put_object(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    # Attempt to acquire lock - should proceed despite the exception and return True
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is True
