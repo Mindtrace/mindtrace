@@ -787,75 +787,60 @@ class Registry(Mindtrace):
         )
 
         # (Optional) Huggingface materializers
-        try:
-            self.register_materializer(
-                "datasets.Dataset", 
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
-            self.register_materializer(
-                "datasets.DatasetDict", 
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
-            self.register_materializer(
-                "datasets.IterableDataset", 
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
-        except ImportError:
-            pass
+        self.register_materializer(
+            "datasets.Dataset", 
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
+        self.register_materializer(
+            "datasets.DatasetDict", 
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
+        self.register_materializer(
+            "datasets.IterableDataset", 
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
 
-        try:
-            self.register_materializer(
-                "transformers.PreTrainedModel", 
-                "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-            )
-            self.register_materializer(
-                "transformers.TFPreTrainedModel", 
-                "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-            )
-        except ImportError:
-            pass
+        self.register_materializer(
+            "transformers.PreTrainedModel", 
+            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
+        )
+        self.register_materializer(
+            "transformers.TFPreTrainedModel", 
+            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
+        )
 
         # (Optional) NumPy materializers
-        try:
-            self.register_materializer(
-                "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
-            )
-        except ImportError:
-            pass
+        self.register_materializer(
+            "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
+        )
 
         # (Optional) Pillow materializers
-        try:
-            self.register_materializer(
-                "PIL.Image.Image", 
-                "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
-            )
-        except ImportError:
-            pass
+        self.register_materializer(
+            "PIL.Image.Image", 
+            "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
+        )
 
         # (Optional) PyTorch materializers
-        try:
-            self.register_materializer(
-                "torch.utils.data.DataLoader", 
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.utils.data.Dataset", 
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.utils.data.IterableDataset", 
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.nn.Module", 
-                "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-            )
-            self.register_materializer(
-                "torch.jit.ScriptModule", 
-                "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-            )
-        except ImportError:
-            pass
+        self.register_materializer(
+            "torch.utils.data.DataLoader", 
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.utils.data.Dataset", 
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.utils.data.IterableDataset", 
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.nn.Module", 
+            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
+        )
+        self.register_materializer(
+            "torch.jit.ScriptModule", 
+            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
+        )
 
         self.logger.info("Default materializers registered successfully.")
 

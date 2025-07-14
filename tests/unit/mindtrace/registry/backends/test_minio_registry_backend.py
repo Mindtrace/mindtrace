@@ -331,7 +331,7 @@ def test_registered_materializer_other_error(backend, monkeypatch):
 
 
 def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
-    """Test that acquire_lock returns False when trying to acquire a shared lock while an exclusive lock exists."""
+    """Test that acquire_lock raises LockAcquisitionError when trying to acquire a shared lock while an exclusive lock exists."""
 
     # Mock get_object to return an active exclusive lock
     def mock_get_object(*args, **kwargs):
@@ -350,7 +350,10 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire a shared lock while an exclusive lock exists
-    assert not backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
+    import pytest
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
 
 
 def test_acquire_lock_put_failure(backend, monkeypatch):
@@ -390,7 +393,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
 
 
 def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
-    """Test that acquire_lock returns False when trying to acquire an exclusive lock while shared locks exist."""
+    """Test that acquire_lock raises LockAcquisitionError when trying to acquire an exclusive lock while shared locks exist."""
 
     # Mock get_object to return an active shared lock
     def mock_get_object(*args, **kwargs):
@@ -409,7 +412,10 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire an exclusive lock while shared locks exist
-    assert not backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)
+    import pytest
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)
 
 
 def test_release_lock_unexpected_error(backend, monkeypatch):
