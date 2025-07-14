@@ -1013,11 +1013,11 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        
         try:
-            import json
-            
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            import json, os
+            dir_name = os.path.dirname(config_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
             
             # Common flat format
             config = {
@@ -1051,7 +1051,6 @@ class OpenCVCamera(BaseCamera):
             
             self.logger.info(f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format")
             return True
-            
         except Exception as e:
             self.logger.error(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")

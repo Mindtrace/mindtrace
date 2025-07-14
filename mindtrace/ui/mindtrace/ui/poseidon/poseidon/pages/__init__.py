@@ -7,6 +7,7 @@ from .auth import login_page, register_page, register_admin_page, register_super
 from .dashboards import admin_page, super_admin_dashboard_page
 from .management import user_management_page, organization_management_page
 from .user import profile_page
+from .camera_configurator import camera_configurator_page
 
 __all__ = [
     "index", 
@@ -23,4 +24,5 @@ __all__ = [
     "organization_management_page",
     # User pages
     "profile_page",
+    "camera_configurator_page",
 ] 

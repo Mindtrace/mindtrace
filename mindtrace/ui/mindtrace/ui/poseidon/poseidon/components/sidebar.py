@@ -17,6 +17,7 @@ ACTIVE_ITEM = ClientStateVar.create("active_item", "")
 POSEIDON_USER_NAV = [
     {"name": "Profile", "href": "/profile", "icon": "👤"},
     {"name": "Image Viewer", "href": "/image-viewer", "icon": "🔍"},
+    {"name": "Camera Configurator", "href": "/camera-configurator", "icon": "📷"},
 ]
 
 POSEIDON_ADMIN_NAV = [

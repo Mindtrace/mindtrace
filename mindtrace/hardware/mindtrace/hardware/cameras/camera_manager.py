@@ -577,18 +577,26 @@ class CameraProxy:
         Load camera configuration from file.
         
         Args:
-            path: File path to load configuration from
+            path: Path to configuration file
             
         Returns:
-            True if configuration was loaded successfully, False otherwise
-            
-        Raises:
-            CameraConnectionError: If camera is not connected
-            IOError: If file cannot be read
-            CameraConfigurationError: If configuration is invalid
+            True if configuration was loaded successfully
         """
         async with self._lock:
             return await self._camera.import_config(path)
+    
+    async def debug_exposure_properties(self) -> Dict[str, Any]:
+        """
+        Debug method to list available exposure-related properties.
+        
+        Returns:
+            Dictionary with available exposure properties and their values
+        """
+        async with self._lock:
+            if hasattr(self._camera, 'debug_exposure_properties'):
+                return await self._camera.debug_exposure_properties()
+            else:
+                raise NotImplementedError(f"Debug method not available for {self._backend} backend")
     
     # Status and Info
     async def check_connection(self) -> bool:

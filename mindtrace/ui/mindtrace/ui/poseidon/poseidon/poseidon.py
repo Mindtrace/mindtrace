@@ -17,6 +17,7 @@ from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
 from poseidon.pages.management import user_management_page, organization_management_page
 from poseidon.pages.user import profile_page
 from poseidon.pages.images import images_page
+from poseidon.pages.camera_configurator import camera_configurator_page
 from poseidon.styles.theme import theme_config
 from poseidon.styles.styles import styles
 
@@ -38,6 +39,9 @@ app.add_page(register_super_admin_page, route="/register-super-admin", title="Mi
 # Dashboard routes
 app.add_page(admin_page, route="/admin", title="MindTrace - Admin")
 app.add_page(super_admin_dashboard_page, route="/super-admin-dashboard", title="MindTrace - Super Admin Dashboard")
+
+# Camera Configurator route
+app.add_page(camera_configurator_page, route="/camera-configurator", title="MindTrace - Camera Configurator")
 
 # Management routes
 app.add_page(user_management_page, route="/user-management", title="MindTrace - User Management")
