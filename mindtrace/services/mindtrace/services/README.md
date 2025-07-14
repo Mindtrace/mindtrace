@@ -149,6 +149,11 @@ stress:      7 passed in 208.89s (0:03:28)
 The Model Context Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
 
 ### How MCP is Integrated
+- **FastMCP SDK is used to create a MCP compliant server:**
+  [FastMCP](https://gofastmcp.com/getting-started/welcome) automatically handles a standard Python function to be used as a tool:
+    - Tool Name: It uses the function name (add) as the tool’s name.
+    - Description: It uses the function’s docstring as the tool’s description for the LLM.
+    - Schema: It inspects the type hints (a: int, b: int) to generate a JSON schema for the inputs.
 - **Mounting MCP on FastAPI:**
   Each `Service` instance mounts an MCP server on the FastAPI app at `/mcp-server/mcp/`. This allows the same service to be accessed both via REST endpoints and as MCP tools.
 - **Exposing Endpoints as Tools:**
