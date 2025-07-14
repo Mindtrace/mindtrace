@@ -25,6 +25,7 @@ from mindtrace.registry import LocalRegistryBackend, Registry
 # Suppress verbose logging during stress tests
 logging.getLogger("mindtrace.registry").setLevel(logging.WARNING)
 logging.getLogger("zenml").setLevel(logging.WARNING)
+logging.getLogger("mindtrace.core").setLevel(logging.WARNING)
 
 # For even cleaner output during stress tests, uncomment the following line:
 # logging.getLogger().setLevel(logging.CRITICAL)
@@ -156,15 +157,15 @@ class TestRegistryThroughput:
         """
         Test concurrent save/load throughput to find maximum concurrent capacity.
         """
-        max_workers = 10
-        operations_per_worker = 20
+        max_workers = 15
+        operations_per_worker = 50
         total_operations = max_workers * operations_per_worker
 
         # Use medium string for consistent testing
         test_obj = test_objects["medium_string"]
 
         # Results tracking with thread-safe counters
-        results = {"successful_saves": 0, "successful_loads": 0, "failed": 0, "save_times": [], "load_times": []}
+        results = {"successful_saves": 0, "successful_loads": 0, "failed": 0, "save_times": [], "load_times": [], "fallback_ops": 0}
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
@@ -282,19 +283,19 @@ class TestRegistryThroughput:
         """
         Test mixed operations (save/load/delete/info) under concurrent load.
         """
-        max_workers = 8
-        operations_per_worker = 25
+        max_workers = 15
+        operations_per_worker = 50
         total_operations = max_workers * operations_per_worker
 
         # Results tracking
-        results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": []}
+        results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function for mixed operations."""
-            worker_results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": []}
+            worker_results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
             
             for i in range(operations_per_worker):
                 obj_name = f"mixed:obj:{worker_id}:{i}"
@@ -320,11 +321,12 @@ class TestRegistryThroughput:
                             registry.load(obj_name)
                             worker_results["loads"] += 1
                         except ValueError:
-                            # Object doesn't exist, save it first
+                            # Object doesn't exist, save it first (fallback)
                             registry.save(obj_name, test_objects["small_string"])
                             registry.load(obj_name)
                             worker_results["saves"] += 1
                             worker_results["loads"] += 1
+                            worker_results["fallback_ops"] += 1
                             
                     elif op_type == "delete":
                         # Delete operation (might fail if object doesn't exist)
@@ -332,11 +334,12 @@ class TestRegistryThroughput:
                             registry.delete(obj_name)
                             worker_results["deletes"] += 1
                         except KeyError:
-                            # Object doesn't exist, create and delete it
+                            # Object doesn't exist, create and delete it (fallback)
                             registry.save(obj_name, test_objects["small_string"])
                             registry.delete(obj_name)
                             worker_results["saves"] += 1
                             worker_results["deletes"] += 1
+                            worker_results["fallback_ops"] += 1
                             
                     elif op_type == "info":
                         # Info operation
@@ -401,6 +404,9 @@ class TestRegistryThroughput:
 
         total_time = time.time() - start_time
         total_successful = results["saves"] + results["loads"] + results["deletes"] + results["infos"]
+        # Account for fallback operations in success rate calculation
+        fallback_ops = results.get("fallback_ops", 0)
+        effective_successful = total_successful - fallback_ops  # Subtract fallback ops to get true success rate
         throughput = total_successful / total_time
         avg_operation_time = mean(results["operation_times"]) if results["operation_times"] else 0
 
@@ -411,13 +417,14 @@ class TestRegistryThroughput:
         print(f"   - Successful deletes: {results['deletes']}")
         print(f"   - Successful infos: {results['infos']}")
         print(f"   - Failed operations: {results['failed']}")
-        print(f"   - Success rate: {(total_successful / total_operations) * 100:.1f}%")
+        print(f"   - Fallback operations: {fallback_ops}")
+        print(f"   - Effective success rate: {(effective_successful / total_operations) * 100:.1f}%")
         print(f"   - Total time: {total_time:.2f}s")
         print(f"   - Throughput: {throughput:.1f} ops/sec")
         print(f"   - Avg operation time: {avg_operation_time * 1000:.1f}ms")
 
         # Assertions
-        assert total_successful > total_operations * 0.85, f"Success rate too low: {total_successful}/{total_operations}"
+        assert effective_successful > total_operations * 0.85, f"Success rate too low: {effective_successful}/{total_operations}"
         assert throughput > 3, f"Mixed operations throughput too low: {throughput:.1f} ops/sec"
 
     @pytest.mark.slow
@@ -597,14 +604,14 @@ class TestRegistryThroughput:
         shared_objects = ["shared:obj:1", "shared:obj:2", "shared:obj:3"]
         
         # Results tracking
-        results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": []}
+        results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": [], "fallback_ops": 0}
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function that creates lock contention."""
-            worker_results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": []}
+            worker_results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": [], "fallback_ops": 0}
             
             for i in range(operations_per_worker):
                 import random
@@ -626,11 +633,12 @@ class TestRegistryThroughput:
                             registry.load(obj_name)
                             worker_results["loads"] += 1
                         except ValueError:
-                            # Object doesn't exist, save it first
+                            # Object doesn't exist, save it first (fallback)
                             registry.save(obj_name, f"initial:value:{worker_id}:{i}")
                             registry.load(obj_name)
                             worker_results["saves"] += 1
                             worker_results["loads"] += 1
+                            worker_results["fallback_ops"] += 1  # Track fallback operations
                     
                     lock_end = time.time()
                     worker_results["lock_wait_times"].append(lock_end - lock_start)
@@ -690,6 +698,9 @@ class TestRegistryThroughput:
 
         total_time = time.time() - start_time
         total_successful = results["saves"] + results["loads"]
+        # Account for fallback operations in success rate calculation
+        fallback_ops = results.get("fallback_ops", 0)
+        effective_successful = total_successful - fallback_ops  # Subtract fallback ops to get true success rate
         throughput = total_successful / total_time
         avg_lock_wait = mean(results["lock_wait_times"]) if results["lock_wait_times"] else 0
         p95_lock_wait = sorted(results["lock_wait_times"])[int(0.95 * len(results["lock_wait_times"]))] if results["lock_wait_times"] else 0
@@ -704,7 +715,9 @@ class TestRegistryThroughput:
             "successful_saves": results['saves'],
             "successful_loads": results['loads'],
             "failed_operations": results['failed'],
-            "success_rate_percent": (total_successful / total_ops) * 100,
+            "fallback_operations": fallback_ops,
+            "effective_successful": effective_successful,
+            "success_rate_percent": (effective_successful / total_ops) * 100,
             "total_time_seconds": total_time,
             "throughput_ops_per_sec": throughput,
             "avg_lock_wait_ms": avg_lock_wait * 1000,
@@ -721,19 +734,19 @@ class TestRegistryThroughput:
         print(f"   - Successful saves: {results['saves']}")
         print(f"   - Successful loads: {results['loads']}")
         print(f"   - Failed operations: {results['failed']}")
-        print(f"   - Success rate: {(total_successful / total_ops) * 100:.1f}%")
+        print(f"   - Fallback operations: {fallback_ops}")
+        print(f"   - Effective success rate: {(effective_successful / total_ops) * 100:.1f}%")
         print(f"   - Total time: {total_time:.2f}s")
         print(f"   - Throughput: {throughput:.1f} ops/sec")
         print(f"   - Avg lock wait time: {avg_lock_wait * 1000:.1f}ms")
         print(f"   - 95th percentile lock wait: {p95_lock_wait * 1000:.1f}ms")
-        print(f"   - Final registry state: {registry.__str__(latest_only=False)}")
 
         # Save results to file
         self.save_results(summary, "lock_contention_stress_results.json")
 
         # Assertions
         try:
-            assert total_successful > total_ops * 0.95, f"Success rate too low: {total_successful}/{total_ops}"
+            assert effective_successful > total_ops * 0.95, f"Success rate too low: {effective_successful}/{total_ops}"
             assert throughput > 2, f"Lock contention throughput too low: {throughput:.1f} ops/sec"
             assert avg_lock_wait < 0.5, f"Lock wait time too high: {avg_lock_wait * 1000:.1f}ms"
         except AssertionError as e:
@@ -747,19 +760,19 @@ class TestRegistryThroughput:
         """
         Test stress on dictionary-like interface operations.
         """
-        max_workers = 8
-        operations_per_worker = 30
+        max_workers = 15
+        operations_per_worker = 50
         total_operations = max_workers * operations_per_worker
 
         # Results tracking
-        results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": []}
+        results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function for dictionary interface operations."""
-            worker_results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": []}
+            worker_results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
             
             for i in range(operations_per_worker):
                 obj_name = f"dict:obj:{worker_id}:{i}"
@@ -780,11 +793,12 @@ class TestRegistryThroughput:
                             _ = registry[obj_name]
                             worker_results["gets"] += 1
                         except KeyError:
-                            # Object doesn't exist, create it first
+                            # Object doesn't exist, create it first (fallback)
                             registry[obj_name] = test_objects["small_string"]
                             _ = registry[obj_name]
                             worker_results["sets"] += 1
                             worker_results["gets"] += 1
+                            worker_results["fallback_ops"] += 1
                             
                     elif op_type == "del":
                         # Dictionary delete operation
@@ -792,11 +806,12 @@ class TestRegistryThroughput:
                             del registry[obj_name]
                             worker_results["dels"] += 1
                         except KeyError:
-                            # Object doesn't exist, create and delete it
+                            # Object doesn't exist, create and delete it (fallback)
                             registry[obj_name] = test_objects["small_string"]
                             del registry[obj_name]
                             worker_results["sets"] += 1
                             worker_results["dels"] += 1
+                            worker_results["fallback_ops"] += 1
                             
                     elif op_type == "contains":
                         # Dictionary contains operation
@@ -861,6 +876,9 @@ class TestRegistryThroughput:
 
         total_time = time.time() - start_time
         total_successful = results["gets"] + results["sets"] + results["dels"] + results["contains"]
+        # Account for fallback operations in success rate calculation
+        fallback_ops = results.get("fallback_ops", 0)
+        effective_successful = total_successful - fallback_ops  # Subtract fallback ops to get true success rate
         throughput = total_successful / total_time
         avg_operation_time = mean(results["operation_times"]) if results["operation_times"] else 0
 
@@ -876,12 +894,13 @@ class TestRegistryThroughput:
             "successful_dels": results['dels'],
             "successful_contains": results['contains'],
             "failed_operations": results['failed'],
-            "success_rate_percent": (total_successful / total_operations) * 100,
+            "fallback_operations": fallback_ops,
+            "effective_successful": effective_successful,
+            "success_rate_percent": (effective_successful / total_operations) * 100,
             "total_time_seconds": total_time,
             "throughput_ops_per_sec": throughput,
             "avg_operation_time_ms": avg_operation_time * 1000,
-            "test_passed": True,
-            "final_registry_state": registry.__str__(latest_only=False)
+            "test_passed": True
         }
 
         # Print summary to console
@@ -892,18 +911,18 @@ class TestRegistryThroughput:
         print(f"   - Successful dels: {results['dels']}")
         print(f"   - Successful contains: {results['contains']}")
         print(f"   - Failed operations: {results['failed']}")
-        print(f"   - Success rate: {(total_successful / total_operations) * 100:.1f}%")
+        print(f"   - Fallback operations: {fallback_ops}")
+        print(f"   - Effective success rate: {(effective_successful / total_operations) * 100:.1f}%")
         print(f"   - Total time: {total_time:.2f}s")
         print(f"   - Throughput: {throughput:.1f} ops/sec")
         print(f"   - Avg operation time: {avg_operation_time * 1000:.1f}ms")
-        print(f"   - Final registry state: {registry.__str__(latest_only=False)}")
 
         # Save results to file
         self.save_results(summary, "dictionary_interface_stress_results.json")
 
         # Assertions
         try:
-            assert total_successful > total_operations * 0.85, f"Success rate too low: {total_successful}/{total_operations}"
+            assert effective_successful > total_operations * 0.85, f"Success rate too low: {effective_successful}/{total_operations}"
             assert throughput > 3, f"Dictionary interface throughput too low: {throughput:.1f} ops/sec"
         except AssertionError as e:
             summary["test_passed"] = False
