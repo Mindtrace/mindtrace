@@ -593,7 +593,7 @@ class TestRegistryThroughput:
         Test lock contention with many threads accessing the same objects.
         """
         max_workers = 15
-        operations_per_worker = 10
+        operations_per_worker = 50
         shared_objects = ["shared:obj:1", "shared:obj:2", "shared:obj:3"]
         
         # Results tracking
@@ -709,7 +709,8 @@ class TestRegistryThroughput:
             "throughput_ops_per_sec": throughput,
             "avg_lock_wait_ms": avg_lock_wait * 1000,
             "p95_lock_wait_ms": p95_lock_wait * 1000,
-            "test_passed": True
+            "test_passed": True,
+            "final_registry_state": registry.__str__(latest_only=False)
         }
 
         # Print summary to console
@@ -725,13 +726,14 @@ class TestRegistryThroughput:
         print(f"   - Throughput: {throughput:.1f} ops/sec")
         print(f"   - Avg lock wait time: {avg_lock_wait * 1000:.1f}ms")
         print(f"   - 95th percentile lock wait: {p95_lock_wait * 1000:.1f}ms")
+        print(f"   - Final registry state: {registry.__str__(latest_only=False)}")
 
         # Save results to file
         self.save_results(summary, "lock_contention_stress_results.json")
 
         # Assertions
         try:
-            assert total_successful > total_ops * 0.75, f"Success rate too low: {total_successful}/{total_ops}"
+            assert total_successful > total_ops * 0.95, f"Success rate too low: {total_successful}/{total_ops}"
             assert throughput > 2, f"Lock contention throughput too low: {throughput:.1f} ops/sec"
             assert avg_lock_wait < 0.5, f"Lock wait time too high: {avg_lock_wait * 1000:.1f}ms"
         except AssertionError as e:
@@ -878,7 +880,8 @@ class TestRegistryThroughput:
             "total_time_seconds": total_time,
             "throughput_ops_per_sec": throughput,
             "avg_operation_time_ms": avg_operation_time * 1000,
-            "test_passed": True
+            "test_passed": True,
+            "final_registry_state": registry.__str__(latest_only=False)
         }
 
         # Print summary to console
@@ -893,6 +896,7 @@ class TestRegistryThroughput:
         print(f"   - Total time: {total_time:.2f}s")
         print(f"   - Throughput: {throughput:.1f} ops/sec")
         print(f"   - Avg operation time: {avg_operation_time * 1000:.1f}ms")
+        print(f"   - Final registry state: {registry.__str__(latest_only=False)}")
 
         # Save results to file
         self.save_results(summary, "dictionary_interface_stress_results.json")

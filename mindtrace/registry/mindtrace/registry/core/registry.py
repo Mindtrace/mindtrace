@@ -9,14 +9,10 @@ import threading
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target
-from mindtrace.registry import LocalRegistryBackend, RegistryBackend
-
-
-class LockTimeoutError(Exception):
-    """Exception raised when a lock cannot be acquired within the timeout period."""
-
-    pass
+from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target, Timeout
+from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.core.exceptions import LockTimeoutError, LockAcquisitionError
 
 
 class Registry(Mindtrace):
@@ -97,13 +93,28 @@ class Registry(Mindtrace):
             version = self._latest(name)
         lock_key = f"{name}@{version}"
         lock_id = str(uuid.uuid4())
-        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
 
         @contextmanager
         def lock_context():
             try:
-                if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                    raise LockTimeoutError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                # Use Timeout class to implement retry logic for lock acquisition
+                timeout_handler = Timeout(
+                    timeout=timeout,
+                    retry_delay=0.1,  # Short retry delay for lock acquisition
+                    exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
+                    progress_bar=False,  # Don't show progress bar for lock acquisition
+                    desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
+                )
+                
+                def acquire_lock_with_retry():
+                    """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
+                    if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
+                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                    return True
+                
+                # Use the timeout handler to retry lock acquisition
+                timeout_handler.run(acquire_lock_with_retry)
                 yield
             finally:
                 self.backend.release_lock(lock_key, lock_id)

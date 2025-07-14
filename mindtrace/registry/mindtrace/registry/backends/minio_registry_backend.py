@@ -10,6 +10,7 @@ from minio.api import CopySource
 from minio.error import S3Error
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 T = TypeVar("T")
 
@@ -465,10 +466,20 @@ class MinioRegistryBackend(RegistryBackend):
                 if time.time() < metadata.get("expires_at", 0):
                     # If there's an active exclusive lock, we can't acquire a shared lock
                     if shared and not metadata.get("shared", False):
-                        return False
+                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
                     # If there are active shared locks, we can't acquire an exclusive lock
                     if not shared and metadata.get("shared", False):
-                        return False
+                        raise LockAcquisitionError(f"Lock {key} is currently held as shared")
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    # Lock doesn't exist, we can proceed
+                    pass
+                else:
+                    # Unexpected S3 error
+                    raise
+            except LockAcquisitionError:
+                # Re-raise LockAcquisitionError
+                raise
             except Exception:
                 # Lock doesn't exist or is invalid, we can proceed
                 pass
@@ -485,6 +496,9 @@ class MinioRegistryBackend(RegistryBackend):
 
             return True
 
+        except LockAcquisitionError:
+            # Re-raise LockAcquisitionError
+            raise
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
             return False
