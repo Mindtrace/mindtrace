@@ -145,7 +145,7 @@ class ClusterManager(Gateway):
         self._registry.save("jobregistry", self._job_registry)
         self.orchestrator.register(JobSchema(name=job_type, input=BaseModel)) 
         worker_cm = Worker.connect(worker_url)  
-        worker_cm.connect_to_backend(
+        worker_cm.connect_to_cluster(
             backend_args=self.orchestrator.backend.consumer_backend_args, 
             queue_name=job_type,
             cluster_url=str(self._url)
