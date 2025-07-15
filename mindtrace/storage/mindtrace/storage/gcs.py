@@ -8,12 +8,21 @@ from datetime import timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import re
 
-from google.api_core import exceptions as gexc
-from google.cloud import storage
-from google.oauth2 import service_account
+try:
+    from google.api_core import exceptions as gexc  # type: ignore
+    from google.cloud import storage  # type: ignore
+    from google.oauth2 import service_account  # type: ignore
+except ImportError as e:
+    gexc = None  # type: ignore
+    storage = None  # type: ignore
+    service_account = None  # type: ignore
+    _gcs_import_error = e
+else:
+    _gcs_import_error = None
+
 from tqdm import tqdm
-
 from mindtrace.storage.base import StorageHandler
 
 
@@ -42,16 +51,21 @@ class GCSStorageHandler(StorageHandler):
             FileNotFoundError: If credentials_path is provided but does not exist.
             google.api_core.exceptions.NotFound: If the bucket does not exist and create_if_missing is False.
         """
+        if _gcs_import_error is not None:
+            raise ImportError(
+                f"Google Cloud Storage dependencies are not installed: {_gcs_import_error}. "
+                "Please install 'google-cloud-storage' and 'google-auth' to use GCSStorageHandler."
+            )
         creds = None
         if credentials_path:
             if not os.path.exists(credentials_path):
                 raise FileNotFoundError(credentials_path)
-            creds = service_account.Credentials.from_service_account_file(credentials_path)
+            creds = service_account.Credentials.from_service_account_file(credentials_path)  # type: ignore
             # Extract project ID from credentials if not provided
             if project_id is None:
                 project_id = creds.project_id
 
-        self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
+        self.client = storage.Client(project=project_id, credentials=creds)  # type: ignore
         self.bucket_name = bucket_name
         self._ensure_bucket(create_if_missing, location, storage_class)
 
@@ -61,7 +75,7 @@ class GCSStorageHandler(StorageHandler):
         if bucket.exists(self.client):
             return
         if not create:
-            raise gexc.NotFound(f"Bucket {self.bucket_name!r} not found")
+            raise gexc.NotFound(f"Bucket {self.bucket_name!r} not found")  # type: ignore
         bucket.location = location
         bucket.storage_class = storage_class
         bucket.create()
@@ -81,9 +95,9 @@ class GCSStorageHandler(StorageHandler):
             )
         return blob_path.replace(f"gs://{self.bucket_name}/", "")
 
-    def _bucket(self) -> storage.Bucket:  # thread‑safe fresh bucket obj
+    def _bucket(self) -> Any:  # thread‑safe fresh bucket obj
         """Return a fresh Bucket object for the current bucket (thread-safe)."""
-        return self.client.bucket(self.bucket_name)
+        return self.client.bucket(self.bucket_name)  # type: ignore
 
     def upload(
         self,
@@ -177,8 +191,8 @@ class GCSStorageHandler(StorageHandler):
             remote_path: Path in the bucket to delete.
         """
         try:
-            self._bucket().blob(self._sanitize_blob_path(remote_path)).delete(if_generation_match=None)
-        except gexc.NotFound:
+            self._bucket().blob(self._sanitize_blob_path(remote_path)).delete(if_generation_match=None)  # type: ignore
+        except gexc.NotFound:  # type: ignore
             pass  # idempotent delete
 
     def list_objects(
@@ -194,7 +208,7 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             List of blob names (paths) in the bucket.
         """
-        return [b.name for b in self.client.list_blobs(self.bucket_name, prefix=prefix, max_results=max_results)]
+        return [b.name for b in self.client.list_blobs(self.bucket_name, prefix=prefix, max_results=max_results)]  # type: ignore
 
     def exists(self, remote_path: str) -> bool:
         """Check if a blob exists in the bucket.
@@ -203,7 +217,7 @@ class GCSStorageHandler(StorageHandler):
         Returns:
             True if the blob exists, False otherwise.
         """
-        return self._bucket().blob(remote_path).exists(self.client)
+        return self._bucket().blob(remote_path).exists(self.client)  # type: ignore
 
     def get_presigned_url(
         self,
@@ -258,11 +272,11 @@ class GCSStorageHandler(StorageHandler):
         try:
             # Always use the existing client since it's already configured
             # The client was created in __init__ with proper credentials
-            project = self.client.project
+            project = self.client.project  # type: ignore
             print(f"Google Cloud is configured with project: {project} using existing client.")
             
             # Test the connection by listing buckets
-            buckets = list(self.client.list_buckets())
+            buckets = list(self.client.list_buckets())  # type: ignore
             print(f"Connection to Google Cloud is active. Found {len(buckets)} buckets.")
             
             return True
@@ -275,7 +289,7 @@ class GCSStorageHandler(StorageHandler):
         path: str,
         version_no: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
+        client: Any = None,
     ) -> None:
         """
         Upload a YAML file to a GCP bucket inside a folder named with the version number.
@@ -312,7 +326,7 @@ class GCSStorageHandler(StorageHandler):
         model_path: str,
         version_no: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
+        client: Any = None,
         custom_metadata: Optional[Dict[str, str]] = None,
     ) -> None:
         """
@@ -339,7 +353,7 @@ class GCSStorageHandler(StorageHandler):
 
         # Check if the specific file already exists
         blob = self._bucket().blob(destination_blob_name)
-        if blob.exists(self.client):
+        if blob.exists(self.client):  # type: ignore
             print(f"File {destination_blob_name} already exists in bucket {self.bucket_name}. Skipping upload.")
             return
         
@@ -355,7 +369,7 @@ class GCSStorageHandler(StorageHandler):
         local_dir: str,
         version_no: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
+        client: Any = None,
     ) -> Tuple[List[str], Dict[str, str], Dict[str, Any]]:
         """
         Download model weights and metadata from Google Cloud Storage (GCS) to a local directory.
@@ -382,7 +396,7 @@ class GCSStorageHandler(StorageHandler):
             client = self.client
 
         # Convert blobs iterator to a list so we can use it multiple times
-        blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{version_no}/"))
+        blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{version_no}/"))  # type: ignore
 
         # Create directory to store downloaded files
         os.makedirs(os.path.join(local_dir, version_no), exist_ok=True)
@@ -433,11 +447,11 @@ class GCSStorageHandler(StorageHandler):
 
     def _download_blob(
         self,
-        blob: storage.Blob,
+        blob: Any,
         local_dir: str,
         version_no: str,
         overwrite: bool = False
-    ) -> Tuple[Optional[storage.Blob], Optional[str]]:
+    ) -> Tuple[Optional[Any], Optional[str]]:
         """
         Download a blob to a local directory if it does not already exist.
 
@@ -465,7 +479,7 @@ class GCSStorageHandler(StorageHandler):
         local_dir: str,
         version_no: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
+        client: Any = None,
         config_name: Optional[str] = None,
     ) -> Optional[str]:
         """
@@ -490,7 +504,7 @@ class GCSStorageHandler(StorageHandler):
             client = self.client
 
         # List all blobs (files) in the bucket
-        blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{version_no}/"))
+        blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{version_no}/"))  # type: ignore
         config_blob = [blob for blob in blobs if config_name in blob.name]
         if len(config_blob) == 0:
             raise FileNotFoundError(
@@ -608,7 +622,7 @@ class GCSStorageHandler(StorageHandler):
 
     def _should_download_file(
         self,
-        blob: storage.Blob,
+        blob: Any,
         local_file_path: str,
         verify_integrity: bool = True
     ) -> bool:
@@ -679,8 +693,8 @@ class GCSStorageHandler(StorageHandler):
         task_name: str,
         version: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz",
+        client: Any = None,
+        base_folder: str = "",
         custom_metadata: Optional[Dict[str, str]] = None,
         auto_register_task: bool = False
     ) -> List[str]:
@@ -693,7 +707,7 @@ class GCSStorageHandler(StorageHandler):
             version: Version number (e.g., 'v1.0', 'v2.0').
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
             custom_metadata: Optional metadata to attach to uploaded files.
             auto_register_task: Whether to automatically register the task if not found.
         
@@ -734,10 +748,10 @@ class GCSStorageHandler(StorageHandler):
                                f"Please register the task first using register_task() or set auto_register_task=True.")
         
         # Construct the registry path: base_folder/task_name/version/
-        registry_path = f"{base_folder}/{task_name}/{version}"
+        registry_path = os.path.join(base_folder, task_name, version)
         
         # Check if version already exists
-        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))
+        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))  # type: ignore
         if version_blobs:
             raise ValueError(f"Version {version} already exists for task {task_name}. Please use a different version number.")
         
@@ -765,7 +779,7 @@ class GCSStorageHandler(StorageHandler):
                     # Clean up partial upload on error
                     for uploaded_file in uploaded_files:
                         try:
-                            self._bucket().blob(uploaded_file).delete()
+                            self._bucket().blob(uploaded_file).delete()  # type: ignore
                         except:
                             pass
                     raise Exception(f"Upload failed. Cleaned up partial upload. Error: {e}")
@@ -779,8 +793,8 @@ class GCSStorageHandler(StorageHandler):
         local_directory: str,
         version: Optional[str] = None,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz",
+        client: Any = None,
+        base_folder: str = "",
         overwrite: bool = False,
         verify_integrity: bool = True,
         dry_run: bool = False
@@ -795,7 +809,7 @@ class GCSStorageHandler(StorageHandler):
             version: Optional version number to download. If None, downloads the latest version.
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
             overwrite: Whether to overwrite existing files. Defaults to False.
             verify_integrity: Whether to verify file integrity using metadata. Defaults to True.
             dry_run: If True, only show what would be downloaded without actually downloading.
@@ -832,10 +846,10 @@ class GCSStorageHandler(StorageHandler):
             print(f"No version specified. Using latest version: {version}")
         
         # Construct the registry path
-        registry_path = f"{base_folder}/{task_name}/{version}"
+        registry_path = os.path.join(base_folder, task_name, version)
         
         # Check if the version exists
-        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))
+        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))  # type: ignore
         if not version_blobs:
             raise FileNotFoundError(f"Version {version} not found for task '{task_name}' in the model registry.")
         
@@ -897,8 +911,8 @@ class GCSStorageHandler(StorageHandler):
         local_directory: str,
         version: Optional[str] = None,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz"
+        client: Any = None,
+        base_folder: str = ""
     ) -> Dict[str, Any]:
         """
         Check synchronization status between remote registry and local files.
@@ -923,10 +937,10 @@ class GCSStorageHandler(StorageHandler):
             
             version = sorted(available_versions, key=version_key)[-1]
         
-        registry_path = f"{base_folder}/{task_name}/{version}"
+        registry_path = os.path.join(base_folder, task_name, version)
         local_task_version_dir = os.path.join(local_directory, task_name, version)
         
-        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))
+        version_blobs = list(self.client.list_blobs(self.bucket_name, prefix=f"{registry_path}/"))  # type: ignore
         
         status = {
             "version": version,
@@ -986,8 +1000,8 @@ class GCSStorageHandler(StorageHandler):
         self,
         task_name: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz"
+        client: Any = None,
+        base_folder: str = ""
     ) -> List[str]:
         """
         List all available versions for a specific task in the model registry.
@@ -996,7 +1010,7 @@ class GCSStorageHandler(StorageHandler):
             task_name: Name of the task.
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
         
         Returns:
             list: List of available version strings for the task.
@@ -1008,33 +1022,46 @@ class GCSStorageHandler(StorageHandler):
         if client is None:
             client = self.client
         
-        # List all blobs with the task prefix
-        task_prefix = f"{base_folder}/{task_name}/"
-        blobs = self.client.list_blobs(self.bucket_name, prefix=task_prefix, delimiter='/')
+        # List all blobs with the task prefix (without delimiter to get all files)
+        task_prefix = os.path.join(base_folder, task_name)
+        all_blobs = list(self.client.list_blobs(self.bucket_name, prefix=task_prefix))  # type: ignore
+        
+        # Calculate the expected number of parts based on base folder
+        expected_parts = 3 if base_folder else 2  # base_folder/task_name/version vs task_name/version
         
         versions = set()
-        for blob in blobs:
+        
+        # Extract versions from file paths
+        for blob in all_blobs:
             # Extract version from blob path
             # Path format: base_folder/task_name/version/files...
             path_parts = blob.name.split('/')
-            if len(path_parts) >= 3:
-                version = path_parts[2]  # The version part
-                if version:  # Make sure it's not empty
+            
+            if len(path_parts) >= expected_parts:
+                # Get the version part (last part before the file)
+                version = path_parts[expected_parts - 1]  # The version part
+                if version and version != task_name:  # Make sure it's not empty and not the task name
                     versions.add(version)
         
         # Also check prefixes (folders) to catch empty version folders
-        for prefix in blobs.prefixes:
-            version = prefix.rstrip('/').split('/')[-1]
-            if version:
-                versions.add(version)
+        blobs_with_delimiter = self.client.list_blobs(self.bucket_name, prefix=task_prefix, delimiter='/')  # type: ignore
+        for prefix in blobs_with_delimiter.prefixes:
+            prefix_parts = prefix.rstrip('/').split('/')
+            if len(prefix_parts) >= expected_parts:
+                version = prefix_parts[expected_parts - 1]
+                if version and version != task_name:
+                    versions.add(version)
         
-        return sorted(list(versions))
+        # Only include versions that match the pattern v<digit>.<digit>
+        version_pattern = re.compile(r"^v\d+\.\d+$")
+        filtered_versions = [v for v in versions if version_pattern.match(v)]
+        return sorted(filtered_versions)
 
     def list_registry_tasks(
         self,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz"
+        client: Any = None,
+        base_folder: str = ""
     ) -> List[str]:
         """
         List all available tasks in the model registry.
@@ -1042,7 +1069,7 @@ class GCSStorageHandler(StorageHandler):
         Args:
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
         
         Returns:
             list: List of available task names in the registry.
@@ -1054,25 +1081,30 @@ class GCSStorageHandler(StorageHandler):
         if client is None:
             client = self.client
         
-        # List all blobs with the base folder prefix
-        base_prefix = f"{base_folder}/"
-        blobs = self.client.list_blobs(self.bucket_name, prefix=base_prefix, delimiter='/')
+        # List all blobs with the base folder prefix (without delimiter to get all files)
+        base_prefix = base_folder
+        all_blobs = list(self.client.list_blobs(self.bucket_name, prefix=base_prefix))  # type: ignore
         
         tasks = set()
-        for blob in blobs:
-            # Extract task from blob path
-            # Path format: base_folder/task_name/version/files...
+        # Calculate the expected task position based on base folder
+        task_position = 1 if base_folder else 0  # base_folder/task_name vs task_name
+
+        # Extract task names from file paths
+        for blob in all_blobs:
             path_parts = blob.name.split('/')
-            if len(path_parts) >= 2:
-                task = path_parts[1]  # The task part
-                if task:  # Make sure it's not empty
+            if len(path_parts) > task_position:
+                task = path_parts[task_position]
+                if task and task != base_folder:
                     tasks.add(task)
-        
+
         # Also check prefixes (folders) to catch empty task folders
-        for prefix in blobs.prefixes:
-            task = prefix.rstrip('/').split('/')[-1]
-            if task:
-                tasks.add(task)
+        blobs_with_delimiter = self.client.list_blobs(self.bucket_name, prefix=base_prefix, delimiter='/')  # type: ignore
+        for prefix in blobs_with_delimiter.prefixes:
+            prefix_parts = prefix.rstrip('/').split('/')
+            if len(prefix_parts) > task_position:
+                task = prefix_parts[task_position]
+                if task and task != base_folder:
+                    tasks.add(task)
         
         return sorted(list(tasks))
 
@@ -1080,8 +1112,8 @@ class GCSStorageHandler(StorageHandler):
         self,
         task_name: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz"
+        client: Any = None,
+        base_folder: str = ""
     ) -> str:
         """
         Register a task by ensuring its folder exists in the GCP bucket.
@@ -1090,7 +1122,7 @@ class GCSStorageHandler(StorageHandler):
             task_name: Name of the task (e.g., 'spatter_detection', 'zone_segmentation').
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
         
         Returns:
             str: Path to the created task folder in the bucket.
@@ -1102,14 +1134,14 @@ class GCSStorageHandler(StorageHandler):
             client = self.client
         
         # Create task folder path
-        task_folder_path = f"{base_folder}/{task_name}/"
+        task_folder_path = os.path.join(base_folder, task_name)
         
         # Create an empty placeholder file to ensure the folder exists
         # GCS doesn't have folders per se, so we create a placeholder file
         placeholder_blob = self._bucket().blob(f"{task_folder_path}.keep")
         
         # Check if folder already exists by checking for any files with the prefix
-        existing_blobs = list(self.client.list_blobs(self.bucket_name, prefix=task_folder_path, max_results=1))
+        existing_blobs = list(self.client.list_blobs(self.bucket_name, prefix=task_folder_path, max_results=1))  # type: ignore
         
         if not existing_blobs:
             # Create placeholder file to establish the folder
@@ -1124,8 +1156,8 @@ class GCSStorageHandler(StorageHandler):
         self,
         task_name: str,
         credentials_path: Optional[str] = None,
-        client: Optional[storage.Client] = None,
-        base_folder: str = "sfz"
+        client: Any = None,
+        base_folder: str = ""
     ) -> bool:
         """
         Check if a task folder exists in the GCP bucket.
@@ -1134,7 +1166,7 @@ class GCSStorageHandler(StorageHandler):
             task_name: Name of the task to check.
             credentials_path: Optional path to the service account JSON credentials file.
             client: Optional Google Cloud Storage client.
-            base_folder: Base folder name in the bucket. Defaults to 'sfz'.
+            base_folder: Base folder name in the bucket. Defaults to ''.
         
         Returns:
             bool: True if task folder exists, False otherwise.
@@ -1145,10 +1177,10 @@ class GCSStorageHandler(StorageHandler):
         if client is None:
             client = self.client
         
-        task_folder_path = f"{base_folder}/{task_name}/"
+        task_folder_path = os.path.join(base_folder, task_name)
         
         # Check if any files exist with this prefix (indicating folder exists)
-        existing_blobs = list(self.client.list_blobs(self.bucket_name, prefix=task_folder_path, max_results=1))
+        existing_blobs = list(self.client.list_blobs(self.bucket_name, prefix=task_folder_path, max_results=1))  # type: ignore
         return len(existing_blobs) > 0
 
 
@@ -1160,36 +1192,64 @@ if __name__ == '__main__':
         credentials_path='/home/vineeth/Desktop/mindtrace/google_creds.json'
     )
     
-    # Example: Upload model to registry
+    # Example: Upload model to registry with base folder "sfz"
     # Try to upload with a new version
-    try:
-        uploaded_files = handler.upload_model_to_registry(
-            local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
-            task_name='sfz_pipeline',
-            version='v2.2',
-            auto_register_task=True
-        )
-        print(f"Successfully uploaded {len(uploaded_files)} files")
-    except ValueError as e:
-        print(f"Upload failed: {e}")
-        print("This is expected if the version already exists")
+    # try:
+    #     uploaded_files = handler.upload_model_to_registry(
+    #         local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
+    #         task_name='sfz_pipeline',
+    #         version='v2.3',
+    #         base_folder='sfz',
+    #         auto_register_task=True
+    #     )
+    #     print(f"Successfully uploaded {len(uploaded_files)} files")
+    # except ValueError as e:
+    #     print(f"Upload failed: {e}")
+    #     print("This is expected if the version already exists")
     
-    # Example: Download model from registry
-    # Try to download the model
-    try:
-        downloaded_files, version = handler.download_model_from_registry(
-            task_name='sfz_pipeline',
-            local_directory='./downloaded_models',
-            version='v2.1'  # or None for latest
-        )
-        print(f"Successfully downloaded {len(downloaded_files)} files for version {version}")
-    except Exception as e:
-        print(f"Download failed: {e}")
+    # # Example: Download model from registry with base folder "sfz"
+    # # Try to download the model
+    # try:
+    #     downloaded_files, version = handler.download_model_from_registry(
+    #         task_name='sfz_pipeline',
+    #         local_directory='./downloaded_models',
+    #         version='v2.1',  # or None for latest
+    #         base_folder='sfz'
+    #     )
+    #     print(f"Successfully downloaded {len(downloaded_files)} files for version {version}")
+    # except Exception as e:
+    #     print(f"Download failed: {e}")
     
-    # Example: Check sync status
+    # Example: Check sync status with base folder "sfz"
     status = handler.check_registry_sync_status(
         task_name='sfz_pipeline',
-        local_directory='./downloaded_models'
+        local_directory='./downloaded_models',
+        base_folder='sfz'
     )
     
-    print("GCS Storage Handler enhanced with model registry functionality!")
+    # Example: List model versions with base folder "sfz"
+    try:
+        versions = handler.list_model_versions(
+            task_name='sfz_pipeline',
+            base_folder='sfz'
+        )
+        print(f"Available versions for sfz_pipeline: {versions}")
+    except Exception as e:
+        print(f"Failed to list versions: {e}")
+    
+    # Example: List registry tasks with base folder "sfz"
+    try:
+        tasks = handler.list_registry_tasks(base_folder='sfz')
+        print(f"Available tasks in registry: {tasks}")
+    except Exception as e:
+        print(f"Failed to list tasks: {e}")
+    
+    # Example: Check if task is registered with base folder "sfz"
+    try:
+        is_registered = handler.is_task_registered(
+            task_name='sfz_pipeline',
+            base_folder='sfz'
+        )
+        print(f"Task sfz_pipeline is registered: {is_registered}")
+    except Exception as e:
+        print(f"Failed to check task registration: {e}")
