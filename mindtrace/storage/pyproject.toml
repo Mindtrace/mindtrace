@@ -3,6 +3,7 @@ name = "mindtrace-storage"
 version = "0.1.0"
 dependencies = [
     "google-cloud-storage",
+    "tqdm",
 ]
 
 [build-system]
