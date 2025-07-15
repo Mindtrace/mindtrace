@@ -15,9 +15,12 @@ class ClusterManager(Gateway):
         super().__init__(**kwargs)
         self.orchestrator = Orchestrator(backend=RabbitMQClient())
         self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
-        self._registry = Registry(self.config["MINDTRACE_CLUSTER_DEFAULT_REGISTRY_DIR"], version_objects=False)
-        self._job_registry = {}
-        self._registry.save("jobregistry", self._job_registry)
+        self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.JobSchemaTargeting,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS
+        )
+        self.job_schema_targeting_database.initialize_sync()
         self.job_status_database = UnifiedMindtraceODMBackend(
             unified_model_cls=cluster_types.JobStatus,
             redis_url=self.redis_url,
@@ -72,10 +75,14 @@ class ClusterManager(Gateway):
         Args:
             payload (RegisterJobToEndpointInput): The payload containing the job type and endpoint.
         """
-        self._job_registry[payload.job_type] = payload.endpoint
-        self._registry.save("jobregistry", self._job_registry)
+        for entry in self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == payload.job_type):
+            self.job_schema_targeting_database.delete(entry.pk)
+        self.job_schema_targeting_database.insert(cluster_types.JobSchemaTargeting(
+            schema_name=payload.job_type,
+            target_endpoint=payload.endpoint
+        ))
 
-    def _submit_job_to_endpoint(self, job: Job):
+    def _submit_job_to_endpoint(self, job: Job, endpoint: str):
         """
         Submit a job to the appropriate endpoint.
 
@@ -85,8 +92,16 @@ class ClusterManager(Gateway):
         Returns:
             JobOutput: The output of the job.
         """
-        endpoint_url = f"{self._url}{self._job_registry[job.schema_name]}"
-        print(endpoint_url)
+
+        job_status = cluster_types.JobStatus(
+            job_id=job.id,
+            status="running",
+            output={},
+            worker_id=endpoint
+        )
+        endpoint_url = f"{self._url}{endpoint}"
+        self.job_status_database.insert(job_status)
+
         response = requests.post(endpoint_url, json=job.model_dump(), timeout=60)
 
         if response.status_code != 200:
@@ -96,9 +111,12 @@ class ClusterManager(Gateway):
         try:
             result = response.json()
         except Exception:
-            result = {"status": "success", "output": {}}
+            result = {"status": "completed", "output": {}}
 
-        return cluster_types.JobStatus(**result)
+        job_status.status = result.get("status", "completed")
+        job_status.output = result.get("output", {})
+        self.job_status_database.insert(job_status)
+        return job_status
 
     def submit_job(self, job: Job):
         """
@@ -117,19 +135,15 @@ class ClusterManager(Gateway):
             worker_id=""
         )
         self.job_status_database.insert(job_status)
-        print(self.job_status_database.all())
-        if job.schema_name in self._job_registry:
-            if self._job_registry[job.schema_name] == "@orchestrator":
-                self.orchestrator.publish(job.schema_name, job)
-                return job_status
-            return self._submit_job_to_endpoint(job)
-        else:
-            self._job_registry = self._registry.load("jobregistry")
-            if job.schema_name in self._job_registry:
-                return self._submit_job_to_endpoint(job)
-            else:
-                job_status.status = "failed"
-                return job_status
+
+        job_schema_targeting_list = self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job.schema_name)
+        if not job_schema_targeting_list:
+            raise ValueError(f"No job schema targeting found for job type {job.schema_name}")
+        job_schema_targeting = job_schema_targeting_list[0]
+        if job_schema_targeting.target_endpoint == "@orchestrator":
+            self.orchestrator.publish(job.schema_name, job)
+            return job_status
+        return self._submit_job_to_endpoint(job, job_schema_targeting.target_endpoint)
 
     def register_job_to_worker(self, payload: dict):
         """
@@ -141,8 +155,12 @@ class ClusterManager(Gateway):
         """
         job_type = payload["job_type"]
         worker_url = payload["worker_url"]
-        self._job_registry[job_type] = "@orchestrator"
-        self._registry.save("jobregistry", self._job_registry)
+        for entry in self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job_type):
+            self.job_schema_targeting_database.delete(entry.pk)
+        self.job_schema_targeting_database.insert(cluster_types.JobSchemaTargeting(
+            schema_name=job_type,
+            target_endpoint="@orchestrator"
+        ))
         self.orchestrator.register(JobSchema(name=job_type, input=BaseModel)) 
         worker_cm = Worker.connect(worker_url)  
         worker_cm.connect_to_cluster(
@@ -186,7 +204,7 @@ class ClusterManager(Gateway):
         if not job_status_list:
             raise ValueError(f"Job status not found for job id {job_id}")
         job_status = job_status_list[0]
-        job_status.status = "completed"
+        job_status.status = payload["status"]
         job_status.output = payload["output"]
         self.job_status_database.insert(job_status)
 
@@ -203,15 +221,17 @@ class Worker(Service, Consumer):
 
     @property
     def cluster_connection_manager(self):
-        if self._cluster_connection_manager is None:
+        if self._cluster_connection_manager is None and self._cluster_url is not None:
             self._cluster_connection_manager = ClusterManager.connect(self._cluster_url)
         return self._cluster_connection_manager
 
     def run(self, job_dict: dict):
         cm = self.cluster_connection_manager
-        cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
+        if cm:
+            cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
         output = self._run(job_dict["payload"])
-        cm.worker_alert_completed_job(job_id=job_dict["id"], output=output)
+        if cm:
+            cm.worker_alert_completed_job(job_id=job_dict["id"], status=output["status"], output=output["output"])
         return output
 
     @abstractmethod
