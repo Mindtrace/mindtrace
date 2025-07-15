@@ -8,8 +8,9 @@ Gateway Service example showing how to:
 """
 
 from mindtrace.cluster import ClusterManager
+from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 echo_job = JobSchema(name="echo_job", input=EchoInput, output=EchoOutput)
 
@@ -23,7 +24,7 @@ def base_gateway_example():
     print("Gateway launched successfully!")
 
     # Launch EchoService on port 8098
-    echo_cm = EchoService.launch(port=8098, wait_for_launch=True, timeout=15)
+    echo_cm = EchoWorker.launch(port=8098, wait_for_launch=True, timeout=15)
     print("EchoService launched successfully!")
 
     try:
@@ -36,8 +37,9 @@ def base_gateway_example():
         )
         print(f"EchoService registered with Gateway: {result}")
         print(f"Registered apps: {cluster_cm.registered_apps}")
+        
 
-        cluster_cm.register_job_to_endpoint(job_type="echo_job", endpoint="echo/echo")
+        cluster_cm.register_job_to_endpoint(job_type="echo_job", endpoint="echo/run")
         print(job_from_schema(echo_job, EchoInput(message="echo")).model_dump())
         result = cluster_cm.submit_job(**(job_from_schema(echo_job, EchoInput(message="echo"))).model_dump())
 

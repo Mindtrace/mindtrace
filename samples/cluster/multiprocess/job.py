@@ -7,17 +7,16 @@ from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 def main():
-    cluster_manager = ClusterManager.launch(host="localhost", port=8000, wait_for_launch=True)
-    worker_cm = EchoWorker.launch(host="localhost", port=8001, wait_for_launch=True)
+    cluster_manager = ClusterManager.connect("http://localhost:8000")
+    worker_cm = EchoWorker.connect("http://localhost:8001")
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
-        cluster_manager.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
-        job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 3})
+        job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 60})
         cluster_manager.submit_job(**job.model_dump())
         print(cluster_manager.get_job_status(job_id=job.id))
         time.sleep(1)
         print(cluster_manager.get_job_status(job_id=job.id))
-        time.sleep(5)
+        time.sleep(65)
         print(cluster_manager.get_job_status(job_id=job.id))
     finally:
         worker_cm.shutdown()
