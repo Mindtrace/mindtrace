@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 import pandas as pd
 
-from mindtrace.automation.database_connection import DatabaseConnection
+from mindtrace.automation.database.database_connection import DatabaseConnection
 from mindtrace.storage.gcs import GCSStorageHandler
 
 # Load environment variables from .env file
