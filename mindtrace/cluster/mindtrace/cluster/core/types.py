@@ -67,7 +67,7 @@ RegisterJobToWorkerTaskSchema = TaskSchema(name="register_job_to_worker", input_
 class GetJobStatusInput(BaseModel):
     job_id: str
 
-GetJobStatusTaskSchema = TaskSchema(name="get_job_status", input_schema=GetJobStatusInput)
+GetJobStatusTaskSchema = TaskSchema(name="get_job_status", input_schema=GetJobStatusInput, output_schema=JobStatus)
 
 class WorkerAlertStartedJobInput(BaseModel):
     job_id: str

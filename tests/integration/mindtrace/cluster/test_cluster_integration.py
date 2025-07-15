@@ -1,4 +1,5 @@
 import pytest
+import time
 
 from mindtrace.cluster import ClusterManager
 from mindtrace.jobs import JobSchema, job_from_schema
@@ -25,8 +26,8 @@ def test_cluster_manager_as_gateway():
         cluster_cm.register_job_to_endpoint(job_type="echo_job", endpoint="echo/run")
         job = job_from_schema(echo_job, EchoInput(message="integration test"))
         result = cluster_cm.submit_job(**job.model_dump())
-        assert result.status == "success"
-        assert result.output == "integration test"
+        assert result.status == "completed"
+        assert result.output == {"echoed": "integration test"}
     finally:
         # Clean up in reverse order
         echo_cm.shutdown()
@@ -46,7 +47,12 @@ def test_cluster_manager_with_prelaunched_worker():
         # Submit a job
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, Worker!"})
         result = cluster_cm.submit_job(**job.model_dump())
-        assert result.status == "success"
+        assert result.status == "queued"
+        assert result.output == {}
+        time.sleep(1)
+        result = cluster_cm.get_job_status(job_id=job.id)
+        assert result.status == "completed"
+        assert result.output == {"echoed": "Hello, Worker!"}
     finally:
         if worker_cm is not None:
             worker_cm.shutdown()
@@ -64,10 +70,17 @@ def test_cluster_manager_multiple_jobs_with_worker():
     try:
         cluster_cm.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
         messages = ["Job 1", "Job 2", "Job 3"]
+        jobs = []
         for msg in messages:
-            job = job_from_schema(echo_job_schema, input_data={"message": msg})
+            job = job_from_schema(echo_job_schema, input_data={"message": msg}) 
+            jobs.append(job)
             result = cluster_cm.submit_job(**job.model_dump())
-            assert result.status == "success"
+            assert result.status == "queued"
+        time.sleep(1)
+        for i, job in enumerate(jobs):
+            result = cluster_cm.get_job_status(job_id=job.id)
+            assert result.status == "completed"
+            assert result.output == {"echoed": messages[i]}
     finally:
         if worker_cm is not None:
             worker_cm.shutdown()
@@ -88,7 +101,8 @@ def test_cluster_manager_worker_failure():
         worker_cm.shutdown()
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
         result = cluster_cm.submit_job(**job.model_dump())
-        assert result.status == "success"  # Should still succeed but the job is queued
+        time.sleep(1)
+        assert result.status == "queued"  # Should still succeed but the job is queued
     finally:
         if cluster_cm is not None:
             cluster_cm.shutdown()
