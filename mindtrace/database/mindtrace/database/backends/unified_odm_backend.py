@@ -61,7 +61,7 @@ class UnifiedMindtraceDocument(BaseModel):
     @classmethod
     def _auto_generate_mongo_model(cls) -> Type[MindtraceDocument]:
         """Automatically generate a MongoDB-compatible model from the unified model."""
-        from typing import Annotated, Any, Dict
+        from typing import Annotated
         
         from beanie import Indexed
         
@@ -122,13 +122,19 @@ class UnifiedMindtraceDocument(BaseModel):
     @classmethod
     def _auto_generate_redis_model(cls) -> Type[MindtraceRedisDocument]:
         """Automatically generate a Redis-compatible model from the unified model."""
-        from typing import Any, Dict
+        from typing import get_origin, get_args, Union
         
         from redis_om import Field as RedisField
         
         # Get field annotations from the original class, excluding inherited ones
         cls_annotations = getattr(cls, '__annotations__', {})
         meta = getattr(cls, 'Meta', cls.Meta)
+        
+        # Get the original field values/defaults from the class
+        cls_fields = {}
+        for field_name in cls_annotations:
+            if hasattr(cls, field_name):
+                cls_fields[field_name] = getattr(cls, field_name)
         
         # Use a simpler approach without exec to avoid annotation issues
         
@@ -140,18 +146,64 @@ class UnifiedMindtraceDocument(BaseModel):
             if field_name == 'id':
                 continue  # Skip id field for Redis
                 
-            annotations[field_name] = field_type
+            # Handle optional fields properly
+            is_optional = False
+            base_type = field_type
             
-            # For Redis, if field should be indexed, use RedisField(index=True)
-            if hasattr(meta, 'indexed_fields') and field_name in meta.indexed_fields:
-                fields[field_name] = RedisField(index=True)
+            # Check if the field is Optional (Union[X, None])
+            if get_origin(field_type) is Union:
+                args = get_args(field_type)
+                if len(args) == 2 and type(None) in args:
+                    is_optional = True
+                    base_type = args[0] if args[1] is type(None) else args[1]
+            
+            # Check if field has a default value from Pydantic Field
+            field_default = None
+            if field_name in cls_fields:
+                field_info = cls_fields[field_name]
+                if hasattr(field_info, 'default') and field_info.default is not ...:
+                    field_default = field_info.default
+                elif hasattr(field_info, 'default_factory') and field_info.default_factory is not None:
+                    field_default = field_info.default_factory()
+                    
+            # For Redis, preserve the optional nature in annotations
+            if is_optional:
+                annotations[field_name] = Union[base_type, type(None)]
             else:
-                fields[field_name] = RedisField()
+                annotations[field_name] = base_type
+            
+            # Create Redis field with proper defaults
+            # Only index fields that are explicitly marked as indexed
+            should_index = hasattr(meta, 'indexed_fields') and field_name in meta.indexed_fields
+            
+            if should_index:
+                if is_optional or field_default is not None:
+                    fields[field_name] = RedisField(index=True, default=field_default)
+                else:
+                    fields[field_name] = RedisField(index=True)
+            else:
+                # For non-indexed fields, explicitly disable indexing
+                if is_optional or field_default is not None:
+                    fields[field_name] = RedisField(index=False, default=field_default)
+                else:
+                    fields[field_name] = RedisField(index=False)
+        
+        # Create the Meta class first - this must be done before class creation
+        # so that Redis-OM can properly initialize its internal mechanisms
+        parent_meta = MindtraceRedisDocument.Meta
+        class_name = f'{cls.__name__}Redis'
+        meta_attrs = {
+            'global_key_prefix': getattr(meta, 'global_key_prefix', 'mindtrace'),
+            'index_name': f"{getattr(meta, 'global_key_prefix', 'mindtrace')}:{class_name}:index",
+            'model_key_prefix': class_name,  # Set the model key prefix to match the class name
+        }
+        MetaClass = type('Meta', (parent_meta,), meta_attrs)
         
         # Create the class attributes dictionary
         class_dict = {
             '__annotations__': annotations,
             '__module__': cls.__module__,
+            'Meta': MetaClass,
         }
         
         # Add field instances to the class dict
@@ -163,14 +215,6 @@ class UnifiedMindtraceDocument(BaseModel):
             (MindtraceRedisDocument,),
             class_dict
         )
-        
-        # Now set the Meta class after creation to avoid Pydantic annotation issues
-        meta_attrs = {
-            'global_key_prefix': getattr(meta, 'global_key_prefix', 'mindtrace'),
-            'index_name': f"{getattr(meta, 'global_key_prefix', 'mindtrace')}:{getattr(meta, 'collection_name', 'unified_documents')}",
-        }
-        MetaClass = type('Meta', (), meta_attrs)
-        setattr(DynamicRedisModel, 'Meta', MetaClass)
         
         return DynamicRedisModel
     
@@ -581,8 +625,8 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # to avoid Beanie initialization issues
                 return DataWrapper(data)
             elif backend_type == BackendType.REDIS:
-                # Convert to Redis format - use model_dump to get clean data
-                data = obj.model_dump(exclude_none=True)
+                # Convert to Redis format - include None values for optional fields
+                data = obj.model_dump(exclude_none=False)
                 # Redis uses 'pk' field instead of 'id'
                 if 'id' in data:
                     if data['id'] is not None:
