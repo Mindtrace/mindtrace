@@ -18,6 +18,7 @@ from poseidon.pages.management import user_management_page, organization_managem
 from poseidon.pages.user import profile_page
 from poseidon.pages.images import images_page
 from poseidon.pages.camera_configurator import camera_configurator_page
+from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.styles.theme import theme_config
 from poseidon.styles.styles import styles
 
@@ -42,6 +43,9 @@ app.add_page(super_admin_dashboard_page, route="/super-admin-dashboard", title="
 
 # Camera Configurator route
 app.add_page(camera_configurator_page, route="/camera-configurator", title="MindTrace - Camera Configurator")
+
+# Model Deployment route
+app.add_page(model_deployment_page, route="/model-deployment", title="MindTrace - Model Deployment")
 
 # Management routes
 app.add_page(user_management_page, route="/user-management", title="MindTrace - User Management")
