@@ -13,13 +13,18 @@ from mindtrace.services import Service
 @pytest.fixture
 def cluster_manager():
     # Patch Database to avoid file I/O
-    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase, \
+            patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
         mock_database.delete = MagicMock()
         mock_database.redis_backend = MagicMock()
         mock_database.redis_backend.model_cls = MagicMock()
+        mock_rabbitmq_client = MockRabbitMQClient.return_value
+        mock_rabbitmq_client.publish = MagicMock()
+        mock_rabbitmq_client.register = MagicMock()
+
         cm = ClusterManager()
         cm.job_schema_targeting_database = mock_database
         cm.job_status_database = mock_database
