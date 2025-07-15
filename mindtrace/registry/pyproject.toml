@@ -1,6 +1,15 @@
 [project]
 name = "mindtrace-registry"
 version = "0.1.0"
+description = "Registry functionality for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mindtrace-core",
     "minio>=7.2.15",
