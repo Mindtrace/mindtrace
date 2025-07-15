@@ -80,5 +80,6 @@ class WorkerAlertCompletedJobInput(BaseModel):
     job_id: str
     status: str
     output: dict
+    worker_id: str
 
 WorkerAlertCompletedJobTaskSchema = TaskSchema(name="worker_alert_completed_job", input_schema=WorkerAlertCompletedJobInput)

@@ -283,7 +283,7 @@ def test_worker_alert_completed_job(cluster_manager):
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
     
-    payload = {"job_id": job_id, "status": status, "output": output}
+    payload = {"job_id": job_id, "status": status, "output": output, "worker_id": "worker-123"}
     cluster_manager.worker_alert_completed_job(payload)
     
     # Verify job status was updated and saved
@@ -300,7 +300,7 @@ def test_worker_alert_completed_job_not_found(cluster_manager):
     
     cluster_manager.job_status_database.find.return_value = []
     
-    payload = {"job_id": job_id, "status": status, "output": output}
+    payload = {"job_id": job_id, "status": status, "output": output, "worker_id": "worker-123"}
     
     with pytest.raises(ValueError, match=f"Job status not found for job id {job_id}"):
         cluster_manager.worker_alert_completed_job(payload)
@@ -353,7 +353,8 @@ def test_worker_run_with_cluster_manager(mock_worker):
     mock_cm.worker_alert_completed_job.assert_called_once_with(
         job_id="test-job", 
         status="completed", 
-        output={"result": "test"}
+        output={"result": "test"},
+        worker_id=str(mock_worker.id)
     )
     
     # Verify result
