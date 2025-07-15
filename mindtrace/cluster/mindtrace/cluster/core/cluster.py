@@ -171,6 +171,15 @@ class ClusterManager(Gateway):
         )
 
     def get_job_status(self, payload: dict):
+        """
+        Get the status of a job. Does not query the worker, only the database.
+        
+        Args:
+            payload (dict): The payload containing the job id. 
+
+        Returns:
+            JobStatus: The status of the job.
+        """
         job_id = payload["job_id"]
         job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
         if not job_status_list:
