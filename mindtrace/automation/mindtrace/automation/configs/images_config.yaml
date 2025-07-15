@@ -14,6 +14,7 @@ sampling:
   cameras:
     camx:
       proportion: 0.6
+      number: 100
     camy:
       proportion: 0.4
 
@@ -21,6 +22,8 @@ sampling:
 start_date: "2025-06-30"
 end_date: "2025-07-01"
 
+# Random seed for reproducible sampling (optional)
+seed: 42
 
 download_path: "" 
 max_workers: 8 

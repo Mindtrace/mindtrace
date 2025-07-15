@@ -49,22 +49,30 @@ class ImageDownload:
         self,
         start_date: str,
         end_date: str,
-        cameras: Optional[Dict[str, float]] = None,
-        number_samples_per_day: Optional[int] = None
+        cameras: Optional[Dict[str, dict]] = None,
+        number_samples_per_day: Optional[int] = None,
+        seed: Optional[int] = None
     ) -> pd.DataFrame:
         """Get image paths from database within date range.
         
         Args:
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
-            cameras: Dictionary mapping camera names to proportions (if None, get all cameras)
+            cameras: Dictionary mapping camera names to config dict with 'proportion' and/or 'number'
             number_samples_per_day: Optional number of samples to take per day
+            seed: Random seed for reproducible sampling
         """
         df = self.db_conn.get_images_by_date(
             start_timestamp=start_date,
             end_timestamp=end_date,
             number_samples_per_day=number_samples_per_day
         )
+        
+        # Set random seed for reproducible sampling
+        if seed is not None:
+            import random
+            random.seed(seed)
+            print(f"Using random seed: {seed}")
         
         if df.empty:
             print("No images found in the specified date range")
@@ -102,15 +110,31 @@ class ImageDownload:
         print(f"Auto-detected total: {total_available} images")
         
         sampled_dfs = []
-        for camera, proportion in cameras.items():
+        for camera, config in cameras.items():
             if camera in found_cameras:
                 camera_df = df[df['Camera'] == camera]
                 if not camera_df.empty:
-                    n_samples = int(total_available * proportion)
-                    print(f"Camera {camera}: {len(camera_df)} available, taking {n_samples} ({proportion*100:.1f}%)")
+                    # Check if both proportion and number are specified
+                    has_proportion = 'proportion' in config
+                    has_number = 'number' in config
+                    
+                    if has_proportion and has_number:
+                        print(f"Warning: Both proportion and number specified for camera {camera}. Using number.")
+                    
+                    # Use number if specified, otherwise use proportion
+                    if has_number:
+                        n_samples = min(config['number'], len(camera_df))
+                        print(f"Camera {camera}: {len(camera_df)} available, taking {n_samples} (requested: {config['number']})")
+                    elif has_proportion:
+                        n_samples = int(total_available * config['proportion'])
+                        print(f"Camera {camera}: {len(camera_df)} available, taking {n_samples} ({config['proportion']*100:.1f}%)")
+                    else:
+                        # Default to 100% if neither specified
+                        n_samples = len(camera_df)
+                        print(f"Camera {camera}: {len(camera_df)} available, taking all {n_samples}")
                     
                     if len(camera_df) > n_samples:
-                        camera_df = camera_df.sample(n=n_samples)
+                        camera_df = camera_df.sample(n=n_samples, random_state=seed)
                     sampled_dfs.append(camera_df)
         
         if sampled_dfs:
@@ -192,31 +216,29 @@ def main():
             # Handle list of camera names (default to 100% each)
             if isinstance(cameras_config, list):
                 for cam in cameras_config:
-                    cameras[cam] = 1.0
-            # Handle dictionary format (for backward compatibility)
+                    cameras[cam] = {'proportion': 1.0}
+            # Handle dictionary format
             elif isinstance(cameras_config, dict):
                 for cam, cfg in cameras_config.items():
-                    if isinstance(cfg, dict) and 'proportion' in cfg:
-                        cameras[cam] = cfg['proportion']
+                    if isinstance(cfg, dict):
+                        # Validate the configuration
+                        if 'proportion' in cfg and cfg['proportion'] <= 0:
+                            raise ValueError(f"Camera {cam} proportion must be greater than 0, got {cfg['proportion']}")
+                        if 'number' in cfg and cfg['number'] <= 0:
+                            raise ValueError(f"Camera {cam} number must be greater than 0, got {cfg['number']}")
+                        cameras[cam] = cfg
                     elif isinstance(cfg, (int, float)):
-                        cameras[cam] = float(cfg)
+                        # Backward compatibility: treat as proportion
+                        cameras[cam] = {'proportion': float(cfg)}
                     else:
-                        cameras[cam] = 1.0
-            
-            proportions = list(cameras.values())
-            if any(p < 1.0 for p in proportions):
-                total_proportion = sum(proportions)
-                if abs(total_proportion - 1.0) > 0.001: 
-                    raise ValueError(
-                        f"Camera proportions must add up to 1.0, but got {total_proportion:.3f}. "
-                        f"Current proportions: {dict(zip(cameras.keys(), proportions))}"
-                    )
+                        cameras[cam] = {'proportion': 1.0}
         
         df = downloader.get_images_by_date(
             start_date=config['start_date'],
             end_date=config['end_date'],
             cameras=cameras,
-            number_samples_per_day=config.get('samples_per_day')
+            number_samples_per_day=config.get('samples_per_day'),
+            seed=config.get('seed')
         )
         
         os.makedirs('database_data', exist_ok=True)
