@@ -10,4 +10,4 @@ class EchoWorker(Worker):
         if job_dict.get("delay", 0) > 0:
             time.sleep(job_dict["delay"])
         print(job_dict["message"])
-        return {"output": job_dict["message"]}
+        return {"status": "completed", "output": {"echoed": job_dict["message"]}}

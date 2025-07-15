@@ -19,6 +19,16 @@ class JobStatus(UnifiedMindtraceDocument):
         indexed_fields = ["job_id"]
         unique_fields = ["job_id"]
 
+class JobSchemaTargeting(UnifiedMindtraceDocument):
+    schema_name: str = Field(description="Schema name")
+    target_endpoint: str = Field(description="Target endpoint")
+
+    class Meta:
+        collection_name = "job_schema_targeting"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["schema_name"]
+        unique_fields = ["schema_name"]
 
 
 class WorkerStatusEnum(Enum):
@@ -67,6 +77,7 @@ WorkerAlertStartedJobTaskSchema = TaskSchema(name="worker_alert_started_job", in
 
 class WorkerAlertCompletedJobInput(BaseModel):
     job_id: str
-    output: Any
+    status: str
+    output: dict
 
 WorkerAlertCompletedJobTaskSchema = TaskSchema(name="worker_alert_completed_job", input_schema=WorkerAlertCompletedJobInput)
