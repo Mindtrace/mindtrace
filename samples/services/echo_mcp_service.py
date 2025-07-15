@@ -47,7 +47,7 @@ async def mcp_example():
         # setup MCP client
         async with streamablehttp_client(mcp_url) as (read, write, session_id):
             async with ClientSession(read, write) as session:
-                print("🌀 Initializing session...")
+                print("Initializing session...")
                 await session.initialize()
                 print("✅ Session ready!")
 
@@ -58,6 +58,8 @@ async def mcp_example():
                 print("=" * 50)
                 for tool in tools.tools:
                     print(f" - {tool.name}: {tool.description or 'No description'}")
+                    print(f" - {tool.name}: {tool.inputSchema.items() or 'No Input Schema'}")
+                    # print(f" - {tool.name}: {tool.outputSchema.items() or 'No Output Schema'}")
 
                 # # Call your  tool
                 print("=" * 50)
