@@ -158,7 +158,13 @@ class ClusterManager(Gateway):
             raise ValueError(f"Job status not found for job id {job_id}")
         return job_status_list[0]
 
-    def worker_alert_started_job(self, payload: dict):
+    def worker_alert_started_job(self, payload: dict):  
+        """
+        Alert the cluster manager that a job has started.
+
+        Args:
+            payload (dict): The payload containing the job id and the worker id that started the job.
+        """
         job_id = payload["job_id"]  
         job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
         if not job_status_list:
@@ -169,6 +175,12 @@ class ClusterManager(Gateway):
         self.job_status_database.insert(job_status)
 
     def worker_alert_completed_job(self, payload: dict):
+        """
+        Alert the cluster manager that a job has completed.
+
+        Args:
+            payload (dict): The payload containing the job id and the output of the job.
+        """
         job_id = payload["job_id"]
         job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
         if not job_status_list:
@@ -184,7 +196,7 @@ class Worker(Service, Consumer):
         super().__init__(**kwargs)
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint("/run", self.run, schema=cluster_types.WorkerRunTaskSchema)
-        self.add_endpoint("/connect_to_backend", self.connect_to_backend, schema=cluster_types.ConnectToBackendTaskSchema)
+        self.add_endpoint("/connect_to_cluster", self.connect_to_cluster, schema=cluster_types.ConnectToBackendTaskSchema)
         self.consume_process = None
         self._cluster_connection_manager = None # type: ignore
         self._cluster_url = None
@@ -204,12 +216,32 @@ class Worker(Service, Consumer):
 
     @abstractmethod
     def _run(self, job_dict: dict) -> dict:
+        """
+        The main method that runs the job. Should be implemented by the Worker subclass.
+
+        Args:
+            job_dict (dict): The Job object as a dictionary.
+
+        Returns:
+            dict: The output of the job.
+        """
         raise NotImplementedError("Subclasses must implement this method")
     
     def start(self):
+        """
+        Put any initialization code that wants to run after the worker is connected to the cluster here.
+        """
         pass
 
-    def connect_to_backend(self, payload: dict):
+    def connect_to_cluster(self, payload: dict):
+        """
+        Connect the worker to a Cluster and an Orchestrator.
+        This is called by the cluster manager once the worker is launched.
+
+        Args:
+            payload (dict): The payload containing the Orchestrator backend arguments, 
+                queue name to listen on, and cluster URL to report back to.
+        """
         backend_args = payload["backend_args"]
         queue_name = payload["queue_name"]
         cluster_url = payload["cluster_url"]
@@ -223,6 +255,9 @@ class Worker(Service, Consumer):
         self.consume_process.start()
         
     def shutdown(self):
+        """
+        If the consume process is running, we need to kill it too when the worker is shutdown.
+        """
         if self.consume_process is not None:
             self.consume_process.kill()
         return super().shutdown() 
