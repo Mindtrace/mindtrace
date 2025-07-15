@@ -1,6 +1,6 @@
-from mindtrace.cluster import ClusterManager
 import time
 
+from mindtrace.cluster import ClusterManager
 
 if __name__ == "__main__":
     cluster_manager = ClusterManager.connect("http://localhost:8000")

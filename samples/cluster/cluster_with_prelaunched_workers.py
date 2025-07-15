@@ -1,8 +1,10 @@
 import time
+
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.echo_worker import EchoWorker
-from mindtrace.jobs import Job, JobSchema, job_from_schema
+from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+
 
 def main():
     cluster_manager = ClusterManager.launch(host="localhost", port=8000, wait_for_launch=True)
