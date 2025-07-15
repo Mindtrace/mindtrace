@@ -12,11 +12,19 @@ dependencies = [
     "mindtrace-storage",
     "tqdm>=4.67.1",
     "pandas>=2.3.1",
+    "mtrix",
     "psycopg2-binary>=2.9.10",
     "pyyaml>=6.0.2",
     "python-dotenv>=1.1.0",
+    "torch>=2.7.1",
+    "torchvision>=0.22.1",
+    "huggingface>=0.0.1",
+    "opencv-python>=4.11.0.86",
 ]
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+mtrix = { git = "ssh://git@github.com/mindtrace/mt-rix.git", branch="modelbank/feature/v1"}
