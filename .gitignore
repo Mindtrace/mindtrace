@@ -175,3 +175,22 @@ cython_debug/
 
 # Stress test results
 stress_test_results/
+
+# Miscellaneous
+*.json
+*.csv
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.ico
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+
+
+
