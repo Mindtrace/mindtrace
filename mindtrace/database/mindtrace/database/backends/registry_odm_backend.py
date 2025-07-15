@@ -1,15 +1,15 @@
 from pydantic import BaseModel
+import uuid
 
 from mindtrace.database import MindtraceODMBackend
+from mindtrace.registry import Registry, RegistryBackend
 
-class LocalMindtraceODMBackend(MindtraceODMBackend):
-    """
-    Local implementation of the Mindtrace ODM backend for placeholder/testing purposes.
-    
-    This backend is designed as a stub implementation and does not provide actual
-    data persistence functionality. All operations raise NotImplementedError to
-    indicate that this backend is not meant for production use.
-    
+
+class RegistryMindtraceODMBackend(MindtraceODMBackend):
+    """Implementation of the Mindtrace ODM backend that uses the Registry backend.
+
+    Pass in a RegistryBackend to select the storage source. By default, a local directory store will be used.
+        
     Args:
         **kwargs: Additional configuration parameters (currently unused).
         
@@ -19,27 +19,25 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
             from mindtrace.database.backends.local_odm_backend import LocalMindtraceODMBackend
             
             # Create backend instance (for testing/development only)
-            backend = LocalMindtraceODMBackend()
+            backend = RegistryMindtraceODMBackend()
             
-            # All operations will raise NotImplementedError
             try:
                 backend.insert(some_document)
             except NotImplementedError:
                 print("Local backend does not support actual operations")
     """
     
-    def __init__(self, **kwargs):
-        """
-        Initialize the local ODM backend.
+    def __init__(self, backend: RegistryBackend | None = None, **kwargs):
+        """Initialize the local ODM backend.
         
         Args:
             **kwargs: Additional configuration parameters (currently unused).
         """
         super().__init__(**kwargs)
+        self.registry = Registry(backend=backend, version_objects=False)
 
     def is_async(self) -> bool:
-        """
-        Determine if this backend operates asynchronously.
+        """Determine if this backend operates asynchronously.
         
         Returns:
             bool: Always returns False as this is a synchronous stub implementation.
@@ -52,9 +50,8 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
         """
         return False
 
-    def insert(self, obj: BaseModel):
-        """
-        Insert a new document into the database.
+    def insert(self, obj: BaseModel) -> str:
+        """Insert a new document into the database.
         
         Args:
             obj (BaseModel): The document object to insert.
@@ -71,11 +68,12 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
                 except NotImplementedError:
                     print("Insert not supported in local backend")
         """
-        raise NotImplementedError("LocalMindtraceODMBackend does not support insert")
+        unique_id = str(uuid.uuid1())
+        self.registry[unique_id] = obj
+        return unique_id
 
     def get(self, id: str) -> BaseModel:
-        """
-        Retrieve a document by its unique identifier.
+        """Retrieve a document by its unique identifier.
         
         Args:
             id (str): The unique identifier of the document to retrieve.
@@ -95,11 +93,10 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
                 except NotImplementedError:
                     print("Get not supported in local backend")
         """
-        raise NotImplementedError("LocalMindtraceODMBackend does not support get")
+        return self.registry[id]
 
     def delete(self, id: str):
-        """
-        Delete a document by its unique identifier.
+        """Delete a document by its unique identifier.
         
         Args:
             id (str): The unique identifier of the document to delete.
@@ -116,11 +113,10 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
                 except NotImplementedError:
                     print("Delete not supported in local backend")
         """
-        raise NotImplementedError("LocalMindtraceODMBackend does not support delete")
+        del self.registry[id]
 
     def all(self) -> list[BaseModel]:
-        """
-        Retrieve all documents from the collection.
+        """Retrieve all documents from the collection.
         
         Returns:
             list[BaseModel]: This method never returns as it always raises NotImplementedError.
@@ -137,4 +133,4 @@ class LocalMindtraceODMBackend(MindtraceODMBackend):
                 except NotImplementedError:
                     print("All not supported in local backend")
         """
-        raise NotImplementedError("LocalMindtraceODMBackend does not support all")
+        return self.registry.values()
