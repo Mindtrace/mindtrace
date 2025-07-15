@@ -245,7 +245,7 @@ class Worker(Service, Consumer):
         Returns:
             dict: The output of the job.
         """
-        raise NotImplementedError("Subclasses must implement this method")
+        raise NotImplementedError("Subclasses must implement this method") # pragma: no cover
     
     def start(self):
         """
