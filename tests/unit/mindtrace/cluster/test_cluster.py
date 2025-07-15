@@ -11,10 +11,14 @@ from mindtrace.jobs.types.job_specs import ExecutionStatus
 @pytest.fixture
 def cluster_manager():
     # Patch Registry to avoid file I/O
-    with patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry:
+    with patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry, \
+                 patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient:
         mock_registry = MockRegistry.return_value
         mock_registry.save = MagicMock()
         mock_registry.load = MagicMock(return_value={})
+        mock_rabbitmq_client = MockRabbitMQClient.return_value
+        mock_rabbitmq_client.publish = MagicMock()
+        mock_rabbitmq_client.register = MagicMock()
         cm = ClusterManager()
         cm._registry = mock_registry
         # Patch _url using object.__setattr__ to bypass type checks
@@ -45,7 +49,7 @@ def test_submit_job_success(cluster_manager):
     cluster_manager._job_registry["test_job"] = "/test"
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"result": 42}
+        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
         assert result.status == "success"
         assert result.output == {"result": 42}
@@ -59,7 +63,7 @@ def test_submit_job_registry_reload(cluster_manager):
     cluster_manager._registry.load.return_value = {"test_job": "/test"}
     with patch("mindtrace.cluster.core.cluster.requests.post") as mock_post:
         mock_post.return_value.status_code = 200
-        mock_post.return_value.json.return_value = {"result": 42}
+        mock_post.return_value.json.return_value = {"status": "success", "output": {"result": 42}}
         result = cluster_manager.submit_job(job)
         assert result.status == "success"
         assert result.output == {"result": 42}

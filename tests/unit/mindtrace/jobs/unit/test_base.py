@@ -4,7 +4,7 @@ import pydantic
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-
+from mindtrace.jobs.consumers.consumer import Consumer
 
 class MockConnection(BrokerConnectionBase):
     """Mock implementation of BrokerConnectionBase for testing."""
@@ -24,8 +24,8 @@ class MockConnection(BrokerConnectionBase):
 
 class MockConsumer(ConsumerBackendBase):
     """Mock implementation of ConsumerBackendBase for testing."""
-    def __init__(self, queue_name: str, orchestrator, run_method=None):
-        super().__init__(queue_name, orchestrator, run_method)
+    def __init__(self, queue_name: str, consumer_frontend):
+        super().__init__(queue_name, consumer_frontend)
         self.consumed_messages = []
     
     def consume(self, num_messages: int = 0, **kwargs):
@@ -34,15 +34,31 @@ class MockConsumer(ConsumerBackendBase):
     def consume_until_empty(self, **kwargs):
         pass
     
-    def process_message(self, message) -> bool:
-        if self.run_method:
-            try:
-                self.run_method(message)
-                return True
-            except:
-                return False
-        return False
+    def process_message(self, message):
+        try:
+            self.consumer_frontend.run(message)
+            return True
+        except Exception as e:
+            return False
 
+class MockConsumerFrontend(Consumer):
+    """Mock implementation of ConsumerFrontend for testing."""
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+    
+    def run(self, job_dict: dict):
+        return job_dict
+
+    
+class MockBadConsumerFrontend(Consumer):
+    """Mock implementation of ConsumerFrontend for testing."""
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+    
+    def run(self, job_dict: dict):
+        raise Exception("Test error")
 
 class MockOrchestrator(OrchestratorBackend):
     """Mock implementation of OrchestratorBackend for testing."""
@@ -137,44 +153,16 @@ class TestConsumerBackendBase:
     
     def test_initialization(self):
         """Test consumer initialization."""
-        orchestrator = Mock()
-        run_method = Mock()
-        consumer = MockConsumer("test_queue", orchestrator, run_method)
+        frontend = Mock()
+        consumer = MockConsumer("test_queue", frontend)
         
         assert consumer.queue_name == "test_queue"
-        assert consumer.orchestrator == orchestrator
-        assert consumer.run_method == run_method
-    
-    def test_set_run_method(self):
-        """Test setting run method."""
-        consumer = MockConsumer("test_queue", Mock())
-        assert consumer.run_method is None
-        
-        run_method = Mock()
-        consumer.set_run_method(run_method)
-        assert consumer.run_method == run_method
-    
-    def test_process_message_with_run_method(self):
-        """Test processing message with run method set."""
-        run_method = Mock()
-        consumer = MockConsumer("test_queue", Mock(), run_method)
-        
-        message = {"test": "data"}
-        success = consumer.process_message(message)
-        
-        assert success
-        run_method.assert_called_once_with(message)
-    
-    def test_process_message_without_run_method(self):
-        """Test processing message without run method."""
-        consumer = MockConsumer("test_queue", Mock())
-        success = consumer.process_message({"test": "data"})
-        assert not success
-    
+        assert consumer.consumer_frontend == frontend
+
     def test_process_message_with_exception(self):
         """Test processing message that raises exception."""
-        run_method = Mock(side_effect=Exception("Test error"))
-        consumer = MockConsumer("test_queue", Mock(), run_method)
+        frontend = MockBadConsumerFrontend()
+        consumer = MockConsumer("test_queue", frontend)
         
         success = consumer.process_message({"test": "data"})
         assert not success
@@ -252,14 +240,18 @@ class TestOrchestratorBackend:
     def test_abstract_methods(self):
         """Test that abstract methods raise NotImplementedError."""
         class PartialOrchestrator(OrchestratorBackend):
+            @property
+            def consumer_backend_args(self) -> dict:
+                return super().consumer_backend_args
+            
+            def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> ConsumerBackendBase:
+                return super().create_consumer_backend(consumer_frontend, queue_name)
+
             def declare_queue(self, queue_name: str, **kwargs):
                 super().declare_queue(queue_name, **kwargs)
             
             def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs):
                 super().publish(queue_name, message, **kwargs)
-            
-            def receive_message(self, queue_name: str, **kwargs):
-                super().receive_message(queue_name, **kwargs)
             
             def clean_queue(self, queue_name: str, **kwargs):
                 super().clean_queue(queue_name, **kwargs)
@@ -278,13 +270,14 @@ class TestOrchestratorBackend:
         class TestMessage(pydantic.BaseModel):
             data: str
         message = TestMessage(data="test")
-        
+        with pytest.raises(NotImplementedError):
+            orchestrator.consumer_backend_args()
+        with pytest.raises(NotImplementedError):
+            orchestrator.create_consumer_backend(MockConsumerFrontend(), "test")
         with pytest.raises(NotImplementedError):
             orchestrator.declare_queue("test")
         with pytest.raises(NotImplementedError):
             orchestrator.publish("test", message)
-        with pytest.raises(NotImplementedError):
-            orchestrator.receive_message("test")
         with pytest.raises(NotImplementedError):
             orchestrator.clean_queue("test")
         with pytest.raises(NotImplementedError):

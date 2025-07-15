@@ -4,8 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 from mindtrace.jobs.utils.checks import job_from_schema
-
-
+from mindtrace.jobs import Consumer
 
 
 class SampleJobInput(BaseModel):
@@ -16,6 +15,16 @@ class SampleJobInput(BaseModel):
 class SampleJobOutput(BaseModel):
     result: str = "success"
     timestamp: str = "2024-01-01T00:00:00"
+
+
+class SampleConsumer(Consumer):
+    def __init__(self, name):
+        super().__init__()
+        self.processed_jobs = []
+    
+    def run(self, job_dict):
+        self.processed_jobs.append(job_dict)
+        return {"result": "processed"}
 
 
 def create_test_job(name: str = "test_job", schema_name: str = "default_schema") -> Job:

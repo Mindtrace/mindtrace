@@ -1,15 +1,19 @@
 import json
 import threading
 import uuid
-from typing import Optional, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 import pydantic
 
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.utils.checks import ifnone
+from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
+from mindtrace.jobs.utils.checks import ifnone
+
+if TYPE_CHECKING: # pragma: no cover
+    from mindtrace.jobs.consumers.consumer import Consumer
 
 class LocalClient(OrchestratorBackend):
     """A pure-python in-memory message broker.
@@ -22,9 +26,16 @@ class LocalClient(OrchestratorBackend):
         self.queues: dict[str, Any] = {}
         self._lock = threading.Lock()
         self._job_results: dict[str, Any] = {}
-    def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
+
+    @property
+    def consumer_backend_args(self):
+        raise NotImplementedError("LocalConsumerBackend needs to be created with access to a LocalClient instance.")
+
+    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str) -> LocalConsumerBackend:
+        return LocalConsumerBackend(queue_name, consumer_frontend, self)
+
+    def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""
-        queue_type = kwargs.get("queue_type", "fifo")
         with self._lock:
             if queue_name in self.queues:
                 return {

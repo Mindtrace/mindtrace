@@ -1,8 +1,13 @@
 from abc import abstractmethod
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import pydantic
+
 from mindtrace.core import MindtraceABC
+from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
+
+if TYPE_CHECKING: # pragma: no cover
+    from mindtrace.jobs.consumers.consumer import Consumer
 
 class OrchestratorBackend(MindtraceABC):
     """Abstract base class for orchestrator backends.
@@ -12,7 +17,15 @@ class OrchestratorBackend(MindtraceABC):
     
     def __init__(self):
         super().__init__()
-    
+
+    @property
+    def consumer_backend_args(self) -> dict:
+        raise NotImplementedError
+
+    def create_consumer_backend(self, consumer_frontend: "Consumer", queue_name: str) -> ConsumerBackendBase:
+        """Create a consumer backend for the given schema and consumer frontend."""
+        raise NotImplementedError
+
     @abstractmethod
     def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a queue
@@ -29,20 +42,6 @@ class OrchestratorBackend(MindtraceABC):
         Args:
             queue_name: Name of the queue to publish to
             message: Pydantic model to publish
-        """
-        raise NotImplementedError
-    
-    @abstractmethod
-    def receive_message(
-        self, queue_name: str, **kwargs
-    ) -> Optional[dict]:
-        """Receive a message from the specified queue
-        
-        Args:
-            queue_name: Name of the queue to receive from
-        
-        Returns:
-            Dict if message available, None if queue is empty
         """
         raise NotImplementedError
     

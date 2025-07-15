@@ -28,7 +28,7 @@ class TestConsumer:
         """Test basic consumer message processing."""
         class TestWorker(Consumer):
             def __init__(self, name):
-                super().__init__(name)
+                super().__init__()
                 self.processed_jobs = []
             
             def run(self, job_dict):
@@ -38,7 +38,7 @@ class TestConsumer:
                 return {"result": f"processed_{task_data}"}
         
         consumer = TestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         test_job = create_test_job("consumer_test_job")
         job_id = self.orchestrator.publish(self.test_queue, test_job)
@@ -55,7 +55,7 @@ class TestConsumer:
         """Test consumer error handling with failing jobs."""
         class ErrorProneWorker(Consumer):
             def __init__(self, name):
-                super().__init__(name)
+                super().__init__()
                 self.processed_jobs = []
                 self.errors = []
             
@@ -68,7 +68,7 @@ class TestConsumer:
                 return {"result": "success"}
         
         consumer = ErrorProneWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         success_job = create_test_job("success_job")
         fail_job = create_test_job("fail_job", input_data_str='fail_me')
@@ -95,7 +95,7 @@ class TestConsumer:
         
         class MultiQueueWorker(Consumer):
             def __init__(self, name):
-                super().__init__(name)
+                super().__init__()
                 self.processed_jobs = []
             
             def run(self, job_dict):
@@ -103,7 +103,7 @@ class TestConsumer:
                 return {"result": "multi_queue_processed"}
         
         consumer = MultiQueueWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         job1 = create_test_job("queue1_job")
         job2 = create_test_job("queue2_job")
@@ -122,7 +122,7 @@ class TestConsumer:
         """Test consume_until_empty functionality."""
         class EmptyTestWorker(Consumer):
             def __init__(self, name):
-                super().__init__(name)
+                super().__init__()
                 self.processed_count = 0
             
             def run(self, job_dict):
@@ -130,7 +130,7 @@ class TestConsumer:
                 return {"result": f"processed_{self.processed_count}"}
         
         consumer = EmptyTestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         job_count = 5
         for i in range(job_count):
@@ -150,7 +150,7 @@ class TestConsumer:
         """Test that consumers receive properly structured dict messages."""
         class StructureTestWorker(Consumer):
             def __init__(self, name):
-                super().__init__(name)
+                super().__init__()
                 self.received_message = None
             
             def run(self, job_dict):
@@ -169,7 +169,7 @@ class TestConsumer:
                 return {"result": "structure_verified"}
         
         consumer = StructureTestWorker("test_consumer_jobs")
-        consumer.connect(self.orchestrator)
+        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         test_job = create_test_job("structure_test_job")
         self.orchestrator.publish(self.test_queue, test_job)
@@ -180,24 +180,13 @@ class TestConsumer:
         assert consumer.received_message["payload"]["data"] == "test_input"
         assert consumer.received_message["payload"]["param1"] == "value1"
 
-    def test_consumer_unregistered_job_type(self):
-        """Test consumer connecting with unregistered job type."""
-        class UnregisteredWorker(Consumer):
-            def run(self, job_dict):
-                return {"result": "processed"}
-        
-        consumer = UnregisteredWorker("nonexistent_job_type")
-        
-        with pytest.raises(ValueError, match="No schema registered for job type: nonexistent_job_type"):
-            consumer.connect(self.orchestrator)
-
     def test_consumer_not_connected_consume(self):
         """Test calling consume before connecting."""
         class DisconnectedWorker(Consumer):
             def run(self, job_dict):
                 return {"result": "processed"}
         
-        consumer = DisconnectedWorker("test_consumer_jobs")
+        consumer = DisconnectedWorker()
         
         with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
             consumer.consume(num_messages=1)
@@ -208,14 +197,14 @@ class TestConsumer:
             def run(self, job_dict):
                 return {"result": "processed"}
         
-        consumer = DisconnectedWorker("test_consumer_jobs")
+        consumer = DisconnectedWorker()
         
         with pytest.raises(RuntimeError, match="Consumer not connected. Call connect\\(\\) first"):
             consumer.consume_until_empty()
 
     def test_abstract_run_method(self):
         """Test that Consumer is abstract and run method must be implemented."""
-        consumer = Consumer("test_consumer_jobs")
+        consumer = Consumer()
         
         result = consumer.run({"test": "data"})
         assert result is None  # The base implementation just passes, returns None
@@ -226,7 +215,7 @@ class TestConsumer:
             def run(self, job_dict):
                 return {"result": "concrete_implementation"}
         
-        concrete_consumer = ConcreteWorker("test_consumer_jobs")
+        concrete_consumer = ConcreteWorker()
         result = concrete_consumer.run({"test": "data"})
         assert result["result"] == "concrete_implementation"
 
@@ -235,7 +224,7 @@ class TestConsumer:
         class DummyWorker(Consumer):
             def run(self, job_dict):
                 return {}
-        dummy = DummyWorker("test_consumer_jobs")
-        dummy.connect(self.orchestrator)
+        dummy = DummyWorker()
+        dummy.connect_to_orchestrator(self.orchestrator, self.test_queue)
         with pytest.raises(RuntimeError):
-            dummy.connect(self.orchestrator) 
+            dummy.connect_to_orchestrator(self.orchestrator, self.test_queue)
