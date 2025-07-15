@@ -1,0 +1,26 @@
+# Auto-Proportion Image Downloader Configuration
+
+# Database queries
+database_queries:
+  get_images_by_date: |
+
+# Google Cloud Storage settings
+gcp:
+  bucket: ""
+  credentials_file: "
+
+sampling:
+  
+  cameras:
+    camx:
+      proportion: 0.6
+    camy:
+      proportion: 0.4
+
+
+start_date: "2025-06-30"
+end_date: "2025-07-01"
+
+
+download_path: "" 
+max_workers: 8 
