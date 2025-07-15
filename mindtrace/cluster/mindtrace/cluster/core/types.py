@@ -1,10 +1,11 @@
-from typing import Any
 from enum import Enum
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.jobs import Job
-from mindtrace.database import UnifiedMindtraceDocument 
+from mindtrace.database import UnifiedMindtraceDocument
+
 
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")

@@ -1,7 +1,6 @@
 import time
 
 from mindtrace.cluster.core.cluster import Worker
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 class EchoWorker(Worker):

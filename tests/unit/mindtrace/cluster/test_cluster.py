@@ -1,14 +1,13 @@
-from unittest.mock import MagicMock, patch, Mock
-import multiprocessing
-import pytest
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Worker
-from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient
+from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.services import Service
-from mindtrace.database import UnifiedMindtraceODMBackend, BackendType
 
 
 @pytest.fixture
@@ -192,10 +191,8 @@ def test_register_job_to_worker_with_existing_entries(cluster_manager):
     existing_entry.pk = "existing-pk"
     cluster_manager.job_schema_targeting_database.find.return_value = [existing_entry]
     
-    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker, \
-         patch.object(cluster_manager.orchestrator, 'register') as mock_register:
-        
-        mock_worker_instance = MockWorker.connect.return_value
+    with patch("mindtrace.cluster.core.cluster.Worker"), \
+         patch.object(cluster_manager.orchestrator, 'register'):
         
         cluster_manager.register_job_to_worker(payload)
         

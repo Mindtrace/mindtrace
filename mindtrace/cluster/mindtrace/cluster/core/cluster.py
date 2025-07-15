@@ -1,14 +1,15 @@
-import requests
-from pydantic import BaseModel
+import multiprocessing
 from abc import abstractmethod
 
+import requests
+from pydantic import BaseModel
+
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient, Consumer
-from mindtrace.registry import Registry
-from mindtrace.services import Gateway, Service
-from mindtrace.database import UnifiedMindtraceODMBackend, BackendType
 from mindtrace.core import TaskSchema
-import multiprocessing
+from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
+from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
+from mindtrace.services import Gateway, Service
+
 
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
