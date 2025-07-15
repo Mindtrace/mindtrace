@@ -29,7 +29,7 @@ uv sync
 
 ```bash
 cd mindtrace/automation/mindtrace/automation
-uv run python -m download_images --config images_config.yaml
+uv run python -m download_images --config configs/images_config.yaml
 ```
 
 ## Configuration Examples
