@@ -1,22 +1,38 @@
 import requests
 from pydantic import BaseModel
+from abc import abstractmethod
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient
+from mindtrace.jobs import Job, JobSchema, Orchestrator, RabbitMQClient, Consumer
 from mindtrace.registry import Registry
-from mindtrace.services import Gateway
-from mindtrace.cluster.core.worker import Worker
-
+from mindtrace.services import Gateway, Service
+from mindtrace.database import UnifiedMindtraceODMBackend, BackendType
+from mindtrace.core import TaskSchema
+import multiprocessing
 
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orchestrator = Orchestrator(backend=RabbitMQClient())
+        self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
         self._registry = Registry(self.config["MINDTRACE_CLUSTER_DEFAULT_REGISTRY_DIR"], version_objects=False)
         self._job_registry = {}
         self._registry.save("jobregistry", self._job_registry)
+        self.job_status_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.JobStatus,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS
+        )
+        self.job_status_database.initialize_sync()
         self.add_endpoint(
-            "/submit_job", func=self.submit_job, schema=cluster_types.SubmitJobTaskSchema(), methods=["POST"]
+            "/submit_job", 
+            func=self.submit_job, 
+            schema=TaskSchema(
+                name="submit_job", 
+                input_schema=Job,
+                output_schema=cluster_types.JobStatus
+            ),
+            methods=["POST"]
         )
         self.add_endpoint(
             "/register_job_to_endpoint",
@@ -28,6 +44,24 @@ class ClusterManager(Gateway):
             "/register_job_to_worker",
             func=self.register_job_to_worker,
             schema=cluster_types.RegisterJobToWorkerTaskSchema,
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/get_job_status",
+            func=self.get_job_status,
+            schema=cluster_types.GetJobStatusTaskSchema,
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/worker_alert_started_job",
+            func=self.worker_alert_started_job,
+            schema=cluster_types.WorkerAlertStartedJobTaskSchema,
+            methods=["POST"],
+        )   
+        self.add_endpoint(
+            "/worker_alert_completed_job",
+            func=self.worker_alert_completed_job,
+            schema=cluster_types.WorkerAlertCompletedJobTaskSchema,
             methods=["POST"],
         )
 
@@ -64,7 +98,7 @@ class ClusterManager(Gateway):
         except Exception:
             result = {"status": "success", "output": {}}
 
-        return cluster_types.JobOutput(**result)
+        return cluster_types.JobStatus(**result)
 
     def submit_job(self, job: Job):
         """
@@ -76,17 +110,26 @@ class ClusterManager(Gateway):
         Returns:
             JobOutput: The output of the job.
         """
+        job_status = cluster_types.JobStatus(
+            job_id=job.id,
+            status="queued",
+            output={},
+            worker_id=""
+        )
+        self.job_status_database.insert(job_status)
+        print(self.job_status_database.all())
         if job.schema_name in self._job_registry:
             if self._job_registry[job.schema_name] == "@orchestrator":
                 self.orchestrator.publish(job.schema_name, job)
-                return cluster_types.JobOutput(status="success", output={})
+                return job_status
             return self._submit_job_to_endpoint(job)
         else:
             self._job_registry = self._registry.load("jobregistry")
             if job.schema_name in self._job_registry:
                 return self._submit_job_to_endpoint(job)
             else:
-                return cluster_types.JobOutput(status="failed", output={})
+                job_status.status = "failed"
+                return job_status
 
     def register_job_to_worker(self, payload: dict):
         """
@@ -101,6 +144,85 @@ class ClusterManager(Gateway):
         self._job_registry[job_type] = "@orchestrator"
         self._registry.save("jobregistry", self._job_registry)
         self.orchestrator.register(JobSchema(name=job_type, input=BaseModel)) 
-        worker_cm = Worker.connect(worker_url)
-        print(self.orchestrator.backend.consumer_backend_args, job_type)
-        worker_cm.connect_to_backend(backend_args=self.orchestrator.backend.consumer_backend_args, queue_name=job_type)
+        worker_cm = Worker.connect(worker_url)  
+        worker_cm.connect_to_backend(
+            backend_args=self.orchestrator.backend.consumer_backend_args, 
+            queue_name=job_type,
+            cluster_url=str(self._url)
+        )
+
+    def get_job_status(self, payload: dict):
+        job_id = payload["job_id"]
+        job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
+        if not job_status_list:
+            raise ValueError(f"Job status not found for job id {job_id}")
+        return job_status_list[0]
+
+    def worker_alert_started_job(self, payload: dict):
+        job_id = payload["job_id"]  
+        job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
+        if not job_status_list:
+            raise ValueError(f"Job status not found for job id {job_id}")
+        job_status = job_status_list[0]
+        job_status.status = "running"
+        job_status.worker_id = payload["worker_id"]
+        self.job_status_database.insert(job_status)
+
+    def worker_alert_completed_job(self, payload: dict):
+        job_id = payload["job_id"]
+        job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
+        if not job_status_list:
+            raise ValueError(f"Job status not found for job id {job_id}")
+        job_status = job_status_list[0]
+        job_status.status = "completed"
+        job_status.output = payload["output"]
+        self.job_status_database.insert(job_status)
+
+
+class Worker(Service, Consumer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
+        self.add_endpoint("/run", self.run, schema=cluster_types.WorkerRunTaskSchema)
+        self.add_endpoint("/connect_to_backend", self.connect_to_backend, schema=cluster_types.ConnectToBackendTaskSchema)
+        self.consume_process = None
+        self._cluster_connection_manager = None # type: ignore
+        self._cluster_url = None
+
+    @property
+    def cluster_connection_manager(self):
+        if self._cluster_connection_manager is None:
+            self._cluster_connection_manager = ClusterManager.connect(self._cluster_url)
+        return self._cluster_connection_manager
+
+    def run(self, job_dict: dict):
+        cm = self.cluster_connection_manager
+        cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
+        output = self._run(job_dict["payload"])
+        cm.worker_alert_completed_job(job_id=job_dict["id"], output=output)
+        return output
+
+    @abstractmethod
+    def _run(self, job_dict: dict) -> dict:
+        raise NotImplementedError("Subclasses must implement this method")
+    
+    def start(self):
+        pass
+
+    def connect_to_backend(self, payload: dict):
+        backend_args = payload["backend_args"]
+        queue_name = payload["queue_name"]
+        cluster_url = payload["cluster_url"]
+        
+        # Set the cluster URL so the worker can report back
+        self._cluster_url = cluster_url
+        
+        self.start()
+        self.connect_to_orchestator_via_backend_args(backend_args, queue_name=queue_name)
+        self.consume_process = multiprocessing.Process(target=self.consume)
+        self.consume_process.start()
+        
+    def shutdown(self):
+        if self.consume_process is not None:
+            self.consume_process.kill()
+        return super().shutdown() 
