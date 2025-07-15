@@ -1157,19 +1157,20 @@ if __name__ == '__main__':
     # Example: Initialize the storage handler
     handler = GCSStorageHandler(
         bucket_name='adient-staging-weights',
-        credentials_path='/home/vineeth/Desktop/mindtrace/google_creds.json'
+        credentials_path='/home/joshua/Downloads/google_creds.json'
     )
     
     # Example: Upload model to registry
     # Try to upload with a new version
     try:
-        uploaded_files = handler.upload_model_to_registry(
-            local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
-            task_name='sfz_pipeline',
-            version='v2.2',
-            auto_register_task=True
-        )
-        print(f"Successfully uploaded {len(uploaded_files)} files")
+        # uploaded_files = handler.upload_model_to_registry(
+        #     local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
+        #     task_name='sfz_pipeline',
+        #     version='v2.2',
+        #     auto_register_task=True
+        # )
+        print("wow")
+        # print(f"Successfully uploaded {len(uploaded_files)} files")
     except ValueError as e:
         print(f"Upload failed: {e}")
         print("This is expected if the version already exists")

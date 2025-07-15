@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "python-dotenv>=1.1.0",
     "label-studio-sdk>=1.0.18",
+    "supervision>=0.25.1",
 ]
 
 [build-system]
