@@ -12,7 +12,7 @@ from mindtrace.automation.database_connection import DatabaseConnection
 from mindtrace.storage.gcs import GCSStorageHandler
 
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv("envs/database.env")
 
 class ImageDownload:
     def __init__(
