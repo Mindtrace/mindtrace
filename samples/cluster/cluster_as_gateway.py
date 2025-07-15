@@ -8,8 +8,8 @@ Gateway Service example showing how to:
 """
 
 from mindtrace.cluster import ClusterManager
-from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.cluster.workers.echo_worker import EchoWorker
+from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 echo_job = JobSchema(name="echo_job", input=EchoInput, output=EchoOutput)
