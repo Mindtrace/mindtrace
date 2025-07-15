@@ -49,7 +49,7 @@ async def mcp_example():
             async with ClientSession(read, write) as session:
                 print("Initializing session...")
                 await session.initialize()
-                print("✅ Session ready!")
+                print("Session ready!")
 
                 # List tools
                 tools = await session.list_tools()
@@ -86,12 +86,6 @@ async def mcp_example():
             print("Service shutdown successfully!")
         except Exception as e:
             print(f"Error during shutdown: {e}")
-
-
-
-
-
-
 
 
 def main():
