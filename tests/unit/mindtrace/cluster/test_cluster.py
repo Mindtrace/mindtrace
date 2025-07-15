@@ -11,10 +11,14 @@ from mindtrace.jobs.types.job_specs import ExecutionStatus
 @pytest.fixture
 def cluster_manager():
     # Patch Registry to avoid file I/O
-    with patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry:
+    with patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry, \
+                 patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient:
         mock_registry = MockRegistry.return_value
         mock_registry.save = MagicMock()
         mock_registry.load = MagicMock(return_value={})
+        mock_rabbitmq_client = MockRabbitMQClient.return_value
+        mock_rabbitmq_client.publish = MagicMock()
+        mock_rabbitmq_client.register = MagicMock()
         cm = ClusterManager()
         cm._registry = mock_registry
         # Patch _url using object.__setattr__ to bypass type checks

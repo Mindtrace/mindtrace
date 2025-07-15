@@ -17,6 +17,8 @@ def backend(consumer_frontend):
             host='localhost', port=5672, username='user', password='password'
         )
         backend.logger = MagicMock()
+        backend.connection.get_channel = MagicMock(return_value=MagicMock())
+        backend.connection.connect = MagicMock(return_value=MagicMock())
         return backend
 
 def test_init_calls_connect(consumer_frontend):
