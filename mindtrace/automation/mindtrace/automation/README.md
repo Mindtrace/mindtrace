@@ -4,10 +4,10 @@
 Create a `.env` file in the project root with your database credentials:
 ```bash
 DATABASE_NAME=your_database_name
-USERNAME=your_username
-PASSWORD=your_password
-HOST_NAME=your_host_ip
-PORT=your_port_number
+DATABASE_USERNAME=your_username
+DATABASE_PASSWORD=your_password
+DATABASE_HOST_NAME=your_host_ip
+DATABASE_PORT=your_port_number
 ```
 
 ### GCP Credentials

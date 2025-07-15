@@ -171,14 +171,13 @@ def main():
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_file:
         yaml.dump(query_config, tmp_file)
         query_config_path = tmp_file.name
-    
     try:
         downloader = ImageDownload(
             database=os.getenv('DATABASE_NAME'),
-            user=os.getenv('USERNAME'),
-            password=os.getenv('PASSWORD'),
-            host=os.getenv('HOST_NAME'),
-            port=os.getenv('PORT'),
+            user=os.getenv('DATABASE_USERNAME'),
+            password=os.getenv('DATABASE_PASSWORD'),
+            host=os.getenv('DATABASE_HOST_NAME'),
+            port=os.getenv('DATABASE_PORT'),
             gcp_credentials_path=config['gcp']['credentials_file'],
             gcp_bucket=config['gcp']['bucket'],
             local_download_path=config.get('download_path', 'downloads'),
