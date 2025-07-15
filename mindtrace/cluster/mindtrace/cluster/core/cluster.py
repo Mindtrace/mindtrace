@@ -77,11 +77,13 @@ class ClusterManager(Gateway):
             payload (RegisterJobToEndpointInput): The payload containing the job type and endpoint.
         """
         for entry in self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == payload.job_type):
+            self.logger.info(f"Deleting old job schema targeting for job type {payload.job_type} from endpoint {entry.target_endpoint}")
             self.job_schema_targeting_database.delete(entry.pk)
         self.job_schema_targeting_database.insert(cluster_types.JobSchemaTargeting(
             schema_name=payload.job_type,
             target_endpoint=payload.endpoint
         ))
+        self.logger.info(f"Registered {payload.job_type} to {payload.endpoint}")
 
     def _submit_job_to_endpoint(self, job: Job, endpoint: str):
         """
@@ -102,6 +104,7 @@ class ClusterManager(Gateway):
         )
         endpoint_url = f"{self._url}{endpoint}"
         self.job_status_database.insert(job_status)
+        self.logger.info(f"Submitted job {job.id} to {endpoint_url}")
 
         response = requests.post(endpoint_url, json=job.model_dump(), timeout=60)
 
@@ -117,6 +120,7 @@ class ClusterManager(Gateway):
         job_status.status = result.get("status", "completed")
         job_status.output = result.get("output", {})
         self.job_status_database.insert(job_status)
+        self.logger.info(f"Completed job {job.id} with status {job_status.status}")
         return job_status
 
     def submit_job(self, job: Job):
@@ -139,6 +143,7 @@ class ClusterManager(Gateway):
 
         job_schema_targeting_list = self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job.schema_name)
         if not job_schema_targeting_list:
+            self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
             raise ValueError(f"No job schema targeting found for job type {job.schema_name}")
         job_schema_targeting = job_schema_targeting_list[0]
         if job_schema_targeting.target_endpoint == "@orchestrator":
@@ -157,6 +162,7 @@ class ClusterManager(Gateway):
         job_type = payload["job_type"]
         worker_url = payload["worker_url"]
         for entry in self.job_schema_targeting_database.find(self.job_schema_targeting_database.redis_backend.model_cls.schema_name == job_type):
+            self.logger.info(f"Deleting old job schema targeting for job type {job_type} from endpoint {entry.target_endpoint}")
             self.job_schema_targeting_database.delete(entry.pk)
         self.job_schema_targeting_database.insert(cluster_types.JobSchemaTargeting(
             schema_name=job_type,
@@ -169,6 +175,7 @@ class ClusterManager(Gateway):
             queue_name=job_type,
             cluster_url=str(self._url)
         )
+        self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
 
     def get_job_status(self, payload: dict):
         """
@@ -201,6 +208,7 @@ class ClusterManager(Gateway):
         job_status.status = "running"
         job_status.worker_id = payload["worker_id"]
         self.job_status_database.insert(job_status)
+        self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has started")
 
     def worker_alert_completed_job(self, payload: dict):
         """
@@ -210,15 +218,17 @@ class ClusterManager(Gateway):
             payload (dict): The payload containing the job id and the output of the job.
         """
         job_id = payload["job_id"]
+        self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
         job_status_list = self.job_status_database.find(self.job_status_database.redis_backend.model_cls.job_id == job_id)
         if not job_status_list:
             raise ValueError(f"Job status not found for job id {job_id}")
         job_status = job_status_list[0]
+        if job_status.worker_id != payload["worker_id"]:
+            self.logger.warning(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}")
         job_status.status = payload["status"]
         job_status.output = payload["output"]
         self.job_status_database.insert(job_status)
-
-
+        
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -239,9 +249,13 @@ class Worker(Service, Consumer):
         cm = self.cluster_connection_manager
         if cm:
             cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
+        else:
+            self.logger.warning(f"No cluster connection manager found for worker {self.id}")
         output = self._run(job_dict["payload"])
         if cm:
-            cm.worker_alert_completed_job(job_id=job_dict["id"], status=output["status"], output=output["output"])
+            cm.worker_alert_completed_job(job_id=job_dict["id"], worker_id=str(self.id), status=output["status"], output=output["output"])
+        else:
+            self.logger.warning(f"No cluster connection manager found for worker {self.id}")
         return output
 
     @abstractmethod
@@ -281,8 +295,10 @@ class Worker(Service, Consumer):
         
         self.start()
         self.connect_to_orchestator_via_backend_args(backend_args, queue_name=queue_name)
+        self.logger.info(f"Worker {self.id} connected to cluster {cluster_url} listening on queue {queue_name}")
         self.consume_process = multiprocessing.Process(target=self.consume)
         self.consume_process.start()
+        self.logger.info(f"Worker {self.id} started consuming from queue {queue_name}, process id {self.consume_process.pid}")
         
     def shutdown(self):
         """
@@ -290,4 +306,5 @@ class Worker(Service, Consumer):
         """
         if self.consume_process is not None:
             self.consume_process.kill()
+            self.logger.info(f"Worker {self.id} killed consume process {self.consume_process.pid} as part of shutdown")
         return super().shutdown() 
