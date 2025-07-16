@@ -16,8 +16,8 @@ from poseidon.pages.auth import login_page, register_page, register_admin_page, 
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
 from poseidon.pages.management import user_management_page, organization_management_page, project_management_page
 from poseidon.pages.user import profile_page
-from poseidon.pages.images import images_page
-from poseidon.pages.camera_configurator import camera_configurator_page
+from poseidon.pages.gallery import images_page
+from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.model_deployment import model_deployment_page
 
 from poseidon.styles.theme import theme_config
