@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Optional
 import os
 from dotenv import load_dotenv
-
+import tempfile
 import pandas as pd
 
 from mindtrace.automation.database.database_connection import DatabaseConnection
@@ -25,16 +25,21 @@ class ImageDownload:
         gcp_credentials_path: str,
         gcp_bucket: str,
         local_download_path: str,
-        query_config_path: str = None
+        config: Dict[str, dict]
     ):
         """Initialize database and GCP connections."""
+        self.config = config
+        query_config = self.config.get('database_queries', {})
+        if not query_config:
+            raise ValueError("No database_queries section found in config file")
+        
         self.db_conn = DatabaseConnection(
             database=database,
             user=user,
             password=password,
             host=host,
             port=int(port),
-            query_config_path=query_config_path
+            query_config=query_config
         )
         
         self.gcp_manager = GCSStorageHandler(
@@ -45,6 +50,32 @@ class ImageDownload:
         self.local_download_path = Path(local_download_path)
         self.local_download_path.mkdir(parents=True, exist_ok=True)
 
+    def get_camera_proportions(self, config: Dict[str, dict]) -> Dict[str, float]:
+        if 'sampling' in config and 'cameras' in config['sampling']:
+            cameras_config = config['sampling']['cameras']
+            cameras = {}
+            
+            # Handle list of camera names (default to 100% each)
+            if isinstance(cameras_config, list):
+                for cam in cameras_config:
+                    cameras[cam] = {'proportion': 1.0}
+            # Handle dictionary format
+            elif isinstance(cameras_config, dict):
+                for cam, cfg in cameras_config.items():
+                    if isinstance(cfg, dict):
+                        # Validate the configuration
+                        if 'proportion' in cfg and cfg['proportion'] <= 0:
+                            raise ValueError(f"Camera {cam} proportion must be greater than 0, got {cfg['proportion']}")
+                        if 'number' in cfg and cfg['number'] <= 0:
+                            raise ValueError(f"Camera {cam} number must be greater than 0, got {cfg['number']}")
+                        cameras[cam] = cfg
+                    elif isinstance(cfg, (int, float)):
+                        # Backward compatibility: treat as proportion
+                        cameras[cam] = {'proportion': float(cfg)}
+                    else:
+                        cameras[cam] = {'proportion': 1.0}
+        return cameras
+
     def get_images_by_date(
         self,
         start_date: str,
@@ -54,7 +85,7 @@ class ImageDownload:
         seed: Optional[int] = None
     ) -> pd.DataFrame:
         """Get image paths from database within date range.
-        
+
         Args:
             start_date: Start date in YYYY-MM-DD format
             end_date: End date in YYYY-MM-DD format
@@ -67,26 +98,26 @@ class ImageDownload:
             end_timestamp=end_date,
             number_samples_per_day=number_samples_per_day
         )
-        
+
         # Set random seed for reproducible sampling
         if seed is not None:
             import random
             random.seed(seed)
             print(f"Using random seed: {seed}")
-        
+
         if df.empty:
             print("No images found in the specified date range")
             return df
-        
+
         print(f"Found {len(df)} total images in date range {start_date} to {end_date}")
-        
+
         available_cameras = df['Camera'].unique()
         print(f"Available cameras: {list(available_cameras)}")
-        
+
         if cameras is None:
             print("No cameras specified, returning all images")
             return df
-        
+
         requested_cameras = list(cameras.keys())
         
         found_cameras = [cam for cam in requested_cameras if cam in available_cameras]
@@ -178,77 +209,48 @@ class ImageDownload:
                     print(f"    Error: {error}")
                 if len(errors) > 3:
                     print(f"  ... and {len(errors) - 3} more errors")
+    
+    def get_data(self):       
+        try:
+            cameras = self.get_camera_proportions(self.config)
+            
+            df = self.get_images_by_date(
+                start_date=self.config['start_date'],
+                end_date=self.config['end_date'],
+                cameras=cameras,
+                number_samples_per_day=self.config.get('samples_per_day'),
+                seed=self.config.get('seed')
+            )
+            
+            os.makedirs('database_data', exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            df.to_csv(f'database_data/{timestamp}.csv')
+            
+            self.download_images(df, max_workers=self.config.get('max_workers', 8))
+        except Exception as e:
+            print(f"Error: {e}")
+            raise e
 
 def main():
     parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     args = parser.parse_args()
-    
+
     with open(args.config) as f:
         config = yaml.safe_load(f)
-    
-    import tempfile
-    query_config = config.get('database_queries', {})
-    if not query_config:
-        raise ValueError("No database_queries section found in config file")
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_file:
-        yaml.dump(query_config, tmp_file)
-        query_config_path = tmp_file.name
-    try:
-        downloader = ImageDownload(
-            database=os.getenv('DATABASE_NAME'),
-            user=os.getenv('DATABASE_USERNAME'),
-            password=os.getenv('DATABASE_PASSWORD'),
-            host=os.getenv('DATABASE_HOST_NAME'),
-            port=os.getenv('DATABASE_PORT'),
-            gcp_credentials_path=config['gcp']['credentials_file'],
-            gcp_bucket=config['gcp']['bucket'],
-            local_download_path=config.get('download_path', 'downloads'),
-            query_config_path=query_config_path
-        )
-        
-        cameras = None
-        if 'sampling' in config and 'cameras' in config['sampling']:
-            cameras_config = config['sampling']['cameras']
-            cameras = {}
-            
-            # Handle list of camera names (default to 100% each)
-            if isinstance(cameras_config, list):
-                for cam in cameras_config:
-                    cameras[cam] = {'proportion': 1.0}
-            # Handle dictionary format
-            elif isinstance(cameras_config, dict):
-                for cam, cfg in cameras_config.items():
-                    if isinstance(cfg, dict):
-                        # Validate the configuration
-                        if 'proportion' in cfg and cfg['proportion'] <= 0:
-                            raise ValueError(f"Camera {cam} proportion must be greater than 0, got {cfg['proportion']}")
-                        if 'number' in cfg and cfg['number'] <= 0:
-                            raise ValueError(f"Camera {cam} number must be greater than 0, got {cfg['number']}")
-                        cameras[cam] = cfg
-                    elif isinstance(cfg, (int, float)):
-                        # Backward compatibility: treat as proportion
-                        cameras[cam] = {'proportion': float(cfg)}
-                    else:
-                        cameras[cam] = {'proportion': 1.0}
-        
-        df = downloader.get_images_by_date(
-            start_date=config['start_date'],
-            end_date=config['end_date'],
-            cameras=cameras,
-            number_samples_per_day=config.get('samples_per_day'),
-            seed=config.get('seed')
-        )
-        
-        os.makedirs('database_data', exist_ok=True)
-        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        df.to_csv(f'database_data/{timestamp}.csv')
-        
-        downloader.download_images(df, max_workers=config.get('max_workers', 8))
-    
-    finally:
-        os.unlink(query_config_path)
+
+    downloader = ImageDownload(
+        database=os.getenv('DATABASE_NAME'),
+        user=os.getenv('DATABASE_USERNAME'),
+        password=os.getenv('DATABASE_PASSWORD'),
+        host=os.getenv('DATABASE_HOST_NAME'),
+        port=os.getenv('DATABASE_PORT'),
+        gcp_credentials_path=config['gcp']['credentials_file'],
+        gcp_bucket=config['gcp']['data_bucket'],
+        local_download_path=config.get('download_path', 'downloads'),
+        config=config
+    )
+    downloader.get_data()
 
 if __name__ == "__main__":
     main() 

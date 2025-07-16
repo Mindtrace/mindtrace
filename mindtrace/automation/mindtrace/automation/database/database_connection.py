@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, date
 import psycopg2
 import yaml
 import os
+from typing import Dict, Optional
 
 class DatabaseConnection:
     def __init__(
@@ -12,7 +13,7 @@ class DatabaseConnection:
         password: str, 
         host: str, 
         port: int,
-        query_config_path: str = None
+        query_config: Dict[str, str]
     ):
         """Initialize database connection."""
         self.conn_params = {
@@ -24,7 +25,8 @@ class DatabaseConnection:
         }
         
         # Load query configuration
-        self.query_config = self._load_query_config(query_config_path)
+        self.query_config = query_config
+        # self.query_config = self._load_query_config(query_config_path)
         
         try:
             self.conn = psycopg2.connect(**self.conn_params)
