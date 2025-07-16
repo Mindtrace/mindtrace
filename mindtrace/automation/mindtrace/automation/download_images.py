@@ -235,10 +235,10 @@ def main():
     parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     args = parser.parse_args()
-    
+
     with open(args.config) as f:
         config = yaml.safe_load(f)
-    
+
     downloader = ImageDownload(
         database=os.getenv('DATABASE_NAME'),
         user=os.getenv('DATABASE_USERNAME'),
