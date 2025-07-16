@@ -742,6 +742,7 @@ class Registry(Mindtrace):
         self.register_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
         self.register_materializer(PosixPath, "zenml.materializers.PathMaterializer")
         self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
+        self.register_materializer("pydantic.main.BaseModel", "zenml.materializers.PydanticMaterializer")
 
         # Core mindtrace materializers
         self.register_materializer(
