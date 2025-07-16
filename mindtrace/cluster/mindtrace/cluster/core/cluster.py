@@ -51,31 +51,37 @@ class ClusterManager(Gateway):
         self.add_endpoint(
             "/register_job_to_endpoint",
             func=self.register_job_to_endpoint,
-            schema=cluster_types.RegisterJobToEndpointTaskSchema(),
+            schema=TaskSchema(name="register_job_to_endpoint", input_schema=cluster_types.RegisterJobToEndpointInput),
             methods=["POST"],
         )
         self.add_endpoint(
             "/register_job_to_worker",
             func=self.register_job_to_worker,
-            schema=cluster_types.RegisterJobToWorkerTaskSchema,
+            schema=TaskSchema(name="register_job_to_worker", input_schema=cluster_types.RegisterJobToWorkerInput),
             methods=["POST"],
         )
         self.add_endpoint(
             "/get_job_status",
             func=self.get_job_status,
-            schema=cluster_types.GetJobStatusTaskSchema,
+            schema=TaskSchema(
+                name="get_job_status",
+                input_schema=cluster_types.GetJobStatusInput,
+                output_schema=cluster_types.JobStatus,
+            ),
             methods=["POST"],
         )
         self.add_endpoint(
             "/worker_alert_started_job",
             func=self.worker_alert_started_job,
-            schema=cluster_types.WorkerAlertStartedJobTaskSchema,
+            schema=TaskSchema(name="worker_alert_started_job", input_schema=cluster_types.WorkerAlertStartedJobInput),
             methods=["POST"],
         )
         self.add_endpoint(
             "/worker_alert_completed_job",
             func=self.worker_alert_completed_job,
-            schema=cluster_types.WorkerAlertCompletedJobTaskSchema,
+            schema=TaskSchema(
+                name="worker_alert_completed_job", input_schema=cluster_types.WorkerAlertCompletedJobInput
+            ),
             methods=["POST"],
         )
         self.add_endpoint(
@@ -344,9 +350,17 @@ class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
-        self.add_endpoint("/run", self.run, schema=cluster_types.WorkerRunTaskSchema)
         self.add_endpoint(
-            "/connect_to_cluster", self.connect_to_cluster, schema=cluster_types.ConnectToBackendTaskSchema
+            "/run",
+            self.run,
+            schema=TaskSchema(
+                name="run_worker", input_schema=cluster_types.WorkerRunInput, output_schema=cluster_types.JobStatus
+            ),
+        )
+        self.add_endpoint(
+            "/connect_to_cluster",
+            self.connect_to_cluster,
+            schema=TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
         )
         self.consume_process = None
         self._cluster_connection_manager = None  # type: ignore

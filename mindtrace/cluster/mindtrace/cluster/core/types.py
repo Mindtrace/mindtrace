@@ -44,16 +44,8 @@ class RegisterJobToEndpointInput(BaseModel):
     endpoint: str
 
 
-class RegisterJobToEndpointTaskSchema(TaskSchema):
-    name: str = "register_job_to_endpoint"
-    input_schema: type[RegisterJobToEndpointInput] = RegisterJobToEndpointInput
-
-
 class WorkerRunInput(BaseModel):
     job_dict: dict
-
-
-WorkerRunTaskSchema = TaskSchema(name="worker_run", input_schema=WorkerRunInput, output_schema=JobStatus)
 
 
 class ConnectToBackendInput(BaseModel):
@@ -62,22 +54,13 @@ class ConnectToBackendInput(BaseModel):
     cluster_url: str
 
 
-ConnectToBackendTaskSchema = TaskSchema(name="connect_to_backend", input_schema=ConnectToBackendInput)
-
-
 class RegisterJobToWorkerInput(BaseModel):
     job_type: str
     worker_url: str
 
 
-RegisterJobToWorkerTaskSchema = TaskSchema(name="register_job_to_worker", input_schema=RegisterJobToWorkerInput)
-
-
 class GetJobStatusInput(BaseModel):
     job_id: str
-
-
-GetJobStatusTaskSchema = TaskSchema(name="get_job_status", input_schema=GetJobStatusInput, output_schema=JobStatus)
 
 
 class WorkerAlertStartedJobInput(BaseModel):
@@ -85,19 +68,11 @@ class WorkerAlertStartedJobInput(BaseModel):
     worker_id: str
 
 
-WorkerAlertStartedJobTaskSchema = TaskSchema(name="worker_alert_started_job", input_schema=WorkerAlertStartedJobInput)
-
-
 class WorkerAlertCompletedJobInput(BaseModel):
     job_id: str
     status: str
     output: dict
     worker_id: str
-
-
-WorkerAlertCompletedJobTaskSchema = TaskSchema(
-    name="worker_alert_completed_job", input_schema=WorkerAlertCompletedJobInput
-)
 
 
 class LaunchWorkerInput(BaseModel):
