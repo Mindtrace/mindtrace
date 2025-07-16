@@ -5,14 +5,14 @@ import requests
 from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.core import TaskSchema
+from mindtrace.cluster.workers.standard_worker_launcher import ProxyWorker
+from mindtrace.core import TaskSchema, ifnone
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
-from mindtrace.services import Gateway, Service
-from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.registry import Registry
-from mindtrace.cluster.workers.standard_worker_launcher import StandardWorkerLauncher, ProxyWorker
-from mindtrace.core import ifnone
+from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+from mindtrace.services import Gateway, Service
+
 
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
