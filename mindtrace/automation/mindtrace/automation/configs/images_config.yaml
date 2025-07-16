@@ -27,3 +27,15 @@ seed: 42
 
 download_path: "" 
 max_workers: 8 
+
+# Weights Information
+task_name: # Registered task name in the model registry
+version: # Version of the task
+inference_list:
+  zone_segmentation: "mask" # Export type for the zone segmentation task
+  spatter_segmentation: "mask" # Export type for the spatter segmentation task
+
+# Output settings
+output_folder: # Folder to save the output
+threshold: 0.4 # Threshold for the inference. Currently unused
+save_visualizations: True # Whether to save the visualizations
