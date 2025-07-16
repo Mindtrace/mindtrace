@@ -12,7 +12,7 @@ def main():
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 60})
-        cluster_manager.submit_job(**job.model_dump())
+        cluster_manager.submit_job(job)
         print(cluster_manager.get_job_status(job_id=job.id))
         time.sleep(1)
         print(cluster_manager.get_job_status(job_id=job.id))

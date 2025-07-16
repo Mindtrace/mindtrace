@@ -19,7 +19,7 @@ def main():
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         cluster_manager.register_job_to_worker(job_type="echo", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 3})
-        cluster_manager.submit_job(**job.model_dump())
+        cluster_manager.submit_job(job)
         print(cluster_manager.get_job_status(job_id=job.id))
         time.sleep(1)
         print(cluster_manager.get_job_status(job_id=job.id))
