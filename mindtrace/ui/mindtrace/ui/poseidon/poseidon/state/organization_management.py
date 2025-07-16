@@ -1,44 +1,25 @@
 import reflex as rx
 from poseidon.backend.services.organization_management_service import OrganizationManagementService
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
+from poseidon.state.base import BaseDialogState, RoleBasedAccessMixin
+from poseidon.state.models import OrganizationData, SubscriptionPlans, StatusTypes
 from poseidon.state.auth import AuthState
 from typing import List, Dict, Optional
 
 
-class OrganizationData(rx.Base):
-    """Organization data model for frontend"""
-    id: str
-    name: str
-    description: str = ""
-    subscription_plan: str = "basic"
-    max_users: Optional[int] = 50
-    max_projects: Optional[int] = 10
-    admin_key: str = ""
-    is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-
-
-class OrganizationManagementState(rx.State):
+class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
     """State management for organization administration operations."""
-    
-    # UI State
-    error: str = ""
-    success: str = ""
-    loading: bool = False
     
     # Organization Management Data
     organizations: List[OrganizationData] = []
     
-    # Filters and Search
-    search_query: str = ""
-    status_filter: str = "active"  # active, inactive, all
+    # Additional Filters (extends BaseFilterState)
     plan_filter: str = ""  # basic, premium, enterprise, all
     
     # Add Organization Form Data
     new_org_name: str = ""
     new_org_description: str = ""
-    new_org_plan: str = "basic"
+    new_org_plan: str = SubscriptionPlans.BASIC
     new_org_max_users: str = "50"
     new_org_max_projects: str = "10"
     
@@ -50,21 +31,13 @@ class OrganizationManagementState(rx.State):
     edit_org_max_users: str = "0"
     edit_org_max_projects: str = "0"
 
-    def clear_messages(self):
-        """Clear success and error messages"""
-        self.error = ""
-        self.success = ""
-
     async def load_organizations(self):
         """Load all organizations (super admin only)"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_super_admin:
+        async def load_organizations_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_organization(auth_state.is_super_admin):
                 self.error = "Access denied: Super Admin privileges required"
-                return
+                return False
             
             organizations = await OrganizationManagementService.get_all_organizations()
             self.organizations = [
@@ -72,7 +45,7 @@ class OrganizationManagementState(rx.State):
                     id=str(org.id),
                     name=org.name or "",
                     description=org.description or "",
-                    subscription_plan=org.subscription_plan or "basic",
+                    subscription_plan=org.subscription_plan or SubscriptionPlans.BASIC,
                     max_users=org.max_users if org.max_users is not None else 50,
                     max_projects=org.max_projects if org.max_projects is not None else 10,
                     admin_key=org.admin_registration_key or "",
@@ -82,24 +55,20 @@ class OrganizationManagementState(rx.State):
                 )
                 for org in organizations
             ]
-            
-        except Exception as e:
-            self.error = f"Failed to load organizations: {str(e)}"
-        finally:
-            self.loading = False
+            return True
+        
+        await self.handle_async_operation(
+            load_organizations_data,
+            "Organizations loaded successfully"
+        )
 
     @rx.var
     def filtered_organizations(self) -> List[OrganizationData]:
         """Get filtered list of organizations"""
         orgs = self.organizations
         
-        # Filter by search query
-        if self.search_query:
-            orgs = [
-                org for org in orgs
-                if (self.search_query.lower() in org.name.lower() or
-                    self.search_query.lower() in org.description.lower())
-            ]
+        # Apply search filter
+        orgs = self.filter_by_search(orgs, ["name", "description"])
         
         # Filter by subscription plan
         if self.plan_filter and self.plan_filter != "all":
@@ -108,71 +77,60 @@ class OrganizationManagementState(rx.State):
                 if org.subscription_plan == self.plan_filter
             ]
         
-        # Filter by status
-        if self.status_filter == "active":
-            orgs = [org for org in orgs if org.is_active]
-        elif self.status_filter == "inactive":
-            orgs = [org for org in orgs if not org.is_active]
-        # "all" shows all organizations
+        # Apply status filter
+        orgs = self.filter_by_status(orgs)
         
         return orgs
 
     @rx.var
     def available_plans(self) -> List[str]:
         """Get list of available subscription plans"""
-        return ["basic", "premium", "enterprise"]
+        return SubscriptionPlans.get_all()
     
     @rx.var
     def available_display_plans(self) -> List[str]:
         """Get list of available plans for display"""
-        return ["Basic", "Premium", "Enterprise"]
+        return [SubscriptionPlans.get_display_names()[plan] for plan in SubscriptionPlans.get_all()]
 
     def can_edit_organization(self, target_org_id: str) -> bool:
         """Check if current user can edit the target organization"""
         # Only super admins can edit organizations
+        from poseidon.state.auth import AuthState
         return AuthState.is_super_admin
     
     def can_deactivate_organization(self, target_org_id: str) -> bool:
         """Check if current user can deactivate the target organization"""
         # Only super admins can deactivate organizations
+        from poseidon.state.auth import AuthState
         return AuthState.is_super_admin
 
     def clear_new_org_form(self):
         """Clear the new organization form data"""
         self.new_org_name = ""
         self.new_org_description = ""
-        self.new_org_plan = "basic"
+        self.new_org_plan = SubscriptionPlans.BASIC
         self.new_org_max_users = "50"
         self.new_org_max_projects = "10"
 
     async def add_organization(self):
         """Add a new organization"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_super_admin:
+        async def create_organization():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_organization(auth_state.is_super_admin):
                 self.error = "Access denied: Super Admin privileges required"
-                return
+                return False
             
             # Validate form data
-            if not self.new_org_name.strip():
-                self.error = "Organization name is required"
-                return
+            if not self.validate_required_field(self.new_org_name, "Organization name"):
+                return False
             
             # Convert plan to unified format
-            plan_mapping = {
-                "Basic": "basic",
-                "Premium": "premium",
-                "Enterprise": "enterprise",
-                # Direct plan names (no conversion needed)
-                "basic": "basic",
-                "premium": "premium",
-                "enterprise": "enterprise"
-            }
+            plan_mapping = SubscriptionPlans.get_display_names()
+            # Reverse mapping for display names to internal values
+            reverse_plan_mapping = {v: k for k, v in plan_mapping.items()}
+            reverse_plan_mapping.update({k: k for k in SubscriptionPlans.get_all()})  # Direct mappings
             
-            backend_plan = plan_mapping.get(self.new_org_plan, "basic")
+            backend_plan = reverse_plan_mapping.get(self.new_org_plan, SubscriptionPlans.BASIC)
             
             # Call organization management service to add organization
             result = await OrganizationManagementService.create_organization(
@@ -184,16 +142,17 @@ class OrganizationManagementState(rx.State):
             )
             
             if result.get("success"):
-                self.success = f"Organization '{self.new_org_name}' added successfully"
                 self.clear_new_org_form()
                 await self.load_organizations()  # Refresh organization list
+                return True
             else:
                 self.error = result.get("error", "Failed to add organization")
-            
-        except Exception as e:
-            self.error = f"Failed to add organization: {str(e)}"
-        finally:
-            self.loading = False
+                return False
+        
+        await self.handle_async_operation(
+            create_organization,
+            f"Organization '{self.new_org_name}' added successfully"
+        )
 
     def set_edit_org_data(self, org_data: OrganizationData):
         """Set edit organization form data from selected organization"""
@@ -215,19 +174,15 @@ class OrganizationManagementState(rx.State):
 
     async def update_organization(self):
         """Update an existing organization"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_super_admin:
+        async def update_organization_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_organization(auth_state.is_super_admin):
                 self.error = "Access denied: Super Admin privileges required"
-                return
+                return False
             
             # Validate form data
-            if not self.edit_org_name.strip():
-                self.error = "Organization name is required"
-                return
+            if not self.validate_required_field(self.edit_org_name, "Organization name"):
+                return False
             
             # Update organization
             result = await OrganizationManagementService.update_organization(
@@ -242,57 +197,54 @@ class OrganizationManagementState(rx.State):
             )
             
             if result.get("success"):
-                self.success = f"Organization '{self.edit_org_name}' updated successfully"
                 self.clear_edit_org_form()
                 await self.load_organizations()  # Refresh organization list
+                return True
             else:
                 self.error = result.get("error", "Failed to update organization")
-            
-        except Exception as e:
-            self.error = f"Failed to update organization: {str(e)}"
-        finally:
-            self.loading = False
+                return False
+        
+        await self.handle_async_operation(
+            update_organization_data,
+            f"Organization '{self.edit_org_name}' updated successfully"
+        )
 
     async def deactivate_organization(self, org_id: str):
         """Deactivate an organization"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_super_admin:
+        async def deactivate_organization_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_organization(auth_state.is_super_admin):
                 self.error = "Access denied: Super Admin privileges required"
-                return
+                return False
             
             result = await OrganizationManagementService.deactivate_organization(org_id)
             
             if result.get("success"):
-                self.success = "Organization deactivated successfully"
                 await self.load_organizations()  # Refresh organization list
-            
-        except Exception as e:
-            self.error = f"Failed to deactivate organization: {str(e)}"
-        finally:
-            self.loading = False
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            deactivate_organization_data,
+            "Organization deactivated successfully"
+        )
 
     async def activate_organization(self, org_id: str):
         """Activate an organization"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_super_admin:
+        async def activate_organization_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_organization(auth_state.is_super_admin):
                 self.error = "Access denied: Super Admin privileges required"
-                return
+                return False
             
             result = await OrganizationManagementService.activate_organization(org_id)
             
             if result.get("success"):
-                self.success = "Organization activated successfully"
                 await self.load_organizations()  # Refresh organization list
-            
-        except Exception as e:
-            self.error = f"Failed to activate organization: {str(e)}"
-        finally:
-            self.loading = False 
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            activate_organization_data,
+            "Organization activated successfully"
+        ) 

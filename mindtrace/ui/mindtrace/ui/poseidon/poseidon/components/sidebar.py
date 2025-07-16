@@ -22,7 +22,8 @@ POSEIDON_USER_NAV = [
 
 POSEIDON_ADMIN_NAV = [
     {"name": "Admin Panel", "href": "/admin", "icon": "⚙️"},
-    {"name": "User Management", "href": "/user-management", "icon": "👥"}
+    {"name": "User Management", "href": "/user-management", "icon": "👥"},
+    {"name": "Project Management", "href": "/project-management", "icon": "📋"}
 ]
 
 POSEIDON_SUPER_ADMIN_NAV = [
@@ -32,7 +33,8 @@ POSEIDON_SUPER_ADMIN_NAV = [
 POSEIDON_SUPER_ADMIN_MANAGEMENT_NAV = [
     {"name": "System Dashboard", "href": "/super-admin", "icon": "🖥️"},
     {"name": "User Management", "href": "/super-admin/users", "icon": "👥"},
-    {"name": "Organization Management", "href": "/super-admin/organizations", "icon": "🏢"},
+    {"name": "Organization Management", "href": "/organization-management", "icon": "🏢"},
+    {"name": "Project Management", "href": "/project-management", "icon": "📋"},
 ]
 
 
@@ -157,7 +159,8 @@ def sidebar():
                     rx.fragment(
                         side_bar_wrapper("SUPER ADMIN", create_sidebar_menu_items([
                             {"name": "User Management", "href": "/user-management", "icon": "👥"},
-                            {"name": "Organization Management", "href": "/organization-management", "icon": "🏢"}
+                            {"name": "Organization Management", "href": "/organization-management", "icon": "🏢"},
+                            {"name": "Project Management", "href": "/project-management", "icon": "📋"}
                         ])),
                         create_divider(),
                     )

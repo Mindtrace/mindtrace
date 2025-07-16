@@ -5,121 +5,19 @@ while keeping the exact styling patterns.
 """
 
 import reflex as rx
+from .mindtrace_forms import input_mindtrace
 
 
-def text_input_with_label(
-    label: str, 
-    placeholder: str = "", 
-    input_type: str = "text",
-    name: str = "",
-    required: bool = False,
-    value: str = "",
-    on_change=None
-):
-    """Text input with label - keeps Buridan UI styling."""
-    return rx.box(
-        rx.text(label, class_name="text-xs font-semibold"),
-        rx.el.input(
-            placeholder=placeholder,
-            type=input_type,
-            name=name,
-            required=required,
-            value=value,
-            on_change=on_change,
-            class_name=(
-                "p-2 w-full "
-                + "text-sm "
-                + "rounded-md bg-transparent border border-gray-500/40 "
-                + "focus:outline-none focus:border-blue-500 shadow-sm"
-            ),
-        ),
-        class_name="w-full max-w-[20em] flex flex-col gap-y-2",
-    )
+# Removed: text_input_with_label - use mindtrace_forms.input_with_label_mindtrace instead
 
 
-def email_input(
-    label: str = "Email",
-    placeholder: str = "example@company.com",
-    name: str = "email",
-    required: bool = True,
-    value: str = "",
-    on_change=None
-):
-    """Email input - keeps Buridan UI styling."""
-    return rx.box(
-        rx.text(label, class_name="text-xs font-semibold"),
-        rx.el.input(
-            placeholder=placeholder,
-            type="email",
-            name=name,
-            required=required,
-            value=value,
-            on_change=on_change,
-            class_name=(
-                "p-2 w-full "
-                + "text-sm "
-                + "rounded-md bg-transparent border border-gray-500/40 "
-                + "focus:outline-none focus:border-blue-500 shadow-sm"
-            ),
-        ),
-        class_name="w-full max-w-[20em] flex flex-col gap-y-2",
-    )
+# Removed: email_input - use mindtrace_forms.input_with_label_mindtrace instead
 
 
-def password_input(
-    label: str = "Password",
-    placeholder: str = "Enter password",
-    name: str = "password",
-    required: bool = True,
-    value: str = "",
-    on_change=None
-):
-    """Password input - keeps Buridan UI styling."""
-    return rx.box(
-        rx.text(label, class_name="text-xs font-semibold"),
-        rx.el.input(
-            placeholder=placeholder,
-            type="password",
-            name=name,
-            required=required,
-            value=value,
-            on_change=on_change,
-            class_name=(
-                "p-2 w-full "
-                + "text-sm "
-                + "rounded-md bg-transparent border border-gray-500/40 "
-                + "focus:outline-none focus:border-blue-500 shadow-sm"
-            ),
-        ),
-        class_name="w-full max-w-[20em] flex flex-col gap-y-2",
-    )
+# Removed: password_input - use mindtrace_forms.input_with_label_mindtrace instead
 
 
-def search_input(
-    label: str = "Search",
-    placeholder: str = "Search...",
-    name: str = "search",
-    value: str = "",
-    on_change=None
-):
-    """Search input - keeps Buridan UI styling."""
-    return rx.box(
-        rx.text(label, class_name="text-xs font-semibold"),
-        rx.el.input(
-            placeholder=placeholder,
-            type="search",
-            name=name,
-            value=value,
-            on_change=on_change,
-            class_name=(
-                "p-2 w-full "
-                + "text-sm "
-                + "rounded-md bg-transparent border border-gray-500/40 "
-                + "focus:outline-none focus:border-blue-500 shadow-sm"
-            ),
-        ),
-        class_name="w-full max-w-[20em] flex flex-col gap-y-2",
-    )
+# Removed: search_input - use mindtrace_forms.input_mindtrace instead
 
 
 def textarea_with_label(
@@ -185,9 +83,9 @@ def filter_bar(search_value: str = "", search_on_change=None,
     """Complete filter bar - keeps Buridan UI styling."""
     return rx.box(
         rx.hstack(
-            search_input(
-                label="",
+            input_mindtrace(
                 placeholder="Search users by name or email...",
+                name="search",
                 value=search_value,
                 on_change=search_on_change,
             ),
@@ -276,19 +174,4 @@ def info_message(message: str):
     )
 
 
-# Keep original demo input for reference
-def input_v1():
-    """Original Buridan UI demo input - for reference."""
-    return rx.box(
-        rx.text("Email", class_name="text-xs font-semibold"),
-        rx.el.input(
-            placeholder="something@email.com",
-            class_name=(
-                "p-2 w-full "
-                + "text-sm "
-                + "rounded-md bg-transparent border border-gray-500/40 "
-                + "focus:outline-none focus:border-blue-500 shadow-sm"
-            ),
-        ),
-        class_name="w-full max-w-[20em] flex flex-col gap-y-2",
-    )
+

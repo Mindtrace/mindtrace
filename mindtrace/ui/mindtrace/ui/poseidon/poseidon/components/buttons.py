@@ -5,70 +5,13 @@ the exact Buridan UI styling patterns.
 """
 
 import reflex as rx
+from .mindtrace_forms import button_mindtrace
 
 
-def primary_action_button(
-    text: str,
-    on_click=None,
-    loading: bool = False,
-    disabled: bool = False,
-    icon: str = "",
-    size: str = "3",
-    width: str = "auto"
-):
-    """Primary action button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.cond(
-            icon,
-            rx.hstack(
-                rx.text(icon, margin_right="8px"),
-                rx.text(text),
-                spacing="1",
-                align="center",
-            ),
-            rx.text(text),
-        ),
-        on_click=on_click,
-        loading=loading,
-        disabled=disabled,
-        variant="solid",
-        color_scheme="blue",
-        size=size,
-        width=width,
-        cursor="pointer",
-    )
+# Removed: primary_action_button - use mindtrace_forms.button_mindtrace instead
 
 
-def secondary_action_button(
-    text: str,
-    on_click=None,
-    loading: bool = False,
-    disabled: bool = False,
-    icon: str = "",
-    size: str = "3",
-    width: str = "auto"
-):
-    """Secondary action button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.cond(
-            icon,
-            rx.hstack(
-                rx.text(icon, margin_right="8px"),
-                rx.text(text),
-                spacing="1",
-                align="center",
-            ),
-            rx.text(text),
-        ),
-        on_click=on_click,
-        loading=loading,
-        disabled=disabled,
-        variant="surface",
-        color_scheme="gray",
-        size=size,
-        width=width,
-        cursor="pointer",
-    )
+# Removed: secondary_action_button - use mindtrace_forms.button_mindtrace instead
 
 
 def refresh_button(
@@ -77,85 +20,20 @@ def refresh_button(
     text: str = "Refresh",
     icon: str = "🔄"
 ):
-    """Refresh/reload data button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.hstack(
-            rx.text(icon, margin_right="8px"),
-            rx.text(text),
-            spacing="1",
-            align="center",
-        ),
+    """Refresh/reload data button - using mindtrace styling."""
+    return button_mindtrace(
+        text=f"{icon} {text}",
         on_click=on_click,
         loading=loading,
-        variant="surface",
-        color_scheme="gray",
-        size="2",
-        cursor="pointer",
+        variant="secondary",
+        size="medium",
     )
 
 
-def danger_action_button(
-    text: str,
-    on_click=None,
-    loading: bool = False,
-    disabled: bool = False,
-    icon: str = "",
-    size: str = "3",
-    width: str = "auto"
-):
-    """Danger action button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.cond(
-            icon,
-            rx.hstack(
-                rx.text(icon, margin_right="8px"),
-                rx.text(text),
-                spacing="1",
-                align="center",
-            ),
-            rx.text(text),
-        ),
-        on_click=on_click,
-        loading=loading,
-        disabled=disabled,
-        variant="solid",
-        color_scheme="red",
-        size=size,
-        width=width,
-        cursor="pointer",
-    )
+# Removed: danger_action_button - use mindtrace_forms.button_mindtrace with variant="danger"
 
 
-def success_action_button(
-    text: str,
-    on_click=None,
-    loading: bool = False,
-    disabled: bool = False,
-    icon: str = "",
-    size: str = "3",
-    width: str = "auto"
-):
-    """Success action button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.cond(
-            icon,
-            rx.hstack(
-                rx.text(icon, margin_right="8px"),
-                rx.text(text),
-                spacing="1",
-                align="center",
-            ),
-            rx.text(text),
-        ),
-        on_click=on_click,
-        loading=loading,
-        disabled=disabled,
-        variant="solid",
-        color_scheme="green",
-        size=size,
-        width=width,
-        cursor="pointer",
-    )
+# Removed: success_action_button - use mindtrace_forms.button_mindtrace instead
 
 
 def icon_button(
@@ -167,16 +45,18 @@ def icon_button(
     color_scheme: str = "gray",
     size: str = "2"
 ):
-    """Icon-only button - keeps Buridan UI styling."""
-    return rx.button(
-        rx.text(icon),
+    """Icon-only button - using mindtrace styling."""
+    # Map legacy variant to mindtrace variant
+    mindtrace_variant = "secondary" if variant == "ghost" else "primary"
+    mindtrace_size = "small" if size == "1" else "medium" if size == "2" else "large"
+    
+    return button_mindtrace(
+        text=icon,
         on_click=on_click,
         loading=loading,
         disabled=disabled,
-        variant=variant,
-        color_scheme=color_scheme,
-        size=size,
-        cursor="pointer",
+        variant=mindtrace_variant,
+        size=mindtrace_size,
     )
 
 
@@ -218,13 +98,4 @@ def action_button_group(*buttons, spacing: str = "3", justify: str = "start"):
     )
 
 
-# Keep original demo button for reference
-def button_v1():
-    """Original Buridan UI demo button - for reference."""
-    return rx.button(
-        "Buridan UI Button",
-        variant="solid",
-        color_scheme="blue",
-        size="3",
-        cursor="pointer",
-    ) 
+ 

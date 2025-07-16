@@ -11,6 +11,11 @@ import logging
 import base64
 from typing import Optional, Dict, Any
 
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
+from starlette.responses import StreamingResponse
+import cv2
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from mindtrace.hardware.cameras.camera_manager import CameraManager
@@ -22,12 +27,14 @@ from mindtrace.hardware.models.requests import (
     CaptureRequest,
     BatchCaptureRequest,
     HDRCaptureRequest,
-    BatchHDRCaptureRequest
+    BatchHDRCaptureRequest,
+    StreamRequest
 )
 from mindtrace.hardware.models.responses import (
     CaptureResponse,
     HDRCaptureResponse,
-    BatchOperationResponse
+    BatchOperationResponse,
+    StreamResponse
 )
 from mindtrace.hardware.core.exceptions import CameraError
 
@@ -437,3 +444,88 @@ async def capture_hdr_batch(
             status_code=500,
             detail=f"Batch HDR capture error: {str(e)}"
         ) 
+
+
+@router.post("/stream", response_model=StreamResponse)
+async def video_stream(
+    body: StreamRequest,
+    request: Request,
+    manager: CameraManager = Depends(get_camera_manager)
+):
+    camera = body.camera
+    # Validate camera is initialized
+    active_cameras = manager.get_active_cameras()
+    if camera not in active_cameras:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Camera '{camera}' is not initialized. Use POST /api/v1/cameras/initialize first."
+        )
+    camera_proxy = manager.get_camera(camera)
+    async def generate():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                capture_result = await camera_proxy.capture()
+                if isinstance(capture_result, tuple):
+                    success, img = capture_result
+                else:
+                    success = True
+                    img = capture_result
+                if not success or img is None:
+                    await asyncio.sleep(0.1)
+                    continue
+                is_success, buffer = await asyncio.to_thread(cv2.imencode, ".jpg", img)
+                if not is_success:
+                    await asyncio.sleep(0.1)
+                    continue
+                frame = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"video_stream_frame_failed: {e}")
+                await asyncio.sleep(0.1)
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame") 
+
+
+@router.get("/stream/mjpeg")
+async def video_stream_get(
+    request: Request,
+    camera: str = Query(..., description="Camera name in format 'Backend:device_name'"),
+    manager: CameraManager = Depends(get_camera_manager)
+):
+    # Validate camera is initialized
+    active_cameras = manager.get_active_cameras()
+    if camera not in active_cameras:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Camera '{camera}' is not initialized. Use POST /api/v1/cameras/initialize first."
+        )
+    camera_proxy = manager.get_camera(camera)
+    async def generate():
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                capture_result = await camera_proxy.capture()
+                if isinstance(capture_result, tuple):
+                    success, img = capture_result
+                else:
+                    success = True
+                    img = capture_result
+                if not success or img is None:
+                    await asyncio.sleep(0.1)
+                    continue
+                is_success, buffer = await asyncio.to_thread(cv2.imencode, ".jpg", img)
+                if not is_success:
+                    await asyncio.sleep(0.1)
+                    continue
+                frame = buffer.tobytes()
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"video_stream_frame_failed: {e}")
+                await asyncio.sleep(0.1)
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame") 

@@ -55,7 +55,7 @@ class OrganizationManagementService:
                 "is_active": True
             }
             
-            new_org = await OrganizationRepository.create_organization(org_data)
+            new_org = await OrganizationRepository.create(org_data)
             return {"success": True, "organization": new_org}
             
         except Exception as e:
@@ -79,7 +79,7 @@ class OrganizationManagementService:
                 raise OrganizationNotFoundError("Organization not found.")
             
             # Update organization
-            updated_org = await OrganizationRepository.update_organization(organization_id, update_data)
+            updated_org = await OrganizationRepository.update(organization_id, update_data)
             return {"success": True, "organization": updated_org}
             
         except Exception as e:
@@ -102,7 +102,7 @@ class OrganizationManagementService:
                 raise OrganizationNotFoundError("Organization not found.")
             
             # Deactivate organization
-            updated_org = await OrganizationRepository.deactivate_organization(organization_id)
+            updated_org = await OrganizationRepository.update(organization_id, {"is_active": False})
             return {"success": True, "organization": updated_org}
             
         except Exception as e:
@@ -125,7 +125,7 @@ class OrganizationManagementService:
                 raise OrganizationNotFoundError("Organization not found.")
             
             # Activate organization
-            updated_org = await OrganizationRepository.activate_organization(organization_id)
+            updated_org = await OrganizationRepository.update(organization_id, {"is_active": True})
             return {"success": True, "organization": updated_org}
             
         except Exception as e:
@@ -154,7 +154,7 @@ class OrganizationManagementService:
             users = await UserRepository.get_by_organization(organization_id)
             active_users = await UserRepository.get_active_by_organization(organization_id)
             
-            # Get project count (if project repository has this method)
+            # Get project count
             try:
                 projects = await ProjectRepository.get_by_organization(organization_id)
                 project_count = len(projects)

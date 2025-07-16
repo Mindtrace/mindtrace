@@ -7,17 +7,41 @@ backend = MongoMindtraceODMBackend(Project, db_uri=settings.MONGO_URI, db_name=s
 
 class ProjectRepository:
     @staticmethod
-    async def create_project(project_data: dict) -> Project:
+    async def create(project_data: dict) -> Project:
+        """Create a new project"""
         await backend.initialize()
         project = Project(**project_data)
         return await backend.insert(project)
     
     @staticmethod
     async def get_by_id(project_id: str) -> Optional[Project]:
+        """Get project by ID"""
         await backend.initialize()
         try:
             return await backend.get(project_id)
         except:
+            return None
+    
+    @staticmethod
+    async def get_all() -> List[Project]:
+        """Get all projects across all organizations (super admin only)"""
+        await backend.initialize()
+        return await backend.find({})
+    
+    @staticmethod
+    async def update(project_id: str, update_data: dict) -> Optional[Project]:
+        """Update project with arbitrary data"""
+        await backend.initialize()
+        try:
+            project = await backend.get(project_id)
+            if project:
+                for key, value in update_data.items():
+                    if hasattr(project, key):
+                        setattr(project, key, value)
+                project.update_timestamp()
+                return await backend.update(project_id, project)
+        except:
+            pass
             return None
     
     @staticmethod
@@ -27,28 +51,16 @@ class ProjectRepository:
         return await backend.find({"organization_id": organization_id})
     
     @staticmethod
-    async def get_active_by_organization(organization_id: str) -> List[Project]:
-        """Get all active projects for an organization"""
+    async def get_by_organization_and_status(organization_id: str, status: str) -> List[Project]:
+        """Get projects by organization and status"""
         await backend.initialize()
-        return await backend.find({"organization_id": organization_id, "status": "active"})
+        return await backend.find({"organization_id": organization_id, "status": status})
     
     @staticmethod
     async def get_by_owner(owner_id: str, organization_id: str) -> List[Project]:
         """Get projects owned by a specific user within an organization"""
         await backend.initialize()
         return await backend.find({"owner_id": owner_id, "organization_id": organization_id})
-    
-    @staticmethod
-    async def get_by_status(organization_id: str, status: str) -> List[Project]:
-        """Get projects by status within an organization"""
-        await backend.initialize()
-        return await backend.find({"organization_id": organization_id, "status": status})
-    
-    @staticmethod
-    async def get_by_type(organization_id: str, project_type: str) -> List[Project]:
-        """Get projects by type within an organization"""
-        await backend.initialize()
-        return await backend.find({"organization_id": organization_id, "project_type": project_type})
     
     @staticmethod
     async def search_by_name(organization_id: str, name_pattern: str) -> List[Project]:
@@ -60,55 +72,34 @@ class ProjectRepository:
         })
     
     @staticmethod
-    async def update_status(project_id: str, organization_id: str, status: str) -> Optional[Project]:
-        """Update project status (with organization check for security)"""
+    async def update_with_org_check(project_id: str, organization_id: str, update_data: dict) -> Optional[Project]:
+        """Update project with organization security check"""
         await backend.initialize()
-        project = await backend.get(project_id)
-        if project and project.organization_id == organization_id:
-            project.set_status(status)
-            return await backend.update(project_id, project.dict())
-        return None
-    
-    @staticmethod
-    async def update_settings(project_id: str, organization_id: str, settings: dict) -> Optional[Project]:
-        """Update project settings (with organization check)"""
-        await backend.initialize()
-        project = await backend.get(project_id)
-        if project and project.organization_id == organization_id:
-            project.settings.update(settings)
+        try:
+            project = await backend.get(project_id)
+            if project and project.organization_id == organization_id:
+                for key, value in update_data.items():
+                    if hasattr(project, key):
+                        setattr(project, key, value)
             project.update_timestamp()
-            return await backend.update(project_id, project.dict())
+            return await backend.update(project_id, project)
+        except:
+            pass
         return None
     
     @staticmethod
-    async def add_tag(project_id: str, organization_id: str, tag: str) -> Optional[Project]:
-        """Add tag to project (with organization check)"""
+    async def delete(project_id: str, organization_id: str = None) -> bool:
+        """Delete project (with optional organization check for security)"""
         await backend.initialize()
-        project = await backend.get(project_id)
-        if project and project.organization_id == organization_id:
-            project.add_tag(tag)
-            return await backend.update(project_id, project.dict())
-        return None
-    
-    @staticmethod
-    async def remove_tag(project_id: str, organization_id: str, tag: str) -> Optional[Project]:
-        """Remove tag from project (with organization check)"""
-        await backend.initialize()
-        project = await backend.get(project_id)
-        if project and project.organization_id == organization_id:
-            project.remove_tag(tag)
-            return await backend.update(project_id, project.dict())
-        return None
-    
-    @staticmethod
-    async def delete_project(project_id: str, organization_id: str) -> bool:
-        """Delete project (with organization check for security)"""
-        await backend.initialize()
-        project = await backend.get(project_id)
-        if project and project.organization_id == organization_id:
+        try:
+            if organization_id:
+                project = await backend.get(project_id)
+                if not project or project.organization_id != organization_id:
+                    return False
             await backend.delete(project_id)
             return True
-        return False
+        except:
+            return False
     
     @staticmethod
     async def count_by_organization(organization_id: str) -> int:

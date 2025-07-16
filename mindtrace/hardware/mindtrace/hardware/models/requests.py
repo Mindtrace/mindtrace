@@ -157,3 +157,8 @@ class CameraPropertiesRequest(BaseModel):
     class Config:
         # Allow tuple types in request
         arbitrary_types_allowed = True 
+
+
+class StreamRequest(BaseModel):
+    """Request model for video stream endpoint."""
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'") 

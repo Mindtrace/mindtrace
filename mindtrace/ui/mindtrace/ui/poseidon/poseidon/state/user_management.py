@@ -3,23 +3,21 @@ from poseidon.backend.services.user_management_service import UserManagementServ
 from poseidon.backend.database.repositories.user_repository import UserRepository
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
+from poseidon.state.base import BaseDialogState, RoleBasedAccessMixin
+from poseidon.state.models import UserData, ProjectData, UserRoles, ProjectRoles, StatusTypes
 from poseidon.state.auth import AuthState
 from typing import List, Dict, Optional
 
-class UserManagementState(rx.State):
-    # UI State
-    error: str = ""
-    success: str = ""
-    loading: bool = False
+class UserManagementState(BaseDialogState, RoleBasedAccessMixin):
+    """State management for user administration operations."""
     
     # User Management Data
     organization_users: List[Dict] = []
     project_users: List[Dict] = []
+    available_projects: List[Dict] = []  # Projects available for assignment
     
-    # Filters and Search
-    search_query: str = ""
+    # Additional Filters (extends BaseFilterState)
     role_filter: str = ""
-    status_filter: str = "active"  # active, inactive, all
     
     # Add User Form Data
     new_user_username: str = ""
@@ -32,40 +30,83 @@ class UserManagementState(rx.State):
     edit_user_email: str = ""
     edit_user_role: str = ""
 
-    def clear_messages(self):
-        """Clear success and error messages"""
-        self.error = ""
-        self.success = ""
+    # Project Assignment Form Data
+    assignment_user_id: str = ""
+    assignment_project_id: str = ""
+    assignment_roles: List[str] = []
+    assignment_dialog_open: bool = False
+    
+    # Project Management Dialog Data
+    project_management_user_id: str = ""
+    project_management_dialog_open: bool = False
 
-    async def get_admin_organization_id(self) -> Optional[str]:
-        """Get the organization ID of the current admin user"""
-        auth_state = await self.get_state(AuthState)
-        if auth_state.is_authenticated and (auth_state.is_admin or auth_state.is_super_admin):
-            return auth_state.user_organization_id
-        return None
+    async def load_available_projects(self):
+        """Load projects available for assignment"""
+        try:
+            auth_state = await self.get_auth_state()
+            if not auth_state.is_authenticated:
+                return
+            
+            if auth_state.is_super_admin:
+                # Super admins can see all active projects across all organizations
+                projects = await ProjectRepository.get_all()
+                # Filter to only active projects
+                projects = [p for p in projects if p.status == "active"]
+            else:
+                # Regular admins only see projects in their organization
+                org_id = await self.get_admin_organization_id()
+                if not org_id:
+                    return
+                projects = await ProjectRepository.get_by_organization_and_status(org_id, "active")
+            
+            self.available_projects = [
+                {
+                    "id": str(project.id),
+                    "name": project.name,
+                    "description": project.description or "",
+                    "status": project.status if hasattr(project, 'status') else "active",
+                    "organization_id": project.organization_id
+                }
+                for project in projects
+            ]
+            
+        except Exception as e:
+            self.error = f"Failed to load projects: {str(e)}"
 
     async def load_organization_users(self):
         """Load users based on user role - all users for super admin, org users for admin"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
+        async def load_users_data():
+            auth_state = await self.get_auth_state()
             
             if auth_state.is_super_admin:
                 # Super admin sees all users across all organizations
-                await self.load_all_users()
-            elif auth_state.is_admin:
-                # Regular admin sees only their organization users
-                await self.load_admin_organization_users()
+                users = await UserManagementService.get_all_users()
+                self.organization_users = [
+                    {
+                        "id": str(user.id),
+                        "username": user.username,
+                        "email": user.email,
+                        "organization_id": user.organization_id,
+                        "org_roles": user.org_roles,
+                        "project_assignments": user.project_assignments,
+                        "is_active": user.is_active,
+                        "created_at": user.created_at,
+                        "updated_at": user.updated_at
+                    }
+                    for user in users
+                ]
             else:
-                self.error = "Access denied: Admin privileges required"
-                return
+                # Regular admin sees only their organization's users
+                await self.load_admin_organization_users()
             
-        except Exception as e:
-            self.error = f"Failed to load users: {str(e)}"
-        finally:
-            self.loading = False
+            # Load available projects for assignment
+            await self.load_available_projects()
+            return True
+        
+        await self.handle_async_operation(
+            load_users_data,
+            "Users loaded successfully"
+        )
 
     async def load_all_users(self):
         """Load all users across all organizations (super admin only)"""
@@ -109,14 +150,11 @@ class UserManagementState(rx.State):
 
     async def load_project_users(self, project_id: str):
         """Load all users assigned to a specific project"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
+        async def load_project_users_data():
             org_id = await self.get_admin_organization_id()
             if not org_id:
                 self.error = "Access denied: Admin privileges required"
-                return
+                return False
             
             users = await UserManagementService.get_project_users(project_id, org_id)
             self.project_users = [
@@ -129,22 +167,20 @@ class UserManagementState(rx.State):
                 }
                 for user in users
             ]
-            
-        except Exception as e:
-            self.error = f"Failed to load project users: {str(e)}"
-        finally:
-            self.loading = False
+            return True
+        
+        await self.handle_async_operation(
+            load_project_users_data,
+            "Project users loaded successfully"
+        )
 
     async def assign_user_to_project(self, form_data: Dict):
         """Assign a user to a project with specific roles"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
+        async def assign_user_data():
             org_id = await self.get_admin_organization_id()
             if not org_id:
                 self.error = "Access denied: Admin privileges required"
-                return
+                return False
             
             user_id = form_data.get("user_id")
             project_id = form_data.get("project_id")
@@ -152,135 +188,131 @@ class UserManagementState(rx.State):
             
             if not user_id or not project_id:
                 self.error = "User and project are required"
-                return
+                return False
                 
             if not roles:
                 self.error = "At least one role is required"
-                return
+                return False
             
             result = await UserManagementService.assign_user_to_project(
                 user_id, project_id, roles, org_id
             )
             
             if result.get("success"):
-                self.success = f"User successfully assigned to project"
                 await self.load_organization_users()  # Refresh user list
-            
-        except Exception as e:
-            self.error = f"Failed to assign user to project: {str(e)}"
-        finally:
-            self.loading = False
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            assign_user_data,
+            "User successfully assigned to project"
+        )
 
     async def remove_user_from_project(self, user_id: str, project_id: str):
-        """Remove a user from a project"""
-        try:
-            self.loading = True
-            self.clear_messages()
+        """Remove user from a project"""
+        async def remove_user_data():
+            # Get the user
+            user = await UserRepository.get_by_id(user_id)
+            if not user:
+                self.error = "User not found"
+                return False
             
-            org_id = await self.get_admin_organization_id()
-            if not org_id:
-                self.error = "Access denied: Admin privileges required"
-                return
+            # Remove project assignment
+            user.remove_project_assignment(project_id)
             
-            result = await UserManagementService.remove_user_from_project(
-                user_id, project_id, org_id
-            )
+            # Update user in database
+            await UserRepository.update(user_id, {
+                "project_assignments": user.project_assignments
+            })
             
-            if result.get("success"):
-                self.success = "User successfully removed from project"
-                await self.load_organization_users()  # Refresh user list
-            
-        except Exception as e:
-            self.error = f"Failed to remove user from project: {str(e)}"
-        finally:
-            self.loading = False
+            await self.load_organization_users()  # Refresh user list
+            return True
+        
+        await self.handle_async_operation(
+            remove_user_data,
+            "User removed from project successfully"
+        )
 
     async def update_user_org_roles(self, form_data: Dict):
         """Update a user's organization roles"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
+        async def update_roles_data():
             org_id = await self.get_admin_organization_id()
             if not org_id:
                 self.error = "Access denied: Admin privileges required"
-                return
+                return False
             
             user_id = form_data.get("user_id")
             roles = form_data.get("roles", [])
             
             if not user_id:
                 self.error = "User is required"
-                return
+                return False
                 
             if not roles:
                 self.error = "At least one role is required"
-                return
+                return False
             
             result = await UserManagementService.update_user_org_roles(
                 user_id, roles, org_id
             )
             
             if result.get("success"):
-                self.success = "User roles updated successfully"
                 await self.load_organization_users()  # Refresh user list
-            
-        except Exception as e:
-            self.error = f"Failed to update user roles: {str(e)}"
-        finally:
-            self.loading = False
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            update_roles_data,
+            "User roles updated successfully"
+        )
 
     async def deactivate_user(self, user_id: str):
         """Deactivate a user account"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
+        async def deactivate_user_data():
+            auth_state = await self.get_auth_state()
             if auth_state.is_super_admin:
                 org_id = None
             else:
                 org_id = await self.get_admin_organization_id()
                 if not org_id:
                     self.error = "Access denied: Admin privileges required"
-                    return
+                    return False
             
             result = await UserManagementService.deactivate_user(user_id, org_id)
             
             if result.get("success"):
-                self.success = "User deactivated successfully"
                 await self.load_organization_users()  # Refresh user list
-            
-        except Exception as e:
-            self.error = f"Failed to deactivate user: {str(e)}"
-        finally:
-            self.loading = False
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            deactivate_user_data,
+            "User deactivated successfully"
+        )
 
     async def activate_user(self, user_id: str):
         """Activate a user account"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            auth_state = await self.get_state(AuthState)
+        async def activate_user_data():
+            auth_state = await self.get_auth_state()
             if auth_state.is_super_admin:
                 org_id = None
             else:
                 org_id = await self.get_admin_organization_id()
                 if not org_id:
                     self.error = "Access denied: Admin privileges required"
-                    return
+                    return False
             
             result = await UserManagementService.activate_user(user_id, org_id)
             
             if result.get("success"):
-                self.success = "User activated successfully"
                 await self.load_organization_users()  # Refresh user list
-            
-        except Exception as e:
-            self.error = f"Failed to activate user: {str(e)}"
-        finally:
-            self.loading = False
+                return True
+            return False
+        
+        await self.handle_async_operation(
+            activate_user_data,
+            "User activated successfully"
+        )
 
     async def check_user_permission(self, user_id: str, project_id: Optional[str] = None, 
                                    required_org_role: Optional[str] = None,
@@ -301,7 +333,7 @@ class UserManagementState(rx.State):
         """Get filtered list of organization users"""
         users = self.organization_users
         
-        # Filter by search query
+        # Apply search filter
         if self.search_query:
             users = [
                 user for user in users
@@ -316,10 +348,10 @@ class UserManagementState(rx.State):
                 if self.role_filter in user.get("org_roles", [])
             ]
         
-        # Filter by status
-        if self.status_filter == "active":
+        # Apply status filter
+        if self.status_filter == StatusTypes.ACTIVE:
             users = [user for user in users if user.get("is_active", False)]
-        elif self.status_filter == "inactive":
+        elif self.status_filter == StatusTypes.INACTIVE:
             users = [user for user in users if not user.get("is_active", True)]
         # "all" shows all users
         
@@ -328,56 +360,32 @@ class UserManagementState(rx.State):
     @rx.var
     def available_org_roles(self) -> List[str]:
         """Get list of available organization roles (no super_admin assignment)"""
-        return ["user", "admin"]
+        return UserRoles.get_assignable()
     
     @rx.var
     def available_display_roles(self) -> List[str]:
         """Get list of available roles for display in add user popup (no Super Admin)"""
-        return ["User", "Admin"]
+        return [UserRoles.get_display_names()[role] for role in UserRoles.get_assignable()]
     
     @rx.var
     def edit_user_role_options(self) -> List[str]:
         """Get role options for editing users (no super_admin assignment)"""
-        return ["user", "admin"]
+        return UserRoles.get_assignable()
 
     @rx.var
     def available_project_roles(self) -> List[str]:
         """Get list of available project roles"""
-        return ["project_manager", "inspector", "analyst", "viewer"]
+        return ProjectRoles.get_all()
     
     def can_edit_user(self, target_user_id: str) -> bool:
         """Check if current user can edit the target user"""
-        # No one can edit themselves (self-protection)
-        if AuthState.user_id == target_user_id:
-            return False
-            
-        # Super admins can edit anyone except themselves
-        if AuthState.is_super_admin:
-            return True
-            
-        # Regular admins can edit other users except themselves
-        if AuthState.is_admin:
-            return True
-            
-        # Regular users cannot edit anyone
-        return False
+        from poseidon.state.auth import AuthState
+        return self.can_edit_item(target_user_id, AuthState.user_id, AuthState.is_admin, AuthState.is_super_admin)
     
     def can_deactivate_user(self, target_user_id: str) -> bool:
         """Check if current user can deactivate the target user"""
-        # No one can deactivate themselves (self-protection)
-        if AuthState.user_id == target_user_id:
-            return False
-            
-        # Super admins can deactivate anyone except themselves
-        if AuthState.is_super_admin:
-            return True
-            
-        # Regular admins can deactivate other users except themselves
-        if AuthState.is_admin:
-            return True
-            
-        # Regular users cannot deactivate anyone
-        return False
+        from poseidon.state.auth import AuthState
+        return self.can_deactivate_item(target_user_id, AuthState.user_id, AuthState.is_admin, AuthState.is_super_admin)
 
     def clear_new_user_form(self):
         """Clear the new user form data"""
@@ -387,44 +395,35 @@ class UserManagementState(rx.State):
 
     async def add_user(self):
         """Add a new user to the organization"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
+        async def create_user():
             org_id = await self.get_admin_organization_id()
             if not org_id:
                 self.error = "Access denied: Admin privileges required"
-                return
+                return False
             
             # Validate form data
-            if not self.new_user_username.strip():
-                self.error = "Username is required"
-                return
+            if not self.validate_required_field(self.new_user_username, "Username"):
+                return False
                 
-            if not self.new_user_email.strip():
-                self.error = "Email is required"
-                return
+            if not self.validate_email(self.new_user_email):
+                return False
                 
-            if not self.new_user_role:
-                self.error = "Role is required"
-                return
+            if not self.validate_required_field(self.new_user_role, "Role"):
+                return False
             
             # Convert role to unified format
-            role_mapping = {
-                "User": "user",
-                "Admin": "admin", 
-                # Direct role names (no conversion needed)
-                "user": "user",
-                "admin": "admin"
-            }
+            role_mapping = UserRoles.get_display_names()
+            # Reverse mapping for display names to internal values
+            reverse_role_mapping = {v: k for k, v in role_mapping.items()}
+            reverse_role_mapping.update({k: k for k in UserRoles.get_assignable()})  # Direct mappings
             
-            backend_role = role_mapping.get(self.new_user_role, "user")
+            backend_role = reverse_role_mapping.get(self.new_user_role, UserRoles.USER)
             
             # Validate role assignment permissions
-            auth_state = await self.get_state(AuthState)
-            if backend_role == "admin" and not (auth_state.is_admin or auth_state.is_super_admin):
+            auth_state = await self.get_auth_state()
+            if backend_role == UserRoles.ADMIN and not self.can_manage_users(auth_state.is_admin, auth_state.is_super_admin):
                 self.error = "Only admins can assign admin role"
-                return
+                return False
             
             # Call user management service to add user
             result = await UserManagementService.create_user_in_organization(
@@ -436,16 +435,17 @@ class UserManagementState(rx.State):
             )
             
             if result.get("success"):
-                self.success = f"User '{self.new_user_username}' added successfully"
                 self.clear_new_user_form()
                 await self.load_organization_users()  # Refresh user list
+                return True
             else:
                 self.error = result.get("error", "Failed to add user")
-            
-        except Exception as e:
-            self.error = f"Failed to add user: {str(e)}"
-        finally:
-            self.loading = False
+                return False
+        
+        await self.handle_async_operation(
+            create_user,
+            f"User '{self.new_user_username}' added successfully"
+        )
 
     def set_edit_user_data(self, user_data: Dict):
         """Set edit user form data from selected user"""
@@ -454,12 +454,12 @@ class UserManagementState(rx.State):
         self.edit_user_email = user_data.get("email", "")
         # Set role using unified naming
         org_roles = user_data.get("org_roles", [])
-        if "super_admin" in org_roles:
-            self.edit_user_role = "super_admin"
-        elif "admin" in org_roles:
-            self.edit_user_role = "admin"
+        if UserRoles.SUPER_ADMIN in org_roles:
+            self.edit_user_role = UserRoles.SUPER_ADMIN
+        elif UserRoles.ADMIN in org_roles:
+            self.edit_user_role = UserRoles.ADMIN
         else:
-            self.edit_user_role = "user"
+            self.edit_user_role = UserRoles.USER
 
     def clear_edit_user_form(self):
         """Clear the edit user form data"""
@@ -470,33 +470,27 @@ class UserManagementState(rx.State):
 
     async def update_user(self):
         """Update an existing user"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
+        async def update_user_data():
             org_id = await self.get_admin_organization_id()
             if not org_id:
                 self.error = "Access denied: Admin privileges required"
-                return
+                return False
             
             # Validate form data
-            if not self.edit_user_username.strip():
-                self.error = "Username is required"
-                return
+            if not self.validate_required_field(self.edit_user_username, "Username"):
+                return False
                 
-            if not self.edit_user_email.strip():
-                self.error = "Email is required"
-                return
+            if not self.validate_email(self.edit_user_email):
+                return False
                 
-            if not self.edit_user_role:
-                self.error = "Role is required"
-                return
+            if not self.validate_required_field(self.edit_user_role, "Role"):
+                return False
             
             # Validate role assignment permissions
-            auth_state = await self.get_state(AuthState)
-            if self.edit_user_role == "admin" and not (auth_state.is_admin or auth_state.is_super_admin):
+            auth_state = await self.get_auth_state()
+            if self.edit_user_role == UserRoles.ADMIN and not self.can_manage_users(auth_state.is_admin, auth_state.is_super_admin):
                 self.error = "Only admins can assign admin role"
-                return
+                return False
             
             # Update user organization roles
             result = await UserManagementService.update_user_org_roles(
@@ -506,13 +500,162 @@ class UserManagementState(rx.State):
             )
             
             if result.get("success"):
-                self.success = f"User '{self.edit_user_username}' updated successfully"
                 self.clear_edit_user_form()
                 await self.load_organization_users()  # Refresh user list
+                return True
             else:
                 self.error = result.get("error", "Failed to update user")
+                return False
+        
+        await self.handle_async_operation(
+            update_user_data,
+            f"User '{self.edit_user_username}' updated successfully"
+        )
+
+    # Project Assignment Methods
+    async def open_assignment_dialog(self, user_id: str):
+        """Open project assignment dialog for a specific user"""
+        self.assignment_user_id = user_id
+        self.assignment_project_id = ""
+        self.assignment_roles = []
+        self.assignment_dialog_open = True
+        # Load available projects for the organization
+        await self.load_available_projects()
+
+    def close_assignment_dialog(self):
+        """Close project assignment dialog"""
+        self.assignment_user_id = ""
+        self.assignment_project_id = ""
+        self.assignment_roles = []
+        self.assignment_dialog_open = False
+
+    def set_assignment_dialog_open(self, open: bool):
+        """Set assignment dialog open state"""
+        self.assignment_dialog_open = open
+        if not open:
+            self.close_assignment_dialog()
+
+    def set_assignment_project(self, project_id: str):
+        """Set the project for assignment"""
+        self.assignment_project_id = project_id
+
+    def set_assignment_roles(self, roles: List[str]):
+        """Set the roles for assignment"""
+        self.assignment_roles = roles
+
+    def toggle_assignment_role(self, role: str):
+        """Toggle a role in the assignment"""
+        if role in self.assignment_roles:
+            self.assignment_roles = [r for r in self.assignment_roles if r != role]
+        else:
+            self.assignment_roles = self.assignment_roles + [role]
+
+    async def assign_user_to_project_from_dialog(self):
+        """Assign user to project using dialog data"""
+        async def assign_user_from_dialog():
+            if not self.assignment_user_id or not self.assignment_project_id:
+                self.error = "User and project are required"
+                return False
+                
+            if not self.assignment_roles:
+                self.error = "At least one role is required"
+                return False
             
-        except Exception as e:
-            self.error = f"Failed to update user: {str(e)}"
-        finally:
-            self.loading = False 
+            org_id = await self.get_admin_organization_id()
+            if not org_id:
+                self.error = "Access denied: Admin privileges required"
+                return False
+            
+            result = await UserManagementService.assign_user_to_project(
+                self.assignment_user_id, 
+                self.assignment_project_id, 
+                self.assignment_roles, 
+                org_id
+            )
+            
+            if result.get("success"):
+                self.close_assignment_dialog()
+                await self.load_organization_users()  # Refresh user list
+                return True
+            else:
+                self.error = result.get("error", "Failed to assign user to project")
+                return False
+        
+        await self.handle_async_operation(
+            assign_user_from_dialog,
+            "User successfully assigned to project"
+        )
+
+    def get_user_project_assignments(self, user_id: str) -> List[Dict]:
+        """Get project assignments for a specific user"""
+        for user in self.organization_users:
+            if user["id"] == user_id:
+                return user.get("project_assignments", [])
+        return []
+
+    def get_user_by_id(self, user_id: str) -> Optional[Dict]:
+        """Get user data by ID"""
+        for user in self.organization_users:
+            if user["id"] == user_id:
+                return user
+        return None
+
+    @rx.var
+    def assignment_user_name(self) -> str:
+        """Get the name of the user being assigned"""
+        user = self.get_user_by_id(self.assignment_user_id)
+        return user["username"] if user else ""
+
+    @rx.var
+    def assignment_project_name(self) -> str:
+        """Get the name of the project being assigned"""
+        for project in self.available_projects:
+            if project["id"] == self.assignment_project_id:
+                return project["name"]
+        return ""
+
+    @rx.var
+    def available_project_options(self) -> List[str]:
+        """Get list of available project names for dropdown"""
+        return [project["name"] for project in self.available_projects]
+
+    def get_project_id_by_name(self, project_name: str) -> str:
+        """Get project ID by name"""
+        for project in self.available_projects:
+            if project["name"] == project_name:
+                return project["id"]
+        return ""
+
+    def set_assignment_project_by_name(self, project_name: str):
+        """Set assignment project by name"""
+        self.assignment_project_id = self.get_project_id_by_name(project_name) 
+
+    def open_project_management_dialog(self, user_id: str):
+        """Open project management dialog for a specific user"""
+        self.project_management_user_id = user_id
+        self.project_management_dialog_open = True
+
+    def close_project_management_dialog(self):
+        """Close project management dialog"""
+        self.project_management_user_id = ""
+        self.project_management_dialog_open = False
+
+    def set_project_management_dialog_open(self, open: bool):
+        """Set project management dialog open state"""
+        self.project_management_dialog_open = open
+        if not open:
+            self.close_project_management_dialog()
+
+    @rx.var
+    def project_management_user_name(self) -> str:
+        """Get the name of the user being managed"""
+        user = self.get_user_by_id(self.project_management_user_id)
+        return user["username"] if user else ""
+
+    @rx.var
+    def project_management_user_assignments(self) -> List[Dict]:
+        """Get current project assignments for the user being managed"""
+        user = self.get_user_by_id(self.project_management_user_id)
+        return user.get("project_assignments", []) if user else []
+
+ 
