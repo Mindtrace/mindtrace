@@ -325,6 +325,21 @@ class TestServiceMCP:
         assert called['name'] == "dummy_tool"
         assert called['func'] is dummy_func
 
+    def test_add_endpoint_with_as_tool_calls_add_tool(self):
+        service = Service()
+        # Patch add_tool to track calls
+        called = {}
+        def fake_add_tool(tool_name, func):
+            called['tool_name'] = tool_name
+            called['func'] = func
+        service.add_tool = fake_add_tool
+        def dummy_func():
+            return "ok"
+        test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
+        service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
+        assert called['tool_name'] == "dummy"
+        assert called['func'] is dummy_func
+
 
 class TestServiceUrlBuilding:
     """Test Service URL building functionality."""
