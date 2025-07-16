@@ -469,24 +469,33 @@ class Service(Mindtrace):
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         autolog_kwargs = ifnone(autolog_kwargs, default={})
-
         self._endpoints[path] = schema
+        if as_tool:
+            self.add_tool(tool_name=path, func=func)
+        else:
+            # Warn if the function has no docstring
+            if not func.__doc__:
+                service_name = getattr(self, 'name', self.__class__.__name__)
+                self.logger.warning(
+                    f"Function '{path}' for service '{service_name}' has no docstring."
+                )
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
-        if as_tool:
-            self.add_tool(tool_name=path, func=func)
 
-    def add_tool(self, tool_name, func, description=None):
+    def add_tool(self, tool_name, func):
         """Add a tool to the MCP server, with an informative description including the tool and service name."""
         service_name = getattr(self, 'name', self.__class__.__name__)
-        if description is None:
-            # Use the function's docstring if available
-            base_desc = func.__doc__.strip() if func.__doc__ else f"Tool '{tool_name}' for service '{service_name}'."
+        # Use the function's docstring if available, otherwise log and use a default description
+        if (doc := func.__doc__):
+            base_desc = doc.strip()
         else:
-            base_desc = description
+            base_desc = f"No description provided."
+            self.logger.warning(
+                f"Function '{tool_name}' for service '{service_name}' has no docstring."
+            )
         full_desc = f"{base_desc} This tool ('{tool_name}') belongs to the service '{service_name}'."
         self.mcp.tool(name=tool_name, description=full_desc)(func)
