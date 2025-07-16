@@ -27,10 +27,47 @@ uv sync
 
 ## Usage
 
+### Image Download
 ```bash
 cd mindtrace/automation/mindtrace/automation
 uv run python -m download_images --config configs/images_config.yaml
 ```
+
+### Inference Pipeline
+```bash
+cd mindtrace/automation/mindtrace/automation
+uv run python -m infer_folder --config configs/test_config.yaml
+```
+
+## Inference Pipeline Features
+
+### Supported Input Types
+The inference pipeline can process:
+- **Single Images**: Direct path to an image file
+- **Folders**: All images in a directory
+- **Subfolders**: Recursively processes all images in subdirectories
+
+### Export Types
+Each model can export results in different formats:
+- **Mask**: Semantic segmentation masks (PNG format)
+- **Bounding Box**: Object detection boxes (YOLO format)
+
+### Output Structure
+The pipeline creates a structured output directory:
+```
+output_folder/
+├── images/           # Original images
+├── raw_masks/        # Segmentation masks (PNG)
+├── boxes/           # Bounding boxes (YOLO format)
+└── visualizations/   # Overlay visualizations (JPG)
+```
+
+### Model Loading
+The pipeline automatically:
+1. Downloads models from GCS if not available locally
+2. Loads multiple models for different tasks
+3. Handles different model types (object detection, segmentation)
+4. Manages model versions and metadata
 
 ## Configuration Examples
 
@@ -96,6 +133,61 @@ sampling:
 seed: 42  # Same seed = same images every time
 ```
 
+### 8. Inference Pipeline Configuration
+```yaml
+# Model registry settings
+task_name: "sfz_pipeline"  # Registered task name
+version: "v2.1"            # Model version
+
+# Inference configuration
+inference_list:
+  zone_segmentation: "mask"           # Export segmentation masks
+  spatter_segmentation: "bounding_box" # Export bounding boxes
+
+# Output settings
+output_folder: "/path/to/output"
+threshold: 0.4              # Confidence threshold
+save_visualizations: True   # Generate overlay images
+```
+
+### 9. Complete Pipeline Example
+```yaml
+# Database and GCS settings
+gcp:
+  data_bucket: "your-data-bucket"
+  weights_bucket: "your-weights-bucket"
+  base_folder: "models"
+  credentials_file: "/path/to/credentials.json"
+
+# Image sampling
+sampling:
+  cameras:
+    cam14:
+      number: 10
+    cam15:
+      number: 10
+
+# Date range
+start_date: "2025-06-30"
+end_date: "2025-07-01"
+
+# Download settings
+download_path: "/path/to/downloads"
+max_workers: 8
+
+# Inference pipeline
+task_name: "sfz_pipeline"
+version: "v2.1"
+inference_list:
+  zone_segmentation: "mask"
+  spatter_segmentation: "bounding_box"
+
+# Output settings
+output_folder: "/path/to/results"
+threshold: 0.4
+save_visualizations: True
+```
+
 ## Configuration File Structure
 
 ```yaml
@@ -106,8 +198,10 @@ database_queries:
 
 # Google Cloud Storage settings
 gcp:
-  bucket: "your-bucket-name"
-  credentials_file: "/path/to/your/credentials.json"
+  data_bucket: "your-data-bucket"
+  weights_bucket: "your-weights-bucket"
+  base_folder: "models"
+  credentials_file: "/path/to/credentials.json"
 
 # Image sampling configuration
 sampling:
@@ -143,6 +237,18 @@ seed: 42
 # Download settings
 download_path: "/path/to/download/directory"
 max_workers: 8  # Number of parallel download threads
+
+# Inference pipeline settings
+task_name: "your_pipeline_name"
+version: "v1.0"
+inference_list:
+  task1: "mask"
+  task2: "bounding_box"
+
+# Output settings
+output_folder: "/path/to/output"
+threshold: 0.4
+save_visualizations: True
 ```
 
 ## Sampling Options
@@ -166,4 +272,43 @@ Each camera can be configured with different sampling methods:
 - **Number only**: Takes exactly `number` images (or all if less available)
 - **Both specified**: Prints warning and uses `number`
 - **Neither specified**: Takes all available images
-- **Seed specified**: Ensures reproducible random sampling 
+- **Seed specified**: Ensures reproducible random sampling
+
+## Inference Pipeline Options
+
+### Export Types
+Each model task can export results in different formats:
+
+1. **Mask Export**: 
+   - Generates semantic segmentation masks
+   - Saves as PNG files preserving class values
+   - Creates colored overlay visualizations
+   - Useful for segmentation tasks
+
+2. **Bounding Box Export**:
+   - Generates object detection bounding boxes
+   - Saves in YOLO format with confidence scores
+   - Creates box overlay visualizations
+   - Useful for detection tasks
+
+### Input Processing
+The pipeline automatically handles:
+- **Single Images**: Direct file path processing
+- **Folder Processing**: All images in a directory
+- **Subfolder Recursion**: Processes all subdirectories
+- **Format Support**: JPG, PNG, BMP, TIFF, WebP
+
+### Output Organization
+Results are organized by:
+- **Original Images**: Copied to `images/` folder
+- **Raw Masks**: Saved to `raw_masks/` folder
+- **Bounding Boxes**: Saved to `boxes/` folder
+- **Visualizations**: Saved to `visualizations/` folder
+
+### Model Management
+The pipeline handles:
+- **Automatic Downloads**: Models from GCS if not local
+- **Version Control**: Specific model versions
+- **Multi-Model Loading**: Multiple tasks simultaneously
+- **Device Optimization**: CPU/GPU selection
+- **Error Handling**: Graceful failure recovery 
