@@ -9,7 +9,10 @@ from mindtrace.core import TaskSchema
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.services import Gateway, Service
-
+from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+from mindtrace.registry import Registry
+from mindtrace.cluster.workers.standard_worker_launcher import StandardWorkerLauncher, ProxyWorker
+from mindtrace.core import ifnone
 
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
@@ -28,6 +31,19 @@ class ClusterManager(Gateway):
             preferred_backend=BackendType.REDIS
         )
         self.job_status_database.initialize_sync()
+        self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
+        self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
+        self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
+        self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
+        minio_backend = MinioRegistryBackend(
+            uri="~/.cache/mindtrace/minio_registry_cluster",
+            endpoint=self.worker_registry_endpoint,
+            access_key=self.worker_registry_access_key,
+            secret_key=self.worker_registry_secret_key,
+            bucket=self.worker_registry_bucket,
+            secure=False
+        )
+        self.worker_registry = Registry(backend=minio_backend)
         self.add_endpoint(
             "/submit_job", 
             func=self.submit_job, 
@@ -68,10 +84,22 @@ class ClusterManager(Gateway):
             schema=cluster_types.WorkerAlertCompletedJobTaskSchema,
             methods=["POST"],
         )
+        self.add_endpoint(
+            "/register_node",
+            func=self.register_node,
+            schema=TaskSchema(name="register_node", input_schema=cluster_types.RegisterNodeInput, output_schema=cluster_types.RegisterNodeOutput),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/register_worker_type",
+            func=self.register_worker_type,
+            schema=TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
+            methods=["POST"],
+        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
-        Register a job to an endpoint.
+        Register a job schema to an endpoint. Jobs of this type will be routed directly to the endpoint.
 
         Args:
             payload (RegisterJobToEndpointInput): The payload containing the job type and endpoint.
@@ -125,7 +153,7 @@ class ClusterManager(Gateway):
 
     def submit_job(self, job: Job):
         """
-        Submit a job to the cluster. Will route to the appropriate endpoint based on the job type, or to the Orchestrator once that is implemented.
+        Submit a job to the cluster. Will route to the appropriate endpoint based on the job type, or to the Orchestrator.
 
         Args:
             job (Job): The job to submit.
@@ -153,8 +181,9 @@ class ClusterManager(Gateway):
 
     def register_job_to_worker(self, payload: dict):
         """
-        Register a job to a worker.
-
+        Register a job to an (already launched) Worker instance. 
+        This will connect the worker to the Orchestrator and listen on the appropriate queue for this job type.
+        
         Args:
             job_type (str): The type of job to register.
             worker_url (str): The URL of the worker to register the job to.
@@ -176,6 +205,21 @@ class ClusterManager(Gateway):
             cluster_url=str(self._url)
         )
         self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
+
+    def register_worker_type(self, payload: dict):
+        """
+        Register a worker type to the cluster. This will allow Workers of this type to be launched on Nodes.
+
+        Args:
+            payload (dict): The payload containing the worker name, worker class, and worker params.
+        """
+        worker_name = payload["worker_name"]
+        worker_class = payload["worker_class"]
+        worker_params = payload["worker_params"]
+        materializer_name = ifnone(payload["materializer_name"], "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher")
+        proxy_worker = ProxyWorker(worker_type=worker_class, worker_params=worker_params)
+        self.worker_registry.register_materializer(ProxyWorker, materializer_name)
+        self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
 
     def get_job_status(self, payload: dict):
         """
@@ -228,7 +272,70 @@ class ClusterManager(Gateway):
         job_status.status = payload["status"]
         job_status.output = payload["output"]
         self.job_status_database.insert(job_status)
+
+    def register_node(self, payload: dict):
+        """
+        Register a node to the cluster. This returns the Minio parameters for the node to be used in the Worker registry.
+
+        Args:
+            node_id (str): The id of the node.
+        """
+        return {
+            "endpoint": self.worker_registry_endpoint,
+            "access_key": self.worker_registry_access_key,
+            "secret_key": self.worker_registry_secret_key,
+            "bucket": self.worker_registry_bucket
+        }
         
+
+class Node(Service):
+    def __init__(self, cluster_url: str | None = None, **kwargs):
+        super().__init__(**kwargs)
+        self.worker_registry: Registry = None # type: ignore
+        self.cluster_url = cluster_url
+        if cluster_url is not None:
+            self.cluster_cm = ClusterManager.connect(cluster_url)
+            minio_params = self.cluster_cm.register_node(node_id=str(self.id))
+            minio_backend = MinioRegistryBackend(
+                uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}",
+                **minio_params.model_dump(),
+                secure=False
+            )
+            self.worker_registry = Registry(backend=minio_backend)
+        else:
+            self.cluster_cm = None # type: ignore
+            self.worker_registry = None # type: ignore
+
+        self.workers = []
+        self.add_endpoint(
+            "/launch_worker",
+            func=self.launch_worker,
+            schema=TaskSchema(name="launch_worker", input_schema=cluster_types.LaunchWorkerInput),
+            methods=["POST"],
+        )
+
+    def launch_worker(self, payload: dict):
+        """
+        Launch a worker from the Worker registry.
+
+        Args:
+            payload (dict): The payload containing the worker type and worker URL.
+        """
+        worker_type = payload["worker_type"]
+        worker_url = payload["worker_url"]
+        worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
+        self.workers.append(worker_cm)
+        return worker_cm.url
+
+    def shutdown(self):
+        """
+        Shutdown the node and all workers connected to it.
+        """
+        for worker in self.workers:
+            worker.shutdown()
+        return super().shutdown()
+
+
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

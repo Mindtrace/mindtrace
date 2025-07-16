@@ -284,8 +284,11 @@ class Service(Mindtrace):
         cls._active_servers[server_id] = process
         if len(cls._active_servers) == 1:
             atexit.register(cls._cleanup_all_servers)
-            signal.signal(signal.SIGTERM, lambda sig, frame: cls._cleanup_all_servers())
-            signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
+            try:
+                signal.signal(signal.SIGTERM, lambda sig, frame: cls._cleanup_all_servers())
+                signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
+            except ValueError:
+                cls.logger.warning("Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service.")
 
         # Wait for server to be available and get connection manager
         connection_manager = None
