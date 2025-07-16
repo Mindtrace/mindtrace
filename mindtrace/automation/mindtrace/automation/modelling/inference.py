@@ -8,6 +8,7 @@ from PIL import Image
 import cv2
 from mtrix.models.wrappers import HFVisionModelWrapper
 from mindtrace.storage.gcs import GCSStorageHandler
+import shutil
 
 
 class ExportType(Enum):
@@ -75,20 +76,14 @@ class ModelInference:
         """Instantiate the model using HFVisionModelWrapper."""
         try:
             print(f"Instantiating model: {self.model_name} for task: {self.task_type}")
-            print(f"Model path: {self.model_path}")
-            
-            # Import and instantiate actual HFVisionModelWrapper
-            # Note: You'll need to import HFVisionModelWrapper at the top of the file
-            # from your_model_wrapper import HFVisionModelWrapper
-            
-            # Instantiate model
+            print(f"Model path: {self.model_path}")            
+
             self.model = HFVisionModelWrapper(
                 model_name=self.model_name,
                 task=self.task_type,
                 checkpoint_path=self.model_path
             )
             
-            # Move to device
             self.model.to(self.device)
             
             print(f"Model instantiated successfully")
@@ -144,8 +139,7 @@ class ModelInference:
             
             with torch.no_grad():
                 resp = self.model.predict(image)
-            
-            # Post-process results
+                
             resp = self.model.preprocessor.post_process_object_detection(
                 resp, 
                 threshold=threshold, 
@@ -196,7 +190,7 @@ class ModelInference:
             print(f"Error in semantic segmentation: {e}")
             return {'error': str(e)}
     
-    def _mask_to_bounding_box(self, result: Dict[str, Any]) -> Dict[str, Any]:
+    def _mask_to_bounding_box(self, result: Dict[str, Any], min_area: int = 10) -> Dict[str, Any]:
         """Convert mask to bounding box format."""
         mask = result.get('mask')
         if mask is None:
@@ -220,12 +214,12 @@ class ModelInference:
                 
                 for contour in contours:
                     # Filter out very small contours
-                    if cv2.contourArea(contour) < 10:  # Minimum area threshold
+                    if cv2.contourArea(contour) < min_area:  # Minimum area threshold
                         continue
                     
                     # Get bounding rectangle
                     x, y, w, h = cv2.boundingRect(contour)
-                    boxes.append([x, y, x + w, y + h])
+                    boxes.append([int(x), int(y), int(x + w), int(y + h)])
                     
                     # Calculate confidence based on the proportion of the box that contains the class
                     box_mask = class_mask[y:y+h, x:x+w]
@@ -598,6 +592,23 @@ class Pipeline:
             'num_classes': len(model.id2label)
         }
     
+    def _make_json_serializable(self, obj):
+        """Convert numpy arrays and other non-serializable objects to JSON-serializable formats."""
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, dict):
+            return {key: self._make_json_serializable(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._make_json_serializable(item) for item in obj]
+        elif hasattr(obj, 'cpu') and hasattr(obj, 'numpy'):  # Handle torch tensors
+            return obj.cpu().numpy().tolist()
+        else:
+            return obj
+
     def run_inference_on_folder(self, 
                                input_folder: str,
                                output_folder: str,
@@ -621,8 +632,17 @@ class Pipeline:
         if not os.path.exists(input_folder):
             raise ValueError(f"Input folder does not exist: {input_folder}")
         
-        # Create output folder
+        # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
+        images_folder = os.path.join(output_folder, "images")
+        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        boxes_folder = os.path.join(output_folder, "boxes")
+        visualizations_folder = os.path.join(output_folder, "visualizations")
+        
+        os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(raw_masks_folder, exist_ok=True)
+        os.makedirs(boxes_folder, exist_ok=True)
+        os.makedirs(visualizations_folder, exist_ok=True)
         
         # Get list of image files
         image_files = []
@@ -648,6 +668,11 @@ class Pipeline:
             try:
                 print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)}")
                 
+                # Copy original image to images folder
+                image_filename = os.path.basename(image_path)
+                image_dest = os.path.join(images_folder, image_filename)
+                shutil.copy2(image_path, image_dest)
+                
                 # Run inference
                 results = self.run_inference(
                     image=image_path,
@@ -655,16 +680,13 @@ class Pipeline:
                     threshold=threshold
                 )
                 
-                # Save results
+                # Save structured outputs
                 image_name = os.path.splitext(os.path.basename(image_path))[0]
-                results_file = os.path.join(output_folder, f"{image_name}_results.json")
-                
-                with open(results_file, 'w') as f:
-                    json.dump(results, f, indent=2, default=str)
+                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
                 
                 # Save visualizations if requested
                 if save_visualizations:
-                    self._save_visualizations(image_path, results, output_folder, image_name, export_types)
+                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
                 
                 results_summary['results'][image_name] = results
                 results_summary['processed_images'] += 1
@@ -673,16 +695,89 @@ class Pipeline:
                 print(f"Error processing {image_path}: {e}")
                 results_summary['failed_images'] += 1
         
-        # Save summary
-        summary_file = os.path.join(output_folder, "inference_summary.json")
-        with open(summary_file, 'w') as f:
-            json.dump(results_summary, f, indent=2)
-        
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
     
+    def _save_structured_outputs(self, image_path: str, results: Dict[str, Any], 
+                               raw_masks_folder: str, boxes_folder: str,
+                               export_types: Optional[Dict[str, ExportType]] = None):
+        """Save raw masks and YOLO format boxes with original image filename."""
+        try:
+            image_name = os.path.splitext(os.path.basename(image_path))[0]
+            image_extension = os.path.splitext(os.path.basename(image_path))[1]
+            
+            # Load original image to get dimensions for YOLO format
+            original_image = Image.open(image_path).convert('RGB')
+            img_width, img_height = original_image.size
+            
+            for task_name, result in results.items():
+                if 'error' in result:
+                    continue
+                
+                # Determine export type for this task
+                export_type = ExportType.BOUNDING_BOX  # Default
+                if export_types and task_name in export_types:
+                    export_type = export_types[task_name]
+                
+                # Save raw masks with original filename
+                if 'mask' in result:
+                    mask = result['mask']
+                    if mask is not None and mask.size > 0:
+                        # Use original image filename for mask
+                        mask_filename = f"{image_name}.png"
+                        raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                        
+                        mask = mask.astype(np.uint8)
+                        
+                        # Save the raw mask as PNG (preserves class values)
+                        mask_pil = Image.fromarray(mask, mode='L' if mask.dtype == np.uint8 else 'I;16')
+                        mask_pil.save(raw_mask_path)
+                        print(f"Saved raw mask: {raw_mask_path}")
+                
+                # Save YOLO format boxes with original filename  
+                if 'boxes' in result and len(result['boxes']) > 0:
+                    boxes = result['boxes']
+                    scores = result.get('scores', [])
+                    labels = result.get('labels', [])
+                    
+                    # Use original image filename for boxes
+                    boxes_filename = f"{image_name}.txt"
+                    boxes_path = os.path.join(boxes_folder, boxes_filename)
+                    
+                    self._save_yolo_boxes(boxes, scores, labels, boxes_path, img_width, img_height)
+                    print(f"Saved YOLO boxes: {boxes_path}")
+        
+        except Exception as e:
+            print(f"Error saving structured outputs: {e}")
+    
+    def _save_yolo_boxes(self, boxes: np.ndarray, scores: np.ndarray, labels: np.ndarray, 
+                        output_path: str, img_width: int, img_height: int):
+        """Save bounding boxes in YOLO format with original coordinates (not normalized)."""
+        try:
+            with open(output_path, 'w') as f:
+                for i, box in enumerate(boxes):
+                    x1, y1, x2, y2 = box
+                    
+                    # Convert to YOLO format but keep original coordinates (not normalized)
+                    # YOLO format: class_id center_x center_y width height
+                    center_x = (x1 + x2) / 2
+                    center_y = (y1 + y2) / 2
+                    width = x2 - x1
+                    height = y2 - y1
+                    
+                    # Get class id and confidence
+                    class_id = int(labels[i]) if i < len(labels) else 0
+                    confidence = scores[i] if i < len(scores) else 1.0
+                    
+                    # Write in YOLO format: class_id center_x center_y width height confidence
+                    # Note: Using original coordinates, not normalized to [0,1]
+                    f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f} {confidence:.6f}\n")
+        
+        except Exception as e:
+            print(f"Error saving YOLO boxes: {e}")
+
     def _save_visualizations(self, image_path: str, results: Dict[str, Any], 
-                           output_folder: str, image_name: str, 
+                           visualizations_folder: str, image_name: str, 
                            export_types: Optional[Dict[str, ExportType]] = None):
         """Save visualization images for each model result based on export types."""
         try:
@@ -697,39 +792,35 @@ class Pipeline:
                 export_type = ExportType.BOUNDING_BOX  # Default
                 if export_types and task_name in export_types:
                     export_type = export_types[task_name]
-                elif task_name in self.models:
-                    # Try to get from the model's inference list if available
-                    # This is a fallback for when export_types is not passed
-                    pass
                 
                 # Create visualization based on the specified export type
                 if export_type == ExportType.BOUNDING_BOX:
                     # Create bounding box visualization
                     if 'boxes' in result and len(result['boxes']) > 0:
                         vis_image = self.models[task_name].draw_detection_boxes(original_image, result)
-                        vis_path = os.path.join(output_folder, f"{image_name}_{task_name}_boxes.jpg")
+                        vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_boxes.jpg")
                         vis_image.save(vis_path)
                         print(f"Saved bounding box visualization: {vis_path}")
                     else:
                         print(f"No bounding boxes found for {task_name}")
                 
                 elif export_type == ExportType.MASK:
-                    # Create mask visualization
+                    # Create mask visualizations
                     if 'mask' in result:
                         mask = result['mask']
                         if mask is not None and mask.size > 0:
                             # Create overlay
                             vis_image = self.models[task_name].create_segmentation_overlay(original_image, mask)
-                            vis_path = os.path.join(output_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
+                            vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
                             vis_image.save(vis_path)
                             print(f"Saved mask overlay visualization: {vis_path}")
                             
-                            # Also save mask only
+                            # Also save colored mask only (for visualization)
                             colored_mask = self.models[task_name].generate_colored_mask(mask)
                             mask_image = Image.fromarray(colored_mask)
-                            mask_path = os.path.join(output_folder, f"{image_name}_{task_name}_mask_only.jpg")
+                            mask_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_colored.jpg")
                             mask_image.save(mask_path)
-                            print(f"Saved mask-only visualization: {mask_path}")
+                            print(f"Saved colored mask visualization: {mask_path}")
                         else:
                             print(f"No valid mask found for {task_name}")
                     else:
@@ -741,23 +832,14 @@ class Pipeline:
 
 def test_pipeline():
     """Test function to verify pipeline functionality."""
-    print("Testing Pipeline Functionality")
-    print("=" * 50)
-    
+
     # Configuration
     credentials_path = "/home/vineeth/Desktop/mindtrace/google_creds.json"
     bucket_name = 'adient-staging-weights'
     base_folder = 'sfz'
-    input_folder = "/home/vineeth/Desktop/mindtrace/test_images/cam14"
+    input_folder = "/home/vineeth/Desktop/mindtrace/test_images/cam146"
     output_folder = "./inference_results"
-    
-    print(f"\nConfiguration:")
-    print(f"  Bucket: {bucket_name}")
-    print(f"  Base folder: {base_folder}")
-    print(f"  Credentials: {credentials_path}")
-    print(f"  Input folder: {input_folder}")
-    print(f"  Output folder: {output_folder}")
-    
+
     try:
         # Initialize pipeline
         pipeline = Pipeline(
@@ -766,35 +848,31 @@ def test_pipeline():
             base_folder=base_folder,
             local_models_dir="./tmp"
         )
-        
+
         # Test pipeline loading
-        print("\n1. Testing pipeline loading...")
         inference_list = {
             "zone_segmentation": "mask",
-            "spatter_segmentation": "mask"
+            "spatter_segmentation": "bounding_box"
         }
-        
+
         success = pipeline.load_pipeline(
             task_name="sfz_pipeline",
             version="v2.1",
             inference_list=inference_list
         )
-        
+
         if not success:
             print("Failed to load pipeline")
             return
-        
+
         # Test model info
-        print("\n2. Testing model info...")
         loaded_models = pipeline.get_loaded_models()
-        print(f"Loaded models: {loaded_models}")
-        
+
         for model_name in loaded_models:
             info = pipeline.get_model_info(model_name)
             print(f"Model {model_name}: {info}")
-        
+
         # Test folder inference
-        print("\n3. Testing folder inference...")
         if os.path.exists(input_folder):
             # Convert string export types to ExportType enum values
             export_types = {}
@@ -803,7 +881,7 @@ def test_pipeline():
                     export_types[task_name] = ExportType.MASK
                 elif export_type_str == "bounding_box":
                     export_types[task_name] = ExportType.BOUNDING_BOX
-            
+
             summary = pipeline.run_inference_on_folder(
                 input_folder=input_folder,
                 output_folder=output_folder,
@@ -811,22 +889,19 @@ def test_pipeline():
                 threshold=0.4,
                 save_visualizations=True
             )
-            
+
             print(f"Folder inference summary: {summary}")
         else:
             print(f"Input folder not found: {input_folder}")
             print("Skipping folder inference test")
-        
-        print("\n" + "=" * 50)
-        print("Test completed!")
-        
+
+
     except ValueError as e:
         print(f"Configuration error: {e}")
     except ImportError as e:
         print(f"Import error: {e}")
     except Exception as e:
         print(f"Unexpected error: {e}")
-
 
 if __name__ == "__main__":
     test_pipeline()
