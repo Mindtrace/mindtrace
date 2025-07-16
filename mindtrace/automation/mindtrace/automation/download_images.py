@@ -7,12 +7,51 @@ import os
 from dotenv import load_dotenv
 import tempfile
 import pandas as pd
+from enum import Enum
 
 from mindtrace.automation.database.database_connection import DatabaseConnection
 from mindtrace.storage.gcs import GCSStorageHandler
 
 # Load environment variables from .env file
 load_dotenv("envs/database.env")
+
+class QueryType(Enum):
+    """Supported database query types."""
+    GET_IMAGES_BY_DATE = "get_images_by_date"
+    GET_IMAGES_BY_CAMERA = "get_images_by_camera"
+    GET_IMAGES_BY_TIMESTAMP = "get_images_by_timestamp"
+
+class QueryManager:
+    """Manages predefined database queries."""
+    
+    QUERIES = {
+        QueryType.GET_IMAGES_BY_DATE: """
+            SELECT 
+                img."bucketName",
+                img."fullPath",
+                img."name" AS "image_name",
+                analytics."createdAt" AS "entry_date"
+            FROM public."AdientImage" AS img
+            JOIN public."AdientAnalytics" AS analytics 
+                ON analytics."id" = img."analyticsId"
+            WHERE analytics."createdAt" >= %s 
+            AND analytics."createdAt" < %s
+        """
+    }
+    
+    @classmethod
+    def get_query(cls, query_type: str) -> str:
+        """Get SQL query by type."""
+        try:
+            query_enum = QueryType(query_type)
+            return cls.QUERIES[query_enum]
+        except ValueError:
+            raise ValueError(f"Unknown query type: {query_type}. Available types: {[qt.value for qt in QueryType]}")
+    
+    @classmethod
+    def get_available_queries(cls) -> list:
+        """Get list of available query types."""
+        return [qt.value for qt in QueryType]
 
 class ImageDownload:
     def __init__(
@@ -29,9 +68,23 @@ class ImageDownload:
     ):
         """Initialize database and GCP connections."""
         self.config = config
+        
+        # Get query type from config
         query_config = self.config.get('database_queries', {})
         if not query_config:
             raise ValueError("No database_queries section found in config file")
+        
+        query_type = query_config.get('query_type')
+        if not query_type:
+            raise ValueError("No query_type specified in database_queries section")
+        
+        # Get the actual SQL query
+        sql_query = QueryManager.get_query(query_type)
+        
+        # Create query config for database connection
+        db_query_config = {
+            'get_images_by_date': sql_query
+        }
         
         self.db_conn = DatabaseConnection(
             database=database,
@@ -39,7 +92,7 @@ class ImageDownload:
             password=password,
             host=host,
             port=int(port),
-            query_config=query_config
+            query_config=db_query_config
         )
         
         self.gcp_manager = GCSStorageHandler(
