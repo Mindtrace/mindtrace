@@ -663,15 +663,27 @@ class CameraState(rx.State):
                     if data.get("success"):
                         self.camera_statuses[camera] = "available"
                         self.success = f"Camera {camera} initialized successfully"
+                        
+                        # Save camera to database
+                        await self.save_camera_to_db(camera, "active")
                     else:
                         self.camera_statuses[camera] = "unavailable"
                         self.error = data.get("message", f"Failed to initialize {camera}")
+                        
+                        # Still save to database with inactive status
+                        await self.save_camera_to_db(camera, "inactive")
                 else:
                     self.camera_statuses[camera] = "unavailable"
                     self.error = f"Failed to initialize {camera}: {response.status_code}"
+                    
+                    # Still save to database with error status
+                    await self.save_camera_to_db(camera, "error")
         except Exception as e:
             self.camera_statuses[camera] = "unavailable"
             self.error = f"Error initializing {camera}: {str(e)}"
+            
+            # Still save to database with error status
+            await self.save_camera_to_db(camera, "error")
         finally:
             self.is_loading = False
     
@@ -692,6 +704,9 @@ class CameraState(rx.State):
                     if data.get("success"):
                         self.camera_statuses[camera] = "not_initialized"
                         self.success = f"Camera {camera} closed successfully"
+                        
+                        # Update camera status in database
+                        await self.save_camera_to_db(camera, "inactive")
                         
                         # If the closed camera was selected, clear the selection
                         if self.selected_camera == camera:

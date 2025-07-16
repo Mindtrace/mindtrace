@@ -18,6 +18,7 @@ POSEIDON_USER_NAV = [
     {"name": "Profile", "href": "/profile", "icon": "👤"},
     {"name": "Image Viewer", "href": "/image-viewer", "icon": "🔍"},
     {"name": "Camera Configurator", "href": "/camera-configurator", "icon": "📷"},
+    {"name": "Model Deployment", "href": "/model-deployment", "icon": "🔧"},
 ]
 
 POSEIDON_ADMIN_NAV = [
