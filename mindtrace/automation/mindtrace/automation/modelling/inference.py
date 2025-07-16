@@ -6,9 +6,11 @@ from typing import Optional, Dict, Any, Tuple, List, Union
 from enum import Enum
 from PIL import Image
 import cv2
+import shutil
+import argparse
+import yaml
 from mtrix.models.wrappers import HFVisionModelWrapper
 from mindtrace.storage.gcs import GCSStorageHandler
-import shutil
 
 
 class ExportType(Enum):
@@ -943,12 +945,19 @@ class Pipeline:
 def test_pipeline():
     """Test function to verify pipeline functionality."""
 
+    parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    args = parser.parse_args()
+    
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+
     # Configuration
-    credentials_path = "/home/vineeth/Desktop/mindtrace/google_creds.json"
-    bucket_name = 'adient-staging-weights'
-    base_folder = 'sfz'
-    input_folder = "/home/vineeth/Desktop/mindtrace/test_images/cam146"
-    output_folder = "./inference_results"
+    credentials_path = config['gcp']['credentials_file']
+    bucket_name = config['gcp']['weights_bucket']
+    base_folder = config['gcp']['base_folder']
+    input_folder = config['download_path']
+    output_folder = config['output_folder']
 
     try:
         # Initialize pipeline
@@ -960,14 +969,11 @@ def test_pipeline():
         )
 
         # Test pipeline loading
-        inference_list = {
-            "zone_segmentation": "mask",
-            "spatter_segmentation": "bounding_box"
-        }
+        inference_list = config['inference_list']
 
         success = pipeline.load_pipeline(
-            task_name="sfz_pipeline",
-            version="v2.1",
+            task_name=config['task_name'],
+            version=config['version'],
             inference_list=inference_list
         )
 
@@ -986,21 +992,20 @@ def test_pipeline():
         if os.path.exists(input_folder):
             # Convert string export types to ExportType enum values
             export_types = {}
-            for task_name, export_type_str in inference_list.items():
+            for task_name, export_type_str in config['inference_list'].items():
                 if export_type_str == "mask":
                     export_types[task_name] = ExportType.MASK
                 elif export_type_str == "bounding_box":
                     export_types[task_name] = ExportType.BOUNDING_BOX
 
-            summary = pipeline.run_inference_on_path(
-                input_path=input_folder,
+            summary = pipeline.run_inference_on_folder(
+                input_folder=input_folder,
                 output_folder=output_folder,
                 export_types=export_types,
-                threshold=0.4,
+                threshold=config['threshold'],
                 save_visualizations=True
             )
 
-            print(f"Folder inference summary: {summary}")
         else:
             print(f"Input folder not found: {input_folder}")
             print("Skipping folder inference test")

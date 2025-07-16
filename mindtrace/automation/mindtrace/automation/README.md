@@ -36,7 +36,7 @@ uv run python -m download_images --config configs/images_config.yaml
 ### Inference Pipeline
 ```bash
 cd mindtrace/automation/mindtrace/automation
-uv run python -m infer_folder --config configs/test_config.yaml
+uv run python -m infer_folder --config configs/images_config.yaml
 ```
 
 ## Inference Pipeline Features
@@ -150,44 +150,6 @@ threshold: 0.4              # Confidence threshold
 save_visualizations: True   # Generate overlay images
 ```
 
-### 9. Complete Pipeline Example
-```yaml
-# Database and GCS settings
-gcp:
-  data_bucket: "your-data-bucket"
-  weights_bucket: "your-weights-bucket"
-  base_folder: "models"
-  credentials_file: "/path/to/credentials.json"
-
-# Image sampling
-sampling:
-  cameras:
-    cam14:
-      number: 10
-    cam15:
-      number: 10
-
-# Date range
-start_date: "2025-06-30"
-end_date: "2025-07-01"
-
-# Download settings
-download_path: "/path/to/downloads"
-max_workers: 8
-
-# Inference pipeline
-task_name: "sfz_pipeline"
-version: "v2.1"
-inference_list:
-  zone_segmentation: "mask"
-  spatter_segmentation: "bounding_box"
-
-# Output settings
-output_folder: "/path/to/results"
-threshold: 0.4
-save_visualizations: True
-```
-
 ## Configuration File Structure
 
 ```yaml
@@ -266,13 +228,6 @@ Each camera can be configured with different sampling methods:
 - Same seed = same images every time
 - Useful for debugging and consistent testing
 - Optional - omit for random sampling
-
-### Behavior Rules
-- **Proportion only**: Samples `proportion * total_available_images`
-- **Number only**: Takes exactly `number` images (or all if less available)
-- **Both specified**: Prints warning and uses `number`
-- **Neither specified**: Takes all available images
-- **Seed specified**: Ensures reproducible random sampling
 
 ## Inference Pipeline Options
 
