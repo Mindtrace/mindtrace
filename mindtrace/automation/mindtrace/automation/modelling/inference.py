@@ -534,7 +534,225 @@ class Pipeline:
             print(f"Error loading model {inference_task}: {e}")
             return False
     
-    def run_inference(self, image: Union[str, Image.Image, np.ndarray],
+    def run_inference_on_path(self, 
+                     input_path: str,
+                     output_folder: str,
+                     export_types: Optional[Dict[str, ExportType]] = None,
+                     threshold: float = 0.4,
+                     save_visualizations: bool = True,
+                     supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')) -> Dict[str, Any]:
+        """Run inference on a single image or all images in a folder (including subfolders).
+        
+        Args:
+            input_path: Path to single image or folder containing images
+            output_folder: Path to save results and visualizations
+            export_types: Dictionary mapping task names to export types
+            threshold: Confidence threshold for detections
+            save_visualizations: Whether to save visualization images
+            supported_formats: Image formats to process
+            
+        Returns:
+            Dictionary with results summary
+        """
+        if not os.path.exists(input_path):
+            raise ValueError(f"Input path does not exist: {input_path}")
+        
+        if os.path.isfile(input_path):
+            # Single image
+            return self._run_inference_on_single_image(
+                input_path, output_folder, export_types, threshold, save_visualizations
+            )
+        elif os.path.isdir(input_path):
+            # Folder (with subfolder support)
+            return self.run_inference_on_folder(
+                input_path, output_folder, export_types, threshold, save_visualizations, supported_formats
+            )
+        else:
+            raise ValueError(f"Input path is neither a file nor directory: {input_path}")
+    
+    def _run_inference_on_single_image(self, 
+                                      image_path: str,
+                                      output_folder: str,
+                                      export_types: Optional[Dict[str, ExportType]] = None,
+                                      threshold: float = 0.4,
+                                      save_visualizations: bool = True) -> Dict[str, Any]:
+        """Run inference on a single image.
+        
+        Args:
+            image_path: Path to the image file
+            output_folder: Path to save results and visualizations
+            export_types: Dictionary mapping task names to export types
+            threshold: Confidence threshold for detections
+            save_visualizations: Whether to save visualization images
+            
+        Returns:
+            Dictionary with results summary
+        """
+        # Create output folder structure
+        os.makedirs(output_folder, exist_ok=True)
+        images_folder = os.path.join(output_folder, "images")
+        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        boxes_folder = os.path.join(output_folder, "boxes")
+        visualizations_folder = os.path.join(output_folder, "visualizations")
+        
+        os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(raw_masks_folder, exist_ok=True)
+        os.makedirs(boxes_folder, exist_ok=True)
+        os.makedirs(visualizations_folder, exist_ok=True)
+        
+        try:
+            print(f"Processing single image: {os.path.basename(image_path)}")
+            
+            # Copy original image to images folder
+            image_filename = os.path.basename(image_path)
+            image_dest = os.path.join(images_folder, image_filename)
+            shutil.copy2(image_path, image_dest)
+            
+            # Run inference on all models
+            results = self.run_inference_on_models(
+                image=image_path,
+                export_types=export_types,
+                threshold=threshold
+            )
+            
+            # Save structured outputs
+            image_name = os.path.splitext(os.path.basename(image_path))[0]
+            self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
+            
+            # Save visualizations if requested
+            if save_visualizations:
+                self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+            
+            results_summary = {
+                'total_images': 1,
+                'processed_images': 1,
+                'failed_images': 0,
+                'results': {image_name: results}
+            }
+            
+            print(f"Single image inference completed successfully")
+            return results_summary
+            
+        except Exception as e:
+            print(f"Error processing {image_path}: {e}")
+            return {
+                'total_images': 1,
+                'processed_images': 0,
+                'failed_images': 1,
+                'results': {},
+                'error': str(e)
+            }
+
+    def run_inference_on_folder(self, 
+                               input_folder: str,
+                               output_folder: str,
+                               export_types: Optional[Dict[str, ExportType]] = None,
+                               threshold: float = 0.4,
+                               save_visualizations: bool = True,
+                               supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')) -> Dict[str, Any]:
+        """Run inference on all images in a folder and its subfolders.
+        
+        Args:
+            input_folder: Path to folder containing images
+            output_folder: Path to save results and visualizations
+            export_types: Dictionary mapping task names to export types
+            threshold: Confidence threshold for detections
+            save_visualizations: Whether to save visualization images
+            supported_formats: Image formats to process
+            
+        Returns:
+            Dictionary with results summary
+        """
+        if not os.path.exists(input_folder):
+            raise ValueError(f"Input folder does not exist: {input_folder}")
+        
+        # Create output folder structure
+        os.makedirs(output_folder, exist_ok=True)
+        images_folder = os.path.join(output_folder, "images")
+        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        boxes_folder = os.path.join(output_folder, "boxes")
+        visualizations_folder = os.path.join(output_folder, "visualizations")
+        
+        os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(raw_masks_folder, exist_ok=True)
+        os.makedirs(boxes_folder, exist_ok=True)
+        os.makedirs(visualizations_folder, exist_ok=True)
+        
+        # Get list of image files from all subfolders
+        image_files = []
+        for root, dirs, files in os.walk(input_folder):
+            for file in files:
+                if file.lower().endswith(supported_formats):
+                    image_files.append(os.path.join(root, file))
+        
+        if not image_files:
+            print(f"No supported image files found in {input_folder} or its subfolders")
+            return {'error': 'No supported images found'}
+        
+        print(f"Found {len(image_files)} images to process in {input_folder} and its subfolders")
+        
+        # Process each image
+        results_summary = {
+            'total_images': len(image_files),
+            'processed_images': 0,
+            'failed_images': 0,
+            'results': {}
+        }
+        
+        for i, image_path in enumerate(image_files):
+            try:
+                print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+                
+                # Copy original image to images folder
+                image_filename = os.path.basename(image_path)
+                image_dest = os.path.join(images_folder, image_filename)
+                shutil.copy2(image_path, image_dest)
+                
+                # Run inference
+                results = self.run_inference_on_models(
+                    image=image_path,
+                    export_types=export_types,
+                    threshold=threshold
+                )
+                
+                # Save structured outputs
+                image_name = os.path.splitext(os.path.basename(image_path))[0]
+                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
+                
+                # Save visualizations if requested
+                if save_visualizations:
+                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+                
+                results_summary['results'][image_name] = results
+                results_summary['processed_images'] += 1
+                
+            except Exception as e:
+                print(f"Error processing {image_path}: {e}")
+                results_summary['failed_images'] += 1
+        
+        print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
+        return results_summary
+    
+    def get_loaded_models(self) -> List[str]:
+        """Get list of loaded model names."""
+        return list(self.models.keys())
+    
+    def get_model_info(self, task_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific model."""
+        if task_name not in self.models:
+            return None
+        
+        model = self.models[task_name]
+        return {
+            'model_name': model.model_name,
+            'task_type': model.task_type,
+            'model_path': model.model_path,
+            'device': model.device,
+            'img_size': model.img_size,
+            'num_classes': len(model.id2label)
+        }
+    
+    def run_inference_on_models(self, image: Union[str, Image.Image, np.ndarray],
                      export_types: Optional[Dict[str, ExportType]] = None,
                      threshold: float = 0.4) -> Dict[str, Any]:
         """Run inference on all loaded models.
@@ -572,26 +790,7 @@ class Pipeline:
                 results[task_name] = {'error': str(e)}
         
         return results
-    
-    def get_loaded_models(self) -> List[str]:
-        """Get list of loaded model names."""
-        return list(self.models.keys())
-    
-    def get_model_info(self, task_name: str) -> Optional[Dict[str, Any]]:
-        """Get information about a specific model."""
-        if task_name not in self.models:
-            return None
-        
-        model = self.models[task_name]
-        return {
-            'model_name': model.model_name,
-            'task_type': model.task_type,
-            'model_path': model.model_path,
-            'device': model.device,
-            'img_size': model.img_size,
-            'num_classes': len(model.id2label)
-        }
-    
+
     def _make_json_serializable(self, obj):
         """Convert numpy arrays and other non-serializable objects to JSON-serializable formats."""
         if isinstance(obj, np.ndarray):
@@ -609,95 +808,6 @@ class Pipeline:
         else:
             return obj
 
-    def run_inference_on_folder(self, 
-                               input_folder: str,
-                               output_folder: str,
-                               export_types: Optional[Dict[str, ExportType]] = None,
-                               threshold: float = 0.4,
-                               save_visualizations: bool = True,
-                               supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')) -> Dict[str, Any]:
-        """Run inference on all images in a folder.
-        
-        Args:
-            input_folder: Path to folder containing images
-            output_folder: Path to save results and visualizations
-            export_types: Dictionary mapping task names to export types
-            threshold: Confidence threshold for detections
-            save_visualizations: Whether to save visualization images
-            supported_formats: Image formats to process
-            
-        Returns:
-            Dictionary with results summary
-        """
-        if not os.path.exists(input_folder):
-            raise ValueError(f"Input folder does not exist: {input_folder}")
-        
-        # Create output folder structure
-        os.makedirs(output_folder, exist_ok=True)
-        images_folder = os.path.join(output_folder, "images")
-        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
-        boxes_folder = os.path.join(output_folder, "boxes")
-        visualizations_folder = os.path.join(output_folder, "visualizations")
-        
-        os.makedirs(images_folder, exist_ok=True)
-        os.makedirs(raw_masks_folder, exist_ok=True)
-        os.makedirs(boxes_folder, exist_ok=True)
-        os.makedirs(visualizations_folder, exist_ok=True)
-        
-        # Get list of image files
-        image_files = []
-        for file in os.listdir(input_folder):
-            if file.lower().endswith(supported_formats):
-                image_files.append(os.path.join(input_folder, file))
-        
-        if not image_files:
-            print(f"No supported image files found in {input_folder}")
-            return {'error': 'No supported images found'}
-        
-        print(f"Found {len(image_files)} images to process")
-        
-        # Process each image
-        results_summary = {
-            'total_images': len(image_files),
-            'processed_images': 0,
-            'failed_images': 0,
-            'results': {}
-        }
-        
-        for i, image_path in enumerate(image_files):
-            try:
-                print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)}")
-                
-                # Copy original image to images folder
-                image_filename = os.path.basename(image_path)
-                image_dest = os.path.join(images_folder, image_filename)
-                shutil.copy2(image_path, image_dest)
-                
-                # Run inference
-                results = self.run_inference(
-                    image=image_path,
-                    export_types=export_types,
-                    threshold=threshold
-                )
-                
-                # Save structured outputs
-                image_name = os.path.splitext(os.path.basename(image_path))[0]
-                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
-                
-                # Save visualizations if requested
-                if save_visualizations:
-                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-                
-                results_summary['results'][image_name] = results
-                results_summary['processed_images'] += 1
-                
-            except Exception as e:
-                print(f"Error processing {image_path}: {e}")
-                results_summary['failed_images'] += 1
-        
-        print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
-        return results_summary
-    
     def _save_structured_outputs(self, image_path: str, results: Dict[str, Any], 
                                raw_masks_folder: str, boxes_folder: str,
                                export_types: Optional[Dict[str, ExportType]] = None):
@@ -882,8 +992,8 @@ def test_pipeline():
                 elif export_type_str == "bounding_box":
                     export_types[task_name] = ExportType.BOUNDING_BOX
 
-            summary = pipeline.run_inference_on_folder(
-                input_folder=input_folder,
+            summary = pipeline.run_inference_on_path(
+                input_path=input_folder,
                 output_folder=output_folder,
                 export_types=export_types,
                 threshold=0.4,
