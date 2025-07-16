@@ -1,7 +1,6 @@
 import time
 
-from mindtrace.cluster import Node, ClusterManager
-from mindtrace.cluster.workers.echo_worker import EchoWorker
+from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 

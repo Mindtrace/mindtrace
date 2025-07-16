@@ -8,6 +8,7 @@ from mindtrace.core import get_class
 from mindtrace.registry import Archiver
 from mindtrace.services import ConnectionManager
 
+
 class ProxyWorker(BaseModel):
     worker_type: str
     worker_params: dict
