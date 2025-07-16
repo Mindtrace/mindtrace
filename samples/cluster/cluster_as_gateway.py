@@ -37,7 +37,6 @@ def base_gateway_example():
         )
         print(f"EchoService registered with Gateway: {result}")
         print(f"Registered apps: {cluster_cm.registered_apps}")
-        
 
         cluster_cm.register_job_to_endpoint(job_type="echo_job", endpoint="echo/run")
         print(job_from_schema(echo_job, EchoInput(message="echo")).model_dump())
