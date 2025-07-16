@@ -6,10 +6,8 @@ from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from mindtrace.services import generate_connection_manager
-from mindtrace.services.core.types import (EndpointsOutput, HeartbeatOutput,
-                                           PIDFileOutput, ServerIDOutput,
-                                           StatusOutput)
-from mindtrace.services.sample.echo_service import EchoOutput, EchoService
+from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService
 
 
 class TestServiceIntegration:
@@ -59,6 +57,33 @@ class TestServiceIntegration:
         async_result = await echo_service_manager.aecho(message="Async integration test")
         assert isinstance(async_result, EchoOutput)
         assert async_result.echoed == "Async integration test"
+
+        input_message = EchoInput(message="Pre-validated test message")
+        result = echo_service_manager.echo(input_message)
+        assert isinstance(result, EchoOutput)
+        assert result.echoed == "Pre-validated test message"
+
+        async_result = await echo_service_manager.aecho(input_message)
+        assert isinstance(async_result, EchoOutput)
+        assert async_result.echoed == "Pre-validated test message"
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoOutput(echoed="should fail"))
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoInput(message="should fail"), "can't have a second argument")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoInput(message="should fail"), message="can't have things both ways")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoOutput(echoed="should fail"))
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoInput(message="should fail"), "can't have a second argument")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoInput(message="should fail"), message="can't have things both ways")
 
         print("All integration tests passed!")
 
