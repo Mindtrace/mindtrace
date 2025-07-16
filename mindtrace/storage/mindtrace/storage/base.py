@@ -31,7 +31,7 @@ class StorageHandler(MindtraceABC, ABC):
         local_path: str,
         remote_path: str,
         metadata: Optional[Dict[str, str]] = None,
-    ) -> str:
+    ) -> str: 
         """Upload a file from local_path to remote_path in storage.
         Args:
             local_path: Path to the local file to upload.
@@ -40,17 +40,17 @@ class StorageHandler(MindtraceABC, ABC):
         Returns:
             The remote path or URI of the uploaded file.
         """
-        ...
+        pass  # pragma: no cover
 
     @abstractmethod
-    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:
+    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:  
         """Download a file from remote_path in storage to local_path.
         Args:
             remote_path: Path in the storage backend to download from.
             local_path: Local path to save the downloaded file.
             skip_if_exists: If True, skip download if local_path exists.
         """
-        ...
+        pass  # pragma: no cover
 
     @abstractmethod
     def delete(self, remote_path: str) -> None:
@@ -58,7 +58,7 @@ class StorageHandler(MindtraceABC, ABC):
         Args:
             remote_path: Path in the storage backend to delete.
         """
-        ...
+        pass  # pragma: no cover
 
     # Bulk Operations -------------------------------------------------------
     def upload_batch(
@@ -245,7 +245,7 @@ class StorageHandler(MindtraceABC, ABC):
         Returns:
             List of object paths.
         """
-        ...
+        pass  # pragma: no cover
 
     @abstractmethod
     def exists(self, remote_path: str) -> bool:
@@ -255,7 +255,7 @@ class StorageHandler(MindtraceABC, ABC):
         Returns:
             True if the object exists, False otherwise.
         """
-        ...
+        pass  # pragma: no cover
 
     @abstractmethod
     def get_presigned_url(
@@ -273,7 +273,7 @@ class StorageHandler(MindtraceABC, ABC):
         Returns:
             A presigned URL string.
         """
-        ...
+        pass  # pragma: no cover
 
     @abstractmethod
     def get_object_metadata(self, remote_path: str) -> Dict[str, Any]:
@@ -283,4 +283,4 @@ class StorageHandler(MindtraceABC, ABC):
         Returns:
             Dictionary of metadata for the object.
         """
-        ...
+        pass  # pragma: no cover
