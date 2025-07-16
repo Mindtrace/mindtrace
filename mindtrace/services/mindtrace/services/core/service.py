@@ -116,16 +116,18 @@ class Service(Mindtrace):
         self.app.mount("/mcp-server", self.mcp_app)
         self.add_endpoint(
             path="/endpoints",
-            func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
+            func=self.endpoints_func,
             schema=EndpointsSchema(),
+            as_tool=True,
         )
         self.add_endpoint(
-            path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema()
+            path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True
         )
         self.add_endpoint(
             path="/heartbeat",
-            func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}),
+            func=self.heartbeat_func,
             schema=HeartbeatSchema(),
+            as_tool=True,
         )
         self.add_endpoint(
             path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
@@ -136,6 +138,18 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
         )
+
+    def endpoints_func(self):
+        """List all available endpoints for the service."""
+        return {"endpoints": list(self._endpoints.keys())}
+
+    def status_func(self):
+        """Get the current status of the service."""
+        return {"status": self.status.value}
+
+    def heartbeat_func(self):
+        """Perform a heartbeat check for the service."""
+        return {"heartbeat": self.heartbeat()}
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -463,6 +477,13 @@ class Service(Mindtrace):
         if as_tool:
             self.add_tool(tool_name=path, func=func)
 
-    def add_tool(self, tool_name, func):
-        """Add a tool to the MCP server."""
-        self.mcp.tool(name=tool_name)(func)
+    def add_tool(self, tool_name, func, description=None):
+        """Add a tool to the MCP server, with an informative description including the tool and service name."""
+        service_name = getattr(self, 'name', self.__class__.__name__)
+        if description is None:
+            # Use the function's docstring if available
+            base_desc = func.__doc__.strip() if func.__doc__ else f"Tool '{tool_name}' for service '{service_name}'."
+        else:
+            base_desc = description
+        full_desc = f"{base_desc} This tool ('{tool_name}') belongs to the service '{service_name}'."
+        self.mcp.tool(name=tool_name, description=full_desc)(func)
