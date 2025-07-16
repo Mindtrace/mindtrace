@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from mindtrace.cluster import ClusterManager
+from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
@@ -107,3 +107,24 @@ def test_cluster_manager_worker_failure():
     finally:
         if cluster_cm is not None:
             cluster_cm.shutdown()
+
+@pytest.mark.integration
+def test_cluster_manager_with_node():
+    """Integration test for ClusterManager with a Node."""
+    cluster_cm = ClusterManager.launch(host="localhost", port=8106, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8107, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    try:
+        cluster_cm.register_worker_type(worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={})
+        worker_url = "http://localhost:8108"
+        node.launch_worker(worker_type="echoworker", worker_url=worker_url)
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!"})
+        result = cluster_cm.submit_job(**job.model_dump())
+        time.sleep(1)
+        result = cluster_cm.get_job_status(job_id=job.id)
+        assert result.status == "completed"
+        assert result.output == {"echoed": "Hello, World!"}
+    finally:
+        node.shutdown()
+        cluster_cm.shutdown()

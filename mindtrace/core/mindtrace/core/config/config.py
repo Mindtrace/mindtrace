@@ -20,6 +20,10 @@ class Config(dict):
             "MINDTRACE_SERVER_PIDS_DIR_PATH": "~/.cache/mindtrace/pids",
             "MINDTRACE_LOGGER_DIR": "~/.cache/mindtrace/logs",
             "MINDTRACE_CLUSTER_DEFAULT_REDIS_URL": "redis://localhost:6379",
+            "MINDTRACE_CLUSTER_MINIO_ENDPOINT": "localhost:9000",
+            "MINDTRACE_CLUSTER_MINIO_ACCESS_KEY": "minioadmin",
+            "MINDTRACE_CLUSTER_MINIO_SECRET_KEY": "minioadmin",
+            "MINDTRACE_CLUSTER_MINIO_BUCKET": "minio-registry",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)

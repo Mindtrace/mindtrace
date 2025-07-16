@@ -83,3 +83,22 @@ class WorkerAlertCompletedJobInput(BaseModel):
     worker_id: str
 
 WorkerAlertCompletedJobTaskSchema = TaskSchema(name="worker_alert_completed_job", input_schema=WorkerAlertCompletedJobInput)
+
+class LaunchWorkerInput(BaseModel):
+    worker_type: str
+    worker_url: str
+
+class RegisterNodeInput(BaseModel):
+    node_id: str
+
+class RegisterNodeOutput(BaseModel):
+    endpoint: str
+    access_key: str
+    secret_key: str
+    bucket: str
+
+class RegisterWorkerTypeInput(BaseModel):
+    worker_name: str
+    worker_class: str
+    worker_params: dict
+    materializer_name: str | None = None
