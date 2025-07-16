@@ -22,9 +22,9 @@ class StandardWorkerLauncher(Archiver):
     def __init__(self, uri: str, *args, **kwargs):
         super().__init__(uri=uri, *args, **kwargs)
 
-    def save(self, worker: ProxyWorker):
+    def save(self, data: ProxyWorker):
         with open(Path(self.uri) / "worker.json", "w") as f:
-            json.dump(worker.model_dump(), f)
+            json.dump(data.model_dump(), f)
 
     def load(self, data_type: Any, url: str) -> ConnectionManager:
         with open(Path(self.uri) / "worker.json", "r") as f:
