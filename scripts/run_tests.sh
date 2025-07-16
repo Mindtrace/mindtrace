@@ -106,6 +106,16 @@ if [ "$RUN_INTEGRATION" = true ]; then
     until curl -s http://localhost:9000/minio/health/live > /dev/null; do
         sleep 1
     done
+    
+    echo "Waiting for MongoDB to be ready..."
+    until nc -z localhost 27017; do
+        sleep 1
+    done
+    
+    echo "Waiting for Redis to be ready..."
+    until nc -z localhost 6379; do
+        sleep 1
+    done
 fi
 
 # Clear any existing coverage data when running with coverage
