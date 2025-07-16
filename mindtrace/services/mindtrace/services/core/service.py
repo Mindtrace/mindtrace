@@ -11,7 +11,7 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Type, TypeVar
+from typing import Any, Dict, Type, TypeVar
 from uuid import UUID
 
 import fastapi
@@ -49,7 +49,7 @@ class Service(Mindtrace):
         summary: str | None = None,
         description: str | None = None,
         terms_of_service: str | None = None,
-        license_info: str | None = None,
+        license_info: Dict[str, str | Any] | None = None,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -88,7 +88,10 @@ class Service(Mindtrace):
         description = str(ifnone(description, default=f"{self.name} server."))
         version_str = "Mindtrace " + version("mindtrace-services")
 
-        self.mcp = FastMCP(re.sub(r"server", "mcp server", description, flags=re.IGNORECASE))
+        self.mcp = FastMCP(
+            name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
+            version=version_str,
+        )
         self.mcp_app = self.mcp.http_app(path='/mcp')
 
         @asynccontextmanager
