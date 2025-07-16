@@ -31,7 +31,8 @@ if __name__ == "__main__":
         credentials_path=config['gcp']['credentials_file'],
         bucket_name=config['gcp']['weights_bucket'],
         base_folder=config['gcp']['base_folder'],
-        local_models_dir="./tmp"
+        local_models_dir="./tmp",
+        overwrite_masks=config['overwrite_masks']
     )
 
     # Load the pipeline

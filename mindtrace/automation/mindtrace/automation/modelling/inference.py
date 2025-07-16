@@ -389,7 +389,8 @@ class Pipeline:
         credentials_path: Optional[str] = None,
         bucket_name: str = '',
         base_folder: str = '',
-        local_models_dir: str = "./tmp"
+        local_models_dir: str = "./tmp",
+        overwrite_masks: bool = False
     ):
         """Initialize the pipeline.
         
@@ -398,6 +399,7 @@ class Pipeline:
             bucket_name: GCS bucket name (must be provided)
             base_folder: Base folder in the bucket (must be provided)
             local_models_dir: Local directory to store downloaded models
+            overwrite_masks: Whether to overwrite masks or save in task subfolders
         """
         if not bucket_name:
             raise ValueError("bucket_name must be provided")
@@ -408,6 +410,7 @@ class Pipeline:
         self.bucket_name = bucket_name
         self.base_folder = base_folder
         self.local_models_dir = local_models_dir
+        self.overwrite_masks = overwrite_masks
         self.device = self._get_device()
         
         # Initialize GCS storage handler
@@ -619,7 +622,7 @@ class Pipeline:
             
             # Save structured outputs
             image_name = os.path.splitext(os.path.basename(image_path))[0]
-            self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
+            self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
             
             # Save visualizations if requested
             if save_visualizations:
@@ -719,7 +722,7 @@ class Pipeline:
                 
                 # Save structured outputs
                 image_name = os.path.splitext(os.path.basename(image_path))[0]
-                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types)
+                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
                 
                 # Save visualizations if requested
                 if save_visualizations:
@@ -812,7 +815,8 @@ class Pipeline:
 
     def _save_structured_outputs(self, image_path: str, results: Dict[str, Any], 
                                raw_masks_folder: str, boxes_folder: str,
-                               export_types: Optional[Dict[str, ExportType]] = None):
+                               export_types: Optional[Dict[str, ExportType]] = None,
+                               overwrite_masks: bool = False):
         """Save raw masks and YOLO format boxes with original image filename."""
         try:
             image_name = os.path.splitext(os.path.basename(image_path))[0]
@@ -831,13 +835,20 @@ class Pipeline:
                 if export_types and task_name in export_types:
                     export_type = export_types[task_name]
                 
-                # Save raw masks with original filename
+                # Save raw masks
                 if 'mask' in result:
                     mask = result['mask']
                     if mask is not None and mask.size > 0:
-                        # Use original image filename for mask
-                        mask_filename = f"{image_name}.png"
-                        raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                        if overwrite_masks:
+                            # Overwrite mode: use original image filename
+                            mask_filename = f"{image_name}.png"
+                            raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                        else:
+                            # Non-overwrite mode: create task subfolder
+                            task_mask_folder = os.path.join(raw_masks_folder, task_name)
+                            os.makedirs(task_mask_folder, exist_ok=True)
+                            mask_filename = f"{image_name}.png"
+                            raw_mask_path = os.path.join(task_mask_folder, mask_filename)
                         
                         mask = mask.astype(np.uint8)
                         
@@ -847,7 +858,7 @@ class Pipeline:
                         print(f"Saved raw mask: {raw_mask_path}")
                 
                 # Save YOLO format boxes with original filename  
-                if 'boxes' in result and len(result['boxes']) > 0:
+                if 'boxes' in result:
                     boxes = result['boxes']
                     scores = result.get('scores', [])
                     labels = result.get('labels', [])
@@ -856,8 +867,12 @@ class Pipeline:
                     boxes_filename = f"{image_name}.txt"
                     boxes_path = os.path.join(boxes_folder, boxes_filename)
                     
+                    # Always save the file, even if no boxes detected
                     self._save_yolo_boxes(boxes, scores, labels, boxes_path, img_width, img_height)
-                    print(f"Saved YOLO boxes: {boxes_path}")
+                    if len(boxes) > 0:
+                        print(f"Saved YOLO boxes: {boxes_path}")
+                    else:
+                        print(f"Saved empty YOLO boxes file: {boxes_path}")
         
         except Exception as e:
             print(f"Error saving structured outputs: {e}")
@@ -965,7 +980,8 @@ def test_pipeline():
             credentials_path=credentials_path,
             bucket_name=bucket_name,
             base_folder=base_folder,
-            local_models_dir="./tmp"
+            local_models_dir="./tmp",
+            overwrite_masks=config['overwrite_masks']
         )
 
         # Test pipeline loading
