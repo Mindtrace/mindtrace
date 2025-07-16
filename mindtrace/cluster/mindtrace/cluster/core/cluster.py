@@ -373,6 +373,15 @@ class Worker(Service, Consumer):
         return self._cluster_connection_manager
 
     def run(self, job_dict: dict):
+        """ 
+        Run a job. Alerts the cluster manager that the job has started and completed; in between it calls self._run().
+
+        Args:
+            job_dict (dict): The job dictionary.
+
+        Returns:
+            dict: The output of the job.
+        """
         cm = self.cluster_connection_manager
         if cm:
             cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
