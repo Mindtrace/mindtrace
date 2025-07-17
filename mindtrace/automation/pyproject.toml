@@ -20,8 +20,8 @@ dependencies = [
     "torchvision>=0.22.1",
     "huggingface>=0.0.1",
     "opencv-python>=4.11.0.86",
-    "label-studio-sdk>=1.0.18",
-    "supervision>=0.25.1",
+    "label-studio-sdk==1.0.17",
+    "supervision>=0.23.0",
 ]
 
 [build-system]

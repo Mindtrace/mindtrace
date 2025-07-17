@@ -177,11 +177,21 @@ class ImageDownload:
         
         return df
 
-    def download_images(self, df: pd.DataFrame, max_workers: int = 8) -> None:
-        """Download images from GCS using paths from database."""
+    def download_images(self, df: pd.DataFrame, max_workers: int = 8) -> Dict[str, str]:
+        """Download images from GCS using paths from database.
+        
+        Returns:
+            Dictionary mapping local filenames to GCS paths
+        """
         if df.empty:
             print("No images to download")
-            return
+            return {}
+        
+        gcs_path_mapping = {
+            "bucket": self.gcp_manager.bucket_name,
+            "prefix": "",
+            "files": {}
+        }
             
         for camera in df['Camera'].unique():
             camera_dir = self.local_download_path / camera
@@ -195,6 +205,9 @@ class ImageDownload:
                 filename = Path(row['ImgPath']).name
                 local_path = camera_dir / filename
                 file_map[row['ImgPath']] = str(local_path)
+                
+                # Store GCS path mapping
+                gcs_path_mapping["files"][filename] = row['ImgPath']
             
             print(f"Downloading {len(file_map)} files for {camera}...")
             downloaded_paths, errors = self.gcp_manager.download_files(
@@ -209,6 +222,32 @@ class ImageDownload:
                     print(f"    Error: {error}")
                 if len(errors) > 3:
                     print(f"  ... and {len(errors) - 3} more errors")
+        
+        return gcs_path_mapping
+    
+    def get_data_with_gcs_paths(self) -> Dict[str, str]:
+        """Get data and download images, returning GCS path mapping."""
+        try:
+            cameras = self.get_camera_proportions(self.config)
+            
+            df = self.get_images_by_date(
+                start_date=self.config['start_date'],
+                end_date=self.config['end_date'],
+                cameras=cameras,
+                number_samples_per_day=self.config.get('samples_per_day'),
+                seed=self.config.get('seed')
+            )
+            
+            os.makedirs('database_data', exist_ok=True)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            df.to_csv(f'database_data/{timestamp}.csv')
+            
+            gcs_path_mapping = self.download_images(df, max_workers=self.config.get('max_workers', 8))
+            return gcs_path_mapping
+            
+        except Exception as e:
+            print(f"Error: {e}")
+            raise e
     
     def get_data(self):       
         try:
