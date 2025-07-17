@@ -83,15 +83,21 @@ class LabelStudio(Mindtrace):
             raise ValueError(f"Multiple projects found with name '{project_name}'")
         return matching[0] if matching else None
 
-    def create_project(self, title: str, description: str = "", label_config: str = "") -> dict:
+    def create_project(self, title: str, description: str = None, label_config: str = None) -> dict:
         """Create a new project.
 
         Args:
             title: Project name
-            description: Project description
-            label_config: Label configuration in XML format
+            description: Project description (optional)
+            label_config: Label configuration in XML format (optional)
         """
-        return self.client.create_project(title=title, description=description, label_config=label_config)
+        kwargs = {"title": title}
+        if description is not None:
+            kwargs["description"] = description
+        if label_config is not None:
+            kwargs["label_config"] = label_config
+        
+        return self.client.create_project(**kwargs)
 
     def delete_project(self, project_id: Optional[int] = None, project_name: Optional[str] = None) -> None:
         """Delete a project by ID or name.
@@ -516,4 +522,4 @@ if __name__ == "__main__":
         gcp_creds="/home/joshua/Downloads/mt-2dportal-82aeba8b62e4.json"
     )
     label_studio = LabelStudio(config)
-    print(label_studio.create_project(title="test"))
+    print(label_studio.create_project(title="test", description="testing"))

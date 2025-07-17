@@ -6,43 +6,25 @@ import uuid
 from pathlib import Path
 from mindtrace.automation.modelling.inference import Pipeline, ExportType
 from mindtrace.automation.download_images import ImageDownload
+from mindtrace.automation.label_studio.utils import create_label_studio_mapping
 
 
-def create_label_studio_mapping(gcs_path_mapping, output_folder, combined_mapping_file, job_id):
+def run_inference(config_path: str, custom_job_id: str = None):
     """
-    Create a mapping file that combines GCS paths with inference output paths
-    for easy Label Studio configuration.
+    Run inference pipeline and return job information for Label Studio integration.
+    
+    Args:
+        config_path: Path to YAML configuration file
+        custom_job_id: Optional custom job ID (if not provided, will generate UUID)
+    
+    Returns:
+        Dictionary containing job information and GCS path mapping
     """
-    mapping = {
-        "job_id": job_id,
-        "gcs_paths": gcs_path_mapping,
-        "local_paths": {
-            "images": os.path.join(output_folder, "images"),
-            "boxes": os.path.join(output_folder, "boxes"),
-            "raw_masks": os.path.join(output_folder, "raw_masks"),
-            "visualizations": os.path.join(output_folder, "visualizations")
-        },
-        "label_studio_config": {
-            "image_source": "gcs",  # or "local"
-            "gcs_bucket": gcs_path_mapping.get("bucket", ""),
-            "gcs_prefix": gcs_path_mapping.get("prefix", "")
-        }
-    }
-    
-    with open(combined_mapping_file, 'w') as f:
-        json.dump(mapping, f, indent=2)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
-    parser.add_argument("--config", required=True, help="Path to YAML config file")
-    parser.add_argument("--job_id", type=str, default=None, help="Custom job ID (if not provided, will generate UUID)")
-    args = parser.parse_args()
-    
     # Generate or use provided job ID
-    job_id = args.job_id or str(uuid.uuid4())
+    job_id = custom_job_id or str(uuid.uuid4())
     print(f"Starting inference job with ID: {job_id}")
     
-    with open(args.config) as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
         
     # Get the data from the database
@@ -115,48 +97,20 @@ if __name__ == "__main__":
             )
             print(f"Created Label Studio mapping file: {combined_mapping_file}")
             
-            # If Label Studio upload is enabled, automatically run the conversion
-            if config.get('label_studio', {}).get('upload_enabled', False):
-                print(f"Label Studio upload is enabled, running conversion with job ID: {job_id}")
-                
-                # Import and run the conversion function
-                try:
-                    import subprocess
-                    import sys
-                    
-                    # Construct the conversion command
-                    conversion_cmd = [
-                        sys.executable, "-m", "convert_to_label_studio",
-                        "--input_folder", config['output_folder'],
-                        "--output_dir", os.path.join(config['output_folder'], f"label_studio_jsons_{job_id}"),
-                        "--config", args.config,
-                        "--use_gcs_paths",
-                        "--job_id", job_id,
-                        "--verbose"
-                    ]
-                    
-                    # Add mask tasks if specified
-                    if config.get('mask_tasks'):
-                        conversion_cmd.extend(["--mask_tasks"] + config['mask_tasks'])
-                    
-                    print(f"Running conversion command: {' '.join(conversion_cmd)}")
-                    result = subprocess.run(conversion_cmd, capture_output=True, text=True)
-                    
-                    if result.returncode == 0:
-                        print("Label Studio conversion and upload completed successfully")
-                        if result.stdout:
-                            print("Conversion output:", result.stdout)
-                    else:
-                        print(f"Label Studio conversion failed with return code {result.returncode}")
-                        if result.stderr:
-                            print("Error output:", result.stderr)
-                
-                except Exception as e:
-                    print(f"Error running Label Studio conversion: {e}")
+            # Return job information for use by the orchestrator
+            return {
+                "job_id": job_id,
+                "gcs_path_mapping": gcs_path_mapping,
+                "inference_summary": summary,
+                "config": config,
+                "gcs_folder": f"gs://{config.get('label_studio', {}).get('bucket', '')}/{config.get('label_studio', {}).get('prefix', '')}/{job_id}/"
+            }
             
         else:
             print("Inference failed")
+            return None
             
     else:
         print(f"Input folder not found: {config['download_path']}")
         print("Skipping folder inference test")
+        return None

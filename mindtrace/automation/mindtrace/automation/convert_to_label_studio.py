@@ -66,9 +66,15 @@ def create_individual_label_studio_files_with_gcs(
         mask_task_names=mask_task_names
     )
     
-    # Get GCS mapping info
-    gcs_files = gcs_mapping.get("gcs_paths", {}).get("files", {})
-    gcs_bucket = gcs_mapping.get("gcs_paths", {}).get("bucket", "")
+    # Get GCS mapping info - handle both nested and flat structures
+    if "gcs_paths" in gcs_mapping:
+        # Nested structure: {"gcs_paths": {"bucket": "...", "files": {...}}}
+        gcs_files = gcs_mapping.get("gcs_paths", {}).get("files", {})
+        gcs_bucket = gcs_mapping.get("gcs_paths", {}).get("bucket", "")
+    else:
+        # Flat structure: {"bucket": "...", "files": {...}}
+        gcs_files = gcs_mapping.get("files", {})
+        gcs_bucket = gcs_mapping.get("bucket", "")
     
     # Create a mapping from local filename to GCS URL
     filename_to_gcs = {}
@@ -238,7 +244,6 @@ def main():
     
     # Generate or use provided job ID
     job_id = args.job_id or str(uuid.uuid4())
-    print(f"Using job ID: {job_id}")
     
     # Load config if provided
     config = None
@@ -246,7 +251,6 @@ def main():
         try:
             with open(args.config, 'r') as f:
                 config = yaml.safe_load(f)
-            print(f"Loaded config from: {args.config}")
         except Exception as e:
             print(f"Error loading config: {e}")
             return 1
@@ -257,7 +261,6 @@ def main():
         try:
             with open(args.class_mapping, 'r') as f:
                 class_mapping = json.load(f)
-            print(f"Loaded class mapping: {class_mapping}")
         except Exception as e:
             print(f"Error loading class mapping: {e}")
     
@@ -270,30 +273,11 @@ def main():
     gcs_mapping = None
     if args.use_gcs_paths:
         gcs_mapping = load_gcs_mapping(args.input_folder)
-        if gcs_mapping:
-            print("Found GCS path mapping, will use GCS URLs for images")
-            if args.verbose:
-                print(f"GCS bucket: {gcs_mapping.get('gcs_paths', {}).get('bucket', 'unknown')}")
-                print(f"Number of GCS files: {len(gcs_mapping.get('gcs_paths', {}).get('files', {}))}")
-        else:
+        if not gcs_mapping:
             print("Warning: GCS path mapping not found, falling back to local paths")
-    
-    # List the structure of the input folder
-    if args.verbose:
-        print(f"Input folder structure:")
-        for root, dirs, files in os.walk(args.input_folder):
-            level = root.replace(args.input_folder, '').count(os.sep)
-            indent = ' ' * 2 * level
-            print(f"{indent}{os.path.basename(root)}/")
-            subindent = ' ' * 2 * (level + 1)
-            for file in files[:5]:  # Show first 5 files
-                print(f"{subindent}{file}")
-            if len(files) > 5:
-                print(f"{subindent}... and {len(files) - 5} more files")
     
     # Convert based on whether we have GCS paths
     if args.use_gcs_paths and gcs_mapping:
-        print("Creating individual Label Studio JSON files with GCS paths...")
         created_files = create_individual_label_studio_files_with_gcs(
             output_folder=args.input_folder,
             gcs_mapping=gcs_mapping,
@@ -301,8 +285,6 @@ def main():
             class_mapping=class_mapping,
             mask_task_names=args.mask_tasks
         )
-        
-        print(f"Created {len(created_files)} individual JSON files in {args.output_dir}")
         
         # Upload to GCS if config is provided
         if config and 'label_studio' in config and config['label_studio'].get('upload_enabled', False):
@@ -316,8 +298,6 @@ def main():
                     job_id=job_id,
                     credentials_path=credentials_path
                 )
-                
-                print(f"Successfully uploaded {len(uploaded_urls)} Label Studio JSON files to GCS")
                 
                 # Save job info to output folder
                 job_info = {
@@ -333,36 +313,20 @@ def main():
                 with open(job_info_path, 'w') as f:
                     json.dump(job_info, f, indent=2)
                 
-                print(f"Saved job info to: {job_info_path}")
-                print(f"All files uploaded to GCS folder: {job_info['gcs_folder']}")
-                
             except Exception as e:
                 print(f"Error uploading to GCS: {e}")
                 return 1
         
     else:
         # Use the original local path approach
-        print(f"Gathering detections from {args.input_folder}...")
         detections = gather_detections_from_folders(
             output_folder=args.input_folder,
             class_mapping=class_mapping,
             mask_task_names=args.mask_tasks
         )
         
-        print(f"Found {len(detections)} images with detections")
-        
-        if args.verbose:
-            for i, detection in enumerate(detections[:3]):  # Show first 3
-                print(f"  Image {i+1}: {os.path.basename(detection['image_path'])}")
-                print(f"    Bounding boxes: {len(detection['bboxes'])}")
-                print(f"    Masks: {len(detection['masks'])}")
-                print(f"    Mask classes: {detection['mask_classes']}")
-        
         # For local paths, we'll create individual files too
-        print("Converting to Label Studio format...")
         annotations = detections_to_label_studio(detections)
-        
-        print(f"Generated {len(annotations)} Label Studio annotations")
         
         # Create individual files for local approach too
         os.makedirs(args.output_dir, exist_ok=True)
@@ -406,8 +370,6 @@ def main():
                 json.dump(prediction, f, indent=2)
             
             created_files.append(json_path)
-            
-        print(f"Created {len(created_files)} individual JSON files in {args.output_dir}")
     
     return 0
 
