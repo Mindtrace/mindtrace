@@ -128,3 +128,132 @@ def test_cluster_manager_with_node():
     finally:
         node.shutdown()
         cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_cluster_manager_launch_worker():
+    """Integration test for ClusterManager.launch_worker method."""
+    # Launch cluster manager and node
+    cluster_cm = ClusterManager.launch(host="localhost", port=8108, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8109, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type first
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={}
+        )
+        
+        # Launch a worker using the cluster manager's launch_worker method
+        worker_url = "http://localhost:8110"
+        cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker", 
+            worker_url=worker_url
+        )
+        
+        # Register the worker with the cluster for job processing
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Submit a job and verify it gets processed
+        job = job_from_schema(echo_job_schema, input_data={"message": "Hello from launch_worker test!"})
+        result = cluster_cm.submit_job(job)
+        
+        # Initially the job should be queued
+        assert result.status == "queued"
+        assert result.output == {}
+        
+        # Wait for the job to be processed
+        time.sleep(2)
+        
+        # Check the final job status
+        final_result = cluster_cm.get_job_status(job_id=job.id)
+        assert final_result.status == "completed"
+        assert final_result.output == {"echoed": "Hello from launch_worker test!"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_cluster_manager_launch_worker_multiple_workers():
+    """Integration test for launching multiple workers using ClusterManager.launch_worker."""
+    # Launch cluster manager and node
+    cluster_cm = ClusterManager.launch(host="localhost", port=8111, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8112, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={}
+        )
+        
+        # Launch multiple workers
+        worker_urls = [
+            "http://localhost:8113",
+            "http://localhost:8114",
+            "http://localhost:8115"
+        ]
+        
+        for worker_url in worker_urls:
+            cluster_cm.launch_worker(
+                node_url=str(node.url),
+                worker_type="echoworker", 
+                worker_url=worker_url
+            )
+            # Register each worker
+            cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Submit jobs to different workers
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        jobs = []
+        
+        for i, worker_url in enumerate(worker_urls):
+            job = job_from_schema(echo_job_schema, input_data={"message": f"Job {i+1} from worker {worker_url}"})
+            jobs.append(job)
+            result = cluster_cm.submit_job(job)
+            assert result.status == "queued"
+        
+        # Wait for all jobs to be processed
+        time.sleep(3)
+        
+        # Verify all jobs completed successfully
+        for i, job in enumerate(jobs):
+            final_result = cluster_cm.get_job_status(job_id=job.id)
+            assert final_result.status == "completed"
+            assert final_result.output == {"echoed": f"Job {i+1} from worker {worker_urls[i]}"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_cluster_manager_launch_worker_node_failure():
+    """Integration test for launch_worker when node is not available."""
+    # Launch only cluster manager (no node)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8116, wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={}
+        )
+        
+        # Try to launch a worker on a non-existent node
+        with pytest.raises(Exception):
+            cluster_cm.launch_worker(
+                node_url="http://localhost:9999",  # Non-existent node
+                worker_type="echoworker", 
+                worker_url="http://localhost:8117"
+            )
+        
+    finally:
+        cluster_cm.shutdown()

@@ -33,6 +33,7 @@ class ClusterManager(Gateway):
         self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
         self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
         self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
+        self.nodes = []
         minio_backend = MinioRegistryBackend(
             uri="~/.cache/mindtrace/minio_registry_cluster",
             endpoint=self.worker_registry_endpoint,
@@ -98,6 +99,12 @@ class ClusterManager(Gateway):
             "/register_worker_type",
             func=self.register_worker_type,
             schema=TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/launch_worker",
+            func=self.launch_worker,
+            schema=TaskSchema(name="launch_worker", input_schema=cluster_types.ClusterLaunchWorkerInput),
             methods=["POST"],
         )
 
@@ -292,12 +299,26 @@ class ClusterManager(Gateway):
         Args:
             node_id (str): The id of the node.
         """
+        self.nodes.append(payload["node_url"])
         return {
             "endpoint": self.worker_registry_endpoint,
             "access_key": self.worker_registry_access_key,
             "secret_key": self.worker_registry_secret_key,
             "bucket": self.worker_registry_bucket,
         }
+
+    def launch_worker(self, payload: dict):
+        """
+        Launch a worker on a node.
+
+        Args:
+            payload (dict): The payload containing the node URL, worker type, and worker URL.
+        """
+        node_url = payload["node_url"]
+        worker_type = payload["worker_type"]
+        worker_url = payload["worker_url"]
+        node_cm = Node.connect(node_url)        
+        node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url)
 
 
 class Node(Service):
@@ -307,7 +328,7 @@ class Node(Service):
         self.cluster_url = cluster_url
         if cluster_url is not None:
             self.cluster_cm = ClusterManager.connect(cluster_url)
-            minio_params = self.cluster_cm.register_node(node_id=str(self.id))
+            minio_params = self.cluster_cm.register_node(node_url=str(self._url))
             minio_backend = MinioRegistryBackend(
                 uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
             )
