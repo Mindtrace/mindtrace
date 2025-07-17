@@ -155,8 +155,7 @@ save_visualizations: True   # Generate overlay images
 ```yaml
 # Database queries
 database_queries:
-  get_images_by_date: |
-    # Your SQL query here
+  query_type: "get_images_by_date"  # Available: get_images_by_date, get_images_by_camera, get_images_by_timestamp
 
 # Google Cloud Storage settings
 gcp:

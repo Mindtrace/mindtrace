@@ -2,7 +2,7 @@
 
 # Database queries
 database_queries:
-  get_images_by_date: |
+  query_type: "get_images_by_date"
 
 # Google Cloud Storage settings
 gcp:
