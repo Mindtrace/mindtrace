@@ -80,8 +80,7 @@ class LaunchWorkerInput(BaseModel):
 
 
 class RegisterNodeInput(BaseModel):
-    node_id: str
-
+    node_url: str
 
 class RegisterNodeOutput(BaseModel):
     endpoint: str
@@ -95,3 +94,8 @@ class RegisterWorkerTypeInput(BaseModel):
     worker_class: str
     worker_params: dict
     materializer_name: str | None = None
+
+class ClusterLaunchWorkerInput(BaseModel):
+    node_url: str
+    worker_type: str
+    worker_url: str

@@ -356,10 +356,111 @@ def test_register_worker_type_with_default_materializer(cluster_manager):
         # Verify worker was saved
         mock_save.assert_called_once_with("worker:test_worker", ANY)
 
+def test_launch_worker_success(cluster_manager):
+    """Test launch_worker method with valid parameters."""
+    payload = {
+        "node_url": "http://localhost:8001",
+        "worker_type": "test_worker",
+        "worker_url": "http://localhost:8002"
+    }
+    
+    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+        mock_node_cm = MockNode.connect.return_value
+        
+        cluster_manager.launch_worker(payload)
+        
+        # Verify Node.connect was called with correct URL
+        MockNode.connect.assert_called_once_with("http://localhost:8001")
+        # Verify node's launch_worker method was called with correct parameters
+        mock_node_cm.launch_worker.assert_called_once_with(
+            worker_type="test_worker",
+            worker_url="http://localhost:8002"
+        )
+
+
+def test_launch_worker_node_connection_failure(cluster_manager):
+    """Test launch_worker when Node.connect fails."""
+    payload = {
+        "node_url": "http://localhost:8001",
+        "worker_type": "test_worker",
+        "worker_url": "http://localhost:8002"
+    }
+    
+    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+        MockNode.connect.side_effect = Exception("Connection failed")
+        
+        with pytest.raises(Exception, match="Connection failed"):
+            cluster_manager.launch_worker(payload)
+        
+        # Verify Node.connect was called
+        MockNode.connect.assert_called_once_with("http://localhost:8001")
+
+
+def test_launch_worker_node_launch_failure(cluster_manager):
+    """Test launch_worker when node.launch_worker fails."""
+    payload = {
+        "node_url": "http://localhost:8001",
+        "worker_type": "test_worker",
+        "worker_url": "http://localhost:8002"
+    }
+    
+    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+        mock_node_cm = MockNode.connect.return_value
+        mock_node_cm.launch_worker.side_effect = Exception("Launch failed")
+        
+        with pytest.raises(Exception, match="Launch failed"):
+            cluster_manager.launch_worker(payload)
+        
+        # Verify Node.connect was called
+        MockNode.connect.assert_called_once_with("http://localhost:8001")
+        # Verify node's launch_worker method was called
+        mock_node_cm.launch_worker.assert_called_once_with(
+            worker_type="test_worker",
+            worker_url="http://localhost:8002"
+        )
+
+
+def test_launch_worker_with_different_ports(cluster_manager):
+    """Test launch_worker with different node and worker URLs."""
+    payload = {
+        "node_url": "http://192.168.1.100:9000",
+        "worker_type": "custom_worker",
+        "worker_url": "http://192.168.1.101:9001"
+    }
+    
+    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+        mock_node_cm = MockNode.connect.return_value
+        
+        cluster_manager.launch_worker(payload)
+        
+        # Verify Node.connect was called with correct URL
+        MockNode.connect.assert_called_once_with("http://192.168.1.100:9000")
+        # Verify node's launch_worker method was called with correct parameters
+        mock_node_cm.launch_worker.assert_called_once_with(
+            worker_type="custom_worker",
+            worker_url="http://192.168.1.101:9001"
+        )
+
+
+def test_launch_worker_logging(cluster_manager):
+    """Test that launch_worker logs appropriate messages."""
+    payload = {
+        "node_url": "http://localhost:8001",
+        "worker_type": "test_worker",
+        "worker_url": "http://localhost:8002"
+    }
+    
+    with patch("mindtrace.cluster.core.cluster.Node") as MockNode:
+        mock_node_cm = MockNode.connect.return_value
+        
+        cluster_manager.launch_worker(payload)
+        
+        # Verify the method executed without errors (logging is handled by the node)
+
 
 def test_register_node(cluster_manager):
     """Test register_node method."""
-    payload = {"node_id": "test-node-123"}
+    payload = {"node_url": "http://localhost:8001"}
     
     result = cluster_manager.register_node(payload)
     
@@ -371,6 +472,7 @@ def test_register_node(cluster_manager):
     }
     
     assert result == expected_result
+    assert "http://localhost:8001" in cluster_manager.nodes
 
 
 @pytest.fixture
