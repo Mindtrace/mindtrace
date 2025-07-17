@@ -12,7 +12,7 @@ from mindtrace.automation.label_studio.utils import (
     create_individual_label_studio_files_with_gcs,
     upload_label_studio_jsons_to_gcs
 )
-from mindtrace.automation.label_studio.pipeline import LabelStudioPipeline
+from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 
 
 class PipelineOrchestrator:
@@ -52,10 +52,6 @@ class PipelineOrchestrator:
         if 'gcs_folder' not in job_info:
             job_info['gcs_folder'] = f"gs://{self.config['label_studio']['bucket']}/{self.config['label_studio']['prefix']}/{self.job_id}/"
         
-        job_info_path = os.path.join(self.config['output_folder'], f"label_studio_job_{self.job_id}.json")
-        with open(job_info_path, 'w') as f:
-            json.dump(job_info, f, indent=2, default=str)
-        
         return job_info
     
     def run_conversion(self, job_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -89,34 +85,59 @@ class PipelineOrchestrator:
             }
         })
         
-        job_info_path = os.path.join(job_info['config']['output_folder'], f"label_studio_job_{self.job_id}.json")
-        with open(job_info_path, 'w') as f:
-            json.dump(job_info, f, indent=2, default=str)
-        
         return job_info
     
     def create_label_studio_project(self, job_info: Dict[str, Any], delay_seconds: int = 30) -> Dict[str, Any]:
         """Create Label Studio project and return structured results."""
-        pipeline = LabelStudioPipeline.from_config_file(self.config_path)
+        label_studio_config = self.config['label_studio']
+        api_config = label_studio_config['api']
+        project_config = label_studio_config['project']
         
-        project_info = pipeline.create_project_from_job(
-            job_info=job_info,
-            delay_seconds=delay_seconds
+        label_studio = LabelStudio(
+            LabelStudioConfig(
+                url=api_config['url'],
+                api_key=api_config['api_key'],
+                gcp_creds=api_config['gcp_credentials_path']
+            )
+        )
+        
+        job_id = job_info['job_id']
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        project_title = f"{project_config['title']} - {job_id[:8]} - {timestamp}"
+        
+        description = project_config['description']
+        if 'start_date' in self.config and 'end_date' in self.config:
+            start_date = self.config['start_date']
+            end_date = self.config['end_date']
+            description = f"Images from {start_date} to {end_date}"
+        
+        gcs_folder = job_info.get('gcs_folder')
+        if not gcs_folder or not gcs_folder.startswith('gs://'):
+            raise ValueError(f"Invalid GCS folder format: {gcs_folder}")
+        
+        parts = gcs_folder.replace('gs://', '').split('/')
+        gcs_bucket = parts[0]
+        gcs_prefix = '/'.join(parts[1:]).rstrip('/')
+        
+        project, storage = label_studio.create_project_with_storage(
+            title=project_title,
+            bucket=gcs_bucket,
+            prefix=gcs_prefix,
+            label_config=label_studio_config['interface_config'].strip(),
+            description=description,
+            google_application_credentials=api_config['gcp_credentials_path'],
+            regex_filter=r".*\.json$"
         )
         
         job_info.update({
             "label_studio_project": {
-                "project_id": project_info['project'].id,
-                "project_url": project_info['project_url'],
-                "storage_info": project_info['storage'],
-                "gcs_bucket": project_info['gcs_bucket'],
-                "gcs_prefix": project_info['gcs_prefix']
+                "project_id": project.id,
+                "project_url": f"{api_config['url']}/projects/{project.id}",
+                "storage_info": storage,
+                "gcs_bucket": gcs_bucket,
+                "gcs_prefix": gcs_prefix
             }
         })
-        
-        job_info_path = os.path.join(job_info['config']['output_folder'], f"label_studio_job_{self.job_id}.json")
-        with open(job_info_path, 'w') as f:
-            json.dump(job_info, f, indent=2, default=str)
         
         return job_info
     
@@ -140,34 +161,12 @@ def main():
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument("--job_id", type=str, default=None, help="Custom job ID")
     parser.add_argument("--delay", type=int, default=30, help="Delay in seconds before syncing storage (default: 30)")
-    parser.add_argument("--skip_inference", action="store_true", help="Skip inference and use existing job data")
     
     args = parser.parse_args()
     
     try:
         orchestrator = PipelineOrchestrator(args.config)
-        
-        if args.skip_inference:
-            if not args.job_id:
-                raise ValueError("--job_id is required when using --skip_inference")
-            
-            job_info_path = os.path.join(orchestrator.config['output_folder'], f"label_studio_job_{args.job_id}.json")
-            if not os.path.exists(job_info_path):
-                raise FileNotFoundError(f"Job info file not found: {job_info_path}")
-            
-            with open(job_info_path, 'r') as f:
-                job_info = json.load(f)
-            
-            job_info = orchestrator.run_conversion(job_info)
-            
-            if job_info.get('conversion_results', {}).get('uploaded_urls'):
-                if args.delay > 0:
-                    print(f"Waiting {args.delay} seconds for GCS uploads to complete...")
-                    time.sleep(args.delay)
-            
-            job_info = orchestrator.create_label_studio_project(job_info, delay_seconds=0)
-        else:
-            job_info = orchestrator.run_complete_pipeline(args.job_id, args.delay)
+        job_info = orchestrator.run_complete_pipeline(args.job_id, args.delay)
         
         print("=== PIPELINE COMPLETED SUCCESSFULLY ===")
         print(f"Job ID: {job_info['job_id']}")
