@@ -9,7 +9,9 @@ import cv2
 from mindtrace.storage.gcs import GCSStorageHandler
 
 
-def detections_to_label_studio(dict_format: List[Dict], mask_from_name: str, mask_tool_type: str):
+def detections_to_label_studio(
+    dict_format: List[Dict], mask_from_name: str, mask_tool_type: str, polygon_epsilon_factor: float = 0.005
+):
     """
     Convert list of detection dictionaries into Label Studio pre-annotations.
     
@@ -21,6 +23,7 @@ def detections_to_label_studio(dict_format: List[Dict], mask_from_name: str, mas
             - 'mask_classes': list of class names for masks (same length as masks)
         mask_from_name: The 'name' of the label tag in Label Studio config (e.g., 'label').
         mask_tool_type: The tool type from LS config, 'PolygonLabels' or 'BrushLabels'.
+        polygon_epsilon_factor: Epsilon factor for polygon simplification.
     Returns:
         List[dict] — a list of Label Studio "result" entries
     """
@@ -67,7 +70,9 @@ def detections_to_label_studio(dict_format: List[Dict], mask_from_name: str, mas
 
                 elif mask_tool_type == 'PolygonLabels':
                     try:
-                        polygons = mask_to_polygons(mask_path, img_width, img_height)
+                        polygons = mask_to_polygons(
+                            mask_path, img_width, img_height, epsilon_factor=polygon_epsilon_factor
+                        )
                         for points in polygons:
                             polygon_ann = {
                                 "original_width": img_width,
@@ -173,13 +178,17 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2
     return bboxes
 
 
-def mask_to_polygons(mask_path: str, img_width: int, img_height: int) -> List[List[List[float]]]:
+def mask_to_polygons(
+    mask_path: str, img_width: int, img_height: int, epsilon_factor: float = 0.005
+) -> List[List[List[float]]]:
     """
     Converts a binary mask image to a list of polygons in Label Studio format.
     Args:
         mask_path: Path to the binary mask file.
         img_width: Width of the original image for normalization.
         img_height: Height of the original image for normalization.
+        epsilon_factor: Factor to determine the approximation accuracy for polygon simplification.
+                        Smaller values result in more points.
     Returns:
         A list of polygons, where each polygon is a list of [x, y] points (0-100).
     """
@@ -196,8 +205,15 @@ def mask_to_polygons(mask_path: str, img_width: int, img_height: int) -> List[Li
         if contour.shape[0] < 3:  # A polygon needs at least 3 points
             continue
         
+        # Approximate the contour to reduce points
+        epsilon = epsilon_factor * cv2.arcLength(contour, True)
+        approx_contour = cv2.approxPolyDP(contour, epsilon, True)
+
+        if approx_contour.shape[0] < 3:
+            continue
+        
         # Normalize points to 0-100 range for Label Studio
-        polygon = [[(p[0][0] / img_width) * 100, (p[0][1] / img_height) * 100] for p in contour]
+        polygon = [[(p[0][0] / img_width) * 100, (p[0][1] / img_height) * 100] for p in approx_contour]
         polygons.append(polygon)
         
     return polygons
@@ -235,7 +251,6 @@ def extract_masks_from_pixel_values(mask_path: str, class_mapping: Optional[Dict
             temp_mask_img = Image.fromarray(binary_mask, mode='L')
             temp_mask_img.save(temp_mask_path)
             
-            print('--------------------------------------',class_mapping, class_id)
             if class_mapping and class_id in class_mapping:
                 class_name = class_mapping[class_id]
             else:
@@ -347,7 +362,6 @@ def gather_detections_from_folders(
                 if os.path.exists(mask_file_path):
                     class_masks = extract_masks_from_pixel_values(mask_file_path, class_mapping=id2label)
                     for temp_mask_path, class_name in class_masks:
-                        print('--------------------------------------',class_name)
                         masks.append(temp_mask_path)
                         mask_classes.append(class_name)
         
@@ -369,7 +383,8 @@ def create_label_studio_tasks(
     mask_tool_type: str,
     class_mapping: Optional[Dict[int, str]] = None,
     mask_task_names: Optional[List[str]] = None,
-    image_url_prefix: str = ""
+    image_url_prefix: str = "",
+    polygon_epsilon_factor: float = 0.005,
 ) -> List[Dict[str, Any]]:
     """
     Create Label Studio tasks from the inference output folder structure.
@@ -384,7 +399,9 @@ def create_label_studio_tasks(
         List of Label Studio task dictionaries
     """
     detections = gather_detections_from_folders(output_folder, class_mapping, mask_task_names)
-    annotations = detections_to_label_studio(detections, mask_from_name, mask_tool_type)
+    annotations = detections_to_label_studio(
+        detections, mask_from_name, mask_tool_type, polygon_epsilon_factor=polygon_epsilon_factor
+    )
     
     tasks = []
     current_image = None
@@ -412,7 +429,8 @@ def export_to_label_studio_json(
     mask_from_name: str,
     mask_tool_type: str,
     class_mapping: Optional[Dict[int, str]] = None,
-    mask_task_names: Optional[List[str]] = None
+    mask_task_names: Optional[List[str]] = None,
+    polygon_epsilon_factor: float = 0.005,
 ) -> bool:
     """
     Export inference results to Label Studio JSON format.
@@ -428,7 +446,9 @@ def export_to_label_studio_json(
     """
     try:
         detections = gather_detections_from_folders(output_folder, class_mapping, mask_task_names)
-        annotations = detections_to_label_studio(detections, mask_from_name, mask_tool_type)
+        annotations = detections_to_label_studio(
+            detections, mask_from_name, mask_tool_type, polygon_epsilon_factor=polygon_epsilon_factor
+        )
         
         export_data = {
             "annotations": annotations,
@@ -474,7 +494,8 @@ def create_individual_label_studio_files_with_gcs(
     mask_tool_type: str,
     class_mapping: Optional[dict] = None,
     mask_task_names: Optional[list] = None,
-    box_task_names: Optional[list] = None
+    box_task_names: Optional[list] = None,
+    polygon_epsilon_factor: float = 0.005,
 ) -> list:
     """Create individual Label Studio JSON files for each image with GCS URLs."""
     os.makedirs(output_dir, exist_ok=True)
@@ -502,7 +523,10 @@ def create_individual_label_studio_files_with_gcs(
         print(f"  {filename} -> {gcs_url}")
     
     annotations = detections_to_label_studio(
-        detections, mask_from_name=mask_from_name, mask_tool_type=mask_tool_type
+        detections,
+        mask_from_name=mask_from_name,
+        mask_tool_type=mask_tool_type,
+        polygon_epsilon_factor=polygon_epsilon_factor,
     )
     
     created_files = []
