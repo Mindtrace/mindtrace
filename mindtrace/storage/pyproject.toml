@@ -1,6 +1,15 @@
 [project]
 name = "mindtrace-storage"
 version = "0.1.0"
+description = "Storage functionality for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "google-cloud-storage",
 ]

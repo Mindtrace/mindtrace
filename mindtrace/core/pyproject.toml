@@ -1,10 +1,20 @@
 [project]
 name = "mindtrace-core"
 version = "0.1.0"
+description = "Core functionality for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "pillow>=11.2.1",
     "pydantic>=2.11.1",
     "tqdm>=4.67.1",
+    "urllib3>=2.2.0",
 ]
 
 [build-system]
