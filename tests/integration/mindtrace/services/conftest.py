@@ -2,7 +2,7 @@ import pytest_asyncio
 
 from mindtrace.services import Gateway
 from mindtrace.services.sample.echo_service import EchoService
-
+from mindtrace.services.sample.echo_mcp import EchoService as echo_mcp_service
 
 @pytest_asyncio.fixture(scope="session")
 async def echo_service_manager():
@@ -51,4 +51,17 @@ async def echo_service_for_gateway():
             yield cm
     except Exception as e:
         print(f"Echo service for gateway launch failed: {e}")
+        raise
+
+
+@pytest_asyncio.fixture(scope="session")
+async def echo_mcp_manager():
+    """Launch EchoService for MCP integration testing on a dedicated port.
+    This fixture can be used in MCP-related integration tests to ensure a clean, isolated service instance.
+    """
+    try:
+        with echo_mcp_service.launch(url="http://localhost:8093", timeout=30) as cm:
+            yield cm
+    except Exception as e:
+        print(f"Echo MCP service launch failed: {e}")
         raise

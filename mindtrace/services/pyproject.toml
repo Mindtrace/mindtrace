@@ -1,13 +1,24 @@
 [project]
 name = "mindtrace-services"
 version = "0.1.0"
+description = "Service layer for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
+    "mindtrace-core",
     "fastapi>=0.115.14",
     "gunicorn>=23.0.0",
     "httpx>=0.27.2",
-    "mindtrace-core",
     "structlog>=24.4.0",
     "uvicorn>=0.34.3",
+    "aiohttp>=3.12.13",
+    "fastmcp==2.9.2",
 ]
 
 [build-system]

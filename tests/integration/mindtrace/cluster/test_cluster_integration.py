@@ -26,7 +26,7 @@ def test_cluster_manager_as_gateway():
         )
         cluster_cm.register_job_to_endpoint(job_type="echo_job", endpoint="echo/run")
         job = job_from_schema(echo_job, EchoInput(message="integration test"))
-        result = cluster_cm.submit_job(**job.model_dump())
+        result = cluster_cm.submit_job(job)
         assert result.status == "completed"
         assert result.output == {"echoed": "integration test"}
     finally:
@@ -47,7 +47,7 @@ def test_cluster_manager_with_prelaunched_worker():
         cluster_cm.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
         # Submit a job
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, Worker!"})
-        result = cluster_cm.submit_job(**job.model_dump())
+        result = cluster_cm.submit_job(job)
         assert result.status == "queued"
         assert result.output == {}
         time.sleep(1)
@@ -75,7 +75,7 @@ def test_cluster_manager_multiple_jobs_with_worker():
         for msg in messages:
             job = job_from_schema(echo_job_schema, input_data={"message": msg}) 
             jobs.append(job)
-            result = cluster_cm.submit_job(**job.model_dump())
+            result = cluster_cm.submit_job(job)
             assert result.status == "queued"
         time.sleep(1)
         for i, job in enumerate(jobs):
@@ -101,7 +101,7 @@ def test_cluster_manager_worker_failure():
         # Shut down the worker before submitting the job
         worker_cm.shutdown()
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
-        result = cluster_cm.submit_job(**job.model_dump())
+        result = cluster_cm.submit_job(job)
         time.sleep(1)
         assert result.status == "queued"  # Should still succeed but the job is queued
     finally:
@@ -120,7 +120,7 @@ def test_cluster_manager_with_node():
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!"})
-        result = cluster_cm.submit_job(**job.model_dump())
+        result = cluster_cm.submit_job(job)
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
         assert result.status == "completed"

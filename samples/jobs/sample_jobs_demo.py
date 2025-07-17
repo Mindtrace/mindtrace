@@ -1,13 +1,14 @@
 import argparse
+
 from pydantic import BaseModel
 
 from mindtrace.jobs import (
-    JobSchema,
     Consumer,
-    Orchestrator,
+    JobSchema,
     LocalClient,
-    RedisClient,
+    Orchestrator,
     RabbitMQClient,
+    RedisClient,
     job_from_schema,
 )
 
@@ -102,7 +103,7 @@ def setup_backend(backend_type: str):
             raise ValueError(f"Unknown backend type: {backend_type}")
         
         return backend
-    except Exception as e:
+    except Exception:
         raise
 
 

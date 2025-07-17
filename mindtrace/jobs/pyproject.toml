@@ -1,6 +1,15 @@
 [project]
 name = "mindtrace-jobs"
 version = "0.1.0"
+description = "Job management for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mindtrace-core",
     "pika>=1.3.2",
