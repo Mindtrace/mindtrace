@@ -5,14 +5,13 @@ description = "Hardware abstraction layer for cameras, sensors, PLCs and other d
 requires-python = ">=3.12"
 dependencies = [
     "mindtrace-core",
+    "mindtrace-services",
     "opencv-python>=4.8.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
     "numpy>=1.24.0",
     "pycomm3>=1.2.14",
     "python-snap7[cli]>=2.0.2",
-    "pytest>=8.4.1",
-    "pytest-asyncio>=1.0.0",
 ]
 
 [project.scripts]
@@ -33,11 +32,17 @@ setup-tools = [
 ]
 dev = [
     "pytest>=7.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=1.0.0",
     "pytest-cov>=4.0",
     "black>=23.0",
     "ruff>=0.1.0",
 ]
+
+[tool.setuptools]
+packages = ["mindtrace.hardware"]
+
+[tool.setuptools.package-dir]
+"mindtrace.hardware" = "."
 
 [build-system]
 requires = ["setuptools"]

@@ -149,3 +149,8 @@ class ConfigurationResponse(BaseResponse):
 class StatusResponse(BaseResponse):
     """Response model for status checks."""
     data: Dict[str, Any]  # Status information 
+
+
+class StreamResponse(BaseResponse):
+    """Response model for video stream endpoint."""
+    media_type: str = "multipart/x-mixed-replace; boundary=frame" 
