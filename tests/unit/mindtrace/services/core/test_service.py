@@ -312,10 +312,11 @@ class TestServiceMCP:
         service = Service()
         # Patch the mcp.tool decorator to track registration
         called = {}
-        def fake_tool(name):
+        def fake_tool(name, **kwargs):
             def decorator(func):
                 called['name'] = name
                 called['func'] = func
+                called['kwargs'] = kwargs
                 return func
             return decorator
         service.mcp.tool = fake_tool
