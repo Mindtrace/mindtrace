@@ -1,10 +1,3 @@
-"""
-Label Studio Pipeline Module.
-
-This module provides a clean interface for Label Studio operations,
-separating concerns and making the pipeline more maintainable.
-"""
-
 import os
 import time
 import json
@@ -17,21 +10,14 @@ from dataclasses import dataclass
 class PipelineConfig:
     """Configuration for Label Studio Pipeline."""
     
-    # Label Studio API settings - all required
     label_studio_url: str
     label_studio_api_key: str
     gcp_credentials_path: str
-    
-    # GCS settings for Label Studio - all required
     gcs_bucket: str
     gcs_prefix: str
-    
-    # Project settings - all required
     project_title: str
     project_description: str
     interface_config: str
-    
-    # Optional settings
     upload_enabled: bool = True
     default_delay: int = 30
     
@@ -60,12 +46,7 @@ class PipelineConfig:
 
 
 class LabelStudioPipeline:
-    """
-    Handles Label Studio project creation and storage setup.
-    
-    This class encapsulates all Label Studio-specific operations,
-    making it easier to maintain and modify Label Studio integration.
-    """
+    """Handles Label Studio project creation and storage setup."""
     
     def __init__(self, config: PipelineConfig):
         """Initialize pipeline with configuration."""
@@ -85,28 +66,14 @@ class LabelStudioPipeline:
         job_info: Dict[str, Any],
         delay_seconds: Optional[int] = None
     ) -> Dict[str, Any]:
-        """
-        Create a Label Studio project from inference job information.
-        
-        Args:
-            job_info: Job information dictionary from inference pipeline
-            delay_seconds: Optional delay before storage sync (deprecated, handled by orchestrator)
-        
-        Returns:
-            Dictionary containing project and storage information
-        
-        Raises:
-            ValueError: If required parameters are missing or invalid
-        """
+        """Create a Label Studio project from inference job information."""
         if not job_info.get('job_id'):
             raise ValueError("Job ID is required in job_info")
         
-        # Generate project title with job ID and timestamp
         job_id = job_info['job_id']
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         project_title = f"{self.config.project_title} - {job_id[:8]} - {timestamp}"
         
-        # Create description using dates from config if available
         description = self.config.project_description
         if hasattr(self, '_config_dates') and self._config_dates:
             start_date = self._config_dates.get('start_date')
@@ -114,18 +81,16 @@ class LabelStudioPipeline:
             if start_date and end_date:
                 description = f"Images from {start_date} to {end_date}"
         
-        # Create project
         project = self.label_studio.create_project(
             title=project_title,
             description=description,
             label_config=self.config.interface_config.strip()
         )
         
-        # Set up storage (delay is now handled by orchestrator)
         storage_info = self._setup_storage(
             project_id=project.id,
             job_info=job_info,
-            delay_seconds=0  # No delay needed here
+            delay_seconds=0
         )
         
         return {
@@ -142,26 +107,11 @@ class LabelStudioPipeline:
         job_info: Dict[str, Any],
         delay_seconds: int
     ) -> Dict[str, Any]:
-        """
-        Set up and sync GCS storage for a project.
-        
-        Args:
-            project_id: Label Studio project ID
-            job_info: Job information dictionary
-            delay_seconds: Delay before syncing storage (deprecated, handled by orchestrator)
-        
-        Returns:
-            Storage configuration information
-        
-        Raises:
-            ValueError: If required GCS information is missing
-        """
-        # Extract GCS info from job info - must be present
+        """Set up and sync GCS storage for a project."""
         gcs_folder = job_info.get('gcs_folder')
         if not gcs_folder:
             raise ValueError("GCS folder information is required in job_info")
         
-        # Parse GCS path
         if not gcs_folder.startswith('gs://'):
             raise ValueError(f"Invalid GCS path format: {gcs_folder}")
         
@@ -175,7 +125,6 @@ class LabelStudioPipeline:
         if not gcs_bucket or not gcs_prefix:
             raise ValueError(f"Invalid GCS path components: bucket={gcs_bucket}, prefix={gcs_prefix}")
         
-        # Create and sync storage (delay is handled by orchestrator)
         storage = self.label_studio.create_cloud_storage(
             project_id=project_id,
             bucket=gcs_bucket,
@@ -185,7 +134,6 @@ class LabelStudioPipeline:
             regex_filter=r".*\.json$"
         )
         
-        # Sync storage
         self.label_studio.sync_storage(
             project_id=project_id,
             storage_id=storage['id'],
@@ -200,19 +148,7 @@ class LabelStudioPipeline:
     
     @classmethod
     def from_config_file(cls, config_path: Union[str, Path]) -> 'LabelStudioPipeline':
-        """
-        Create pipeline instance from a YAML config file.
-        
-        Args:
-            config_path: Path to YAML config file
-        
-        Returns:
-            LabelStudioPipeline instance
-        
-        Raises:
-            ValueError: If required configuration is missing
-            FileNotFoundError: If config file or GCP credentials not found
-        """
+        """Create pipeline instance from a YAML config file."""
         import yaml
         
         if not os.path.exists(config_path):
@@ -250,7 +186,6 @@ class LabelStudioPipeline:
         if missing_project:
             raise ValueError(f"Missing required project fields: {', '.join(missing_project)}")
         
-        # Extract dates from config for description
         config_dates = {}
         if 'start_date' in config:
             config_dates['start_date'] = config['start_date']
@@ -271,7 +206,6 @@ class LabelStudioPipeline:
             )
         )
         
-        # Store dates for use in description
         pipeline_instance._config_dates = config_dates
         
         return pipeline_instance 
