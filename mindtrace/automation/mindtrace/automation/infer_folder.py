@@ -17,6 +17,14 @@ def run_inference(config_path: str, custom_job_id: str = None):
     with open(config_path) as f:
         config = yaml.safe_load(f)
         
+    if 'inference_list' in config:
+        config['mask_tasks'] = [
+            task for task, task_type in config['inference_list'].items() if task_type == 'mask'
+        ]
+        config['bounding_box_tasks'] = [
+            task for task, task_type in config['inference_list'].items() if task_type == 'bounding_box'
+        ]
+        
     downloader = ImageDownload(
         database=os.getenv('DATABASE_NAME'),
         user=os.getenv('DATABASE_USERNAME'),
@@ -79,6 +87,7 @@ def run_inference(config_path: str, custom_job_id: str = None):
             )
             print(f"Created Label Studio mapping file: {combined_mapping_file}")
             
+            print(config)
             return {
                 "job_id": job_id,
                 "gcs_path_mapping": gcs_path_mapping,

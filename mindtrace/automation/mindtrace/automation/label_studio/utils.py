@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 import json
+import yaml
 from mindtrace.storage.gcs import GCSStorageHandler
 
 
@@ -85,7 +86,7 @@ def detections_to_label_studio(dict_format):
     return all_annotations
 
 
-def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int) -> List[Dict[str, Any]]:
+def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2label: dict) -> List[Dict[str, Any]]:
     """
     Parse a YOLO format box file and convert directly to Label Studio format.
     
@@ -129,7 +130,7 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int) -> 
                         'width': width_percent,
                         'height': height_percent,
                         'confidence': confidence,
-                        'class_name': f"class_{class_id}"
+                        'class_name': id2label[class_id]
                     }
                     bboxes.append(bbox)
     
@@ -171,6 +172,7 @@ def extract_masks_from_pixel_values(mask_path: str, class_mapping: Optional[Dict
             temp_mask_img = Image.fromarray(binary_mask, mode='L')
             temp_mask_img.save(temp_mask_path)
             
+            print('--------------------------------------',class_mapping, class_id)
             if class_mapping and class_id in class_mapping:
                 class_name = class_mapping[class_id]
             else:
@@ -218,7 +220,8 @@ def create_label_studio_mapping(gcs_path_mapping, output_folder, combined_mappin
 def gather_detections_from_folders(
     output_folder: str,
     class_mapping: Optional[Dict[int, str]] = None,
-    mask_task_names: Optional[List[str]] = None
+    mask_task_names: Optional[List[str]] = None,
+    box_task_names: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Gather detection data from the folder structure created by infer_folder.py.
@@ -226,6 +229,7 @@ def gather_detections_from_folders(
     Args:
         output_folder: Root folder containing images/, boxes/, raw_masks/ subfolders
         class_mapping: Optional mapping from class_id to class_name
+        box_task_names: List of box task names to process (e.g., ['zone_segmentation'])
         mask_task_names: List of mask task names to process (e.g., ['zone_segmentation'])
     
     Returns:
@@ -255,21 +259,32 @@ def gather_detections_from_folders(
         except Exception as e:
             print(f"Error getting dimensions for {image_path}: {e}")
             continue
-        
-        box_file_path = os.path.join(boxes_folder, f"{image_name}.txt")
-        bboxes = parse_yolo_box_file(box_file_path, img_width, img_height)
-        
+
+        bboxes = []
         masks = []
         mask_classes = []
         
+        if box_task_names:
+            for task_name in box_task_names:
+                id2label_path = os.path.join(boxes_folder, task_name, "id2label.yaml")
+                with open(id2label_path, 'r') as f:
+                    id2label = yaml.safe_load(f)
+                task_box_folder = os.path.join(boxes_folder, task_name)
+                box_file_path = os.path.join(task_box_folder, f"{image_name}.txt")
+                bboxes.extend(parse_yolo_box_file(box_file_path, img_width, img_height, id2label))
+        
         if mask_task_names:
             for task_name in mask_task_names:
+                id2label_path = os.path.join(raw_masks_folder, task_name, "id2label.yaml")
+                with open(id2label_path, 'r') as f:
+                    id2label = yaml.safe_load(f)
                 task_mask_folder = os.path.join(raw_masks_folder, task_name)
                 mask_file_path = os.path.join(task_mask_folder, f"{image_name}.png")
                 
                 if os.path.exists(mask_file_path):
-                    class_masks = extract_masks_from_pixel_values(mask_file_path, class_mapping)
+                    class_masks = extract_masks_from_pixel_values(mask_file_path, class_mapping=id2label)
                     for temp_mask_path, class_name in class_masks:
+                        print('--------------------------------------',class_name)
                         masks.append(temp_mask_path)
                         mask_classes.append(class_name)
         
@@ -389,7 +404,8 @@ def create_individual_label_studio_files_with_gcs(
     gcs_mapping: dict,
     output_dir: str,
     class_mapping: dict = None,
-    mask_task_names: list = None
+    mask_task_names: list = None,
+    box_task_names: list = None
 ) -> list:
     """Create individual Label Studio JSON files for each image with GCS URLs."""
     os.makedirs(output_dir, exist_ok=True)
@@ -397,7 +413,8 @@ def create_individual_label_studio_files_with_gcs(
     detections = gather_detections_from_folders(
         output_folder=output_folder,
         class_mapping=class_mapping,
-        mask_task_names=mask_task_names
+        mask_task_names=mask_task_names,
+        box_task_names=box_task_names
     )
     
     if "gcs_paths" in gcs_mapping:

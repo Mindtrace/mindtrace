@@ -746,7 +746,6 @@ class Pipeline:
         """Get information about a specific model."""
         if task_name not in self.models:
             return None
-        
         model = self.models[task_name]
         return {
             'model_name': model.model_name,
@@ -754,7 +753,8 @@ class Pipeline:
             'model_path': model.model_path,
             'device': model.device,
             'img_size': model.img_size,
-            'num_classes': len(model.id2label)
+            'num_classes': len(model.id2label),
+            'id2label': model.id2label
         }
     
     def run_inference_on_models(self, image: Union[str, Image.Image, np.ndarray],
@@ -826,18 +826,36 @@ class Pipeline:
             original_image = Image.open(image_path).convert('RGB')
             img_width, img_height = original_image.size
             
+            results = self._make_json_serializable(results)
+            
             for task_name, result in results.items():
-                if 'error' in result:
+                if not result or 'error' in result:
                     continue
                 
-                # Determine export type for this task
-                export_type = ExportType.BOUNDING_BOX  # Default
-                if export_types and task_name in export_types:
-                    export_type = export_types[task_name]
-                
+                current_export_type = export_types.get(task_name) if export_types else None
+
+                # Save id2label as yaml
+                model_info = self.get_model_info(task_name)
+                if model_info and model_info.get('id2label'):
+                    id2label_map = {int(k): v for k, v in model_info['id2label'].items()}
+                    
+                    output_dir = None
+                    if current_export_type == ExportType.MASK:
+                        output_dir = os.path.join(raw_masks_folder, task_name)
+                    elif current_export_type == ExportType.BOUNDING_BOX:
+                        output_dir = os.path.join(boxes_folder, task_name)
+                    
+                    if output_dir:
+                        os.makedirs(output_dir, exist_ok=True)
+                        yaml_path = os.path.join(output_dir, 'id2label.yaml')
+                        if not os.path.exists(yaml_path):
+                            with open(yaml_path, 'w') as f:
+                                yaml.dump(id2label_map, f, default_flow_style=False)
+                            print(f"Saved id2label map to {yaml_path}")
+
                 # Save raw masks
-                if 'mask' in result:
-                    mask = result['mask']
+                if current_export_type == ExportType.MASK and 'mask' in result:
+                    mask = np.array(result['mask'])
                     if mask is not None and mask.size > 0:
                         if overwrite_masks:
                             # Overwrite mode: use original image filename
@@ -859,13 +877,15 @@ class Pipeline:
                 
                 # Save YOLO format boxes with original filename  
                 if 'boxes' in result:
+                    task_boxes_folder = os.path.join(boxes_folder, task_name)
+                    os.makedirs(task_boxes_folder, exist_ok=True)
                     boxes = result['boxes']
                     scores = result.get('scores', [])
                     labels = result.get('labels', [])
                     
                     # Use original image filename for boxes
                     boxes_filename = f"{image_name}.txt"
-                    boxes_path = os.path.join(boxes_folder, boxes_filename)
+                    boxes_path = os.path.join(task_boxes_folder, boxes_filename)
                     
                     # Always save the file, even if no boxes detected
                     self._save_yolo_boxes(boxes, scores, labels, boxes_path, img_width, img_height)

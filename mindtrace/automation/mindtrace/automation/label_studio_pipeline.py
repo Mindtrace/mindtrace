@@ -68,7 +68,8 @@ class PipelineOrchestrator:
             gcs_mapping=job_info['gcs_path_mapping'],
             output_dir=json_output_dir,
             class_mapping=None,
-            mask_task_names=job_info['config'].get('mask_tasks', ['zone_segmentation'])
+            mask_task_names=job_info['config'].get('mask_tasks', ['zone_segmentation']),
+            box_task_names=job_info['config'].get('bounding_box_tasks', ['zone_segmentation'])
         )
         
         uploaded_urls = []
@@ -117,9 +118,9 @@ class PipelineOrchestrator:
         job_info_path = os.path.join(job_info['config']['output_folder'], f"label_studio_job_{self.job_id}.json")
         with open(job_info_path, 'w') as f:
             json.dump(job_info, f, indent=2, default=str)
-        
+
         return job_info
-    
+
     def run_complete_pipeline(self, custom_job_id: Optional[str] = None, delay_seconds: int = 30) -> Dict[str, Any]:
         """Run the complete pipeline and return structured results."""
         job_info = self.run_inference(custom_job_id)
