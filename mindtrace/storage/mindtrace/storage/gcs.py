@@ -1189,43 +1189,23 @@ if __name__ == '__main__':
     # Example: Initialize the storage handler
     handler = GCSStorageHandler(
         bucket_name='adient-staging-weights',
-        credentials_path='/home/vineeth/Desktop/mindtrace/google_creds.json'
+        credentials_path='/home/joshua/Downloads/google_creds.json'
     )
     
     # Example: Upload model to registry with base folder "sfz"
     # Try to upload with a new version
-    # try:
-    #     uploaded_files = handler.upload_model_to_registry(
-    #         local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
-    #         task_name='sfz_pipeline',
-    #         version='v2.3',
-    #         base_folder='sfz',
-    #         auto_register_task=True
-    #     )
-    #     print(f"Successfully uploaded {len(uploaded_files)} files")
-    # except ValueError as e:
-    #     print(f"Upload failed: {e}")
-    #     print("This is expected if the version already exists")
-    
-    # # Example: Download model from registry with base folder "sfz"
-    # # Try to download the model
-    # try:
-    #     downloaded_files, version = handler.download_model_from_registry(
-    #         task_name='sfz_pipeline',
-    #         local_directory='./downloaded_models',
-    #         version='v2.1',  # or None for latest
-    #         base_folder='sfz'
-    #     )
-    #     print(f"Successfully downloaded {len(downloaded_files)} files for version {version}")
-    # except Exception as e:
-    #     print(f"Download failed: {e}")
-    
-    # Example: Check sync status with base folder "sfz"
-    status = handler.check_registry_sync_status(
-        task_name='sfz_pipeline',
-        local_directory='./downloaded_models',
-        base_folder='sfz'
-    )
+    try:
+        # uploaded_files = handler.upload_model_to_registry(
+        #     local_directory='/home/vineeth/Desktop/mindtrace/local-bucket/weights/sfz_pipeline/v2.0',
+        #     task_name='sfz_pipeline',
+        #     version='v2.2',
+        #     auto_register_task=True
+        # )
+        print("wow")
+        # print(f"Successfully uploaded {len(uploaded_files)} files")
+    except ValueError as e:
+        print(f"Upload failed: {e}")
+        print("This is expected if the version already exists")
     
     # Example: List model versions with base folder "sfz"
     try:

@@ -1,18 +1,22 @@
 import os
 import argparse
 import yaml
+import json
+import uuid
+from pathlib import Path
 from mindtrace.automation.modelling.inference import Pipeline, ExportType
 from mindtrace.automation.download_images import ImageDownload
+from mindtrace.automation.label_studio.utils import create_label_studio_mapping
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
-    parser.add_argument("--config", required=True, help="Path to YAML config file")
-    args = parser.parse_args()
+
+def run_inference(config_path: str, custom_job_id: str = None):
+    """Run inference pipeline and return job information for Label Studio integration."""
+    job_id = custom_job_id or str(uuid.uuid4())
+    print(f"Starting inference job with ID: {job_id}")
     
-    with open(args.config) as f:
+    with open(config_path) as f:
         config = yaml.safe_load(f)
         
-    # Get the data from the database
     downloader = ImageDownload(
         database=os.getenv('DATABASE_NAME'),
         user=os.getenv('DATABASE_USERNAME'),
@@ -24,9 +28,15 @@ if __name__ == "__main__":
         local_download_path=config.get('download_path', 'downloads'),
         config=config
     )
-    downloader.get_data()
+    
+    print("Downloading images and capturing GCS paths...")
+    gcs_path_mapping = downloader.get_data_with_gcs_paths()
+    
+    gcs_mapping_file = os.path.join(config.get('download_path', 'downloads'), 'gcs_paths.json')
+    with open(gcs_mapping_file, 'w') as f:
+        json.dump(gcs_path_mapping, f, indent=2)
+    print(f"Saved GCS path mapping to: {gcs_mapping_file}")
 
-    # Run the inference
     pipeline = Pipeline(
         credentials_path=config['gcp']['credentials_file'],
         bucket_name=config['gcp']['weights_bucket'],
@@ -35,7 +45,6 @@ if __name__ == "__main__":
         overwrite_masks=config['overwrite_masks']
     )
 
-    # Load the pipeline
     pipeline.load_pipeline(
         task_name=config['task_name'],
         version=config['version'],
@@ -43,7 +52,6 @@ if __name__ == "__main__":
     )
 
     if os.path.exists(config['download_path']):
-        # Convert string export types to ExportType enum values
         export_types = {}
         for task_name, export_type_str in config['inference_list'].items():
             if export_type_str == "mask":
@@ -51,7 +59,6 @@ if __name__ == "__main__":
             elif export_type_str == "bounding_box":
                 export_types[task_name] = ExportType.BOUNDING_BOX
 
-        # Run the inference
         summary = pipeline.run_inference_on_path(
             input_path=config['download_path'],
             output_folder=config['output_folder'],
@@ -62,9 +69,29 @@ if __name__ == "__main__":
 
         if summary and summary.get('processed_images', 0) > 0:
             print("Inference completed successfully")
+            
+            combined_mapping_file = os.path.join(config['output_folder'], 'label_studio_mapping.json')
+            create_label_studio_mapping(
+                gcs_path_mapping=gcs_path_mapping,
+                output_folder=config['output_folder'],
+                combined_mapping_file=combined_mapping_file,
+                job_id=job_id
+            )
+            print(f"Created Label Studio mapping file: {combined_mapping_file}")
+            
+            return {
+                "job_id": job_id,
+                "gcs_path_mapping": gcs_path_mapping,
+                "inference_summary": summary,
+                "config": config,
+                "gcs_folder": f"gs://{config.get('label_studio', {}).get('bucket', '')}/{config.get('label_studio', {}).get('prefix', '')}/{job_id}/"
+            }
+            
         else:
             print("Inference failed")
+            return None
             
     else:
         print(f"Input folder not found: {config['download_path']}")
         print("Skipping folder inference test")
+        return None
