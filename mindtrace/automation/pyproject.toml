@@ -20,6 +20,8 @@ dependencies = [
     "torchvision>=0.22.1",
     "huggingface>=0.0.1",
     "opencv-python>=4.11.0.86",
+    "reflex>=0.8.2",
+    "streamlit>=1.46.1",
 ]
 
 [build-system]
