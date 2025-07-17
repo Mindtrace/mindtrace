@@ -5,10 +5,11 @@ from PIL import Image
 from typing import List, Dict, Any, Optional, Tuple
 import json
 import yaml
+import cv2
 from mindtrace.storage.gcs import GCSStorageHandler
 
 
-def detections_to_label_studio(dict_format):
+def detections_to_label_studio(dict_format: List[Dict], mask_from_name: str, mask_tool_type: str):
     """
     Convert list of detection dictionaries into Label Studio pre-annotations.
     
@@ -18,6 +19,8 @@ def detections_to_label_studio(dict_format):
             - 'bboxes': list of bbox dicts with 'x', 'y', 'width', 'height', 'confidence', 'class_name'
             - 'masks': list of mask file paths
             - 'mask_classes': list of class names for masks (same length as masks)
+        mask_from_name: The 'name' of the label tag in Label Studio config (e.g., 'label').
+        mask_tool_type: The tool type from LS config, 'PolygonLabels' or 'BrushLabels'.
     Returns:
         List[dict] — a list of Label Studio "result" entries
     """
@@ -27,30 +30,60 @@ def detections_to_label_studio(dict_format):
     for image_data in dict_format:
         image_annotations = []
         
+        try:
+            with Image.open(image_data['image_path']) as img:
+                img_width, img_height = img.size
+        except Exception as e:
+            print(f"Error getting image dimensions for {image_data['image_path']}: {e}. Skipping mask processing for this image.")
+            continue
+
         if 'masks' in image_data and image_data['masks']:
             mask_paths = image_data['masks']
             mask_classes = image_data.get('mask_classes', [])
             
             for j, mask_path in enumerate(mask_paths):
-                try:
-                    rle, width, height = image2rle(mask_path)
-                    
-                    if not rle:
-                        print(f"No rle found for mask: {mask_path}")
-                        continue
-                    
-                    cls = mask_classes[j] if j < len(mask_classes) else "object"
-                    
-                    mask_ann = {
-                        "image_rotation": 0,
-                        "value": {"format": "rle", "rle": rle, "brushlabels": [cls]},
-                        "from_name": "brush",
-                        "to_name": "image",
-                        "type": "brushlabels",
-                    }
-                    image_annotations.append(mask_ann)
-                except Exception as e:
-                    raise Exception(f"Error saving mask: {e}")
+                cls = mask_classes[j] if j < len(mask_classes) else "object"
+
+                if mask_tool_type == 'BrushLabels':
+                    try:
+                        rle, _, _ = image2rle(mask_path)
+                        
+                        if not rle:
+                            print(f"No rle found for mask: {mask_path}")
+                            continue
+                        
+                        mask_ann = {
+                            "original_width": img_width,
+                            "original_height": img_height,
+                            "image_rotation": 0,
+                            "value": {"format": "rle", "rle": rle, "brushlabels": [cls]},
+                            "from_name": mask_from_name,
+                            "to_name": "image",
+                            "type": 'brushlabels',
+                        }
+                        image_annotations.append(mask_ann)
+                    except Exception as e:
+                        raise Exception(f"Error saving brush mask: {e}")
+
+                elif mask_tool_type == 'PolygonLabels':
+                    try:
+                        polygons = mask_to_polygons(mask_path, img_width, img_height)
+                        for points in polygons:
+                            polygon_ann = {
+                                "original_width": img_width,
+                                "original_height": img_height,
+                                "image_rotation": 0,
+                                "value": {
+                                    "points": points,
+                                    "polygonlabels": [cls]
+                                },
+                                "from_name": mask_from_name,
+                                "to_name": "image",
+                                "type": "polygonlabels",
+                            }
+                            image_annotations.append(polygon_ann)
+                    except Exception as e:
+                        raise Exception(f"Error saving polygon: {e}")
         
         if 'bboxes' in image_data and image_data['bboxes']:
             for bbox_data in image_data['bboxes']:
@@ -138,6 +171,36 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2
         print(f"Error parsing box file {box_file_path}: {e}")
     
     return bboxes
+
+
+def mask_to_polygons(mask_path: str, img_width: int, img_height: int) -> List[List[List[float]]]:
+    """
+    Converts a binary mask image to a list of polygons in Label Studio format.
+    Args:
+        mask_path: Path to the binary mask file.
+        img_width: Width of the original image for normalization.
+        img_height: Height of the original image for normalization.
+    Returns:
+        A list of polygons, where each polygon is a list of [x, y] points (0-100).
+    """
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    if mask is None:
+        return []
+
+    # Using RETR_EXTERNAL to get only external contours
+    # Using CHAIN_APPROX_SIMPLE to save memory
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    polygons = []
+    for contour in contours:
+        if contour.shape[0] < 3:  # A polygon needs at least 3 points
+            continue
+        
+        # Normalize points to 0-100 range for Label Studio
+        polygon = [[(p[0][0] / img_width) * 100, (p[0][1] / img_height) * 100] for p in contour]
+        polygons.append(polygon)
+        
+    return polygons
 
 
 def extract_masks_from_pixel_values(mask_path: str, class_mapping: Optional[Dict[int, str]] = None) -> List[Tuple[str, str]]:
@@ -302,6 +365,8 @@ def gather_detections_from_folders(
 
 def create_label_studio_tasks(
     output_folder: str,
+    mask_from_name: str,
+    mask_tool_type: str,
     class_mapping: Optional[Dict[int, str]] = None,
     mask_task_names: Optional[List[str]] = None,
     image_url_prefix: str = ""
@@ -319,7 +384,7 @@ def create_label_studio_tasks(
         List of Label Studio task dictionaries
     """
     detections = gather_detections_from_folders(output_folder, class_mapping, mask_task_names)
-    annotations = detections_to_label_studio(detections)
+    annotations = detections_to_label_studio(detections, mask_from_name, mask_tool_type)
     
     tasks = []
     current_image = None
@@ -344,6 +409,8 @@ def create_label_studio_tasks(
 def export_to_label_studio_json(
     output_folder: str,
     export_path: str,
+    mask_from_name: str,
+    mask_tool_type: str,
     class_mapping: Optional[Dict[int, str]] = None,
     mask_task_names: Optional[List[str]] = None
 ) -> bool:
@@ -361,7 +428,7 @@ def export_to_label_studio_json(
     """
     try:
         detections = gather_detections_from_folders(output_folder, class_mapping, mask_task_names)
-        annotations = detections_to_label_studio(detections)
+        annotations = detections_to_label_studio(detections, mask_from_name, mask_tool_type)
         
         export_data = {
             "annotations": annotations,
@@ -403,9 +470,11 @@ def create_individual_label_studio_files_with_gcs(
     output_folder: str,
     gcs_mapping: dict,
     output_dir: str,
-    class_mapping: dict = None,
-    mask_task_names: list = None,
-    box_task_names: list = None
+    mask_from_name: str,
+    mask_tool_type: str,
+    class_mapping: Optional[dict] = None,
+    mask_task_names: Optional[list] = None,
+    box_task_names: Optional[list] = None
 ) -> list:
     """Create individual Label Studio JSON files for each image with GCS URLs."""
     os.makedirs(output_dir, exist_ok=True)
@@ -432,7 +501,9 @@ def create_individual_label_studio_files_with_gcs(
     for filename, gcs_url in filename_to_gcs.items():
         print(f"  {filename} -> {gcs_url}")
     
-    annotations = detections_to_label_studio(detections)
+    annotations = detections_to_label_studio(
+        detections, mask_from_name=mask_from_name, mask_tool_type=mask_tool_type
+    )
     
     created_files = []
     annotation_index = 0
