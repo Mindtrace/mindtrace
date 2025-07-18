@@ -31,6 +31,15 @@ class JobSchemaTargeting(UnifiedMindtraceDocument):
         indexed_fields = ["schema_name"]
         unique_fields = ["schema_name"]
 
+class WorkerAutoConnect(UnifiedMindtraceDocument):
+    worker_type: str = Field(description="Worker type")
+    schema_name: str = Field(description="Schema name")
+    class Meta:
+        collection_name = "worker_auto_connect"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_type"]
+        unique_fields = ["worker_type"]
 
 class WorkerStatusEnum(Enum):
     IDLE = "idle"
@@ -94,8 +103,17 @@ class RegisterWorkerTypeInput(BaseModel):
     worker_class: str
     worker_params: dict
     materializer_name: str | None = None
+    job_type: str | None = None
 
 class ClusterLaunchWorkerInput(BaseModel):
     node_url: str
     worker_type: str
     worker_url: str
+
+class ClusterRegisterJobToWorkerInput(BaseModel):
+    job_type: str
+    worker_url: str
+
+class RegisterJobSchemaToWorkerTypeInput(BaseModel):
+    job_schema_name: str
+    worker_type: str

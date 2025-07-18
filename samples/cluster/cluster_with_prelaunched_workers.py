@@ -21,6 +21,7 @@ def main():
         print(cluster_manager.get_job_status(job_id=job.id))
     finally:
         worker_cm.shutdown()
+        cluster_manager.clear_databases()
         cluster_manager.shutdown()
 
 
