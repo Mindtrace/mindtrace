@@ -1,10 +1,12 @@
 import reflex as rx
+from typing import List, Dict, Optional
 from poseidon.backend.services.auth_service import AuthService
 from poseidon.backend.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
 from poseidon.backend.utils.security import decode_jwt
-from typing import List, Dict, TypedDict
+from poseidon.backend.database.models.enums import OrgRole
 
-class ProjectAssignment(TypedDict):
+# Define project assignment structure for type hints
+class ProjectAssignment:
     project_id: str
     roles: List[str]
 
@@ -23,7 +25,7 @@ class AuthState(rx.State):
     user_id: str = ""
     current_username: str = ""
     user_organization_id: str = ""
-    user_org_roles: List[str] = []
+    user_org_role: str = ""  # Changed from list to single string
     user_project_assignments: List[ProjectAssignment] = []
     is_authenticated: bool = False
 
@@ -35,7 +37,7 @@ class AuthState(rx.State):
                 self.user_id = payload.get("user_id", "")
                 self.current_username = payload.get("username", "")
                 self.user_organization_id = payload.get("organization_id", "")
-                self.user_org_roles = payload.get("org_roles", [])
+                self.user_org_role = payload.get("org_role", "")  # Single role
                 self.user_project_assignments = payload.get("project_assignments", [])
                 self.is_authenticated = True
             except Exception:
@@ -43,7 +45,7 @@ class AuthState(rx.State):
 
     def has_org_role(self, required_role: str) -> bool:
         """Check if user has a specific organization role"""
-        return self.is_authenticated and required_role in self.user_org_roles
+        return self.is_authenticated and self.user_org_role == required_role
 
     def has_project_role(self, project_id: str, required_role: str) -> bool:
         """Check if user has a specific project role"""
@@ -57,58 +59,64 @@ class AuthState(rx.State):
     @rx.var
     def is_admin(self) -> bool:
         """Check if user is organization admin"""
-        return self.has_org_role("admin")
-    
+        return self.has_org_role(OrgRole.ADMIN)
+
     @rx.var
     def is_super_admin(self) -> bool:
-        """Check if user is super admin (system-wide)"""
-        return self.has_org_role("super_admin")
-    
+        """Check if user is super admin"""
+        return self.has_org_role(OrgRole.SUPER_ADMIN)
+
     @rx.var
-    def user_display_name(self) -> str:
-        """Get display name for the user"""
-        return self.current_username if self.is_authenticated else "Guest"
-    
+    def is_user(self) -> bool:
+        """Check if user is regular user"""
+        return self.has_org_role(OrgRole.USER)
+
     @rx.var
-    def org_role_display(self) -> str:
-        """Get formatted organization role display"""
-        if not self.is_authenticated:
-            return ""
-        return ", ".join(self.user_org_roles) if self.user_org_roles else "No roles"
-    
+    def role_display(self) -> str:
+        """Get display name for user's role"""
+        if self.is_super_admin:
+            return "Super Admin"
+        elif self.is_admin:
+            return "Admin"
+        elif self.is_user:
+            return "User"
+        else:
+            return "Unknown"
+
     @rx.var
-    def has_projects(self) -> bool:
+    def has_project_assignments(self) -> bool:
         """Check if user has any project assignments"""
         return self.is_authenticated and len(self.user_project_assignments) > 0
-    
+
     @rx.var
     def project_assignments_display(self) -> List[str]:
-        """Get project assignments formatted for display"""
+        """Get formatted project assignments for display"""
         if not self.is_authenticated:
             return []
-        result = []
+        
+        assignments = []
         for assignment in self.user_project_assignments:
-            project_id = assignment.get("project_id", "")
+            project_name = assignment.get("project_name", "Unknown Project")
             roles = assignment.get("roles", [])
-            roles_str = ", ".join(roles) if roles else "No roles"
-            result.append(f"{project_id}: {roles_str}")
-        return result
-    
-    def get_user_project_roles(self, project_id: str) -> List[str]:
-        """Get user's roles for a specific project"""
-        if not self.is_authenticated:
-            return []
+            assignments.append(f"{project_name} ({', '.join(roles)})")
+        return assignments
+
+    @rx.var
+    def current_project_display(self) -> str:
+        """Get current project for display"""
+        if not self.has_project_assignments:
+            return "No projects assigned"
+        
         for assignment in self.user_project_assignments:
-            if assignment.get("project_id") == project_id:
-                return assignment.get("roles", [])
-        return []
-    
+            project_name = assignment.get("project_name", "Unknown Project")
+            return project_name
+        
+        return "No projects assigned"
+
     def is_assigned_to_project(self, project_id: str) -> bool:
         """Check if user is assigned to a specific project"""
-        if not self.is_authenticated:
-            return False
         return any(assignment.get("project_id") == project_id for assignment in self.user_project_assignments)
-    
+
     async def load_available_organizations(self):
         """Load available organizations for registration."""
         try:
@@ -136,7 +144,7 @@ class AuthState(rx.State):
         self.user_id = ""
         self.current_username = ""
         self.user_organization_id = ""
-        self.user_org_roles = []
+        self.user_org_role = ""
         self.user_project_assignments = []
         self.is_authenticated = False
         self.error = ""
@@ -215,14 +223,14 @@ class AuthState(rx.State):
                     self.error = "Invalid organization selected."
                     return
                 
-            # Normal registration can only create regular members (security measure)
+            # Normal registration can only create regular users (security measure)
             # Organization admins must be created through register_admin method
             result = await AuthService.register_user(
                 form_data["username"],
                 form_data["email"],
                 form_data["password"],
                 organization_id,
-                org_roles=["member"]  # Force member role only
+                org_role=OrgRole.USER  # Single role
             )
             self.error = ""
             return rx.redirect("/login")
@@ -261,7 +269,6 @@ class AuthState(rx.State):
                 return
             
             # Validate organization-specific admin registration key
-            from poseidon.backend.services.auth_service import AuthService
             is_valid_key = await AuthService.validate_organization_admin_key(
                 organization_id, 
                 form_data["admin_key"]
@@ -301,7 +308,6 @@ class AuthState(rx.State):
                 self.error = "Invalid super admin key."
                 return
                 
-            from poseidon.backend.services.auth_service import AuthService
             result = await AuthService.register_super_admin(
                 form_data["username"],
                 form_data["email"],
@@ -314,4 +320,4 @@ class AuthState(rx.State):
         except UserAlreadyExistsError as e:
             self.error = str(e)
         except Exception as e:
-            self.error = f"Super admin registration failed: {str(e)}" 
+            self.error = f"Super admin registration failed: {str(e)}"

@@ -123,22 +123,8 @@ class ProjectRoles:
         }
 
 
-class SubscriptionPlans:
-    BASIC = "basic"
-    PREMIUM = "premium"
-    ENTERPRISE = "enterprise"
-    
-    @classmethod
-    def get_all(cls) -> List[str]:
-        return [cls.BASIC, cls.PREMIUM, cls.ENTERPRISE]
-    
-    @classmethod
-    def get_display_names(cls) -> Dict[str, str]:
-        return {
-            cls.BASIC: "Basic",
-            cls.PREMIUM: "Premium",
-            cls.ENTERPRISE: "Enterprise"
-        }
+# Import centralized enum - alias for backward compatibility
+from poseidon.backend.database.models.enums import SubscriptionPlan as SubscriptionPlans
 
 
 class StatusTypes:

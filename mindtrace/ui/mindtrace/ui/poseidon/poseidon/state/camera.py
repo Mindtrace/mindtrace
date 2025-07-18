@@ -90,21 +90,33 @@ class CameraState(rx.State):
                 # Format projects with organization names for super admins
                 formatted_projects = []
                 for project in projects:
-                    org = await organization_repo.get_by_id(project.organization_id)
-                    org_name = org.name if org else "Unknown"
+                    # Extract organization info from Link field
+                    if hasattr(project, 'organization') and project.organization:
+                        org_id = str(project.organization.id)
+                        org_name = project.organization.name if hasattr(project.organization, 'name') else "Unknown"
+                    else:
+                        org_id = ""
+                        org_name = "Unknown"
                     formatted_projects.append({
                         "id": str(project.id),
                         "name": f"{project.name} ({org_name})",
-                        "organization_id": project.organization_id
+                        "organization_id": org_id
                     })
                 self.available_projects = formatted_projects
             elif self.is_admin:
                 # Admins can see all projects in their organization
                 projects = await project_repo.get_by_organization(self.organization_id)
-                self.available_projects = [
-                    {"id": str(project.id), "name": project.name, "organization_id": project.organization_id}
-                    for project in projects
-                ]
+                self.available_projects = []
+                for project in projects:
+                    # Extract organization info from Link field
+                    org_id = ""
+                    if hasattr(project, 'organization') and project.organization:
+                        org_id = str(project.organization.id)
+                    self.available_projects.append({
+                        "id": str(project.id), 
+                        "name": project.name, 
+                        "organization_id": org_id
+                    })
             else:
                 # Regular users can only see projects they're assigned to
                 user_project_ids = [
@@ -114,13 +126,27 @@ class CameraState(rx.State):
                 projects = []
                 for project_id in user_project_ids:
                     project = await project_repo.get_by_id(project_id)
-                    if project and project.organization_id == self.organization_id:
-                        projects.append(project)
+                    if project:
+                        # Extract organization info from Link field
+                        org_id = ""
+                        if hasattr(project, 'organization') and project.organization:
+                            org_id = str(project.organization.id)
+                        
+                        # Check if project belongs to user's organization
+                        if org_id == self.organization_id:
+                            projects.append(project)
                 
-                self.available_projects = [
-                    {"id": str(project.id), "name": project.name, "organization_id": project.organization_id}
-                    for project in projects
-                ]
+                self.available_projects = []
+                for project in projects:
+                    # Extract organization info from Link field
+                    org_id = ""
+                    if hasattr(project, 'organization') and project.organization:
+                        org_id = str(project.organization.id)
+                    self.available_projects.append({
+                        "id": str(project.id), 
+                        "name": project.name, 
+                        "organization_id": org_id
+                    })
             
             # Auto-select first project if available and no project selected
             if self.available_projects and not self.project_id:
@@ -160,19 +186,30 @@ class CameraState(rx.State):
                 projects = []
                 for project_id in user_project_ids:
                     project = await project_repo.get_by_id(project_id)
-                    if project and project.organization_id == self.organization_id:
-                        projects.append(project)
+                    if project:
+                        # Extract organization info from Link field
+                        org_id = ""
+                        if hasattr(project, 'organization') and project.organization:
+                            org_id = str(project.organization.id)
+                        
+                        # Check if project belongs to user's organization
+                        if org_id == self.organization_id:
+                            projects.append(project)
             
-            self.available_projects = [
-                {
+            self.available_projects = []
+            for project in projects:
+                # Extract organization info from Link field
+                org_id = ""
+                if hasattr(project, 'organization') and project.organization:
+                    org_id = str(project.organization.id)
+                
+                self.available_projects.append({
                     "id": str(project.id),
                     "name": project.name,
                     "description": project.description or "",
                     "status": project.status,
-                    "organization_id": project.organization_id
-                }
-                for project in projects
-            ]
+                    "organization_id": org_id
+                })
             
             # Restore current view state (don't auto-select first project)
             self.project_id = current_project_id
@@ -1100,8 +1137,9 @@ class CameraState(rx.State):
             # Get all unique project IDs from camera objects
             project_ids = set()
             for cam in self.camera_objs:
-                if cam.project_id:
-                    project_ids.add(cam.project_id)
+                # Extract project ID from Link field
+                if hasattr(cam, 'project') and cam.project:
+                    project_ids.add(str(cam.project.id))
             
             # Load project details for each referenced project ID
             for project_id in project_ids:
@@ -1112,12 +1150,17 @@ class CameraState(rx.State):
                     try:
                         project = await project_repo.get_by_id(project_id)
                         if project:
+                            # Extract organization info from Link field
+                            org_id = ""
+                            if hasattr(project, 'organization') and project.organization:
+                                org_id = str(project.organization.id)
+                            
                             self.available_projects.append({
                                 "id": str(project.id),
                                 "name": project.name,
                                 "description": project.description or "",
                                 "status": project.status,
-                                "organization_id": project.organization_id
+                                "organization_id": org_id
                             })
                     except Exception:
                         # If we can't load the project, continue with others
@@ -1205,7 +1248,14 @@ class CameraState(rx.State):
                 self.error = "Project not found"
                 return
             
-            project_organization_id = project.organization_id
+            # Extract organization info from Link field
+            project_organization_id = ""
+            if hasattr(project, 'organization') and project.organization:
+                project_organization_id = str(project.organization.id)
+            
+            if not project_organization_id:
+                self.error = "Project organization not found"
+                return
             
             # Check if camera exists in database
             camera_repo = CameraRepository()
@@ -1312,9 +1362,14 @@ class CameraState(rx.State):
     def assignment_camera_current_project(self) -> str:
         """Get the current project name for the assignment camera"""
         for cam in self.camera_objs:
-            if cam.name == self.assignment_camera_name and cam.project_id:
+            # Extract project ID from Link field
+            cam_project_id = ""
+            if hasattr(cam, 'project') and cam.project:
+                cam_project_id = str(cam.project.id)
+            
+            if cam.name == self.assignment_camera_name and cam_project_id:
                 for project in self.available_projects:
-                    if project["id"] == cam.project_id:
+                    if project["id"] == cam_project_id:
                         return project["name"]
         return "Unassigned"
 
@@ -1324,11 +1379,16 @@ class CameraState(rx.State):
         assignments = {}
         
         for cam in self.camera_objs:
-            if cam.project_id:
+            # Extract project ID from Link field
+            cam_project_id = ""
+            if hasattr(cam, 'project') and cam.project:
+                cam_project_id = str(cam.project.id)
+            
+            if cam_project_id:
                 # First try to find project in available_projects
                 project_name = None
                 for project in self.available_projects:
-                    if project["id"] == cam.project_id:
+                    if project["id"] == cam_project_id:
                         project_name = project["name"]
                         break
                 
@@ -1337,12 +1397,12 @@ class CameraState(rx.State):
                 else:
                     # Project not in available_projects, try to find it in loaded projects
                     for project_id, project_name in self.loaded_project_names.items():
-                        if project_id == cam.project_id:
+                        if project_id == cam_project_id:
                             assignments[cam.name] = project_name
                             break
                     else:
                         # Still not found, show the project ID
-                        assignments[cam.name] = f"Project {cam.project_id}"
+                        assignments[cam.name] = f"Project {cam_project_id}"
         
         return assignments
     
@@ -1359,6 +1419,11 @@ class CameraState(rx.State):
     def get_camera_current_project_name(self, camera_name: str) -> str:
         """Get the current project name for any camera by name"""
         for cam in self.camera_objs:
-            if cam.name == camera_name and cam.project_id:
-                return self.get_project_name_by_id(cam.project_id)
+            # Extract project ID from Link field
+            cam_project_id = ""
+            if hasattr(cam, 'project') and cam.project:
+                cam_project_id = str(cam.project.id)
+            
+            if cam.name == camera_name and cam_project_id:
+                return self.get_project_name_by_id(cam_project_id)
         return "Unassigned" 

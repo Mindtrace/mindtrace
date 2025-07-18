@@ -13,6 +13,8 @@ dependencies = [
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
     "pydantic-settings>=2.9.1",
+    "pydantic>=2.11.1",
+    "beanie>=1.29.0",
 ]
 
 [tool.setuptools]

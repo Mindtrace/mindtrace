@@ -1,4 +1,4 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
+from mindtrace.database import MindtraceDocument
 from typing import Dict, Optional, List
 from datetime import datetime
 
