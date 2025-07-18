@@ -19,6 +19,7 @@ dependencies = [
     "uvicorn>=0.34.3",
     "aiohttp>=3.12.13",
     "fastmcp==2.9.2",
+    "discord-py>=2.5.2",
 ]
 
 [build-system]
