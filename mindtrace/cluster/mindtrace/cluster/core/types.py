@@ -54,15 +54,26 @@ class WorkerStatus(UnifiedMindtraceDocument):
     worker_id: str = Field(description="Worker id")
     worker_type: str = Field(description="Worker type")
     worker_url: str = Field(description="Worker url")
+    job_id: str | None = Field(description="Job id")
     status: WorkerStatusEnum = Field(description="Worker status")
     last_heartbeat: datetime | None = Field(description="Last heartbeat")
     class Meta:
         collection_name = "worker_status"
         global_key_prefix = "cluster"
         use_cache = False
-        indexed_fields = ["worker_id"]
+        indexed_fields = ["worker_id", "worker_url"]
         unique_fields = ["worker_id"]
 
+class WorkerStatusLocal(UnifiedMindtraceDocument):
+    worker_id: str = Field(description="Worker id")
+    status: WorkerStatusEnum = Field(description="Worker status")
+    job_id: str | None = Field(description="Job id")
+    class Meta:
+        collection_name = "worker_status_local"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_id"]
+        unique_fields = ["worker_id"]
 
 class RegisterJobToEndpointInput(BaseModel):
     job_type: str
@@ -141,4 +152,10 @@ class GetWorkerStatusInput(BaseModel):
     worker_id: str
 
 class GetWorkerStatusByUrlInput(BaseModel):
+    worker_url: str
+
+class QueryWorkerStatusInput(BaseModel):
+    worker_id: str
+
+class QueryWorkerStatusByUrlInput(BaseModel):
     worker_url: str

@@ -316,7 +316,7 @@ def test_worker_alert_started_job(cluster_manager):
         worker_id=""
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
-    cluster_manager.worker_status_database.find.return_value = [cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.IDLE, last_heartbeat=None)]
+    cluster_manager.worker_status_database.find.return_value = [cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.IDLE, last_heartbeat=None, job_id=None)]
     
     payload = {"job_id": job_id, "worker_id": worker_id}
     cluster_manager.worker_alert_started_job(payload)
@@ -336,7 +336,7 @@ def test_worker_alert_started_job_not_found(cluster_manager):
     
     payload = {"job_id": job_id, "worker_id": worker_id}
     
-    with pytest.raises(ValueError, match=f"Job status not found for job id {job_id}"):
+    with pytest.raises(ValueError, match=f"Expected 1 entry for job_id == {job_id}"):
         cluster_manager.worker_alert_started_job(payload)
 
 
@@ -354,6 +354,7 @@ def test_worker_alert_completed_job(cluster_manager):
         worker_id="worker-123"
     )
     cluster_manager.job_status_database.find.return_value = [existing_job_status]
+    cluster_manager.worker_status_database.find.return_value = [cluster_types.WorkerStatus(worker_id="worker-123", worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.IDLE, last_heartbeat=None, job_id=None)]
     
     payload = {"job_id": job_id, "status": status, "output": output, "worker_id": "worker-123"}
     cluster_manager.worker_alert_completed_job(payload)
@@ -371,7 +372,7 @@ def test_worker_alert_completed_job_not_found(cluster_manager):
     
     payload = {"job_id": job_id, "worker_id": "worker-123", "status": "completed", "output": {"result": "test"}}
     
-    with pytest.raises(ValueError, match=f"Job status not found for job id {job_id}"):
+    with pytest.raises(ValueError, match=f"Expected 1 entry for job_id == {job_id}"):
         cluster_manager.worker_alert_completed_job(payload)
 
 
@@ -976,7 +977,11 @@ def test_worker_run_with_cluster_manager(mock_worker):
     mock_cm = MagicMock()
     mock_worker._cluster_connection_manager = mock_cm
     
-    result = mock_worker.run(job_dict)
+    with patch("mindtrace.cluster.core.cluster.update_database") as mock_update_database:
+        mock_update_database.return_value = None
+        result = mock_worker.run(job_dict)
+        mock_update_database.assert_any_call(mock_worker.worker_status_local_database, "worker_id", str(mock_worker.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": "job-123"})
+        mock_update_database.assert_any_call(mock_worker.worker_status_local_database, "worker_id", str(mock_worker.id), {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None})
     
     # Verify cluster manager was called
     mock_cm.worker_alert_started_job.assert_called_once_with(job_id="job-123", worker_id=str(mock_worker.id))
@@ -1000,11 +1005,15 @@ def test_worker_run_without_cluster_manager(mock_worker):
     mock_worker._cluster_connection_manager = None
     mock_worker._cluster_url = None
     
-    with patch.object(mock_worker, 'logger') as mock_logger:
+    with patch.object(mock_worker, 'logger') as mock_logger, \
+        patch("mindtrace.cluster.core.cluster.update_database") as mock_update_database:
+        mock_update_database.return_value = None
         result = mock_worker.run(job_dict)
         
         # Verify warning was logged
         assert mock_logger.warning.call_count == 2
+        mock_update_database.assert_any_call(mock_worker.worker_status_local_database, "worker_id", str(mock_worker.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": "job-123"})
+        mock_update_database.assert_any_call(mock_worker.worker_status_local_database, "worker_id", str(mock_worker.id), {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None})
         assert result == {"status": "completed", "output": {"result": "test"}}
 
 
@@ -1103,6 +1112,7 @@ def test_get_worker_status_success(cluster_manager):
         worker_type="test_worker",
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     
@@ -1142,6 +1152,7 @@ def test_get_worker_status_by_url_success(cluster_manager):
         worker_type="test_worker",
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     
@@ -1183,6 +1194,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_type="test_worker",
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [idle_worker]
@@ -1197,6 +1209,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_type="test_worker",
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [running_worker]
@@ -1210,6 +1223,7 @@ def test_get_worker_status_with_different_statuses(cluster_manager):
         worker_type="test_worker",
         worker_url="http://worker:8080",
         status=cluster_types.WorkerStatusEnum.ERROR,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [error_worker]
@@ -1227,6 +1241,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_type="test_worker",
         worker_url=http_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [http_worker]
@@ -1242,6 +1257,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_type="secure_worker",
         worker_url=https_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [https_worker]
@@ -1257,6 +1273,7 @@ def test_get_worker_status_by_url_with_different_urls(cluster_manager):
         worker_type="local_worker",
         worker_url=localhost_url,
         status=cluster_types.WorkerStatusEnum.SHUTDOWN,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     cluster_manager.worker_status_database.find.return_value = [localhost_worker]
@@ -1360,6 +1377,7 @@ def test_get_worker_status_multiple_results(cluster_manager):
         worker_type="test_worker_1",
         worker_url="http://worker1:8080",
         status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     worker2 = cluster_types.WorkerStatus(
@@ -1367,6 +1385,7 @@ def test_get_worker_status_multiple_results(cluster_manager):
         worker_type="test_worker_2",
         worker_url="http://worker2:8080",
         status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     
@@ -1389,6 +1408,7 @@ def test_get_worker_status_by_url_multiple_results(cluster_manager):
         worker_type="test_worker_1",
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     worker2 = cluster_types.WorkerStatus(
@@ -1396,6 +1416,7 @@ def test_get_worker_status_by_url_multiple_results(cluster_manager):
         worker_type="test_worker_2",
         worker_url=worker_url,
         status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id=None,
         last_heartbeat=datetime.now()
     )
     
@@ -1409,11 +1430,563 @@ def test_get_worker_status_by_url_multiple_results(cluster_manager):
 
 
 def test_worker_concrete_implementation():
-    """Test that concrete Worker implementation works."""
+    """Test that a concrete Worker implementation works correctly."""
     class ConcreteWorker(Worker):
         def _run(self, job_dict: dict) -> dict:
-            return {"status": "completed", "output": {"result": "concrete"}}
+            return {"status": "completed", "output": {"result": "test"}}
+
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+        mock_database = MockDatabase.return_value
+        mock_database.insert = MagicMock()
+        mock_database.find = MagicMock(return_value=[])
+        mock_database.delete = MagicMock()
+        mock_database.redis_backend = MagicMock()
+        mock_database.redis_backend.model_cls = MagicMock()
+        
+        worker = ConcreteWorker()
+        result = worker._run({"test": "data"})
+        assert result == {"status": "completed", "output": {"result": "test"}}
+
+
+def test_update_database_success():
+    """Test update_database function with valid input."""
+    from mindtrace.cluster.core.cluster import update_database
     
-    worker = ConcreteWorker()
-    result = worker._run({"test": "data"})
-    assert result == {"status": "completed", "output": {"result": "concrete"}}
+    # Mock database and entry
+    mock_database = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.pk = "test-pk"
+    mock_database.find.return_value = [mock_entry]
+    mock_database.insert = MagicMock()
+    
+    # Mock model_cls attribute
+    mock_model_cls = MagicMock()
+    mock_database.redis_backend.model_cls = mock_model_cls
+    
+    # Test update
+    update_dict = {"status": "completed", "output": {"result": "test"}}
+    result = update_database(mock_database, "worker_id", "test-worker", update_dict)
+    
+    # Verify find was called
+    mock_database.find.assert_called_once()
+    # Verify attributes were set
+    assert mock_entry.status == "completed"
+    assert mock_entry.output == {"result": "test"}
+    # Verify insert was called
+    mock_database.insert.assert_called_once_with(mock_entry)
+    # Verify result
+    assert result == mock_entry
+
+
+def test_update_database_no_entries():
+    """Test update_database function when no entries are found."""
+    from mindtrace.cluster.core.cluster import update_database
+    
+    mock_database = MagicMock()
+    mock_database.find.return_value = []
+    mock_database.redis_backend.model_cls = MagicMock()
+    
+    with pytest.raises(ValueError, match="Expected 1 entry for worker_id == test-worker, got 0"):
+        update_database(mock_database, "worker_id", "test-worker", {"status": "completed"})
+
+
+def test_update_database_multiple_entries():
+    """Test update_database function when multiple entries are found."""
+    from mindtrace.cluster.core.cluster import update_database
+    
+    mock_database = MagicMock()
+    mock_database.find.return_value = [MagicMock(), MagicMock()]
+    mock_database.redis_backend.model_cls = MagicMock()
+    
+    with pytest.raises(ValueError, match="Expected 1 entry for worker_id == test-worker, got 2"):
+        update_database(mock_database, "worker_id", "test-worker", {"status": "completed"})
+
+
+def test_query_worker_status_success(cluster_manager):
+    """Test query_worker_status when worker exists and is responsive."""
+    worker_id = "test-worker-123"
+    worker_url = "http://worker:8080"
+    
+    # Mock worker status in database
+    existing_worker_status = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
+    
+    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+        mock_worker_instance = MockWorker.connect.return_value
+        
+        # Mock worker heartbeat and status
+        mock_heartbeat = MagicMock()
+        mock_heartbeat.heartbeat.status = ServerStatus.AVAILABLE
+        mock_worker_instance.heartbeat.return_value = mock_heartbeat
+        
+        mock_worker_status = MagicMock()
+        mock_worker_status.status = cluster_types.WorkerStatusEnum.RUNNING
+        mock_worker_status.job_id = "job-123"
+        mock_worker_instance.get_status.return_value = mock_worker_status
+        
+        # Mock update_database
+        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+            mock_update.return_value = existing_worker_status
+            
+            result = cluster_manager.query_worker_status({"worker_id": worker_id})
+            
+            # Verify worker was connected
+            MockWorker.connect.assert_called_once_with(worker_url)
+            # Verify heartbeat was checked
+            mock_worker_instance.heartbeat.assert_called_once()
+            # Verify status was retrieved
+            mock_worker_instance.get_status.assert_called_once()
+            # Verify database was updated
+            mock_update.assert_called_once()
+            # Verify result
+            assert result == existing_worker_status
+
+
+def test_query_worker_status_worker_not_found(cluster_manager):
+    """Test query_worker_status when worker is not found in database."""
+    worker_id = "nonexistent-worker"
+    cluster_manager.worker_status_database.find.return_value = []
+    
+    result = cluster_manager.query_worker_status({"worker_id": worker_id})
+    
+    expected_result = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="",
+        worker_url="",
+        status=cluster_types.WorkerStatusEnum.NONEXISTENT,
+        job_id=None,
+        last_heartbeat=None
+    )
+    
+    assert result.worker_id == expected_result.worker_id
+    assert result.status == expected_result.status
+    assert result.worker_type == expected_result.worker_type
+
+
+def test_query_worker_status_worker_down(cluster_manager):
+    """Test query_worker_status when worker heartbeat status is DOWN."""
+    worker_id = "test-worker-123"
+    worker_url = "http://worker:8080"
+    
+    existing_worker_status = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
+    
+    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+        mock_worker_instance = MockWorker.connect.return_value
+        
+        # Mock worker heartbeat with DOWN status
+        mock_heartbeat = MagicMock()
+        mock_heartbeat.heartbeat.status = ServerStatus.DOWN
+        mock_worker_instance.heartbeat.return_value = mock_heartbeat
+        
+        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+            mock_update.return_value = existing_worker_status
+            
+            result = cluster_manager.query_worker_status({"worker_id": worker_id})
+            
+            # Verify worker was connected
+            MockWorker.connect.assert_called_once_with(worker_url)
+            # Verify heartbeat was checked
+            mock_worker_instance.heartbeat.assert_called_once()
+            # Verify database was updated with NONEXISTENT status
+            mock_update.assert_called_once_with(
+                cluster_manager.worker_status_database,
+                "worker_id",
+                worker_id,
+                {
+                    "status": cluster_types.WorkerStatusEnum.NONEXISTENT,
+                    "job_id": None,
+                    "last_heartbeat": ANY
+                }
+            )
+            # Verify result
+            assert result == existing_worker_status
+
+
+def test_query_worker_status_worker_connection_failure(cluster_manager):
+    """Test query_worker_status when worker connection fails."""
+    worker_id = "test-worker-123"
+    worker_url = "http://worker:8080"
+    
+    existing_worker_status = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
+    
+    with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+        # Mock worker connection failure
+        MockWorker.connect.return_value = None
+        
+        with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+            mock_update.return_value = existing_worker_status
+            
+            result = cluster_manager.query_worker_status({"worker_id": worker_id})
+            
+            # Verify worker connection was attempted
+            MockWorker.connect.assert_called_once_with(worker_url)
+            # Verify database was updated with NONEXISTENT status
+            mock_update.assert_called_once_with(
+                cluster_manager.worker_status_database,
+                "worker_id",
+                worker_id,
+                {
+                    "status": cluster_types.WorkerStatusEnum.NONEXISTENT,
+                    "job_id": None,
+                    "last_heartbeat": ANY
+                }
+            )
+            # Verify result
+            assert result == existing_worker_status
+
+
+def test_query_worker_status_by_url_success(cluster_manager):
+    """Test query_worker_status_by_url when worker URL exists."""
+    worker_url = "http://worker:8080"
+    worker_id = "test-worker-123"
+    
+    # Mock _url_to_id to return worker_id
+    with patch.object(cluster_manager, '_url_to_id', return_value=worker_id) as mock_url_to_id:
+        with patch.object(cluster_manager, 'query_worker_status') as mock_query_status:
+            expected_result = cluster_types.WorkerStatus(
+                worker_id=worker_id,
+                worker_type="test_worker",
+                worker_url=worker_url,
+                status=cluster_types.WorkerStatusEnum.IDLE,
+                job_id=None,
+                last_heartbeat=datetime.now()
+            )
+            mock_query_status.return_value = expected_result
+            
+            result = cluster_manager.query_worker_status_by_url({"worker_url": worker_url})
+            
+            # Verify _url_to_id was called
+            mock_url_to_id.assert_called_once_with(worker_url)
+            # Verify query_worker_status was called
+            mock_query_status.assert_called_once_with(payload={"worker_id": worker_id})
+            # Verify result
+            assert result == expected_result
+
+
+def test_query_worker_status_by_url_not_found(cluster_manager):
+    """Test query_worker_status_by_url when worker URL is not found."""
+    worker_url = "http://nonexistent-worker:8080"
+    
+    # Mock _url_to_id to return None
+    with patch.object(cluster_manager, '_url_to_id', return_value=None):
+        result = cluster_manager.query_worker_status_by_url({"worker_url": worker_url})
+        
+        expected_result = cluster_types.WorkerStatus(
+            worker_id="",
+            worker_type="",
+            worker_url=worker_url,
+            status=cluster_types.WorkerStatusEnum.NONEXISTENT,
+            job_id=None,
+            last_heartbeat=None
+        )
+        
+        assert result.worker_id == expected_result.worker_id
+        assert result.status == expected_result.status
+        assert result.worker_url == expected_result.worker_url
+
+
+def test_url_to_id_success(cluster_manager):
+    """Test _url_to_id when worker URL exists in database."""
+    worker_url = "http://worker:8080"
+    worker_id = "test-worker-123"
+    
+    existing_worker_status = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
+    
+    result = cluster_manager._url_to_id(worker_url)
+    
+    # Verify find was called with correct query
+    cluster_manager.worker_status_database.find.assert_called_once_with(
+        cluster_manager.worker_status_database.redis_backend.model_cls.worker_url == worker_url
+    )
+    # Verify result
+    assert result == worker_id
+
+
+def test_url_to_id_not_found(cluster_manager):
+    """Test _url_to_id when worker URL is not found in database."""
+    worker_url = "http://nonexistent-worker:8080"
+    cluster_manager.worker_status_database.find.return_value = []
+    
+    result = cluster_manager._url_to_id(worker_url)
+    
+    # Verify find was called
+    cluster_manager.worker_status_database.find.assert_called_once_with(
+        cluster_manager.worker_status_database.redis_backend.model_cls.worker_url == worker_url
+    )
+    # Verify result is None
+    assert result is None
+
+
+def test_url_to_id_multiple_entries(cluster_manager):
+    """Test _url_to_id when multiple entries are found (should return first)."""
+    worker_url = "http://worker:8080"
+    worker_id1 = "test-worker-123"
+    worker_id2 = "test-worker-456"
+    
+    # Mock multiple entries (should return first one)
+    existing_worker_status1 = cluster_types.WorkerStatus(
+        worker_id=worker_id1,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    existing_worker_status2 = cluster_types.WorkerStatus(
+        worker_id=worker_id2,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status1, existing_worker_status2]
+    
+    result = cluster_manager._url_to_id(worker_url)
+    
+    # Verify find was called
+    cluster_manager.worker_status_database.find.assert_called_once_with(
+        cluster_manager.worker_status_database.redis_backend.model_cls.worker_url == worker_url
+    )
+    # Verify result is first entry's worker_id
+    assert result == worker_id1
+
+
+def test_worker_get_status_success(mock_worker):
+    """Test Worker get_status method when worker status exists."""
+    worker_id = str(mock_worker.id)
+    
+    # Mock worker status in database
+    expected_status = cluster_types.WorkerStatusLocal(
+        worker_id=worker_id,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None
+    )
+    mock_worker.worker_status_local_database.find.return_value = [expected_status]
+    
+    result = mock_worker.get_status()
+    
+    # Verify find was called with correct query
+    mock_worker.worker_status_local_database.find.assert_called_once_with(
+        mock_worker.worker_status_local_database.redis_backend.model_cls.worker_id == worker_id
+    )
+    # Verify result
+    assert result == expected_status
+
+
+def test_worker_get_status_not_found(mock_worker):
+    """Test Worker get_status method when worker status is not found."""
+    worker_id = str(mock_worker.id)
+    mock_worker.worker_status_local_database.find.return_value = []
+    
+    with pytest.raises(IndexError):
+        mock_worker.get_status()
+    
+    # Verify find was called
+    mock_worker.worker_status_local_database.find.assert_called_once_with(
+        mock_worker.worker_status_local_database.redis_backend.model_cls.worker_id == worker_id
+    )
+
+
+def test_worker_get_status_multiple_entries(mock_worker):
+    """Test Worker get_status method when multiple entries are found (should return first)."""
+    worker_id = str(mock_worker.id)
+    
+    # Mock multiple entries
+    status1 = cluster_types.WorkerStatusLocal(
+        worker_id=worker_id,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None
+    )
+    status2 = cluster_types.WorkerStatusLocal(
+        worker_id=worker_id,
+        status=cluster_types.WorkerStatusEnum.RUNNING,
+        job_id="job-123"
+    )
+    mock_worker.worker_status_local_database.find.return_value = [status1, status2]
+    
+    result = mock_worker.get_status()
+    
+    # Verify find was called
+    mock_worker.worker_status_local_database.find.assert_called_once_with(
+        mock_worker.worker_status_local_database.redis_backend.model_cls.worker_id == worker_id
+    )
+    # Verify result is first entry
+    assert result == status1
+
+
+def test_query_worker_status_edge_cases(cluster_manager):
+    """Test query_worker_status with various edge cases."""
+    worker_id = "test-worker-123"
+    worker_url = "http://worker:8080"
+    
+    existing_worker_status = cluster_types.WorkerStatus(
+        worker_id=worker_id,
+        worker_type="test_worker",
+        worker_url=worker_url,
+        status=cluster_types.WorkerStatusEnum.IDLE,
+        job_id=None,
+        last_heartbeat=datetime.now()
+    )
+    cluster_manager.worker_status_database.find.return_value = [existing_worker_status]
+    
+    # Test with different worker statuses
+    test_cases = [
+        (cluster_types.WorkerStatusEnum.IDLE, None),
+        (cluster_types.WorkerStatusEnum.RUNNING, "job-123"),
+        (cluster_types.WorkerStatusEnum.NONEXISTENT, None),
+    ]
+    
+    for expected_status, expected_job_id in test_cases:
+        with patch("mindtrace.cluster.core.cluster.Worker") as MockWorker:
+            mock_worker_instance = MockWorker.connect.return_value
+            
+            # Mock worker heartbeat
+            mock_heartbeat = MagicMock()
+            mock_heartbeat.heartbeat.status = ServerStatus.AVAILABLE
+            mock_worker_instance.heartbeat.return_value = mock_heartbeat
+            
+            # Mock worker status
+            mock_worker_status = MagicMock()
+            mock_worker_status.status = expected_status
+            mock_worker_status.job_id = expected_job_id
+            mock_worker_instance.get_status.return_value = mock_worker_status
+            
+            with patch("mindtrace.cluster.core.cluster.update_database") as mock_update:
+                mock_update.return_value = existing_worker_status
+                
+                result = cluster_manager.query_worker_status({"worker_id": worker_id})
+                
+                # Verify database was updated with correct values
+                mock_update.assert_called_with(
+                    cluster_manager.worker_status_database,
+                    "worker_id",
+                    worker_id,
+                    {
+                        "status": expected_status,
+                        "job_id": expected_job_id,
+                        "last_heartbeat": ANY
+                    }
+                )
+                assert result == existing_worker_status
+
+
+def test_update_database_edge_cases():
+    """Test update_database function with various edge cases."""
+    from mindtrace.cluster.core.cluster import update_database
+    
+    mock_database = MagicMock()
+    mock_entry = MagicMock()
+    mock_entry.pk = "test-pk"
+    mock_database.find.return_value = [mock_entry]
+    mock_database.insert = MagicMock()
+    mock_database.redis_backend.model_cls = MagicMock()
+    
+    # Test with different update dictionaries
+    test_cases = [
+        {"status": "completed"},
+        {"output": {"result": "test"}},
+        {"worker_id": "new-worker-id"},
+        {"status": "running", "job_id": "job-123", "last_heartbeat": datetime.now()},
+        {},  # Empty update dict
+    ]
+    
+    for update_dict in test_cases:
+        # Reset mock entry
+        mock_entry = MagicMock()
+        mock_entry.pk = "test-pk"
+        mock_database.find.return_value = [mock_entry]
+        
+        result = update_database(mock_database, "worker_id", "test-worker", update_dict)
+        
+        # Verify attributes were set
+        for key, value in update_dict.items():
+            assert getattr(mock_entry, key) == value
+        
+        # Verify insert was called
+        mock_database.insert.assert_called_with(mock_entry)
+        assert result == mock_entry
+
+
+def test_query_worker_status_by_url_edge_cases(cluster_manager):
+    """Test query_worker_status_by_url with various edge cases."""
+    # Test with different URL formats
+    test_urls = [
+        "http://localhost:8080",
+        "https://worker.example.com:9000",
+        "http://192.168.1.100:8080",
+        "http://worker:8080",
+        "",  # Empty URL
+    ]
+    
+    for worker_url in test_urls:
+        with patch.object(cluster_manager, '_url_to_id') as mock_url_to_id:
+            with patch.object(cluster_manager, 'query_worker_status') as mock_query_status:
+                if worker_url:  # Non-empty URL
+                    worker_id = f"worker-{hash(worker_url) % 1000}"
+                    mock_url_to_id.return_value = worker_id
+                    expected_result = cluster_types.WorkerStatus(
+                        worker_id=worker_id,
+                        worker_type="test_worker",
+                        worker_url=worker_url,
+                        status=cluster_types.WorkerStatusEnum.IDLE,
+                        job_id=None,
+                        last_heartbeat=datetime.now()
+                    )
+                    mock_query_status.return_value = expected_result
+                else:  # Empty URL
+                    mock_url_to_id.return_value = None
+                
+                result = cluster_manager.query_worker_status_by_url({"worker_url": worker_url})
+                
+                if worker_url:
+                    # Verify _url_to_id was called
+                    mock_url_to_id.assert_called_once_with(worker_url)
+                    # Verify query_worker_status was called
+                    mock_query_status.assert_called_once_with(payload={"worker_id": worker_id})
+                    # Verify result
+                    assert result == expected_result
+                else:
+                    # Verify result for empty URL
+                    expected_result = cluster_types.WorkerStatus(
+                        worker_id="",
+                        worker_type="",
+                        worker_url="",
+                        status=cluster_types.WorkerStatusEnum.NONEXISTENT,
+                        job_id=None,
+                        last_heartbeat=None
+                    )
+                    assert result.worker_id == expected_result.worker_id
+                    assert result.status == expected_result.status
+                    assert result.worker_url == expected_result.worker_url

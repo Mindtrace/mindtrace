@@ -55,12 +55,24 @@ def test_cluster_manager_with_prelaunched_worker():
         assert result.output == {}
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Test query_worker_status as well
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert query_status.worker_id == worker_id
+        assert query_status.status == WorkerStatusEnum.IDLE.value
+        
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
         assert result.status == "completed"
         assert result.output == {"echoed": "Hello, Worker!"}
+        
+        # Test both status methods after job completion
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert query_status.worker_id == worker_id
+        assert query_status.status == WorkerStatusEnum.IDLE.value
     finally:
         if worker_cm is not None:
             worker_cm.shutdown()
@@ -632,6 +644,11 @@ def test_launch_worker_with_delay():
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
         
+        # Test query_worker_status for initial state
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert query_status.worker_id == worker_id
+        assert query_status.status == WorkerStatusEnum.IDLE.value
+        
         # Wait for the job to be processed
         time.sleep(1)
         
@@ -640,6 +657,12 @@ def test_launch_worker_with_delay():
         
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.RUNNING.value
+        
+        # Test query_worker_status during job execution
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert query_status.worker_id == worker_id
+        assert query_status.status == WorkerStatusEnum.RUNNING.value
+        assert query_status.job_id == job.id
 
         time.sleep(3)
 
@@ -650,9 +673,399 @@ def test_launch_worker_with_delay():
 
         worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
         assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Test query_worker_status after job completion
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert query_status.worker_id == worker_id
+        assert query_status.status == WorkerStatusEnum.IDLE.value
+        assert query_status.job_id is None
 
         
     finally:
         node.shutdown()
         cluster_cm.clear_databases()
         cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_integration():
+    """Integration test for query_worker_status method with real worker."""
+    # Launch cluster manager and worker
+    cluster_cm = ClusterManager.launch(host="localhost", port=8140, wait_for_launch=True, timeout=15)
+    worker_cm = EchoWorker.launch(host="localhost", port=8141, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+    
+    try:
+        # Register the worker with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
+        
+        # Test initial worker status using query_worker_status
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.worker_id == worker_id
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.worker_url == str(worker_cm.url)
+        assert worker_status.job_id is None
+        
+        # Submit a job to test status changes
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Query status test!"})
+        result = cluster_cm.submit_job(job)
+        assert result.status == "queued"
+        
+        # Wait a bit for the job to start
+        time.sleep(0.5)
+        
+        # Query worker status during job execution
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.worker_id == worker_id
+        # Status could be either IDLE (if job hasn't started) or RUNNING (if job is in progress)
+        assert worker_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        
+        # Wait for job completion
+        time.sleep(2)
+        
+        # Query worker status after job completion
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.worker_id == worker_id
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.job_id is None
+        
+        # Verify job was completed
+        job_result = cluster_cm.get_job_status(job_id=job.id)
+        assert job_result.status == "completed"
+        assert job_result.output == {"echoed": "Query status test!"}
+        
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_by_url_integration():
+    """Integration test for query_worker_status_by_url method with real worker."""
+    # Launch cluster manager and worker
+    cluster_cm = ClusterManager.launch(host="localhost", port=8142, wait_for_launch=True, timeout=15)
+    worker_cm = EchoWorker.launch(host="localhost", port=8143, wait_for_launch=True, timeout=15)
+    worker_url = str(worker_cm.url)
+    
+    try:
+        # Register the worker with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Test initial worker status using query_worker_status_by_url
+        worker_status = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
+        assert worker_status.worker_url == worker_url
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.job_id is None
+        
+        # Submit a job to test status changes
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Query status by URL test!"})
+        result = cluster_cm.submit_job(job)
+        assert result.status == "queued"
+        
+        # Wait a bit for the job to start
+        time.sleep(0.5)
+        
+        # Query worker status during job execution
+        worker_status = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
+        assert worker_status.worker_url == worker_url
+        # Status could be either IDLE (if job hasn't started) or RUNNING (if job is in progress)
+        assert worker_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        
+        # Wait for job completion
+        time.sleep(2)
+        
+        # Query worker status after job completion
+        worker_status = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
+        assert worker_status.worker_url == worker_url
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.job_id is None
+        
+        # Verify job was completed
+        job_result = cluster_cm.get_job_status(job_id=job.id)
+        assert job_result.status == "completed"
+        assert job_result.output == {"echoed": "Query status by URL test!"}
+        
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_nonexistent_worker():
+    """Integration test for query_worker_status with non-existent worker."""
+    # Launch cluster manager only (no worker)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8144, wait_for_launch=True, timeout=15)
+    
+    try:
+        # Test query_worker_status with non-existent worker ID
+        worker_status = cluster_cm.query_worker_status(worker_id="nonexistent-worker-123")
+        assert worker_status.worker_id == "nonexistent-worker-123"
+        assert worker_status.status == WorkerStatusEnum.NONEXISTENT.value
+        assert worker_status.worker_url == ""
+        assert worker_status.worker_type == ""
+        assert worker_status.job_id is None
+        assert worker_status.last_heartbeat is None
+        
+    finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_by_url_nonexistent_worker():
+    """Integration test for query_worker_status_by_url with non-existent worker URL."""
+    # Launch cluster manager only (no worker)
+    cluster_cm = ClusterManager.launch(host="localhost", port=8145, wait_for_launch=True, timeout=15)
+    
+    try:
+        # Test query_worker_status_by_url with non-existent worker URL
+        worker_status = cluster_cm.query_worker_status_by_url(worker_url="http://nonexistent-worker:8080")
+        assert worker_status.worker_id == ""
+        assert worker_status.status == WorkerStatusEnum.NONEXISTENT.value
+        assert worker_status.worker_url == "http://nonexistent-worker:8080"
+        assert worker_status.worker_type == ""
+        assert worker_status.job_id is None
+        assert worker_status.last_heartbeat is None
+        
+    finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_worker_shutdown():
+    """Integration test for query_worker_status when worker is shut down."""
+    # Launch cluster manager and worker
+    cluster_cm = ClusterManager.launch(host="localhost", port=8146, wait_for_launch=True, timeout=15)
+    worker_cm = EchoWorker.launch(host="localhost", port=8147, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+    worker_url = str(worker_cm.url)
+    
+    try:
+        # Register the worker with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Test initial worker status
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.worker_id == worker_id
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Shut down the worker
+        worker_cm.shutdown()
+        
+        # Query worker status after shutdown - should detect worker is down
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.worker_id == worker_id
+        assert worker_status.status == WorkerStatusEnum.NONEXISTENT.value
+        assert worker_status.job_id is None
+        
+        # Test query_worker_status_by_url after shutdown
+        worker_status_by_url = cluster_cm.query_worker_status_by_url(worker_url=worker_url)
+        assert worker_status_by_url.worker_id == worker_id
+        assert worker_status_by_url.status == WorkerStatusEnum.NONEXISTENT.value
+        assert worker_status_by_url.job_id is None
+        
+    finally:
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_multiple_workers():
+    """Integration test for query_worker_status with multiple workers."""
+    # Launch cluster manager and multiple workers
+    cluster_cm = ClusterManager.launch(host="localhost", port=8148, wait_for_launch=True, timeout=15)
+    worker1_cm = EchoWorker.launch(host="localhost", port=8149, wait_for_launch=True, timeout=15)
+    worker2_cm = EchoWorker.launch(host="localhost", port=8150, wait_for_launch=True, timeout=15)
+    
+    worker1_id = str(worker1_cm.heartbeat().heartbeat.server_id)
+    worker2_id = str(worker2_cm.heartbeat().heartbeat.server_id)
+    worker1_url = str(worker1_cm.url)
+    worker2_url = str(worker2_cm.url)
+    
+    try:
+        # Register both workers with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker1_url)
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker2_url)
+        
+        # Test initial status of both workers
+        worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
+        worker2_status = cluster_cm.query_worker_status(worker_id=worker2_id)
+        
+        assert worker1_status.worker_id == worker1_id
+        assert worker1_status.status == WorkerStatusEnum.IDLE.value
+        assert worker2_status.worker_id == worker2_id
+        assert worker2_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Submit jobs to both workers
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!"})
+        job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!"})
+        
+        result1 = cluster_cm.submit_job(job1)
+        result2 = cluster_cm.submit_job(job2)
+        assert result1.status == "queued"
+        assert result2.status == "queued"
+        
+        # Wait a bit for jobs to start
+        time.sleep(0.5)
+        
+        # Query status of both workers during job execution
+        worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
+        worker2_status = cluster_cm.query_worker_status(worker_id=worker2_id)
+        
+        # Both workers should be either IDLE or RUNNING
+        assert worker1_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        assert worker2_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        
+        # Wait for job completion
+        time.sleep(2)
+        
+        # Query status of both workers after job completion
+        worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
+        worker2_status = cluster_cm.query_worker_status(worker_id=worker2_id)
+        
+        assert worker1_status.status == WorkerStatusEnum.IDLE.value
+        assert worker1_status.job_id is None
+        assert worker2_status.status == WorkerStatusEnum.IDLE.value
+        assert worker2_status.job_id is None
+        
+        # Verify both jobs were completed
+        job1_result = cluster_cm.get_job_status(job_id=job1.id)
+        job2_result = cluster_cm.get_job_status(job_id=job2.id)
+        assert job1_result.status == "completed"
+        assert job2_result.status == "completed"
+        
+    finally:
+        if worker1_cm is not None:
+            worker1_cm.shutdown()
+        if worker2_cm is not None:
+            worker2_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_vs_get_worker_status():
+    """Integration test comparing query_worker_status vs get_worker_status."""
+    # Launch cluster manager and worker
+    cluster_cm = ClusterManager.launch(host="localhost", port=8151, wait_for_launch=True, timeout=15)
+    worker_cm = EchoWorker.launch(host="localhost", port=8152, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+    worker_url = str(worker_cm.url)
+    
+    try:
+        # Register the worker with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Compare initial status from both methods
+        get_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        
+        # Both should return the same basic information
+        assert get_status.worker_id == query_status.worker_id
+        assert get_status.worker_url == query_status.worker_url
+        assert get_status.worker_type == query_status.worker_type
+        
+        # Submit a job
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Status comparison test!"})
+        result = cluster_cm.submit_job(job)
+        assert result.status == "queued"
+        
+        # Wait for job to start
+        time.sleep(0.5)
+        
+        # Compare status during job execution
+        get_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        
+        # Both should return the same worker ID and URL
+        assert get_status.worker_id == query_status.worker_id
+        assert get_status.worker_url == query_status.worker_url
+        
+        # Wait for job completion
+        time.sleep(2)
+        
+        # Compare status after job completion
+        get_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        
+        # Both should show IDLE status
+        assert get_status.status == WorkerStatusEnum.IDLE.value
+        assert query_status.status == WorkerStatusEnum.IDLE.value
+        assert get_status.job_id is None
+        assert query_status.job_id is None
+        
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_query_worker_status_real_time_updates():
+    """Integration test for real-time worker status updates using query_worker_status."""
+    # Launch cluster manager and worker
+    cluster_cm = ClusterManager.launch(host="localhost", port=8153, wait_for_launch=True, timeout=15)
+    worker_cm = EchoWorker.launch(host="localhost", port=8154, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
+    
+    try:
+        # Register the worker with the cluster
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
+        
+        # Initial status should be IDLE
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.job_id is None
+        
+        # Submit a job with delay to observe status changes
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Real-time status test!", "delay": 2})
+        result = cluster_cm.submit_job(job)
+        assert result.status == "queued"
+        
+        # Check status immediately after submission (should still be IDLE)
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Wait for job to start
+        time.sleep(0.5)
+        
+        # Check status during job execution (should be RUNNING)
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.RUNNING.value
+        assert worker_status.job_id == job.id
+        
+        # Wait for job completion
+        time.sleep(2.5)
+        
+        # Check status after job completion (should be IDLE again)
+        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        assert worker_status.job_id is None
+        
+        # Verify job was completed
+        job_result = cluster_cm.get_job_status(job_id=job.id)
+        assert job_result.status == "completed"
+        assert job_result.output == {"echoed": "Real-time status test!"}
+        
+    finally:
+        if worker_cm is not None:
+            worker_cm.shutdown()
+        if cluster_cm is not None:
+            cluster_cm.clear_databases()
+            cluster_cm.shutdown()
