@@ -849,7 +849,7 @@ class TestServiceGlobalEndpointPollution:
 
     def test_no_global_endpoint_pollution(self):
         from mindtrace.services.core.utils import generate_connection_manager
-        from mindtrace.services.sample.echo_service import EchoService
+        from mindtrace.services.samples.echo_service import EchoService
 
         # Ensure clean state
         if hasattr(Service, "_endpoints"):

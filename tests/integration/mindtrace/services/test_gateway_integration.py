@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from mindtrace.core import TaskSchema
 from mindtrace.services import AppConfig, Gateway, generate_connection_manager, Service
-from mindtrace.services.sample.echo_service import EchoService, EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoService, EchoInput, EchoOutput
 
 
 class TestGatewayCoreFunctionality:
