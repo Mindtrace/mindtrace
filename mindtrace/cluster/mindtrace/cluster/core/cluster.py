@@ -1,5 +1,6 @@
 import multiprocessing
 from abc import abstractmethod
+from datetime import datetime
 
 import requests
 from pydantic import BaseModel
@@ -11,7 +12,17 @@ from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
-from mindtrace.services import Gateway, Service
+from mindtrace.services import Gateway, Service, ServerStatus
+
+def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
+    entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)
+    if len(entries) != 1:
+        raise ValueError(f"Expected 1 entry for {sort_key} == {find_key}, got {len(entries)}")
+    entry = entries[0]
+    for key, value in update_dict.items():
+        setattr(entry, key, value)
+    database.insert(entry)
+    return entry
 
 
 class ClusterManager(Gateway):
@@ -29,10 +40,21 @@ class ClusterManager(Gateway):
             unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
         )
         self.job_status_database.initialize_sync()
+        self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.WorkerAutoConnect,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_auto_connect_database.initialize_sync()
+        self.worker_status_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+        )
+        self.worker_status_database.initialize_sync()
         self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
         self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
         self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
         self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
+        self.nodes = []
         minio_backend = MinioRegistryBackend(
             uri="~/.cache/mindtrace/minio_registry_cluster",
             endpoint=self.worker_registry_endpoint,
@@ -100,7 +122,51 @@ class ClusterManager(Gateway):
             schema=TaskSchema(name="register_worker_type", input_schema=cluster_types.RegisterWorkerTypeInput),
             methods=["POST"],
         )
-
+        self.add_endpoint(
+            "/launch_worker",
+            func=self.launch_worker,
+            schema=TaskSchema(name="launch_worker", input_schema=cluster_types.ClusterLaunchWorkerInput, output_schema=cluster_types.ClusterLaunchWorkerOutput),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/clear_databases",
+            func=self.clear_databases,
+            schema=TaskSchema(name="clear_databases"),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/register_job_schema_to_worker_type",
+            func=self.register_job_schema_to_worker_type,
+            schema=TaskSchema(
+                name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/get_worker_status",
+            func=self.get_worker_status,
+            schema=TaskSchema(name="get_worker_status", input_schema=cluster_types.GetWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/get_worker_status_by_url",
+            func=self.get_worker_status_by_url,
+            schema=TaskSchema(name="get_worker_status_by_url", input_schema=cluster_types.GetWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/query_worker_status",
+            func=self.query_worker_status,
+            schema=TaskSchema(name="query_worker_status", input_schema=cluster_types.QueryWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/query_worker_status_by_url",
+            func=self.query_worker_status_by_url,
+            schema=TaskSchema(name="query_worker_status_by_url", input_schema=cluster_types.QueryWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+    
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
         Register a job schema to an endpoint. Jobs of this type will be routed directly to the endpoint.
@@ -171,9 +237,15 @@ class ClusterManager(Gateway):
         )
         if not job_schema_targeting_list:
             self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
-            raise ValueError(f"No job schema targeting found for job type {job.schema_name}")
+            return cluster_types.JobStatus(
+                job_id=job.id,
+                status="error",
+                output={"error": f"No job schema targeting found for job type {job.schema_name}"},
+                worker_id="",   
+            )
         job_schema_targeting = job_schema_targeting_list[0]
         if job_schema_targeting.target_endpoint == "@orchestrator":
+            self.logger.info(f"Submitting job {job.id} to orchestrator")
             self.orchestrator.publish(job.schema_name, job)
             return job_status
         return self._submit_job_to_endpoint(job, job_schema_targeting.target_endpoint)
@@ -201,29 +273,62 @@ class ClusterManager(Gateway):
         )
         self.orchestrator.register(JobSchema(name=job_type, input=BaseModel))
         worker_cm = Worker.connect(worker_url)
+        
+        heartbeat = worker_cm.heartbeat().heartbeat
+        if heartbeat.status == ServerStatus.DOWN:
+            self.logger.warning(f"Worker {worker_url} is down, not registering to cluster")
+            return
+            
         worker_cm.connect_to_cluster(
             backend_args=self.orchestrator.backend.consumer_backend_args,
             queue_name=job_type,
             cluster_url=str(self._url),
         )
+        worker_id = str(heartbeat.server_id)
+        worker_status_list = self.worker_status_database.find(
+            self.worker_status_database.redis_backend.model_cls.worker_id == worker_id
+        )
+        if not worker_status_list:
+            self.worker_status_database.insert(cluster_types.WorkerStatus(worker_id=worker_id, worker_type=job_type, worker_url=worker_url, status=cluster_types.WorkerStatusEnum.IDLE, job_id=None, last_heartbeat=datetime.now()))
         self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
 
     def register_worker_type(self, payload: dict):
         """
         Register a worker type to the cluster. This will allow Workers of this type to be launched on Nodes.
-
+        If the
         Args:
             payload (dict): The payload containing the worker name, worker class, and worker params.
         """
         worker_name = payload["worker_name"]
         worker_class = payload["worker_class"]
         worker_params = payload["worker_params"]
+        job_schema_name = payload["job_type"]
         materializer_name = ifnone(
             payload["materializer_name"], "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher"
         )
         proxy_worker = ProxyWorker(worker_type=worker_class, worker_params=worker_params)
         self.worker_registry.register_materializer(ProxyWorker, materializer_name)
         self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
+        if job_schema_name:
+            self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
+
+    def register_job_schema_to_worker_type(self, payload: dict):
+        """
+        Register a job schema to a worker type. This will allow Jobs of this type to be routed to the worker type.
+        """
+        if not self.worker_registry.has_object(f"worker:{payload['worker_type']}"):
+            self.logger.warning(f"Worker type {payload['worker_type']} not found in registry")
+            return
+
+        job_schema_name = payload["job_schema_name"]
+        worker_type = payload["worker_type"]
+        self.job_schema_targeting_database.insert(
+            cluster_types.JobSchemaTargeting(schema_name=job_schema_name, target_endpoint="@orchestrator")
+        )
+        self.worker_auto_connect_database.insert(
+            cluster_types.WorkerAutoConnect(worker_type=worker_type, schema_name=job_schema_name)
+        )
+        self.logger.info(f"Registered job schema {job_schema_name} to worker type {worker_type}")
 
     def get_job_status(self, payload: dict):
         """
@@ -242,6 +347,68 @@ class ClusterManager(Gateway):
         if not job_status_list:
             raise ValueError(f"Job status not found for job id {job_id}")
         return job_status_list[0]
+    
+    def get_worker_status(self, payload: dict):
+        """
+        Get the status of a worker.
+        """
+        worker_id = payload["worker_id"]
+        worker_status_list = self.worker_status_database.find(
+            self.worker_status_database.redis_backend.model_cls.worker_id == worker_id)
+        if not worker_status_list:
+            return cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        return worker_status_list[0]
+    
+    def get_worker_status_by_url(self, payload: dict):
+        """
+        Get the status of a worker.
+        """
+        worker_url = payload["worker_url"]
+        worker_id = self._url_to_id(worker_url)
+        if worker_id is None:
+            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        return self.get_worker_status(payload={"worker_id": worker_id})
+
+    def query_worker_status(self, payload: dict):
+        """
+        Query the status of a worker.
+        """
+        worker_id = payload["worker_id"]
+        worker_status_list = self.worker_status_database.find(
+            self.worker_status_database.redis_backend.model_cls.worker_id == worker_id)
+        if not worker_status_list:
+            return cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        worker_url = worker_status_list[0].worker_url
+        try:
+            worker_cm = Worker.connect(worker_url)
+        except:
+            worker_cm = None
+        if worker_cm is None or worker_cm.heartbeat().heartbeat.status == ServerStatus.DOWN:
+            our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": cluster_types.WorkerStatusEnum.NONEXISTENT, "job_id": None, "last_heartbeat": datetime.now()})
+            return our_status
+        worker_status = worker_cm.get_status()
+        our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": worker_status.status, "job_id": worker_status.job_id, "last_heartbeat": datetime.now()})
+        return our_status
+
+    def query_worker_status_by_url(self, payload: dict):
+        """
+        Query the status of a worker.
+        """
+        worker_url = payload["worker_url"]
+        worker_id = self._url_to_id(worker_url)
+        if worker_id is None:
+            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        return self.query_worker_status(payload={"worker_id": worker_id})
+
+    def _url_to_id(self, worker_url: str):
+        """
+        Convert a worker URL to a worker ID.
+        """
+        worker_status_list = self.worker_status_database.find(
+            self.worker_status_database.redis_backend.model_cls.worker_url == worker_url)
+        if not worker_status_list:
+            return None
+        return worker_status_list[0].worker_id
 
     def worker_alert_started_job(self, payload: dict):
         """
@@ -251,15 +418,8 @@ class ClusterManager(Gateway):
             payload (dict): The payload containing the job id and the worker id that started the job.
         """
         job_id = payload["job_id"]
-        job_status_list = self.job_status_database.find(
-            self.job_status_database.redis_backend.model_cls.job_id == job_id
-        )
-        if not job_status_list:
-            raise ValueError(f"Job status not found for job id {job_id}")
-        job_status = job_status_list[0]
-        job_status.status = "running"
-        job_status.worker_id = payload["worker_id"]
-        self.job_status_database.insert(job_status)
+        update_database(self.job_status_database, "job_id", job_id, {"status": "running", "worker_id": payload["worker_id"]})
+        update_database(self.worker_status_database, "worker_id", payload["worker_id"], {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_id, "last_heartbeat": datetime.now()})
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has started")
 
     def worker_alert_completed_job(self, payload: dict):
@@ -271,19 +431,12 @@ class ClusterManager(Gateway):
         """
         job_id = payload["job_id"]
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
-        job_status_list = self.job_status_database.find(
-            self.job_status_database.redis_backend.model_cls.job_id == job_id
-        )
-        if not job_status_list:
-            raise ValueError(f"Job status not found for job id {job_id}")
-        job_status = job_status_list[0]
+        job_status = update_database(self.job_status_database, "job_id", job_id, {"status": payload["status"], "output": payload["output"]})
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
-        job_status.status = payload["status"]
-        job_status.output = payload["output"]
-        self.job_status_database.insert(job_status)
+        update_database(self.worker_status_database, "worker_id", payload["worker_id"], {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()})
 
     def register_node(self, payload: dict):
         """
@@ -292,6 +445,7 @@ class ClusterManager(Gateway):
         Args:
             node_id (str): The id of the node.
         """
+        self.nodes.append(payload["node_url"])
         return {
             "endpoint": self.worker_registry_endpoint,
             "access_key": self.worker_registry_access_key,
@@ -299,6 +453,38 @@ class ClusterManager(Gateway):
             "bucket": self.worker_registry_bucket,
         }
 
+    def launch_worker(self, payload: dict):
+        """
+        Launch a worker on a node. If the worker type is registered to a job schema, the worker will be automatically connected to the job schema.
+
+        Args:
+            payload (dict): The payload containing the node URL, worker type, and worker URL.
+        """
+        node_url = payload["node_url"]
+        worker_type = payload["worker_type"]
+        worker_url = payload["worker_url"]
+        node_cm = Node.connect(node_url)        
+        node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url)
+        worker_auto_connect_list = self.worker_auto_connect_database.find(
+            self.worker_auto_connect_database.redis_backend.model_cls.worker_type == worker_type
+        )
+        if worker_auto_connect_list:
+            worker_auto_connect = worker_auto_connect_list[0]
+            self.register_job_to_worker(payload={"job_type": worker_auto_connect.schema_name, "worker_url": worker_url})
+        worker_cm = Worker.connect(worker_url)
+        return {
+            "worker_id": str(worker_cm.heartbeat().heartbeat.server_id),
+        }
+
+
+    def clear_databases(self):
+        """
+        Clear all databases.
+        """
+        for db in [self.job_schema_targeting_database, self.job_status_database, self.worker_auto_connect_database, self.worker_status_database]:
+            for entry in db.all():
+                db.delete(entry.pk)
+        self.logger.info("Cleared all cluster manager databases")
 
 class Node(Service):
     def __init__(self, cluster_url: str | None = None, **kwargs):
@@ -307,7 +493,7 @@ class Node(Service):
         self.cluster_url = cluster_url
         if cluster_url is not None:
             self.cluster_cm = ClusterManager.connect(cluster_url)
-            minio_params = self.cluster_cm.register_node(node_id=str(self.id))
+            minio_params = self.cluster_cm.register_node(node_url=str(self._url))
             minio_backend = MinioRegistryBackend(
                 uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
             )
@@ -320,7 +506,10 @@ class Node(Service):
         self.add_endpoint(
             "/launch_worker",
             func=self.launch_worker,
-            schema=TaskSchema(name="launch_worker", input_schema=cluster_types.LaunchWorkerInput),
+            schema=TaskSchema(
+                name="launch_worker",
+                input_schema=cluster_types.LaunchWorkerInput,
+            ),
             methods=["POST"],
         )
 
@@ -335,7 +524,6 @@ class Node(Service):
         worker_url = payload["worker_url"]
         worker_cm = self.worker_registry.load(f"worker:{worker_type}", url=worker_url)
         self.workers.append(worker_cm)
-        return worker_cm.url
 
     def shutdown(self):
         """
@@ -349,6 +537,20 @@ class Node(Service):
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
+        self.worker_status_local_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.WorkerStatusLocal,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_status_local_database.initialize_sync()
+        self.worker_status_local_database.insert(
+            cluster_types.WorkerStatusLocal(
+                worker_id=str(self.id),
+                status=cluster_types.WorkerStatusEnum.IDLE,
+                job_id=None,
+            )
+        )
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint(
             "/run",
@@ -362,6 +564,11 @@ class Worker(Service, Consumer):
             self.connect_to_cluster,
             schema=TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
         )
+        self.add_endpoint(
+            "/get_status",
+            self.get_status,
+            schema=TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
+        )
         self.consume_process = None
         self._cluster_connection_manager = None  # type: ignore
         self._cluster_url = None
@@ -373,7 +580,7 @@ class Worker(Service, Consumer):
         return self._cluster_connection_manager
 
     def run(self, job_dict: dict):
-        """ 
+        """
         Run a job. Alerts the cluster manager that the job has started and completed; in between it calls self._run().
 
         Args:
@@ -387,6 +594,8 @@ class Worker(Service, Consumer):
             cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
         else:
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
+
+        update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_dict["id"]})
         output = self._run(job_dict["payload"])
         if cm:
             cm.worker_alert_completed_job(
@@ -394,6 +603,7 @@ class Worker(Service, Consumer):
             )
         else:
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
+        update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None})
         return output
 
     @abstractmethod
@@ -439,6 +649,14 @@ class Worker(Service, Consumer):
         self.logger.info(
             f"Worker {self.id} started consuming from queue {queue_name}, process id {self.consume_process.pid}"
         )
+
+    def get_status(self):
+        """
+        Get the status of the worker.
+        """
+        return self.worker_status_local_database.find(
+            self.worker_status_local_database.redis_backend.model_cls.worker_id == str(self.id)
+        )[0]
 
     def shutdown(self):
         """

@@ -1,5 +1,7 @@
+import uuid
 from enum import Enum
 from typing import Any
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
@@ -8,7 +10,7 @@ from mindtrace.database import UnifiedMindtraceDocument
 
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")
-    worker_id: str | None = Field(description="Worker's id")
+    worker_id: str = Field(description="Worker's id")
     status: str = Field(description="Job's status")
     output: Any = Field(description="Job's output")
 
@@ -31,12 +33,47 @@ class JobSchemaTargeting(UnifiedMindtraceDocument):
         indexed_fields = ["schema_name"]
         unique_fields = ["schema_name"]
 
+class WorkerAutoConnect(UnifiedMindtraceDocument):
+    worker_type: str = Field(description="Worker type")
+    schema_name: str = Field(description="Schema name")
+    class Meta:
+        collection_name = "worker_auto_connect"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_type"]
+        unique_fields = ["worker_type"]
 
 class WorkerStatusEnum(Enum):
     IDLE = "idle"
     RUNNING = "running"
     ERROR = "error"
+    SHUTDOWN = "shutdown"
+    NONEXISTENT = "nonexistent"
 
+class WorkerStatus(UnifiedMindtraceDocument):
+    worker_id: str = Field(description="Worker id")
+    worker_type: str = Field(description="Worker type")
+    worker_url: str = Field(description="Worker url")
+    job_id: str | None = Field(description="Job id")
+    status: WorkerStatusEnum = Field(description="Worker status")
+    last_heartbeat: datetime | None = Field(description="Last heartbeat")
+    class Meta:
+        collection_name = "worker_status"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_id", "worker_url"]
+        unique_fields = ["worker_id"]
+
+class WorkerStatusLocal(UnifiedMindtraceDocument):
+    worker_id: str = Field(description="Worker id")
+    status: WorkerStatusEnum = Field(description="Worker status")
+    job_id: str | None = Field(description="Job id")
+    class Meta:
+        collection_name = "worker_status_local"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["worker_id"]
+        unique_fields = ["worker_id"]
 
 class RegisterJobToEndpointInput(BaseModel):
     job_type: str
@@ -78,10 +115,8 @@ class LaunchWorkerInput(BaseModel):
     worker_type: str
     worker_url: str
 
-
 class RegisterNodeInput(BaseModel):
-    node_id: str
-
+    node_url: str
 
 class RegisterNodeOutput(BaseModel):
     endpoint: str
@@ -95,3 +130,32 @@ class RegisterWorkerTypeInput(BaseModel):
     worker_class: str
     worker_params: dict
     materializer_name: str | None = None
+    job_type: str | None = None
+
+class ClusterLaunchWorkerInput(BaseModel):
+    node_url: str
+    worker_type: str
+    worker_url: str
+
+class ClusterLaunchWorkerOutput(BaseModel):
+    worker_id: str
+
+class ClusterRegisterJobToWorkerInput(BaseModel):
+    job_type: str
+    worker_url: str
+
+class RegisterJobSchemaToWorkerTypeInput(BaseModel):
+    job_schema_name: str
+    worker_type: str
+
+class GetWorkerStatusInput(BaseModel):
+    worker_id: str
+
+class GetWorkerStatusByUrlInput(BaseModel):
+    worker_url: str
+
+class QueryWorkerStatusInput(BaseModel):
+    worker_id: str
+
+class QueryWorkerStatusByUrlInput(BaseModel):
+    worker_url: str
