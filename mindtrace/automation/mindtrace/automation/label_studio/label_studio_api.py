@@ -6,6 +6,8 @@ import re
 import json
 from dataclasses import dataclass
 from mindtrace.core import Mindtrace
+from urllib.parse import urlparse, parse_qs
+import base64
 
 
 @dataclass
@@ -136,8 +138,19 @@ class LabelStudio(Mindtrace):
         return None, None
 
     def list_tasks(self, project_id: int) -> list:
-        """Get all tasks in a project."""
-        return self.get_project(project_id).get_tasks()
+        """Get all tasks in a project.
+        
+        Args:
+            project_id: Project ID
+        """
+        try:
+            project = self.get_project(project_id)
+            tasks = project.get_tasks()
+            return tasks
+            
+        except Exception as e:
+            self.logger.error(f"Error getting tasks for project {project_id}: {e}")
+            return []
 
     def get_task(self, project_id: int, task_id: int) -> dict:
         """Get a specific task."""
@@ -500,26 +513,202 @@ class LabelStudio(Mindtrace):
 
         task_types = []
 
-        # Check for object detection (RectangleLabels)
         if "<RectangleLabels" in label_config:
             task_types.append("object_detection")
 
-        # Check for segmentation (PolygonLabels, BrushLabels)
         if "<PolygonLabels" in label_config or "<BrushLabels" in label_config:
             task_types.append("segmentation")
 
-        # Check for classification (Choices, Labels)
         if "<Choices" in label_config or "<Labels" in label_config:
             task_types.append("classification")
 
         return task_types
     
-
-if __name__ == "__main__":
-    config = LabelStudioConfig(
-        url="http://192.168.50.40:8080/",
-        api_key="5c7de958cb0583e9b89f5795cdd9fc053aa105ba",
-        gcp_creds="/home/joshua/Downloads/mt-2dportal-82aeba8b62e4.json"
-    )
-    label_studio = LabelStudio(config)
-    print(label_studio.create_project(title="test", description="testing"))
+    def _extract_gcs_path_from_label_studio_url(self, label_studio_url: str) -> Optional[str]:
+        """Extract GCS path from a Label Studio presign URL.
+        
+        Args:
+            label_studio_url: Label Studio presign URL
+            
+        Returns:
+            GCS path in gs://bucket/path format, or None if not a valid Label Studio URL
+        """
+        if not label_studio_url:
+            return None
+            
+        try:
+            parsed = urlparse(label_studio_url)
+            
+            if 'presign' not in parsed.path:
+                return None
+            
+            query_params = parse_qs(parsed.query)
+            fileuri = query_params.get('fileuri', [None])[0]
+            
+            if not fileuri:
+                return None
+            
+            try:
+                decoded_bytes = base64.b64decode(fileuri)
+                gcs_path = decoded_bytes.decode('utf-8')
+                
+                if gcs_path.startswith('gs://'):
+                    return gcs_path
+                else:
+                    self.logger.warning(f"Decoded path is not a GCS path: {gcs_path}")
+                    return None
+                    
+            except Exception as e:
+                self.logger.warning(f"Error decoding base64 fileuri '{fileuri}': {str(e)}")
+                return None
+            
+        except Exception as e:
+            self.logger.warning(f"Error extracting GCS path from Label Studio URL '{label_studio_url}': {str(e)}")
+            return None
+    
+    def _extract_image_path_from_task(self, task: dict) -> Optional[str]:
+        """Extract image path from a task dictionary.
+        
+        Args:
+            task: Label Studio task dictionary
+            
+        Returns:
+            GCS path if extractable, original URL otherwise, None if not found
+        """
+        if not task or not isinstance(task, dict):
+            return None
+            
+        if 'data' in task and isinstance(task['data'], dict):
+            data = task['data']
+            if 'image' in data:
+                image_url = data['image']
+                
+                gcs_path = self._extract_gcs_path_from_label_studio_url(image_url)
+                if gcs_path:
+                    return gcs_path
+                else:
+                    return image_url
+        
+        if 'image' in task:
+            image_url = task['image']
+            
+            gcs_path = self._extract_gcs_path_from_label_studio_url(image_url)
+            if gcs_path:
+                return gcs_path
+            else:
+                return image_url
+            
+        return None
+    
+    def get_project_image_paths(self, project_id: int) -> set:
+        """Get all image paths from a specific project.
+        
+        Args:
+            project_id: Label Studio project ID
+            
+        Returns:
+            Set of image paths/URLs used in the project
+        """
+        try:
+            tasks = self.list_tasks(project_id)
+            image_paths = set()
+            
+            for task in tasks:
+                image_path = self._extract_image_path_from_task(task)
+                if image_path:
+                    image_paths.add(image_path)
+            
+            self.logger.info(f"Found {len(image_paths)} unique images in project {project_id}")
+            return image_paths
+            
+        except Exception as e:
+            self.logger.error(f"Error getting image paths from project {project_id}: {str(e)}")
+            return set()
+    
+    def get_all_existing_image_paths(self, project_title_prefix: Optional[str] = None) -> set:
+        """Get all image paths from existing Label Studio projects.
+        
+        Args:
+            project_title_prefix: Optional prefix to filter projects by title.
+                                 If None, checks all projects.
+            
+        Returns:
+            Set of all image paths/URLs from matching projects
+        """
+        try:
+            projects = self.list_projects()
+            all_image_paths = set()
+            
+            if project_title_prefix:
+                projects = [p for p in projects if p.title.startswith(project_title_prefix)]
+                self.logger.info(f"Checking {len(projects)} projects with prefix '{project_title_prefix}'")
+            else:
+                self.logger.info(f"Checking all {len(projects)} projects")
+            
+            for project in projects:
+                try:
+                    project_paths = self.get_project_image_paths(project.id)
+                    all_image_paths.update(project_paths)
+                    self.logger.debug(f"Project '{project.title}' (ID: {project.id}): {len(project_paths)} images")
+                except Exception as e:
+                    self.logger.warning(f"Failed to get images from project '{project.title}' (ID: {project.id}): {str(e)}")
+                    continue
+            
+            self.logger.info(f"Total unique images found across all projects: {len(all_image_paths)}")
+            return all_image_paths
+            
+        except Exception as e:
+            self.logger.error(f"Error getting all existing image paths: {str(e)}")
+            return set()
+    
+    def _get_image_filename_from_path(self, image_path: str) -> Optional[str]:
+        """Extract filename from image path/URL.
+        
+        Args:
+            image_path: Image path or URL (GCS, HTTP, or local path)
+            
+        Returns:
+            Filename if extractable, None otherwise
+        """
+        if not image_path:
+            return None
+            
+        try:
+            if image_path.startswith('gs://'):
+                return image_path.split('/')[-1]
+            
+            elif image_path.startswith(('http://', 'https://')):
+                parsed = urlparse(image_path)
+                filename = parsed.path.split('/')[-1]
+                return filename.split('?')[0] if filename else None
+            
+            else:
+                return os.path.basename(image_path)
+                
+        except Exception as e:
+            self.logger.warning(f"Error extracting filename from path '{image_path}': {str(e)}")
+            return None
+    
+    def get_all_existing_gcs_paths(self, project_title_prefix: Optional[str] = None) -> set:
+        """Get all GCS paths from existing Label Studio projects.
+        
+        Args:
+            project_title_prefix: Optional prefix to filter projects by title.
+                                 If None, checks all projects.
+            
+        Returns:
+            Set of all GCS paths (gs://bucket/path format) from matching projects
+        """
+        image_paths = self.get_all_existing_image_paths(project_title_prefix)
+        gcs_paths = set()
+        
+        for image_path in image_paths:
+            if image_path.startswith('gs://'):
+                gcs_paths.add(image_path)
+            elif 'presign' in image_path and 'fileuri=' in image_path:
+                gcs_path = self._extract_gcs_path_from_label_studio_url(image_path)
+                if gcs_path:
+                    gcs_paths.add(gcs_path)
+        
+        self.logger.info(f"Total unique GCS paths found: {len(gcs_paths)}")
+        return gcs_paths
