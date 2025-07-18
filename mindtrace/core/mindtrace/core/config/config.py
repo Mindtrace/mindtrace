@@ -17,6 +17,7 @@ class Config(dict):
             "MINDTRACE_MINIO_SECRET_KEY": "minioadmin",
             "MINDTRACE_SERVER_PIDS_DIR_PATH": "~/.cache/mindtrace/pids",
             "MINDTRACE_LOGGER_DIR": "~/.cache/mindtrace/logs",
+            "MINDTRACE_DISCORD_BOT_TOKEN": None
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
