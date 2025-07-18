@@ -13,7 +13,10 @@ def main():
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         cluster_manager.register_worker_type(
-            worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}, job_type="echo"
+            worker_name="echoworker",
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
+            worker_params={},
+            job_type="echo",
         )
         worker_url = "http://localhost:8002"
         cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
