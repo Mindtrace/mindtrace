@@ -3,6 +3,7 @@ import time
 import pytest
 
 from mindtrace.cluster import ClusterManager, Node
+from mindtrace.cluster.core.types import WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
@@ -42,6 +43,7 @@ def test_cluster_manager_with_prelaunched_worker():
     # Use different ports to avoid conflicts with other tests
     cluster_cm = ClusterManager.launch(host="localhost", port=8100, wait_for_launch=True, timeout=15)
     worker_cm = EchoWorker.launch(host="localhost", port=8101, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
     try:
         # Register the worker with the cluster
@@ -51,10 +53,14 @@ def test_cluster_manager_with_prelaunched_worker():
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
         assert result.output == {}
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
         assert result.status == "completed"
         assert result.output == {"echoed": "Hello, Worker!"}
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
     finally:
         if worker_cm is not None:
             worker_cm.shutdown()
@@ -69,6 +75,7 @@ def test_cluster_manager_multiple_jobs_with_worker():
     from mindtrace.cluster.workers.echo_worker import EchoWorker
     cluster_cm = ClusterManager.launch(host="localhost", port=8102, wait_for_launch=True, timeout=15)
     worker_cm = EchoWorker.launch(host="localhost", port=8103, wait_for_launch=True, timeout=15)
+    worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
     echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
     try:
         cluster_cm.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
@@ -79,11 +86,15 @@ def test_cluster_manager_multiple_jobs_with_worker():
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == "queued"
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
         time.sleep(1)
         for i, job in enumerate(jobs):
             result = cluster_cm.get_job_status(job_id=job.id)
             assert result.status == "completed"
             assert result.output == {"echoed": messages[i]}
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
     finally:
         if worker_cm is not None:
             worker_cm.shutdown()
@@ -577,6 +588,69 @@ def test_multiple_worker_types_with_auto_connect():
         assert final_result1.output == {"echoed": "Worker 1 job!"}
         assert final_result2.status == "completed"
         assert final_result2.output == {"echoed": "Worker 2 job!"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+
+@pytest.mark.integration
+def test_launch_worker_with_delay():
+    """Integration test for launch_worker when worker is in auto-connect database."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type with job schema name (this creates auto-connect entry)
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type="echo"
+        )
+        
+        # Launch a worker - it should be automatically connected due to auto-connect database
+        worker_url = "http://localhost:8127"
+        worker_id = cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker", 
+            worker_url=worker_url
+        ).worker_id
+        
+        # Submit a job - it should be processed automatically without manual registration
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Launch worker with delay test!", "delay": 3})
+        result = cluster_cm.submit_job(job)
+        
+        # Initially the job should be queued
+        assert result.status == "queued"
+        assert result.output == {}
+        
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+        
+        # Wait for the job to be processed
+        time.sleep(1)
+        
+        job_result = cluster_cm.get_job_status(job_id=job.id)
+        assert job_result.status == "running"
+        
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.RUNNING.value
+
+        time.sleep(3)
+
+        # Check the final job status
+        final_result = cluster_cm.get_job_status(job_id=job.id)
+        assert final_result.status == "completed"
+        assert final_result.output == {"echoed": "Launch worker with delay test!"}
+
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
+
         
     finally:
         node.shutdown()
