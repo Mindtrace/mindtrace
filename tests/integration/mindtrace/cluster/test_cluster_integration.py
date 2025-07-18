@@ -32,6 +32,7 @@ def test_cluster_manager_as_gateway():
     finally:
         # Clean up in reverse order
         echo_cm.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()
 
 
@@ -58,6 +59,7 @@ def test_cluster_manager_with_prelaunched_worker():
         if worker_cm is not None:
             worker_cm.shutdown()
         if cluster_cm is not None:
+            cluster_cm.clear_databases()
             cluster_cm.shutdown()
 
 
@@ -86,6 +88,7 @@ def test_cluster_manager_multiple_jobs_with_worker():
         if worker_cm is not None:
             worker_cm.shutdown()
         if cluster_cm is not None:
+            cluster_cm.clear_databases()
             cluster_cm.shutdown()
 
 
@@ -106,6 +109,7 @@ def test_cluster_manager_worker_failure():
         assert result.status == "queued"  # Should still succeed but the job is queued
     finally:
         if cluster_cm is not None:
+            cluster_cm.clear_databases()
             cluster_cm.shutdown()
 
 @pytest.mark.integration
@@ -127,6 +131,7 @@ def test_cluster_manager_with_node():
         assert result.output == {"echoed": "Hello, World!"}
     finally:
         node.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()
 
 
@@ -150,7 +155,8 @@ def test_cluster_manager_launch_worker():
         cluster_cm.launch_worker(
             node_url=str(node.url),
             worker_type="echoworker", 
-            worker_url=worker_url
+            worker_url=worker_url,
+            job_type=None,
         )
         
         # Register the worker with the cluster for job processing
@@ -175,6 +181,7 @@ def test_cluster_manager_launch_worker():
         
     finally:
         node.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()
 
 
@@ -204,7 +211,8 @@ def test_cluster_manager_launch_worker_multiple_workers():
             cluster_cm.launch_worker(
                 node_url=str(node.url),
                 worker_type="echoworker", 
-                worker_url=worker_url
+                worker_url=worker_url,
+                job_type=None,
             )
             # Register each worker
             cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
@@ -230,6 +238,7 @@ def test_cluster_manager_launch_worker_multiple_workers():
         
     finally:
         node.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()
 
 
@@ -256,4 +265,320 @@ def test_cluster_manager_launch_worker_node_failure():
             )
         
     finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_register_worker_type_with_job_schema_name():
+    """Integration test for register_worker_type when job_schema_name is provided."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8118, wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type with job schema name
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type="echo"  # This should trigger auto-registration
+        )
+        
+        # Verify that the job schema was automatically registered to the worker type
+        # by checking if we can launch a worker and it gets auto-connected
+        node = Node.launch(host="localhost", port=8119, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+        
+        try:
+            # Launch a worker - it should be automatically connected to the job schema
+            worker_url = "http://localhost:8120"
+            cluster_cm.launch_worker(
+                node_url=str(node.url),
+                worker_type="echoworker", 
+                worker_url=worker_url
+            )
+            
+            # Submit a job - it should be processed automatically without manual registration
+            echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+            job = job_from_schema(echo_job_schema, input_data={"message": "Auto-connected worker test!"})
+            result = cluster_cm.submit_job(job)
+            
+            # Initially the job should be queued
+            assert result.status == "queued"
+            assert result.output == {}
+            
+            # Wait for the job to be processed
+            time.sleep(2)
+            
+            # Check the final job status - should be completed due to auto-connection
+            final_result = cluster_cm.get_job_status(job_id=job.id)
+            assert final_result.status == "completed"
+            assert final_result.output == {"echoed": "Auto-connected worker test!"}
+            
+        finally:
+            node.shutdown()
+            
+    finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_register_job_schema_to_worker_type():
+    """Integration test for register_job_schema_to_worker_type method."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8121, wait_for_launch=True, timeout=15)
+    
+    try:
+        # First register a worker type without job schema
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={}
+        )
+        
+        # Then register the job schema to the worker type
+        cluster_cm.register_job_schema_to_worker_type(
+            job_schema_name="echo",
+            worker_type="echoworker"
+        )
+        
+        # Launch a node and worker
+        node = Node.launch(host="localhost", port=8122, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+        
+        try:
+            # Launch a worker - it should be automatically connected due to the registration
+            worker_url = "http://localhost:8123"
+            cluster_cm.launch_worker(
+                node_url=str(node.url),
+                worker_type="echoworker", 
+                worker_url=worker_url
+            )
+            
+            # Submit a job - it should be processed automatically
+            echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+            job = job_from_schema(echo_job_schema, input_data={"message": "Manual registration test!"})
+            result = cluster_cm.submit_job(job)
+            
+            # Initially the job should be queued
+            assert result.status == "queued"
+            assert result.output == {}
+            
+            # Wait for the job to be processed
+            time.sleep(2)
+            
+            # Check the final job status
+            final_result = cluster_cm.get_job_status(job_id=job.id)
+            assert final_result.status == "completed"
+            assert final_result.output == {"echoed": "Manual registration test!"}
+            
+        finally:
+            node.shutdown()
+            
+    finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_register_job_schema_to_worker_type_nonexistent_worker():
+    """Integration test for register_job_schema_to_worker_type with non-existent worker type."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8124, wait_for_launch=True, timeout=15)
+    
+    try:
+        # Try to register job schema to non-existent worker type
+        # This should not raise an error but should log a warning
+        cluster_cm.register_job_schema_to_worker_type(
+            job_schema_name="echo",
+            worker_type="nonexistent_worker"
+        )
+        
+        # Verify that no job schema targeting was created
+        # (This would be verified by checking that jobs of this type fail to submit)
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
+        
+        # This should fail because no targeting was created
+
+        result = cluster_cm.submit_job(job)
+        assert result.status == "error"
+        assert result.output == {"error": "No job schema targeting found for job type echo"}
+            
+    finally:
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_launch_worker_with_auto_connect_database():
+    """Integration test for launch_worker when worker is in auto-connect database."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8125, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8126, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type with job schema name (this creates auto-connect entry)
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type="echo"
+        )
+        
+        # Launch a worker - it should be automatically connected due to auto-connect database
+        worker_url = "http://localhost:8127"
+        cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker", 
+            worker_url=worker_url
+        )
+        
+        # Submit a job - it should be processed automatically without manual registration
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Auto-connect database test!"})
+        result = cluster_cm.submit_job(job)
+        
+        # Initially the job should be queued
+        assert result.status == "queued"
+        assert result.output == {}
+        
+        # Wait for the job to be processed
+        time.sleep(2)
+        
+        # Check the final job status
+        final_result = cluster_cm.get_job_status(job_id=job.id)
+        assert final_result.status == "completed"
+        assert final_result.output == {"echoed": "Auto-connect database test!"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_launch_worker_without_auto_connect_database():
+    """Integration test for launch_worker when worker is not in auto-connect database."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8128, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8129, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register a worker type without job schema name (no auto-connect entry)
+        cluster_cm.register_worker_type(
+            worker_name="echoworker", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type=None,
+        )
+        
+        # Launch a worker - it should NOT be automatically connected
+        worker_url = "http://localhost:8130"
+        cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker", 
+            worker_url=worker_url
+        )
+        
+        # Submit a job - it should fail because no targeting was created
+        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
+        
+        result = cluster_cm.submit_job(job)
+        assert result.status == "error"
+        assert result.output == {"error": "No job schema targeting found for job type echo"}
+        
+        # Now manually register the job to the worker
+        cluster_cm.register_job_to_worker(job_type="echo", worker_url=worker_url)
+        
+        # Submit another job - it should work now
+        job2 = job_from_schema(echo_job_schema, input_data={"message": "Manual registration after launch!"})
+        result = cluster_cm.submit_job(job2)
+        
+        # Initially the job should be queued
+        assert result.status == "queued"
+        assert result.output == {}
+        
+        # Wait for the job to be processed
+        time.sleep(2)
+        
+        # Check the final job status
+        final_result = cluster_cm.get_job_status(job_id=job2.id)
+        assert final_result.status == "completed"
+        assert final_result.output == {"echoed": "Manual registration after launch!"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
+        cluster_cm.shutdown()
+
+
+@pytest.mark.integration
+def test_multiple_worker_types_with_auto_connect():
+    """Integration test for multiple worker types with auto-connect functionality."""
+    # Launch cluster manager
+    cluster_cm = ClusterManager.launch(host="localhost", port=8131, wait_for_launch=True, timeout=15)
+    node = Node.launch(host="localhost", port=8132, cluster_url=str(cluster_cm.url), wait_for_launch=True, timeout=15)
+    
+    try:
+        # Register multiple worker types with different job schemas
+        cluster_cm.register_worker_type(
+            worker_name="echoworker1", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type="echo1"
+        )
+        
+        cluster_cm.register_worker_type(
+            worker_name="echoworker2", 
+            worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", 
+            worker_params={},
+            job_type="echo2"
+        )
+        
+        # Launch workers for both types
+        worker_url1 = "http://localhost:8133"
+        worker_url2 = "http://localhost:8134"
+        
+        cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker1", 
+            worker_url=worker_url1
+        )
+        
+        cluster_cm.launch_worker(
+            node_url=str(node.url),
+            worker_type="echoworker2", 
+            worker_url=worker_url2
+        )
+        
+        # Submit jobs to both workers
+        echo_job_schema1 = JobSchema(name="echo1", input=EchoInput, output=EchoOutput)
+        echo_job_schema2 = JobSchema(name="echo2", input=EchoInput, output=EchoOutput)
+        
+        job1 = job_from_schema(echo_job_schema1, input_data={"message": "Worker 1 job!"})
+        job2 = job_from_schema(echo_job_schema2, input_data={"message": "Worker 2 job!"})
+        
+        result1 = cluster_cm.submit_job(job1)
+        result2 = cluster_cm.submit_job(job2)
+        
+        # Initially both jobs should be queued
+        assert result1.status == "queued"
+        assert result2.status == "queued"
+        
+        # Wait for the jobs to be processed
+        time.sleep(3)
+        
+        # Check the final job statuses
+        final_result1 = cluster_cm.get_job_status(job_id=job1.id)
+        final_result2 = cluster_cm.get_job_status(job_id=job2.id)
+        
+        assert final_result1.status == "completed"
+        assert final_result1.output == {"echoed": "Worker 1 job!"}
+        assert final_result2.status == "completed"
+        assert final_result2.output == {"echoed": "Worker 2 job!"}
+        
+    finally:
+        node.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()

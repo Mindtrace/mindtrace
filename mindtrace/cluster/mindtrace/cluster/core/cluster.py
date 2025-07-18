@@ -29,6 +29,10 @@ class ClusterManager(Gateway):
             unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
         )
         self.job_status_database.initialize_sync()
+        self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.WorkerAutoConnect, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+        )
+        self.worker_auto_connect_database.initialize_sync()
         self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
         self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
         self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
@@ -107,6 +111,18 @@ class ClusterManager(Gateway):
             schema=TaskSchema(name="launch_worker", input_schema=cluster_types.ClusterLaunchWorkerInput),
             methods=["POST"],
         )
+        self.add_endpoint(
+            "/clear_databases",
+            func=self.clear_databases,
+            schema=TaskSchema(name="clear_databases"),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/register_job_schema_to_worker_type",
+            func=self.register_job_schema_to_worker_type,
+            schema=TaskSchema(name="register_job_schema_to_worker_type", input_schema=cluster_types.RegisterJobSchemaToWorkerTypeInput),
+            methods=["POST"],
+        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
@@ -178,7 +194,7 @@ class ClusterManager(Gateway):
         )
         if not job_schema_targeting_list:
             self.logger.error(f"No job schema targeting found for job type {job.schema_name}")
-            raise ValueError(f"No job schema targeting found for job type {job.schema_name}")
+            return cluster_types.JobStatus(job_id=job.id, status="error", output={"error": f"No job schema targeting found for job type {job.schema_name}"}, worker_id=None)
         job_schema_targeting = job_schema_targeting_list[0]
         if job_schema_targeting.target_endpoint == "@orchestrator":
             self.orchestrator.publish(job.schema_name, job)
@@ -218,19 +234,36 @@ class ClusterManager(Gateway):
     def register_worker_type(self, payload: dict):
         """
         Register a worker type to the cluster. This will allow Workers of this type to be launched on Nodes.
-
+        If the 
         Args:
             payload (dict): The payload containing the worker name, worker class, and worker params.
         """
         worker_name = payload["worker_name"]
         worker_class = payload["worker_class"]
         worker_params = payload["worker_params"]
+        job_schema_name = payload["job_type"]
         materializer_name = ifnone(
             payload["materializer_name"], "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher"
         )
         proxy_worker = ProxyWorker(worker_type=worker_class, worker_params=worker_params)
         self.worker_registry.register_materializer(ProxyWorker, materializer_name)
         self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
+        if job_schema_name:
+            self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
+
+    def register_job_schema_to_worker_type(self, payload: dict):
+        """
+        Register a job schema to a worker type. This will allow Jobs of this type to be routed to the worker type.
+        """
+        if not self.worker_registry.has_object(f"worker:{payload["worker_type"]}"):
+            self.logger.warning(f"Worker type {payload['worker_type']} not found in registry")
+            return
+        
+        job_schema_name = payload["job_schema_name"]
+        worker_type = payload["worker_type"]
+        self.job_schema_targeting_database.insert(cluster_types.JobSchemaTargeting(schema_name=job_schema_name, target_endpoint="@orchestrator"))
+        self.worker_auto_connect_database.insert(cluster_types.WorkerAutoConnect(worker_type=worker_type, schema_name=job_schema_name))
+        self.logger.info(f"Registered job schema {job_schema_name} to worker type {worker_type}")
 
     def get_job_status(self, payload: dict):
         """
@@ -309,7 +342,7 @@ class ClusterManager(Gateway):
 
     def launch_worker(self, payload: dict):
         """
-        Launch a worker on a node.
+        Launch a worker on a node. If the worker type is registered to a job schema, the worker will be automatically connected to the job schema.
 
         Args:
             payload (dict): The payload containing the node URL, worker type, and worker URL.
@@ -319,7 +352,23 @@ class ClusterManager(Gateway):
         worker_url = payload["worker_url"]
         node_cm = Node.connect(node_url)        
         node_cm.launch_worker(worker_type=worker_type, worker_url=worker_url)
+        worker_auto_connect_list = self.worker_auto_connect_database.find(
+            self.worker_auto_connect_database.redis_backend.model_cls.worker_type == worker_type
+        )
+        if not worker_auto_connect_list:
+            return
+        worker_auto_connect = worker_auto_connect_list[0]
+        self.register_job_to_worker(payload={"job_type": worker_auto_connect.schema_name, "worker_url": worker_url})
 
+
+    def clear_databases(self):
+        """
+        Clear all databases.
+        """
+        for db in [self.job_schema_targeting_database, self.job_status_database, self.worker_auto_connect_database]:
+            for entry in db.all():
+                db.delete(entry.pk)
+        self.logger.info("Cleared all cluster manager databases")
 
 class Node(Service):
     def __init__(self, cluster_url: str | None = None, **kwargs):

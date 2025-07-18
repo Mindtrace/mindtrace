@@ -48,6 +48,7 @@ def base_gateway_example():
     finally:
         # Clean up in reverse order
         echo_cm.shutdown()
+        cluster_cm.clear_databases()
         cluster_cm.shutdown()
         print("Services shut down successfully!")
 
