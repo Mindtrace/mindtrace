@@ -11,6 +11,7 @@ from enum import Enum
 
 from mindtrace.automation.database.database_connection import DatabaseConnection
 from mindtrace.storage.gcs import GCSStorageHandler
+from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 
 # Load environment variables from .env file
 load_dotenv("envs/database.env")
@@ -102,6 +103,20 @@ class ImageDownload:
         
         self.local_download_path = Path(local_download_path)
         self.local_download_path.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize Label Studio client if configured
+        self.label_studio = None
+        if 'label_studio' in config:
+            label_studio_config = config['label_studio']
+            if 'api' in label_studio_config:
+                api_config = label_studio_config['api']
+                self.label_studio = LabelStudio(
+                    LabelStudioConfig(
+                        url=api_config['url'],
+                        api_key=api_config['api_key'],
+                        gcp_creds=api_config.get('gcp_credentials_path')
+                    )
+                )
 
     def get_camera_proportions(self, config: Dict[str, dict]) -> Dict[str, float]:
         if 'sampling' in config and 'cameras' in config['sampling']:
@@ -128,6 +143,110 @@ class ImageDownload:
                     else:
                         cameras[cam] = {'proportion': 1.0}
         return cameras
+
+    def filter_existing_label_studio_images(self, df: pd.DataFrame, project_title_prefix: Optional[str] = None) -> pd.DataFrame:
+        """Filter out images that already exist in Label Studio projects.
+        
+        Args:
+            df: DataFrame with image data
+            project_title_prefix: Optional prefix to filter Label Studio projects
+            
+        Returns:
+            DataFrame with existing images removed
+        """
+        if self.label_studio is None:
+            print("Label Studio not configured, skipping deduplication")
+            return df
+        
+        if df.empty:
+            return df
+        
+        print("Checking for existing images in Label Studio projects...")
+        
+        try:
+            existing_gcs_paths = self.label_studio.get_all_existing_gcs_paths(project_title_prefix)
+            print(f"Found {len(existing_gcs_paths)} existing GCS paths in Label Studio")
+            
+            if not existing_gcs_paths:
+                print("No existing images found in Label Studio")
+                return df
+            
+            df_gcs_paths = set(df['ImgPath'].tolist())
+            
+            bucket_name = self.config.get('gcp', {}).get('data_bucket', '')
+            bucket_prefix = f"gs://{bucket_name}/"
+            
+            normalized_ls_paths = set()
+            for path in existing_gcs_paths:
+                if path.startswith(bucket_prefix):
+                    normalized_path = path[len(bucket_prefix):]
+                    normalized_ls_paths.add(normalized_path)
+                else:
+                    normalized_ls_paths.add(path)
+            
+            overlapping_paths = df_gcs_paths.intersection(normalized_ls_paths)
+            
+            if overlapping_paths:
+                print(f"Found {len(overlapping_paths)} images already in Label Studio projects")
+                
+                df_filtered = df[~df['ImgPath'].isin(overlapping_paths)]
+                filtered_count = len(df) - len(df_filtered)
+                print(f"\nDEDUPLICATION SUMMARY:")
+                print(f"  Total images found: {len(df)}")
+                print(f"  Images already in Label Studio: {filtered_count}")
+                print(f"  Images remaining for download: {len(df_filtered)}")
+                
+
+                
+                return df_filtered
+            else:
+                print("No overlapping images found")
+                return df
+                
+        except Exception as e:
+            print(f"Warning: Error checking Label Studio for existing images: {e}")
+            print("Continuing without deduplication...")
+            return df
+
+    def check_sufficient_images(self, df: pd.DataFrame, cameras: Dict[str, dict]) -> Dict[str, dict]:
+        """Check if we have sufficient unused images for each camera.
+        
+        Args:
+            df: DataFrame with available images after Label Studio filtering
+            cameras: Original camera configuration with requested numbers
+            
+        Returns:
+            Dictionary with availability status for each camera
+        """
+        availability = {}
+        
+        for camera, config in cameras.items():
+            camera_df = df[df['Camera'] == camera]
+            available_count = len(camera_df)
+            
+            requested_count = None
+            if 'number' in config:
+                requested_count = config['number']
+            elif 'proportion' in config:
+                pass
+            
+            if requested_count is not None:
+                sufficient = available_count >= requested_count
+                availability[camera] = {
+                    'requested': requested_count,
+                    'available': available_count,
+                    'sufficient': sufficient,
+                    'shortfall': max(0, requested_count - available_count)
+                }
+            else:
+                availability[camera] = {
+                    'requested': 'proportion-based',
+                    'available': available_count,
+                    'sufficient': True,
+                    'shortfall': 0
+                }
+        
+        return availability
 
     def get_images_by_date(
         self,
@@ -198,14 +317,12 @@ class ImageDownload:
             if camera in found_cameras:
                 camera_df = df[df['Camera'] == camera]
                 if not camera_df.empty:
-                    # Check if both proportion and number are specified
                     has_proportion = 'proportion' in config
                     has_number = 'number' in config
                     
                     if has_proportion and has_number:
                         print(f"Warning: Both proportion and number specified for camera {camera}. Using number.")
                     
-                    # Use number if specified, otherwise use proportion
                     if has_number:
                         n_samples = min(config['number'], len(camera_df))
                         print(f"Camera {camera}: {len(camera_df)} available, taking {n_samples} (requested: {config['number']})")
@@ -213,7 +330,6 @@ class ImageDownload:
                         n_samples = int(total_available * config['proportion'])
                         print(f"Camera {camera}: {len(camera_df)} available, taking {n_samples} ({config['proportion']*100:.1f}%)")
                     else:
-                        # Default to 100% if neither specified
                         n_samples = len(camera_df)
                         print(f"Camera {camera}: {len(camera_df)} available, taking all {n_samples}")
                     
@@ -259,7 +375,6 @@ class ImageDownload:
                 local_path = camera_dir / filename
                 file_map[row['ImgPath']] = str(local_path)
                 
-                # Store GCS path mapping
                 gcs_path_mapping["files"][filename] = row['ImgPath']
             
             print(f"Downloading {len(file_map)} files for {camera}...")
@@ -291,6 +406,9 @@ class ImageDownload:
                 seed=self.config.get('seed')
             )
             
+            project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
+            df = self.filter_existing_label_studio_images(df, project_prefix)
+            
             os.makedirs('database_data', exist_ok=True)
             timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
             df.to_csv(f'database_data/{timestamp}.csv')
@@ -313,6 +431,9 @@ class ImageDownload:
                 number_samples_per_day=self.config.get('samples_per_day'),
                 seed=self.config.get('seed')
             )
+            
+            project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
+            df = self.filter_existing_label_studio_images(df, project_prefix)
             
             os.makedirs('database_data', exist_ok=True)
             timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
