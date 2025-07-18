@@ -14,6 +14,16 @@ from mindtrace.registry import Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.services import Gateway, Service, ServerStatus
 
+def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
+    entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)
+    if len(entries) != 1:
+        raise ValueError(f"Expected 1 entry for {sort_key} == {find_key}, got {len(entries)}")
+    entry = entries[0]
+    for key, value in update_dict.items():
+        setattr(entry, key, value)
+    database.insert(entry)
+    return entry
+
 
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
@@ -144,6 +154,19 @@ class ClusterManager(Gateway):
             schema=TaskSchema(name="get_worker_status_by_url", input_schema=cluster_types.GetWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
             methods=["POST"],
         )
+        self.add_endpoint(
+            "/query_worker_status",
+            func=self.query_worker_status,
+            schema=TaskSchema(name="query_worker_status", input_schema=cluster_types.QueryWorkerStatusInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/query_worker_status_by_url",
+            func=self.query_worker_status_by_url,
+            schema=TaskSchema(name="query_worker_status_by_url", input_schema=cluster_types.QueryWorkerStatusByUrlInput, output_schema=cluster_types.WorkerStatus),
+            methods=["POST"],
+        )
+    
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
         Register a job schema to an endpoint. Jobs of this type will be routed directly to the endpoint.
@@ -266,7 +289,7 @@ class ClusterManager(Gateway):
             self.worker_status_database.redis_backend.model_cls.worker_id == worker_id
         )
         if not worker_status_list:
-            self.worker_status_database.insert(cluster_types.WorkerStatus(worker_id=worker_id, worker_type=job_type, worker_url=worker_url, status=cluster_types.WorkerStatusEnum.IDLE, last_heartbeat=datetime.now()))
+            self.worker_status_database.insert(cluster_types.WorkerStatus(worker_id=worker_id, worker_type=job_type, worker_url=worker_url, status=cluster_types.WorkerStatusEnum.IDLE, job_id=None, last_heartbeat=datetime.now()))
         self.logger.info(f"Connected {worker_url} to cluster {str(self._url)} listening on queue {job_type}")
 
     def register_worker_type(self, payload: dict):
@@ -333,7 +356,7 @@ class ClusterManager(Gateway):
         worker_status_list = self.worker_status_database.find(
             self.worker_status_database.redis_backend.model_cls.worker_id == worker_id)
         if not worker_status_list:
-            return cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.NONEXISTENT, last_heartbeat=None)
+            return cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
         return worker_status_list[0]
     
     def get_worker_status_by_url(self, payload: dict):
@@ -341,11 +364,51 @@ class ClusterManager(Gateway):
         Get the status of a worker.
         """
         worker_url = payload["worker_url"]
+        worker_id = self._url_to_id(worker_url)
+        if worker_id is None:
+            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        return self.get_worker_status(payload={"worker_id": worker_id})
+
+    def query_worker_status(self, payload: dict):
+        """
+        Query the status of a worker.
+        """
+        worker_id = payload["worker_id"]
+        worker_status_list = self.worker_status_database.find(
+            self.worker_status_database.redis_backend.model_cls.worker_id == worker_id)
+        if not worker_status_list:
+            return cluster_types.WorkerStatus(worker_id=worker_id, worker_type="", worker_url="", status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        worker_url = worker_status_list[0].worker_url
+        try:
+            worker_cm = Worker.connect(worker_url)
+        except:
+            worker_cm = None
+        if worker_cm is None or worker_cm.heartbeat().heartbeat.status == ServerStatus.DOWN:
+            our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": cluster_types.WorkerStatusEnum.NONEXISTENT, "job_id": None, "last_heartbeat": datetime.now()})
+            return our_status
+        worker_status = worker_cm.get_status()
+        our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": worker_status.status, "job_id": worker_status.job_id, "last_heartbeat": datetime.now()})
+        return our_status
+
+    def query_worker_status_by_url(self, payload: dict):
+        """
+        Query the status of a worker.
+        """
+        worker_url = payload["worker_url"]
+        worker_id = self._url_to_id(worker_url)
+        if worker_id is None:
+            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+        return self.query_worker_status(payload={"worker_id": worker_id})
+
+    def _url_to_id(self, worker_url: str):
+        """
+        Convert a worker URL to a worker ID.
+        """
         worker_status_list = self.worker_status_database.find(
             self.worker_status_database.redis_backend.model_cls.worker_url == worker_url)
         if not worker_status_list:
-            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, last_heartbeat=None)
-        return worker_status_list[0]
+            return None
+        return worker_status_list[0].worker_id
 
     def worker_alert_started_job(self, payload: dict):
         """
@@ -355,23 +418,8 @@ class ClusterManager(Gateway):
             payload (dict): The payload containing the job id and the worker id that started the job.
         """
         job_id = payload["job_id"]
-        job_status_list = self.job_status_database.find(
-            self.job_status_database.redis_backend.model_cls.job_id == job_id
-        )
-        if not job_status_list:
-            raise ValueError(f"Job status not found for job id {job_id}")
-        job_status = job_status_list[0]
-        job_status.status = "running"
-        job_status.worker_id = payload["worker_id"]
-        self.job_status_database.insert(job_status)
-        worker_status_list = self.worker_status_database.find(
-            self.worker_status_database.redis_backend.model_cls.worker_id == payload["worker_id"]
-        )
-        if not worker_status_list:
-            raise ValueError(f"Worker status not found for worker id {payload['worker_id']}")
-        worker_status = worker_status_list[0]
-        worker_status.status = cluster_types.WorkerStatusEnum.RUNNING
-        self.worker_status_database.insert(worker_status)
+        update_database(self.job_status_database, "job_id", job_id, {"status": "running", "worker_id": payload["worker_id"]})
+        update_database(self.worker_status_database, "worker_id", payload["worker_id"], {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_id, "last_heartbeat": datetime.now()})
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has started")
 
     def worker_alert_completed_job(self, payload: dict):
@@ -383,28 +431,12 @@ class ClusterManager(Gateway):
         """
         job_id = payload["job_id"]
         self.logger.info(f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed")
-        job_status_list = self.job_status_database.find(
-            self.job_status_database.redis_backend.model_cls.job_id == job_id
-        )
-        if not job_status_list:
-            raise ValueError(f"Job status not found for job id {job_id}")
-        job_status = job_status_list[0]
+        job_status = update_database(self.job_status_database, "job_id", job_id, {"status": payload["status"], "output": payload["output"]})
         if job_status.worker_id != payload["worker_id"]:
             self.logger.warning(
                 f"Worker {payload['worker_id']} alerted cluster manager that job {job_id} has completed, but the worker id does not match the stored worker id {job_status.worker_id}"
             )
-        job_status.status = payload["status"]
-        job_status.output = payload["output"]
-        self.job_status_database.insert(job_status)
-        worker_status_list = self.worker_status_database.find(
-            self.worker_status_database.redis_backend.model_cls.worker_id == payload["worker_id"]
-        )
-        if not worker_status_list:
-            self.logger.warning(f"Worker status not found for worker id {payload['worker_id']}")
-            return
-        worker_status = worker_status_list[0]
-        worker_status.status = cluster_types.WorkerStatusEnum.IDLE
-        self.worker_status_database.insert(worker_status)
+        update_database(self.worker_status_database, "worker_id", payload["worker_id"], {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None, "last_heartbeat": datetime.now()})
 
     def register_node(self, payload: dict):
         """
@@ -505,6 +537,20 @@ class Node(Service):
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
+        self.worker_status_local_database = UnifiedMindtraceODMBackend(
+            unified_model_cls=cluster_types.WorkerStatusLocal,
+            redis_url=self.redis_url,
+            preferred_backend=BackendType.REDIS,
+        )
+        self.worker_status_local_database.initialize_sync()
+        self.worker_status_local_database.insert(
+            cluster_types.WorkerStatusLocal(
+                worker_id=str(self.id),
+                status=cluster_types.WorkerStatusEnum.IDLE,
+                job_id=None,
+            )
+        )
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint(
             "/run",
@@ -517,6 +563,11 @@ class Worker(Service, Consumer):
             "/connect_to_cluster",
             self.connect_to_cluster,
             schema=TaskSchema(name="connect_to_cluster", input_schema=cluster_types.ConnectToBackendInput),
+        )
+        self.add_endpoint(
+            "/get_status",
+            self.get_status,
+            schema=TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
         )
         self.consume_process = None
         self._cluster_connection_manager = None  # type: ignore
@@ -543,6 +594,8 @@ class Worker(Service, Consumer):
             cm.worker_alert_started_job(job_id=job_dict["id"], worker_id=str(self.id))
         else:
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
+
+        update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_dict["id"]})
         output = self._run(job_dict["payload"])
         if cm:
             cm.worker_alert_completed_job(
@@ -550,6 +603,7 @@ class Worker(Service, Consumer):
             )
         else:
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
+        update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.IDLE, "job_id": None})
         return output
 
     @abstractmethod
@@ -595,6 +649,14 @@ class Worker(Service, Consumer):
         self.logger.info(
             f"Worker {self.id} started consuming from queue {queue_name}, process id {self.consume_process.pid}"
         )
+
+    def get_status(self):
+        """
+        Get the status of the worker.
+        """
+        return self.worker_status_local_database.find(
+            self.worker_status_local_database.redis_backend.model_cls.worker_id == str(self.id)
+        )[0]
 
     def shutdown(self):
         """
