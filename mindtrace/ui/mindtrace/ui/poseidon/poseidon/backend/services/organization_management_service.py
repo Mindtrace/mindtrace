@@ -8,9 +8,10 @@ This module provides organization administration functionality including:
 This service is for super admin use only.
 """
 
-from typing import List, Optional, Dict
+from typing import List, Dict
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
 from poseidon.backend.core.exceptions import OrganizationNotFoundError
+from poseidon.backend.database.models.enums import SubscriptionPlan
 
 
 class OrganizationManagementService:
@@ -29,7 +30,7 @@ class OrganizationManagementService:
     async def create_organization(
         name: str,
         description: str = "",
-        subscription_plan: str = "basic",
+        subscription_plan: SubscriptionPlan = SubscriptionPlan.BASIC,
         max_users: int = 50,
         max_projects: int = 10
     ) -> dict:

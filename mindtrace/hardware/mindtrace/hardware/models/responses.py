@@ -5,7 +5,7 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, List, Optional, Any, Tuple
 from pydantic import BaseModel, Field
 
@@ -14,7 +14,7 @@ class BaseResponse(BaseModel):
     """Base response model for all API endpoints."""
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BoolResponse(BaseResponse):

@@ -1,72 +1,66 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
-from typing import Dict, List, Optional
-from datetime import datetime
+from mindtrace.database import MindtraceDocument
+from typing import Dict, List, Optional, TYPE_CHECKING
+from datetime import datetime, UTC
+from beanie import Link, before_event, Insert, Replace, SaveChanges
+from pydantic import Field
+from .enums import ProjectStatus, ProjectType
+
+if TYPE_CHECKING:
+    from .organization import Organization
+    from .user import User
 
 class Project(MindtraceDocument):
     name: str
     description: Optional[str] = ""
-    organization_id: str  # Required - tenant isolation
-    
+
+    # Links
+    organization: Link["Organization"]
+    owner: Optional[Link["User"]] = None
+
     # Project details
-    status: str = "active"  # active, inactive, completed, archived
-    project_type: Optional[str] = None  # inspection, audit, etc.
-    
-    # Project settings and metadata
-    settings: Dict = {}
-    tags: List[str] = []
-    
-    # Ownership
-    owner_id: Optional[str] = None  # User who created/owns the project
-    
+    status: ProjectStatus = ProjectStatus.ACTIVE
+    project_type: Optional[ProjectType] = None
+
+    # Settings and metadata
+    settings: Dict = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+
     # Timestamps
-    created_at: str = ""
-    updated_at: str = ""
-    
-    # Optional: Project dates
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        super().__init__(**data)
-    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    # Optional: Project time window
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+    @before_event(Insert)
+    def set_creation_timestamps(self):
+        now = datetime.now(UTC)
+        self.created_at = now
+        self.updated_at = now
+
+    @before_event([Replace, SaveChanges])
     def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat()
-    
+        self.updated_at = datetime.now(UTC)
+
     def is_active(self) -> bool:
-        """Check if project is active"""
-        return self.status == "active"
-    
+        return self.status == ProjectStatus.ACTIVE
+
     def add_tag(self, tag: str):
-        """Add a tag to the project"""
         if tag not in self.tags:
             self.tags.append(tag)
-            self.update_timestamp()
-    
+
     def remove_tag(self, tag: str):
-        """Remove a tag from the project"""
         if tag in self.tags:
             self.tags.remove(tag)
-            self.update_timestamp()
-    
+
     def get_setting(self, key: str, default=None):
-        """Get a specific setting value"""
         return self.settings.get(key, default)
-    
+
     def update_setting(self, key: str, value):
-        """Update a specific setting"""
         self.settings[key] = value
-        self.update_timestamp()
-    
-    def set_status(self, status: str):
-        """Update project status"""
-        valid_statuses = ["active", "inactive", "completed", "archived"]
-        if status in valid_statuses:
-            self.status = status
-            self.update_timestamp()
-        else:
-            raise ValueError(f"Invalid status. Must be one of: {valid_statuses}") 
+
+    def set_status(self, status: ProjectStatus):
+        if status not in ProjectStatus:
+            raise ValueError(f"Invalid status. Must be one of: {[s.value for s in ProjectStatus]}")
+        self.status = status

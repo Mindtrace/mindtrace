@@ -7,6 +7,7 @@ from .inputs import success_message, error_message, filter_bar
 from .layouts import page_container
 from .utilities import access_denied_component, authentication_required_component
 from poseidon.state.auth import AuthState
+from poseidon.backend.database.models.enums import SubscriptionPlan
 
 
 def base_management_page(
@@ -201,7 +202,7 @@ def standard_filter_bar(
     if show_plan_filter:
         filters.append(
             rx.select(
-                ["all", "basic", "premium", "enterprise"],
+                ["all"] + SubscriptionPlan.get_all(),
                 placeholder="Filter by plan",
                 value=state_class.plan_filter if hasattr(state_class, 'plan_filter') else "",
                 on_change=state_class.set_plan_filter if hasattr(state_class, 'set_plan_filter') else lambda x: None,

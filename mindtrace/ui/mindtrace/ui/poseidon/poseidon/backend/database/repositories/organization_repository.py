@@ -1,64 +1,101 @@
 from poseidon.backend.database.models.organization import Organization
-from poseidon.backend.core.config import settings
-from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+from poseidon.backend.database.init import initialize_database
 from typing import Optional, List
-
-backend = MongoMindtraceODMBackend(Organization, db_uri=settings.MONGO_URI, db_name=settings.DB_NAME)
 
 class OrganizationRepository:
     @staticmethod
+    async def _ensure_init():
+        """Ensure database is initialized before operations"""
+        await initialize_database()
+
+    @staticmethod
     async def create(org_data: dict) -> Organization:
         """Create a new organization"""
-        await backend.initialize()
+        await OrganizationRepository._ensure_init()
         organization = Organization(**org_data)
-        return await backend.insert(organization)
-    
+        return await organization.insert()
+
     @staticmethod
     async def get_by_id(org_id: str) -> Optional[Organization]:
         """Get organization by ID"""
-        await backend.initialize()
+        await OrganizationRepository._ensure_init()
         try:
-            return await backend.get(org_id)
+            return await Organization.get(org_id)
         except:
             return None
-    
+
     @staticmethod
     async def get_by_name(name: str) -> Optional[Organization]:
-        """Get organization by name (active only)"""
-        await backend.initialize()
-        orgs = await backend.find({"name": name, "is_active": True})
-        return orgs[0] if orgs else None
-    
-    @staticmethod
-    async def get_all_active() -> List[Organization]:
-        """Get all active organizations"""
-        await backend.initialize()
-        return await backend.find({"is_active": True})
-    
+        """Get organization by name"""
+        await OrganizationRepository._ensure_init()
+        return await Organization.find_one(Organization.name == name)
+
     @staticmethod
     async def get_all() -> List[Organization]:
-        """Get all organizations (active and inactive)"""
-        await backend.initialize()
-        return await backend.find({})
-    
+        """Get all organizations"""
+        await OrganizationRepository._ensure_init()
+        return await Organization.find_all().to_list()
+
     @staticmethod
     async def update(org_id: str, update_data: dict) -> Optional[Organization]:
-        """Update organization with arbitrary data"""
-        await backend.initialize()
+        """Update organization"""
+        await OrganizationRepository._ensure_init()
         try:
-            org = await backend.get(org_id)
-            if org:
+            organization = await Organization.get(org_id)
+            if organization:
                 for key, value in update_data.items():
-                    if hasattr(org, key):
-                        setattr(org, key, value)
-                org.update_timestamp()
-                return await backend.update(org_id, org)
+                    if hasattr(organization, key):
+                        setattr(organization, key, value)
+                organization.update_timestamp()
+                await organization.save()
+                return organization
         except:
             pass
         return None
-    
+
     @staticmethod
-    async def get_by_plan(plan: str) -> List[Organization]:
-        """Get organizations by subscription plan"""
-        await backend.initialize()
-        return await backend.find({"subscription_plan": plan, "is_active": True}) 
+    async def delete(org_id: str) -> bool:
+        """Delete organization"""
+        await OrganizationRepository._ensure_init()
+        try:
+            organization = await Organization.get(org_id)
+            if organization:
+                await organization.delete()
+                return True
+        except:
+            pass
+        return False
+
+    @staticmethod
+    async def get_active_organizations() -> List[Organization]:
+        """Get all active organizations"""
+        await OrganizationRepository._ensure_init()
+        return await Organization.find(Organization.is_active == True).to_list()
+
+    @staticmethod
+    async def increment_user_count(org_id: str) -> Optional[Organization]:
+        """Increment user count for an organization"""
+        await OrganizationRepository._ensure_init()
+        try:
+            organization = await Organization.get(org_id)
+            if organization:
+                organization.user_count += 1
+                await organization.save()
+                return organization
+        except:
+            pass
+        return None
+
+    @staticmethod
+    async def decrement_user_count(org_id: str) -> Optional[Organization]:
+        """Decrement user count for an organization"""
+        await OrganizationRepository._ensure_init()
+        try:
+            organization = await Organization.get(org_id)
+            if organization and organization.user_count > 0:
+                organization.user_count -= 1
+                await organization.save()
+                return organization
+        except:
+            pass
+        return None 

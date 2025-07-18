@@ -65,7 +65,7 @@ def user_profile_stats(user_data: dict = None):
         )
     
     return rx.hstack(
-        stat_item("Organization Roles", AuthState.user_org_roles.length(), "blue"),
+        stat_item("Organization Role", AuthState.user_org_role, "blue"),
         stat_item("Project Assignments", AuthState.user_project_assignments.length(), "orange"),
         stat_item("Account Status", rx.cond(AuthState.is_authenticated, "Active", "Inactive"), "green"),
         spacing="4",

@@ -6,7 +6,7 @@ necessary middleware, exception handlers, and route configurations.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any
 
 from fastapi import FastAPI, Request
@@ -94,7 +94,7 @@ async def camera_error_handler(request: Request, exc: CameraError):
             message=str(exc),
             error_type=type(exc).__name__,
             error_code=error_code,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -111,7 +111,7 @@ async def value_error_handler(request: Request, exc: ValueError):
             message=str(exc),
             error_type="ValueError",
             error_code="VALIDATION_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -128,7 +128,7 @@ async def key_error_handler(request: Request, exc: KeyError):
             message=f"Resource not found: {exc}",
             error_type="KeyError",
             error_code="RESOURCE_NOT_FOUND",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -145,7 +145,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             message="An unexpected error occurred",
             error_type=type(exc).__name__,
             error_code="INTERNAL_SERVER_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -155,7 +155,7 @@ async def health_check() -> Dict[str, Any]:
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "version": "1.0.0",
         "service": "Camera API"
     }
@@ -177,11 +177,11 @@ async def root():
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests."""
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC)
     
     response = await call_next(request)
     
-    process_time = (datetime.utcnow() - start_time).total_seconds()
+    process_time = (datetime.now(UTC) - start_time).total_seconds()
     
     logger.info(
         f"{request.method} {request.url} - "

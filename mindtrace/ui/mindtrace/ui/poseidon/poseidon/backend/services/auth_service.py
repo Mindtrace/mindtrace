@@ -15,6 +15,7 @@ from poseidon.backend.database.repositories.user_repository import UserRepositor
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
 from poseidon.backend.utils.security import hash_password, verify_password, create_jwt
 from poseidon.backend.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
+from poseidon.backend.database.models.enums import SubscriptionPlan, OrgRole
 
 
 class AuthService:
@@ -26,7 +27,7 @@ class AuthService:
         email: str, 
         password: str, 
         organization_id: str,
-        org_roles: Optional[list] = None
+        org_role: Optional[str] = None
     ) -> dict:
         """Register a new user with validation and secure password storage.
         
@@ -35,7 +36,7 @@ class AuthService:
             email: User's email address (must be unique)
             password: Plain text password (will be hashed)
             organization_id: Required organization ID for multi-tenancy
-            org_roles: List of organization roles (defaults to ["member"])
+            org_role: Organization role (defaults to "user")
             
         Returns:
             dict: Success response with user data or error information
@@ -65,14 +66,13 @@ class AuthService:
             "username": username,
             "email": email,
             "password_hash": password_hash,
-            "organization_id": organization_id,
-            "org_roles": org_roles or ["member"],
-            "project_assignments": [],
+            "organization_id": organization_id,  # Will be converted to Link in repository
+            "org_role": org_role or OrgRole.USER,
             "is_active": True
         }
         
         # Create user in database
-        user = await UserRepository.create_user(user_data)
+        user = await UserRepository.create(user_data)
         return {"success": True, "user": user}
 
     @staticmethod
@@ -103,13 +103,16 @@ class AuthService:
         if not verify_password(password, user.password_hash):
             raise InvalidCredentialsError("Invalid password.")
         
+        # Fetch linked organization using fetch_all_links instead of fetch_link
+        await user.fetch_all_links()
+        
         # Create JWT payload with user information
         payload = {
             "user_id": str(user.id), 
             "username": user.username, 
-            "organization_id": user.organization_id,
-            "org_roles": user.org_roles,
-            "project_assignments": user.project_assignments
+            "organization_id": str(user.organization.id),
+            "org_role": user.org_role,
+            "project_assignments": []  # Will be populated based on user.projects
         }
         
         # Generate JWT token
@@ -139,7 +142,7 @@ class AuthService:
             email=email,
             password=password,
             organization_id=organization_id,
-            org_roles=["admin"]
+            org_role=OrgRole.ADMIN
         )
     
     @staticmethod
@@ -159,7 +162,7 @@ class AuthService:
             dict: Success response with super admin user data
         """
         # Check if any super admin already exists
-        existing_super_admins = await UserRepository.find_by_role("super_admin")
+        existing_super_admins = await UserRepository.find_by_role(OrgRole.SUPER_ADMIN)
         if existing_super_admins:
             raise ValueError("Super admin already exists. Only one super admin is allowed.")
         
@@ -167,7 +170,7 @@ class AuthService:
         system_org_data = {
             "name": "SYSTEM",
             "description": "System organization for super admin",
-            "subscription_plan": "enterprise",
+            "subscription_plan": SubscriptionPlan.ENTERPRISE,
             "is_active": True
         }
         system_org = await OrganizationRepository.create(system_org_data)
@@ -177,7 +180,7 @@ class AuthService:
             email=email,
             password=password,
             organization_id=str(system_org.id),
-            org_roles=["super_admin"]
+            org_role=OrgRole.SUPER_ADMIN
         )
     
     @staticmethod
@@ -192,4 +195,7 @@ class AuthService:
             bool: True if key is valid, False otherwise
         """
         organization = await OrganizationRepository.get_by_id(organization_id)
-        return organization and organization.admin_registration_key == admin_key 
+        if not organization:
+            return False
+        
+        return organization.admin_registration_key == admin_key 
