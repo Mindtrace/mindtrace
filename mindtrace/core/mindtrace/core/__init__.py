@@ -1,3 +1,16 @@
+from mindtrace.core.utils.conversions import (
+    ascii_to_pil,
+    bytes_to_pil,
+    cv2_to_pil,
+    ndarray_to_pil,
+    pil_to_ascii,
+    pil_to_bytes,
+    pil_to_cv2,
+    pil_to_ndarray,
+    pil_to_tensor,
+    tensor_to_ndarray,
+    tensor_to_pil,
+)
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
 from mindtrace.core.config import Config
 from mindtrace.core.logging.logger import setup_logger
@@ -13,9 +26,12 @@ from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 setup_logger()  # Initialize the default logger
 
 __all__ = [
+    "ascii_to_pil",
+    "bytes_to_pil",
     "check_libs",
     "ContextListener",
     "Config",
+    "cv2_to_pil",
     "EventBus",
     "first_not_none",
     "get_class",
@@ -26,8 +42,16 @@ __all__ = [
     "MindtraceABC",
     "MindtraceMeta",
     "named_lambda",
+    "ndarray_to_pil",
+    "pil_to_ascii",
+    "pil_to_bytes",
+    "pil_to_cv2",
+    "pil_to_ndarray",
+    "pil_to_tensor",
     "ObservableContext",
     "TaskSchema",
+    "tensor_to_ndarray",
+    "tensor_to_pil",
     "Timer",
     "TimerCollection",
     "Timeout",
