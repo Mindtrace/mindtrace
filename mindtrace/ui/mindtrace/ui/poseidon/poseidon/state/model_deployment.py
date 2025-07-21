@@ -257,8 +257,8 @@ class ModelDeploymentState(rx.State):
             # Convert deployment objects to DeploymentDict instances
             self.active_deployments = [
                 DeploymentDict(
-                    id=deployment.id,
-                    model_id=deployment.model_id,
+                    id=str(deployment.id),
+                    model_id=str(deployment.model.id) if deployment.model else "",
                     camera_ids=deployment.camera_ids,
                     deployment_status=deployment.deployment_status,
                     health_status=deployment.health_status or "unknown",
