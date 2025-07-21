@@ -94,20 +94,22 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
             # Convert to ProjectData objects
             self.projects = []
             for project in projects:
-                # Get organization name
+                # Get organization name and ID
                 org_name = ""
-                if project.organization_id:
-                    try:
-                        org = await OrganizationRepository.get_by_id(project.organization_id)
-                        org_name = org.name if org else "Unknown"
-                    except:
-                        org_name = "Unknown"
+                org_id = ""
+                
+                # Extract organization info from Link field
+                if hasattr(project, 'organization') and project.organization:
+                    org_id = str(project.organization.id)
+                    org_name = project.organization.name if hasattr(project.organization, 'name') else "Unknown"
+                else:
+                    org_name = "Unknown"
                 
                 self.projects.append(ProjectData(
                     id=str(project.id),
                     name=project.name or "",
                     description=project.description or "",
-                    organization_id=project.organization_id or "",
+                    organization_id=org_id,
                     organization_name=org_name,
                     status=project.status if hasattr(project, 'status') else ("active" if getattr(project, 'is_active', True) else "inactive"),
                     created_at=str(project.created_at) if project.created_at else "",

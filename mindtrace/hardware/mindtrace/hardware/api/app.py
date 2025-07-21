@@ -54,7 +54,7 @@ def camera_error_handler(request: Request, exc: CameraError):
             message=str(exc),
             error_type=type(exc).__name__,
             error_code=error_code,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -66,7 +66,7 @@ def value_error_handler(request: Request, exc: ValueError):
             message=str(exc),
             error_type="ValueError",
             error_code="VALIDATION_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -78,7 +78,7 @@ def key_error_handler(request: Request, exc: KeyError):
             message=f"Resource not found: {exc}",
             error_type="KeyError",
             error_code="RESOURCE_NOT_FOUND",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -90,7 +90,7 @@ def general_exception_handler(request: Request, exc: Exception):
             message="An unexpected error occurred",
             error_type=type(exc).__name__,
             error_code="INTERNAL_SERVER_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 

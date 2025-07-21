@@ -1,63 +1,74 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
-from typing import List, Optional, Dict
-from datetime import datetime
+from mindtrace.database import MindtraceDocument
+from typing import List, TYPE_CHECKING
+from datetime import datetime, UTC
+from .enums import OrgRole
+from beanie import Link, before_event, Insert, Replace, SaveChanges, after_event, Delete
+from pydantic import Field
+
+if TYPE_CHECKING:
+    from .organization import Organization
+    from .project import Project
 
 class User(MindtraceDocument):
     username: str
     email: str
     password_hash: str
-    organization_id: str  # Required - primary tenant
-    
-    # Organization-level roles
-    org_roles: List[str] = ["user"]  # admin, user, super_admin
-    
-    # Project assignments with roles
-    project_assignments: List[Dict] = []  # {project_id: str, roles: List[str]}
-    
+    organization: Link["Organization"]
+
+    # Single organization role
+    org_role: OrgRole = OrgRole.USER
+
+    # Reference to projects
+    projects: List[Link["Project"]] = Field(default_factory=list)
+
     is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-    
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        super().__init__(**data)
-    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    async def validate_and_set_creation_timestamps(self):
+        # Fetch the linked organization
+        await self.fetch_link(User.organization)
+
+        # Enforce organization max_users limit
+        if not self.organization.is_within_user_limit():
+            raise ValueError(f"Organization '{self.organization.id}' has reached its user limit.")
+
+        # Set timestamps
+        now = datetime.now(UTC)
+        self.created_at = now
+        self.updated_at = now
+
+    @before_event([Replace, SaveChanges])
     def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat()
-    
-    def has_org_role(self, role: str) -> bool:
-        """Check if user has a specific organization role"""
-        return role in self.org_roles
-    
-    def has_project_role(self, project_id: str, role: str) -> bool:
-        """Check if user has a specific role in a project"""
-        for assignment in self.project_assignments:
-            if assignment.get("project_id") == project_id:
-                return role in assignment.get("roles", [])
-        return False
-    
-    def add_project_assignment(self, project_id: str, roles: List[str]):
-        """Add or update project assignment"""
-        for assignment in self.project_assignments:
-            if assignment.get("project_id") == project_id:
-                assignment["roles"] = list(set(assignment.get("roles", []) + roles))
-                return
-        self.project_assignments.append({"project_id": project_id, "roles": roles})
-    
-    def remove_project_assignment(self, project_id: str):
-        """Remove project assignment"""
-        self.project_assignments = [
-            assignment for assignment in self.project_assignments 
-            if assignment.get("project_id") != project_id
-        ]
-    
-    def get_user_project_roles(self, project_id: str) -> List[str]:
-        """Get user's roles for a specific project"""
-        for assignment in self.project_assignments:
-            if assignment.get("project_id") == project_id:
-                return assignment.get("roles", [])
-        return [] 
+        self.updated_at = datetime.now(UTC)
+
+    def has_org_role(self, role: OrgRole) -> bool:
+        """Check if user has the specified org-level role"""
+        return self.org_role == role
+
+    def add_project(self, project: "Project"):
+        """Add a project to the user's list if not already present"""
+        if project not in self.projects:
+            self.projects.append(project)
+
+    def remove_project(self, project: "Project"):
+        """Remove a project from the user's list"""
+        self.projects = [p for p in self.projects if p.id != project.id]
+
+    def is_assigned_to_project(self, project: "Project") -> bool:
+        """Check if user is assigned to a specific project"""
+        return any(p.id == project.id for p in self.projects)
+
+    @after_event(Insert)
+    async def increment_org_user_count(self):
+        await self.fetch_link(User.organization)
+        self.organization.user_count += 1
+        await self.organization.save()
+
+    @after_event(Delete)
+    async def decrement_org_user_count(self):
+        await self.fetch_link(User.organization)
+        if self.organization.user_count > 0:
+            self.organization.user_count -= 1
+            await self.organization.save()

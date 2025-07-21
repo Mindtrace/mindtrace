@@ -6,6 +6,7 @@ from poseidon.backend.database.repositories.camera_repository import CameraRepos
 from poseidon.backend.database.repositories.model_repository import ModelRepository
 from poseidon.backend.database.repositories.model_deployment_repository import ModelDeploymentRepository
 from poseidon.state.auth import AuthState
+from poseidon.state.camera import CameraState
 
 @dataclass
 class CameraDict:
@@ -48,7 +49,7 @@ class DeploymentDict:
 class ModelDeploymentState(rx.State):
     """State management for model deployment functionality"""
     
-    # Lists using dataclass types
+    # Lists using dataclass types for Reflex compatibility
     available_cameras: List[CameraDict] = []
     available_models: List[ModelDict] = []
     active_deployments: List[DeploymentDict] = []
@@ -133,25 +134,25 @@ class ModelDeploymentState(rx.State):
         return set(self.selected_camera_ids)
     
     async def load_cameras(self):
-        """Load cameras from database"""
+        """Load cameras using CameraState and convert to CameraDict for UI"""
         self.is_loading = True
         self.clear_messages()
-        print("Loading cameras...")
+        
         try:
-            # Get current user organization
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_authenticated:
-                self.error = "User not authenticated"
-                print("Error: ", self.error)
-                return
+            # Get camera state and initialize context
+            camera_state = await self.get_state(CameraState)
             
-            organization_id = auth_state.user_organization_id
-            cameras = await CameraRepository.get_by_organization(organization_id)
-            print("Cameras: ", cameras)
-            # Convert camera objects to CameraDict instances
+            # Initialize camera context if not already done
+            if not camera_state.organization_id:
+                await camera_state.initialize_context()
+            
+            # Fetch cameras using CameraState
+            await camera_state.fetch_cameras()
+            
+            # Convert camera objects to CameraDict instances for Reflex compatibility
             self.available_cameras = [
                 CameraDict(
-                    id=camera.id,
+                    id=str(camera.id),
                     name=camera.name,
                     backend=camera.backend,
                     device_name=camera.device_name,
@@ -160,102 +161,20 @@ class ModelDeploymentState(rx.State):
                     description=camera.description or "",
                     location=camera.location or ""
                 )
-                for camera in cameras
+                for camera in camera_state.camera_objs
             ]
-            print("Available cameras: ", self.available_cameras)
-            # Add sample cameras for testing if none exist
-            if len(self.available_cameras) == 0:
-                self.available_cameras = [
-                    CameraDict(
-                        id="camera_1",
-                        name="cam1",
-                        backend="opencv",
-                        device_name="cam_001",
-                        status="active",
-                        configuration={"resolution": "1920x1080", "fps": 30},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_2",
-                        name="cam2",
-                        backend="rtsp",
-                        device_name="cam_002",
-                        status="active",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_3",
-                        name="cam3",
-                        backend="usb",
-                        device_name="cam_003",
-                        status="inactive",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_4",
-                        name="cam4",
-                        backend="rtsp",
-                        device_name="cam_004",
-                        status="active",
-                        configuration={"resolution": "1920x1080", "fps": 30},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_5",
-                        name="cam5",
-                        backend="opencv",
-                        device_name="cam_005",
-                        status="active",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_6",
-                        name="cam6",
-                        backend="usb",
-                        device_name="cam_006",
-                        status="active",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_7",
-                        name="cam7",
-                        backend="usb",
-                        device_name="cam_007",
-                        status="active",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id="camera_8",
-                        name="cam8",
-                        backend="rtsp",
-                        device_name="cam_008",
-                        status="inactive",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                ]
             
-            self.success = f"Loaded {len(self.available_cameras)} cameras"
+            # Check if we have cameras
+            if len(self.available_cameras) == 0:
+                self.error = "No cameras available. Please assign cameras to your project first."
+            else:
+                self.success = f"Loaded {len(self.available_cameras)} cameras from project: {camera_state.selected_project_name}"
             
         except Exception as e:
             self.error = f"Error loading cameras: {str(e)}"
-            print("Error: ", self.error)
         finally:
             self.is_loading = False
-    
+
     async def load_models(self):
         """Load models from database"""
         self.is_loading = True
@@ -366,6 +285,27 @@ class ModelDeploymentState(rx.State):
         """Select all available cameras"""
         self.selected_camera_ids = [camera.id for camera in self.available_cameras]
     
+    async def ensure_cameras_initialized(self):
+        """Ensure selected cameras are initialized before deployment"""
+        camera_state = await self.get_state(CameraState)
+        
+        # Get selected camera names for initialization
+        selected_camera_names = []
+        for camera in self.available_cameras:
+            if camera.id in self.selected_camera_ids:
+                selected_camera_names.append(camera.name)
+        
+        # Initialize each selected camera if not already active
+        for camera_name in selected_camera_names:
+            camera_status = camera_state.camera_statuses.get(camera_name, "not_initialized")
+            if camera_status != "available":
+                self.deployment_status = f"Initializing camera {camera_name}..."
+                await camera_state.initialize_camera(camera_name)
+                
+                # Check if initialization was successful
+                if camera_state.camera_statuses.get(camera_name) != "available":
+                    raise Exception(f"Failed to initialize camera {camera_name}")
+    
     async def deploy_model(self):
         """Deploy selected model to selected cameras"""
         if not self.can_deploy:
@@ -400,7 +340,21 @@ class ModelDeploymentState(rx.State):
                 self.error = "Selected model not found"
                 return
             
-            # Step 2: Call model server API to load model (mock for now)
+            # Get selected cameras
+            selected_cameras = []
+            for camera in self.available_cameras:
+                if camera.id in self.selected_camera_ids:
+                    selected_cameras.append(camera)
+            
+            if not selected_cameras:
+                self.error = "No valid cameras selected"
+                return
+            
+            # Step 2: Ensure cameras are initialized
+            self.deployment_status = "Initializing cameras..."
+            await self.ensure_cameras_initialized()
+            
+            # Step 3: Call model server API to load model
             self.deployment_status = "Loading model on server..."
             
             async with httpx.AsyncClient() as client:
@@ -427,14 +381,19 @@ class ModelDeploymentState(rx.State):
                     self.error = f"Model server communication error: {str(e)} - using mock deployment"
                     # Continue with mock deployment for development
             
-            # Step 3: Register cameras with model server (mock for now)
-            self.deployment_status = "Registering cameras..."
+            # Step 4: Register cameras with model server
+            self.deployment_status = "Registering cameras with model server..."
+            
+            camera_names = [camera.name for camera in selected_cameras]
             
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.post(
                         f"{self.model_server_url}/model/register_cameras",
-                        json={"camera_ids": self.selected_camera_ids},
+                        json={
+                            "camera_names": camera_names,
+                            "camera_ids": self.selected_camera_ids
+                        },
                         timeout=30.0
                     )
                     
@@ -446,7 +405,7 @@ class ModelDeploymentState(rx.State):
                     # Continue with mock deployment for development
                     pass
             
-            # Step 4: Save deployment to database
+            # Step 5: Save deployment to database
             self.deployment_status = "Saving deployment..."
             
             deployment_data = {
@@ -459,6 +418,7 @@ class ModelDeploymentState(rx.State):
                 "deployment_config": {
                     "model_name": selected_model.name,
                     "model_version": selected_model.version,
+                    "camera_names": camera_names,
                     "deployed_at": "2024-01-01T00:00:00Z"  # This will be set by the model
                 },
                 "is_active": True
@@ -466,9 +426,9 @@ class ModelDeploymentState(rx.State):
             
             deployment = await ModelDeploymentRepository.create(deployment_data)
             
-            # Step 5: Update deployment status
+            # Step 6: Update deployment status
             self.deployment_status = "Deployment completed successfully!"
-            self.success = f"Successfully deployed {selected_model.name} to {len(self.selected_camera_ids)} cameras"
+            self.success = f"Successfully deployed {selected_model.name} to {len(selected_cameras)} cameras: {', '.join(camera_names)}"
             
             # Clear selections
             self.selected_camera_ids = []
