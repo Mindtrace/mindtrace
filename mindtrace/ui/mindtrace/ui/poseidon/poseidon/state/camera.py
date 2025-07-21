@@ -4,11 +4,17 @@ from typing import List, Dict, Optional, Any
 import math
 from poseidon.backend.database.repositories.camera_repository import CameraRepository
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
+from poseidon.backend.database.models.camera import Camera
+from poseidon.backend.database.models.organization import Organization
+from poseidon.backend.database.models.user import User
 from poseidon.state.auth import AuthState
+from poseidon.state.base import BaseManagementState
+
 camera_repo = CameraRepository()
 project_repo = ProjectRepository()
 
-class CameraState(rx.State):
+
+class CameraState(BaseManagementState):
     """
     Secure, multi-tenant, role-aware camera state management.
     Handles: camera discovery, assignment, configuration, capture, and streaming,
@@ -37,10 +43,8 @@ class CameraState(rx.State):
     camera_statuses: Dict[str, str] = {}
     camera_ranges: Dict[str, Dict[str, List[float]]] = {}
     
-    # UI state
+    # UI state - override base class loading to use is_loading for consistency
     is_loading: bool = False
-    error: str = ""
-    success: str = ""
     config_modal_open: bool = False
     capture_image_data: Optional[str] = None
     capture_loading: bool = False
@@ -51,15 +55,24 @@ class CameraState(rx.State):
     assignment_dialog_open: bool = False
     assignment_camera_name: str = ""
     assignment_project_id: str = ""
-    API_BASE = "http://localhost:8001/api/v1"
+    API_BASE = "http://localhost:8001"
+    
+    # Override loading property to use is_loading for camera-specific operations
+    @property
+    def loading(self) -> bool:
+        return self.is_loading
+    
+    @loading.setter
+    def loading(self, value: bool):
+        self.is_loading = value
     
     # --- Context and Permissions ---
     async def initialize_context(self):
         """Initialize the context from auth state and load available projects."""
-        auth_state = await self.get_state(AuthState)
+        auth_state = await self.get_auth_state()
         
         if not auth_state.is_authenticated:
-            self.error = "Please log in to access cameras"
+            self.set_error("Please log in to access cameras")
             return
         
         self.user_id = auth_state.user_id
@@ -82,7 +95,7 @@ class CameraState(rx.State):
         self.clear_messages()
         
         try:
-            auth_state = await self.get_state(AuthState)
+            auth_state = await self.get_auth_state()
             
             if self.is_super_admin:
                 # Super admins can see all projects across all organizations
@@ -118,7 +131,7 @@ class CameraState(rx.State):
                         "organization_id": org_id
                     })
             else:
-                # Regular users can only see projects they're assigned to
+                # Regular users can only see projects they're explicitly assigned to
                 user_project_ids = [
                     assignment.get("project_id") 
                     for assignment in auth_state.user_project_assignments
@@ -147,17 +160,98 @@ class CameraState(rx.State):
                         "name": project.name, 
                         "organization_id": org_id
                     })
-            
-            # Auto-select first project if available and no project selected
-            if self.available_projects and not self.project_id:
-                first_project = self.available_projects[0]
-                self.project_id = first_project["id"]
-                self.selected_project_name = first_project["name"]
                 
         except Exception as e:
-            self.error = f"Error loading projects: {str(e)}"
+            self.set_error(f"Error loading projects: {str(e)}")
         finally:
             self.is_loading = False
+
+    async def create_default_project(self):
+        """Create a default project for the organization."""
+        try:
+            from poseidon.backend.database.models.project import Project
+            from poseidon.backend.database.models.enums import ProjectStatus
+            
+            # Get the organization
+            org = await Organization.find_one(Organization.name == "mindtrace")
+            if not org:
+                self.set_error("Organization not found")
+                return
+            
+            # Get the current user
+            auth_state = await self.get_auth_state()
+            user = await User.find_one(User.username == "mindtracesuperadmin")
+            if not user:
+                self.set_error("User not found")
+                return
+            
+            # Create default project
+            project = Project(
+                name="Default Project",
+                description="Default project for camera management",
+                organization=org,
+                owner=user,
+                status=ProjectStatus.ACTIVE
+            )
+            await project.save()
+            
+            # Add to available projects
+            self.available_projects.append({
+                "id": str(project.id),
+                "name": project.name,
+                "description": project.description or "",
+                "status": project.status,
+                "organization_id": str(org.id)
+            })
+            
+            # Auto-select this project
+            self.project_id = str(project.id)
+            self.selected_project_name = project.name
+            
+            self.set_success(f"Created default project: {project.name}")
+            
+        except Exception as e:
+            self.set_error(f"Error creating default project: {str(e)}")
+
+    async def save_camera_to_db(self, camera_name: str, status: str):
+        """Save camera status to database."""
+        try:
+            # Parse camera name to get backend and device name
+            if ":" not in camera_name:
+                return
+            
+            backend, device_name = camera_name.split(":", 1)
+            
+            # Get the organization and user
+            org = await Organization.find_one(Organization.name == "mindtrace")
+            user = await User.find_one(User.username == "mindtracesuperadmin")
+            
+            if not org or not user:
+                return
+            
+            # Create camera data
+            camera_data = {
+                "name": camera_name,
+                "backend": backend,
+                "device_name": device_name,
+                "status": status,
+                "organization_id": str(org.id),
+                "project_id": self.project_id or "",
+                "created_by": str(user.id),
+                "description": f"Auto-saved {backend} camera",
+                "configuration": {}
+            }
+            
+            # Create or update camera in database
+            camera_obj = await camera_repo.create_or_update(camera_data)
+            if camera_obj:
+                # Update camera_objs list
+                if camera_obj not in self.camera_objs:
+                    self.camera_objs.append(camera_obj)
+                    
+        except Exception as e:
+            # Don't show error to user for background database operations
+            pass
 
     async def load_available_projects_for_assignment(self):
         """Load available projects for assignment dialog without changing current view."""
@@ -169,7 +263,7 @@ class CameraState(rx.State):
         current_project_name = self.selected_project_name
         
         try:
-            auth_state = await self.get_state(AuthState)
+            auth_state = await self.get_auth_state()
             
             if self.is_super_admin:
                 # Super admins can see all projects across all organizations
@@ -178,7 +272,7 @@ class CameraState(rx.State):
                 # Admins can see all projects in their organization
                 projects = await project_repo.get_by_organization_and_status(self.organization_id, "active")
             else:
-                # Regular users can only see projects they're assigned to
+                # Regular users can only see projects they're explicitly assigned to
                 user_project_ids = [
                     assignment.get("project_id") 
                     for assignment in auth_state.user_project_assignments
@@ -216,7 +310,7 @@ class CameraState(rx.State):
             self.selected_project_name = current_project_name
                 
         except Exception as e:
-            self.error = f"Error loading projects: {str(e)}"
+            self.set_error(f"Error loading projects: {str(e)}")
 
     async def select_project(self, project_id: str):
         """Select a project and load its cameras."""
@@ -251,7 +345,7 @@ class CameraState(rx.State):
         """Set the current org/project/user/role context."""
         self.organization_id = organization_id
         self.project_id = project_id
-        auth_state = await self.get_state(AuthState)
+        auth_state = await self.get_auth_state()
         self.user_id = getattr(auth_state, 'user_id', None)
         self.is_admin = getattr(auth_state, 'is_admin', False)
         self.is_super_admin = getattr(auth_state, 'is_super_admin', False)
@@ -274,61 +368,74 @@ class CameraState(rx.State):
         if not self.selected_camera:
             return False
         return self.is_camera_in_scope(self.selected_camera)
+    
+
+    
+    @rx.var
+    def project_names(self) -> List[str]:
+        """Get list of project names for dropdown."""
+        return [project["name"] for project in self.available_projects]
 
     # --- Camera Fetching ---
     async def fetch_cameras(self):
-        """Fetch cameras for the current org/project scope."""
-        # Admins and super admins can see all cameras without project selection
+        """Fetch cameras based on project selection and admin toggle."""
         if not self.organization_id:
-            self.error = "No organization selected"
-            return
-        if not self.project_id and not (self.is_admin or self.is_super_admin):
-            self.error = "No project selected"
+            self.set_error("No organization selected")
             return
             
         self.is_loading = True
         self.clear_messages()
         
         try:
-            camera_repo = CameraRepository()
+            # First, fetch all discovered cameras from hardware API
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self.API_BASE}/cameras/discover")
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        discovered_cameras = data.get("data", [])
+                        
+                        # Filter cameras based on project selection
+                        if self.project_id:
+                            # Show only cameras assigned to the selected project
+                            project_cameras = await camera_repo.get_by_project_id(self.project_id)
+                            # Filter discovered cameras to only show those assigned to this project
+                            project_camera_names = [cam.name for cam in project_cameras]
+                            self.cameras = [cam for cam in discovered_cameras if cam in project_camera_names]
+                            self.camera_objs = project_cameras
+                            self.set_success(f"Found {len(self.cameras)} cameras for selected project")
+                        elif self.selected_project_name in ["All Cameras (Super Admin)", "All Cameras (Admin)"]:
+                            # Show all discovered cameras for admin/super admin
+                            self.cameras = discovered_cameras
+                            
+                            # Load database assignment information for all discovered cameras
+                            all_cameras_from_db = await camera_repo.get_all()
+                            self.camera_objs = all_cameras_from_db
+                            
+                            self.set_success(f"Showing all {len(discovered_cameras)} discovered cameras")
+                        else:
+                            # No project selected, show empty list
+                            self.cameras = []
+                            self.set_success("Please select a project to view cameras")
             
-            if (self.is_admin or self.is_super_admin) and not self.project_id:
-                # Admin/super admin without project - show all cameras in organization
-                if self.is_super_admin:
-                    # Super admins can see cameras from all organizations
-                    camera_objs = await camera_repo.get_all()
+                        # Initialize camera statuses for visible cameras
+                        for camera in self.cameras:
+                            if camera not in self.camera_statuses:
+                                self.camera_statuses[camera] = "not_initialized"
+            
+                        # Load projects for assignment functionality
+                        await self.load_projects_for_camera_display()
+            
+                        # Refresh camera statuses from API
+                        await self.refresh_camera_statuses()
+                        
+                    else:
+                        self.set_error(data.get("message", "Failed to discover cameras"))
                 else:
-                    # Regular admins only see cameras in their organization
-                    camera_objs = await camera_repo.get_by_organization(self.organization_id)
-            else:
-                # Regular users or super admin with project selected
-                if self.is_super_admin:
-                    # Super admins can see cameras from any organization for the selected project
-                    camera_objs = await camera_repo.get_by_project_id(self.project_id)
-                else:
-                    # Regular users and admins only see cameras in their organization
-                    camera_objs = await camera_repo.get_by_organization_and_project(
-                        self.organization_id, self.project_id
-                    )
-            
-            self.camera_objs = camera_objs
-            
-            # Set cameras list from camera objects
-            self.cameras = [cam.name for cam in camera_objs]
-            
-            # Initialize camera statuses for assigned cameras
-            for camera in [cam.name for cam in self.camera_objs]:
-                if camera not in self.camera_statuses:
-                    self.camera_statuses[camera] = "not_initialized"
-            
-            # Load all projects referenced by cameras for proper assignment display
-            await self.load_projects_for_camera_display()
-            
-            # Refresh camera statuses from API
-            await self.refresh_camera_statuses()
+                    self.set_error(f"Failed to discover cameras: {response.status_code}")
             
         except Exception as e:
-            self.error = f"Error fetching cameras: {str(e)}"
+            self.set_error(f"Error fetching cameras: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -336,113 +443,118 @@ class CameraState(rx.State):
     async def assign_camera_to_project(self, camera_id: str, organization_id: str, project_id: str):
         """Assign a camera to an organization and project (admin only)."""
         if not self.can_assign():
-            self.error = "Access denied: Admin privileges required"
+            self.set_error("Access denied: Admin privileges required")
             return
-        self.is_loading = True
-        self.clear_messages()
-        try:
+        
+        async def perform_assignment():
             updated_camera = await camera_repo.assign_to_project(camera_id, organization_id, project_id)
             if updated_camera:
-                self.success = f"Camera assigned to project {project_id} in org {organization_id}"
                 await self.fetch_cameras()
+                return True
             else:
-                self.error = f"Failed to assign camera (not found)"
-        except Exception as e:
-            self.error = f"Error assigning camera: {str(e)}"
-        finally:
-            self.is_loading = False
+                self.set_error("Failed to assign camera (not found)")
+                return False
+
+        await self.handle_async_operation(
+            perform_assignment,
+            f"Camera assigned to project {project_id} in org {organization_id}"
+        )
 
     async def unassign_camera_from_project(self, camera_id: str):
         """Unassign a camera from its organization and project (admin only)."""
         if not self.can_assign():
-            self.error = "Access denied: Admin privileges required"
+            self.set_error("Access denied: Admin privileges required")
             return
-        self.is_loading = True
-        self.clear_messages()
-        try:
+        
+        async def perform_unassignment():
             updated_camera = await camera_repo.unassign_from_project(camera_id)
             if updated_camera:
-                self.success = f"Camera unassigned from project/organization"
                 await self.fetch_cameras()
+                return True
             else:
-                self.error = f"Failed to unassign camera (not found)"
-        except Exception as e:
-            self.error = f"Error unassigning camera: {str(e)}"
-        finally:
-            self.is_loading = False
+                self.set_error("Failed to unassign camera (not found)")
+                return False
+
+        await self.handle_async_operation(
+            perform_unassignment,
+            "Camera unassigned from project/organization"
+        )
 
     # --- Camera Configuration (Scoped) ---
     async def load_config_from_db(self, camera_id: str):
         """Load camera config from the database for a camera in scope."""
         if not self.can_configure(camera_id):
-            self.error = "Camera not in current project/organization scope"
+            self.set_error("Camera not in current project/organization scope")
             return
-        self.is_loading = True
-        self.clear_messages()
-        try:
+        
+        async def load_config():
             camera_doc = await camera_repo.get_by_id(camera_id)
             if camera_doc:
                 self.camera_config = camera_doc.configuration
-                self.success = f"Loaded config for {camera_id} from DB"
+                return True
             else:
-                self.error = f"Camera {camera_id} not found in DB"
-        except Exception as e:
-            self.error = f"Error loading config from DB: {str(e)}"
-        finally:
-            self.is_loading = False
+                self.set_error(f"Camera {camera_id} not found in DB")
+                return False
+
+        await self.handle_async_operation(
+            load_config,
+            f"Loaded config for {camera_id} from DB"
+        )
 
     async def save_config_to_db(self, camera_id: str, configuration: dict):
         """Save camera config to the database for a camera in scope."""
         if not self.can_configure(camera_id):
-            self.error = "Camera not in current project/organization scope"
+            self.set_error("Camera not in current project/organization scope")
             return
-        self.is_loading = True
-        self.clear_messages()
-        try:
+        
+        async def save_config():
             updated_camera = await camera_repo.update_configuration(camera_id, configuration)
             if updated_camera:
-                self.success = f"Saved config for {camera_id} to DB"
+                return True
             else:
-                self.error = f"Failed to save config for {camera_id} to DB (not found or org mismatch)"
-        except Exception as e:
-            self.error = f"Error saving config to DB: {str(e)}"
-        finally:
-            self.is_loading = False
+                self.set_error(f"Failed to save config for {camera_id} to DB (not found or org mismatch)")
+                return False
+
+        await self.handle_async_operation(
+            save_config,
+            f"Saved config for {camera_id} to DB"
+        )
 
     # --- Camera Capture/Streaming (Scoped) ---
     async def capture_image(self):
         """Capture image from the selected camera (scoped)."""
         if not self.selected_camera or not self.can_configure(self.selected_camera):
-            self.error = "No camera selected or not in scope"
+            self.set_error("No camera selected or not in scope")
             return
+        
         self.capture_loading = True
         self.clear_messages()
+        
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.API_BASE}/cameras/capture/",
-                    json={"camera": self.selected_camera}
+                    f"{self.API_BASE}/cameras/{self.selected_camera}/capture"
                 )
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         self.capture_image_data = data.get("image_data", "")
-                        self.success = f"Image captured from {self.selected_camera}"
+                        self.set_success(f"Image captured from {self.selected_camera}")
                     else:
-                        self.error = data.get("message", f"Failed to capture from {self.selected_camera}")
+                        self.set_error(data.get("message", f"Failed to capture from {self.selected_camera}"))
                 else:
-                    self.error = f"Failed to capture from {self.selected_camera}: {response.status_code}"
+                    self.set_error(f"Failed to capture from {self.selected_camera}: {response.status_code}")
         except Exception as e:
-            self.error = f"Error capturing from {self.selected_camera}: {str(e)}"
+            self.set_error(f"Error capturing from {self.selected_camera}: {str(e)}")
         finally:
             self.capture_loading = False
 
     def start_stream(self, camera: str):
         """Start MJPEG video stream for the given camera (scoped)."""
         if not self.can_configure(camera):
-            self.error = "Camera not in current project/organization scope"
+            self.set_error("Camera not in current project/organization scope")
             return
-        self.stream_url = f"{self.API_BASE}/cameras/capture/stream/mjpeg?camera={camera}"
+        self.stream_url = f"{self.API_BASE}/cameras/{camera}/stream"
         self.is_streaming = True
         self.selected_camera = camera
 
@@ -462,8 +574,8 @@ class CameraState(rx.State):
 
     def clear_messages(self):
         """Clear error and success messages."""
-        self.error = ""
-        self.success = ""
+        self.set_error("")
+        self.set_success("")
 
     def set_config_modal_open(self, open: bool):
         """Set the config modal open state."""
@@ -588,16 +700,16 @@ class CameraState(rx.State):
                         for camera in discovered_cameras:
                             self.camera_statuses[camera] = "not_initialized"
         except Exception as e:
-            self.error = f"Error fetching discovered cameras: {str(e)}"
+            self.set_error(f"Error fetching discovered cameras: {str(e)}")
     
     async def assign_camera_to_organization(self, camera_name: str):
         """Assign a discovered camera to the current organization (super admin only)."""
         if not self.is_super_admin:
-            self.error = "Only super admins can assign cameras to organizations"
+            self.set_error("Only super admins can assign cameras to organizations")
             return
         
         if not self.organization_id:
-            self.error = "No organization selected"
+            self.set_error("No organization selected")
             return
         
         self.is_loading = True
@@ -606,7 +718,7 @@ class CameraState(rx.State):
         try:
             # Parse camera name to get backend and device name
             if ":" not in camera_name:
-                self.error = "Invalid camera name format"
+                self.set_error("Invalid camera name format")
                 return
             
             backend, device_name = camera_name.split(":", 1)
@@ -627,14 +739,14 @@ class CameraState(rx.State):
             # Create or update camera in database
             camera_obj = await camera_repo.create_or_update(camera_data)
             if camera_obj:
-                self.success = f"Camera {camera_name} assigned to organization successfully"
+                self.set_success(f"Camera {camera_name} assigned to organization successfully")
                 # Refresh cameras to show the newly assigned camera
                 await self.fetch_cameras()
             else:
-                self.error = f"Failed to assign camera {camera_name} to organization"
+                self.set_error(f"Failed to assign camera {camera_name} to organization")
                 
         except Exception as e:
-            self.error = f"Error assigning camera: {str(e)}"
+            self.set_error(f"Error assigning camera: {str(e)}")
         finally:
             self.is_loading = False
     
@@ -645,7 +757,7 @@ class CameraState(rx.State):
         
         # Super admins can fetch cameras without project selection
         if not self.project_id and not self.is_super_admin:
-            self.error = "Please select a project first"
+            self.set_error("Please select a project first")
             return
         
         self.is_loading = True
@@ -668,22 +780,22 @@ class CameraState(rx.State):
                                 self.camera_statuses[camera] = "not_initialized"
                         
                         if self.is_super_admin and not self.project_id:
-                            self.success = f"Found {len(discovered_cameras)} total cameras, {len(self.cameras)} in organization"
+                            self.set_success(f"Found {len(discovered_cameras)} total cameras, {len(self.cameras)} in organization")
                         else:
-                            self.success = f"Found {len(discovered_cameras)} total cameras, {len(self.cameras)} assigned to {self.selected_project_name}"
+                            self.set_success(f"Found {len(discovered_cameras)} total cameras, {len(self.cameras)} assigned to {self.selected_project_name}")
                     else:
-                        self.error = data.get("message", "Failed to fetch cameras")
+                        self.set_error(data.get("message", "Failed to fetch cameras"))
                 else:
-                    self.error = f"Failed to fetch cameras: {response.status_code}"
+                    self.set_error(f"Failed to fetch cameras: {response.status_code}")
         except Exception as e:
-            self.error = f"Error fetching cameras: {str(e)}"
+            self.set_error(f"Error fetching cameras: {str(e)}")
         finally:
             self.is_loading = False
     
     async def initialize_camera(self, camera: str):
         """Initialize a camera and update its status."""
         if not self.can_configure(camera):
-            self.error = "Camera not in current project scope"
+            self.set_error("Camera not in current project scope")
             return
             
         self.is_loading = True
@@ -692,32 +804,31 @@ class CameraState(rx.State):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.API_BASE}/cameras/initialize",
-                    json={"camera": camera}
+                    f"{self.API_BASE}/cameras/{camera}/initialize"
                 )
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         self.camera_statuses[camera] = "available"
-                        self.success = f"Camera {camera} initialized successfully"
+                        self.set_success(f"Camera {camera} initialized successfully")
                         
                         # Save camera to database
                         await self.save_camera_to_db(camera, "active")
                     else:
                         self.camera_statuses[camera] = "unavailable"
-                        self.error = data.get("message", f"Failed to initialize {camera}")
+                        self.set_error(data.get("message", f"Failed to initialize {camera}"))
                         
                         # Still save to database with inactive status
                         await self.save_camera_to_db(camera, "inactive")
                 else:
                     self.camera_statuses[camera] = "unavailable"
-                    self.error = f"Failed to initialize {camera}: {response.status_code}"
+                    self.set_error(f"Failed to initialize {camera}: {response.status_code}")
                     
                     # Still save to database with error status
                     await self.save_camera_to_db(camera, "error")
         except Exception as e:
             self.camera_statuses[camera] = "unavailable"
-            self.error = f"Error initializing {camera}: {str(e)}"
+            self.set_error(f"Error initializing {camera}: {str(e)}")
             
             # Still save to database with error status
             await self.save_camera_to_db(camera, "error")
@@ -727,7 +838,7 @@ class CameraState(rx.State):
     async def close_camera(self, camera: str):
         """Close a specific camera and update its status."""
         if not self.can_configure(camera):
-            self.error = "Camera not in current project scope"
+            self.set_error("Camera not in current project scope")
             return
             
         self.is_loading = True
@@ -735,12 +846,12 @@ class CameraState(rx.State):
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.delete(f"{self.API_BASE}/cameras/?camera={camera}")
+                response = await client.delete(f"{self.API_BASE}/cameras/{camera}")
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         self.camera_statuses[camera] = "not_initialized"
-                        self.success = f"Camera {camera} closed successfully"
+                        self.set_success(f"Camera {camera} closed successfully")
                         
                         # Update camera status in database
                         await self.save_camera_to_db(camera, "inactive")
@@ -752,11 +863,11 @@ class CameraState(rx.State):
                             self.camera_config = {"exposure": 1000, "gain": 0}
                             self.capture_image_data = None
                     else:
-                        self.error = data.get("message", f"Failed to close {camera}")
+                        self.set_error(data.get("message", f"Failed to close {camera}"))
                 else:
-                    self.error = f"Failed to close {camera}: {response.status_code}"
+                    self.set_error(f"Failed to close {camera}: {response.status_code}")
         except Exception as e:
-            self.error = f"Error closing {camera}: {str(e)}"
+            self.set_error(f"Error closing {camera}: {str(e)}")
         finally:
             self.is_loading = False
     
@@ -767,7 +878,7 @@ class CameraState(rx.State):
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.delete(f"{self.API_BASE}/cameras/all")
+                response = await client.delete(f"{self.API_BASE}/cameras")
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
@@ -782,13 +893,13 @@ class CameraState(rx.State):
                             self.camera_config = {"exposure": 1000, "gain": 0}
                             self.capture_image_data = None
                         
-                        self.success = data.get("message", "All cameras closed successfully")
+                        self.set_success(data.get("message", "All cameras closed successfully"))
                     else:
-                        self.error = data.get("message", "Failed to close all cameras")
+                        self.set_error(data.get("message", "Failed to close all cameras"))
                 else:
-                    self.error = f"Failed to close all cameras: {response.status_code}"
+                    self.set_error(f"Failed to close all cameras: {response.status_code}")
         except Exception as e:
-            self.error = f"Error closing all cameras: {str(e)}"
+            self.set_error(f"Error closing all cameras: {str(e)}")
         finally:
             self.is_loading = False
     
@@ -813,13 +924,13 @@ class CameraState(rx.State):
                             else:
                                 self.camera_statuses[camera] = "not_initialized"
                         
-                        self.success = f"Refreshed camera statuses. {len(active_cameras)} cameras active."
+                        self.set_success(f"Refreshed camera statuses. {len(active_cameras)} cameras active.")
                     else:
-                        self.error = data.get("message", "Failed to refresh camera statuses")
+                        self.set_error(data.get("message", "Failed to refresh camera statuses"))
                 else:
-                    self.error = f"Failed to refresh camera statuses: {response.status_code}"
+                    self.set_error(f"Failed to refresh camera statuses: {response.status_code}")
         except Exception as e:
-            self.error = f"Error refreshing camera statuses: {str(e)}"
+            self.set_error(f"Error refreshing camera statuses: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -852,7 +963,7 @@ class CameraState(rx.State):
         try:
             async with httpx.AsyncClient() as client:
                 # Fetch exposure range
-                exposure_response = await client.get(f"{self.API_BASE}/cameras/config/async/exposure/range?camera={camera}")
+                exposure_response = await client.get(f"{self.API_BASE}/cameras/{camera}/exposure/range")
                 if exposure_response.status_code == 200:
                     exposure_data = exposure_response.json()
                     if exposure_data.get("success"):
@@ -866,7 +977,7 @@ class CameraState(rx.State):
                     print(f"DEBUG: Exposure range request failed for {camera}: {exposure_response.status_code}")
                 
                 # Fetch gain range
-                gain_response = await client.get(f"{self.API_BASE}/cameras/config/sync/gain/range?camera={camera}")
+                gain_response = await client.get(f"{self.API_BASE}/cameras/{camera}/gain/range")
                 if gain_response.status_code == 200:
                     gain_data = gain_response.json()
                     if gain_data.get("success"):
@@ -892,45 +1003,45 @@ class CameraState(rx.State):
         """Fetch the current trigger mode for a camera."""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{self.API_BASE}/cameras/config/async/trigger-mode?camera={camera}")
+                response = await client.get(f"{self.API_BASE}/cameras/{camera}/trigger-mode")
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         self.camera_config["trigger_mode"] = data.get("data", "continuous")
                     else:
-                        self.error = data.get("message", "Failed to get trigger mode")
+                        self.set_error(data.get("message", "Failed to get trigger mode"))
                 else:
-                    self.error = f"Failed to get trigger mode: {response.status_code}"
+                    self.set_error(f"Failed to get trigger mode: {response.status_code}")
         except Exception as e:
-            self.error = f"Error fetching trigger mode: {str(e)}"
+            self.set_error(f"Error fetching trigger mode: {str(e)}")
 
     async def set_trigger_mode(self, mode: str):
         """Set the trigger mode for the selected camera."""
         if not self.selected_camera:
-            self.error = "No camera selected"
+            self.set_error("No camera selected")
             return
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.put(
-                    f"{self.API_BASE}/cameras/config/async/trigger-mode",
-                    json={"camera": self.selected_camera, "mode": mode}
+                    f"{self.API_BASE}/cameras/{self.selected_camera}/trigger-mode",
+                    json={"mode": mode}
                 )
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         self.camera_config["trigger_mode"] = mode
-                        self.success = f"Trigger mode set to {mode}"
+                        self.set_success(f"Trigger mode set to {mode}")
                     else:
-                        self.error = data.get("message", f"Failed to set trigger mode to {mode}")
+                        self.set_error(data.get("message", f"Failed to set trigger mode to {mode}"))
                 else:
-                    self.error = f"Failed to set trigger mode: {response.status_code}"
+                    self.set_error(f"Failed to set trigger mode: {response.status_code}")
         except Exception as e:
-            self.error = f"Error setting trigger mode: {str(e)}"
+            self.set_error(f"Error setting trigger mode: {str(e)}")
 
     async def open_camera_config(self, camera: str):
         """Open camera configuration modal and fetch camera data."""
         if not self.can_configure(camera):
-            self.error = "Camera not in current project scope"
+            self.set_error("Camera not in current project scope")
             return
             
         self.selected_camera = camera
@@ -942,19 +1053,19 @@ class CameraState(rx.State):
             # Get current camera values
             async with httpx.AsyncClient() as client:
                 # Get current exposure
-                exposure_response = await client.get(f"{self.API_BASE}/cameras/config/async/exposure?camera={camera}")
+                exposure_response = await client.get(f"{self.API_BASE}/cameras/{camera}/exposure")
                 if exposure_response.status_code == 200:
                     exposure_data = exposure_response.json()
                     if exposure_data.get("success"):
                         self.camera_config["exposure"] = exposure_data.get("data", 1000)
                 # Get current gain
-                gain_response = await client.get(f"{self.API_BASE}/cameras/config/sync/gain?camera={camera}")
+                gain_response = await client.get(f"{self.API_BASE}/cameras/{camera}/gain")
                 if gain_response.status_code == 200:
                     gain_data = gain_response.json()
                     if gain_data.get("success"):
                         self.camera_config["gain"] = gain_data.get("data", 0)
         except Exception as e:
-            self.error = f"Error opening camera config: {str(e)}"
+            self.set_error(f"Error opening camera config: {str(e)}")
     
     async def update_config_value(self, key: str, value: Any):
         """Update a configuration value and apply it to the camera."""
@@ -966,38 +1077,38 @@ class CameraState(rx.State):
                 if key == "exposure":
                     print(f"DEBUG: Setting exposure to {value} for {self.selected_camera}")
                     response = await client.put(
-                        f"{self.API_BASE}/cameras/config/async/exposure",
-                        json={"camera": self.selected_camera, "exposure": value}
+                        f"{self.API_BASE}/cameras/{self.selected_camera}/exposure",
+                        json={"exposure": value}
                     )
                 elif key == "gain":
                     print(f"DEBUG: Setting gain to {value} for {self.selected_camera}")
                     response = await client.put(
-                        f"{self.API_BASE}/cameras/config/sync/gain",
-                        json={"camera": self.selected_camera, "gain": value}
+                        f"{self.API_BASE}/cameras/{self.selected_camera}/gain",
+                        json={"gain": value}
                     )
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         print(f"DEBUG: Successfully updated {key} to {value}")
-                        self.success = f"{key.title()} updated to {value}"
+                        self.set_success(f"{key.title()} updated to {value}")
                     else:
                         print(f"DEBUG: Failed to update {key}: {data.get('message')}")
-                        self.error = data.get("message", f"Failed to update {key}")
+                        self.set_error(data.get("message", f"Failed to update {key}"))
                 else:
                     print(f"DEBUG: Failed to update {key}: {response.status_code}")
-                    self.error = f"Failed to update {key}: {response.status_code}"
+                    self.set_error(f"Failed to update {key}: {response.status_code}")
         except Exception as e:
             print(f"DEBUG: Error updating {key}: {str(e)}")
-            self.error = f"Error updating {key}: {str(e)}"
+            self.set_error(f"Error updating {key}: {str(e)}")
     
     async def apply_config(self):
         """Apply all current configuration values to the selected camera using existing setters."""
         if not self.selected_camera:
-            self.error = "No camera selected"
+            self.set_error("No camera selected")
             return
         
         if not self.can_configure(self.selected_camera):
-            self.error = "Camera not in current project/organization scope"
+            self.set_error("Camera not in current project/organization scope")
             return
         
         self.is_loading = True
@@ -1025,10 +1136,10 @@ class CameraState(rx.State):
             
             # Only show success if no errors occurred
             if not self.error:
-                self.success = f"Configuration applied to {self.selected_camera}"
+                self.set_success(f"Configuration applied to {self.selected_camera}")
                 
         except Exception as e:
-            self.error = f"Error applying configuration: {str(e)}"
+            self.set_error(f"Error applying configuration: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -1037,20 +1148,20 @@ class CameraState(rx.State):
         self.is_loading = True
         self.clear_messages()
         try:
-            url = f"http://localhost:8001/api/v1/cameras/config_persistence/export"
-            payload = {"camera": camera, "config_path": path}
+            url = f"{self.API_BASE}/cameras/{camera}/config/export"
+            payload = {"config_path": path}
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
-                        self.success = f"Exported config for {camera} to {path}"
+                        self.set_success(f"Exported config for {camera} to {path}")
                     else:
-                        self.error = data.get("message", f"Failed to export config for {camera} to {path}")
+                        self.set_error(data.get("message", f"Failed to export config for {camera} to {path}"))
                 else:
-                    self.error = f"Failed to export config for {camera}: {response.status_code}"
+                    self.set_error(f"Failed to export config for {camera}: {response.status_code}")
         except Exception as e:
-            self.error = f"Error exporting config: {str(e)}"
+            self.set_error(f"Error exporting config: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -1059,21 +1170,21 @@ class CameraState(rx.State):
         self.is_loading = True
         self.clear_messages()
         try:
-            url = f"http://localhost:8001/api/v1/cameras/config_persistence/import"
-            payload = {"camera": camera, "config_path": path}
+            url = f"{self.API_BASE}/cameras/{camera}/config/import"
+            payload = {"config_path": path}
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload)
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
                         # Optionally update camera_config if API returns config
-                        self.success = f"Imported config for {camera} from {path}"
+                        self.set_success(f"Imported config for {camera} from {path}")
                     else:
-                        self.error = data.get("message", f"Failed to import config for {camera} from {path}")
+                        self.set_error(data.get("message", f"Failed to import config for {camera} from {path}"))
                 else:
-                    self.error = f"Failed to import config for {camera}: {response.status_code}"
+                    self.set_error(f"Failed to import config for {camera}: {response.status_code}")
         except Exception as e:
-            self.error = f"Error importing config: {str(e)}"
+            self.set_error(f"Error importing config: {str(e)}")
         finally:
             self.is_loading = False 
 
@@ -1085,49 +1196,49 @@ class CameraState(rx.State):
             camera_objs = await camera_repo.get_by_organization_and_project(organization_id, project_id)
             self.camera_objs = camera_objs
             self.cameras = [cam.name for cam in camera_objs]
-            self.success = f"Loaded {len(camera_objs)} cameras for this project"
+            self.set_success(f"Loaded {len(camera_objs)} cameras for this project")
         except Exception as e:
-            self.error = f"Error fetching cameras: {str(e)}"
+            self.set_error(f"Error fetching cameras: {str(e)}")
         finally:
             self.is_loading = False 
 
     async def assign_camera_to_project(self, camera_id: str, organization_id: str, project_id: str):
         """Assign a camera to an organization and project (admin only)."""
-        auth_state = await self.get_state(AuthState)
+        auth_state = await self.get_auth_state()
         if not getattr(auth_state, 'is_admin', False) and not getattr(auth_state, 'is_super_admin', False):
-            self.error = "Access denied: Admin privileges required"
+            self.set_error("Access denied: Admin privileges required")
             return
         self.is_loading = True
         self.clear_messages()
         try:
             updated_camera = await camera_repo.assign_to_project(camera_id, organization_id, project_id)
             if updated_camera:
-                self.success = f"Camera assigned to project {project_id} in org {organization_id}"
+                self.set_success(f"Camera assigned to project {project_id} in org {organization_id}")
                 await self.fetch_cameras()  # Refresh list
             else:
-                self.error = f"Failed to assign camera (not found)"
+                self.set_error(f"Failed to assign camera (not found)")
         except Exception as e:
-            self.error = f"Error assigning camera: {str(e)}"
+            self.set_error(f"Error assigning camera: {str(e)}")
         finally:
             self.is_loading = False
 
     async def unassign_camera_from_project(self, camera_id: str):
         """Unassign a camera from its organization and project (admin only)."""
-        auth_state = await self.get_state(AuthState)
+        auth_state = await self.get_auth_state()
         if not getattr(auth_state, 'is_admin', False) and not getattr(auth_state, 'is_super_admin', False):
-            self.error = "Access denied: Admin privileges required"
+            self.set_error("Access denied: Admin privileges required")
             return
         self.is_loading = True
         self.clear_messages()
         try:
             updated_camera = await camera_repo.unassign_from_project(camera_id)
             if updated_camera:
-                self.success = f"Camera unassigned from project/organization"
+                self.set_success(f"Camera unassigned from project/organization")
                 await self.fetch_cameras()  # Refresh list
             else:
-                self.error = f"Failed to unassign camera (not found)"
+                self.set_error(f"Failed to unassign camera (not found)")
         except Exception as e:
-            self.error = f"Error unassigning camera: {str(e)}"
+            self.set_error(f"Error unassigning camera: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -1235,17 +1346,17 @@ class CameraState(rx.State):
             self.clear_messages()
             
             if not self.assignment_camera_name or not self.assignment_project_id:
-                self.error = "Camera and project are required"
+                self.set_error("Camera and project are required")
                 return
                 
             if not self.can_assign():
-                self.error = "Access denied: Admin privileges required"
+                self.set_error("Access denied: Admin privileges required")
                 return
             
             # Get the project's organization ID
             project = await project_repo.get_by_id(self.assignment_project_id)
             if not project:
-                self.error = "Project not found"
+                self.set_error("Project not found")
                 return
             
             # Extract organization info from Link field
@@ -1254,31 +1365,42 @@ class CameraState(rx.State):
                 project_organization_id = str(project.organization.id)
             
             if not project_organization_id:
-                self.error = "Project organization not found"
+                self.set_error("Project organization not found")
                 return
             
             # Check if camera exists in database
             camera_repo = CameraRepository()
-            camera = await camera_repo.get_by_name(self.assignment_camera_name)
+            camera = await camera_repo.get_by_name(self.assignment_camera_name, project_organization_id)
             
             if not camera:
                 # Camera doesn't exist in database, create it
-                camera = Camera(
-                    name=self.assignment_camera_name,
-                    organization_id=project_organization_id,  # Use project's organization
-                    project_id=self.assignment_project_id,
-                    ip_address="",  # Will be populated later
-                    port=0,
-                    username="",
-                    password="",
-                    is_active=True
-                )
-                await camera_repo.create_or_update(camera)
-                self.success = f"Camera {self.assignment_camera_name} created and assigned to project"
+                # Parse camera name to extract backend and device name
+                if ":" in self.assignment_camera_name:
+                    backend, device_name = self.assignment_camera_name.split(":", 1)
+                else:
+                    backend = "unknown"
+                    device_name = self.assignment_camera_name
+                
+                # Get current user for created_by field
+                auth_state = await self.get_auth_state()
+                user_id = auth_state.user_id if auth_state else None
+                
+                camera_data = {
+                    "name": self.assignment_camera_name,
+                    "backend": backend,
+                    "device_name": device_name,
+                    "organization_id": project_organization_id,  # Use project's organization
+                    "project_id": self.assignment_project_id,
+                    "created_by_id": user_id,
+                    "description": f"Auto-created camera from hardware discovery",
+                    "is_active": True
+                }
+                await camera_repo.create_or_update(camera_data)
+                self.set_success(f"Camera {self.assignment_camera_name} created and assigned to project")
             else:
                 # Camera exists, update assignment
                 await camera_repo.assign_to_project(camera.name, self.assignment_project_id, project_organization_id)
-                self.success = f"Camera {self.assignment_camera_name} assigned to project"
+                self.set_success(f"Camera {self.assignment_camera_name} assigned to project")
             
             # Close dialog
             self.assignment_dialog_open = False
@@ -1289,7 +1411,7 @@ class CameraState(rx.State):
             await self.refresh_camera_data()
             
         except Exception as e:
-            self.error = f"Error assigning camera: {str(e)}"
+            self.set_error(f"Error assigning camera: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -1300,7 +1422,7 @@ class CameraState(rx.State):
             self.clear_messages()
             
             if not self.can_assign():
-                self.error = "Access denied: Admin privileges required"
+                self.set_error("Access denied: Admin privileges required")
                 return
             
             # Find the camera object to get its ID
@@ -1311,19 +1433,19 @@ class CameraState(rx.State):
                     break
             
             if not camera_obj:
-                self.error = "Camera not found in database. Only cameras that are already assigned to projects can be unassigned."
+                self.set_error("Camera not found in database. Only cameras that are already assigned to projects can be unassigned.")
                 return
             
             result = await camera_repo.unassign_from_project(str(camera_obj.id))
             
             if result:
-                self.success = f"Camera {camera_name} successfully unassigned from project"
+                self.set_success(f"Camera {camera_name} successfully unassigned from project")
                 await self.refresh_camera_data()  # Refresh camera list without changing view
             else:
-                self.error = "Failed to unassign camera from project"
+                self.set_error("Failed to unassign camera from project")
             
         except Exception as e:
-            self.error = f"Failed to unassign camera from project: {str(e)}"
+            self.set_error(f"Failed to unassign camera from project: {str(e)}")
         finally:
             self.is_loading = False
 
@@ -1403,6 +1525,11 @@ class CameraState(rx.State):
                     else:
                         # Still not found, show the project ID
                         assignments[cam.name] = f"Project {cam_project_id}"
+        
+        # For cameras that are in self.cameras but not in self.camera_objs (not in database yet)
+        for camera_name in self.cameras:
+            if camera_name not in assignments:
+                assignments[camera_name] = "Unassigned"
         
         return assignments
     
