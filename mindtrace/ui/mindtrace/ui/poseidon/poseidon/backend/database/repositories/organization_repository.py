@@ -73,6 +73,11 @@ class OrganizationRepository:
         return await Organization.find(Organization.is_active == True).to_list()
 
     @staticmethod
+    async def get_all_active() -> List[Organization]:
+        """Alias for get_active_organizations for consistency"""
+        return await OrganizationRepository.get_active_organizations()
+
+    @staticmethod
     async def increment_user_count(org_id: str) -> Optional[Organization]:
         """Increment user count for an organization"""
         await OrganizationRepository._ensure_init()

@@ -4,18 +4,13 @@ Database seed file to create the initial organization and superadmin user.
 """
 
 import asyncio
-import hashlib
 import secrets
 
 from .init import initialize_database
 from .models.organization import Organization
 from .models.user import User
 from .models.enums import OrgRole, SubscriptionPlan
-
-
-def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 (simple hashing for demo purposes)"""
-    return hashlib.sha256(password.encode()).hexdigest()
+from poseidon.backend.utils.security import hash_password
 
 
 async def create_initial_organization() -> Organization:
@@ -170,16 +165,28 @@ async def seed_database():
 
 async def reset_and_seed():
     """Reset and seed the database (WARNING: This will delete existing data)"""
-    print("⚠️  WARNING: This will delete all existing organizations and users!")
+    print("⚠️  WARNING: This will delete all existing data!")
     
     try:
         await initialize_database()
         
-        # Delete all users and organizations
+        # Import all models to delete all collections
+        from .models.project import Project
+        from .models.camera import Camera
+        from .models.image import Image
+        from .models.model import Model
+        from .models.model_deployment import ModelDeployment
+        
+        # Delete all data from all collections
         await User.delete_all()
         await Organization.delete_all()
+        await Project.delete_all()
+        await Camera.delete_all()
+        await Image.delete_all()
+        await Model.delete_all()
+        await ModelDeployment.delete_all()
         
-        print("✓ Cleared existing data")
+        print("✓ Cleared all existing data")
         
         # Run seed
         return await seed_database()
