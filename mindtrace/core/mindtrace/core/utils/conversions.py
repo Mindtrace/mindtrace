@@ -8,36 +8,36 @@ from PIL.Image import Image
 try:
     import numpy as np
     _HAS_NUMPY = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _HAS_NUMPY = False
 
 try:
     import torch
     _HAS_TORCH = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _HAS_TORCH = False
 
 try:
     from torchvision.transforms.v2 import functional as F
     _HAS_TORCHVISION = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _HAS_TORCHVISION = False
 
 try:
     import cv2
     _HAS_CV2 = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _HAS_CV2 = False
 
 try:
     from discord import Attachment, File
     _HAS_DISCORD = True
-except ImportError:
+except ImportError:  # pragma: no cover
     _HAS_DISCORD = False
 
 from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
+if TYPE_CHECKING:  # pragma: no cover
     from discord import File, Attachment
 
 
@@ -181,8 +181,6 @@ def pil_to_ndarray(image: Image, image_format="RGB") -> np.ndarray:
             if image_format == "RGB":
                 return np.array(image)
             elif image_format == "BGR":
-                if not _HAS_CV2:
-                    raise ImportError("cv2 is required for BGR conversion but is not installed.")
                 return cv2.cvtColor(np.array(image), cv2.COLOR_RGBA2BGRA)
 
     else:  # No alpha channel
