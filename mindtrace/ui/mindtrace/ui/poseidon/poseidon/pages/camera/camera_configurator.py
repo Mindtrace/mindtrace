@@ -58,6 +58,7 @@ def project_selector() -> rx.Component:
                 margin_top="0.5rem",
             ),
         ),
+
         width="100%",
         spacing="2",
     )

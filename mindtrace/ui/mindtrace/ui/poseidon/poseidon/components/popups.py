@@ -913,6 +913,7 @@ def assign_project_popup():
         ),
         open=UserManagementState.assignment_dialog_open,
         on_open_change=UserManagementState.set_assignment_dialog_open,
+        on_mount=UserManagementState.load_projects_for_assignment,
     )
 
 
