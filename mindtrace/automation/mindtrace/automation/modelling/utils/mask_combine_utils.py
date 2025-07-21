@@ -3,6 +3,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 import cv2
 import random
+from PIL import Image
 
 def logits_to_mask(logits, conf_threshold, background_class, target_size=None):
     if target_size is not None:
@@ -78,6 +79,8 @@ def crop_zones(
     updated_mask_crops = []
     for i, key in enumerate(keys):
         img = imgs[i]  # Shape: [H, W, C]
+        if isinstance(img, Image.Image):
+            img = np.array(img)
         pred_mask = zone_predictions[i]  # Shape: [128, 128]
         combined_mask = torch.zeros(img.shape[:2], dtype=torch.long, device=pred_mask.device)
         image_key = get_updated_key(key)
@@ -91,14 +94,12 @@ def crop_zones(
             continue
         # Resize masks to image dimensions
         img_h, img_w = img.shape[:2]
-        print(pred_mask, 'pred_mask')
         pred_mask_resized = logits_to_mask(
             pred_mask, 
             confidence_threshold, 
             background_class, 
             target_size=(img_h, img_w)
         ).view(img_h, img_w)
-        print(pred_mask_resized, 'pred_mask_resized')
         # ref_mask_resized = None
         if ref_mask is not None:
             ref_mask = torch.nn.functional.interpolate(
@@ -106,7 +107,6 @@ def crop_zones(
                 size=(img_h, img_w), 
                 mode='nearest'
             ).squeeze().long()
-        
         # Initialize metadata for this image
         crop_metadata[image_key] = []
         decision_log[image_key] = []
@@ -134,7 +134,6 @@ def crop_zones(
                 'zone_ids': zone_ids,
                 'decisions': crop_decisions
             })
-            print(combined_crop_mask, 'combined_crop_mask')
             if combined_crop_mask.sum() == 0:
                 print(f"WARNING: Empty mask for crop {crop_name}")
                 continue
@@ -143,7 +142,6 @@ def crop_zones(
             # Convert class mask to boolean mask for bbox calculation
             bbox_mask = combined_crop_mask > 0
             crop_bbox = _get_padded_bbox(bbox_mask, padding_percent, img_h, img_w, square_crop)
-            print(crop_bbox, 'crop_bbox')
             # Extract crop from image and mask
             y1, y2, x1, x2 = crop_bbox
             image_crop = img[y1:y2, x1:x2]
@@ -162,7 +160,6 @@ def crop_zones(
                 'original_img_shape': (img_h, img_w),
                 'crop_shape': image_crop.shape[:2]
             })
-            print(crop_metadata, 'crop_metadata')
             
     return {
         'all_image_crops': all_image_crops,

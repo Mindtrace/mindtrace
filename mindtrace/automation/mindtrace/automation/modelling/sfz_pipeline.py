@@ -11,7 +11,7 @@ import cv2
 import shutil
 from mindtrace.automation.modelling import ModelInference, ExportType
 from mindtrace.storage.gcs import GCSStorageHandler
-from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logits_to_mask
+from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logits_to_mask, get_updated_key
 
 class SFZPipeline:
     """Pipeline class to manage multiple models for inference."""
@@ -372,35 +372,35 @@ class SFZPipeline:
         }
         
         for i, image_path in enumerate(image_files):
-            try:
-                print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+            # try:
+            print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+            
+            # Copy original image to images folder
+            image_filename = os.path.basename(image_path)
+            image_dest = os.path.join(images_folder, image_filename)
+            shutil.copy2(image_path, image_dest)
+            
+            # Run inference
+            results = self.run_inference_on_models(
+                image=image_path,
+                export_types=export_types,
+                threshold=threshold
+            )
+            
+            # Save structured outputs
+            image_name = os.path.splitext(os.path.basename(image_path))[0]
+            self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
+            
+            # Save visualizations if requested
+            if save_visualizations:
+                self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+            
+            results_summary['results'][image_name] = results
+            results_summary['processed_images'] += 1
                 
-                # Copy original image to images folder
-                image_filename = os.path.basename(image_path)
-                image_dest = os.path.join(images_folder, image_filename)
-                shutil.copy2(image_path, image_dest)
-                
-                # Run inference
-                results = self.run_inference_on_models(
-                    image=image_path,
-                    export_types=export_types,
-                    threshold=threshold
-                )
-                
-                # Save structured outputs
-                image_name = os.path.splitext(os.path.basename(image_path))[0]
-                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
-                
-                # Save visualizations if requested
-                if save_visualizations:
-                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-                
-                results_summary['results'][image_name] = results
-                results_summary['processed_images'] += 1
-                
-            except Exception as e:
-                print(f"Error processing {image_path}: {e}")
-                results_summary['failed_images'] += 1
+            # except Exception as e:
+            #     print(f"Error processing {image_path}: {e}")
+            #     results_summary['failed_images'] += 1
         
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
@@ -493,7 +493,7 @@ class SFZPipeline:
             )
             results['zone_segmentation'] = zone_segmentation_result['mask']
             zone_predictions = zone_segmentation_result["logits"]
-            print(zone_predictions, '-----')
+            print(zone_predictions.shape, 'zone_predictions')
             # Crop based on zone segmentation
             crop_results = crop_zones(
                 zone_predictions, 
@@ -501,22 +501,51 @@ class SFZPipeline:
                 [key], 
                 self.cropping_config, 
                 self.reference_masks, 
-                self.models['zone_segmentation'].id2label,
+                self.models['zone_segmentation'].label2id,
                 padding_percent=zone_crop_padding_percent,
                 confidence_threshold=zone_crop_confidence_threshold,
                 min_coverage_ratio=zone_crop_min_coverage_ratio,
                 square_crop=zone_crop_square_crop,
                 background_class=background_class
             )
-            print(crop_results['all_image_crops'])
-            
+            print('all_image_crops')
+            os.makedirs('all_image_crops', exist_ok=True)
+            for i, img in enumerate(crop_results['all_image_crops']):
+                if isinstance(img, Image.Image):
+                    img.save(f'all_image_crops/img_{i}.png')
+                else:
+                    img = Image.fromarray(img)
+                    img.save(f'all_image_crops/img_{i}.png')
             
             # Spatter segmentation
-            spatter_segmentation_result = self.models['spatter_segmentation'].run_inference(
-                image=image,
-                export_type=export_types['spatter_segmentation'],
-                threshold=threshold
+            spatter_results = []
+            for i, img in enumerate(crop_results['all_image_crops']):
+                spatter_segmentation_result = self.models['spatter_segmentation'].run_inference(
+                    image=img,
+                    export_type=export_types['spatter_segmentation'],
+                    threshold=threshold
+                )['logits'][0]
+                spatter_results.append(spatter_segmentation_result)
+            spatter_results = torch.stack(spatter_results)
+            print(spatter_results.shape, 'spatter_results')
+            
+            # Create a mapping of camera keys to their original image shapes
+            camera_shapes = {}
+            image_key = get_updated_key(key)
+            camera_shapes[image_key] = np.array(image).shape[:2]  # (H, W)
+            print(camera_shapes, 'camera_shapes')
+            reconstructed_predictions = combine_crops(
+                zone_crops=crop_results['all_mask_crops'],
+                spatter_crops=spatter_results,
+                crop_metadata=crop_results['crop_metadata'], 
+                original_img_shapes=camera_shapes,
+                zone_classes=len(self.models['zone_segmentation'].id2label),
+                spatter_classes=len(self.models['spatter_segmentation'].id2label),
+                overlap_strategy='max',
+                conf_threshold=threshold,
+                background_class=background_class
             )
+            print(reconstructed_predictions, 'reconstructed_predictions')
         
 
     def _make_json_serializable(self, obj):

@@ -69,6 +69,8 @@ class ModelInference:
         try:
             with open(id2label_path, 'r') as f:
                 self.id2label = json.load(f)
+            
+            self.label2id = {v: k for k, v in self.id2label.items()}
             print(f"Loaded {len(self.id2label)} class labels")
         except Exception as e:
             print(f"Error loading id2label: {e}")
@@ -206,7 +208,6 @@ class ModelInference:
         if type(image) == Image.Image:
             original_images = image
         else:
-            # Convert numpy arrays to PIL Images for overlay if needed
             original_images = Image.fromarray(image)
         
         # Preprocess all images as a batch
@@ -299,7 +300,8 @@ class ModelInference:
                 'scores': np.array(scores) if scores else np.array([]),
                 'labels': np.array(labels) if labels else np.array([]),
                 'task_type': 'object_detection',
-                'original_mask': mask
+                'original_mask': mask,
+                'logits': result.get('logits', None)
             }
         except Exception as e:
             print(f"Error converting mask to bounding box: {e}")
