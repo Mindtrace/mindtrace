@@ -193,7 +193,7 @@ class GitEnvironment(Mindtrace):
 
         try:
             result = subprocess.run(
-                command, shell=True, cwd=working_dir, env=environment_vars, capture_output=False, text=True
+                command, shell=True, cwd=working_dir, env=environment_vars, capture_output=True, text=True
             )
             return result.returncode, result.stdout, result.stderr
         except Exception as e:
