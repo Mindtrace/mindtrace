@@ -53,7 +53,6 @@ class RunScriptWorker(Worker):
             exit_code, stdout, stderr = self.env_manager.execute(
                 job_dict.get("command"),
             )
-            print(stdout)
             if exit_code != 0:
                 return {"status": "failed", "output": {"stdout": stdout, "stderr": stderr}}
             return {"status": "completed", "output": {"stdout": stdout, "stderr": stderr}}
