@@ -1,13 +1,18 @@
 from label_studio_sdk import Client
 import os
-from typing import Optional, Union, Any
+from typing import Optional, Union, Any, Dict, List
 from pathlib import Path
 import re
 import json
+import random
+import shutil
 from dataclasses import dataclass
 from mindtrace.core import Mindtrace
 from urllib.parse import urlparse, parse_qs
 import base64
+from mindtrace.storage.gcs import GCSStorageHandler
+from tqdm import tqdm
+from utils import create_dataset_structure, create_manifest, split_dataset
 
 
 @dataclass
@@ -163,7 +168,40 @@ class LabelStudio(Mindtrace):
     def list_annotations(self, project_id: int, task_id: Optional[int] = None) -> list:
         """Get annotations for a task or all tasks."""
         project = self.get_project(project_id)
-        return project.get_annotations(task_id) if task_id else project.get_annotations()
+        try:
+            if task_id:
+                return project.get_annotations(task_id)
+            else:
+                # Use the tasks API to get annotations
+                tasks = project.get_tasks()
+                annotations = []
+                for task in tasks:
+                    task_annotations = project.get_annotations(task.id)
+                    annotations.extend(task_annotations)
+                return annotations
+        except Exception as e:
+            self.logger.warning(f"Could not get annotations using get_annotations(): {e}")
+            # Fallback: try to get annotations from tasks
+            try:
+                tasks = project.get_tasks()
+                annotations = []
+                for task in tasks:
+                    if hasattr(task, 'annotations') and task.annotations:
+                        annotations.extend(task.annotations)
+                return annotations
+            except Exception as e2:
+                self.logger.error(f"Could not get annotations from tasks either: {e2}")
+                return []
+
+    def list_import_storages(self, project_id: int) -> list:
+        """Get all import storages for a project using the Label Studio SDK."""
+        project = self.get_project(project_id)
+        return project.get_import_storages()
+
+    def list_export_storages(self, project_id: int) -> list:
+        """Get all export storages for a project using the Label Studio SDK."""
+        project = self.get_project(project_id)
+        return project.get_export_storages()
 
     def create_annotation(self, project_id: int, task_id: int, annotation: dict) -> dict:
         """Create an annotation for a task."""
@@ -712,3 +750,421 @@ class LabelStudio(Mindtrace):
         
         self.logger.info(f"Total unique GCS paths found: {len(gcs_paths)}")
         return gcs_paths
+
+    def _transform_to_image_centric_format(self, data: list, output_dir: Path, class_mapping: dict) -> dict:
+        images = {}
+        for task in data:
+            filename = task['data']['image'].split('/')[-1]
+            image_entry = {"file_name": filename, "bboxes": []}
+
+            # Collect all labels from polygon annotations
+            mask_labels = []
+            for ann in task.get('annotations', []):
+                for result in ann.get('result', []):
+                    if result['type'] == 'rectanglelabels':
+                        # No coordinate conversion needed, use original pixel values
+                        bbox = {
+                            "x": int(result['value']['x']),
+                            "y": int(result['value']['y']),
+                            "width": int(result['value']['width']),
+                            "height": int(result['value']['height']),
+                            "label": result['value']['rectanglelabels'][0]
+                        }
+                        image_entry['bboxes'].append(bbox)
+                    elif result['type'] == 'polygonlabels':
+                        label = result['value']['polygonlabels'][0]
+                        mask_labels.append(label)
+
+            # Check for mask file and add mask info if it exists
+            mask_file = (output_dir / "masks" / f"{Path(filename).stem}_mask.png")
+            if mask_file.exists() and mask_labels:
+                image_entry['masks'] = {
+                    "file_name": str(mask_file.name),
+                    "labels": sorted(mask_labels)  # Still sort for consistency
+                }
+
+            images[filename] = image_entry
+        return {"images": images}
+
+    def export_project_to_json(
+        self,
+        project_id: int,
+        output_dir: str,
+        download_path: str,
+        download_images: bool = False,
+        generate_masks: bool = False,
+        splits: Optional[Dict[str, List[str]]] = None,
+        version: str = "1.0.0"
+    ) -> Dict[str, any]:
+        """Export project annotations to JSON format.
+        
+        Args:
+            project_id: Label Studio project ID
+            output_dir: Output directory for export
+            download_path: Path where images should be downloaded
+            download_images: Whether to download images from GCS
+            generate_masks: Whether to generate segmentation masks from polygon annotations
+            splits: Optional dictionary of split names to lists of image filenames
+            version: Dataset version (default: "1.0.0")
+        
+        Returns:
+            Dict with export statistics
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Export JSON
+        json_export_path = output_dir / "export.json"
+        self.export_annotations(
+            project_id=project_id,
+            export_type="JSON",
+            download_all_tasks=True,
+            download_resources=False,
+            export_location=str(json_export_path)
+        )
+        
+        with open(json_export_path, 'r') as f:
+            data = json.load(f)
+        
+        gcs_paths = []
+        local_image_paths = {}
+        
+        if download_images or generate_masks:  # We need images for masks
+            import_storages = self.list_import_storages(project_id)
+            if not import_storages:
+                self.logger.warning("No import storages found, cannot download images")
+                download_images = False
+                generate_masks = False
+            else:
+                storage_info = import_storages[0]
+                bucket_name = storage_info.get('bucket')
+                if not bucket_name:
+                    self.logger.warning("No bucket name found in storage info, cannot download images")
+                    download_images = False
+                    generate_masks = False
+                else:
+                    gcs_handler = GCSStorageHandler(bucket_name=bucket_name)
+                    temp_images_dir = Path(download_path)
+                    temp_images_dir.mkdir(exist_ok=True)
+                    self.logger.info(f"Downloading images from bucket '{bucket_name}' to {temp_images_dir}")
+        
+        from tqdm import tqdm
+        for task in tqdm(data, desc="Processing tasks", unit="task"):
+            if 'data' in task and 'image' in task['data']:
+                image_path = task['data']['image']
+                if image_path.startswith('gs://'):
+                    gcs_paths.append(image_path)
+        
+        if download_images or generate_masks:
+            if gcs_paths:
+                self.logger.info(f"Starting batch download of {len(gcs_paths)} images...")
+                file_map = {}
+                for gcs_path in gcs_paths:
+                    filename = gcs_path.split('/')[-1]
+                    local_path = temp_images_dir / filename
+                    file_map[gcs_path] = str(local_path)
+                
+                downloaded_paths, errors = gcs_handler.download_files(file_map, max_workers=4)
+                local_image_paths.update(downloaded_paths)
+                self.logger.info(f"✅ Successfully downloaded: {len(downloaded_paths)} images")
+                if errors:
+                    self.logger.warning(f"❌ Failed to download: {len(errors)} images")
+                    for path, error in errors.items():
+                        self.logger.debug(f"  Failed {path}: {error}")
+        
+        if generate_masks:
+            import cv2
+            import numpy as np
+            from PIL import Image
+            
+            # Create masks directory
+            masks_dir = output_dir / "masks"
+            masks_dir.mkdir(exist_ok=True)
+            
+            # Get unique labels and create class mapping
+            unique_labels = set()
+            for task in data:
+                for ann in task.get('annotations', []):
+                    for result in ann.get('result', []):
+                        if result['type'] == 'polygonlabels':
+                            unique_labels.update(result['value']['polygonlabels'])
+            
+            class2idx = {label: idx + 1 for idx, label in enumerate(sorted(unique_labels))}  # 0 is background
+            
+            # Save class mapping
+            class_mapping = {
+                'idx2label': {str(idx): label for label, idx in class2idx.items()},
+                'label2idx': class2idx
+            }
+            with open(output_dir / 'class_mapping.json', 'w') as f:
+                json.dump(class_mapping, f, indent=2)
+            
+            self.logger.info(f"Generating masks for {len(data)} tasks...")
+            for task in tqdm(data, desc="Generating masks"):
+                # First check if this image has any polygon annotations
+                has_polygons = False
+                polygon_results = []
+                for ann in task.get('annotations', []):
+                    for result in ann.get('result', []):
+                        if result['type'] == 'polygonlabels':
+                            has_polygons = True
+                            polygon_results.append(result)
+                
+                if not has_polygons:
+                    continue
+                        
+                image_path = task['data']['image']
+                local_path = local_image_paths.get(image_path)
+                if not local_path:
+                    continue
+                
+                try:
+                    image = Image.open(local_path)
+                    w, h = image.size
+                    
+                    # Create a single mask for this image
+                    mask = np.zeros((h, w), dtype=np.uint8)  # 0 is background
+                    
+                    # Sort polygon results by class ID to ensure consistent ordering
+                    polygon_results.sort(key=lambda x: class2idx[x['value']['polygonlabels'][0]])
+                    
+                    for result in polygon_results:
+                        label = result['value']['polygonlabels'][0]
+                        class_id = class2idx[label]
+                        
+                        # Convert points to pixel coordinates
+                        points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
+                        points = points.reshape((-1, 1, 2))
+                        
+                        # Fill the polygon with the class ID
+                        cv2.fillPoly(mask, [points], color=class_id)
+                    
+                    # Save mask file
+                    mask_filename = f"{Path(local_path).stem}_mask.png"
+                    mask_path = masks_dir / mask_filename
+                    cv2.imwrite(str(mask_path), mask)
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to generate mask for {image_path}: {e}")
+                
+            self.logger.info("✅ Mask generation completed")
+
+            # Update the image-centric format to reference single mask file
+            data = self._transform_to_image_centric_format(data, output_dir, class_mapping)
+        
+        # Save transformed JSON
+        with open(output_dir / "annotations.json", 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        # Remove the original export.json as we now have annotations.json
+        json_export_path.unlink()
+        
+        stats = {
+            'total_tasks': len(data),
+            'downloaded_images': len(local_image_paths) if download_images or generate_masks else 0,
+            'generated_masks': len(local_image_paths) if generate_masks else 0,
+            'class_mapping': class2idx if generate_masks else None,
+            'images': data['images']  # Include the transformed data
+        }
+        
+        self.logger.info(f"Export completed successfully!")
+        self.logger.info(f"Total tasks: {stats['total_tasks']}")
+        if download_images:
+            self.logger.info(f"Images downloaded to: {temp_images_dir}")
+        if generate_masks:
+            self.logger.info(f"Masks generated in: {masks_dir}")
+            self.logger.info(f"Classes: {list(class2idx.keys())}")
+        
+        return stats
+
+    def convert_and_publish_to_datalake(
+        self,
+        project_id: int,
+        output_dir: Path,
+        download_path: str,
+        dataset_name: str,
+        version: str = "1.0.0",
+        train_split: float = 0.8,
+        test_split: float = 0.2,
+        download_images: bool = True,
+        generate_masks: bool = True,
+        description: str = "",
+        seed: int = 42
+    ) -> Dict[str, Any]:
+        """Convert Label Studio project to datalake format with train/test splits.
+        
+        Args:
+            project_id: Label Studio project ID
+            output_dir: Base output directory
+            download_path: Path where images should be downloaded
+            dataset_name: Name of the dataset
+            version: Dataset version (default: "1.0.0")
+            train_split: Fraction of data for training (default: 0.8)
+            test_split: Fraction of data for testing (default: 0.2)
+            download_images: Whether to download images (default: True)
+            generate_masks: Whether to generate segmentation masks (default: True)
+            description: Dataset description (default: "")
+            seed: Random seed for reproducible splits (default: 42)
+            
+        Returns:
+            Dictionary containing dataset information and statistics
+        """
+        # Validate splits
+        if abs(train_split + test_split - 1.0) > 1e-6:
+            raise ValueError("Train and test splits must sum to 1.0")
+            
+        # Create dataset directory
+        dataset_dir = output_dir / dataset_name
+        temp_dir = Path(download_path)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create necessary directories
+        for split in ['train', 'test']:
+            (dataset_dir / "splits" / split / "images").mkdir(parents=True, exist_ok=True)
+            if generate_masks:
+                (dataset_dir / "splits" / split / "masks").mkdir(parents=True, exist_ok=True)
+        
+        # Export with downloads and mask generation
+        export_result = self.export_project_to_json(
+            project_id=project_id,
+            output_dir=temp_dir,
+            download_path=download_path,
+            download_images=download_images,
+            generate_masks=generate_masks
+        )
+        
+        if not export_result['images']:
+            raise ValueError(f"No data found for project {project_id}")
+        
+        # Split the data
+        split_result = split_dataset(
+            data=list(export_result['images'].keys()),  # Split by image filenames
+            train_split=train_split,
+            val_split=0.0,  # No validation split
+            test_split=test_split,
+            seed=seed
+        )
+        
+        # Move files to split directories
+        moved_files = {}
+        for split_name, filenames in split_result['splits'].items():
+            split_dir = dataset_dir / "splits" / split_name
+            moved_files[split_name] = []
+            
+            for filename in filenames:
+                # Move image
+                src_image = temp_dir / filename
+                dst_image = split_dir / "images" / filename
+                shutil.move(src_image, dst_image)
+                moved_files[split_name].append(str(dst_image.absolute()))  # Store absolute path
+                
+                # Move mask if it exists
+                if generate_masks:
+                    mask_name = f"{Path(filename).stem}_mask.png"
+                    src_mask = temp_dir / "masks" / mask_name  # Fixed: Added "masks" directory
+                    if src_mask.exists():
+                        dst_mask = split_dir / "masks" / mask_name
+                        shutil.move(src_mask, dst_mask)
+                        moved_files[split_name].append(str(dst_mask.absolute()))  # Store absolute path
+                
+                # Create split-specific annotations
+                split_annotations = {
+                    "images": {
+                        img: export_result['images'][img]
+                        for img in filenames
+                    }
+                }
+                annotations_file = split_dir / f"annotations_v{version}.json"
+                with open(annotations_file, 'w') as f:
+                    json.dump(split_annotations, f, indent=2)
+        
+        # Create manifest
+        create_manifest(
+            base_dir=dataset_dir,
+            name=dataset_name,
+            version=version,
+            splits=moved_files,  # Now contains absolute paths
+            class_mapping=export_result['class_mapping'],
+            description=description
+        )
+        
+        return {
+            'dataset_dir': str(dataset_dir.absolute()),
+            'manifest': str(dataset_dir / f"manifest_v{version}.json"),
+            'splits': {
+                'train': len(split_result['splits']['train']),
+                'test': len(split_result['splits']['test'])
+            },
+            'class_mapping': export_result['class_mapping']
+        }
+
+
+if __name__ == "__main__":
+    import yaml
+    from pathlib import Path
+    
+    # Get absolute path to config from current file location
+    current_dir = Path(__file__).parent
+    config_path = current_dir.parent / "configs" / "images_config.yaml"
+    print(f"Loading config from: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Initialize Label Studio client
+    label_studio = LabelStudio(
+        LabelStudioConfig(
+            url=config['label_studio']['api']['url'],
+            api_key=config['label_studio']['api']['api_key'],
+            gcp_creds=config['label_studio']['api']['gcp_credentials_path']
+        )
+    )
+    
+    # Test datalake export for project 2898
+    project_id = 2898
+    output_dir = Path(config['output_folder'])
+    download_path = Path(config['download_path'])
+    dataset_name = f"defect_detection_dataset_{project_id}"
+    
+    print(f"Testing datalake export for project {project_id}")
+    print(f"Output directory: {output_dir}")
+    print(f"Download path: {download_path}")
+    print(f"Dataset name: {dataset_name}")
+    
+    try:
+        result = label_studio.convert_and_publish_to_datalake(
+            project_id=project_id,
+            output_dir=output_dir,
+            download_path=download_path,
+            dataset_name=dataset_name,
+            version="1.0.0",
+            train_split=0.8,
+            test_split=0.2,
+            download_images=True,
+            generate_masks=True,
+            description=f"Defect detection dataset exported from Label Studio project {project_id}"
+        )
+        
+        print("\nExport completed successfully!")
+        print(f"Dataset directory: {result['dataset_dir']}")
+        print(f"Manifest file: {result['manifest']}")
+        print("\nSplit statistics:")
+        print(f"Train: {result['splits']['train']} images")
+        print(f"Test: {result['splits']['test']} images")
+        
+        # Print class mapping
+        print("\nClass mapping:")
+        for class_type, mapping in result['class_mapping'].items():
+            print(f"{class_type}:")
+            print(json.dumps(mapping, indent=2))
+        
+        # List created files
+        print("\nCreated files:")
+        for path in Path(result['dataset_dir']).rglob("*"):
+            if path.is_file():
+                print(f"  {path.relative_to(result['dataset_dir'])}")
+        
+    except Exception as e:
+        print(f"❌ Error during export: {e}")
+        import traceback
+        traceback.print_exc()
