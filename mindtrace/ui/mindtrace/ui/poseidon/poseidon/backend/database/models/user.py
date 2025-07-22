@@ -10,7 +10,8 @@ if TYPE_CHECKING:
     from .project import Project
 
 class User(MindtraceDocument):
-    username: str
+    first_name: str
+    last_name: str
     email: str
     password_hash: str
     organization: Link["Organization"]

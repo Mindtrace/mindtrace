@@ -1269,7 +1269,6 @@ class CameraState(rx.State):
                     project_id=self.assignment_project_id,
                     ip_address="",  # Will be populated later
                     port=0,
-                    username="",
                     password="",
                     is_active=True
                 )

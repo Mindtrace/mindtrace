@@ -106,7 +106,12 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
         ),
         rx.form(
             rx.vstack(
-                form_input_with_label("Username", "Enter username", "text", "username", True, "medium"),
+                rx.hstack(
+                    form_input_with_label("First Name", "First name"),
+                    form_input_with_label("Last Name", "Last name"),
+                    width="100%",
+                    display="flex",
+                ),
                 form_input_with_label("Email", "you@company.com", "email", "email", True, "medium"),
                 form_input_with_label("Password", "Create password", "password", "password", True, "medium"),
                 # Organization selection

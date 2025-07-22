@@ -243,7 +243,8 @@ class UserManagementService:
     
     @staticmethod
     async def create_user_in_organization(
-        username: str,
+        first_name: str,
+        last_name: str,
         email: str,
         password: str,
         admin_organization_id: str,
@@ -252,7 +253,8 @@ class UserManagementService:
         """Create a new user in the organization.
         
         Args:
-            username: Username for the new user
+            first_name: First name for the new user
+            last_name: Last name for the new user
             email: Email for the new user
             password: Password for the new user
             admin_organization_id: Organization ID where user will be created
@@ -268,7 +270,8 @@ class UserManagementService:
         # Create the user
         from poseidon.backend.services.auth_service import AuthService
         result = await AuthService.register_user(
-            username=username,
+            first_name=first_name,
+            last_name=last_name,
             email=email,
             password=password,
             organization_id=admin_organization_id,

@@ -37,7 +37,8 @@ class ProjectData(BaseDataModel):
 
 class UserData(BaseDataModel):
     """User data model for frontend"""
-    username: str
+    first_name: str
+    last_name: str
     email: str
     organization_id: str
     organization_name: str = ""

@@ -32,7 +32,7 @@ title = rx.hstack(
 )
 
 
-def delete_user_confirmation_popup(user_id: str, username: str):
+def delete_user_confirmation_popup(user_id: str, first_name: str, last_name: str):
     """Delete user confirmation popup - keeps Buridan UI styling."""
     
     title = rx.hstack(
@@ -58,7 +58,7 @@ def delete_user_confirmation_popup(user_id: str, username: str):
             title,
             rx.vstack(
                 rx.text(
-                    f"Are you sure you want to delete user '{username}'?",
+                    f"Are you sure you want to delete user '{first_name} {last_name}'?",
                     color=rx.color("slate", 11),
                 ),
                 rx.text(
@@ -120,8 +120,8 @@ def user_details_popup(user_data: dict):
             title,
             rx.vstack(
                 rx.vstack(
-                    rx.text("Username", color=rx.color("slate", 11)),
-                    rx.text(user_data.get("username", ""), color=rx.color("slate", 12)),
+                    rx.text("Full Name", color=rx.color("slate", 11)),
+                    rx.text(f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}", color=rx.color("slate", 12)),
                     spacing="1",
                 ),
                 rx.vstack(
@@ -181,12 +181,32 @@ def add_user_popup():
             title,
             rx.vstack(
                 rx.vstack(
-                    rx.text("Username", color=rx.color("slate", 11)),
+                    rx.text("First Name", color=rx.color("slate", 11)),
                     rx.input(
-                        placeholder="Enter username",
-                        name="username",
-                        value=UserManagementState.new_user_username,
-                        on_change=UserManagementState.set_new_user_username,
+                        placeholder="Enter first name",
+                        name="first_name",
+                        value=UserManagementState.new_user_first_name,
+                        on_change=UserManagementState.set_new_user_first_name,
+                    ),
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("Last Name", color=rx.color("slate", 11)),
+                    rx.input(
+                        placeholder="Enter last name",
+                        name="last_name",
+                        value=UserManagementState.new_user_last_name,
+                        on_change=UserManagementState.set_new_user_last_name,
+                    ),
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("Email", color=rx.color("slate", 11)),
+                    rx.input(
+                        placeholder="Enter email",
+                        type="email",
+                        name="email",
+                        value=UserManagementState.new_user_email,
                     ),
                     spacing="1",
                 ),
@@ -265,12 +285,20 @@ def edit_user_popup(user_data: dict):
             title,
             rx.vstack(
                 rx.vstack(
-                    rx.text("Username", color=rx.color("slate", 11)),
+                    rx.text("First Name", color=rx.color("slate", 11)),
                     rx.input(
-                        placeholder="Enter username",
-                        name="username",
-                        value=UserManagementState.edit_user_username,
-                        on_change=UserManagementState.set_edit_user_username,
+                        placeholder="Enter first name",
+                        value=UserManagementState.edit_user_first_name,
+                        on_change=UserManagementState.set_edit_user_first_name,
+                    ),
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("Last Name", color=rx.color("slate", 11)),
+                    rx.input(
+                        placeholder="Enter last name",
+                        value=UserManagementState.edit_user_last_name,
+                        on_change=UserManagementState.set_edit_user_last_name,
                     ),
                     spacing="1",
                 ),
@@ -851,7 +879,7 @@ def assign_project_popup():
         rx.dialog.content(
             rx.dialog.title("Assign User to Project"),
             rx.dialog.description(
-                rx.text("Assign ", rx.text(UserManagementState.assignment_user_name, weight="bold"), " to a project")
+                rx.text("Assign ", rx.text(f"{UserManagementState.assignment_user_first_name} {UserManagementState.assignment_user_last_name}", weight="bold"), " to a project")
             ),
             rx.vstack(
                 rx.vstack(
@@ -922,7 +950,7 @@ def project_management_popup():
         rx.dialog.content(
             rx.dialog.title("Manage Project Assignments"),
             rx.dialog.description(
-                rx.text("Manage project assignments for ", rx.text(UserManagementState.project_management_user_name, weight="bold"))
+                rx.text("Manage project assignments for ", rx.text(f"{UserManagementState.project_management_user_first_name} {UserManagementState.project_management_user_last_name}", weight="bold"))
             ),
             rx.vstack(
                 rx.text("Current Project Assignments:", weight="bold", color=rx.color("slate", 11)),

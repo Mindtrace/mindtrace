@@ -131,12 +131,12 @@ def navigation_action_card(title: str, description: str, icon: str):
     )
 
 
-def user_management_card(username: str, email: str, status: str):
+def user_management_card(first_name:str, last_name: str, email: str, status: str):
     """User management list card - keeps Buridan UI styling."""
     return rx.box(
         rx.vstack(
             rx.hstack(
-                rx.text(username, weight="bold"),
+                rx.text(f"{first_name} {last_name}", weight="bold"),
                 rx.text(status, size="1", color=rx.color("green", 9)),
                 justify="between",
                 width="100%",

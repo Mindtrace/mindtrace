@@ -67,7 +67,7 @@ def profile_content() -> rx.Component:
                     profile_info_card(
                         title="Account Information",
                         content_items=[
-                            {"label": "Username", "value": AuthState.current_username},
+                            {"label": "Full Name", "value": f"{AuthState.first_name} {AuthState.last_name}"},
                             {"label": "User ID", "value": AuthState.user_id},
                             {"label": "Organization ID", "value": AuthState.user_organization_id},
                             {"label": "Organization Role", "value": rx.cond(
