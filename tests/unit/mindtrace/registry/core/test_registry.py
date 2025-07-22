@@ -2015,3 +2015,13 @@ def test_register_materializer_type_assigns_fully_qualified_name(registry):
     registry.register_materializer(CoverageDummy2, "coverage.DummyMaterializer2")
     expected_key = f"{CoverageDummy2.__module__}.{CoverageDummy2.__name__}"
     assert registry.registered_materializer(expected_key) == "coverage.DummyMaterializer2"
+
+def test_register_materializer_accepts_materializer_class_type(registry):
+    class DummyClass:
+        pass
+    class DummyMaterializer:
+        pass
+    registry.register_materializer(DummyClass, DummyMaterializer)
+    expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
+    expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"
+    assert registry.registered_materializer(expected_key) == expected_value
