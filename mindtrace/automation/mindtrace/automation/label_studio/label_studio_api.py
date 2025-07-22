@@ -6,13 +6,16 @@ import re
 import json
 import random
 import shutil
+import cv2
+import numpy as np
+from PIL import Image
 from dataclasses import dataclass
 from mindtrace.core import Mindtrace
 from urllib.parse import urlparse, parse_qs
 import base64
 from mindtrace.storage.gcs import GCSStorageHandler
 from tqdm import tqdm
-from utils import create_dataset_structure, create_manifest, split_dataset
+from utils import create_dataset_structure, create_manifest, split_dataset, organize_files_into_splits
 
 
 @dataclass
@@ -751,18 +754,16 @@ class LabelStudio(Mindtrace):
         self.logger.info(f"Total unique GCS paths found: {len(gcs_paths)}")
         return gcs_paths
 
-    def _transform_to_image_centric_format(self, data: list, output_dir: Path, class_mapping: dict) -> dict:
+    def _transform_annotation_to_datalake(self, data: list, output_dir: Path, class_mapping: dict) -> dict:
         images = {}
         for task in data:
             filename = task['data']['image'].split('/')[-1]
             image_entry = {"file_name": filename, "bboxes": []}
 
-            # Collect all labels from polygon annotations
             mask_labels = []
             for ann in task.get('annotations', []):
                 for result in ann.get('result', []):
                     if result['type'] == 'rectanglelabels':
-                        # No coordinate conversion needed, use original pixel values
                         bbox = {
                             "x": int(result['value']['x']),
                             "y": int(result['value']['y']),
@@ -775,12 +776,11 @@ class LabelStudio(Mindtrace):
                         label = result['value']['polygonlabels'][0]
                         mask_labels.append(label)
 
-            # Check for mask file and add mask info if it exists
             mask_file = (output_dir / "masks" / f"{Path(filename).stem}_mask.png")
             if mask_file.exists() and mask_labels:
                 image_entry['masks'] = {
                     "file_name": str(mask_file.name),
-                    "labels": sorted(mask_labels)  # Still sort for consistency
+                    "labels": sorted(mask_labels) 
                 }
 
             images[filename] = image_entry
@@ -829,7 +829,7 @@ class LabelStudio(Mindtrace):
         gcs_paths = []
         local_image_paths = {}
         
-        if download_images or generate_masks:  # We need images for masks
+        if download_images or generate_masks:  
             import_storages = self.list_import_storages(project_id)
             if not import_storages:
                 self.logger.warning("No import storages found, cannot download images")
@@ -848,8 +848,7 @@ class LabelStudio(Mindtrace):
                     temp_images_dir.mkdir(exist_ok=True)
                     self.logger.info(f"Downloading images from bucket '{bucket_name}' to {temp_images_dir}")
         
-        from tqdm import tqdm
-        for task in tqdm(data, desc="Processing tasks", unit="task"):
+        for task in data:
             if 'data' in task and 'image' in task['data']:
                 image_path = task['data']['image']
                 if image_path.startswith('gs://'):
@@ -864,19 +863,15 @@ class LabelStudio(Mindtrace):
                     local_path = temp_images_dir / filename
                     file_map[gcs_path] = str(local_path)
                 
-                downloaded_paths, errors = gcs_handler.download_files(file_map, max_workers=4)
+                downloaded_paths, errors = gcs_handler.download_files(file_map, max_workers=8)
                 local_image_paths.update(downloaded_paths)
                 self.logger.info(f"✅ Successfully downloaded: {len(downloaded_paths)} images")
                 if errors:
-                    self.logger.warning(f"❌ Failed to download: {len(errors)} images")
+                    self.logger.warning(f"Failed to download: {len(errors)} images")
                     for path, error in errors.items():
                         self.logger.debug(f"  Failed {path}: {error}")
         
         if generate_masks:
-            import cv2
-            import numpy as np
-            from PIL import Image
-            
             # Create masks directory
             masks_dir = output_dir / "masks"
             masks_dir.mkdir(exist_ok=True)
@@ -889,7 +884,7 @@ class LabelStudio(Mindtrace):
                         if result['type'] == 'polygonlabels':
                             unique_labels.update(result['value']['polygonlabels'])
             
-            class2idx = {label: idx + 1 for idx, label in enumerate(sorted(unique_labels))}  # 0 is background
+            class2idx = {label: idx + 1 for idx, label in enumerate(sorted(unique_labels))} 
             
             # Save class mapping
             class_mapping = {
@@ -901,7 +896,6 @@ class LabelStudio(Mindtrace):
             
             self.logger.info(f"Generating masks for {len(data)} tasks...")
             for task in tqdm(data, desc="Generating masks"):
-                # First check if this image has any polygon annotations
                 has_polygons = False
                 polygon_results = []
                 for ann in task.get('annotations', []):
@@ -921,25 +915,20 @@ class LabelStudio(Mindtrace):
                 try:
                     image = Image.open(local_path)
                     w, h = image.size
+               
+                    mask = np.zeros((h, w), dtype=np.uint8) 
                     
-                    # Create a single mask for this image
-                    mask = np.zeros((h, w), dtype=np.uint8)  # 0 is background
-                    
-                    # Sort polygon results by class ID to ensure consistent ordering
                     polygon_results.sort(key=lambda x: class2idx[x['value']['polygonlabels'][0]])
                     
                     for result in polygon_results:
                         label = result['value']['polygonlabels'][0]
                         class_id = class2idx[label]
                         
-                        # Convert points to pixel coordinates
                         points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
                         points = points.reshape((-1, 1, 2))
                         
-                        # Fill the polygon with the class ID
                         cv2.fillPoly(mask, [points], color=class_id)
                     
-                    # Save mask file
                     mask_filename = f"{Path(local_path).stem}_mask.png"
                     mask_path = masks_dir / mask_filename
                     cv2.imwrite(str(mask_path), mask)
@@ -949,14 +938,11 @@ class LabelStudio(Mindtrace):
                 
             self.logger.info("✅ Mask generation completed")
 
-            # Update the image-centric format to reference single mask file
-            data = self._transform_to_image_centric_format(data, output_dir, class_mapping)
+            data = self._transform_annotation_to_datalake(data, output_dir, class_mapping)
         
-        # Save transformed JSON
         with open(output_dir / "annotations.json", 'w') as f:
             json.dump(data, f, indent=2)
         
-        # Remove the original export.json as we now have annotations.json
         json_export_path.unlink()
         
         stats = {
@@ -991,40 +977,17 @@ class LabelStudio(Mindtrace):
         description: str = "",
         seed: int = 42
     ) -> Dict[str, Any]:
-        """Convert Label Studio project to datalake format with train/test splits.
-        
-        Args:
-            project_id: Label Studio project ID
-            output_dir: Base output directory
-            download_path: Path where images should be downloaded
-            dataset_name: Name of the dataset
-            version: Dataset version (default: "1.0.0")
-            train_split: Fraction of data for training (default: 0.8)
-            test_split: Fraction of data for testing (default: 0.2)
-            download_images: Whether to download images (default: True)
-            generate_masks: Whether to generate segmentation masks (default: True)
-            description: Dataset description (default: "")
-            seed: Random seed for reproducible splits (default: 42)
-            
-        Returns:
-            Dictionary containing dataset information and statistics
-        """
+        """Convert Label Studio project to datalake format with train/test splits."""
         # Validate splits
         if abs(train_split + test_split - 1.0) > 1e-6:
             raise ValueError("Train and test splits must sum to 1.0")
             
-        # Create dataset directory
         dataset_dir = output_dir / dataset_name
         temp_dir = Path(download_path)
         temp_dir.mkdir(parents=True, exist_ok=True)
         
-        # Create necessary directories
-        for split in ['train', 'test']:
-            (dataset_dir / "splits" / split / "images").mkdir(parents=True, exist_ok=True)
-            if generate_masks:
-                (dataset_dir / "splits" / split / "masks").mkdir(parents=True, exist_ok=True)
+        create_dataset_structure(dataset_dir, splits=['train', 'test'])
         
-        # Export with downloads and mask generation
         export_result = self.export_project_to_json(
             project_id=project_id,
             output_dir=temp_dir,
@@ -1038,52 +1001,41 @@ class LabelStudio(Mindtrace):
         
         # Split the data
         split_result = split_dataset(
-            data=list(export_result['images'].keys()),  # Split by image filenames
+            data=list(export_result['images'].keys()),
             train_split=train_split,
-            val_split=0.0,  # No validation split
+            val_split=0.0,
             test_split=test_split,
             seed=seed
         )
         
-        # Move files to split directories
-        moved_files = {}
-        for split_name, filenames in split_result['splits'].items():
-            split_dir = dataset_dir / "splits" / split_name
-            moved_files[split_name] = []
-            
-            for filename in filenames:
-                # Move image
-                src_image = temp_dir / filename
-                dst_image = split_dir / "images" / filename
-                shutil.move(src_image, dst_image)
-                moved_files[split_name].append(str(dst_image.absolute()))  # Store absolute path
-                
-                # Move mask if it exists
-                if generate_masks:
-                    mask_name = f"{Path(filename).stem}_mask.png"
-                    src_mask = temp_dir / "masks" / mask_name  # Fixed: Added "masks" directory
-                    if src_mask.exists():
-                        dst_mask = split_dir / "masks" / mask_name
-                        shutil.move(src_mask, dst_mask)
-                        moved_files[split_name].append(str(dst_mask.absolute()))  # Store absolute path
-                
-                # Create split-specific annotations
-                split_annotations = {
-                    "images": {
-                        img: export_result['images'][img]
-                        for img in filenames
-                    }
-                }
-                annotations_file = split_dir / f"annotations_v{version}.json"
-                with open(annotations_file, 'w') as f:
-                    json.dump(split_annotations, f, indent=2)
+        moved_files = organize_files_into_splits(
+            base_dir=dataset_dir,
+            split_assignments=split_result['splits'],
+            source_images_dir=temp_dir,
+            source_masks_dir=temp_dir / "masks" if generate_masks else None
+        )
         
-        # Create manifest
+        # Create split-specific annotations
+        for split_name, filenames in split_result['splits'].items():
+            if not filenames:  # Skip empty splits
+                continue
+            split_dir = dataset_dir / "splits" / split_name
+            split_annotations = {
+                "images": {
+                    img: export_result['images'][img]
+                    for img in filenames
+                }
+            }
+            annotations_file = split_dir / f"annotations_v{version}.json"
+            with open(annotations_file, 'w') as f:
+                json.dump(split_annotations, f, indent=2)
+        
+        # Create manifest using utility function
         create_manifest(
             base_dir=dataset_dir,
             name=dataset_name,
             version=version,
-            splits=moved_files,  # Now contains absolute paths
+            splits=moved_files,
             class_mapping=export_result['class_mapping'],
             description=description
         )
