@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from discord import File, Attachment
+    import numpy as np
+    import torch
 
 
 def pil_to_ascii(image: Image) -> str:
@@ -108,7 +110,7 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
     return PIL.Image.open(io.BytesIO(bytes_image))
 
 
-def pil_to_tensor(image: Image) -> torch.Tensor:
+def pil_to_tensor(image: Image) -> "torch.Tensor":
     """Convert PIL Image to Torch Tensor.
 
     Example::
@@ -126,7 +128,7 @@ def pil_to_tensor(image: Image) -> torch.Tensor:
     return F.pil_to_tensor(image)
 
 
-def tensor_to_pil(image: torch.Tensor, mode=None, min_val=None, max_val=None) -> Image:
+def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) -> Image:
     """Convert Torch Tensor to PIL Image.
 
     Note that PIL float images must be scaled [0, 1]. It is often the case, however, that torch tensor images may have a
@@ -396,7 +398,7 @@ async def discord_file_to_pil(attachment: "Attachment") -> Image:
     return PIL.Image.open(io.BytesIO(image_bytes))  # Convert the bytes to a PIL Image
 
 
-def tensor_to_ndarray(tensor: torch.Tensor) -> np.ndarray:
+def tensor_to_ndarray(tensor: "torch.Tensor") -> "np.ndarray":
     """Convert a PyTorch tensor to a numpy array.
 
     Handles both single images (3D tensors) and batches (4D tensors),
@@ -416,10 +418,8 @@ def tensor_to_ndarray(tensor: torch.Tensor) -> np.ndarray:
 
     if tensor.device.type != "cpu":
         tensor = tensor.cpu()
-
     if tensor.requires_grad:
         tensor = tensor.detach()
-
     is_normalized = tensor.max() <= 1.0
 
     tensor_np = tensor.numpy()
@@ -435,7 +435,7 @@ def tensor_to_ndarray(tensor: torch.Tensor) -> np.ndarray:
         raise ValueError(f"Expected 3D or 4D tensor, got {tensor.dim()}D tensor with shape {tensor.shape}")
 
 
-def ndarray_to_tensor(image: np.ndarray) -> torch.Tensor:
+def ndarray_to_tensor(image: "np.ndarray") -> "torch.Tensor":
     """Convert a numpy array to a PyTorch tensor.
 
     Args:
