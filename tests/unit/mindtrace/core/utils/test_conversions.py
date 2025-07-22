@@ -182,28 +182,36 @@ def test_base64_conversion(mock_assets):
 
 
 def test_pil_to_tensor_missing_torch(mock_assets):
-    """Test that pil_to_tensor raises ImportError when torch is missing."""
+    missing_libs = check_libs(["torch"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
         with pytest.raises(ImportError, match="torch is required for pil_to_tensor but is not installed."):
             pil_to_tensor(mock_assets.image)
 
 
 def test_pil_to_tensor_missing_torchvision(mock_assets):
-    """Test that pil_to_tensor raises ImportError when torchvision is missing."""
+    missing_libs = check_libs(["torch", "torchvision"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCHVISION', False):
         with pytest.raises(ImportError, match="torchvision is required for pil_to_tensor but is not installed."):
             pil_to_tensor(mock_assets.image)
 
 
 def test_tensor_to_pil_missing_torch():
-    """Test that tensor_to_pil raises ImportError when torch is missing."""
+    missing_libs = check_libs(["torch"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
         with pytest.raises(ImportError, match="torch is required for tensor_to_pil but is not installed."):
             tensor_to_pil(None)
 
 
 def test_tensor_to_pil_missing_torchvision():
-    """Test that tensor_to_pil raises ImportError when torchvision is missing."""
+    missing_libs = check_libs(["torch", "torchvision"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCHVISION', False):
         with pytest.raises(ImportError, match="torchvision is required for tensor_to_pil but is not installed."):
             tensor_to_pil(None)
@@ -211,6 +219,9 @@ def test_tensor_to_pil_missing_torchvision():
 
 def test_pil_to_ndarray_missing_numpy(mock_assets):
     """Test that pil_to_ndarray raises ImportError when numpy is missing."""
+    missing_libs = check_libs(["numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
         with pytest.raises(ImportError, match="numpy is required for pil_to_ndarray but is not installed."):
             pil_to_ndarray(mock_assets.image)
@@ -218,6 +229,9 @@ def test_pil_to_ndarray_missing_numpy(mock_assets):
 
 def test_pil_to_ndarray_bgr_missing_cv2(mock_assets):
     """Test that pil_to_ndarray raises ImportError when cv2 is missing for BGR conversion."""
+    missing_libs = check_libs(["cv2"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
         with pytest.raises(ImportError, match="cv2 is required for BGR conversion but is not installed."):
             pil_to_ndarray(mock_assets.image, image_format="BGR")
@@ -225,6 +239,9 @@ def test_pil_to_ndarray_bgr_missing_cv2(mock_assets):
 
 def test_ndarray_to_pil_missing_numpy():
     """Test that ndarray_to_pil raises ImportError when numpy is missing."""
+    missing_libs = check_libs(["numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
         with pytest.raises(ImportError, match="numpy is required for ndarray_to_pil but is not installed."):
             ndarray_to_pil(None)
@@ -244,6 +261,9 @@ def test_ndarray_to_pil_bgr_missing_cv2():
 
 def test_pil_to_cv2_missing_numpy(mock_assets):
     """Test that pil_to_cv2 raises ImportError when numpy is missing."""
+    missing_libs = check_libs(["numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
         with pytest.raises(ImportError, match="numpy is required for pil_to_cv2 but is not installed."):
             pil_to_cv2(mock_assets.image)
@@ -251,6 +271,9 @@ def test_pil_to_cv2_missing_numpy(mock_assets):
 
 def test_pil_to_cv2_missing_cv2(mock_assets):
     """Test that pil_to_cv2 raises ImportError when cv2 is missing."""
+    missing_libs = check_libs(["cv2"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
         with pytest.raises(ImportError, match="cv2 is required for pil_to_cv2 but is not installed."):
             pil_to_cv2(mock_assets.image)
@@ -258,6 +281,9 @@ def test_pil_to_cv2_missing_cv2(mock_assets):
 
 def test_pil_to_discord_file_missing_discord(mock_assets):
     """Test that pil_to_discord_file raises ImportError when discord.py is missing."""
+    missing_libs = check_libs(["discord"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_DISCORD', False):
         with pytest.raises(ImportError, match="discord.py is required for pil_to_discord_file but is not installed."):
             pil_to_discord_file(mock_assets.image)
@@ -287,6 +313,9 @@ def test_pil_to_discord_file_success(mock_assets):
 @pytest.mark.asyncio
 async def test_discord_file_to_pil_missing_discord():
     """Test that discord_file_to_pil raises ImportError when discord.py is missing."""
+    missing_libs = check_libs(["discord"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_DISCORD', False):
         with pytest.raises(ImportError, match="discord.py is required for discord_file_to_pil but is not installed."):
             # Create a mock attachment to pass to the function
@@ -327,6 +356,9 @@ async def test_discord_file_to_pil_success(mock_assets):
 
 def test_tensor_to_ndarray_missing_torch():
     """Test that tensor_to_ndarray raises ImportError when torch is missing."""
+        missing_libs = check_libs(["torch"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
         with pytest.raises(ImportError, match="torch is required for tensor_to_ndarray but is not installed."):
             tensor_to_ndarray(None)
@@ -334,6 +366,9 @@ def test_tensor_to_ndarray_missing_torch():
 
 def test_tensor_to_ndarray_missing_numpy():
     """Test that tensor_to_ndarray raises ImportError when numpy is missing."""
+        missing_libs = check_libs(["torch", "numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
         with pytest.raises(ImportError, match="numpy is required for tensor_to_ndarray but is not installed."):
             tensor_to_ndarray(None)
@@ -394,6 +429,9 @@ def test_tensor_to_ndarray_requires_grad():
 
 def test_cv2_to_pil_missing_numpy():
     """Test that cv2_to_pil raises ImportError when numpy is missing."""
+    missing_libs = check_libs(["numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
         with pytest.raises(ImportError, match="numpy is required for cv2_to_pil but is not installed."):
             cv2_to_pil(None)
@@ -401,6 +439,9 @@ def test_cv2_to_pil_missing_numpy():
 
 def test_cv2_to_pil_missing_cv2():
     """Test that cv2_to_pil raises ImportError when cv2 is missing."""
+    missing_libs = check_libs(["cv2"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
         with pytest.raises(ImportError, match="cv2 is required for cv2_to_pil but is not installed."):
             cv2_to_pil(None)
