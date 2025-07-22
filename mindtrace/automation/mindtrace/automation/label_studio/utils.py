@@ -687,7 +687,8 @@ def create_manifest(
     version: str,
     splits: Dict[str, List[str]],
     class_mapping: Optional[Dict[str, Any]] = None,
-    description: str = ""
+    description: str = "",
+    detection_classes: Optional[List[str]] = None
 ) -> None:
     """Create a manifest file for the dataset.
     
@@ -698,42 +699,53 @@ def create_manifest(
         splits: Dictionary mapping split names to lists of file paths (absolute paths as strings)
         class_mapping: Optional class mapping dictionary
         description: Optional dataset description
+        detection_classes: List of detection classes from config
     """
     base_dir = Path(base_dir)
+    
+    # Get segmentation class names from class mapping
+    segmentation_classes = []
+    if class_mapping and 'label2idx' in class_mapping:
+        segmentation_classes = sorted(class_mapping['label2idx'].keys())
+    
     manifest = {
         "name": name,
         "version": version,
         "description": description,
-        "splits": {},
-        "class_mapping": class_mapping
+        "data_type": "image",
+        "outputs": [
+            {
+                "name": "bboxes",
+                "type": "detection",
+                "classes": detection_classes or [],
+                "required": False
+            },
+            {
+                "name": "zones",
+                "type": "image_segmentation",
+                "classes": segmentation_classes,
+                "required": False
+            }
+        ],
+        "splits": {}
     }
     
     for split_name, files in splits.items():
-        split_files = {
-            "images": [],
-            "masks": [],
-            "other": []
-        }
+        # Skip empty splits and 'val' split
+        if not files or split_name == 'val':
+            continue
+            
+        data_files = {}
         
         for file_path in files:
             path = Path(file_path)
             if path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']:
-                if "_mask" in path.stem:
-                    split_files["masks"].append(file_path)
-                else:
-                    split_files["images"].append(file_path)
-            else:
-                split_files["other"].append(file_path)
+                data_files[path.name] = str(path)
         
         manifest["splits"][split_name] = {
-            "images": split_files["images"],
-            "masks": split_files["masks"],
-            "other": split_files["other"],
-            "count": {
-                "images": len(split_files["images"]),
-                "masks": len(split_files["masks"]),
-                "other": len(split_files["other"])
-            }
+            "data_files": data_files,
+            "annotations": f"annotations_v{version}.json",
+            "removed": []
         }
     
     manifest_path = base_dir / f"manifest_v{version}.json"
@@ -745,19 +757,26 @@ def create_manifest(
 {description}
 
 ## Structure
-- splits/
-  - train/ ({manifest["splits"]["train"]["count"]["images"]} images, {manifest["splits"]["train"]["count"]["masks"]} masks)
+- splits/"""
+    
+    for split_name in manifest["splits"].keys():
+        readme_content += f"""
+  - {split_name}/ ({len(manifest["splits"][split_name]["data_files"])} files)
     - images/
     - masks/
-    - annotations_v{version}.json
-  - test/ ({manifest["splits"]["test"]["count"]["images"]} images, {manifest["splits"]["test"]["count"]["masks"]} masks)
-    - images/
-    - masks/
-    - annotations_v{version}.json
+    - annotations_v{version}.json"""
+    
+    readme_content += """
 
-## Class Mapping
-{json.dumps(class_mapping, indent=2) if class_mapping else "No class mapping provided"}
+## Detection Classes
 """
+    readme_content += json.dumps(detection_classes or [], indent=2)
+    
+    readme_content += """
+
+## Segmentation Classes
+"""
+    readme_content += json.dumps(segmentation_classes, indent=2)
     
     with open(base_dir / "README.md", 'w') as f:
         f.write(readme_content)

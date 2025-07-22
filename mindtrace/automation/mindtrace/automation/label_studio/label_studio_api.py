@@ -15,7 +15,8 @@ from urllib.parse import urlparse, parse_qs
 import base64
 from mindtrace.storage.gcs import GCSStorageHandler
 from tqdm import tqdm
-from utils import create_dataset_structure, create_manifest, split_dataset, organize_files_into_splits
+from .utils import create_dataset_structure, create_manifest, split_dataset, organize_files_into_splits
+from mtrix.datalake import Datalake
 
 
 @dataclass
@@ -975,7 +976,11 @@ class LabelStudio(Mindtrace):
         download_images: bool = True,
         generate_masks: bool = True,
         description: str = "",
-        seed: int = 42
+        seed: int = 42,
+        hf_token: str = None,
+        gcp_creds_path: str = None,
+        new_dataset: bool = True,
+        detection_classes: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Convert Label Studio project to datalake format with train/test splits."""
         # Validate splits
@@ -999,7 +1004,6 @@ class LabelStudio(Mindtrace):
         if not export_result['images']:
             raise ValueError(f"No data found for project {project_id}")
         
-        # Split the data
         split_result = split_dataset(
             data=list(export_result['images'].keys()),
             train_split=train_split,
@@ -1015,7 +1019,6 @@ class LabelStudio(Mindtrace):
             source_masks_dir=temp_dir / "masks" if generate_masks else None
         )
         
-        # Create split-specific annotations
         for split_name, filenames in split_result['splits'].items():
             if not filenames:  # Skip empty splits
                 continue
@@ -1030,15 +1033,48 @@ class LabelStudio(Mindtrace):
             with open(annotations_file, 'w') as f:
                 json.dump(split_annotations, f, indent=2)
         
-        # Create manifest using utility function
         create_manifest(
             base_dir=dataset_dir,
             name=dataset_name,
             version=version,
             splits=moved_files,
             class_mapping=export_result['class_mapping'],
-            description=description
+            description=description,
+            detection_classes=detection_classes
         )
+
+        # Create and publish dataset using Datalake
+        if hf_token and gcp_creds_path:            
+            self.logger.info(f"{'Creating new' if new_dataset else 'Updating existing'} dataset: {dataset_name}")
+            
+            if new_dataset:
+                # Create new dataset
+                datalake = Datalake(
+                    hf_token=hf_token,
+                    gcp_creds_path=gcp_creds_path
+                )
+                datalake.create_dataset(
+                    source=str(dataset_dir),
+                    dataset_name=dataset_name,
+                    version=version
+                )
+            else:
+                # Update existing dataset
+                datalake = Datalake(
+                    hf_token=hf_token,
+                    gcp_creds_path=gcp_creds_path
+                )
+                datalake.update_dataset(
+                    src=str(dataset_dir),
+                    dataset_name=dataset_name,
+                    version=version
+                )
+            
+            # Publish the dataset
+            datalake.publish_dataset(
+                dataset_name=dataset_name,
+                version=version
+            )
         
         return {
             'dataset_dir': str(dataset_dir.absolute()),
@@ -1049,74 +1085,3 @@ class LabelStudio(Mindtrace):
             },
             'class_mapping': export_result['class_mapping']
         }
-
-
-if __name__ == "__main__":
-    import yaml
-    from pathlib import Path
-    
-    # Get absolute path to config from current file location
-    current_dir = Path(__file__).parent
-    config_path = current_dir.parent / "configs" / "images_config.yaml"
-    print(f"Loading config from: {config_path}")
-    
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # Initialize Label Studio client
-    label_studio = LabelStudio(
-        LabelStudioConfig(
-            url=config['label_studio']['api']['url'],
-            api_key=config['label_studio']['api']['api_key'],
-            gcp_creds=config['label_studio']['api']['gcp_credentials_path']
-        )
-    )
-    
-    # Test datalake export for project 2898
-    project_id = 2898
-    output_dir = Path(config['output_folder'])
-    download_path = Path(config['download_path'])
-    dataset_name = f"defect_detection_dataset_{project_id}"
-    
-    print(f"Testing datalake export for project {project_id}")
-    print(f"Output directory: {output_dir}")
-    print(f"Download path: {download_path}")
-    print(f"Dataset name: {dataset_name}")
-    
-    try:
-        result = label_studio.convert_and_publish_to_datalake(
-            project_id=project_id,
-            output_dir=output_dir,
-            download_path=download_path,
-            dataset_name=dataset_name,
-            version="1.0.0",
-            train_split=0.8,
-            test_split=0.2,
-            download_images=True,
-            generate_masks=True,
-            description=f"Defect detection dataset exported from Label Studio project {project_id}"
-        )
-        
-        print("\nExport completed successfully!")
-        print(f"Dataset directory: {result['dataset_dir']}")
-        print(f"Manifest file: {result['manifest']}")
-        print("\nSplit statistics:")
-        print(f"Train: {result['splits']['train']} images")
-        print(f"Test: {result['splits']['test']} images")
-        
-        # Print class mapping
-        print("\nClass mapping:")
-        for class_type, mapping in result['class_mapping'].items():
-            print(f"{class_type}:")
-            print(json.dumps(mapping, indent=2))
-        
-        # List created files
-        print("\nCreated files:")
-        for path in Path(result['dataset_dir']).rglob("*"):
-            if path.is_file():
-                print(f"  {path.relative_to(result['dataset_dir'])}")
-        
-    except Exception as e:
-        print(f"❌ Error during export: {e}")
-        import traceback
-        traceback.print_exc()
