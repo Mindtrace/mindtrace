@@ -429,7 +429,7 @@ class SFZPipeline:
         image: Union[str, Image.Image, np.ndarray],
         export_types: Optional[Dict[str, ExportType]] = None,
         threshold: float = 0.4,
-        follow_pipeline: bool = True,
+        follow_pipeline: bool = False,
         background_class: int = 0,
         zone_crop_padding_percent: float = 0.1,
         zone_crop_confidence_threshold: float = 0.7,
