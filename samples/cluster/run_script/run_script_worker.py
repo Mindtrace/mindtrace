@@ -45,6 +45,28 @@ def main():
             time.sleep(1)
             status = cluster_manager.get_job_status(job_id=job.id)
         print(status)
+        job = job_from_schema(
+            sample_vbrain_schema,
+            input_data={
+                "environment": {
+                    "docker": {
+                        "image": "ubuntu:22.04",
+                        "environment": {},
+                        "volumes": {},
+                        "devices": [],
+                        "working_dir": "/app",
+                    }
+                },
+                "command": "echo 'Hello, World!' && echo 'Goodnight, World!'",
+            },
+        )
+        cluster_manager.submit_job(job)
+        status = cluster_manager.get_job_status(job_id=job.id)
+        while status.status != "completed" and status.status != "failed":
+            print(status)
+            time.sleep(1)
+            status = cluster_manager.get_job_status(job_id=job.id)
+        print(status)
     finally:
         node.shutdown()
         cluster_manager.clear_databases()

@@ -27,11 +27,10 @@ class RunScriptWorker(Worker):
 
         elif environment_config.get("docker"):
             volumes = environment_config["docker"].get("volumes", {})
-            print(volumes)
+            # this is not a good way to handle this, but it's a quick fix for now
             if "GCP_CREDENTIALS" in volumes:
                 volumes[os.environ["GOOGLE_APPLICATION_CREDENTIALS"]] = volumes["GCP_CREDENTIALS"]
                 volumes.pop("GCP_CREDENTIALS")
-            print(volumes)
             self.env_manager = DockerEnvironment(
                 image=environment_config["docker"]["image"],
                 working_dir=environment_config["docker"].get("working_dir"),
@@ -49,53 +48,11 @@ class RunScriptWorker(Worker):
         """Execute a job in a fresh environment."""
         try:
             # Setup environment based on job configuration
-            self.setup_environment(job_dict.get("environment"))
-            exit_code, stdout, stderr = self.env_manager.execute(
-                job_dict.get("command"),
-            )
+            self.setup_environment(job_dict["environment"])
+            exit_code, stdout, stderr = self.env_manager.execute(job_dict["command"])
             if exit_code != 0:
                 return {"status": "failed", "output": {"stdout": stdout, "stderr": stderr}}
             return {"status": "completed", "output": {"stdout": stdout, "stderr": stderr}}
-
-            if job_dict.get("environment", {}).get("git"):
-                script = job_dict.get("environment", {}).get("git", {}).get("entry_point")
-                if not script:
-                    raise ValueError("No script specified in job data")
-
-                args = job_dict.get("args", {})
-
-                # Environment variables for the script
-                visible_devices, local_devices = self.prepare_devices()
-
-                env = {
-                    **os.environ,
-                    "PYTHONPATH": self.working_dir if isinstance(self.env_manager, GitEnvironment) else "/app",
-                    **{f"ARG_{k.upper()}": str(v) for k, v in args.items()},
-                    "CUDA_VISIBLE_DEVICES": visible_devices
-                    if visible_devices != ""
-                    else os.environ.get("CUDA_VISIBLE_DEVICES", ""),
-                    "DEVICES": local_devices,
-                    "JOB_ID": job_dict.get("job_id", uuid.uuid4().__str__()),
-                }
-
-                exit_code, stdout, stderr = self.env_manager.execute(
-                    ["uv", "run", script], env=env, cwd=self.working_dir
-                )
-
-                if exit_code != 0:
-                    raise RuntimeError(f"Script execution failed: {stderr}")
-
-                return {"output": stdout, "error": stderr}
-            elif job_dict.get("environment", {}).get("docker"):
-                script = job_dict.get("environment", {}).get("docker", {}).get("entry_point")
-                exit_code, stdout, stderr = self.env_manager.execute(
-                    script,
-                )
-                print(stdout)
-                if exit_code != 0:
-                    raise RuntimeError(f"Script execution failed: {stderr}")
-
-                return {"output": stdout, "error": stderr}
         except Exception as e:
             self.logger.error(f"Error executing job: {e}")
             raise e
