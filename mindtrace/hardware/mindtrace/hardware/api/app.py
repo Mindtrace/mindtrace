@@ -4,7 +4,7 @@ Camera API Service using Mindtrace Service base class.
 
 import logging
 import base64
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Dict, Any, List, Optional, Tuple
 
 from fastapi import Request, HTTPException
@@ -54,7 +54,7 @@ def camera_error_handler(request: Request, exc: CameraError):
             message=str(exc),
             error_type=type(exc).__name__,
             error_code=error_code,
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -66,7 +66,7 @@ def value_error_handler(request: Request, exc: ValueError):
             message=str(exc),
             error_type="ValueError",
             error_code="VALIDATION_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -78,7 +78,7 @@ def key_error_handler(request: Request, exc: KeyError):
             message=f"Resource not found: {exc}",
             error_type="KeyError",
             error_code="RESOURCE_NOT_FOUND",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
@@ -90,14 +90,14 @@ def general_exception_handler(request: Request, exc: Exception):
             message="An unexpected error occurred",
             error_type=type(exc).__name__,
             error_code="INTERNAL_SERVER_ERROR",
-            timestamp=datetime.utcnow()
+            timestamp=datetime.now(UTC)
         ).model_dump(mode="json")
     )
 
 async def log_requests(request: Request, call_next):
-    start_time = datetime.utcnow()
+    start_time = datetime.now(UTC)
     response = await call_next(request)
-    process_time = (datetime.utcnow() - start_time).total_seconds()
+    process_time = (datetime.now(UTC) - start_time).total_seconds()
     logger.info(f"{request.method} {request.url} - {response.status_code} - {process_time:.4f}s")
     return response
 
@@ -487,17 +487,35 @@ async def video_stream(camera: str) -> StreamingResponse:
     camera_proxy = manager.get_camera(camera)
     
     async def generate():
+        consecutive_failures = 0
+        max_consecutive_failures = 10
+        
         while True:
             try:
+                # Check if camera is still active before attempting capture
+                active_cameras = manager.get_active_cameras()
+                if camera not in active_cameras:
+                    logger.info(f"Camera '{camera}' no longer active, stopping video stream")
+                    break
+                
                 capture_result = await camera_proxy.capture()
                 if isinstance(capture_result, tuple):
                     success, img = capture_result
                 else:
                     success = True
                     img = capture_result
+                
                 if not success or img is None:
+                    consecutive_failures += 1
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.warning(f"Camera '{camera}' failed {max_consecutive_failures} consecutive captures, stopping stream")
+                        break
                     await asyncio.sleep(0.1)
                     continue
+                
+                # Reset failure counter on successful capture
+                consecutive_failures = 0
+                
                 is_success, buffer = await asyncio.to_thread(cv2.imencode, ".jpg", img)
                 if not is_success:
                     await asyncio.sleep(0.1)
@@ -506,8 +524,20 @@ async def video_stream(camera: str) -> StreamingResponse:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                 await asyncio.sleep(0.01)
+            except CameraConnectionError:
+                # Camera connection lost, likely closed
+                logger.info(f"Camera '{camera}' connection lost, stopping video stream")
+                break
+            except KeyError:
+                # Camera proxy no longer exists, likely closed
+                logger.info(f"Camera '{camera}' proxy no longer exists, stopping video stream")
+                break
             except Exception as e:
+                consecutive_failures += 1
                 logger.error(f"video_stream_frame_failed: {e}")
+                if consecutive_failures >= max_consecutive_failures:
+                    logger.warning(f"Camera '{camera}' failed {max_consecutive_failures} consecutive times, stopping stream")
+                    break
                 await asyncio.sleep(0.1)
     
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
