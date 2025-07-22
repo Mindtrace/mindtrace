@@ -423,7 +423,7 @@ class Registry(Mindtrace):
             materializer_class: Materializer class to register.
         """
         if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}"
+            object_class = f"{object_class.__module__}.{object_class.__name__}" 
         
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
