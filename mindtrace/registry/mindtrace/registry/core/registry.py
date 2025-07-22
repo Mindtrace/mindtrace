@@ -27,6 +27,9 @@ class Registry(Mindtrace):
     for different object types and provides both a high-level API and a dictionary-like
     interface.
     """
+    # Class-level default materializer registry and lock
+    _default_materializers = {}
+    _materializer_lock = threading.Lock()
 
     def __init__(
         self,
@@ -78,78 +81,24 @@ class Registry(Mindtrace):
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
 
-    def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
-        """Get a distributed lock for a specific object version.
+    @classmethod
+    def register_default_materializer(cls, object_class: str | type, materializer_class: str):
+        """Register a default materializer at the class level.
 
         Args:
-            name: Name of the object
-            version: Version of the object
-            shared: Whether to use a shared (read) lock. If False, uses an exclusive (write) lock.
-
-        Returns:
-            A context manager that handles lock acquisition and release.
+            object_class: Object class (str or type) to register the materializer for.
+            materializer_class: Materializer class string to register.
         """
-        if version == "latest":
-            version = self._latest(name)
-        lock_key = f"{name}@{version}"
-        lock_id = str(uuid.uuid4())
-        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
+        if isinstance(object_class, type):
+            object_class = f"{object_class.__module__}.{object_class.__name__}"
+        with cls._materializer_lock:
+            cls._default_materializers[object_class] = materializer_class
 
-        @contextmanager
-        def lock_context():
-            try:
-                # Use Timeout class to implement retry logic for lock acquisition
-                timeout_handler = Timeout(
-                    timeout=timeout,
-                    retry_delay=0.1,  # Short retry delay for lock acquisition
-                    exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
-                    progress_bar=False,  # Don't show progress bar for lock acquisition
-                    desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
-                )
-                
-                def acquire_lock_with_retry():
-                    """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
-                    if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
-                    return True
-                
-                # Use the timeout handler to retry lock acquisition
-                timeout_handler.run(acquire_lock_with_retry)
-                yield
-            finally:
-                self.backend.release_lock(lock_key, lock_id)
-
-        return lock_context()
-
-    def _validate_version(self, version: str | None) -> str:
-        """Validate and normalize a version string to follow semantic versioning syntax.
-
-        Args:
-            version: Version string to validate.
-
-        Returns:
-            Normalized version string.
-
-        Raises:
-            ValueError: If version string is invalid.
-        """
-        if version is None or version == "latest":
-            return None
-
-        # Remove any 'v' prefix
-        if version.startswith("v"):
-            version = version[1:]
-
-        # Split into components and validate
-        try:
-            components = version.split(".")
-            # Convert each component to int to validate
-            [int(c) for c in components]
-            return version
-        except ValueError:
-            raise ValueError(
-                f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
-            )
+    @classmethod
+    def get_default_materializers(cls):
+        """Get a copy of the class-level default materializers dictionary."""
+        with cls._materializer_lock:
+            return dict(cls._default_materializers)
 
     def save(
         self,
@@ -612,6 +561,79 @@ class Registry(Mindtrace):
 
         self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
+    def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
+        """Get a distributed lock for a specific object version.
+
+        Args:
+            name: Name of the object
+            version: Version of the object
+            shared: Whether to use a shared (read) lock. If False, uses an exclusive (write) lock.
+
+        Returns:
+            A context manager that handles lock acquisition and release.
+        """
+        if version == "latest":
+            version = self._latest(name)
+        lock_key = f"{name}@{version}"
+        lock_id = str(uuid.uuid4())
+        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
+
+        @contextmanager
+        def lock_context():
+            try:
+                # Use Timeout class to implement retry logic for lock acquisition
+                timeout_handler = Timeout(
+                    timeout=timeout,
+                    retry_delay=0.1,  # Short retry delay for lock acquisition
+                    exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
+                    progress_bar=False,  # Don't show progress bar for lock acquisition
+                    desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
+                )
+                
+                def acquire_lock_with_retry():
+                    """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
+                    if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
+                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                    return True
+                
+                # Use the timeout handler to retry lock acquisition
+                timeout_handler.run(acquire_lock_with_retry)
+                yield
+            finally:
+                self.backend.release_lock(lock_key, lock_id)
+
+        return lock_context()
+
+    def _validate_version(self, version: str | None) -> str:
+        """Validate and normalize a version string to follow semantic versioning syntax.
+
+        Args:
+            version: Version string to validate.
+
+        Returns:
+            Normalized version string.
+
+        Raises:
+            ValueError: If version string is invalid.
+        """
+        if version is None or version == "latest":
+            return None
+
+        # Remove any 'v' prefix
+        if version.startswith("v"):
+            version = version[1:]
+
+        # Split into components and validate
+        try:
+            components = version.split(".")
+            # Convert each component to int to validate
+            [int(c) for c in components]
+            return version
+        except ValueError:
+            raise ValueError(
+                f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
+            )
+
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
 
@@ -765,83 +787,10 @@ class Registry(Mindtrace):
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
     def _register_default_materializers(self):
-        """Register default materializers."""
+        """Register default materializers from the class-level registry."""
         self.logger.info("Registering default materializers...")
-        
-        # Core zenml materializers
-        self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-        self.register_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-        self.register_materializer("builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-        self.register_materializer("builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-        self.register_materializer("builtins.list", "zenml.materializers.BuiltInContainerMaterializer")
-        self.register_materializer("builtins.dict", "zenml.materializers.BuiltInContainerMaterializer")
-        self.register_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
-        self.register_materializer("builtins.set", "zenml.materializers.BuiltInContainerMaterializer")
-        self.register_materializer("builtins.bytes", "zenml.materializers.BytesMaterializer")
-        self.register_materializer(PosixPath, "zenml.materializers.PathMaterializer")
-        self.register_materializer("pydantic.BaseModel", "zenml.materializers.PydanticMaterializer")
-
-        # Core mindtrace materializers
-        self.register_materializer(
-            "mindtrace.core.config.config.Config", "mindtrace.registry.archivers.config_archiver.ConfigArchiver"
-        )
-
-        # (Optional) Huggingface materializers
-        self.register_materializer(
-            "datasets.Dataset", 
-            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-        )
-        self.register_materializer(
-            "datasets.DatasetDict", 
-            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-        )
-        self.register_materializer(
-            "datasets.IterableDataset", 
-            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-        )
-
-        self.register_materializer(
-            "transformers.PreTrainedModel", 
-            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-        )
-        self.register_materializer(
-            "transformers.TFPreTrainedModel", 
-            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-        )
-
-        # (Optional) NumPy materializers
-        self.register_materializer(
-            "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
-        )
-
-        # (Optional) Pillow materializers
-        self.register_materializer(
-            "PIL.Image.Image", 
-            "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
-        )
-
-        # (Optional) PyTorch materializers
-        self.register_materializer(
-            "torch.utils.data.DataLoader", 
-            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-        )
-        self.register_materializer(
-            "torch.utils.data.Dataset", 
-            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-        )
-        self.register_materializer(
-            "torch.utils.data.IterableDataset", 
-            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-        )
-        self.register_materializer(
-            "torch.nn.Module", 
-            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-        )
-        self.register_materializer(
-            "torch.jit.ScriptModule", 
-            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-        )
-
+        for object_class, materializer_class in self.get_default_materializers().items():
+            self.register_materializer(object_class, materializer_class)
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):
