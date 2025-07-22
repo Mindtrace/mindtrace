@@ -66,7 +66,7 @@ def ascii_to_pil(ascii_image: str) -> Image:
     Example::
 
           import PIL
-          from mtrix.utils import pil_to_ascii, ascii_to_pil
+          from mindtrace.core import pil_to_ascii, ascii_to_pil
 
           image = PIL.Image.open('tests/resources/hopper.png')
           ascii_image = pil_to_ascii(image)
@@ -81,7 +81,7 @@ def pil_to_bytes(image: Image) -> bytes:
     Example::
 
           import PIL
-          from mtrix.utils import pil_to_bytes, bytes_to_pil
+          from mindtrace.core import pil_to_bytes, bytes_to_pil
 
           image = PIL.Image.open('tests/resources/hopper.png')
           bytes_image = pil_to_bytes(image)
@@ -114,7 +114,7 @@ def pil_to_tensor(image: Image) -> torch.Tensor:
     Example::
 
         from PIL import Image
-        from mtrix.utils import pil_to_tensor
+        from mindtrace.core import pil_to_tensor
 
         image = Image.open('tests/resources/hopper.png')
         tensor = pil_to_tensor(image)
@@ -143,7 +143,7 @@ def tensor_to_pil(image: torch.Tensor, mode=None, min_val=None, max_val=None) ->
     Example::
 
         from PIL import Image
-        from mtrix.utils import pil_to_tensor, tensor_to_pil
+        from mindtrace.core import pil_to_tensor, tensor_to_pil
 
         image = Image.open('tests/resources/hopper.png')
         tensor_image = pil_to_tensor(image)
@@ -213,7 +213,7 @@ def ndarray_to_pil(image: np.ndarray, image_format: str = "RGB"):
     Example::
 
         from matplotlib import image, pyplot as plt
-        from mtrix.utils import ndarray_to_pil
+        from mindtrace.core import ndarray_to_pil
 
         ndarray_image = image.imread('tests/resources/hopper.png')
         pil_image = ndarray_to_pil(ndarray_image, image_format='RGB')
@@ -257,7 +257,7 @@ def pil_to_cv2(image: Image) -> np.ndarray:
     Example::
 
           import PIL
-          from mtrix.utils import pil_to_cv2
+          from mindtrace.core import pil_to_cv2
 
           pil_image = PIL.Image.open('tests/resources/hopper.png')
           cv2_image = pil_to_cv2(pil_image)
@@ -284,7 +284,7 @@ def cv2_to_pil(image: np.ndarray) -> Image:
     Example::
 
           import cv2
-          from mtrix.utils import cv2_to_pil
+          from mindtrace.core import cv2_to_pil
 
           cv2_image = cv2.imread('tests/resources/hopper.png')
           pil_image = cv2_to_pil(cv2_image)
@@ -307,7 +307,7 @@ def pil_to_base64(image: Image) -> str:
 
     Example::
         from PIL import Image
-        from mtrix.utils import pil_to_base64
+        from mindtrace.core import pil_to_base64
 
         image = Image.open("path_to_image.png")
         encoded_image = pil_to_base64(image)
@@ -327,7 +327,7 @@ def base64_to_pil(base64_str: str) -> Image:
         PIL.Image: The decoded image object.
 
     Example::
-        from mtrix.utils import base64_to_pil
+        from mindtrace.core import base64_to_pil
 
         base64_str = "..."  # Base64 string obtained earlier
         image = base64_to_pil(base64_str)
@@ -349,7 +349,7 @@ def pil_to_discord_file(image: Image, filename: str = "image.png") -> "File":
 
     Example::
         from PIL import Image
-        from mtrix.utils import pil_to_discord_file
+        from mindtrace.core import pil_to_discord_file
         from discord import File
 
         image = Image.open("path_to_image.png")
