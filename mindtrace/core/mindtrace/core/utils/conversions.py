@@ -400,7 +400,7 @@ def tensor_to_ndarray(tensor: torch.Tensor) -> np.ndarray:
     """Convert a PyTorch tensor to a numpy array.
 
     Handles both single images (3D tensors) and batches (4D tensors),
-    converting them to the numpy format .
+    converting them to the numpy format.
 
     Args:
         tensor: PyTorch tensor in format [C,H,W] or [B,C,H,W]
@@ -433,3 +433,21 @@ def tensor_to_ndarray(tensor: torch.Tensor) -> np.ndarray:
         return np.transpose(tensor_np, (1, 2, 0))
     else:
         raise ValueError(f"Expected 3D or 4D tensor, got {tensor.dim()}D tensor with shape {tensor.shape}")
+
+
+def ndarray_to_tensor(image: np.ndarray) -> torch.Tensor:
+    """Convert a numpy array to a PyTorch tensor.
+
+    Args:
+        image: The numpy array to convert.
+
+    Returns:
+        The PyTorch tensor.
+    """
+    if not _HAS_TORCH:
+        raise ImportError("torch is required for ndarray_to_tensor but is not installed.")
+    if not _HAS_NUMPY:
+        raise ImportError("numpy is required for ndarray_to_tensor but is not installed.")
+    if not image.flags.writeable:
+        image = image.copy()
+    return torch.from_numpy(image)
