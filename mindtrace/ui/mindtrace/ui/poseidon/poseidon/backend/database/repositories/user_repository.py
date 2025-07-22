@@ -8,12 +8,14 @@ backend = MongoMindtraceODMBackend(User, db_uri=settings.MONGO_URI, db_name=sett
 class UserRepository:
     @staticmethod
     async def get_by_email(email: str) -> Optional[User]:
+        """Get user by email"""
         await backend.initialize()
         users = await backend.find({"email": email})
         return users[0] if users else None
 
     @staticmethod
     async def get_by_username(username: str) -> Optional[User]:
+        """Get user by username"""
         await backend.initialize()
         users = await backend.find({"username": username})
         return users[0] if users else None
@@ -28,10 +30,27 @@ class UserRepository:
             return None
 
     @staticmethod
-    async def create_user(user_data: dict) -> User:
+    async def create(user_data: dict) -> User:
+        """Create a new user"""
         await backend.initialize()
         user = User(**user_data)
         return await backend.insert(user)
+    
+    @staticmethod
+    async def update(user_id: str, update_data: dict) -> Optional[User]:
+        """Update user with arbitrary data"""
+        await backend.initialize()
+        try:
+            user = await backend.get(user_id)
+            if user:
+                for key, value in update_data.items():
+                    if hasattr(user, key):
+                        setattr(user, key, value)
+                user.update_timestamp()
+                return await backend.update(user_id, user)
+        except:
+            pass
+        return None
     
     @staticmethod
     async def get_by_organization(organization_id: str) -> List[User]:
@@ -104,29 +123,23 @@ class UserRepository:
         return None
     
     @staticmethod
+    async def find_by_role(role: str) -> List[User]:
+        """Find all users with a specific role"""
+        await backend.initialize()
+        return await backend.find({"org_roles": {"$in": [role]}})
+
+    # Backward compatibility aliases
+    @staticmethod
+    async def create_user(user_data: dict) -> User:
+        """Create a new user (backward compatibility alias)"""
+        return await UserRepository.create(user_data)
+    
+    @staticmethod
     async def deactivate_user(user_id: str) -> Optional[User]:
         """Deactivate user instead of deleting"""
-        await backend.initialize()
-        user = await backend.get(user_id)
-        if user:
-            user.is_active = False
-            user.update_timestamp()
-            return await backend.update(user_id, user)
-        return None
+        return await UserRepository.update(user_id, {"is_active": False})
     
     @staticmethod
     async def activate_user(user_id: str) -> Optional[User]:
         """Activate user account"""
-        await backend.initialize()
-        user = await backend.get(user_id)
-        if user:
-            user.is_active = True
-            user.update_timestamp()
-            return await backend.update(user_id, user)
-        return None
-    
-    @staticmethod
-    async def find_by_role(role: str) -> List[User]:
-        """Find all users with a specific role"""
-        await backend.initialize()
-        return await backend.find({"org_roles": {"$in": [role]}}) 
+        return await UserRepository.update(user_id, {"is_active": True}) 

@@ -32,6 +32,18 @@ def user_management_table():
                 ),
                 rx.fragment()
             ),
+            # Project assignments column
+            rx.table.cell(
+                rx.button(
+                    "Manage Projects",
+                    on_click=lambda: UserManagementState.open_project_management_dialog(user["id"]),
+                    size="1",
+                    color_scheme="blue",
+                    variant="soft",
+                    cursor="pointer",
+                ),
+                max_width="200px",
+            ),
             rx.table.cell(
                 rx.text(
                     rx.cond(user["is_active"], "Active", "Inactive"),
@@ -48,6 +60,15 @@ def user_management_table():
                             UserManagementState.can_edit_user(user["id"]),
                             edit_user_popup(user),
                             None,
+                        ),
+                        # Project assignment button
+                        rx.button(
+                            "Assign Project",
+                            size="1",
+                            color_scheme="blue",
+                            variant="surface",
+                            cursor="pointer",
+                            on_click=lambda: UserManagementState.open_assignment_dialog(user["id"]),
                         ),
                         rx.cond(
                             UserManagementState.can_deactivate_user(user["id"]),
@@ -90,8 +111,8 @@ def user_management_table():
     # Dynamic columns based on user role
     user_columns = rx.cond(
         AuthState.is_super_admin,
-        ["Username", "Email", "Organization", "Status", "Actions"],
-        ["Username", "Email", "Status", "Actions"]
+        ["Username", "Email", "Organization", "Project Assignments", "Status", "Actions"],
+        ["Username", "Email", "Project Assignments", "Status", "Actions"]
     )
     
     return rx.vstack(
@@ -117,7 +138,7 @@ def user_management_table():
             rx.table.body(rx.foreach(UserManagementState.filtered_users, create_user_row)),
             width="100%",
             variant="surface",
-            max_width="800px",
+            max_width="1200px",  # Increased width for project assignments column
             size="1",
         ),
         width="100%",
@@ -213,98 +234,7 @@ def project_assignments_table(assignments: list):
     )
 
 
-# Keep original demo table for reference
-def tables_v1():
-    """Original Buridan UI demo table - for reference."""
-    demo_data = [
-        {"userId": 1, "id": 1, "title": "delectus aut autem", "completed": False},
-        {"userId": 1, "id": 2, "title": "quis ut nam facilis", "completed": False},
-        {"userId": 1, "id": 3, "title": "fugiat veniam minus", "completed": False},
-        {"userId": 1, "id": 4, "title": "et porro tempora", "completed": True},
-    ]
-    
-    class Table(rx.State):
-        main_data: list[dict[str, str]] = demo_data
-        paginated_data: list[dict[str, str]] = demo_data
-        column_names: list[str] = list(demo_data[0].keys())
-        limits: list[str] = ["10", "15", "20", "30", "50"]
-        current_limit: int = 10
-        offset: int = 0
-        current_page: int = 1
-        number_of_rows: int = len(demo_data)
-        total_pages: int = 1
 
-    def create_table_header(title: str):
-        return rx.table.column_header_cell(title)
-
-    def create_query_rows(data: dict[str, str]):
-        def fill_rows_with_data(data_):
-            return rx.table.cell(f"{data_[1]}", cursor="pointer")
-
-        return rx.table.row(
-            rx.foreach(data, fill_rows_with_data),
-            _hover={"bg": rx.color(color="gray", shade=4)},
-            align="center",
-            white_space="nowrap",
-        )
-
-    def create_pagination():
-        return rx.hstack(
-            rx.hstack(
-                rx.text("Rows per page", weight="bold", font_size="12px"),
-                rx.select(
-                    Table.limits,
-                    default_value="10",
-                    width="80px",
-                ),
-                align_items="center",
-            ),
-            rx.hstack(
-                rx.text(
-                    f"Page {Table.current_page} of {Table.total_pages}",
-                    width="100px",
-                    weight="bold",
-                    font_size="12px",
-                ),
-                rx.button(
-                    rx.icon(tag="chevron-left", size=25),
-                    color_scheme="gray",
-                    variant="surface",
-                    size="1",
-                    width="32px",
-                    height="32px",
-                ),
-                rx.button(
-                    rx.icon(tag="chevron-right", size=25),
-                    color_scheme="gray", 
-                    variant="surface",
-                    size="1",
-                    width="32px",
-                    height="32px",
-                ),
-                align_items="center",
-                spacing="1",
-            ),
-            align_items="center",
-            spacing="4",
-            flex_wrap="wrap",
-        )
-
-    return rx.vstack(
-        create_pagination(),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(rx.foreach(Table.column_names, create_table_header)),
-            ),
-            rx.table.body(rx.foreach(Table.paginated_data, create_query_rows)),
-            width="100%",
-            variant="surface",
-            max_width="800px",
-            size="1",
-        ),
-        width="100%",
-        align="center",
-    )
 
 
 def organization_management_table():

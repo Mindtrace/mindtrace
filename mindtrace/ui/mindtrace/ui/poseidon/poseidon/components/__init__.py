@@ -1,7 +1,46 @@
 """Poseidon UI Components.
 
-Buridan UI components adapted for Poseidon use cases.
+Modern component library with mindtrace styling as the primary choice.
+Mindtrace components provide superior animations, styling, and user experience.
 """
+
+# === PRIMARY MINDTRACE COMPONENTS (RECOMMENDED) ===
+# These provide superior styling, animations, and user experience
+
+# Mindtrace form components (PRIMARY CHOICE)
+from .mindtrace_forms import (
+    input_mindtrace,
+    input_with_label_mindtrace,
+    input_with_hint_mindtrace,
+    select_mindtrace,
+    button_mindtrace,
+    link_mindtrace,
+)
+
+# Mindtrace layout components
+from .mindtrace_layouts import (
+    background_mindtrace,
+    page_layout_mindtrace,
+    css_animations_mindtrace,
+)
+
+# Mindtrace branding components
+from .mindtrace_branding import (
+    logo_mindtrace,
+)
+
+# Mindtrace card components
+from .mindtrace_cards import (
+    card_mindtrace,
+)
+
+# Mindtrace header components
+from .mindtrace_headers import (
+    header_mindtrace,
+)
+
+# === SECONDARY COMPONENTS ===
+# Use these for specific functionality not covered by mindtrace components
 
 # Core navigation components
 from .sidebar import sidebar
@@ -13,7 +52,6 @@ from .cards import (
     navigation_action_card,
     user_management_card,
     dashboard_card,
-    card_v1,  # Original demo
 )
 
 # Form components
@@ -22,7 +60,6 @@ from .forms import (
     registration_form,
     contact_form,
     form_input_with_label,
-    forms_v1,  # Original demo
 )
 
 # Table components
@@ -30,15 +67,10 @@ from .tables import (
     user_management_table,
     organization_management_table,
     project_assignments_table,
-    tables_v1,  # Original demo
 )
 
 # Input components
 from .inputs import (
-    text_input_with_label,
-    email_input,
-    password_input,
-    search_input,
     textarea_with_label,
     role_filter_select,
     status_filter_select,
@@ -47,7 +79,6 @@ from .inputs import (
     error_message,
     warning_message,
     info_message,
-    input_v1,  # Original demo
 )
 
 # Stats components
@@ -56,20 +87,14 @@ from .stats import (
     user_profile_stats,
     system_overview_stats,
     custom_stats_grid,
-    stat_v1,  # Original demo
 )
 
 # Button components
 from .buttons import (
-    primary_action_button,
-    secondary_action_button,
     refresh_button,
-    danger_action_button,
-    success_action_button,
     icon_button,
     link_button,
     action_button_group,
-    button_v1,  # Original demo
 )
 
 # Page header components
@@ -80,7 +105,6 @@ from .headers import (
     section_header,
     dashboard_header,
     breadcrumb_header,
-    header_v1,
 )
 
 # Popup components
@@ -92,7 +116,8 @@ from .popups import (
     edit_organization_popup,
     notification_popup,
     custom_dialog,
-    popups_v1,  # Original demo
+    assign_project_popup,
+    project_management_popup,
 )
 
 # Layout components
@@ -128,31 +153,40 @@ from .utilities import (
     authentication_required_component,
 )
 
-# Mindtrace components
-from .mindtrace_layouts import (
-    background_mindtrace,
-    page_layout_mindtrace,
-    css_animations_mindtrace,
-)
-from .mindtrace_branding import (
-    logo_mindtrace,
-)
-from .mindtrace_cards import (
-    card_mindtrace,
-)
-from .mindtrace_headers import (
-    header_mindtrace,
-)
-from .mindtrace_forms import (
-    input_mindtrace,
-    input_with_label_mindtrace,
-    input_with_hint_mindtrace,
-    select_mindtrace,
-    button_mindtrace,
-    link_mindtrace,
+# Base management components
+from .base_management import (
+    base_management_page,
+    standard_filter_bar,
+    standard_table_actions,
 )
 
+# Mindtrace components are now imported at the top as primary components
+
 __all__ = [
+    # === PRIMARY MINDTRACE COMPONENTS (RECOMMENDED) ===
+    # Form components (PRIMARY CHOICE)
+    "input_mindtrace",
+    "input_with_label_mindtrace", 
+    "input_with_hint_mindtrace",
+    "select_mindtrace",
+    "button_mindtrace",
+    "link_mindtrace",
+    
+    # Layout components
+    "background_mindtrace",
+    "page_layout_mindtrace",
+    "css_animations_mindtrace",
+    
+    # Branding components
+    "logo_mindtrace",
+    
+    # Card components
+    "card_mindtrace",
+    
+    # Header components
+    "header_mindtrace",
+    
+    # === SECONDARY COMPONENTS ===
     # Navigation
     "app_header",
     "sidebar",
@@ -163,26 +197,19 @@ __all__ = [
     "navigation_action_card",
     "user_management_card",
     "dashboard_card",
-    "card_v1",
     
     # Forms
     "login_form",
     "registration_form",
     "contact_form",
     "form_input_with_label",
-    "forms_v1",
     
     # Tables
     "user_management_table",
     "organization_management_table",
     "project_assignments_table",
-    "tables_v1",
     
     # Inputs
-    "text_input_with_label",
-    "email_input",
-    "password_input",
-    "search_input",
     "textarea_with_label",
     "role_filter_select",
     "status_filter_select",
@@ -191,25 +218,18 @@ __all__ = [
     "error_message",
     "warning_message",
     "info_message",
-    "input_v1",
     
     # Stats
     "admin_dashboard_stats",
     "user_profile_stats",
     "system_overview_stats",
     "custom_stats_grid",
-    "stat_v1",
     
     # Buttons
-    "primary_action_button",
-    "secondary_action_button",
     "refresh_button",
-    "danger_action_button",
-    "success_action_button",
     "icon_button",
     "link_button",
     "action_button_group",
-    "button_v1",
     
     # Page Headers
     "page_header",
@@ -217,7 +237,6 @@ __all__ = [
     "section_header",
     "dashboard_header",
     "breadcrumb_header",
-    "header_v1",
     
     # Popups
     "user_details_popup",
@@ -227,7 +246,8 @@ __all__ = [
     "edit_organization_popup",
     "notification_popup",
     "custom_dialog",
-    "popups_v1",
+    "assign_project_popup",
+    "project_management_popup",
     
     # Layouts
     "page_container",
@@ -258,17 +278,8 @@ __all__ = [
     "access_denied_component",
     "authentication_required_component",
     
-    # Mindtrace components
-    "background_mindtrace",
-    "logo_mindtrace",
-    "card_mindtrace",
-    "header_mindtrace",
-    "input_mindtrace",
-    "input_with_label_mindtrace",
-    "input_with_hint_mindtrace",
-    "select_mindtrace",
-    "button_mindtrace",
-    "link_mindtrace",
-    "page_layout_mindtrace",
-    "css_animations_mindtrace",
+    # Base Management
+    "base_management_page",
+    "standard_filter_bar",
+    "standard_table_actions",
 ] 

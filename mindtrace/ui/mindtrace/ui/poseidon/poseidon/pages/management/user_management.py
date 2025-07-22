@@ -14,7 +14,8 @@ from poseidon.components import (
     add_user_popup, page_header_with_actions,
     refresh_button, filter_bar, success_message, error_message,
     page_container, authenticated_page_wrapper,
-    access_denied_component, authentication_required_component
+    access_denied_component, authentication_required_component,
+    assign_project_popup, project_management_popup
 )
 from poseidon.state.auth import AuthState
 from poseidon.state.user_management import UserManagementState
@@ -97,6 +98,12 @@ def user_management_content() -> rx.Component:
             
             # User management table using unified component
             user_management_table(),
+            
+            # Project assignment popup
+            assign_project_popup(),
+            
+            # Project management popup
+            project_management_popup(),
             
             margin_top="60px",  # Account for header
         ),

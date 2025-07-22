@@ -14,9 +14,12 @@ import reflex as rx
 from poseidon.pages.index import index
 from poseidon.pages.auth import login_page, register_page, register_admin_page, register_super_admin_page
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
-from poseidon.pages.management import user_management_page, organization_management_page
+from poseidon.pages.management import user_management_page, organization_management_page, project_management_page
 from poseidon.pages.user import profile_page
-from poseidon.pages.images import images_page
+from poseidon.pages.gallery import images_page
+from poseidon.pages.camera import camera_configurator_page
+from poseidon.pages.model_deployment import model_deployment_page
+
 from poseidon.styles.theme import theme_config
 from poseidon.styles.styles import styles
 
@@ -39,9 +42,16 @@ app.add_page(register_super_admin_page, route="/register-super-admin", title="Mi
 app.add_page(admin_page, route="/admin", title="MindTrace - Admin")
 app.add_page(super_admin_dashboard_page, route="/super-admin-dashboard", title="MindTrace - Super Admin Dashboard")
 
+# Camera Configurator route
+app.add_page(camera_configurator_page, route="/camera-configurator", title="MindTrace - Camera Configurator")
+
+# Model Deployment route
+app.add_page(model_deployment_page, route="/model-deployment", title="MindTrace - Model Deployment")
+
 # Management routes
 app.add_page(user_management_page, route="/user-management", title="MindTrace - User Management")
 app.add_page(organization_management_page, route="/organization-management", title="MindTrace - Organization Management")
+app.add_page(project_management_page, route="/project-management", title="MindTrace - Project Management")
 
 # User routes
 app.add_page(profile_page, route="/profile", title="MindTrace - Profile")

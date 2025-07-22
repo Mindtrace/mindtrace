@@ -41,7 +41,6 @@ class Service(Mindtrace):
     """Base class for all Mindtrace services."""
 
     _status = ServerStatus.DOWN
-    _endpoints: dict[str, TaskSchema] = {}
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
 
@@ -72,6 +71,7 @@ class Service(Mindtrace):
         """
         super().__init__()
         self._status: ServerStatus = ServerStatus.AVAILABLE
+        self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file()
 
         # Build URL with the following priority:

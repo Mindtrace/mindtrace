@@ -8,6 +8,8 @@ This file contains all header components for Poseidon:
 
 import reflex as rx
 from poseidon.state.auth import AuthState
+from .mindtrace_headers import header_mindtrace
+from .mindtrace_forms import input_mindtrace
 
 # --- App Header (Navigation Bar) ---
 def app_header() -> rx.Component:
@@ -15,9 +17,12 @@ def app_header() -> rx.Component:
     return rx.box(
         rx.hstack(
             # Search section
-            rx.input(
+            rx.box(
+                input_mindtrace(
                 placeholder="Search datasets, models, devices...",
-                size="2",
+                    name="search",
+                    size="medium",
+                ),
                 max_width="400px",
                 flex="1",
             ),
@@ -73,24 +78,9 @@ def page_header(
     align: str = "center",
     margin_bottom: str = "2rem"
 ):
-    """Standard page header - keeps Buridan UI styling."""
+    """Standard page header - using mindtrace styling."""
     return rx.box(
-        rx.heading(
-            title,
-            size="8",
-            weight="bold",
-            color=rx.color("slate", 12),
-            margin_bottom="0.5rem",
-        ),
-        rx.cond(
-            description,
-            rx.text(
-                description,
-                size="4",
-                color=rx.color("slate", 11),
-                margin_bottom="3rem",
-            ),
-        ),
+        header_mindtrace(title, description),
         text_align=align,
         margin_bottom=margin_bottom,
     )
@@ -143,22 +133,9 @@ def section_header(
     size: str = "6",
     margin_bottom: str = "1.5rem"
 ):
-    """Section header within pages - keeps Buridan UI styling."""
+    """Section header within pages - using mindtrace styling."""
     return rx.box(
-        rx.heading(
-            title,
-            size=size,
-            color=rx.color("slate", 12),
-            margin_bottom="0.5rem" if subtitle else "0",
-        ),
-        rx.cond(
-            subtitle,
-            rx.text(
-                subtitle,
-                size="3",
-                color=rx.color("slate", 11),
-            ),
-        ),
+        header_mindtrace(title, subtitle),
         margin_bottom=margin_bottom,
     )
 
@@ -167,29 +144,14 @@ def dashboard_header(
     user_name: str = "",
     stats: list = None
 ):
-    """Dashboard-style header with stats - keeps Buridan UI styling."""
+    """Dashboard-style header with stats - using mindtrace styling."""
     if stats is None:
         stats = []
+    
+    subtitle = f"Welcome back, {user_name}!" if user_name else ""
+    
     return rx.vstack(
-        rx.heading(
-            title,
-            size="8",
-            weight="bold",
-            color=rx.color("slate", 12),
-            text_align="center",
-            margin_bottom="0.5rem",
-        ),
-        rx.cond(
-            user_name,
-            rx.text(
-                f"Welcome back, {user_name}!",
-                size="5",
-                color=rx.color("slate", 12),
-                weight="medium",
-                text_align="center",
-                margin_bottom="2rem",
-            ),
-        ),
+        header_mindtrace(title, subtitle),
         rx.cond(
             stats,
             rx.box(
@@ -282,21 +244,4 @@ def breadcrumb_header(
         margin_bottom="2rem",
     )
 
-# Keep original demo header for reference
-def header_v1():
-    """Original Buridan UI demo header - for reference."""
-    return rx.box(
-        rx.heading(
-            "Buridan UI Header",
-            size="8",
-            weight="bold",
-            color=rx.color("slate", 12),
-        ),
-        rx.text(
-            "Demo header component",
-            size="4",
-            color=rx.color("slate", 11),
-        ),
-        text_align="center",
-        margin_bottom="2rem",
-    ) 
+ 

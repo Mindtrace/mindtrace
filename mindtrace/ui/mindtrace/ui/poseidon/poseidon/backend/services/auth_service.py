@@ -170,7 +170,7 @@ class AuthService:
             "subscription_plan": "enterprise",
             "is_active": True
         }
-        system_org = await OrganizationRepository.create_organization(system_org_data)
+        system_org = await OrganizationRepository.create(system_org_data)
         
         return await AuthService.register_user(
             username=username,

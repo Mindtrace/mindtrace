@@ -9,17 +9,24 @@ Provides reusable layout patterns used across multiple pages:
 
 import reflex as rx
 from poseidon.state.auth import AuthState
+from .mindtrace_layouts import background_mindtrace
 
 
 def page_container(*children, **props) -> rx.Component:
-    """Standard page container with sidebar spacing and consistent styling."""
+    """Standard page container with sidebar spacing and mindtrace background."""
     return rx.box(
+        background_mindtrace(),
+        rx.box(
         *children,
         margin_left="16rem",  # Space for sidebar
         padding="2rem",
         min_height="100vh",
-        background=rx.color("gray", 1),
+            position="relative",
+            z_index="1",
         **props
+        ),
+        min_height="100vh",
+        position="relative",
     )
 
 

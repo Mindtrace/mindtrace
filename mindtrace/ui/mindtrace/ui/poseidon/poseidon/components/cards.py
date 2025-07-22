@@ -5,23 +5,22 @@ while keeping the exact styling patterns.
 """
 
 import reflex as rx
+from .mindtrace_cards import card_mindtrace
 
 
 def admin_feature_card(title: str, description: str, icon: str):
-    """Admin dashboard feature card - keeps Buridan UI styling."""
+    """Admin dashboard feature card - using mindtrace styling."""
     return rx.box(
-        rx.vstack(
+        card_mindtrace([
             rx.text(icon, font_size="2rem"),
             rx.heading(title, size="4", weight="bold"),
             rx.text(description, size="2", color=rx.color("slate", 11)),
-            spacing="3",
-            align="center",
-        ),
-        class_name=(
-            "w-full h-72 max-w-[35em] "
-            + "p-4 "
-            + "rounded-md border border-dashed border-gray-600 "
-        ),
+        ]),
+        height="18rem",
+        max_width="35em",
+        display="flex",
+        align_items="center",
+        justify_content="center",
     )
 
 
@@ -84,9 +83,9 @@ def profile_info_card(title: str, content_items: list):
 
 
 def navigation_action_card(title: str, description: str, icon: str):
-    """Home page navigation card - clean, modern styling without problematic background patterns."""
+    """Home page navigation card - using mindtrace styling."""
     return rx.box(
-        rx.vstack(
+        card_mindtrace([
             # Icon with proper styling
         rx.box(
                 rx.text(icon, font_size="2.5rem"),
@@ -117,29 +116,14 @@ def navigation_action_card(title: str, description: str, icon: str):
                 text_align="center",
                 line_height="1.5",
             ),
-            spacing="2",
-            align="center",
-            justify="center",
-            height="100%",
-        ),
-        # Modern card styling
-        width="100%",
+        ]),
         min_height="200px",
         max_width="320px",
-        padding="2rem",
-        border_radius="12px",
-        background=rx.color("slate", 2),
-        border=f"1px solid {rx.color('slate', 6)}",
-        box_shadow="0 2px 8px rgba(0, 0, 0, 0.04)",
         cursor="pointer",
         transition="all 0.2s ease",
-        # Hover effects
         _hover={
             "transform": "translateY(-2px)",
-            "box_shadow": "0 4px 16px rgba(0, 0, 0, 0.08)",
-            "border_color": rx.color("blue", 7),
         },
-        # Focus effects for accessibility
         _focus={
             "outline": f"2px solid {rx.color('blue', 8)}",
             "outline_offset": "2px",
@@ -210,19 +194,4 @@ def dashboard_card(title: str, description: str, icon: str, href: str):
     )
 
 
-def card_v1():
-    """Original Buridan UI demo card - for reference."""
-    return rx.box(
-        rx.box(
-            color=rx.color("gray", 4),
-            class_name=(
-                "w-full h-full "
-                + "col-start-2 row-span-full row-start-1 bg-[size:10px_10px] bg-fixed bg-[image:repeating-linear-gradient(315deg,currentColor_0,currentColor_1px,_transparent_0,_transparent_50%)]"
-            ),
-        ),
-        class_name=(
-            "w-full h-72 max-w-[35em] "
-            + "p-4 "
-            + "rounded-md border border-dashed border-gray-600 "
-        ),
-    )
+

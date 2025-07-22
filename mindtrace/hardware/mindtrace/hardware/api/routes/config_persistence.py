@@ -27,7 +27,6 @@ router = APIRouter()
 @router.post("/export", response_model=BoolResponse)
 async def export_config(
     request: ConfigFileRequest,
-    validated_camera: str = Depends(validate_camera_exists),
     manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
     """
@@ -38,7 +37,6 @@ async def export_config(
     
     Args:
         request: Export configuration request with camera name and file path
-        validated_camera: Validated camera name (from dependency)
         manager: Camera manager instance
         
     Returns:
@@ -50,28 +48,40 @@ async def export_config(
         500: If unexpected error occurs
     """
     try:
-        logger.info(f"Exporting configuration for camera '{validated_camera}' to '{request.config_path}'")
+        # Validate camera name format
+        if ":" not in request.camera:
+            raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
+        
+        # Check if camera is initialized
+        active_cameras = manager.get_active_cameras()
+        if request.camera not in active_cameras:
+            from mindtrace.hardware.core.exceptions import CameraNotFoundError
+            raise CameraNotFoundError(
+                f"Camera '{request.camera}' is not initialized. Use POST /api/v1/cameras/initialize first."
+            )
+        
+        logger.info(f"Exporting configuration for camera '{request.camera}' to '{request.config_path}'")
         
         # Get camera and export configuration
-        camera = manager.get_camera(validated_camera)
+        camera = manager.get_camera(request.camera)
         success = await camera.save_config(request.config_path)
         
         if success:
-            logger.info(f"Configuration exported successfully for camera '{validated_camera}'")
+            logger.info(f"Configuration exported successfully for camera '{request.camera}'")
             return BoolResponse(
                 success=True,
                 data=True,
                 message=f"Configuration exported successfully to '{request.config_path}'"
             )
         else:
-            logger.error(f"Failed to export configuration for camera '{validated_camera}'")
+            logger.error(f"Failed to export configuration for camera '{request.camera}'")
             raise HTTPException(
                 status_code=422,
-                detail=f"Failed to export configuration for camera '{validated_camera}'"
+                detail=f"Failed to export configuration for camera '{request.camera}'"
             )
         
     except CameraError as e:
-        logger.error(f"Camera error during export for '{validated_camera}': {e}")
+        logger.error(f"Camera error during export for '{request.camera}': {e}")
         raise HTTPException(
             status_code=422,
             detail=f"Camera error during export: {str(e)}"
@@ -83,7 +93,7 @@ async def export_config(
         # Re-raise HTTPExceptions (like validation errors) as-is
         raise
     except Exception as e:
-        logger.error(f"Unexpected error exporting config for '{validated_camera}': {e}")
+        logger.error(f"Unexpected error exporting config for '{request.camera}': {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error during export: {str(e)}"
@@ -93,7 +103,6 @@ async def export_config(
 @router.post("/import", response_model=BoolResponse)
 async def import_config(
     request: ConfigFileRequest,
-    validated_camera: str = Depends(validate_camera_exists),
     manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
     """
@@ -104,7 +113,6 @@ async def import_config(
     
     Args:
         request: Import configuration request with camera name and file path
-        validated_camera: Validated camera name (from dependency)
         manager: Camera manager instance
         
     Returns:
@@ -116,28 +124,40 @@ async def import_config(
         500: If unexpected error occurs
     """
     try:
-        logger.info(f"Importing configuration for camera '{validated_camera}' from '{request.config_path}'")
+        # Validate camera name format
+        if ":" not in request.camera:
+            raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
+        
+        # Check if camera is initialized
+        active_cameras = manager.get_active_cameras()
+        if request.camera not in active_cameras:
+            from mindtrace.hardware.core.exceptions import CameraNotFoundError
+            raise CameraNotFoundError(
+                f"Camera '{request.camera}' is not initialized. Use POST /api/v1/cameras/initialize first."
+            )
+        
+        logger.info(f"Importing configuration for camera '{request.camera}' from '{request.config_path}'")
         
         # Get camera and import configuration
-        camera = manager.get_camera(validated_camera)
+        camera = manager.get_camera(request.camera)
         success = await camera.load_config(request.config_path)
         
         if success:
-            logger.info(f"Configuration imported successfully for camera '{validated_camera}'")
+            logger.info(f"Configuration imported successfully for camera '{request.camera}'")
             return BoolResponse(
                 success=True,
                 data=True,
                 message=f"Configuration imported successfully from '{request.config_path}'"
             )
         else:
-            logger.error(f"Failed to import configuration for camera '{validated_camera}'")
+            logger.error(f"Failed to import configuration for camera '{request.camera}'")
             raise HTTPException(
                 status_code=422,
-                detail=f"Failed to import configuration for camera '{validated_camera}'"
+                detail=f"Failed to import configuration for camera '{request.camera}'"
             )
         
     except CameraError as e:
-        logger.error(f"Camera error during import for '{validated_camera}': {e}")
+        logger.error(f"Camera error during import for '{request.camera}': {e}")
         raise HTTPException(
             status_code=422,
             detail=f"Camera error during import: {str(e)}"
@@ -149,7 +169,7 @@ async def import_config(
         # Re-raise HTTPExceptions (like validation errors) as-is
         raise
     except Exception as e:
-        logger.error(f"Unexpected error importing config for '{validated_camera}': {e}")
+        logger.error(f"Unexpected error importing config for '{request.camera}': {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Unexpected error during import: {str(e)}"
