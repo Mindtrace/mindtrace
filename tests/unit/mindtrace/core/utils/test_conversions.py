@@ -26,6 +26,7 @@ from mindtrace.core import (
     base64_to_pil,
     pil_to_discord_file,
     discord_file_to_pil,
+    ndarray_to_tensor,
 )
 from tests.utils import images_are_identical
 
@@ -559,3 +560,39 @@ def test_tensor_to_ndarray_moves_to_cpu():
     result = tensor_to_ndarray(gpu_tensor)
     assert isinstance(result, np.ndarray)
     assert result.shape == (8, 8, 3)
+
+
+def test_ndarray_to_tensor(mock_assets):
+    """Test conversion of numpy ndarray to PyTorch tensor."""
+    missing_libs = check_libs(["torch", "numpy"])
+    if missing_libs:
+        pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    import torch
+    import numpy as np
+
+    # Test with uint8 ndarray
+    np_image = mock_assets.image_uint8_ndarray
+    tensor = ndarray_to_tensor(np_image)
+    assert isinstance(tensor, torch.Tensor)
+    assert np.allclose(tensor.numpy(), np_image)
+    assert tensor.shape == np_image.shape
+    assert tensor.dtype == torch.uint8
+
+    # Test with float32 ndarray
+    np_image_fp32 = mock_assets.image_float32_ndarray
+    tensor_fp32 = ndarray_to_tensor(np_image_fp32)
+    assert isinstance(tensor_fp32, torch.Tensor)
+    assert np.allclose(tensor_fp32.numpy(), np_image_fp32)
+    assert tensor_fp32.shape == np_image_fp32.shape
+    assert tensor_fp32.dtype == torch.float32
+
+    # Test ImportError when torch is missing
+    with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
+        with pytest.raises(ImportError, match="torch is required for ndarray_to_tensor but is not installed."):
+            ndarray_to_tensor(np_image)
+
+    # Test ImportError when numpy is missing
+    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+        with pytest.raises(ImportError, match="numpy is required for ndarray_to_tensor but is not installed."):
+            ndarray_to_tensor(np_image)
