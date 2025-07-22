@@ -47,7 +47,7 @@ def pil_to_ascii(image: Image) -> str:
     Example::
 
           import PIL
-          from mtrix.utils import pil_to_ascii, ascii_to_pil
+          from mindtrace.core import pil_to_ascii, ascii_to_pil
 
           image = PIL.Image.open('tests/resources/hopper.png')
           ascii_image = pil_to_ascii(image)
@@ -99,7 +99,7 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
     Example::
 
           import PIL
-          from mtrix.utils import pil_to_bytes, bytes_to_pil
+          from mindtrace.core import pil_to_bytes, bytes_to_pil
 
           image = PIL.Image.open('tests/resources/hopper.png')
           bytes_image = pil_to_bytes(image)
