@@ -596,7 +596,11 @@ class Worker(Service, Consumer):
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
 
         update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_dict["id"]})
-        output = self._run(job_dict["payload"])
+        try:
+            output = self._run(job_dict["payload"])
+        except Exception as e:
+            output = {"status": "failed", "output": {}}
+            self.logger.error(f"Error running job {job_dict['id']}: {e}")
         if cm:
             cm.worker_alert_completed_job(
                 job_id=job_dict["id"], worker_id=str(self.id), status=output["status"], output=output["output"]
