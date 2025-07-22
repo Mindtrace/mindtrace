@@ -356,7 +356,7 @@ async def test_discord_file_to_pil_success(mock_assets):
 
 def test_tensor_to_ndarray_missing_torch():
     """Test that tensor_to_ndarray raises ImportError when torch is missing."""
-        missing_libs = check_libs(["torch"])
+    missing_libs = check_libs(["torch"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
@@ -366,7 +366,7 @@ def test_tensor_to_ndarray_missing_torch():
 
 def test_tensor_to_ndarray_missing_numpy():
     """Test that tensor_to_ndarray raises ImportError when numpy is missing."""
-        missing_libs = check_libs(["torch", "numpy"])
+    missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
     with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
