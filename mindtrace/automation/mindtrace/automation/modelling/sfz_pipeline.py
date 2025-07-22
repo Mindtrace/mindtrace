@@ -1,4 +1,6 @@
 import os
+import sys
+import yaml
 import json
 import torch
 import numpy as np
@@ -7,461 +9,11 @@ from enum import Enum
 from PIL import Image
 import cv2
 import shutil
-import argparse
-import yaml
-from mtrix.models.wrappers import HFVisionModelWrapper
+from mindtrace.automation.modelling import ModelInference, ExportType
 from mindtrace.storage.gcs import GCSStorageHandler
+from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logits_to_mask, get_updated_key
 
-
-class ExportType(Enum):
-    """Export format types for inference results."""
-    BOUNDING_BOX = "bounding_box"
-    MASK = "mask"
-
-
-class ModelInference:
-    """Individual model inference class for a specific task."""
-    
-    def __init__(
-        self,
-        model_path: str,
-        task_type: str,
-        model_name: str,
-        device: str = "cpu"
-    ):
-        """Initialize model inference.
-        
-        Args:
-            model_path: Path to the model directory
-            task_type: Type of task (object_detection, semantic_segmentation, etc.)
-            model_name: Name of the model
-            device: Device to run inference on
-        """
-        self.model_path = model_path
-        self.task_type = task_type
-        self.model_name = model_name
-        self.device = device
-        self.model = None
-        self.id2label = {}
-        self.img_size = None
-        
-        # Load model metadata
-        self._load_metadata()
-        self._load_id2label()
-        self._instantiate_model()
-    
-    def _load_metadata(self):
-        """Load model metadata from metadata.json."""
-        metadata_path = os.path.join(self.model_path, "metadata.json")
-        try:
-            with open(metadata_path, 'r') as f:
-                metadata = json.load(f)
-            
-            self.img_size = metadata.get('img_size', [1024, 1024])
-            print(f"Loaded metadata for {self.model_name}: task={self.task_type}, img_size={self.img_size}")
-        except Exception as e:
-            print(f"Error loading metadata: {e}")
-            self.img_size = [1024, 1024]
-    
-    def _load_id2label(self):
-        """Load class mapping from id2label.json."""
-        id2label_path = os.path.join(self.model_path, "id2label.json")
-        try:
-            with open(id2label_path, 'r') as f:
-                self.id2label = json.load(f)
-            print(f"Loaded {len(self.id2label)} class labels")
-        except Exception as e:
-            print(f"Error loading id2label: {e}")
-            self.id2label = {}
-    
-    def _instantiate_model(self):
-        """Instantiate the model using HFVisionModelWrapper."""
-        try:
-            print(f"Instantiating model: {self.model_name} for task: {self.task_type}")
-            print(f"Model path: {self.model_path}")            
-
-            self.model = HFVisionModelWrapper(
-                model_name=self.model_name,
-                task=self.task_type,
-                checkpoint_path=self.model_path
-            )
-            
-            self.model.to(self.device)
-            
-            print(f"Model instantiated successfully")
-        except Exception as e:
-            print(f"Error instantiating model: {e}")
-            self.model = None
-    
-    def run_inference(self, image: Union[str, Image.Image, np.ndarray], 
-                     export_type: ExportType = ExportType.BOUNDING_BOX,
-                     threshold: float = 0.5) -> Dict[str, Any]:
-        """Run inference on the image.
-        
-        Args:
-            image: Input image (path, PIL Image, or numpy array)
-            export_type: Export format (bounding_box or mask)
-            threshold: Confidence threshold for detections
-            
-        Returns:
-            Dictionary with inference results
-        """
-        if self.model is None:
-            raise ValueError("Model not initialized")
-        
-        # Convert image to PIL if needed
-        if isinstance(image, str):
-            image = Image.open(image).convert('RGB')
-        elif isinstance(image, np.ndarray):
-            image = Image.fromarray(image).convert('RGB')
-        
-        # Run task-specific inference
-        if self.task_type == "object_detection":
-            result = self._run_object_detection(image, threshold)
-        elif self.task_type in ["semantic_segmentation", "universal_segmentation"]:
-            result = self._run_semantic_segmentation(image, threshold)
-        else:
-            raise ValueError(f"Unsupported task type: {self.task_type}")
-        
-        # Convert to requested export format
-        if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
-            result = self._mask_to_bounding_box(result)
-        elif export_type == ExportType.MASK and result.get('boxes') is not None:
-            result = self._bounding_box_to_mask(result)
-        
-        return result
-    
-    def _run_object_detection(self, image: Image.Image, threshold: float) -> Dict[str, Any]:
-        """Run object detection inference."""
-        try:
-            print(f"Running object detection with threshold {threshold}")
-            
-            if self.model is None:
-                raise ValueError("Model not initialized")
-            
-            with torch.no_grad():
-                resp = self.model.predict(image)
-                
-            resp = self.model.preprocessor.post_process_object_detection(
-                resp, 
-                threshold=threshold, 
-                target_sizes=[image.size[::-1]]
-            )
-            
-            if resp and len(resp) > 0 and 'boxes' in resp[0]:
-                boxes = resp[0]['boxes'].cpu().numpy() if hasattr(resp[0]['boxes'], 'cpu') else resp[0]['boxes']
-                scores = resp[0]['scores'].cpu().numpy() if hasattr(resp[0]['scores'], 'cpu') else resp[0]['scores']
-                labels = resp[0]['labels'].cpu().numpy() if hasattr(resp[0]['labels'], 'cpu') else resp[0]['labels']
-                
-                return {
-                    'boxes': boxes,
-                    'scores': scores,
-                    'labels': labels,
-                    'task_type': 'object_detection'
-                }
-            return {'error': 'No detections found'}
-        except Exception as e:
-            print(f"Error in object detection: {e}")
-            return {'error': str(e)}
-    
-    def _run_semantic_segmentation_og(self, image: Image.Image, threshold: float) -> Dict[str, Any]:
-        """Run semantic segmentation inference."""
-        try:
-            print(f"Running semantic segmentation with threshold {threshold}")
-            
-            if self.model is None:
-                raise ValueError("Model not initialized")
-            
-            with torch.no_grad():
-                # Use the predict method from HFVisionModelWrapper
-                resp = self.model.predict(image)
-                
-                # Post-process the response to get the segmentation map
-                resp = self.model.preprocessor.post_process_semantic_segmentation(
-                    resp, target_sizes=[image.size[::-1]]
-                )
-                
-                # Get the segmentation mask
-                mask_array = resp[0].cpu().detach().numpy()
-                
-                return {
-                    'mask': mask_array,
-                    'task_type': 'semantic_segmentation'
-                }
-        except Exception as e:
-            print(f"Error in semantic segmentation: {e}")
-            return {'error': str(e)}
-    
-    def _run_semantic_segmentation(
-        self, 
-        image: Image.Image, 
-        conf_threshold: float = 0.5,
-        background_class: int = 0,
-    ) -> Dict[str, Any]:
-        # Get image dimensions from first image
-        if type(image) == Image.Image:
-            original_images = image
-        else:
-            # Convert numpy arrays to PIL Images for overlay if needed
-            original_images = Image.fromarray(image)
-        
-        # Preprocess all images as a batch
-        pixel_values = self.model.preprocessor(images=original_images, return_tensors="pt").to(self.model.device)
-        with torch.no_grad():
-            outputs = self.model.hf_model(**pixel_values)
-        # Process the entire batch at once
-        if "mask" in self.model.model_name:
-            logits = self._get_mask2former_logits(outputs)
-        else:
-            logits = self._get_segformer_logits(outputs)
-
-        mask_results = self.logits_to_mask(
-            logits, 
-            conf_threshold, 
-            background_class, 
-            target_size=(original_images.size[1], original_images.size[0])
-        )
-        mask = mask_results[0].cpu().detach().numpy()
-        
-        return {
-            'logits': logits,
-            'mask': mask,
-            'task_type': 'semantic_segmentation'
-        }
-
-    def _get_segformer_logits(self, outputs):
-        logits = outputs["logits"]  # Shape: (batch, num_classes, H_orig, W_orig)
-        return logits
-
-    def _get_mask2former_logits(self, outputs):
-        if hasattr(outputs, 'class_queries_logits') and hasattr(outputs, 'masks_queries_logits'):
-            class_queries_logits = outputs.class_queries_logits  # [batch_size, num_queries, num_classes+1]
-            masks_queries_logits = outputs.masks_queries_logits  # [batch_size, num_queries, height, width]
-        else:
-            class_queries_logits = outputs["pred_logits"]  # [batch_size, num_queries, num_classes+1]
-            masks_queries_logits = outputs["pred_masks"]   # [batch_size, num_queries, height, width]
-
-        # Remove the null class `[..., :-1]` and get class probabilities
-        masks_classes = class_queries_logits.softmax(dim=-1)[..., :-1]  # [batch_size, num_queries, num_classes]
-        masks_probs = masks_queries_logits.sigmoid()  # [batch_size, num_queries, height, width]
-
-        # Semantic segmentation logits of shape (batch_size, num_classes, height, width)
-        segmentation_logits = torch.einsum("bqc, bqhw -> bchw", masks_classes, masks_probs)
-        return segmentation_logits
-
-    def logits_to_mask(self, logits, conf_threshold, background_class, target_size=None):
-        if target_size is not None:
-            if logits.ndim == 3:
-                logits = logits.unsqueeze(0)
-            logits = torch.nn.functional.interpolate(
-                logits, size=[target_size[0], target_size[1]], mode="bilinear", align_corners=False
-            )
-        probs = torch.softmax(logits, dim=1)
-        mask_pred = torch.argmax(probs, dim=1)
-        # Set low-confidence pixels to background
-        if conf_threshold > 0:
-            max_probs = torch.max(probs, dim=1)[0]  # Shape: (batch, height, width)
-            low_confidence_mask = max_probs < conf_threshold  # Shape: (batch, height, width)
-            if mask_pred.shape != low_confidence_mask.shape:
-                try:
-                    low_confidence_mask = low_confidence_mask.view(mask_pred.shape)
-                except Exception as e:
-                    print(f"Error reshaping low_confidence_mask: {e}")
-                    raise
-            mask_pred[low_confidence_mask] = background_class
-        return mask_pred
-        
-        
-    def _mask_to_bounding_box(self, result: Dict[str, Any], min_area: int = 10) -> Dict[str, Any]:
-        """Convert mask to bounding box format."""
-        mask = result.get('mask')
-        if mask is None:
-            return result
-        
-        try:
-            boxes = []
-            scores = []
-            labels = []
-            
-            # Get unique class IDs from the mask (excluding background class 0)
-            unique_classes = np.unique(mask)
-            unique_classes = unique_classes[unique_classes != 0]  # Exclude background
-            
-            for class_id in unique_classes:
-                # Create binary mask for this class
-                class_mask = (mask == class_id).astype(np.uint8)
-                
-                # Find contours for this class
-                contours, _ = cv2.findContours(class_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                
-                for contour in contours:
-                    # Filter out very small contours
-                    if cv2.contourArea(contour) < min_area:  # Minimum area threshold
-                        continue
-                    
-                    # Get bounding rectangle
-                    x, y, w, h = cv2.boundingRect(contour)
-                    boxes.append([int(x), int(y), int(x + w), int(y + h)])
-                    
-                    # Calculate confidence based on the proportion of the box that contains the class
-                    box_mask = class_mask[y:y+h, x:x+w]
-                    if box_mask.size > 0:
-                        confidence = np.sum(box_mask) / box_mask.size
-                    else:
-                        confidence = 0.5
-                    
-                    scores.append(confidence)
-                    labels.append(int(class_id))
-            
-            return {
-                'boxes': np.array(boxes) if boxes else np.array([]),
-                'scores': np.array(scores) if scores else np.array([]),
-                'labels': np.array(labels) if labels else np.array([]),
-                'task_type': 'object_detection',
-                'original_mask': mask
-            }
-        except Exception as e:
-            print(f"Error converting mask to bounding box: {e}")
-            return result
-    
-    def _bounding_box_to_mask(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert bounding box to mask format."""
-        boxes = result.get('boxes')
-        if boxes is None or len(boxes) == 0:
-            return result
-        
-        try:
-            # Get image size from first box (assuming all boxes are from same image)
-            if len(boxes) > 0:
-                max_x = max(box[2] for box in boxes)
-                max_y = max(box[3] for box in boxes)
-                mask = np.zeros((max_y, max_x), dtype=np.uint8)
-                
-                for box in boxes:
-                    x1, y1, x2, y2 = box
-                    mask[y1:y2, x1:x2] = 1
-                
-                return {
-                    'mask': mask,
-                    'task_type': 'semantic_segmentation',
-                    'original_boxes': boxes
-                }
-        except Exception as e:
-            print(f"Error converting bounding box to mask: {e}")
-            return result
-        
-        return result
-    
-    def draw_detection_boxes(self, image: Image.Image, detection_result: Dict[str, Any]) -> Image.Image:
-        """Draw bounding boxes on image for object detection."""
-        if not detection_result or 'boxes' not in detection_result:
-            return image
-        
-        img_array = np.array(image.convert("RGB"))
-        
-        boxes = detection_result['boxes']
-        scores = detection_result['scores']
-        labels = detection_result['labels']
-        
-        for i, (box, score, label) in enumerate(zip(boxes, scores, labels)):
-            x1, y1, x2, y2 = map(int, box)
-            
-            # Get consistent color for this class
-            color = self.get_consistent_color(int(label))
-            color_bgr = tuple(reversed(color))
-            
-            # Draw bounding box
-            cv2.rectangle(img_array, (x1, y1), (x2, y2), color_bgr, 2)
-            
-            # Add label with confidence
-            label_text = f"Class {label}: {score:.2f}"
-            
-            # Calculate text size for background
-            (text_width, text_height), baseline = cv2.getTextSize(
-                label_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
-            )
-            
-            # Draw background rectangle for text
-            cv2.rectangle(
-                img_array,
-                (x1, y1 - text_height - baseline - 5),
-                (x1 + text_width, y1),
-                color_bgr,
-                -1
-            )
-            
-            # Draw text
-            cv2.putText(
-                img_array,
-                label_text,
-                (x1, y1 - baseline - 2),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),  # White text
-                1
-            )
-        
-        return Image.fromarray(img_array)
-    
-    def get_consistent_color(self, class_id: int) -> List[int]:
-        """Get consistent color for a class ID."""
-        fixed_colors = [
-            [0, 0, 0],        # Class 0: Black (background)
-            [255, 0, 0],      # Class 1: Red
-            [0, 255, 0],      # Class 2: Green
-            [0, 0, 255],      # Class 3: Blue
-            [255, 255, 0],    # Class 4: Yellow
-            [255, 0, 255],    # Class 5: Magenta
-            [0, 255, 255],    # Class 6: Cyan
-            [255, 165, 0],    # Class 7: Orange
-            [128, 0, 128],    # Class 8: Purple
-            [255, 192, 203],  # Class 9: Pink
-            [128, 128, 128],  # Class 10: Gray
-            [165, 42, 42],    # Class 11: Brown
-            [0, 128, 0],      # Class 12: Dark Green
-            [128, 0, 0],      # Class 13: Dark Red
-            [0, 0, 128],      # Class 14: Dark Blue
-            [255, 215, 0],    # Class 15: Gold
-        ]
-        
-        if class_id < len(fixed_colors):
-            return fixed_colors[class_id]
-        else:
-            np.random.seed(class_id)
-            color = np.random.randint(0, 255, 3).tolist()
-            np.random.seed()
-            return color
-    
-    def generate_colored_mask(self, mask_array: np.ndarray) -> np.ndarray:
-        """Generate colored mask using consistent colors."""
-        unique_classes = np.unique(mask_array)
-        colored_mask = np.zeros((*mask_array.shape, 3), dtype=np.uint8)
-        
-        for class_id in unique_classes:
-            color = self.get_consistent_color(class_id)
-            colored_mask[mask_array == class_id] = color
-        
-        return colored_mask
-    
-    def create_segmentation_overlay(self, image: Image.Image, mask_array: np.ndarray, alpha: float = 0.5) -> Image.Image:
-        """Create overlay of image and colored segmentation mask."""
-        try:
-            img_array = np.array(image.convert("RGB"))
-            colored_mask = self.generate_colored_mask(mask_array)
-            
-            # Resize mask to match image if needed
-            if colored_mask.shape[:2] != img_array.shape[:2]:
-                colored_mask = cv2.resize(colored_mask, (img_array.shape[1], img_array.shape[0]))
-            
-            # Create overlay
-            overlay = cv2.addWeighted(img_array, 1-alpha, colored_mask, alpha, 0)
-            return Image.fromarray(overlay)
-        except Exception as e:
-            print(f"Error creating segmentation overlay: {str(e)}")
-            return image
-
-
-class Pipeline:
+class SFZPipeline:
     """Pipeline class to manage multiple models for inference."""
     
     def __init__(
@@ -534,6 +86,19 @@ class Pipeline:
             if pipeline_metadata is None:
                 return False
             
+            self.get_reference_masks(task_name, version)
+            cropping_path = os.path.join(
+                self.local_models_dir, 
+                task_name,
+                version,
+                'cropping.json'
+            )
+            if os.path.exists(cropping_path):
+                self.cropping_config = json.load(open(cropping_path))
+            else:
+                print(f"DEBUG: File not found at {cropping_path}")
+                self.cropping_config = None
+            
             # Load each model in the inference list
             for inference_task, export_type in inference_list.items():
                 if not self._load_model(task_name, version, inference_task, export_type):
@@ -584,6 +149,28 @@ class Pipeline:
             print(f"Error loading pipeline metadata: {e}")
             return None
     
+    def get_reference_masks(self, task_name: str, version: str):
+        self.reference_masks = {}
+        reference_mask_folder = os.path.join(
+            self.local_models_dir, 
+            task_name,
+            version,
+            'zone_segmentation/reference_masks'
+        )
+        if os.path.exists(reference_mask_folder):
+            for file in os.listdir(reference_mask_folder):
+                if file.endswith('.png'):
+                    mask = cv2.imread(os.path.join(reference_mask_folder, file))[:,:,0]
+                    # mask = cv2.resize(mask, (128, 128), interpolation=cv2.INTER_NEAREST)
+                    mask = torch.from_numpy(mask)
+                    if self.device != 'cpu':
+                        mask = mask.to(self.device)
+                    self.reference_masks[file.split('.')[0].replace('_mask', '')] = mask
+                else:
+                    raise FileNotFoundError(f"Reference Mask format is not supported: {file}")
+        else:
+            raise FileNotFoundError(f"Reference Masks not found at {reference_mask_folder}")
+        
     def _load_model(self, task_name: str, version: str, inference_task: str, 
                    export_type: str) -> bool:
         """Load a specific model from the pipeline."""
@@ -785,35 +372,35 @@ class Pipeline:
         }
         
         for i, image_path in enumerate(image_files):
-            try:
-                print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+            # try:
+            print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+            
+            # Copy original image to images folder
+            image_filename = os.path.basename(image_path)
+            image_dest = os.path.join(images_folder, image_filename)
+            shutil.copy2(image_path, image_dest)
+            
+            # Run inference
+            results = self.run_inference_on_models(
+                image=image_path,
+                export_types=export_types,
+                threshold=threshold
+            )
+            
+            # Save structured outputs
+            image_name = os.path.splitext(os.path.basename(image_path))[0]
+            self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
+            
+            # Save visualizations if requested
+            if save_visualizations:
+                self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+            
+            results_summary['results'][image_name] = results
+            results_summary['processed_images'] += 1
                 
-                # Copy original image to images folder
-                image_filename = os.path.basename(image_path)
-                image_dest = os.path.join(images_folder, image_filename)
-                shutil.copy2(image_path, image_dest)
-                
-                # Run inference
-                results = self.run_inference_on_models(
-                    image=image_path,
-                    export_types=export_types,
-                    threshold=threshold
-                )
-                
-                # Save structured outputs
-                image_name = os.path.splitext(os.path.basename(image_path))[0]
-                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
-                
-                # Save visualizations if requested
-                if save_visualizations:
-                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-                
-                results_summary['results'][image_name] = results
-                results_summary['processed_images'] += 1
-                
-            except Exception as e:
-                print(f"Error processing {image_path}: {e}")
-                results_summary['failed_images'] += 1
+            # except Exception as e:
+            #     print(f"Error processing {image_path}: {e}")
+            #     results_summary['failed_images'] += 1
         
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
@@ -837,9 +424,18 @@ class Pipeline:
             'id2label': model.id2label
         }
     
-    def run_inference_on_models(self, image: Union[str, Image.Image, np.ndarray],
-                     export_types: Optional[Dict[str, ExportType]] = None,
-                     threshold: float = 0.4) -> Dict[str, Any]:
+    def run_inference_on_models(
+        self, 
+        image: Union[str, Image.Image, np.ndarray],
+        export_types: Optional[Dict[str, ExportType]] = None,
+        threshold: float = 0.4,
+        follow_pipeline: bool = False,
+        background_class: int = 0,
+        zone_crop_padding_percent: float = 0.1,
+        zone_crop_confidence_threshold: float = 0.7,
+        zone_crop_min_coverage_ratio: float = 0.3,
+        zone_crop_square_crop: bool = False
+    ) -> Dict[str, Any]:
         """Run inference on all loaded models.
         
         Args:
@@ -847,34 +443,110 @@ class Pipeline:
             export_types: Dictionary mapping task names to export types
                          If None, uses default export types from inference_list
             threshold: Confidence threshold for detections
-        
+            follow_pipeline: Whether to follow the pipeline order
         Returns:
             Dictionary with results for each model
         """
         results = {}
-        
-        for task_name, model_inference in self.models.items():
-            try:
-                # Determine export type
-                export_type = ExportType.BOUNDING_BOX  # Default
-                if export_types and task_name in export_types:
-                    export_type = export_types[task_name]
-                
-                # Run inference
-                result = model_inference.run_inference(
-                    image=image,
-                    export_type=export_type,
+        if not follow_pipeline:
+            for task_name, model in self.models.items():
+                try:
+                    # Determine export type
+                    export_type = ExportType.BOUNDING_BOX  # Default
+                    if export_types and task_name in export_types:
+                        export_type = export_types[task_name]
+                    
+                    # Run inference
+                    result = model.run_inference(
+                        image=image,
+                        export_type=export_type,
+                        threshold=threshold,
+                        background_class=background_class
+                    )
+                    
+                    results[task_name] = result
+                    print(f"Inference completed for {task_name}")
+                    
+                except Exception as e:
+                    print(f"Error running inference for {task_name}: {e}")
+                    results[task_name] = {'error': str(e)}
+            
+            return results
+        else:
+            assert 'spatter_segmentation' in self.models or 'spatter_detection' in self.models, "Spatter segmentation or detection model not loaded"
+            assert 'zone_segmentation' in self.models, "Zone segmentation model not loaded"
+            assert 'spatter_segmentation' in export_types or 'spatter_detection' in export_types, "Spatter segmentation or detection export type not provided"
+            assert 'zone_segmentation' in export_types, "Zone segmentation export type not provided"
+            
+            img_name = os.path.basename(image).split('.')[0]
+            key = img_name.split('-')[0]
+            print(key, '-----')
+            # key = img_name.split(':')[-1].split('-')[0]
+            image = Image.open(image).convert('RGB')
+            
+            # Zone segmentation
+            zone_segmentation_result = self.models['zone_segmentation'].run_inference(
+                image=image,
+                export_type=export_types['zone_segmentation'],
+                threshold=threshold,
+                background_class=background_class
+            )
+            results['zone_segmentation'] = zone_segmentation_result['mask']
+            zone_predictions = zone_segmentation_result["logits"]
+            print(zone_predictions.shape, 'zone_predictions')
+            # Crop based on zone segmentation
+            crop_results = crop_zones(
+                zone_predictions, 
+                [image], 
+                [key], 
+                self.cropping_config, 
+                self.reference_masks, 
+                self.models['zone_segmentation'].label2id,
+                padding_percent=zone_crop_padding_percent,
+                confidence_threshold=zone_crop_confidence_threshold,
+                min_coverage_ratio=zone_crop_min_coverage_ratio,
+                square_crop=zone_crop_square_crop,
+                background_class=background_class
+            )
+            print('all_image_crops')
+            os.makedirs('all_image_crops', exist_ok=True)
+            for i, img in enumerate(crop_results['all_image_crops']):
+                if isinstance(img, Image.Image):
+                    img.save(f'all_image_crops/img_{i}.png')
+                else:
+                    img = Image.fromarray(img)
+                    img.save(f'all_image_crops/img_{i}.png')
+            
+            # Spatter segmentation
+            spatter_results = []
+            for i, img in enumerate(crop_results['all_image_crops']):
+                spatter_segmentation_result = self.models['spatter_segmentation'].run_inference(
+                    image=img,
+                    export_type=export_types['spatter_segmentation'],
                     threshold=threshold
-                )
-                
-                results[task_name] = result
-                print(f"Inference completed for {task_name}")
-                
-            except Exception as e:
-                print(f"Error running inference for {task_name}: {e}")
-                results[task_name] = {'error': str(e)}
+                )['logits'][0]
+                spatter_results.append(spatter_segmentation_result)
+            spatter_results = torch.stack(spatter_results)
+            print(spatter_results.shape, 'spatter_results')
+            
+            # Create a mapping of camera keys to their original image shapes
+            camera_shapes = {}
+            image_key = get_updated_key(key)
+            camera_shapes[image_key] = np.array(image).shape[:2]  # (H, W)
+            print(camera_shapes, 'camera_shapes')
+            reconstructed_predictions = combine_crops(
+                zone_crops=crop_results['all_mask_crops'],
+                spatter_crops=spatter_results,
+                crop_metadata=crop_results['crop_metadata'], 
+                original_img_shapes=camera_shapes,
+                zone_classes=len(self.models['zone_segmentation'].id2label),
+                spatter_classes=len(self.models['spatter_segmentation'].id2label),
+                overlap_strategy='max',
+                conf_threshold=threshold,
+                background_class=background_class
+            )
+            print(reconstructed_predictions, 'reconstructed_predictions')
         
-        return results
 
     def _make_json_serializable(self, obj):
         """Convert numpy arrays and other non-serializable objects to JSON-serializable formats."""
@@ -1055,84 +727,3 @@ class Pipeline:
         
         except Exception as e:
             print(f"Error saving visualizations for {image_name}: {e}")
-
-
-def test_pipeline():
-    """Test function to verify pipeline functionality."""
-
-    parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
-    parser.add_argument("--config", required=True, help="Path to YAML config file")
-    args = parser.parse_args()
-    
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
-
-    # Configuration
-    credentials_path = config['gcp']['credentials_file']
-    bucket_name = config['gcp']['weights_bucket']
-    base_folder = config['gcp']['base_folder']
-    input_folder = config['download_path']
-    output_folder = config['output_folder']
-
-    try:
-        # Initialize pipeline
-        pipeline = Pipeline(
-            credentials_path=credentials_path,
-            bucket_name=bucket_name,
-            base_folder=base_folder,
-            local_models_dir="./tmp",
-            overwrite_masks=config['overwrite_masks']
-        )
-
-        # Test pipeline loading
-        inference_list = config['inference_list']
-
-        success = pipeline.load_pipeline(
-            task_name=config['task_name'],
-            version=config['version'],
-            inference_list=inference_list
-        )
-
-        if not success:
-            print("Failed to load pipeline")
-            return
-
-        # Test model info
-        loaded_models = pipeline.get_loaded_models()
-
-        for model_name in loaded_models:
-            info = pipeline.get_model_info(model_name)
-            print(f"Model {model_name}: {info}")
-
-        # Test folder inference
-        if os.path.exists(input_folder):
-            # Convert string export types to ExportType enum values
-            export_types = {}
-            for task_name, export_type_str in config['inference_list'].items():
-                if export_type_str == "mask":
-                    export_types[task_name] = ExportType.MASK
-                elif export_type_str == "bounding_box":
-                    export_types[task_name] = ExportType.BOUNDING_BOX
-
-            summary = pipeline.run_inference_on_folder(
-                input_folder=input_folder,
-                output_folder=output_folder,
-                export_types=export_types,
-                threshold=config['threshold'],
-                save_visualizations=True
-            )
-
-        else:
-            print(f"Input folder not found: {input_folder}")
-            print("Skipping folder inference test")
-
-
-    except ValueError as e:
-        print(f"Configuration error: {e}")
-    except ImportError as e:
-        print(f"Import error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-
-if __name__ == "__main__":
-    test_pipeline()

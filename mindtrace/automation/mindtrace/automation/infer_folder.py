@@ -4,7 +4,8 @@ import yaml
 import json
 import uuid
 from pathlib import Path
-from mindtrace.automation.modelling.inference import Pipeline, ExportType
+# from mindtrace.automation.modelling.inference import Pipeline, ExportType
+from mindtrace.automation.modelling.sfz_pipeline import SFZPipeline, ExportType
 from mindtrace.automation.download_images import ImageDownload
 from mindtrace.automation.label_studio.utils import create_label_studio_mapping
 
@@ -45,7 +46,7 @@ def run_inference(config_path: str, custom_job_id: str = None):
         json.dump(gcs_path_mapping, f, indent=2)
     print(f"Saved GCS path mapping to: {gcs_mapping_file}")
 
-    pipeline = Pipeline(
+    pipeline = SFZPipeline(
         credentials_path=config['gcp']['credentials_file'],
         bucket_name=config['gcp']['weights_bucket'],
         base_folder=config['gcp']['base_folder'],
@@ -104,3 +105,11 @@ def run_inference(config_path: str, custom_job_id: str = None):
         print(f"Input folder not found: {config['download_path']}")
         print("Skipping folder inference test")
         return None
+    
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Efficiently download images using database and GCS")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
+    args = parser.parse_args()
+
+    job_id = str(uuid.uuid4())
+    run_inference(args.config, job_id)
