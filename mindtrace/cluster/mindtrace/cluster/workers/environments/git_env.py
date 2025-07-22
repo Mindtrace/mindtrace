@@ -162,8 +162,8 @@ class GitEnvironment(Mindtrace):
         """Cleanup temporary directory."""
         if self.temp_dir and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-            self.temp_dir = None # type: ignore
-            self.repo = None
+        self.temp_dir = None # type: ignore
+        self.repo = None
 
     # TODO CHECK COMMAND USAGE FOR SHELL=TRYE CORRESPONDANCE(should be more usefully shell = False)
     def execute(

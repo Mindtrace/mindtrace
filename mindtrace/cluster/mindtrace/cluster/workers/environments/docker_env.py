@@ -16,6 +16,7 @@ class DockerEnvironment(Mindtrace):
         devices: Optional[List[str]] = None,
         working_dir: Optional[str] = None,
     ):
+        super().__init__()
         self.image = image
         self.environment = environment or {}
         self.volumes = volumes or {}
@@ -47,7 +48,7 @@ class DockerEnvironment(Mindtrace):
                 stdin_open=True,
             )
 
-            return self.container.id
+            return str(self.container.id)
 
         except Exception as e:
             self.cleanup()

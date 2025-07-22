@@ -13,6 +13,13 @@ class RunScriptWorker(Worker):
     Each job gets its own isolated environment based on the job message configuration. The environment is cleaned up
     after each job completes execution.
     """
+    def start(self):
+        super().start()
+        self.devices = None
+        self.working_dir = None
+        self.container_id = None
+        self.env_manager = None
+
     def setup_environment(self, environment_config: dict):
         """Setup environment based on job configuration."""
         # TODO: add devices
@@ -64,7 +71,8 @@ class RunScriptWorker(Worker):
         if self.env_manager:
             self.env_manager.cleanup()
             self.env_manager = None
-            self.working_dir = None
+        self.working_dir = None
+        self.container_id = None
 
     def prepare_devices(self):
         """Prepare the environment for script execution based on the devices specified in the job configuration.
