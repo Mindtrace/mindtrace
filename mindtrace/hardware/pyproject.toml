@@ -30,8 +30,7 @@ mindtrace-uninstall-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:unin
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
-cameras-daheng = ["gxipy @ git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy"]
-cameras-all = ["mindtrace-hardware[cameras-basler,cameras-daheng]"]
+cameras-all = ["mindtrace-hardware[cameras-basler]"]
 hardware-all = ["mindtrace-hardware[cameras-all]"]
 setup-tools = [
     "requests>=2.28.0",

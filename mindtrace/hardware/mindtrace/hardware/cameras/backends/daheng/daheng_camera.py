@@ -21,7 +21,7 @@ Requirements:
 
 Installation:
     1. Install Daheng Galaxy SDK from manufacturer
-    2. pip install gxipy
+    2. pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
@@ -143,7 +143,7 @@ class DahengCamera(BaseCamera):
                 "gxipy",
                 "Install gxipy to use Daheng cameras:\n"
                 "1. Download and install Daheng Galaxy SDK from https://www.daheng-imaging.com/\n"
-                "2. pip install gxipy\n"
+                "2. pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy\n"
                 "3. Ensure camera drivers are properly installed"
             )
         
