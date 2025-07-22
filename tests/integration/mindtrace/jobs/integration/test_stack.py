@@ -20,8 +20,8 @@ def create_test_job_local(name: str = "test_job") -> Job:
     test_input = SampleJobInput()
     schema = JobSchema(
         name=f"{name}_schema", 
-        input=test_input,
-        output=SampleJobOutput()
+        input=SampleJobInput,
+        output=SampleJobOutput
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
@@ -65,14 +65,14 @@ class TestRedisStack:
     
     def test_serialization(self):
         job = create_test_job_local("serialize_test")
-        job.payload.input.data = "complex_data_123"
+        job.payload.data = "complex_data_123"
         
         self.stack.push(job)
         retrieved_job = self.stack.pop(block=False)
         
         assert retrieved_job is not None
         assert retrieved_job.name == "serialize_test"
-        assert retrieved_job.payload.input.data == "complex_data_123"
+        assert retrieved_job.payload.data == "complex_data_123"
         assert retrieved_job.id == "serialize_test_123"
 
 
