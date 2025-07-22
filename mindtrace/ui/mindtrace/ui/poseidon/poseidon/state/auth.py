@@ -181,16 +181,13 @@ class AuthState(rx.State):
             return rx.redirect("/")
 
     async def login(self, form_data):
-        print("Login method called with form_data:")
         # Validate required fields
         self.error = ""
-        print("Full field_errors dict:", self.field_errors)
         
         if not self.validate_required_fields(form_data, {
             "email": "Email is required.",
             "password": "Password is required."
         }):
-            print("Email field error:", self.field_errors.get("email", ""))
             return
 
         try:
@@ -257,18 +254,24 @@ class AuthState(rx.State):
             self.error = f"Registration failed: {str(e)}"
 
     async def register_admin(self, form_data):
+        self.error = ""
+        # Validate required fields
+        if not self.validate_required_fields(form_data, {
+            "username": "Username is required.",
+            "email": "Email is required.",
+            "password": "Password is required.",
+            "organization_id": "Organization is required.",
+            "admin_key": "Admin registration key is required."
+        }):
+            return
+
         try:
-            # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
-                return
-            
             # Convert organization name to ID if needed
             org_input = form_data.get("organization_id", "")
             if not org_input:
                 self.error = "Organization is required."
                 return
-            
+
             # Check if it's already an ID or if we need to convert from name
             organization_id = org_input
             if organization_id == "fallback-id":
@@ -310,12 +313,18 @@ class AuthState(rx.State):
     
     async def register_super_admin(self, form_data):
         """Register the first super admin user."""
+        self.error = ""
+        # Validate required fields
+        if not self.validate_required_fields(form_data, {
+            "username": "Username is required.",
+            "email": "Email is required.",
+            "password": "Password is required.",
+            "super_admin_key": "Super admin key is required."
+        }):
+            return
+
         try:
             # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
-                return
-            
             if not form_data.get("super_admin_key"):
                 self.error = "Super admin key is required."
                 return
