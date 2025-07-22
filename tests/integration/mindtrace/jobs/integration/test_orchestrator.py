@@ -146,8 +146,8 @@ class TestOrchestrator:
         
         test_schema = JobSchema(
             name="test_rabbitmq_job",
-            input=SampleJobInput(),
-            output=SampleJobOutput()
+            input=SampleJobInput,
+            output=SampleJobOutput,
         )
         
         consumer_backend = orchestrator.create_consumer_backend_for_schema(test_schema)
@@ -168,8 +168,8 @@ class TestOrchestrator:
         
         test_schema = JobSchema(
             name="test_unknown_job",
-            input=SampleJobInput(),
-            output=SampleJobOutput()
+            input=SampleJobInput,
+            output=SampleJobOutput,
         )
         
         with pytest.raises(ValueError, match="Unknown backend type: UnknownBackend"):
