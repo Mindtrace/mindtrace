@@ -229,46 +229,47 @@ def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_u
     os.environ['HF_TOKEN'] = token
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcp_creds_path
     
-    datalake = Datalake(
-        hf_token = token,    
-        gcp_creds_path = gcp_creds_path,
-        datalake_dir = download_dir
-    )
-    ds = datalake.get_dataset(
-        dataset_name = existing_dataset,
-        version = existing_version
-    )
+    if existing_dataset is not None:
+        datalake = Datalake(
+            hf_token = token,    
+            gcp_creds_path = gcp_creds_path,
+            datalake_dir = download_dir
+        )
+        ds = datalake.get_dataset(
+            dataset_name = existing_dataset,
+            version = existing_version
+        )
 
-    datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
-    datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
-    
-    for file in os.listdir(os.path.join(datalake_train_path, 'images')):
-        image_path = os.path.join(datalake_train_path, 'images', file)
-        mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
-        if remove_holes:
-            mask = cv2.imread(mask_path)
-            mask[mask == hole_id] = 0
-            cv2.imwrite(mask_path, mask)
+        datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
+        datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
         
+        for file in os.listdir(os.path.join(datalake_train_path, 'images')):
+            image_path = os.path.join(datalake_train_path, 'images', file)
+            mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
+            if remove_holes:
+                mask = cv2.imread(mask_path)
+                mask[mask == hole_id] = 0
+                cv2.imwrite(mask_path, mask)
+            
 
-        shutil.move(image_path, os.path.join(download_dir, 'images', 'train', file))
-        shutil.move(mask_path, os.path.join(download_dir, 'masks', 'train', file.replace('.jpg', '_mask.png')))
+            shutil.move(image_path, os.path.join(download_dir, 'images', 'train', file))
+            shutil.move(mask_path, os.path.join(download_dir, 'masks', 'train', file.replace('.jpg', '_mask.png')))
 
-    for file in os.listdir(os.path.join(datalake_test_path, 'images')):
-        image_path = os.path.join(datalake_test_path, 'images', file)
-        mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
-        if remove_holes:
-            mask = cv2.imread(mask_path)
-            mask[mask == hole_id] = 0
-            cv2.imwrite(mask_path, mask)
+        for file in os.listdir(os.path.join(datalake_test_path, 'images')):
+            image_path = os.path.join(datalake_test_path, 'images', file)
+            mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
+            if remove_holes:
+                mask = cv2.imread(mask_path)
+                mask[mask == hole_id] = 0
+                cv2.imwrite(mask_path, mask)
 
-        shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
-        shutil.move(mask_path, os.path.join(download_dir, 'masks', 'test', file.replace('.jpg', '_mask.png')))
+            shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
+            shutil.move(mask_path, os.path.join(download_dir, 'masks', 'test', file.replace('.jpg', '_mask.png')))
 
-    
-    shutil.rmtree(datalake_train_path)
-    shutil.rmtree(datalake_test_path)
-    shutil.rmtree(os.path.join(download_dir, existing_dataset))
+        
+        shutil.rmtree(datalake_train_path)
+        shutil.rmtree(datalake_test_path)
+        shutil.rmtree(os.path.join(download_dir, existing_dataset))
     
     target_path = os.path.join(download_dir, dataset_name)
     source_images_train = os.path.join(download_dir, 'images', 'train')
@@ -455,6 +456,7 @@ if __name__ == "__main__":
     remove_holes = config['remove_holes']
     hole_id = config['hole_id']
     unique_id = str(uuid.uuid4())
+    # unique_id = "21c5aaba-1e4a-4f06-a453-ab1c27391db2"
     download_dir = os.path.join(download_dir, unique_id)
     label_studio_config = config['label_studio']
     api_config = label_studio_config['api']
