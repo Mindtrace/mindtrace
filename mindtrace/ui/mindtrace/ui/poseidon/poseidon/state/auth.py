@@ -15,6 +15,7 @@ class AuthState(rx.State):
     organization_id: str = ""
     error: str = ""
     token: str = ""
+    field_errors: Dict[str, str] = {}
     
     # Organization discovery
     available_organizations: List[Dict[str, str]] = []
@@ -129,6 +130,19 @@ class AuthState(rx.State):
             
         except Exception as e:
             self.error = f"Failed to load organizations: {str(e)}"
+            
+    def validate_required_fields(self, form_data: dict, required_fields: dict) -> bool:
+        """
+        Validates required fields and populates field_errors.
+        Returns True if all fields are valid, False if any are missing.
+        """
+        self.field_errors = {
+            field: message
+            for field, message in required_fields.items()
+            if not form_data.get(field)
+        }
+        return not self.field_errors
+
 
     def logout(self):
         """Clear all session data"""
@@ -167,12 +181,19 @@ class AuthState(rx.State):
             return rx.redirect("/")
 
     async def login(self, form_data):
+        print("Login method called with form_data:")
+        # Validate required fields
+        self.error = ""
+        print("Full field_errors dict:", self.field_errors)
+        
+        if not self.validate_required_fields(form_data, {
+            "email": "Email is required.",
+            "password": "Password is required."
+        }):
+            print("Email field error:", self.field_errors.get("email", ""))
+            return
+
         try:
-            # Validate required fields
-            if not form_data.get("email") or not form_data.get("password"):
-                self.error = "Email and password are required."
-                return
-                
             result = await AuthService.authenticate_user(form_data["email"], form_data["password"])
             self.token = result["token"]
             self.check_auth()  # Decode token and set user data
@@ -191,30 +212,33 @@ class AuthState(rx.State):
         return ""
 
     async def register(self, form_data):
+        self.error = ""
+
+        if not self.validate_required_fields(form_data, {
+            "username": "Username is required.",
+            "email": "Email is required.",
+            "password": "Password is required.",
+            "organization_id": "Organization is required.",
+        }):
+            return
+
+        # Convert organization name to ID if needed
+        org_input = form_data.get("organization_id", "")
+        
+        # Check if it's already an ID or if we need to convert from name
+        organization_id = org_input
+
+        if organization_id == "fallback-id":
+            self.field_errors["organization_id"] = "Please select a valid organization."
+            return
+
+        if not any(org.get("id") == org_input for org in self.available_organizations):
+            organization_id = self.get_organization_id_by_name(org_input)
+            if not organization_id:
+                self.field_errors["organization_id"] = "Invalid organization selected."
+                return
+
         try:
-            # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
-                return
-            
-            # Convert organization name to ID if needed
-            org_input = form_data.get("organization_id", "")
-            if not org_input:
-                self.error = "Organization is required."
-                return
-            
-            # Check if it's already an ID or if we need to convert from name
-            organization_id = org_input
-            if organization_id == "fallback-id":
-                self.error = "Please select a valid organization."
-                return
-            if not any(org.get("id") == org_input for org in self.available_organizations):
-                # It's probably a name, convert to ID
-                organization_id = self.get_organization_id_by_name(org_input)
-                if not organization_id:
-                    self.error = "Invalid organization selected."
-                    return
-                
             # Normal registration can only create regular members (security measure)
             # Organization admins must be created through register_admin method
             result = await AuthService.register_user(
@@ -222,15 +246,16 @@ class AuthState(rx.State):
                 form_data["email"],
                 form_data["password"],
                 organization_id,
-                org_roles=["member"]  # Force member role only
+                org_roles=["member"]
             )
             self.error = ""
             return rx.redirect("/login")
+
         except UserAlreadyExistsError as e:
             self.error = str(e)
         except Exception as e:
             self.error = f"Registration failed: {str(e)}"
-    
+
     async def register_admin(self, form_data):
         try:
             # Validate required fields

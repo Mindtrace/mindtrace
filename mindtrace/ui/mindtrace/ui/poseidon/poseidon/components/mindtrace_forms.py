@@ -5,87 +5,82 @@ from typing import List, Dict, Any
 
 
 def input_mindtrace(
-    placeholder: str, 
-    name: str, 
-    input_type: str = "text", 
-    required: bool = True, 
+    placeholder: str,
+    name: str,
+    input_type: str = "text",
+    required: bool = True,
     size: str = "large",
+    error: rx.Var = rx.Var.create(False),
     **kwargs
 ) -> rx.Component:
-    """
-    Animated input field with modern styling.
-    Supports size variants: small, medium, large (default)
-    """
-    # Define size variants
     size_styles = {
-        "small": {
-            "padding": "0.5rem 0.75rem",
-            "font_size": "0.875rem",
-        },
-        "medium": {
-            "padding": "0.65rem 0.9rem",
-            "font_size": "0.9rem",
-        },
-        "large": {
-            "padding": "0.75rem 1rem",
-            "font_size": "0.925rem",
-        }
+        "small": {"padding": "0.5rem 0.75rem", "font_size": "0.875rem"},
+        "medium": {"padding": "0.65rem 0.9rem", "font_size": "0.9rem"},
+        "large": {"padding": "0.75rem 1rem", "font_size": "0.925rem"},
     }
-    
-    # Get the size style, default to large if invalid size provided
+
     current_size = size_styles.get(size, size_styles["large"])
-    
+
+    style = {
+        "width": "100%",
+        "padding": current_size["padding"],
+        "font_size": current_size["font_size"],
+        "font_family": '"Inter", system-ui, sans-serif',
+        "border_radius": "12px",
+        "background": "rgba(248, 250, 252, 0.8)",
+        "border": rx.cond(error, "2px solid red !important", "2px solid rgba(226, 232, 240, 0.6)"),
+        "outline": "none",
+        "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        "backdrop_filter": "blur(10px)",
+        "color": "rgb(51, 65, 85)",
+        "_focus": {
+            "border": rx.cond(error, "2px solid red !important", "#0057FF"),
+            "background": "rgba(255, 255, 255, 0.95)",
+            "box_shadow": rx.cond(
+                error,
+                "0 0 0 4px rgba(255, 0, 0, 0.1), 0 4px 12px rgba(255, 0, 0, 0.15)",
+                "0 0 0 4px rgba(0, 87, 255, 0.1), 0 4px 12px rgba(0, 87, 255, 0.15)"
+            ),
+            "transform": "translateY(-1px)",
+        },
+        "_hover": {
+            "border": rx.cond(error, "2px solid red !important", "rgba(0, 87, 255, 0.3)"),
+            "background": "rgba(255, 255, 255, 0.9)",
+        },
+        "_placeholder": {
+            "color": "rgba(100, 116, 139, 0.6)",
+        },
+    }
+
     return rx.el.input(
+        class_name="mindtrace-input",
         placeholder=placeholder,
+        id=name,
         name=name,
         type=input_type,
         required=required,
-        style={
-            "width": "100%",
-            "padding": current_size["padding"],
-            "font_size": current_size["font_size"],
-            "font_family": '"Inter", system-ui, sans-serif',
-            "border_radius": "12px",
-            "background": "rgba(248, 250, 252, 0.8)",
-            "border": "2px solid rgba(226, 232, 240, 0.6)",
-            "outline": "none",
-            "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-            "backdrop_filter": "blur(10px)",
-            "color": "rgb(51, 65, 85)",
-            "_focus": {
-                "border_color": "#0057FF",
-                "background": "rgba(255, 255, 255, 0.95)",
-                "box_shadow": "0 0 0 4px rgba(0, 87, 255, 0.1), 0 4px 12px rgba(0, 87, 255, 0.15)",
-                "transform": "translateY(-1px)",
-            },
-            "_hover": {
-                "border_color": "rgba(0, 87, 255, 0.3)",
-                "background": "rgba(255, 255, 255, 0.9)",
-            },
-            "_placeholder": {
-                "color": "rgba(100, 116, 139, 0.6)",
-            }
+        style=style,
+        custom_attrs={
+            "data-size": size,
+            "auto_complete": "off"
         },
-        custom_attrs={"data-size": size},
         **kwargs
     )
 
 
 def input_with_label_mindtrace(
-    label: str, 
-    placeholder: str, 
-    name: str, 
-    input_type: str = "text", 
+    label: str,
+    placeholder: str,
+    name: str,
+    input_type: str = "text",
     required: bool = False,
-    size: str = "large"
+    size: str = "large",
+    error_message: rx.Var = rx.Var.create(""),
 ) -> rx.Component:
-    """
-    Input field with label using mindtrace styling.
-    Supports size variants: small, medium, large (default)
-    """
     return rx.vstack(
         rx.el.label(
-            label,
+            f"{label}{' *' if required else ''}",
+            html_for=name,
             style={
                 "font_size": "0.875rem",
                 "font_weight": "500",
@@ -93,7 +88,7 @@ def input_with_label_mindtrace(
                 "margin_bottom": "0.5rem",
                 "display": "block",
                 "font_family": '"Inter", system-ui, sans-serif',
-            }
+            },
         ),
         input_mindtrace(
             placeholder=placeholder,
@@ -101,12 +96,23 @@ def input_with_label_mindtrace(
             input_type=input_type,
             required=required,
             size=size,
+            error=(error_message != ""),
+        ),
+        rx.cond(
+            error_message != "",
+            rx.text(
+                error_message,
+                style={
+                    "color": "red",
+                    "font_size": "0.75rem",
+                    "margin_top": "0.25rem",
+                    "font_family": '"Inter", system-ui, sans-serif',
+                },
+            )
         ),
         width="100%",
         spacing="1",
-        style={
-            "margin_bottom": "0.5rem",
-        }
+        style={"margin_bottom": "0.5rem"},
     )
 
 
