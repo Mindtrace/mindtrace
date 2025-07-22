@@ -218,7 +218,7 @@ def train_test_split(masks_save_path, images_save_path, desired_ratio=0.2):
         except Exception as e:
             print(e)
 
-def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_up=True):
+def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_up=True, remove_holes=True, hole_id=1):
     dataset_name = huggingface_config.get('dataset_name')
     version = huggingface_config.get('version')
     existing_dataset = huggingface_config.get('existing_dataset')
@@ -245,14 +245,26 @@ def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_u
     for file in os.listdir(os.path.join(datalake_train_path, 'images')):
         image_path = os.path.join(datalake_train_path, 'images', file)
         mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
+        if remove_holes:
+            mask = cv2.imread(mask_path)
+            mask[mask == hole_id] = 0
+            cv2.imwrite(mask_path, mask)
+        
+
         shutil.move(image_path, os.path.join(download_dir, 'images', 'train', file))
         shutil.move(mask_path, os.path.join(download_dir, 'masks', 'train', file.replace('.jpg', '_mask.png')))
 
     for file in os.listdir(os.path.join(datalake_test_path, 'images')):
         image_path = os.path.join(datalake_test_path, 'images', file)
         mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
+        if remove_holes:
+            mask = cv2.imread(mask_path)
+            mask[mask == hole_id] = 0
+            cv2.imwrite(mask_path, mask)
+
         shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
         shutil.move(mask_path, os.path.join(download_dir, 'masks', 'test', file.replace('.jpg', '_mask.png')))
+
     
     shutil.rmtree(datalake_train_path)
     shutil.rmtree(datalake_test_path)
@@ -440,13 +452,15 @@ if __name__ == "__main__":
     class_names = config['class_names']
     workers = config['workers']
     download_dir = config['download_dir']
+    remove_holes = config['remove_holes']
+    hole_id = config['hole_id']
     unique_id = str(uuid.uuid4())
-    unique_id = '76e11055-4af8-4e95-b682-2c26cbcb6bbe'
     download_dir = os.path.join(download_dir, unique_id)
     label_studio_config = config['label_studio']
     api_config = label_studio_config['api']
     project_list = label_studio_config['project_list']
     export_type = label_studio_config['export_type']
+    
     
     
     label_studio = LabelStudio(
@@ -485,9 +499,9 @@ if __name__ == "__main__":
             delete_empty_masks=config['delete_empty_masks']
         )
         
-        train_test_split(masks_save_path, images_save_path, desired_ratio=config['train_test_split_ratio'])
+    train_test_split(masks_save_path, images_save_path, desired_ratio=config['train_test_split_ratio'])
         
-        upload_to_huggingface(download_dir, config.get('huggingface', {}), class_names, clean_up=True)
+    upload_to_huggingface(download_dir, config.get('huggingface', {}), class_names, clean_up=True, remove_holes=remove_holes, hole_id=hole_id)
         
         
         
