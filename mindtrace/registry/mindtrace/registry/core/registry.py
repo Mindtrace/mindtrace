@@ -415,7 +415,7 @@ class Registry(Mindtrace):
                 return False
         return self.backend.has_object(name, version)
 
-    def register_materializer(self, object_class: str | type, materializer_class: str):
+    def register_materializer(self, object_class: str | type, materializer_class: str | type):
         """Register a materializer for an object class.
 
         Args:
@@ -424,6 +424,8 @@ class Registry(Mindtrace):
         """
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}" 
+        if isinstance(materializer_class, type):
+            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
         
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
