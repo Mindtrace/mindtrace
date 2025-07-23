@@ -160,6 +160,9 @@ from .base_management import (
     standard_table_actions,
 )
 
+from .mindtrace_image_with_bb import mindtrace_image_with_bb
+from .mindtrace_bb import mindtrace_bb
+
 # Mindtrace components are now imported at the top as primary components
 
 __all__ = [
