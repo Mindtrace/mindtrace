@@ -34,7 +34,7 @@ class Gateway(Service):
             allow_headers=["*"],
         )
 
-        self.add_endpoint("/register_app", func=self.register_app, schema=RegisterAppTaskSchema(), methods=["POST"])
+        self.add_endpoint("/register_app", func=self.register_app, schema=RegisterAppTaskSchema, methods=["POST"])
 
     def register_app(self, payload: AppConfig):
         """Register a FastAPI app with the gateway."""
