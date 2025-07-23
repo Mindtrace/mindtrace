@@ -155,11 +155,11 @@ class StreamRequest(BaseModel):
 
 class BatchConfigExportRequest(BaseModel):
     """Request model for batch configuration export."""
-    cameras: str = Field(..., description="Comma-separated list of camera names")
-    config_path_pattern: str = Field(..., description="Path pattern with {camera} placeholder")
+    cameras: List[str] = Field(..., description="List of camera names")
+    config_path: str = Field(..., description="Path pattern with {camera} placeholder")
 
 
 class BatchConfigImportRequest(BaseModel):
     """Request model for batch configuration import."""
-    cameras: str = Field(..., description="Comma-separated list of camera names")
-    config_path_pattern: str = Field(..., description="Path pattern with {camera} placeholder") 
+    cameras: List[str] = Field(..., description="List of camera names")
+    config_path: str = Field(..., description="Path pattern with {camera} placeholder") 

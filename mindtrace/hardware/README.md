@@ -6,13 +6,14 @@ The Mindtrace Hardware Component provides a unified interface for managing indus
 
 This component offers:
 - **Unified Configuration System**: Single configuration for all hardware components
-- **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with mock implementations
+- **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with comprehensive mock implementations
 - **Network Bandwidth Management**: Intelligent concurrent capture limiting for GigE cameras
 - **Multiple PLC Backends**: Support for Allen Bradley PLCs with LogixDriver, SLCDriver, and CIPDriver
 - **Async Operations**: Thread-safe asynchronous operations for both cameras and PLCs
 - **Graceful Error Handling**: Comprehensive exception system with detailed error messages
 - **Industrial-Grade Architecture**: Production-ready design for manufacturing environments
 - **Extensible Design**: Easy to add new hardware backends and components
+- **Professional Documentation**: Comprehensive docstrings and consistent code documentation
 
 ## 📁 Component Structure
 
@@ -27,7 +28,7 @@ mindtrace/hardware/
         ├── cameras/
         │   ├── camera_manager.py  # Main camera management interface
         │   ├── backends/
-        │   │   ├── base.py        # Abstract base camera class
+        │   │   ├── base.py        # Abstract base camera class with comprehensive async interface
         │   │   ├── daheng/        # Daheng camera implementation + mock
         │   │   │   ├── daheng_camera.py
         │   │   │   └── mock_daheng.py
@@ -36,6 +37,8 @@ mindtrace/hardware/
         │   │   │   └── mock_basler.py
         │   │   └── opencv/        # OpenCV camera implementation
         │   │       └── opencv_camera.py
+        ├── api/
+        │   └── app.py             # REST API service for camera management
         ├── plcs/
         │   ├── plc_manager.py     # Main PLC management interface
         │   ├── backends/
@@ -94,6 +97,18 @@ mindtrace-uninstall-daheng
 mindtrace-uninstall-basler
 ```
 
+### REST API Service
+
+The hardware component includes a comprehensive REST API service for camera management:
+
+```bash
+# Start the camera API service
+python -m mindtrace.hardware.api.app
+
+# The service will be available at http://localhost:8000
+# API documentation available at http://localhost:8000/docs
+```
+
 ### Camera Quick Start
 
 ```python
@@ -116,13 +131,21 @@ async def camera_example():
             image = await camera_proxy.capture()
             print(f"Captured image: {image.shape}")
             
-            # Configure camera
+            # Configure camera with comprehensive settings
             success = await camera_proxy.configure(
                 exposure=15000,
                 gain=2.0,
-                trigger_mode="continuous"
+                trigger_mode="continuous",
+                roi=(100, 100, 800, 600),
+                pixel_format="BGR8",
+                white_balance="auto",
+                image_enhancement=True
             )
             print(f"Configuration success: {success}")
+            
+            # Get camera information
+            sensor_info = await camera_proxy.get_sensor_info()
+            print(f"Camera sensor info: {sensor_info}")
 
 asyncio.run(camera_example())
 ```
@@ -183,19 +206,30 @@ async def modern_camera_usage():
         await manager.initialize_camera(cameras[0])
         camera_proxy = manager.get_camera(cameras[0])
         
-        # Use camera through proxy
-        image = await camera_proxy.capture()
-        
-        # Configure through proxy
+        # Use camera through proxy with comprehensive configuration
         await camera_proxy.configure(
             exposure=20000,
             gain=1.5,
-            trigger_mode="continuous"
+            trigger_mode="continuous",
+            roi=(0, 0, 1920, 1080),
+            pixel_format="BGR8",
+            white_balance="auto",
+            image_enhancement=True
         )
         
-        # Get camera information
-        info = await camera_proxy.get_sensor_info()
-        print(f"Camera info: {info}")
+        # Capture image
+        image = await camera_proxy.capture()
+        
+        # Get comprehensive camera information
+        sensor_info = await camera_proxy.get_sensor_info()
+        current_exposure = await camera_proxy.get_exposure()
+        current_gain = await camera_proxy.get_gain()
+        current_roi = await camera_proxy.get_roi()
+        
+        print(f"Camera sensor info: {sensor_info}")
+        print(f"Current exposure: {current_exposure} μs")
+        print(f"Current gain: {current_gain}")
+        print(f"Current ROI: {current_roi}")
         
         # Check network bandwidth management info
         bandwidth_info = manager.get_network_bandwidth_info()
@@ -282,7 +316,14 @@ async def image_operations():
         # Capture with save
         image = await camera.capture(save_path='captured.jpg')
         
-        # Multiple configuration methods
+        # HDR capture with multiple exposure levels
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )
+        
+        # Comprehensive configuration
         await camera.configure(
             exposure=15000,
             gain=1.5,
@@ -293,12 +334,29 @@ async def image_operations():
             image_enhancement=True
         )
         
-        # Individual setting methods
+        # Individual setting methods with proper async/await
         await camera.set_exposure(20000)
-        camera.set_gain(2.0)
-        camera.set_roi(0, 0, 1920, 1080)
+        await camera.set_gain(2.0)
+        await camera.set_roi(0, 0, 1920, 1080)
         await camera.set_trigger_mode("trigger")
-        camera.set_pixel_format("RGB8")
+        await camera.set_pixel_format("RGB8")
+        await camera.set_white_balance("auto")
+        await camera.set_image_enhancement(True)
+        
+        # Get current settings
+        current_exposure = await camera.get_exposure()
+        current_gain = await camera.get_gain()
+        current_roi = await camera.get_roi()
+        current_trigger = await camera.get_trigger_mode()
+        current_format = await camera.get_pixel_format()
+        current_wb = await camera.get_white_balance()
+        enhancement_status = await camera.get_image_enhancement()
+        
+        # Get available options
+        exposure_range = await camera.get_exposure_range()
+        gain_range = await camera.get_gain_range()
+        pixel_formats = await camera.get_available_pixel_formats()
+        wb_modes = await camera.get_available_white_balance_modes()
 ```
 
 ### Batch Operations
@@ -387,34 +445,42 @@ async def advanced_control():
         await manager.initialize_camera('Basler:serial123')
         camera = manager.get_camera('Basler:serial123')
         
-        # Exposure control
+        # Exposure control with proper async/await
         exposure_range = await camera.get_exposure_range()
         current_exposure = await camera.get_exposure()
         await camera.set_exposure(15000.0)
         
-        # Gain control
-        gain_range = camera.get_gain_range()
-        current_gain = camera.get_gain()
-        camera.set_gain(2.0)
+        # Gain control with proper async/await
+        gain_range = await camera.get_gain_range()
+        current_gain = await camera.get_gain()
+        await camera.set_gain(2.0)
         
-        # ROI control
-        camera.set_roi(100, 100, 800, 600)
-        roi = camera.get_roi()
-        camera.reset_roi()
+        # ROI control with proper async/await
+        await camera.set_roi(100, 100, 800, 600)
+        roi = await camera.get_roi()
+        await camera.reset_roi()
         
-        # Pixel format control
-        formats = camera.get_available_pixel_formats()
-        current_format = camera.get_pixel_format()
-        camera.set_pixel_format("RGB8")
+        # Pixel format control with proper async/await
+        formats = await camera.get_available_pixel_formats()
+        current_format = await camera.get_pixel_format()
+        await camera.set_pixel_format("RGB8")
         
-        # White balance control
-        wb_modes = camera.get_available_white_balance_modes()
+        # White balance control with proper async/await
+        wb_modes = await camera.get_available_white_balance_modes()
         current_wb = await camera.get_white_balance()
         await camera.set_white_balance("auto")
         
-        # Configuration management
+        # Image enhancement control
+        enhancement_status = await camera.get_image_enhancement()
+        await camera.set_image_enhancement(True)
+        
+        # Configuration persistence
         await camera.save_config("camera_config.json")
         await camera.load_config("camera_config.json")
+        
+        # Connection status check
+        is_connected = await camera.check_connection()
+        print(f"Camera connected: {is_connected}")
 ```
 
 ## 📋 PLC Manager API
@@ -697,35 +763,39 @@ Create a `hardware_config.json` file for persistent configuration:
 #### Daheng Cameras
 - **SDK**: gxipy
 - **Setup**: `mindtrace-setup-daheng` or `pip install mindtrace-hardware[cameras-daheng]`
-- **Features**: Industrial cameras with advanced controls
+- **Features**: Industrial cameras with advanced controls and comprehensive async interface
 - **Supported Models**: All Daheng USB3 and GigE cameras
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
 - **Image Enhancement**: Gamma correction, contrast adjustment, color correction
-- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format
-- **Mock Support**: Comprehensive mock implementation for testing
+- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format, white balance
+- **Mock Support**: Comprehensive mock implementation with realistic behavior simulation
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### Basler Cameras
 - **SDK**: pypylon
 - **Setup**: Install Basler pylon SDK + `mindtrace-setup-basler`
-- **Features**: High-performance industrial cameras
+- **Features**: High-performance industrial cameras with comprehensive async interface
 - **Supported Models**: All Basler USB3, GigE, and CameraLink cameras
-- **Advanced Features**: ROI selection, gain control, pixel format selection
+- **Advanced Features**: ROI selection, gain control, pixel format selection, white balance
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
 - **Configuration**: Unified JSON format with graceful feature degradation
-- **Mock Support**: Full mock implementation with realistic behavior
+- **Mock Support**: Full mock implementation with realistic behavior simulation
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### OpenCV Cameras
 - **SDK**: opencv-python (included by default)
 - **Setup**: No additional setup required
-- **Features**: USB cameras, webcams, IP cameras
+- **Features**: USB cameras, webcams, IP cameras with software-based ROI
 - **Supported Devices**: Any device supported by OpenCV VideoCapture
 - **Platform Support**: Windows, Linux, macOS
 - **Configuration**: Unified JSON format adapted for OpenCV limitations
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### Mock Cameras
 - **Purpose**: Testing and development without physical hardware
-- **Features**: Configurable test patterns, realistic behavior simulation
+- **Features**: Configurable test patterns, realistic behavior simulation, synthetic image generation
 - **Configuration**: Configurable number of mock cameras via `mock_camera_count`
+- **Documentation**: Professional docstrings and consistent error handling
 
 ### PLC Backends
 
@@ -1050,6 +1120,15 @@ asyncio.run(testing_setup())
 
 ## 🛠️ Development and Testing
 
+### Code Quality and Documentation
+
+The hardware component maintains high code quality standards:
+- **Comprehensive Documentation**: All functions have detailed docstrings with Args/Returns/Raises sections
+- **Consistent Error Handling**: Professional exception handling with meaningful error messages
+- **Clean Code**: No debugging artifacts or unnecessary comments
+- **Type Hints**: Proper type annotations throughout the codebase
+- **Async/Await Consistency**: Proper async/await usage across all camera operations
+
 ### Test Structure
 
 The hardware component uses a well-organized test structure:
@@ -1145,7 +1224,12 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 4. Add appropriate exceptions to `core/exceptions.py`
 5. Create both real and mock implementations
 6. Add comprehensive unit tests in `tests/unit/[component]/`
-7. Update this README with usage examples
+7. **Documentation Requirements**:
+   - Add detailed docstrings to all functions with Args/Returns/Raises sections
+   - Ensure consistent error handling and logging
+   - Remove any debugging artifacts or unnecessary comments
+   - Maintain proper async/await patterns
+8. Update this README with usage examples
 
 ## 📄 License
 
