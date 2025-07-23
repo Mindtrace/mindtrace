@@ -7,8 +7,8 @@ from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 def main():
-    cluster_manager = ClusterManager.launch(host="localhost", port=8000, wait_for_launch=True)
-    worker_cm = EchoWorker.launch(host="localhost", port=8001, wait_for_launch=True)
+    cluster_manager = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
+    worker_cm = EchoWorker.launch(host="localhost", port=8003, wait_for_launch=True)
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         cluster_manager.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))

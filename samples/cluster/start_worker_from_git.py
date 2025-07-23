@@ -5,9 +5,9 @@ from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 def main():
-    cluster_manager = ClusterManager.launch(host="localhost", port=8000, wait_for_launch=True)
+    cluster_manager = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
     node = Node.launch(
-        host="localhost", port=8001, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
+        host="localhost", port=8003, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
     )
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
@@ -19,7 +19,7 @@ def main():
             git_branch="feature/cluster/git-and-docker",
             job_type="echo",
         )
-        worker_url = "http://localhost:8002"
+        worker_url = "http://localhost:8004"
         cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 3})
         cluster_manager.submit_job(job)
