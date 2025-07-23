@@ -3,6 +3,7 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
+from turtle import pensize
 from typing import Optional, List, Dict, Union, Tuple
 
 import git
@@ -53,16 +54,18 @@ class GitEnvironment(Mindtrace):
             base_dir = pathlib.Path(self.config["MINDTRACE_TEMP_DIR"])
             base_dir.mkdir(parents=True, exist_ok=True)
             self.temp_dir = tempfile.mkdtemp(dir=base_dir)
+            print("temp_dir", self.temp_dir)
 
             # Clone repository
             self._clone_repository()
+            print("cloned")
 
             # Setup working directory
             working_dir = self._get_working_dir()
-
+            print("working_dir", working_dir)
             # Sync dependencies
             self._sync_dependencies(working_dir)
-
+            print("synced")
             return working_dir
 
         except Exception as e:
@@ -167,7 +170,7 @@ class GitEnvironment(Mindtrace):
 
     # TODO CHECK COMMAND USAGE FOR SHELL=TRYE CORRESPONDANCE(should be more usefully shell = False)
     def execute(
-        self, command: Union[str, List[str]], env: Optional[Dict[str, str]] = None, cwd: Optional[str] = None
+        self, command: Union[str, List[str]], env: Optional[Dict[str, str]] = None, cwd: Optional[str] = None, detach: bool = False
     ) -> Tuple[int, str, str]:
         """Execute command in git synced environment.
 
@@ -182,19 +185,33 @@ class GitEnvironment(Mindtrace):
         if not self.temp_dir:
             raise RuntimeError("Git environment not initialized")
 
-        if isinstance(command, list):
-            command = " ".join(command)
+        if detach:
+            if isinstance(command, list):
+                if not command[0].startswith("uv"):
+                    command = ["uv", "run"] + command
+            else:
+                if not command.startswith("uv"):
+                    command = ["uv run " + command]
+        else:        
+            if isinstance(command, list):
+                command = " ".join(command)
         
-        if not command.startswith("uv"):
-            command = "uv run " + command
+            if not command.startswith("uv"):
+                command = "uv run " + command
 
         working_dir = cwd or self._get_working_dir()
         environment_vars = {**os.environ, **(env or {})}
-
+        print(command)
         try:
-            result = subprocess.run(
-                command, shell=True, cwd=working_dir, env=environment_vars, capture_output=True, text=True
-            )
-            return result.returncode, result.stdout, result.stderr
+            if not detach:
+                result = subprocess.run(
+                    command, shell=True, cwd=working_dir, env=environment_vars, capture_output=False, text=True
+                )
+                return result.returncode, result.stdout, result.stderr
+            else:
+                process = subprocess.Popen(
+                    command, cwd=working_dir, env=environment_vars
+                )
+                return process.pid, "", ""
         except Exception as e:
             return 1, "", str(e)
