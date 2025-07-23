@@ -1,4 +1,4 @@
-from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker
-from mindtrace.cluster.workers.standard_worker_launcher import StandardWorkerLauncher
+from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, StandardWorkerLauncher
+from mindtrace.cluster.core.types import ProxyWorker
 
-__all__ = ["ClusterManager", "Node", "StandardWorkerLauncher", "Worker"]
+__all__ = ["ClusterManager", "Node", "Worker", "ProxyWorker", "StandardWorkerLauncher"]
