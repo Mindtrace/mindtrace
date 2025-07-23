@@ -264,31 +264,97 @@ class CameraProxy:
             True if all settings applied successfully
         """
         async with self._lock:
-            success = True
+            results = {}
+            failed_settings = []
             
+            # Configure each setting independently
             if "exposure" in settings:
-                success &= await self._camera.set_exposure(settings["exposure"])
+                try:
+                    exposure_success = await self._camera.set_exposure(settings["exposure"])
+                    results["exposure"] = exposure_success
+                    if not exposure_success:
+                        failed_settings.append(f"exposure={settings['exposure']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set exposure {settings['exposure']}: {e}")
+                    failed_settings.append(f"exposure={settings['exposure']} (error: {e})")
+                    results["exposure"] = False
             
             if "gain" in settings:
-                success &= self._camera.set_gain(settings["gain"])
+                try:
+                    gain_success = await self._camera.set_gain(settings["gain"])
+                    results["gain"] = gain_success
+                    if not gain_success:
+                        failed_settings.append(f"gain={settings['gain']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set gain {settings['gain']}: {e}")
+                    failed_settings.append(f"gain={settings['gain']} (error: {e})")
+                    results["gain"] = False
             
             if "roi" in settings:
-                x, y, w, h = settings["roi"]
-                success &= self._camera.set_ROI(x, y, w, h)
+                try:
+                    x, y, w, h = settings["roi"]
+                    roi_success = await self._camera.set_ROI(x, y, w, h)
+                    results["roi"] = roi_success
+                    if not roi_success:
+                        failed_settings.append(f"roi=({x},{y},{w},{h})")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set ROI {settings['roi']}: {e}")
+                    failed_settings.append(f"roi={settings['roi']} (error: {e})")
+                    results["roi"] = False
             
             if "trigger_mode" in settings:
-                success &= await self._camera.set_triggermode(settings["trigger_mode"])
+                try:
+                    trigger_success = await self._camera.set_triggermode(settings["trigger_mode"])
+                    results["trigger_mode"] = trigger_success
+                    if not trigger_success:
+                        failed_settings.append(f"trigger_mode={settings['trigger_mode']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set trigger_mode {settings['trigger_mode']}: {e}")
+                    failed_settings.append(f"trigger_mode={settings['trigger_mode']} (error: {e})")
+                    results["trigger_mode"] = False
             
             if "pixel_format" in settings:
-                success &= self._camera.set_pixel_format(settings["pixel_format"])
+                try:
+                    pixel_success = await self._camera.set_pixel_format(settings["pixel_format"])
+                    results["pixel_format"] = pixel_success
+                    if not pixel_success:
+                        failed_settings.append(f"pixel_format={settings['pixel_format']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set pixel_format {settings['pixel_format']}: {e}")
+                    failed_settings.append(f"pixel_format={settings['pixel_format']} (error: {e})")
+                    results["pixel_format"] = False
             
             if "white_balance" in settings:
-                success &= await self._camera.set_auto_wb_once(settings["white_balance"])
+                try:
+                    wb_success = await self._camera.set_auto_wb_once(settings["white_balance"])
+                    results["white_balance"] = wb_success
+                    if not wb_success:
+                        failed_settings.append(f"white_balance={settings['white_balance']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set white_balance {settings['white_balance']}: {e}")
+                    failed_settings.append(f"white_balance={settings['white_balance']} (error: {e})")
+                    results["white_balance"] = False
             
             if "image_enhancement" in settings:
-                success &= self._camera.set_image_quality_enhancement(settings["image_enhancement"])
+                try:
+                    enhancement_success = await self._camera.set_image_quality_enhancement(settings["image_enhancement"])
+                    results["image_enhancement"] = enhancement_success
+                    if not enhancement_success:
+                        failed_settings.append(f"image_enhancement={settings['image_enhancement']}")
+                except Exception as e:
+                    self._camera.logger.error(f"Failed to set image_enhancement {settings['image_enhancement']}: {e}")
+                    failed_settings.append(f"image_enhancement={settings['image_enhancement']} (error: {e})")
+                    results["image_enhancement"] = False
             
-            return success
+            # Log results
+            if failed_settings:
+                self._camera.logger.warning(f"Configuration partially failed for camera '{self._full_name}'. Failed settings: {', '.join(failed_settings)}")
+                self._camera.logger.info(f"Configuration results: {results}")
+            else:
+                self._camera.logger.info(f"Configuration successful for camera '{self._full_name}': {results}")
+            
+            # Return True if at least one setting was successful
+            return any(results.values())
     
     # Exposure Control
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
@@ -334,7 +400,7 @@ class CameraProxy:
         return range_list[0], range_list[1]
     
     # Gain Control
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """
         Set camera gain value.
         
@@ -347,9 +413,10 @@ class CameraProxy:
         Raises:
             CameraConfigurationError: If gain value is invalid
         """
-        return self._camera.set_gain(gain)
+        async with self._lock:
+            return await self._camera.set_gain(gain)
     
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """
         Get current camera gain value.
         
@@ -359,9 +426,10 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        return self._camera.get_gain()
+        async with self._lock:
+            return await self._camera.get_gain()
     
-    def get_gain_range(self) -> Tuple[float, float]:
+    async def get_gain_range(self) -> Tuple[float, float]:
         """
         Get camera gain range.
         
@@ -371,11 +439,12 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        range_list = self._camera.get_gain_range()
-        return range_list[0], range_list[1]
+        async with self._lock:
+            range_list = await self._camera.get_gain_range()
+            return range_list[0], range_list[1]
     
     # ROI Control
-    def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set camera Region of Interest (ROI).
         
@@ -391,9 +460,10 @@ class CameraProxy:
         Raises:
             CameraConfigurationError: If ROI parameters are invalid
         """
-        return self._camera.set_ROI(x, y, width, height)
+        async with self._lock:
+            return await self._camera.set_ROI(x, y, width, height)
     
-    def get_roi(self) -> Dict[str, int]:
+    async def get_roi(self) -> Dict[str, int]:
         """
         Get current Region of Interest settings.
         
@@ -403,9 +473,10 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        return self._camera.get_ROI()
+        async with self._lock:
+            return await self._camera.get_ROI()
     
-    def reset_roi(self) -> bool:
+    async def reset_roi(self) -> bool:
         """
         Reset ROI to full sensor size.
         
@@ -414,8 +485,10 @@ class CameraProxy:
             
         Raises:
             CameraConnectionError: If camera is not connected
+            CameraConfigurationError: If ROI reset fails
         """
-        return self._camera.reset_ROI()
+        async with self._lock:
+            return await self._camera.reset_ROI()
     
     # Trigger Control  
     async def set_trigger_mode(self, mode: str) -> bool:
@@ -448,7 +521,7 @@ class CameraProxy:
         return await self._camera.get_triggermode()
     
     # Pixel Format
-    def set_pixel_format(self, format: str) -> bool:
+    async def set_pixel_format(self, format: str) -> bool:
         """
         Set camera pixel format.
         
@@ -461,9 +534,10 @@ class CameraProxy:
         Raises:
             CameraConfigurationError: If pixel format is not supported
         """
-        return self._camera.set_pixel_format(format)
+        async with self._lock:
+            return await self._camera.set_pixel_format(format)
     
-    def get_pixel_format(self) -> str:
+    async def get_pixel_format(self) -> str:
         """
         Get current pixel format.
         
@@ -473,9 +547,10 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        return self._camera.get_current_pixel_format()
+        async with self._lock:
+            return await self._camera.get_current_pixel_format()
     
-    def get_available_pixel_formats(self) -> List[str]:
+    async def get_available_pixel_formats(self) -> List[str]:
         """
         Get list of available pixel formats.
         
@@ -485,7 +560,8 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        return self._camera.get_pixel_format_range()
+        async with self._lock:
+            return await self._camera.get_pixel_format_range()
     
     # White Balance
     async def set_white_balance(self, mode: str) -> bool:
@@ -517,7 +593,7 @@ class CameraProxy:
         """
         return await self._camera.get_wb()
     
-    def get_available_white_balance_modes(self) -> List[str]:
+    async def get_available_white_balance_modes(self) -> List[str]:
         """
         Get list of available white balance modes.
         
@@ -527,10 +603,11 @@ class CameraProxy:
         Raises:
             CameraConnectionError: If camera is not connected
         """
-        return self._camera.get_wb_range()
+        async with self._lock:
+            return await self._camera.get_wb_range()
     
     # Image Enhancement
-    def set_image_enhancement(self, enabled: bool) -> bool:
+    async def set_image_enhancement(self, enabled: bool) -> bool:
         """
         Enable or disable image quality enhancement.
         
@@ -543,16 +620,18 @@ class CameraProxy:
         Returns:
             True if setting was applied successfully, False otherwise
         """
-        return self._camera.set_image_quality_enhancement(enabled)
+        async with self._lock:
+            return await self._camera.set_image_quality_enhancement(enabled)
     
-    def get_image_enhancement(self) -> bool:
+    async def get_image_enhancement(self) -> bool:
         """
         Get current image enhancement status.
         
         Returns:
             True if image enhancement is enabled, False otherwise
         """
-        return self._camera.get_image_quality_enhancement()
+        async with self._lock:
+            return await self._camera.get_image_quality_enhancement()
     
     # Configuration Management
     async def save_config(self, path: str) -> bool:
@@ -584,19 +663,6 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.import_config(path)
-    
-    async def debug_exposure_properties(self) -> Dict[str, Any]:
-        """
-        Debug method to list available exposure-related properties.
-        
-        Returns:
-            Dictionary with available exposure properties and their values
-        """
-        async with self._lock:
-            if hasattr(self._camera, 'debug_exposure_properties'):
-                return await self._camera.debug_exposure_properties()
-            else:
-                raise NotImplementedError(f"Debug method not available for {self._backend} backend")
     
     # Status and Info
     async def check_connection(self) -> bool:
@@ -943,12 +1009,15 @@ class CameraManager(Mindtrace):
     
     def _parse_camera_name(self, camera_name: str) -> Tuple[str, str]:
         """Parse full camera name into backend and device name."""
+        self.logger.info(f"_parse_camera_name called with: '{camera_name}' (contains ':' = {':' in camera_name})")
         if ":" not in camera_name:
+            self.logger.error(f"Camera name validation failed: '{camera_name}'")
             raise CameraConfigurationError(
                 f"Invalid camera name format: '{camera_name}'. Expected 'Backend:device_name'"
             )
         
         backend, device_name = camera_name.split(":", 1)
+        self.logger.info(f"Camera name parsed successfully: backend='{backend}', device_name='{device_name}'")
         return backend, device_name
     
     def _create_camera_instance(self, backend: str, device_name: str, **kwargs) -> BaseCamera:

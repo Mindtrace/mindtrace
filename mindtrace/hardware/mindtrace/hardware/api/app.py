@@ -1,5 +1,10 @@
 """
 Camera API Service using Mindtrace Service base class.
+
+This module provides a comprehensive REST API for camera management and control,
+including camera discovery, initialization, configuration, capture operations,
+and network management. The service supports multiple camera backends (OpenCV,
+Basler, Daheng, and mock backends) with unified async interfaces.
 """
 
 import logging
@@ -46,6 +51,7 @@ EXCEPTION_MAPPING = {
 }
 
 def camera_error_handler(request: Request, exc: CameraError):
+    """Handle camera-specific exceptions and return appropriate HTTP responses."""
     status_code, error_code = EXCEPTION_MAPPING.get(type(exc), (500, "UNKNOWN_CAMERA_ERROR"))
     return JSONResponse(
         status_code=status_code,
@@ -59,6 +65,7 @@ def camera_error_handler(request: Request, exc: CameraError):
     )
 
 def value_error_handler(request: Request, exc: ValueError):
+    """Handle ValueError exceptions and return appropriate HTTP responses."""
     return JSONResponse(
         status_code=400,
         content=ErrorResponse(
@@ -71,6 +78,7 @@ def value_error_handler(request: Request, exc: ValueError):
     )
 
 def key_error_handler(request: Request, exc: KeyError):
+    """Handle KeyError exceptions and return appropriate HTTP responses."""
     return JSONResponse(
         status_code=404,
         content=ErrorResponse(
@@ -83,6 +91,7 @@ def key_error_handler(request: Request, exc: KeyError):
     )
 
 def general_exception_handler(request: Request, exc: Exception):
+    """Handle general exceptions and return appropriate HTTP responses."""
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
@@ -95,6 +104,7 @@ def general_exception_handler(request: Request, exc: Exception):
     )
 
 async def log_requests(request: Request, call_next):
+    """Middleware to log request processing time and status."""
     start_time = datetime.now(UTC)
     response = await call_next(request)
     process_time = (datetime.now(UTC) - start_time).total_seconds()
@@ -102,7 +112,14 @@ async def log_requests(request: Request, call_next):
     return response
 
 def _encode_image_to_base64(image_array) -> Optional[str]:
-    """Convert image array to base64 string."""
+    """Convert image array to base64 string.
+    
+    Args:
+        image_array: numpy array representing the image
+        
+    Returns:
+        Base64 encoded string of the image in JPEG format, or None if conversion fails
+    """
     try:
         import cv2
         import numpy as np
@@ -129,16 +146,41 @@ def _encode_image_to_base64(image_array) -> Optional[str]:
 
 # Camera Management Endpoints
 async def discover_cameras(backend: str = None) -> ListResponse:
+    """Discover available cameras across all backends or a specific backend.
+    
+    Args:
+        backend: Optional backend name to filter cameras
+        
+    Returns:
+        ListResponse containing discovered camera names
+    """
     manager = get_camera_manager()
     cameras = manager.discover_cameras(backends=backend if backend else None)
     return ListResponse(success=True, data=cameras, message=f"Found {len(cameras)} cameras")
 
 async def list_active_cameras() -> ListResponse:
+    """List all currently initialized cameras.
+    
+    Returns:
+        ListResponse containing active camera names
+    """
     manager = get_camera_manager()
     active_cameras = manager.get_active_cameras()
     return ListResponse(success=True, data=active_cameras, message=f"Found {len(active_cameras)} active cameras")
 
 async def initialize_camera(camera: str, payload: CameraInitializeRequest = None) -> BoolResponse:
+    """Initialize a single camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Optional initialization parameters
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If camera name format is invalid
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -150,6 +192,17 @@ async def initialize_camera(camera: str, payload: CameraInitializeRequest = None
     return BoolResponse(success=True, message=f"Camera '{camera}' initialized")
 
 async def initialize_cameras_batch(payload: BatchCameraInitializeRequest) -> BatchOperationResponse:
+    """Initialize multiple cameras in batch.
+    
+    Args:
+        payload: Batch initialization request containing camera names and parameters
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+    """
     manager = get_camera_manager()
     for camera in payload.cameras:
         if ":" not in camera:
@@ -166,6 +219,17 @@ async def initialize_cameras_batch(payload: BatchCameraInitializeRequest) -> Bat
     )
 
 async def close_camera(camera: str) -> BoolResponse:
+    """Close a single camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If camera name format is invalid
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -176,6 +240,11 @@ async def close_camera(camera: str) -> BoolResponse:
     return BoolResponse(success=True, message=f"Camera '{camera}' closed")
 
 async def close_all_cameras() -> BoolResponse:
+    """Close all active cameras.
+    
+    Returns:
+        BoolResponse indicating success/failure
+    """
     manager = get_camera_manager()
     active_cameras = manager.get_active_cameras()
     camera_count = len(active_cameras)
@@ -183,6 +252,14 @@ async def close_all_cameras() -> BoolResponse:
     return BoolResponse(success=True, message=f"Successfully closed {camera_count} cameras")
 
 async def check_camera_connection(camera: str) -> StatusResponse:
+    """Check if a camera is connected and responsive.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StatusResponse with connection status and camera information
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     is_connected = await camera_proxy.check_connection()
@@ -200,6 +277,14 @@ async def check_camera_connection(camera: str) -> StatusResponse:
     )
 
 async def get_camera_info(camera: str) -> StatusResponse:
+    """Get comprehensive information about a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StatusResponse with detailed camera information including sensor info and current settings
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     sensor_info = await camera_proxy.get_sensor_info()
@@ -213,9 +298,9 @@ async def get_camera_info(camera: str) -> StatusResponse:
     if camera_proxy.is_connected:
         try:
             info["current_exposure"] = await camera_proxy.get_exposure()
-            info["current_gain"] = camera_proxy.get_gain()
-            info["current_roi"] = camera_proxy.get_roi()
-            info["current_pixel_format"] = camera_proxy.get_pixel_format()
+            info["current_gain"] = await camera_proxy.get_gain()
+            info["current_roi"] = await camera_proxy.get_roi()
+            info["current_pixel_format"] = await camera_proxy.get_pixel_format()
         except Exception as e:
             info["settings_error"] = str(e)
     return StatusResponse(
@@ -226,11 +311,21 @@ async def get_camera_info(camera: str) -> StatusResponse:
 
 # Backend Management Endpoints
 async def list_backends() -> ListResponse:
+    """List all available camera backends.
+    
+    Returns:
+        ListResponse containing backend names
+    """
     manager = get_camera_manager()
     backends = manager._discovered_backends
     return ListResponse(success=True, data=backends, message=f"Found {len(backends)} backends")
 
 async def get_backend_info() -> DictResponse:
+    """Get detailed information about all backends.
+    
+    Returns:
+        DictResponse with backend information including availability and camera counts
+    """
     manager = get_camera_manager()
     backends = manager._discovered_backends
     backend_info = {}
@@ -256,6 +351,17 @@ async def get_backend_info() -> DictResponse:
     return DictResponse(success=True, data=backend_info, message=f"Backend info for {len(backend_info)} backends")
 
 async def get_specific_backend_info(backend: str) -> DictResponse:
+    """Get detailed information about a specific backend.
+    
+    Args:
+        backend: Backend name
+        
+    Returns:
+        DictResponse with backend information
+        
+    Raises:
+        HTTPException: If backend is not found
+    """
     manager = get_camera_manager()
     backend_name = backend
     backends = manager._discovered_backends
@@ -293,6 +399,11 @@ async def get_specific_backend_info(backend: str) -> DictResponse:
     )
 
 async def check_backends_health() -> DictResponse:
+    """Check the health status of all backends.
+    
+    Returns:
+        DictResponse with health status for each backend
+    """
     manager = get_camera_manager()
     backends = manager._discovered_backends
     health_status = {
@@ -332,6 +443,20 @@ async def check_backends_health() -> DictResponse:
 
 # Capture Endpoints
 async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureResponse:
+    """Capture a single image from a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Optional capture parameters including save path
+        
+    Returns:
+        CaptureResponse with base64 encoded image data
+        
+    Raises:
+        ValueError: If camera name format is invalid
+        CameraNotFoundError: If camera is not initialized
+        CameraCaptureError: If capture fails
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -357,6 +482,18 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
     )
 
 async def capture_batch(payload: BatchCaptureRequest) -> BatchOperationResponse:
+    """Capture images from multiple cameras in batch.
+    
+    Args:
+        payload: Batch capture request containing camera names
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+        CameraNotFoundError: If any camera is not initialized
+    """
     manager = get_camera_manager()
     for camera in payload.cameras:
         if ":" not in camera:
@@ -377,6 +514,19 @@ async def capture_batch(payload: BatchCaptureRequest) -> BatchOperationResponse:
     )
 
 async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCaptureResponse:
+    """Capture HDR (High Dynamic Range) images from a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Optional HDR capture parameters
+        
+    Returns:
+        HDRCaptureResponse with multiple images at different exposure levels
+        
+    Raises:
+        ValueError: If camera name format is invalid
+        CameraNotFoundError: If camera is not initialized
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -424,6 +574,18 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     )
 
 async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureResponse:
+    """Capture HDR images from multiple cameras in batch.
+    
+    Args:
+        payload: Batch HDR capture request containing camera names and parameters
+        
+    Returns:
+        BatchHDRCaptureResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+        CameraNotFoundError: If any camera is not initialized
+    """
     manager = get_camera_manager()
     for camera in payload.cameras:
         if ":" not in camera:
@@ -479,6 +641,17 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
     )
 
 async def video_stream(camera: str) -> StreamingResponse:
+    """Start a video stream from a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StreamingResponse with MJPEG video stream
+        
+    Raises:
+        CameraNotFoundError: If camera is not initialized
+    """
     manager = get_camera_manager()
     active_cameras = manager.get_active_cameras()
     if camera not in active_cameras:
@@ -542,16 +715,34 @@ async def video_stream(camera: str) -> StreamingResponse:
     
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
 
-
-
 # Configuration Endpoints - Async
 async def get_exposure(camera: str) -> FloatResponse:
+    """Get the current exposure setting for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        FloatResponse with exposure value in microseconds
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     exposure = await camera_proxy.get_exposure()
     return FloatResponse(success=True, data=exposure, message=f"Exposure: {exposure} μs")
 
 async def set_exposure(camera: str, payload: ExposureRequest) -> BoolResponse:
+    """Set the exposure for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Exposure request containing the exposure value
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If setting exposure fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     success = await camera_proxy.set_exposure(payload.exposure)
@@ -560,6 +751,14 @@ async def set_exposure(camera: str, payload: ExposureRequest) -> BoolResponse:
     return BoolResponse(success=True, message=f"Exposure set to {payload.exposure} μs")
 
 async def get_exposure_range(camera: str) -> RangeResponse:
+    """Get the valid exposure range for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        RangeResponse with minimum and maximum exposure values
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     exposure_range = await camera_proxy.get_exposure_range()
@@ -570,12 +769,33 @@ async def get_exposure_range(camera: str) -> RangeResponse:
     )
 
 async def get_trigger_mode(camera: str) -> StringResponse:
+    """Get the current trigger mode for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StringResponse with trigger mode ('continuous' or 'trigger')
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     trigger_mode = await camera_proxy.get_trigger_mode()
     return StringResponse(success=True, data=trigger_mode, message=f"Trigger mode: {trigger_mode}")
 
 async def set_trigger_mode(camera: str, payload: TriggerModeRequest) -> BoolResponse:
+    """Set the trigger mode for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Trigger mode request containing the mode
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If trigger mode is invalid
+        CameraConfigurationError: If setting trigger mode fails
+    """
     manager = get_camera_manager()
     if payload.mode not in ["continuous", "trigger"]:
         raise ValueError("Invalid trigger mode. Must be 'continuous' or 'trigger'")
@@ -586,12 +806,32 @@ async def set_trigger_mode(camera: str, payload: TriggerModeRequest) -> BoolResp
     return BoolResponse(success=True, message=f"Trigger mode set to {payload.mode}")
 
 async def get_white_balance(camera: str) -> StringResponse:
+    """Get the current white balance setting for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StringResponse with white balance mode
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     white_balance = await camera_proxy.get_white_balance()
     return StringResponse(success=True, data=white_balance, message=f"White balance: {white_balance}")
 
 async def set_white_balance(camera: str, payload: WhiteBalanceRequest) -> BoolResponse:
+    """Set the white balance for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: White balance request containing the mode
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If setting white balance fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
     success = await camera_proxy.set_white_balance(payload.mode)
@@ -600,12 +840,31 @@ async def set_white_balance(camera: str, payload: WhiteBalanceRequest) -> BoolRe
     return BoolResponse(success=True, message=f"White balance set to {payload.mode}")
 
 async def get_white_balance_modes(camera: str) -> WhiteBalanceListResponse:
+    """Get available white balance modes for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        WhiteBalanceListResponse with list of available modes
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    modes = camera_proxy.get_available_white_balance_modes()
+    modes = await camera_proxy.get_available_white_balance_modes()
     return WhiteBalanceListResponse(success=True, data=modes, message=f"Available white balance modes")
 
 async def configure_batch_async(payload: BatchCameraConfigRequest) -> BatchOperationResponse:
+    """Configure multiple cameras with async parameters in batch.
+    
+    Args:
+        payload: Batch configuration request containing camera settings
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+    """
     manager = get_camera_manager()
     for camera_name in payload.configurations.keys():
         if ":" not in camera_name:
@@ -644,23 +903,51 @@ async def configure_batch_async(payload: BatchCameraConfigRequest) -> BatchOpera
 
 # Configuration Endpoints - Sync
 async def get_gain(camera: str) -> FloatResponse:
+    """Get the current gain setting for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        FloatResponse with gain value
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    gain = camera_proxy.get_gain()
+    gain = await camera_proxy.get_gain()
     return FloatResponse(success=True, data=gain, message=f"Gain: {gain}")
 
 async def set_gain(camera: str, payload: GainRequest) -> BoolResponse:
+    """Set the gain for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Gain request containing the gain value
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If setting gain fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    success = camera_proxy.set_gain(payload.gain)
+    success = await camera_proxy.set_gain(payload.gain)
     if not success:
         raise CameraConfigurationError(f"Failed to set gain to {payload.gain}")
     return BoolResponse(success=True, message=f"Gain set to {payload.gain}")
 
 async def get_gain_range(camera: str) -> RangeResponse:
+    """Get the valid gain range for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        RangeResponse with minimum and maximum gain values
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    gain_range = camera_proxy.get_gain_range()
+    gain_range = await camera_proxy.get_gain_range()
     return RangeResponse(
         success=True,
         data=gain_range,
@@ -668,12 +955,33 @@ async def get_gain_range(camera: str) -> RangeResponse:
     )
 
 async def get_roi(camera: str) -> DictResponse:
+    """Get the current ROI (Region of Interest) for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        DictResponse with ROI parameters (x, y, width, height)
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    roi = camera_proxy.get_roi()
+    roi = await camera_proxy.get_roi()
     return DictResponse(success=True, data=roi, message=f"Current ROI: {roi}")
 
 async def set_roi(camera: str, payload: ROIRequest) -> BoolResponse:
+    """Set the ROI (Region of Interest) for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: ROI request containing x, y, width, height
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If ROI parameters are invalid
+        CameraConfigurationError: If setting ROI fails
+    """
     manager = get_camera_manager()
     if payload.width <= 0 or payload.height <= 0:
         raise ValueError("ROI width and height must be positive")
@@ -681,54 +989,124 @@ async def set_roi(camera: str, payload: ROIRequest) -> BoolResponse:
         raise ValueError("ROI x and y coordinates must be non-negative")
     
     camera_proxy = manager.get_camera(camera)
-    success = camera_proxy.set_roi(payload.x, payload.y, payload.width, payload.height)
+    success = await camera_proxy.set_roi(payload.x, payload.y, payload.width, payload.height)
     if not success:
         raise CameraConfigurationError(f"Failed to set ROI")
     return BoolResponse(success=True, message=f"ROI set to ({payload.x}, {payload.y}, {payload.width}, {payload.height})")
 
 async def reset_roi(camera: str) -> BoolResponse:
+    """Reset the ROI to full sensor size for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If resetting ROI fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    success = camera_proxy.reset_roi()
+    success = await camera_proxy.reset_roi()
     if not success:
         raise CameraConfigurationError(f"Failed to reset ROI")
     return BoolResponse(success=True, message="ROI reset to full sensor size")
 
 async def get_pixel_format(camera: str) -> StringResponse:
+    """Get the current pixel format for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        StringResponse with pixel format
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    pixel_format = camera_proxy.get_pixel_format()
+    pixel_format = await camera_proxy.get_pixel_format()
     return StringResponse(success=True, data=pixel_format, message=f"Pixel format: {pixel_format}")
 
 async def set_pixel_format(camera: str, payload: PixelFormatRequest) -> BoolResponse:
+    """Set the pixel format for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Pixel format request containing the format
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If setting pixel format fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    success = camera_proxy.set_pixel_format(payload.format)
+    success = await camera_proxy.set_pixel_format(payload.format)
     if not success:
         raise CameraConfigurationError(f"Failed to set pixel format to {payload.format}")
     return BoolResponse(success=True, message=f"Pixel format set to {payload.format}")
 
 async def get_pixel_formats(camera: str) -> PixelFormatListResponse:
+    """Get available pixel formats for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        PixelFormatListResponse with list of available formats
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    formats = camera_proxy.get_available_pixel_formats()
+    formats = await camera_proxy.get_available_pixel_formats()
     return PixelFormatListResponse(success=True, data=formats, message=f"Available pixel formats")
 
 async def get_image_enhancement(camera: str) -> BoolResponse:
+    """Get the current image enhancement status for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        
+    Returns:
+        BoolResponse with enhancement status
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    enabled = camera_proxy.get_image_enhancement()
+    enabled = await camera_proxy.get_image_enhancement()
     return BoolResponse(success=True, data=enabled, message=f"Image enhancement: {'enabled' if enabled else 'disabled'}")
 
 async def set_image_enhancement(camera: str, payload: ImageEnhancementRequest) -> BoolResponse:
+    """Set the image enhancement for a camera.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Image enhancement request containing enabled flag
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        CameraConfigurationError: If setting image enhancement fails
+    """
     manager = get_camera_manager()
     camera_proxy = manager.get_camera(camera)
-    success = camera_proxy.set_image_enhancement(payload.enabled)
+    success = await camera_proxy.set_image_enhancement(payload.enabled)
     if not success:
         raise CameraConfigurationError(f"Failed to set image enhancement")
     return BoolResponse(success=True, message=f"Image enhancement {'enabled' if payload.enabled else 'disabled'}")
 
 async def configure_batch_sync(payload: BatchCameraConfigRequest) -> BatchOperationResponse:
+    """Configure multiple cameras with sync parameters in batch.
+    
+    Args:
+        payload: Batch configuration request containing camera settings
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+    """
     manager = get_camera_manager()
     for camera_name in payload.configurations.keys():
         if ":" not in camera_name:
@@ -767,6 +1145,20 @@ async def configure_batch_sync(payload: BatchCameraConfigRequest) -> BatchOperat
 
 # Configuration Persistence Endpoints
 async def export_config(camera: str, payload: ConfigFileRequest) -> BoolResponse:
+    """Export camera configuration to a file.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Config file request containing the file path
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If camera name format is invalid
+        CameraNotFoundError: If camera is not initialized
+        CameraConfigurationError: If export fails
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -787,6 +1179,20 @@ async def export_config(camera: str, payload: ConfigFileRequest) -> BoolResponse
     )
 
 async def import_config(camera: str, payload: ConfigFileRequest) -> BoolResponse:
+    """Import camera configuration from a file.
+    
+    Args:
+        camera: Camera name in format 'Backend:device_name'
+        payload: Config file request containing the file path
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If camera name format is invalid
+        CameraNotFoundError: If camera is not initialized
+        CameraConfigurationError: If import fails
+    """
     manager = get_camera_manager()
     if ":" not in camera:
         raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
@@ -806,20 +1212,37 @@ async def import_config(camera: str, payload: ConfigFileRequest) -> BoolResponse
         message=f"Configuration imported from '{payload.config_path}'"
     )
 
-# Need to create request models for batch config operations
 async def export_batch_config(payload: BatchConfigExportRequest) -> BatchOperationResponse:
+    """Export configurations for multiple cameras in batch.
+    
+    Args:
+        payload: Batch config export request containing camera names and file path pattern
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+    """
     manager = get_camera_manager()
-    camera_list = [cam.strip() for cam in payload.cameras.split(",")]
+    
+    # Handle cameras as list
+    camera_list = payload.cameras
     
     for camera_name in camera_list:
         if ":" not in camera_name:
             raise ValueError(f"Invalid camera name format '{camera_name}'. Expected 'Backend:device_name'")
     
+    active_cameras = manager.get_active_cameras()
     results = {}
     for camera_name in camera_list:
         try:
+            if camera_name not in active_cameras:
+                results[camera_name] = False
+                continue
+                
             safe_camera_name = camera_name.replace(":", "_")
-            config_path = payload.config_path_pattern.replace("{camera}", safe_camera_name)
+            config_path = payload.config_path.replace("{camera}", safe_camera_name)
             
             camera = manager.get_camera(camera_name)
             success = await camera.save_config(config_path)
@@ -840,8 +1263,23 @@ async def export_batch_config(payload: BatchConfigExportRequest) -> BatchOperati
     )
 
 async def import_batch_config(payload: BatchConfigImportRequest) -> BatchOperationResponse:
+    """Import configurations for multiple cameras in batch.
+    
+    Args:
+        payload: Batch config import request containing camera names and file path pattern
+        
+    Returns:
+        BatchOperationResponse with results for each camera
+        
+    Raises:
+        ValueError: If any camera name format is invalid
+    """
     manager = get_camera_manager()
-    camera_list = [cam.strip() for cam in payload.cameras.split(",")]
+    
+    # Handle cameras as list
+    camera_list = payload.cameras
+    
+    active_cameras = manager.get_active_cameras()
     
     for camera_name in camera_list:
         if ":" not in camera_name:
@@ -850,8 +1288,12 @@ async def import_batch_config(payload: BatchConfigImportRequest) -> BatchOperati
     results = {}
     for camera_name in camera_list:
         try:
+            if camera_name not in active_cameras:
+                results[camera_name] = False
+                continue
+                
             safe_camera_name = camera_name.replace(":", "_")
-            config_path = payload.config_path_pattern.replace("{camera}", safe_camera_name)
+            config_path = payload.config_path.replace("{camera}", safe_camera_name)
             
             camera = manager.get_camera(camera_name)
             success = await camera.load_config(config_path)
@@ -873,6 +1315,11 @@ async def import_batch_config(payload: BatchConfigImportRequest) -> BatchOperati
 
 # Network Management Endpoints
 async def get_bandwidth_info() -> DictResponse:
+    """Get network bandwidth information and camera usage statistics.
+    
+    Returns:
+        DictResponse with bandwidth info, camera counts by type, and network status
+    """
     manager = get_camera_manager()
     bandwidth_info = manager.get_network_bandwidth_info()
     active_cameras = list(manager.get_active_cameras())
@@ -903,11 +1350,27 @@ async def get_bandwidth_info() -> DictResponse:
     return DictResponse(success=True, data=enhanced_info, message="Network bandwidth info retrieved")
 
 async def get_concurrent_limit() -> IntResponse:
+    """Get the current maximum concurrent capture limit.
+    
+    Returns:
+        IntResponse with the current limit
+    """
     manager = get_camera_manager()
     current_limit = manager.get_max_concurrent_captures()
     return IntResponse(success=True, data=current_limit, message=f"Current concurrent limit: {current_limit}")
 
 async def set_concurrent_limit(payload: NetworkConcurrentLimitRequest) -> BoolResponse:
+    """Set the maximum concurrent capture limit.
+    
+    Args:
+        payload: Network concurrent limit request containing the new limit
+        
+    Returns:
+        BoolResponse indicating success/failure
+        
+    Raises:
+        ValueError: If limit is outside valid range (1-10)
+    """
     manager = get_camera_manager()
     if payload.limit < 1 or payload.limit > 10:
         raise ValueError(f"Concurrent limit must be between 1 and 10, got {payload.limit}")
@@ -915,6 +1378,11 @@ async def set_concurrent_limit(payload: NetworkConcurrentLimitRequest) -> BoolRe
     return BoolResponse(success=True, message=f"Concurrent limit set to {payload.limit}")
 
 async def get_network_health() -> DictResponse:
+    """Get comprehensive network health status and recommendations.
+    
+    Returns:
+        DictResponse with health status, usage statistics, and recommendations
+    """
     manager = get_camera_manager()
     active_cameras = list(manager.get_active_cameras())
     bandwidth_info = manager.get_network_bandwidth_info()
@@ -1019,13 +1487,36 @@ set_concurrent_limit_task = TaskSchema(name="set_concurrent_limit", input_schema
 get_network_health_task = TaskSchema(name="get_network_health", input_schema=None, output_schema=DictResponse)
 
 class CameraAPIService(Service):
+    """Camera API Service providing REST endpoints for camera management and control.
+    
+    This service extends the base Service class to provide a comprehensive REST API
+    for camera operations including discovery, initialization, configuration,
+    capture, and network management. It supports multiple camera backends with
+    unified async interfaces and proper error handling.
+    
+    The service includes:
+    - Camera management (discovery, initialization, closing)
+    - Backend management and health monitoring
+    - Image capture (single, batch, HDR)
+    - Video streaming
+    - Camera configuration (exposure, gain, ROI, etc.)
+    - Configuration persistence (import/export)
+    - Network bandwidth management
+    """
+    
     def __init__(self, **kwargs):
+        """Initialize the Camera API Service with all endpoints and middleware.
+        
+        Args:
+            **kwargs: Additional arguments passed to the base Service class
+        """
         super().__init__(
             summary="Camera API Service",
             description="REST API for camera management and control",
             **kwargs
         )
         
+        # Add CORS middleware for web client support
         self.app.add_middleware(
             CORSMiddleware,
             allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:8080"],
@@ -1034,13 +1525,24 @@ class CameraAPIService(Service):
             allow_headers=["*"],
         )
         
+        # Register exception handlers for proper error responses
         self.app.add_exception_handler(CameraError, camera_error_handler)
         self.app.add_exception_handler(ValueError, value_error_handler)
         self.app.add_exception_handler(KeyError, key_error_handler)
         self.app.add_exception_handler(Exception, general_exception_handler)
+        
+        # Add request logging middleware
         self.app.middleware("http")(log_requests)
         
-        # Register ALL endpoints with proper HTTP methods
+        # Register all endpoints with proper HTTP methods
+        self._register_camera_management_endpoints()
+        self._register_backend_management_endpoints()
+        self._register_capture_endpoints()
+        self._register_configuration_endpoints()
+        self._register_network_management_endpoints()
+    
+    def _register_camera_management_endpoints(self):
+        """Register camera management endpoints."""
         # Camera Management - GET endpoints
         self.add_endpoint("cameras/discover", discover_cameras, discover_cameras_task, methods=["GET"])
         self.add_endpoint("cameras/active", list_active_cameras, list_active_cameras_task, methods=["GET"])
@@ -1048,28 +1550,34 @@ class CameraAPIService(Service):
         self.add_endpoint("cameras/{camera}/info", get_camera_info, get_camera_info_task, methods=["GET"])
         
         # Camera Management - POST endpoints
-        self.add_endpoint("cameras/{camera}/initialize", initialize_camera, initialize_camera_task, methods=["POST"])
         self.add_endpoint("cameras/batch/initialize", initialize_cameras_batch, initialize_cameras_batch_task, methods=["POST"])
+        self.add_endpoint("cameras/{camera}/initialize", initialize_camera, initialize_camera_task, methods=["POST"])
         
         # Camera Management - DELETE endpoints
         self.add_endpoint("cameras/{camera}", close_camera, close_camera_task, methods=["DELETE"])
         self.add_endpoint("cameras", close_all_cameras, close_all_cameras_task, methods=["DELETE"])
-        
+    
+    def _register_backend_management_endpoints(self):
+        """Register backend management endpoints."""
         # Backend Management - GET endpoints
         self.add_endpoint("backends", list_backends, list_backends_task, methods=["GET"])
         self.add_endpoint("backends/info", get_backend_info, get_backend_info_task, methods=["GET"])
         self.add_endpoint("backends/{backend}/info", get_specific_backend_info, get_specific_backend_info_task, methods=["GET"])
         self.add_endpoint("backends/health", check_backends_health, check_backends_health_task, methods=["GET"])
-        
+    
+    def _register_capture_endpoints(self):
+        """Register capture and streaming endpoints."""
         # Capture - POST endpoints
-        self.add_endpoint("cameras/{camera}/capture", capture_image, capture_image_task, methods=["POST"])
         self.add_endpoint("cameras/batch/capture", capture_batch, capture_batch_task, methods=["POST"])
-        self.add_endpoint("cameras/{camera}/capture/hdr", capture_hdr, capture_hdr_task, methods=["POST"])
         self.add_endpoint("cameras/batch/capture/hdr", capture_hdr_batch, capture_hdr_batch_task, methods=["POST"])
+        self.add_endpoint("cameras/{camera}/capture", capture_image, capture_image_task, methods=["POST"])
+        self.add_endpoint("cameras/{camera}/capture/hdr", capture_hdr, capture_hdr_task, methods=["POST"])
         
         # Video Streaming - GET endpoints
         self.add_endpoint("cameras/{camera}/stream", video_stream, video_stream_task, methods=["GET"])
-        
+    
+    def _register_configuration_endpoints(self):
+        """Register configuration and persistence endpoints."""
         # Configuration - Async - GET endpoints
         self.add_endpoint("cameras/{camera}/exposure", get_exposure, get_exposure_task, methods=["GET"])
         self.add_endpoint("cameras/{camera}/exposure/range", get_exposure_range, get_exposure_range_task, methods=["GET"])
@@ -1106,11 +1614,13 @@ class CameraAPIService(Service):
         self.add_endpoint("cameras/batch/configure/sync", configure_batch_sync, configure_batch_sync_task, methods=["POST"])
         
         # Configuration Persistence - POST endpoints
-        self.add_endpoint("cameras/{camera}/config/export", export_config, export_config_task, methods=["POST"])
-        self.add_endpoint("cameras/{camera}/config/import", import_config, import_config_task, methods=["POST"])
         self.add_endpoint("cameras/batch/config/export", export_batch_config, export_batch_config_task, methods=["POST"])
         self.add_endpoint("cameras/batch/config/import", import_batch_config, import_batch_config_task, methods=["POST"])
-        
+        self.add_endpoint("cameras/{camera}/config/export", export_config, export_config_task, methods=["POST"])
+        self.add_endpoint("cameras/{camera}/config/import", import_config, import_config_task, methods=["POST"])
+    
+    def _register_network_management_endpoints(self):
+        """Register network management endpoints."""
         # Network Management - GET endpoints
         self.add_endpoint("network/bandwidth", get_bandwidth_info, get_bandwidth_info_task, methods=["GET"])
         self.add_endpoint("network/concurrent-limit", get_concurrent_limit, get_concurrent_limit_task, methods=["GET"])

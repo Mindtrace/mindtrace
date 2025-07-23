@@ -318,15 +318,90 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Failed to configure Basler camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool) -> bool:
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
         self.logger.info(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
         return True
+
+    async def _detect_gain_nodes(self) -> str:
+        """
+        Detect which gain property is available for this camera.
+        
+        Returns:
+            The name of the available gain property ("Gain" or "GainRaw")
+            
+        Raises:
+            CameraConfigurationError: If no gain property is available
+        """
+        try:
+            self.logger.info(f"Starting gain node detection for camera '{self.camera_name}'")
+            
+            # Get all available nodes from the camera
+            node_map = await asyncio.to_thread(self.camera.GetNodeMap)
+            self.logger.info(f"Camera '{self.camera_name}' node map obtained")
+            
+            # List all nodes that contain "gain" (case insensitive)
+            all_nodes = []
+            try:
+                for node_name in await asyncio.to_thread(node_map.GetNodes):
+                    node_name_str = str(node_name.GetName())
+                    if 'gain' in node_name_str.lower():
+                        all_nodes.append(node_name_str)
+                self.logger.info(f"Found gain-related nodes for camera '{self.camera_name}': {all_nodes}")
+            except Exception as e:
+                self.logger.warning(f"Could not enumerate all nodes for camera '{self.camera_name}': {str(e)}")
+            
+            # Try to get nodes directly from the node map instead of using hasattr
+            gain_node_names = [
+                'Gain', 'GainRaw', 'GainAbs', 'GainValue', 'GainControl',
+                'GainAuto', 'GainSelector', 'GainMode', 'GainSetting'
+            ]
+            
+            for node_name in gain_node_names:
+                try:
+                    # Try to get the node directly from the node map
+                    node = await asyncio.to_thread(node_map.GetNode, node_name)
+                    if node is not None:
+                        self.logger.info(f"Found gain node '{node_name}' for camera '{self.camera_name}'")
+                        try:
+                            # Test if we can read the current value
+                            current_value = await asyncio.to_thread(node.GetValue)
+                            self.logger.info(f"Successfully read '{node_name}' value: {current_value} for camera '{self.camera_name}'")
+                            return node_name
+                        except Exception as e:
+                            self.logger.warning(f"'{node_name}' exists but not readable for camera '{self.camera_name}': {str(e)}")
+                except Exception as e:
+                    self.logger.debug(f"Node '{node_name}' not found for camera '{self.camera_name}': {str(e)}")
+            
+            # If no nodes found, try the old hasattr method as fallback
+            self.logger.warning(f"No gain nodes found via node map, trying hasattr method for camera '{self.camera_name}'")
+            
+            # Try hasattr for the most common ones
+            for node_name in ['Gain', 'GainRaw']:
+                try:
+                    if hasattr(self.camera, node_name):
+                        self.logger.info(f"'{node_name}' attribute exists for camera '{self.camera_name}'")
+                        try:
+                            current_value = await asyncio.to_thread(getattr(self.camera, node_name).GetValue)
+                            self.logger.info(f"Successfully read '{node_name}' value: {current_value} for camera '{self.camera_name}'")
+                            return node_name
+                        except Exception as e:
+                            self.logger.warning(f"'{node_name}' exists but not accessible for camera '{self.camera_name}': {str(e)}")
+                except Exception as e:
+                    self.logger.debug(f"hasattr check failed for '{node_name}' on camera '{self.camera_name}': {str(e)}")
+            
+            self.logger.error(f"No gain property available for camera '{self.camera_name}'")
+            self.logger.error(f"Available gain-related nodes: {all_nodes}")
+            raise CameraConfigurationError(f"No gain property available for camera '{self.camera_name}'")
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting gain nodes for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to detect gain nodes: {str(e)}")
 
     async def _detect_exposure_nodes(self) -> str:
         """
@@ -339,31 +414,65 @@ class BaslerCamera(BaseCamera):
             CameraConfigurationError: If no exposure property is available
         """
         try:
-            # First check if ExposureTime exists and is accessible
-            if hasattr(self.camera, 'ExposureTime'):
+            self.logger.info(f"Starting exposure node detection for camera '{self.camera_name}'")
+            
+            # Get all available nodes from the camera
+            node_map = await asyncio.to_thread(self.camera.GetNodeMap)
+            self.logger.info(f"Camera '{self.camera_name}' node map obtained")
+            
+            # List all nodes that contain "exposure" (case insensitive)
+            all_nodes = []
+            try:
+                for node_name in await asyncio.to_thread(node_map.GetNodes):
+                    node_name_str = str(node_name.GetName())
+                    if 'exposure' in node_name_str.lower():
+                        all_nodes.append(node_name_str)
+                self.logger.info(f"Found exposure-related nodes for camera '{self.camera_name}': {all_nodes}")
+            except Exception as e:
+                self.logger.warning(f"Could not enumerate all nodes for camera '{self.camera_name}': {str(e)}")
+            
+            # Try to get nodes directly from the node map instead of using hasattr
+            exposure_node_names = [
+                'ExposureTime', 'ExposureTimeRaw', 'ExposureTimeAbs', 
+                'ExposureTimeMicroseconds', 'ExposureTimeUs', 'Exposure', 
+                'ExposureTimeValue', 'ExposureTimeControl'
+            ]
+            
+            for node_name in exposure_node_names:
                 try:
-                    # Test if we can read the current value
-                    await asyncio.to_thread(self.camera.ExposureTime.GetValue)
-                    self.logger.info(f"Using ExposureTime for camera '{self.camera_name}'")
-                    return "ExposureTime"
+                    # Try to get the node directly from the node map
+                    node = await asyncio.to_thread(node_map.GetNode, node_name)
+                    if node is not None:
+                        self.logger.info(f"Found exposure node '{node_name}' for camera '{self.camera_name}'")
+                        try:
+                            # Test if we can read the current value
+                            current_value = await asyncio.to_thread(node.GetValue)
+                            self.logger.info(f"Successfully read '{node_name}' value: {current_value} for camera '{self.camera_name}'")
+                            return node_name
+                        except Exception as e:
+                            self.logger.warning(f"'{node_name}' exists but not readable for camera '{self.camera_name}': {str(e)}")
                 except Exception as e:
-                    self.logger.debug(f"ExposureTime exists but not accessible for camera '{self.camera_name}': {str(e)}")
+                    self.logger.debug(f"Node '{node_name}' not found for camera '{self.camera_name}': {str(e)}")
             
-            # Check if ExposureTimeRaw exists and is accessible
-            if hasattr(self.camera, 'ExposureTimeRaw'):
+            # If no nodes found, try the old hasattr method as fallback
+            self.logger.warning(f"No exposure nodes found via node map, trying hasattr method for camera '{self.camera_name}'")
+            
+            # Try hasattr for the most common ones
+            for node_name in ['ExposureTime', 'ExposureTimeRaw']:
                 try:
-                    # Test if we can read the current value
-                    await asyncio.to_thread(self.camera.ExposureTimeRaw.GetValue)
-                    self.logger.info(f"Using ExposureTimeRaw for camera '{self.camera_name}'")
-                    return "ExposureTimeRaw"
+                    if hasattr(self.camera, node_name):
+                        self.logger.info(f"'{node_name}' attribute exists for camera '{self.camera_name}'")
+                        try:
+                            current_value = await asyncio.to_thread(getattr(self.camera, node_name).GetValue)
+                            self.logger.info(f"Successfully read '{node_name}' value: {current_value} for camera '{self.camera_name}'")
+                            return node_name
+                        except Exception as e:
+                            self.logger.warning(f"'{node_name}' exists but not accessible for camera '{self.camera_name}': {str(e)}")
                 except Exception as e:
-                    self.logger.debug(f"ExposureTimeRaw exists but not accessible for camera '{self.camera_name}': {str(e)}")
+                    self.logger.debug(f"hasattr check failed for '{node_name}' on camera '{self.camera_name}': {str(e)}")
             
-            # If neither is accessible, try ExposureTime first (more common)
-            if hasattr(self.camera, 'ExposureTime'):
-                self.logger.warning(f"ExposureTime exists but may not be fully functional for camera '{self.camera_name}', trying anyway")
-                return "ExposureTime"
-            
+            self.logger.error(f"No exposure property available for camera '{self.camera_name}'")
+            self.logger.error(f"Available exposure-related nodes: {all_nodes}")
             raise CameraConfigurationError(f"No exposure property available for camera '{self.camera_name}'")
             
         except Exception as e:
@@ -856,7 +965,7 @@ class BaslerCamera(BaseCamera):
                 try:
                     if hasattr(self.camera, 'PixelFormat') and \
                        self.camera.PixelFormat.GetAccessMode() in [genicam.RW, genicam.WO]:
-                        available_formats = self.get_pixel_format_range()
+                        available_formats = await self.get_pixel_format_range()
                         pixel_format = config_data['pixel_format']
                         if pixel_format in available_formats:
                             await asyncio.to_thread(self.camera.PixelFormat.SetValue, pixel_format)
@@ -1019,7 +1128,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error exporting configuration for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set the Region of Interest (ROI) for image acquisition.
 
@@ -1079,7 +1188,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error setting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set ROI: {str(e)}")
                 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """
         Get current Region of Interest settings.
         
@@ -1111,7 +1220,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error getting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get ROI: {str(e)}")
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """
         Reset ROI to maximum sensor area.
         
@@ -1126,27 +1235,27 @@ class BaslerCamera(BaseCamera):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
             
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            if not await asyncio.to_thread(self.camera.IsOpen):
+                await asyncio.to_thread(self.camera.Open)
             
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            if await asyncio.to_thread(self.camera.IsGrabbing):
+                await asyncio.to_thread(self.camera.StopGrabbing)
                 
-            self.camera.OffsetX.SetValue(0)
-            self.camera.OffsetY.SetValue(0)
+            await asyncio.to_thread(self.camera.OffsetX.SetValue, 0)
+            await asyncio.to_thread(self.camera.OffsetY.SetValue, 0)
             
-            max_width = self.camera.Width.GetMax()
-            max_height = self.camera.Height.GetMax()
+            max_width = await asyncio.to_thread(self.camera.Width.GetMax)
+            max_height = await asyncio.to_thread(self.camera.Height.GetMax)
             
-            width_inc = self.camera.Width.GetInc()
-            height_inc = self.camera.Height.GetInc()
+            width_inc = await asyncio.to_thread(self.camera.Width.GetInc)
+            height_inc = await asyncio.to_thread(self.camera.Height.GetInc)
             max_width = (max_width // width_inc) * width_inc
             max_height = (max_height // height_inc) * height_inc
             
-            self.camera.Width.SetValue(max_width)
-            self.camera.Height.SetValue(max_height)
+            await asyncio.to_thread(self.camera.Width.SetValue, max_width)
+            await asyncio.to_thread(self.camera.Height.SetValue, max_height)
                 
-            self.camera.StartGrabbing(self.grabbing_mode)
+            await asyncio.to_thread(self.camera.StartGrabbing, self.grabbing_mode)
             
             self.logger.info(f"ROI reset to maximum for camera '{self.camera_name}'")
             return True
@@ -1155,7 +1264,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error resetting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to reset ROI: {str(e)}")
 
-    def set_gain(self, gain: float) -> bool:
+    async def set_gain(self, gain: float) -> bool:
         """
         Set the camera's gain value.
 
@@ -1167,26 +1276,56 @@ class BaslerCamera(BaseCamera):
             
         Raises:
             CameraConnectionError: If camera is not initialized
-            HardwareOperationError: If gain setting fails
+            CameraConfigurationError: If gain value is out of range or setting fails
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
             
         try:
+            # Validate gain range
+            gain_range = await self.get_gain_range()
+            if gain < gain_range[0] or gain > gain_range[1]:
+                raise CameraConfigurationError(f"Gain {gain} out of range [{gain_range[0]}, {gain_range[1]}]")
+            
             was_open = self.camera.IsOpen()
             if not was_open:
                 self.camera.Open()
             
-            self.camera.Gain.SetValue(gain)
-            self.logger.info(f"Gain set to {gain} for camera '{self.camera_name}'")
-            return True
+            # Use the detected gain property
+            gain_prop = await self._detect_gain_nodes()
+            prop = getattr(self.camera, gain_prop)
+            
+            # Convert to appropriate type and ensure it's a valid value
+            gain_value = float(gain)
+            
+            # For GainRaw, we may need to adjust to valid increments
+            if gain_prop == "GainRaw":
+                try:
+                    inc = await asyncio.to_thread(prop.GetInc)
+                    min_val = await asyncio.to_thread(prop.GetMin)
+                    # Adjust gain to be valid according to increment
+                    adjusted_gain = int(round((gain - min_val) / inc) * inc + min_val)
+                    await asyncio.to_thread(prop.SetValue, adjusted_gain)
+                    self.logger.info(f"Set {gain_prop} to {adjusted_gain} (adjusted from {gain}) for camera '{self.camera_name}'")
+                    return True
+                except Exception as e:
+                    # Fallback: try with original value as float
+                    await asyncio.to_thread(prop.SetValue, gain_value)
+                    self.logger.info(f"Set {gain_prop} to {gain_value} for camera '{self.camera_name}'")
+                    return True
+            else:
+                # For Gain, use the value directly
+                await asyncio.to_thread(prop.SetValue, gain_value)
+                self.logger.info(f"Set {gain_prop} to {gain_value} for camera '{self.camera_name}'")
+                return True
                 
+        except CameraConfigurationError:
+            raise
         except Exception as e:
-            self.logger.warning(f"Gain setting not available for camera '{self.camera_name}': {str(e)}")
-            # Return True if gain feature is not available (graceful degradation)
-            return True
+            self.logger.error(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """
         Get current camera gain.
         
@@ -1195,53 +1334,53 @@ class BaslerCamera(BaseCamera):
             
         Raises:
             CameraConnectionError: If camera is not initialized
-            HardwareOperationError: If gain retrieval fails
         """
         if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
-            
+            return 1.0
+        
         try:
             was_open = self.camera.IsOpen()
             if not was_open:
                 self.camera.Open()
 
-            gain = self.camera.Gain.GetValue()
-            return gain
+            # Use the detected gain property
+            gain_prop = await self._detect_gain_nodes()
+            prop = getattr(self.camera, gain_prop)
+            value = await asyncio.to_thread(prop.GetValue)
+            return float(value)
                 
         except Exception as e:
-            self.logger.warning(f"Gain not available for camera '{self.camera_name}': {str(e)}")
-            # Return reasonable default if gain feature is not available
-            return 1.0  # Unity gain default
+            self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
+            return 1.0
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """
         Get camera gain range.
         
         Returns:
             List containing [min_gain, max_gain]
-            
-        Raises:
-            CameraConnectionError: If camera is not initialized
-            HardwareOperationError: If gain range retrieval fails
         """
         if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+            return [1.0, 16.0]
             
         try:
             was_open = self.camera.IsOpen()
             if not was_open:
                 self.camera.Open()
 
-            min_gain = self.camera.Gain.GetMin()
-            max_gain = self.camera.Gain.GetMax()
+            # Use the detected gain property
+            gain_prop = await self._detect_gain_nodes()
+            prop = getattr(self.camera, gain_prop)
+            
+            min_gain = await asyncio.to_thread(prop.GetMin)
+            max_gain = await asyncio.to_thread(prop.GetMax)
             return [min_gain, max_gain]
                 
         except Exception as e:
-            self.logger.warning(f"Gain range not available for camera '{self.camera_name}': {str(e)}")
-            # Return reasonable defaults if gain feature is not available
-            return [1.0, 16.0]  # Common gain range
+            self.logger.error(f"Failed to get gain range for camera '{self.camera_name}': {str(e)}")
+            return [1.0, 16.0]
 
-    def get_wb_range(self) -> List[str]:
+    async def get_wb_range(self) -> List[str]:
         """
         Get available white balance modes.
         
@@ -1304,7 +1443,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error getting height range for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get height range: {str(e)}")
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """
         Get available pixel formats.
         
@@ -1336,7 +1475,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error getting pixel format range for camera '{self.camera_name}': {str(e)}")
             return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """
         Get current pixel format.
         
@@ -1362,7 +1501,7 @@ class BaslerCamera(BaseCamera):
             self.logger.error(f"Error getting current pixel format for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get current pixel format: {str(e)}")
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """
         Set pixel format.
         
@@ -1386,7 +1525,7 @@ class BaslerCamera(BaseCamera):
                 self.camera.Open()
 
             # Check if pixel format is available
-            available_formats = self.get_pixel_format_range()
+            available_formats = await self.get_pixel_format_range()
             if pixel_format not in available_formats:
                 raise CameraConfigurationError(
                     f"Pixel format '{pixel_format}' not supported. "

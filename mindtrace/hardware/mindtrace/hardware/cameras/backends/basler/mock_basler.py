@@ -231,11 +231,11 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Unexpected error initializing mock Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing mock camera '{self.camera_name}': {str(e)}")
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool) -> bool:
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
         if value and not hasattr(self, '_enhancement_initialized'):
@@ -614,7 +614,7 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Failed to export config to '{config_path}': {str(e)}")
             return False
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set Region of Interest (ROI).
         
@@ -646,7 +646,7 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Failed to set ROI for mock camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set ROI for mock camera '{self.camera_name}': {str(e)}")
 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """
         Get current Region of Interest (ROI).
         
@@ -655,7 +655,7 @@ class MockBaslerCamera(BaseCamera):
         """
         return self.roi.copy()
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """
         Reset ROI to full sensor size.
         
@@ -670,7 +670,7 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Failed to reset ROI for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """
         Set camera gain.
         
@@ -696,7 +696,7 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Failed to set gain for mock camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set gain for mock camera '{self.camera_name}': {str(e)}")
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """
         Get the supported gain range.
 
@@ -705,7 +705,7 @@ class MockBaslerCamera(BaseCamera):
         """
         return [1.0, 16.0]
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """
         Get current camera gain.
         
@@ -741,7 +741,7 @@ class MockBaslerCamera(BaseCamera):
             self.logger.error(f"Failed to set white balance for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    def get_wb_range(self) -> List[str]:
+    async def get_wb_range(self) -> List[str]:
         """
         Get available white balance modes.
         
@@ -750,7 +750,7 @@ class MockBaslerCamera(BaseCamera):
         """
         return ["off", "auto", "continuous", "once"]
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """
         Get available pixel formats.
         
@@ -759,7 +759,7 @@ class MockBaslerCamera(BaseCamera):
         """
         return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """
         Get current pixel format.
         
@@ -768,7 +768,7 @@ class MockBaslerCamera(BaseCamera):
         """
         return self.default_pixel_format
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """
         Set pixel format.
         
@@ -782,7 +782,7 @@ class MockBaslerCamera(BaseCamera):
             CameraConfigurationError: If pixel format is not supported
         """
         try:
-            available_formats = self.get_pixel_format_range()
+            available_formats = await self.get_pixel_format_range()
             if pixel_format not in available_formats:
                 raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
             
