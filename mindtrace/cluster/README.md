@@ -120,12 +120,12 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
 
 # Launch cluster manager
-cluster = ClusterManager.launch(host="localhost", port=8000)
+cluster = ClusterManager.launch(host="localhost", port=8002)
 
 # Launch node
 node = Node.launch(
     host="localhost", 
-    port=8001, 
+    port=8003, 
     cluster_url=str(cluster.url)
 )
 
@@ -137,7 +137,7 @@ cluster.register_worker_type(
 )
 
 # Launch worker
-worker_url = "http://localhost:8002"
+worker_url = "http://localhost:8004"
 node.launch_worker(worker_type="myworker", worker_url=worker_url)
 
 # Submit job
@@ -182,7 +182,7 @@ cluster.register_worker_type(
 )
 
 # Launch worker (automatically clones repo)
-node.launch_worker(worker_type="gitworker", worker_url="http://localhost:8003")
+node.launch_worker(worker_type="gitworker", worker_url="http://localhost:8005")
 ```
 
 ## Configuration
