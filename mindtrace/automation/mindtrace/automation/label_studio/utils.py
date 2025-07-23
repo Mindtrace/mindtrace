@@ -2,11 +2,18 @@ from label_studio_sdk.converter.brush import image2rle
 import os
 import numpy as np
 from PIL import Image
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Callable, Union
 import json
 import yaml
 import cv2
 from mindtrace.storage.gcs import GCSStorageHandler
+from collections import defaultdict
+import random
+import numpy as np
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+import torch
+from torch.utils.data import random_split
+from pathlib import Path
 
 
 def detections_to_label_studio(
@@ -423,52 +430,7 @@ def create_label_studio_tasks(
     return tasks
 
 
-def export_to_label_studio_json(
-    output_folder: str,
-    export_path: str,
-    mask_from_name: str,
-    mask_tool_type: str,
-    class_mapping: Optional[Dict[int, str]] = None,
-    mask_task_names: Optional[List[str]] = None,
-    polygon_epsilon_factor: float = 0.005,
-) -> bool:
-    """
-    Export inference results to Label Studio JSON format.
-    
-    Args:
-        output_folder: Root folder containing inference results
-        export_path: Path to save the Label Studio JSON file
-        class_mapping: Optional mapping from class_id to class_name
-        mask_task_names: List of mask task names to process
-    
-    Returns:
-        True if export successful, False otherwise
-    """
-    try:
-        detections = gather_detections_from_folders(output_folder, class_mapping, mask_task_names)
-        annotations = detections_to_label_studio(
-            detections, mask_from_name, mask_tool_type, polygon_epsilon_factor=polygon_epsilon_factor
-        )
-        
-        export_data = {
-            "annotations": annotations,
-            "metadata": {
-                "source_folder": output_folder,
-                "export_timestamp": str(np.datetime64('now')),
-                "total_images": len(detections),
-                "total_annotations": len(annotations)
-            }
-        }
-        
-        with open(export_path, 'w') as f:
-            json.dump(export_data, f, indent=2)
-        
-        print(f"Exported {len(annotations)} annotations to {export_path}")
-        return True
-    
-    except Exception as e:
-        print(f"Error exporting to Label Studio JSON: {e}")
-        return False
+
 
 
 def load_gcs_mapping(output_folder):
@@ -627,3 +589,244 @@ def upload_label_studio_jsons_to_gcs(
             print(f"Error uploading {filename}: {e}")
     
     return uploaded_urls
+
+
+def split_dataset(
+    data: list,
+    train_split: float = 0.7,
+    val_split: float = 0.2,
+    test_split: float = 0.1,
+    seed: int = 42
+) -> dict:
+    """Split a dataset into train/val/test sets using random splitting.
+    
+    Args:
+        data: List of items to split (e.g. Label Studio task JSONs)
+        train_split: Fraction of data for training (default: 0.7)
+        val_split: Fraction of data for validation (default: 0.2)
+        test_split: Fraction of data for testing (default: 0.1)
+        seed: Random seed for reproducible splits (default: 42)
+    
+    Returns:
+        Dict with 'splits' and 'stats':
+        {
+            'splits': {
+                'train': [...],  # List of Label Studio task JSONs
+                'val': [...],
+                'test': [...]
+            },
+            'stats': {
+                'total': int,
+                'train': int,
+                'val': int,
+                'test': int
+            }
+        }
+    
+    Raises:
+        ValueError: If splits don't sum to 1.0
+    """
+    if abs(train_split + val_split + test_split - 1.0) > 1e-6:
+        raise ValueError("Train/val/test splits must sum to 1.0")
+    
+    # Set random seed for reproducibility
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+    
+    data_list = list(data)
+    total = len(data_list)
+    
+    train_size = int(total * train_split)
+    val_size = int(total * val_split)
+    test_size = total - train_size - val_size  
+    train_data, val_data, test_data = random_split(
+        data_list,
+        lengths=[train_size, val_size, test_size],
+        generator=torch.Generator().manual_seed(seed)
+    )
+    splits = {
+        'train': [data_list[i] for i in train_data.indices],
+        'val': [data_list[i] for i in val_data.indices],
+        'test': [data_list[i] for i in test_data.indices]
+    }
+    
+    stats = {
+        'total': total,
+        'train': len(splits['train']),
+        'val': len(splits['val']),
+        'test': len(splits['test'])
+    }
+    
+    return {
+        'splits': splits,
+        'stats': stats
+    }
+
+
+def create_dataset_structure(base_dir: Path, splits: List[str] = ['train', 'test']) -> None:
+    """Create directory structure for dataset.
+    
+    Args:
+        base_dir: Base directory for dataset
+        splits: List of split names (default: ['train', 'test'])
+    """
+    base_dir = Path(base_dir)
+    
+    # Create splits structure
+    splits_dir = base_dir / "splits"
+    for split in splits:
+        (splits_dir / split / "images").mkdir(parents=True, exist_ok=True)
+        (splits_dir / split / "masks").mkdir(parents=True, exist_ok=True)
+
+
+def create_manifest(
+    base_dir: Union[str, Path],
+    name: str,
+    version: str,
+    splits: Dict[str, List[str]],
+    class_mapping: Optional[Dict[str, Any]] = None,
+    description: str = "",
+    detection_classes: Optional[List[str]] = None
+) -> None:
+    """Create a manifest file for the dataset.
+    
+    Args:
+        base_dir: Base directory of the dataset
+        name: Dataset name
+        version: Dataset version
+        splits: Dictionary mapping split names to lists of file paths (absolute paths as strings)
+        class_mapping: Optional class mapping dictionary
+        description: Optional dataset description
+        detection_classes: List of detection classes from config
+    """
+    base_dir = Path(base_dir)
+    
+    # Get segmentation class names from class mapping
+    segmentation_classes = []
+    if class_mapping and 'label2idx' in class_mapping:
+        segmentation_classes = sorted(class_mapping['label2idx'].keys())
+    
+    manifest = {
+        "name": name,
+        "version": version,
+        "description": description,
+        "data_type": "image",
+        "outputs": [
+            {
+                "name": "bboxes",
+                "type": "detection",
+                "classes": detection_classes or [],
+                "required": False
+            },
+            {
+                "name": "zones",
+                "type": "image_segmentation",
+                "classes": segmentation_classes,
+                "required": False
+            }
+        ],
+        "splits": {}
+    }
+    
+    for split_name, files in splits.items():
+        # Skip empty splits and 'val' split
+        if not files or split_name == 'val':
+            continue
+            
+        data_files = {}
+        
+        for file_path in files:
+            path = Path(file_path)
+            if path.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']:
+                data_files[path.name] = str(path)
+        
+        manifest["splits"][split_name] = {
+            "data_files": data_files,
+            "annotations": f"annotations_v{version}.json",
+            "removed": []
+        }
+    
+    manifest_path = base_dir / f"manifest_v{version}.json"
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2)
+    
+    readme_content = f"""# {name} Dataset v{version}
+
+{description}
+
+## Structure
+- splits/"""
+    
+    for split_name in manifest["splits"].keys():
+        readme_content += f"""
+  - {split_name}/ ({len(manifest["splits"][split_name]["data_files"])} files)
+    - images/
+    - masks/
+    - annotations_v{version}.json"""
+    
+    readme_content += """
+
+## Detection Classes
+"""
+    readme_content += json.dumps(detection_classes or [], indent=2)
+    
+    readme_content += """
+
+## Segmentation Classes
+"""
+    readme_content += json.dumps(segmentation_classes, indent=2)
+    
+    with open(base_dir / "README.md", 'w') as f:
+        f.write(readme_content)
+
+
+def organize_files_into_splits(
+    base_dir: Path,
+    split_assignments: Dict[str, List[str]],
+    source_images_dir: Path,
+    source_masks_dir: Optional[Path] = None
+) -> Dict[str, List[str]]:
+    """Move files into split directories.
+    
+    Args:
+        base_dir: Base directory for dataset
+        split_assignments: Dictionary mapping split names to lists of image filenames
+        source_images_dir: Directory containing source images
+        source_masks_dir: Optional directory containing source masks
+    
+    Returns:
+        Dictionary mapping split names to lists of moved file paths (absolute paths)
+    """
+    import shutil
+    
+    base_dir = Path(base_dir)
+    source_images_dir = Path(source_images_dir)
+    if source_masks_dir:
+        source_masks_dir = Path(source_masks_dir)
+    
+    moved_files = {split: [] for split in split_assignments.keys()}
+    
+    for split_name, filenames in split_assignments.items():
+        split_images_dir = base_dir / "splits" / split_name / "images"
+        split_masks_dir = base_dir / "splits" / split_name / "masks"
+        
+        for filename in filenames:
+            # Move image
+            src_image = source_images_dir / filename
+            dst_image = split_images_dir / filename
+            shutil.move(src_image, dst_image)
+            moved_files[split_name].append(str(dst_image.absolute()))
+            
+            # Move mask if it exists
+            if source_masks_dir:
+                mask_name = f"{Path(filename).stem}_mask.png"
+                src_mask = source_masks_dir / mask_name
+                if src_mask.exists():
+                    dst_mask = split_masks_dir / mask_name
+                    shutil.move(src_mask, dst_mask)
+                    moved_files[split_name].append(str(dst_mask.absolute()))
+    
+    return moved_files
+    
