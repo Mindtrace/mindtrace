@@ -114,6 +114,6 @@ class TestStackEquivalence:
             assert redis_results[2].name == "equiv_0"
         finally:
             try:
-                redis_stack._RedisStack__db.delete(redis_stack.key)
+                redis_stack.__db.delete(redis_stack.key)
             except:
                 pass 
