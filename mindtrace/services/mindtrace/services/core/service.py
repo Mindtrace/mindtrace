@@ -11,7 +11,7 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Dict, Literal, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
@@ -208,7 +208,7 @@ class Service(Mindtrace):
         return status
 
     @classmethod
-    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> C:
+    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> ConnectionManager:
         """Connect to an existing service.
 
         The returned connection manager is determined by the registered connection manager for the service. If one has
@@ -231,6 +231,14 @@ class Service(Mindtrace):
             else:
                 return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
+
+    @overload
+    @classmethod
+    def launch(cls: Type[T], *, url: str | Url | None = None, host: str | None = None, port: int | None = None, block: bool = False, num_workers: int = 1, wait_for_launch: Literal[False], timeout: int = 60, progress_bar: bool = True, **kwargs) -> None: ...
+
+    @overload
+    @classmethod
+    def launch(cls: Type[T], *, url: str | Url | None = None, host: str | None = None, port: int | None = None, block: bool = False, num_workers: int = 1, wait_for_launch: Literal[True], timeout: int = 60, progress_bar: bool = True, **kwargs) -> ConnectionManager: ...
 
     @classmethod
     def launch(
