@@ -5,6 +5,7 @@ from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBack
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.registry import LockTimeoutError, Registry
+import mindtrace.registry.archivers.default_archivers  # Registers default archivers to the Registry class
 
 __all__ = [
     "Archiver",
