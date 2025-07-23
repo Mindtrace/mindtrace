@@ -8,7 +8,7 @@ def ifnone[T1, T2](val: T1 | None, default: T2) -> T1 | T2:
     return val if val is not None else default
 
 
-def first_not_none[T1, T2](vals: Iterable[T1 | None], default: T2) -> T1 | T2:
+def first_not_none[T1, T2](vals: Iterable[T1 | None], default: T2 = None) -> T1 | T2:
     """Returns the first not-None value in the given iterable, else returns the default."""
     return next((item for item in vals if item is not None), default)
 
