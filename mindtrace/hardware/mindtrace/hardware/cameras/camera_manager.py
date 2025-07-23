@@ -797,7 +797,7 @@ class CameraManager(Mindtrace):
     management, async operations, and comprehensive error handling.
     """
     
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int = None):
+    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None):
         """
         Initialize camera manager.
         
@@ -1252,7 +1252,7 @@ class CameraManager(Mindtrace):
         config_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for result in config_results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 self.logger.error(f"Configuration task failed: {result}")
             else:
                 camera_name, success = result
@@ -1290,7 +1290,7 @@ class CameraManager(Mindtrace):
         capture_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for result in capture_results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 self.logger.error(f"Capture task failed: {result}")
             else:
                 camera_name, image = result
@@ -1358,7 +1358,7 @@ class CameraManager(Mindtrace):
         hdr_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for result in hdr_results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 self.logger.error(f"HDR capture task failed: {result}")
             else:
                 camera_name, hdr_result = result

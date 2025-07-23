@@ -285,7 +285,7 @@ class OpenCVCamera(BaseCamera):
         try:
             self.cap = cv2.VideoCapture(self.camera_index)
             
-            if not self.cap.isOpened():
+            if not self.cap or not self.cap.isOpened():
                 self.logger.error(f"Could not open camera {self.camera_index}")
                 raise CameraNotFoundError(f"Could not open camera {self.camera_index}")
             

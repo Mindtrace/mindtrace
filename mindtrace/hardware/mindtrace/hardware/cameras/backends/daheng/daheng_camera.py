@@ -76,7 +76,7 @@ import cv2
 from typing import Optional, List, Tuple, Dict, Any, Union
 
 try:
-    import gxipy as gx
+    import gxipy as gx # type: ignore
     GXIPY_AVAILABLE = True
 except ImportError:
     GXIPY_AVAILABLE = False
@@ -249,6 +249,7 @@ class DahengCamera(BaseCamera):
                     dev_info.get("serial_number") == self.camera_name or
                     str(index) == self.camera_name):
                     camera_found = True
+                    camera = None
                     try:
                         camera = await asyncio.to_thread(
                             self.device_manager.open_device_by_index, index + 1
@@ -277,8 +278,8 @@ class DahengCamera(BaseCamera):
                         if camera:
                             try:
                                 await asyncio.to_thread(camera.close_device)
-                            except Exception as e:
-                                self.logger.warning(f"Could not close failed camera device: {e}")
+                            except Exception as e2:
+                                self.logger.warning(f"Could not close failed camera device: {e2}")
                         raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
             
             if not camera_found:
@@ -645,6 +646,10 @@ class DahengCamera(BaseCamera):
         """
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        else:
+            assert gx is not None, "camera is initialized but gx is not initialized"
         
         try:
             import json

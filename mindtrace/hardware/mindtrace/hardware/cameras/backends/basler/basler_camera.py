@@ -76,8 +76,8 @@ import cv2
 from typing import Optional, List, Tuple, Dict, Any, Union
 
 try:
-    from pypylon import pylon
-    from pypylon import genicam
+    from pypylon import pylon # type: ignore
+    from pypylon import genicam # type: ignore
     PYPYLON_AVAILABLE = True
 except ImportError:
     PYPYLON_AVAILABLE = False
@@ -1429,6 +1429,9 @@ class BaslerCamera(BaseCamera):
             elif value == "continuous":
                 self.camera.BalanceWhiteAuto.SetValue("Continuous")
                 target_mode = "Continuous"
+            else:
+                raise CameraConfigurationError(f"Invalid white balance mode '{value}' for camera '{self.camera_name}'. "
+                "Must be 'off', 'once', or 'continuous'")
                 
             actual_mode = self.camera.BalanceWhiteAuto.GetValue()
             success = (actual_mode == target_mode)
