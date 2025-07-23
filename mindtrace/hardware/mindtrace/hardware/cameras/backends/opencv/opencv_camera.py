@@ -180,6 +180,8 @@ class OpenCVCamera(BaseCamera):
                 "opencv-python",
                 "OpenCV is required for USB camera support. Install with: pip install opencv-python"
             )
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
         
@@ -270,6 +272,14 @@ class OpenCVCamera(BaseCamera):
             CameraInitializationError: If camera initialization fails
             CameraConnectionError: If camera connection fails
         """
+        if not OPENCV_AVAILABLE:
+            raise SDKNotAvailableError(
+                "opencv-python",
+                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+            )
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
+
         self.logger.info(f"Initializing OpenCV camera: {self.camera_name}")
         
         try:
@@ -319,6 +329,13 @@ class OpenCVCamera(BaseCamera):
             CameraConfigurationError: If configuration fails
             CameraConnectionError: If camera is not available
         """
+        if not OPENCV_AVAILABLE:
+            raise SDKNotAvailableError(
+                "opencv-python",
+                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+            )
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         if not self.cap or not self.cap.isOpened():
             raise CameraConnectionError("Camera not available for configuration")
         
@@ -369,6 +386,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not OPENCV_AVAILABLE:
             return [] if not include_details else {}
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         
         try:
             available_cameras = []
@@ -445,7 +464,9 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not ready for capture")
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
         self.logger.debug(f"Starting capture with {self.retrieve_retry_count} max attempts for camera '{self.camera_name}'")
         
         start_time = time.time()
@@ -512,6 +533,13 @@ class OpenCVCamera(BaseCamera):
         Raises:
             CameraCaptureError: If image enhancement fails
         """
+        if not OPENCV_AVAILABLE:
+            raise SDKNotAvailableError(
+                "opencv-python",
+                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+            )
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
         try:
             # Convert RGB to LAB color space for better enhancement
             lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
@@ -551,6 +579,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap:
             return False
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         
         try:
             is_open = self.cap.isOpened()
@@ -598,6 +628,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             return False
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             original = self.cap.get(cv2.CAP_PROP_EXPOSURE)
             # Try to set to a different value within the valid range
@@ -632,6 +664,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         # Check if exposure control is supported
         if not await self.is_exposure_control_supported():
             self.logger.warning(f"Exposure control is not supported for camera '{self.camera_name}'. Skipping set_exposure.")
@@ -673,7 +707,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure reading")
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             exposure = self.cap.get(cv2.CAP_PROP_EXPOSURE)
             return float(exposure)
@@ -742,7 +777,9 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for gain setting")
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+
         try:
             gain_range = self.get_gain_range()
             if gain < gain_range[0] or gain > gain_range[1]:
@@ -770,7 +807,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             return 0.0
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             gain = self.cap.get(cv2.CAP_PROP_GAIN)
             return float(gain)
@@ -806,7 +844,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             return {"x": 0, "y": 0, "width": 0, "height": 0}
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -834,7 +873,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             return "unknown"
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             # OpenCV doesn't have a direct white balance mode query
             # Check if auto white balance is enabled
@@ -857,7 +897,8 @@ class OpenCVCamera(BaseCamera):
         if not self.initialized or not self.cap or not self.cap.isOpened():
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
             return False
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             if value.lower() in ["auto", "continuous"]:
                 success = self.cap.set(cv2.CAP_PROP_AUTO_WB, 1)
@@ -1013,7 +1054,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             import json
             
@@ -1072,7 +1114,8 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        
+        else:
+            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
         
