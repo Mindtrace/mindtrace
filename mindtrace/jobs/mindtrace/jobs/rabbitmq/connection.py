@@ -1,7 +1,12 @@
 import time
-from pika import PlainCredentials, ConnectionParameters, BlockingConnection, exceptions
+
+import pika.exceptions
+from pika import BlockingConnection, ConnectionParameters, PlainCredentials, exceptions
+from pika.adapters.blocking_connection import BlockingChannel
+
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.utils.checks import ifnone
+
 
 class RabbitMQConnection(BrokerConnectionBase):
     """Singleton class for RabbitMQ connection.
@@ -26,7 +31,7 @@ class RabbitMQConnection(BrokerConnectionBase):
         self.port = ifnone(port, default=5672)
         self.username = ifnone(username, default="user")
         self.password = ifnone(password, default="password")
-        self.connection = None
+        self.connection: BlockingConnection = None # type: ignore
 
         
     def connect(self):
@@ -57,11 +62,27 @@ class RabbitMQConnection(BrokerConnectionBase):
         """Close the connection to the RabbitMQ server."""
         if self.is_connected():
             self.connection.close()
-            self.connection = None
+            self.connection = None # type: ignore
             self.logger.debug(f"{self.name} closed RabbitMQ connection.")
-    def get_channel(self):
+    def get_channel(self) -> BlockingChannel:
         """Get a channel from the RabbitMQ connection."""
         if self.is_connected():
             return self.connection.channel()
         else:
-            return None
+            return None # type: ignore
+
+    def count_queue_messages(self, queue_name: str, **kwargs) -> int:
+            """Get the number of messages in a queue."""
+            try:
+                result = self.get_channel().queue_declare(
+                    queue=queue_name,
+                    durable=True,
+                    exclusive=False,
+                    auto_delete=False,
+                    passive=True,
+                )
+                return result.method.message_count
+            except pika.exceptions.ChannelClosedByBroker as e:
+                raise ConnectionError(
+                    f"Could not count messages in queue '{queue_name}': {str(e)}"
+                )

@@ -1,10 +1,13 @@
 from abc import abstractmethod
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.types.job_specs import JobSchema
-from mindtrace.jobs.orchestrator import Orchestrator
+
+if TYPE_CHECKING: # pragma: no cover
+    from mindtrace.jobs.orchestrator import Orchestrator
+from mindtrace.core import instantiate_target
 
 
 class Consumer(Mindtrace):
@@ -14,30 +17,26 @@ class Consumer(Mindtrace):
     Consumers receive job data as dict objects for processing.
     """
     
-    def __init__(self, job_type_name: str):
+    def __init__(self):
         super().__init__()
-        self.job_type_name = job_type_name
         self.orchestrator: Optional[Orchestrator] = None
-        self.consumer_backend: Optional[ConsumerBackendBase] = None
+        self.consumer_backend: ConsumerBackendBase = None # type: ignore
         self.job_schema: Optional[JobSchema] = None
         self.queue_name: Optional[str] = None
     
-    def connect(self, orchestrator: Orchestrator) -> None:
+    def connect_to_orchestrator(self, orchestrator: "Orchestrator", queue_name: str) -> None:
         """Connect to orchestrator and create the appropriate consumer backend."""
-        if self.orchestrator:
+        if self.consumer_backend:
+            raise RuntimeError("Consumer already connected.")
+                
+        self.consumer_backend = orchestrator.backend.create_consumer_backend(self, queue_name)
+    
+    def connect_to_orchestator_via_backend_args(self, backend_args: dict, queue_name: str) -> None:
+        """Connect to orchestrator and create the appropriate consumer backend."""
+        if self.consumer_backend:
             raise RuntimeError("Consumer already connected.")
         
-        self.orchestrator = orchestrator
-        
-        schema_info = orchestrator.get_schema_for_job_type(self.job_type_name)
-        if not schema_info:
-            raise ValueError(f"No schema registered for job type: {self.job_type_name}")
-        
-        self.job_schema = schema_info['schema']
-        self.queue_name = schema_info['queue_name']
-        
-        self.consumer_backend = orchestrator.create_consumer_backend_for_schema(self.job_schema)
-        self.consumer_backend.set_run_method(self.run)
+        self.consumer_backend = instantiate_target(backend_args["cls"], consumer_frontend=self, **backend_args["kwargs"], queue_name=queue_name)
     
     def consume(self, num_messages: int = 0, queues: str | list[str] | None = None, block: bool = True) -> None:
         """Consume messages from the queue.

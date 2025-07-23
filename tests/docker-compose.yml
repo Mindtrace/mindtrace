@@ -20,6 +20,7 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+      - "8001:8001"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -27,7 +28,6 @@ services:
       retries: 3
     volumes:
       - redis_test_data:/data
-
 
   rabbitmq:
     image: rabbitmq:3-management

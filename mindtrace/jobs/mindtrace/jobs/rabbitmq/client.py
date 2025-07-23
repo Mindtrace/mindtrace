@@ -1,15 +1,17 @@
 import json
-import time
 import uuid
-from typing import Optional
 
 import pika
-from pika import BasicProperties, DeliveryMode
+import pika.exceptions
 import pydantic
+from pika import BasicProperties, DeliveryMode
 
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
-from mindtrace.jobs.utils.checks import ifnone
+from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
+from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+from mindtrace.jobs.utils.checks import ifnone
+
 
 class RabbitMQClient(OrchestratorBackend):
     def __init__(
@@ -32,6 +34,28 @@ class RabbitMQClient(OrchestratorBackend):
         )
         self.connection.connect()
         self.channel = self.connection.get_channel()
+        self._host = self.connection.host
+        self._port = self.connection.port
+        self._username = self.connection.username
+        self._password = self.connection.password
+        self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
+
+    @property
+    def consumer_backend_args(self):
+        return {    
+            "cls": "mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend",
+            "kwargs": {
+                "host": self._host,
+                "port": self._port,
+                "username": self._username,
+                "password": self._password,
+            }
+        }
+
+    def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RabbitMQConsumerBackend:
+        return RabbitMQConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
+
+        
     def declare_exchange(
         self,
         *,
@@ -91,6 +115,8 @@ class RabbitMQClient(OrchestratorBackend):
             force: Force exchange creation if it doesn't exist.
             max_priority: Maximum priority for priority queue (0-255).
         """
+        if "queue_type" in kwargs:
+            self.logger.warning("queue_type is not available for RabbitMQClient. Creating a FIFO queue.")
         queue = queue_name
         exchange = kwargs.get("exchange")
         durable = kwargs.get("durable", True)
@@ -236,63 +262,6 @@ class RabbitMQClient(OrchestratorBackend):
             self.logger.error(f"Unexpected error in publish: {e}")
             raise e
         
-    def receive_message(
-        self, queue_name: str, **kwargs
-    ) -> Optional[dict]:
-        """Retrieve a message from a specified RabbitMQ queue.
-        This method uses RabbitMQ's basic_get method to fetch a message. It supports blocking behavior by polling until
-        a message is available or the timeout is reached.
-        Args:
-            queue_name: The name of the queue from which to receive the message.
-            block: Whether to block until a message is available.
-            timeout: Maximum time in seconds to block if no message is available.
-            auto_ack: Whether to automatically acknowledge the message upon retrieval.
-            **kwargs: Additional keyword arguments to pass to basic_get (if any).
-        Returns:
-            dict: The message content as a dictionary, or None if no message is available.
-        """
-        if not self.connection.is_connected():
-            self.connection.connect()
-        if self.channel is None or self.channel.is_closed:
-            self.channel = self.connection.get_channel()
-        block = kwargs.get("block", False)
-        timeout = kwargs.get("timeout", None)
-        auto_ack = kwargs.get("auto_ack", True)
-        try:
-            if block:
-                start_time = time.time()
-                while True:
-                    method_frame, header_frame, body = self.channel.basic_get(
-                        queue=queue_name, auto_ack=auto_ack
-                    )
-                    if method_frame:
-                        self.logger.info(f"Received message from queue '{queue_name}'.")
-                        message_dict = json.loads(body.decode("utf-8"))
-                        return message_dict  
-                    if timeout is not None and (time.time() - start_time) > timeout:
-                        self.logger.warning(
-                            f"Timeout reached while waiting for a message from queue '{queue_name}'."
-                        )
-                        return {"status": "error", "message": "Timeout reached while waiting for a message"}
-                    time.sleep(0.1)
-            else:
-                method_frame, header_frame, body = self.channel.basic_get(
-                    queue=queue_name, auto_ack=auto_ack
-                )
-                if method_frame:
-                    self.logger.info(f"Received message from queue '{queue_name}'.")
-                    message_dict = json.loads(body.decode("utf-8"))
-                    return message_dict  
-                else:
-                    self.logger.debug(f"No message available in queue '{queue_name}'.")
-                    return {"status": "error", "message": "No message available"}
-        except Exception as e:
-            self.logger.error(
-                f"Error receiving message from queue '{queue_name}': {str(e)}"
-            )
-            raise RuntimeError(
-                f"Error receiving message from queue '{queue_name}': {str(e)}"
-            )
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from a queue."""
         try:
@@ -307,21 +276,7 @@ class RabbitMQClient(OrchestratorBackend):
             return {"status": "success", "message": f"Deleted queue '{queue_name}'."}
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not delete queue '{queue_name}': {str(e)}")
-    def count_queue_messages(self, queue_name: str, **kwargs) -> int:
-        """Get the number of messages in a queue."""
-        try:
-            result = self.channel.queue_declare(
-                queue=queue_name,
-                durable=True,
-                exclusive=False,
-                auto_delete=False,
-                passive=True,
-            )
-            return result.method.message_count
-        except pika.exceptions.ChannelClosedByBroker as e:
-            raise ConnectionError(
-                f"Could not count messages in queue '{queue_name}': {str(e)}"
-            )
+    
     def count_exchanges(self, *, exchange: str, **kwargs):
         """Get the number of exchanges in the RabbitMQ server.
         Args:
@@ -350,3 +305,6 @@ class RabbitMQClient(OrchestratorBackend):
         """Move a failed message to a dead letter queue"""
         self.logger.info(f"Moving message from {source_queue} to {dlq_name}: {error_details}")
         return None
+
+    def count_queue_messages(self, queue_name: str, **kwargs) -> int:
+        return self.connection.count_queue_messages(queue_name)

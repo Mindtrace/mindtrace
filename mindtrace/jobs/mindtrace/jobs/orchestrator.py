@@ -1,12 +1,6 @@
-from typing import Optional, Dict, Any
-
-import pydantic
+from typing import Any, Dict
 
 from mindtrace.core import Mindtrace
-from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
-from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
-from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
@@ -34,18 +28,7 @@ class Orchestrator(Mindtrace):
             Job ID of the published job
         """
         return self.backend.publish(queue_name, job, **kwargs)
-    
-    def receive_message(self, queue_name: str, **kwargs) -> Optional[dict]:
-        """Get job from specified queue.
-        
-        Args:
-            queue_name: Name of the queue to receive from
-            **kwargs: Additional parameters passed to backend (e.g., block, timeout)
-        Returns:
-            Job object if available, None if queue is empty
-        """
-        return self.backend.receive_message(queue_name, **kwargs)
-    
+
     def clean_queue(self, queue_name: str, **kwargs) -> None:
         """Clear all messages from specified queue.
         
@@ -75,10 +58,10 @@ class Orchestrator(Mindtrace):
         """
         return self.backend.count_queue_messages(queue_name, **kwargs)
     
-    def register(self, schema: JobSchema) -> str:
+    def register(self, schema: JobSchema, queue_type: str = "fifo") -> str:
         """Register a JobSchema and create a queue for it."""
         queue_name = schema.name
-        self.backend.declare_queue(queue_name)
+        self.backend.declare_queue(queue_name, queue_type=queue_type)
         # TODO: This is in memory and not suitable for production, need a way to store
         # the schema in a database
         self._schema_mapping[schema.name] = {
@@ -86,25 +69,3 @@ class Orchestrator(Mindtrace):
             'queue_name': queue_name
         }
         return queue_name
-    
-    def get_schema_for_job_type(self, job_type_name: str) -> Optional[Dict[str, Any]]:
-        """Get the JobSchema and queue info for a given job type name."""
-        return self._schema_mapping.get(job_type_name)
-    
-    def create_consumer_backend_for_schema(self, schema: JobSchema) -> ConsumerBackendBase:
-        """Create the appropriate consumer backend for the schema.
-        
-        - LocalConsumerBackend
-        - RedisConsumerBackend
-        - RabbitMQConsumerBackend
-        """
-        queue_name = schema.name
-        backend_type = type(self.backend).__name__
-        if backend_type == "LocalClient":
-            return LocalConsumerBackend(queue_name, self)
-        elif backend_type == "RedisClient":
-            return RedisConsumerBackend(queue_name, self, poll_timeout=5)
-        elif backend_type == "RabbitMQClient":
-            return RabbitMQConsumerBackend(queue_name, self, prefetch_count=1)
-        else:
-            raise ValueError(f"Unknown backend type: {backend_type}")
