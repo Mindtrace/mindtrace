@@ -554,6 +554,11 @@ class CameraState(BaseManagementState):
         if not self.can_configure(camera):
             self.set_error("Camera not in current project/organization scope")
             return
+        
+        # Stop any existing stream first
+        if self.is_streaming:
+            self.stop_stream()
+            
         self.stream_url = f"{self.API_BASE}/cameras/{camera}/stream"
         self.is_streaming = True
         self.selected_camera = camera
@@ -972,9 +977,11 @@ class CameraState(BaseManagementState):
                             self.camera_ranges[camera] = {}
                         self.camera_ranges[camera]["exposure"] = exposure_range
                     else:
-                        print(f"DEBUG: Failed to get exposure range for {camera}: {exposure_data.get('message')}")
+                        # Failed to get exposure range, will use defaults
+                        pass
                 else:
-                    print(f"DEBUG: Exposure range request failed for {camera}: {exposure_response.status_code}")
+                    # Exposure range request failed, will use defaults
+                    pass
                 
                 # Fetch gain range
                 gain_response = await client.get(f"{self.API_BASE}/cameras/{camera}/gain/range")
@@ -986,18 +993,18 @@ class CameraState(BaseManagementState):
                             self.camera_ranges[camera] = {}
                         self.camera_ranges[camera]["gain"] = gain_range
                     else:
-                        print(f"DEBUG: Failed to get gain range for {camera}: {gain_data.get('message')}")
+                        # Failed to get gain range, will use defaults
+                        pass
                 else:
-                    print(f"DEBUG: Gain range request failed for {camera}: {gain_response.status_code}")
+                    # Gain range request failed, will use defaults
+                    pass
                         
         except Exception as e:
-            print(f"DEBUG: Error fetching ranges for {camera}: {e}")
             # Use default ranges if fetching fails
             if camera not in self.camera_ranges:
                 self.camera_ranges[camera] = {}
             self.camera_ranges[camera]["exposure"] = [31, 1000000]
             self.camera_ranges[camera]["gain"] = [0, 24]
-            print(f"DEBUG: Using default ranges for {camera}: exposure={self.camera_ranges[camera]['exposure']}, gain={self.camera_ranges[camera]['gain']}")
     
     async def fetch_trigger_mode(self, camera: str):
         """Fetch the current trigger mode for a camera."""
@@ -1043,6 +1050,10 @@ class CameraState(BaseManagementState):
         if not self.can_configure(camera):
             self.set_error("Camera not in current project scope")
             return
+        
+        # Stop any existing stream before opening config
+        if self.is_streaming:
+            self.stop_stream()
             
         self.selected_camera = camera
         self.config_modal_open = True
@@ -1075,13 +1086,11 @@ class CameraState(BaseManagementState):
         try:
             async with httpx.AsyncClient() as client:
                 if key == "exposure":
-                    print(f"DEBUG: Setting exposure to {value} for {self.selected_camera}")
                     response = await client.put(
                         f"{self.API_BASE}/cameras/{self.selected_camera}/exposure",
                         json={"exposure": value}
                     )
                 elif key == "gain":
-                    print(f"DEBUG: Setting gain to {value} for {self.selected_camera}")
                     response = await client.put(
                         f"{self.API_BASE}/cameras/{self.selected_camera}/gain",
                         json={"gain": value}
@@ -1089,16 +1098,12 @@ class CameraState(BaseManagementState):
                 if response.status_code == 200:
                     data = response.json()
                     if data.get("success"):
-                        print(f"DEBUG: Successfully updated {key} to {value}")
                         self.set_success(f"{key.title()} updated to {value}")
                     else:
-                        print(f"DEBUG: Failed to update {key}: {data.get('message')}")
                         self.set_error(data.get("message", f"Failed to update {key}"))
                 else:
-                    print(f"DEBUG: Failed to update {key}: {response.status_code}")
                     self.set_error(f"Failed to update {key}: {response.status_code}")
         except Exception as e:
-            print(f"DEBUG: Error updating {key}: {str(e)}")
             self.set_error(f"Error updating {key}: {str(e)}")
     
     async def apply_config(self):

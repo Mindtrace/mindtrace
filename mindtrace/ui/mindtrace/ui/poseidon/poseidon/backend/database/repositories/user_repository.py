@@ -188,9 +188,9 @@ class UserRepository:
             if not project_already_assigned:
                 user.projects.append(project)
                 await user.save()
-                print(f"DEBUG: Assigned user {user.username} to project {project.name}")
             else:
-                print(f"DEBUG: User {user.username} already assigned to project {project.name}")
+                # User already assigned to project
+                pass
             
             return user
         except Exception as e:
@@ -213,7 +213,6 @@ class UserRepository:
             # Remove project from user's projects list
             user.projects = [p for p in user.projects if str(p.id) != project_id]
             await user.save()
-            print(f"DEBUG: Removed user {user.username} from project {project.name}")
             
             return user
         except Exception as e:

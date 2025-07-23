@@ -21,8 +21,8 @@ class Image(MindtraceDocument):
     
     # Link relationships
     uploaded_by: Optional[Link["User"]] = None
-    project: Optional[Link["Project"]] = None
-    organization: Optional[Link["Organization"]] = None
+    project: Link["Project"]
+    organization: Link["Organization"]
     
     # Proper datetime fields
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
