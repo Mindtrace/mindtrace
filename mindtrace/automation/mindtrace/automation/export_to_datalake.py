@@ -36,6 +36,19 @@ def main(config_path: str, project_id: int = None):
     description = datalake_config.get('description', f"Defect detection dataset exported from Label Studio project {project_id}")
     new_dataset = datalake_config.get('new_dataset', True)
     
+    # Get mask generation config
+    mask_generation_config = config.get('mask_generation', {})
+    labelstudio_config = mask_generation_config.get('labelstudio', {})
+    sam_config_section = mask_generation_config.get('sam', {})
+    labelstudio_all_masks = labelstudio_config.get('generate_all_masks', False)
+    sam_all_masks = sam_config_section.get('generate_all_masks', False)
+    
+    # Prepare SAM config with mask generation settings
+    sam_config = config.get('sam', {})
+    if sam_config:
+        # Add mask generation config to SAM config
+        sam_config['mask_generation'] = mask_generation_config
+    
     # Extract detection and segmentation classes from Label Studio interface config
     interface_config = config['label_studio']['interface_config']
     detection_classes = []
@@ -68,6 +81,8 @@ def main(config_path: str, project_id: int = None):
     print(f"Detection classes (from RectangleLabels): {detection_classes}")
     print(f"Segmentation classes (from PolygonLabels): {segmentation_classes}")
     print(f"Using datalake GCP credentials: {datalake_config.get('gcp_creds_path')}")
+    print(f"Label Studio all masks generation: {'Enabled' if labelstudio_all_masks else 'Disabled'}")
+    print(f"SAM all masks generation: {'Enabled' if sam_all_masks else 'Disabled'}")
     
     try:
         result = label_studio.convert_and_publish_to_datalake(
@@ -80,12 +95,14 @@ def main(config_path: str, project_id: int = None):
             test_split=0.2,
             download_images=True,
             generate_masks=True,
+            all_masks=labelstudio_all_masks,
             description=description,
             hf_token=datalake_config.get('hf_token'),
             gcp_creds_path=datalake_config.get('gcp_creds_path'),
             new_dataset=new_dataset,
             detection_classes=detection_classes,
-            segmentation_classes=segmentation_classes  # Pass segmentation classes
+            segmentation_classes=segmentation_classes,
+            sam_config=sam_config  # Pass SAM config with mask generation settings
         )
         
         print("\nExport completed successfully!")

@@ -54,6 +54,11 @@ def detections_to_label_studio(
             for j, mask_path in enumerate(mask_paths):
                 cls = mask_classes[j] if j < len(mask_classes) else "object"
 
+                # Skip empty mask paths (indicates no mask file)
+                if not mask_path:
+                    print(f"Skipping empty mask for class: {cls}")
+                    continue
+
                 if mask_tool_type == 'BrushLabels':
                     try:
                         rle, _, _ = image2rle(mask_path)
@@ -307,6 +312,8 @@ def gather_detections_from_folders(
     class_mapping: Optional[Dict[int, str]] = None,
     mask_task_names: Optional[List[str]] = None,
     box_task_names: Optional[List[str]] = None,
+    mask_source: str = "sam",
+    generate_all_masks: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Gather detection data from the folder structure created by infer_folder.py.
@@ -316,6 +323,8 @@ def gather_detections_from_folders(
         class_mapping: Optional mapping from class_id to class_name
         box_task_names: List of box task names to process (e.g., ['zone_segmentation'])
         mask_task_names: List of mask task names to process (e.g., ['zone_segmentation'])
+        mask_source: Source for masks - "sam" (Segment Anything Model) or "labelstudio" (Label Studio masks)
+        generate_all_masks: If true, generate PNG files for all images even if no masks detected
     
     Returns:
         List of detection dictionaries ready for detections_to_label_studio
@@ -366,11 +375,42 @@ def gather_detections_from_folders(
                 task_mask_folder = os.path.join(raw_masks_folder, task_name)
                 mask_file_path = os.path.join(task_mask_folder, f"{image_name}.png")
                 
+                # Handle mask source selection and generation options
                 if os.path.exists(mask_file_path):
-                    class_masks = extract_masks_from_pixel_values(mask_file_path, class_mapping=id2label)
-                    for temp_mask_path, class_name in class_masks:
-                        masks.append(temp_mask_path)
-                        mask_classes.append(class_name)
+                    if mask_source == "sam":
+                        # Use SAM masks (existing behavior)
+                        class_masks = extract_masks_from_pixel_values(mask_file_path, class_mapping=id2label)
+                        for temp_mask_path, class_name in class_masks:
+                            masks.append(temp_mask_path)
+                            mask_classes.append(class_name)
+                    elif mask_source == "labelstudio":
+                        masks.append(mask_file_path)
+                        mask_classes.append("object")
+                elif generate_all_masks:
+                    # Create empty mask if file doesn't exist but we want all masks
+                    print(f"Creating empty mask for {image_name} (no mask file found)")
+                    # Create task folder if it doesn't exist
+                    os.makedirs(task_mask_folder, exist_ok=True)
+                    
+                    # Create id2label.yaml if it doesn't exist
+                    if not os.path.exists(id2label_path):
+                        default_id2label = {0: "background", 1: "object"}
+                        with open(id2label_path, 'w') as f:
+                            yaml.dump(default_id2label, f, default_flow_style=False)
+                    
+                    # Create empty mask with same dimensions as original image
+                    empty_mask = np.zeros((img_height, img_width), dtype=np.uint8)
+                    mask_pil = Image.fromarray(empty_mask, mode='L')
+                    mask_pil.save(mask_file_path)
+                    print(f"Generated empty mask: {mask_file_path}")
+                    
+                    # Add empty mask to the list
+                    if mask_source == "sam":
+                        # For SAM, we don't add empty masks to the list
+                        pass
+                    elif mask_source == "labelstudio":
+                        masks.append(mask_file_path)
+                        mask_classes.append("background")
         
         detection = {
             'image_path': image_path,
@@ -458,6 +498,8 @@ def create_individual_label_studio_files_with_gcs(
     mask_task_names: Optional[list] = None,
     box_task_names: Optional[list] = None,
     polygon_epsilon_factor: float = 0.005,
+    mask_source: str = "sam",
+    generate_all_masks: bool = False,
 ) -> list:
     """Create individual Label Studio JSON files for each image with GCS URLs."""
     os.makedirs(output_dir, exist_ok=True)
@@ -466,7 +508,9 @@ def create_individual_label_studio_files_with_gcs(
         output_folder=output_folder,
         class_mapping=class_mapping,
         mask_task_names=mask_task_names,
-        box_task_names=box_task_names
+        box_task_names=box_task_names,
+        mask_source=mask_source,
+        generate_all_masks=generate_all_masks
     )
     
     if "gcs_paths" in gcs_mapping:
