@@ -604,7 +604,7 @@ class TestPlatformSpecificImports:
 
             # Verify that msvcrt is imported and fcntl is not
             assert hasattr(module, "msvcrt")
-            assert not hasattr(module, "fcntl")
+            assert not hasattr(module, "fcntl") or module.fcntl is None
 
     def test_unix_imports(self):
         """Test that Unix-specific imports are used on Unix systems."""
@@ -624,7 +624,7 @@ class TestPlatformSpecificImports:
 
             # Verify that fcntl is imported and msvcrt is not
             assert hasattr(module, "fcntl")
-            assert not hasattr(module, "msvcrt")
+            assert not hasattr(module, "msvcrt") or module.msvcrt is None
 
     def test_unknown_platform_imports(self):
         """Test that Unix-specific imports are used as fallback for unknown platforms."""
@@ -644,7 +644,7 @@ class TestPlatformSpecificImports:
 
             # Verify that fcntl is imported and msvcrt is not
             assert hasattr(module, "fcntl")
-            assert not hasattr(module, "msvcrt")
+            assert not hasattr(module, "msvcrt") or module.msvcrt is None
 
 
 def test_delete_parent_directory_error(backend, sample_object_dir, caplog):

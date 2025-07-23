@@ -11,8 +11,10 @@ import yaml
 # Import appropriate locking mechanism based on OS
 if platform.system() == "Windows":
     import msvcrt
+    fcntl = None
 else:
     import fcntl
+    msvcrt = None
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
@@ -296,10 +298,12 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             else:
                 # Unix: Try to acquire an exclusive file lock
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return True
         except (IOError, OSError):
@@ -310,9 +314,11 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Unlock the file
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 # Unix: Release the file lock
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
         except (IOError, OSError) as e:
             self.logger.warning(f"Error releasing file lock: {e}")
@@ -322,11 +328,13 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             else:
                 # Unix: Try to acquire a shared file lock
                 # Use blocking mode for shared locks since multiple readers should be able to share
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH)
                 return True
         except (IOError, OSError):
