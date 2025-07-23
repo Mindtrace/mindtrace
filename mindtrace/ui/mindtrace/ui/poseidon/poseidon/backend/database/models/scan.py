@@ -21,6 +21,8 @@ class Scan(MindtraceDocument):
     # Optional relationship
     user: Optional[Link["User"]] = None
     
+    serial_number: str
+    
     # Status and results
     status: ScanStatus = ScanStatus.PENDING
     cls_result: Optional[str] = None

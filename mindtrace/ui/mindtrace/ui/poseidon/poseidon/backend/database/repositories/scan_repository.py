@@ -26,6 +26,12 @@ class ScanRepository:
             return None
 
     @staticmethod
+    async def get_by_serial_number(serial_number: str) -> Optional[Scan]:
+        """Get scan by serial number"""
+        await ScanRepository._ensure_init()
+        return await Scan.find_one(Scan.serial_number == serial_number)
+
+    @staticmethod
     async def get_all() -> List[Scan]:
         """Get all scans"""
         await ScanRepository._ensure_init()
