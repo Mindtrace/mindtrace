@@ -120,26 +120,26 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/endpoints",
             func=self.endpoints_func,
-            schema=EndpointsSchema(),
+            schema=EndpointsSchema,
             as_tool=True,
         )
         self.add_endpoint(
-            path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True
+            path="/status", func=self.status_func, schema=StatusSchema, as_tool=True
         )
         self.add_endpoint(
             path="/heartbeat",
             func=self.heartbeat_func,
-            schema=HeartbeatSchema(),
+            schema=HeartbeatSchema,
             as_tool=True,
         )
         self.add_endpoint(
-            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
+            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
         )
         self.add_endpoint(
-            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema()
+            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
         )
         self.add_endpoint(
-            path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
+            path="/shutdown", func=self.shutdown, schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
         )
 
     def endpoints_func(self):

@@ -54,51 +54,38 @@ class EndpointsOutput(BaseModel):
     endpoints: list[str]
 
 
-class EndpointsSchema(TaskSchema):
-    name: str = "endpoints"
-    output_schema: Type[EndpointsOutput] = EndpointsOutput
-
+EndpointsSchema = TaskSchema(name="endpoints", output_schema=EndpointsOutput)
 
 class StatusOutput(BaseModel):
     status: ServerStatus
 
 
-class StatusSchema(TaskSchema):
-    name: str = "status"
-    output_schema: Type[StatusOutput] = StatusOutput
+StatusSchema = TaskSchema(name="status", output_schema=StatusOutput)
 
 
 class HeartbeatOutput(BaseModel):
     heartbeat: Heartbeat
 
 
-class HeartbeatSchema(TaskSchema):
-    name: str = "heartbeat"
-    output_schema: Type[HeartbeatOutput] = HeartbeatOutput
+HeartbeatSchema = TaskSchema(name="heartbeat", output_schema=HeartbeatOutput)
 
 
 class ServerIDOutput(BaseModel):
     server_id: UUID
 
 
-class ServerIDSchema(TaskSchema):
-    name: str = "server_id"
-    output_schema: Type[ServerIDOutput] = ServerIDOutput
+ServerIDSchema = TaskSchema(name="server_id", output_schema=ServerIDOutput)
 
 
 class PIDFileOutput(BaseModel):
     pid_file: str
 
 
-class PIDFileSchema(TaskSchema):
-    name: str = "pid_file"
-    output_schema: Type[PIDFileOutput] = PIDFileOutput
+PIDFileSchema = TaskSchema(name="pid_file", output_schema=PIDFileOutput)
 
 
 class ShutdownOutput(BaseModel):
     shutdown: bool
 
 
-class ShutdownSchema(TaskSchema):
-    name: str = "shutdown"
-    output_schema: Type[ShutdownOutput] = ShutdownOutput
+ShutdownSchema = TaskSchema(name="shutdown", output_schema=ShutdownOutput)
