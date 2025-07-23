@@ -980,7 +980,8 @@ class LabelStudio(Mindtrace):
         hf_token: str = None,
         gcp_creds_path: str = None,
         new_dataset: bool = True,
-        detection_classes: Optional[List[str]] = None
+        detection_classes: Optional[List[str]] = None,
+        segmentation_classes: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Convert Label Studio project to datalake format with train/test splits."""
         # Validate splits
@@ -1040,7 +1041,8 @@ class LabelStudio(Mindtrace):
             splits=moved_files,
             class_mapping=export_result['class_mapping'],
             description=description,
-            detection_classes=detection_classes
+            detection_classes=detection_classes,
+            segmentation_classes=segmentation_classes  # Pass segmentation classes to create_manifest
         )
 
         # Create and publish dataset using Datalake

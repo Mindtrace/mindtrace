@@ -688,7 +688,8 @@ def create_manifest(
     splits: Dict[str, List[str]],
     class_mapping: Optional[Dict[str, Any]] = None,
     description: str = "",
-    detection_classes: Optional[List[str]] = None
+    detection_classes: Optional[List[str]] = None,
+    segmentation_classes: Optional[List[str]] = None
 ) -> None:
     """Create a manifest file for the dataset.
     
@@ -696,17 +697,13 @@ def create_manifest(
         base_dir: Base directory of the dataset
         name: Dataset name
         version: Dataset version
-        splits: Dictionary mapping split names to lists of file paths (absolute paths as strings)
+        splits: Dictionary mapping split names to lists of file paths
         class_mapping: Optional class mapping dictionary
         description: Optional dataset description
-        detection_classes: List of detection classes from config
+        detection_classes: List of detection classes from RectangleLabels
+        segmentation_classes: List of segmentation classes from PolygonLabels
     """
     base_dir = Path(base_dir)
-    
-    # Get segmentation class names from class mapping
-    segmentation_classes = []
-    if class_mapping and 'label2idx' in class_mapping:
-        segmentation_classes = sorted(class_mapping['label2idx'].keys())
     
     manifest = {
         "name": name,
@@ -723,7 +720,7 @@ def create_manifest(
             {
                 "name": "zones",
                 "type": "image_segmentation",
-                "classes": segmentation_classes,
+                "classes": segmentation_classes or [],
                 "required": False
             }
         ],
@@ -768,15 +765,15 @@ def create_manifest(
     
     readme_content += """
 
-## Detection Classes
+## Detection Classes (RectangleLabels)
 """
     readme_content += json.dumps(detection_classes or [], indent=2)
     
     readme_content += """
 
-## Segmentation Classes
+## Segmentation Classes (PolygonLabels)
 """
-    readme_content += json.dumps(segmentation_classes, indent=2)
+    readme_content += json.dumps(segmentation_classes or [], indent=2)
     
     with open(base_dir / "README.md", 'w') as f:
         f.write(readme_content)
