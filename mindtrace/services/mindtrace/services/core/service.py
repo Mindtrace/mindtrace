@@ -497,5 +497,5 @@ class Service(Mindtrace):
             self.logger.warning(
                 f"Function '{tool_name}' for service '{service_name}' has no docstring."
             )
-        full_desc = f"{base_desc} This tool ('{tool_name}') belongs to the service '{service_name}'."
+        full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
         self.mcp.tool(name=tool_name, description=full_desc)(func)
