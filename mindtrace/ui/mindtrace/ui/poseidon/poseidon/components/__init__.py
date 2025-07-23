@@ -285,4 +285,8 @@ __all__ = [
     "base_management_page",
     "standard_filter_bar",
     "standard_table_actions",
+    
+    # Mindtrace Image Dialog Components
+    "mindtrace_image_with_bb",
+    "mindtrace_bb",
 ] 
