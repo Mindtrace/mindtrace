@@ -114,7 +114,10 @@ def download_data_yolo(json_path, images_save_path, labels_save_path, workers):
                 bucket = gcs_client.bucket(bucket_name)
                 blob = bucket.blob(blob_path)
                 file_path = os.path.join(images_save_path, os.path.basename(blob_path))
-                blob.download_to_filename(file_path)
+                if not os.path.exists(file_path):
+                    blob.download_to_filename(file_path)
+                else:
+                    print(f"[SKIPPED] {url} already exists")
             except Exception as e:
                 print(f"[ERROR] {url} => {e}")
 
@@ -168,7 +171,7 @@ def download_data_yolo(json_path, images_save_path, labels_save_path, workers):
         for a in task.get('annotations', []):
             for r in a.get('result', []):
                 if 'value' in r and 'rectanglelabels' in r['value']:
-                    if 'Spatter' in r['value']['rectanglelabels']:
+                    if 'spatter' in r['value']['rectanglelabels']:
                         labels.append(r['value'])
 
         if not labels:
@@ -233,7 +236,7 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
         
         all_masks = []
         for b in boxes_xyxy:
-            masks, _, _ = model.predict(box=np.array(b), multimask_output=False)
+            masks, _, _ = model.model.predict(box=np.array(b), multimask_output=False)
             all_masks.append(masks[0])
 
         combined_mask = np.any(np.stack(all_masks, axis=0), axis=0).astype(np.uint8)
@@ -465,7 +468,7 @@ def main():
     parser = argparse.ArgumentParser(description="Spatter Segmentation Datalake Pipeline")
     parser.add_argument("--config", required=True, help="Path to YAML config file", type=str)
     args = parser.parse_args()
-    download = False
+    download = True
 
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
@@ -476,7 +479,7 @@ def main():
     
     download_dir = config['download_dir']
     unique_id = str(uuid.uuid4())
-    unique_id = "b4385498-794f-43aa-9d11-8cf15e8f7365"
+    unique_id = "45b1db5d-1f23-47a2-ba15-9ceebc9e6fc9"
     download_dir = os.path.join(download_dir, unique_id)
     os.makedirs(download_dir, exist_ok=True)
         
@@ -521,7 +524,8 @@ def main():
         config.get('huggingface', {}), 
         use_mask=convert_box_to_mask,
         clean_up=True,
-        class_names=config['class_names']
+        class_names=config['class_names'],
+        download=download
     )
     
     # Optional: clean up the entire unique directory after completion

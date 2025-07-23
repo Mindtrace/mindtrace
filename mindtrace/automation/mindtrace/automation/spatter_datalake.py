@@ -333,11 +333,10 @@ def train_test_split(base_dir, desired_ratio=0.2):
 
     print("Train-test split complete.")
 
-def main():
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spatter Segmentation Datalake Pipeline")
     parser.add_argument("--config", required=True, help="Path to YAML config file", type=str)
     args = parser.parse_args()
-    download = False
 
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
@@ -379,18 +378,18 @@ def main():
             export_location=export_path
         )
         
-        if download:
-            zone_masks_save_path = os.path.join(download_dir, 'zone_masks')
-            download_data_yolo(
-                export_path, 
-                images_save_path, 
-                labels_save_path, 
-                zone_masks_save_path,
-                config['workers'], 
-                config['zone_class_names'],
-                ignore_holes=config['ignore_holes'],
-                delete_empty_masks=config['delete_empty_masks'])
-        
+        zone_masks_save_path = os.path.join(download_dir, 'zone_masks')
+        download_data_yolo(
+            export_path, 
+            images_save_path, 
+            labels_save_path, 
+            zone_masks_save_path,
+            config['workers'], 
+            config['zone_class_names'],
+            ignore_holes=config['ignore_holes'],
+            delete_empty_masks=config['delete_empty_masks'])
+    
     if convert_box_to_mask:
         masks_save_path = os.path.join(download_dir, 'masks')
         generate_masks_from_boxes(images_save_path, labels_save_path, masks_save_path)
+
