@@ -37,17 +37,15 @@ def main(config_path: str, project_id: int = None):
     new_dataset = datalake_config.get('new_dataset', True)
     
     # Get mask generation config
-    mask_generation_config = config.get('mask_generation', {})
-    labelstudio_config = mask_generation_config.get('labelstudio', {})
-    sam_config_section = mask_generation_config.get('sam', {})
-    labelstudio_all_masks = labelstudio_config.get('generate_all_masks', False)
-    sam_all_masks = sam_config_section.get('generate_all_masks', False)
+    sam_config = config.get('sam', {})
+    labelstudio_config = config.get('label_studio', {})
+    sam_all_masks = sam_config.get('generate_masks', False)
+    labelstudio_all_masks = labelstudio_config.get('generate_mask', False)
     
     # Prepare SAM config with mask generation settings
-    sam_config = config.get('sam', {})
     if sam_config:
-        # Add mask generation config to SAM config
-        sam_config['mask_generation'] = mask_generation_config
+        # Add mask generation config to SAM config for backward compatibility
+        sam_config['mask_generation'] = {'sam': {'generate_all_masks': sam_all_masks}}
     
     # Extract detection and segmentation classes from Label Studio interface config
     interface_config = config['label_studio']['interface_config']

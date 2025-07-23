@@ -1053,9 +1053,7 @@ class LabelStudio(Mindtrace):
                 model=sam_config.get('model_version', 'vit_l'),
                 device=sam_config.get('device', 'cuda')
             )
-            mask_generation_config = sam_config.get('mask_generation', {})
-            sam_config_section = mask_generation_config.get('sam', {})
-            sam_generate_all_masks = sam_config_section.get('generate_all_masks', False)
+            sam_generate_all_masks = sam_config.get('generate_masks', False)
         
         for split_name, filenames in split_result['splits'].items():
             if not filenames:  # Skip empty splits
