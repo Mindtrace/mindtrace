@@ -1,21 +1,41 @@
+from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mindtrace.core import TaskSchema
-from mindtrace.jobs import Job
+from mindtrace.database import UnifiedMindtraceDocument
 
 
-class JobOutput(BaseModel):
-    status: str
-    output: Any
+class JobStatus(UnifiedMindtraceDocument):
+    job_id: str = Field(description="Job's id")
+    worker_id: str | None = Field(description="Worker's id")
+    status: str = Field(description="Job's status")
+    output: Any = Field(description="Job's output")
+    
+    class Meta:
+        collection_name = "job_status"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["job_id"]
+        unique_fields = ["job_id"]
+
+class JobSchemaTargeting(UnifiedMindtraceDocument):
+    schema_name: str = Field(description="Schema name")
+    target_endpoint: str = Field(description="Target endpoint")
+
+    class Meta:
+        collection_name = "job_schema_targeting"
+        global_key_prefix = "cluster"
+        use_cache = False
+        indexed_fields = ["schema_name"]
+        unique_fields = ["schema_name"]
 
 
-class SubmitJobTaskSchema(TaskSchema):
-    name: str = "submit_job"
-    input_schema: type[Job] = Job
-    output_schema: type[JobOutput] = JobOutput
-
+class WorkerStatusEnum(Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    ERROR = "error"
 
 class RegisterJobToEndpointInput(BaseModel):
     job_type: str
@@ -29,15 +49,12 @@ class RegisterJobToEndpointTaskSchema(TaskSchema):
 class WorkerRunInput(BaseModel):
     job_dict: dict
 
-class WorkerRunOutput(BaseModel):
-    status: str
-    output: Any
-
-WorkerRunTaskSchema = TaskSchema(name="worker_run", input_schema=WorkerRunInput, output_schema=WorkerRunOutput)
+WorkerRunTaskSchema = TaskSchema(name="worker_run", input_schema=WorkerRunInput, output_schema=JobStatus)
 
 class ConnectToBackendInput(BaseModel):
     backend_args: dict
     queue_name: str
+    cluster_url: str
 
 
 ConnectToBackendTaskSchema = TaskSchema(name="connect_to_backend", input_schema=ConnectToBackendInput)
@@ -47,3 +64,22 @@ class RegisterJobToWorkerInput(BaseModel):
     worker_url: str
 
 RegisterJobToWorkerTaskSchema = TaskSchema(name="register_job_to_worker", input_schema=RegisterJobToWorkerInput)
+
+class GetJobStatusInput(BaseModel):
+    job_id: str
+
+GetJobStatusTaskSchema = TaskSchema(name="get_job_status", input_schema=GetJobStatusInput, output_schema=JobStatus)
+
+class WorkerAlertStartedJobInput(BaseModel):
+    job_id: str
+    worker_id: str
+
+WorkerAlertStartedJobTaskSchema = TaskSchema(name="worker_alert_started_job", input_schema=WorkerAlertStartedJobInput)
+
+class WorkerAlertCompletedJobInput(BaseModel):
+    job_id: str
+    status: str
+    output: dict
+    worker_id: str
+
+WorkerAlertCompletedJobTaskSchema = TaskSchema(name="worker_alert_completed_job", input_schema=WorkerAlertCompletedJobInput)
