@@ -22,8 +22,8 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 try:
-    from pycomm3 import LogixDriver, SLCDriver, CIPDriver
-    from pycomm3 import Tag
+    from pycomm3 import LogixDriver, SLCDriver, CIPDriver # type: ignore
+    from pycomm3 import Tag # type: ignore
     PYCOMM3_AVAILABLE = True
 except ImportError:
     PYCOMM3_AVAILABLE = False
@@ -642,7 +642,8 @@ class AllenBradleyPLC(BasePLC):
                                 f"O:{slot}.{word}/{bit}",  # Output bit
                             ])
             
-            else:  # CIPDriver - Enhanced tag discovery using proper CIP methods
+            else:  # CIPDriver - Enhanced tag discovery using proper CIP method
+                assert CIPDriver is not None, "CIPDriver is required but CIPDriver is not available"
                 # Enhanced CIP tag discovery using official pycomm3 methods
                 self._tags_cache = []
                 

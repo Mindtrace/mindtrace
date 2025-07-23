@@ -386,9 +386,9 @@ class MockBaslerCamera(BaseCamera):
         Returns:
             BGR image array
         """
+        width = self.roi["width"]
+        height = self.roi["height"]
         try:
-            width = self.roi["width"]
-            height = self.roi["height"]
             
             # Use vectorized operations for much better performance
             x_coords = np.arange(width)
