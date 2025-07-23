@@ -7,8 +7,8 @@ from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 def main():
-    cluster_manager = ClusterManager.connect("http://localhost:8000")
-    worker_cm = EchoWorker.connect("http://localhost:8001")
+    cluster_manager = ClusterManager.connect("http://localhost:8002")
+    worker_cm = EchoWorker.connect("http://localhost:8003")
     try:
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 60})
