@@ -30,7 +30,7 @@ class Registry(Mindtrace):
 
     def __init__(
         self,
-        registry_dir: str | None = None,
+        registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = True,
         **kwargs,
@@ -632,8 +632,8 @@ class Registry(Mindtrace):
             return "Registry is empty."
 
         if use_rich:
-            console = Console()
-            table = Table(title=f"Registry at {self.backend.uri}")
+            console = Console() # type: ignore
+            table = Table(title=f"Registry at {self.backend.uri}") # type: ignore
 
             table.add_column("Object", style="bold cyan")
             table.add_column("Version", style="green")
