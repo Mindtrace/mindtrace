@@ -199,7 +199,7 @@ class MinioRegistryBackend(RegistryBackend):
         downloaded_files = []
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
             # Skip directory markers
-            if obj.object_name.endswith("/"):
+            if not obj.object_name or obj.object_name.endswith("/"):
                 continue
 
             # Get the relative path by removing the remote_key prefix
@@ -233,7 +233,8 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Deleting directory: {remote_key}")
 
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
-            self.client.remove_object(self.bucket, obj.object_name)
+            if obj.object_name:
+                self.client.remove_object(self.bucket, obj.object_name)
 
     def save_metadata(self, name: str, version: str, metadata: dict):
         """Save object metadata to MinIO.
@@ -381,7 +382,7 @@ class MinioRegistryBackend(RegistryBackend):
         objects = set()
         prefix = "_meta_"
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".json"):
+            if obj.object_name and obj.object_name.endswith(".json"):
                 # Extract object name from metadata filename
                 name_part = Path(obj.object_name).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
@@ -401,7 +402,7 @@ class MinioRegistryBackend(RegistryBackend):
         versions = []
 
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".json"):
+            if obj.object_name and obj.object_name.endswith(".json"):
                 version = obj.object_name[len(prefix) : -5]
                 versions.append(version)
         return sorted(versions)
@@ -600,7 +601,8 @@ class MinioRegistryBackend(RegistryBackend):
                 target_objects = list(self.client.list_objects(self.bucket, prefix=target_key, recursive=True))
                 if target_objects:
                     for obj in target_objects:
-                        self.client.remove_object(self.bucket, obj.object_name)
+                        if obj.object_name:
+                            self.client.remove_object(self.bucket, obj.object_name)
                 self.client.remove_object(self.bucket, target_meta_key)
             except S3Error as e:
                 if e.code != "NoSuchKey":
@@ -614,7 +616,7 @@ class MinioRegistryBackend(RegistryBackend):
 
             for obj in source_objects:
                 # Skip directory markers (objects ending with /)
-                if obj.object_name.endswith("/"):
+                if not obj.object_name or obj.object_name.endswith("/"):
                     continue
 
                 # Create target object name by replacing source prefix with target prefix
@@ -647,7 +649,7 @@ class MinioRegistryBackend(RegistryBackend):
             # Delete source objects
             for obj in source_objects:
                 # Skip directory markers
-                if obj.object_name.endswith("/"):
+                if not obj.object_name or obj.object_name.endswith("/"):
                     continue
                 self.client.remove_object(self.bucket, obj.object_name)
 

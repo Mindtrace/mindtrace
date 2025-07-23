@@ -73,7 +73,7 @@ class LocalRegistryBackend(RegistryBackend):
         """
         return f"{name}/{version}"
 
-    def push(self, name: str, version: str, local_path: str):
+    def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local directory to the remote backend.
 
         Args:
@@ -87,7 +87,7 @@ class LocalRegistryBackend(RegistryBackend):
         shutil.copytree(local_path, dst, dirs_exist_ok=True)
         self.logger.debug(f"Upload complete. Contents: {list(dst.rglob('*'))}")
 
-    def pull(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str | Path):
         """Copy a directory from the backend store to a local path.
 
         Args:
@@ -169,14 +169,14 @@ class LocalRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, name: str, version: str):
+    def delete_metadata(self, model_name: str, version: str):
         """Delete metadata for a object version.
 
         Args:
-            name: Name of the object.
+            model_name: Name of the object.
             version: Version of the object.
         """
-        meta_path = self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+        meta_path = self.uri / f"_meta_{model_name.replace(':', '_')}@{version}.yaml"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         if meta_path.exists():
             meta_path.unlink()
