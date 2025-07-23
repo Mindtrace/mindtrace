@@ -74,9 +74,7 @@ class Registry(Mindtrace):
         self._materializer_cache_lock = threading.Lock()
 
         # Register the default materializers if there are none
-        if len(self.registered_materializers()) == 0:
-            self.logger.info("No materializers found, registering defaults...")
-            self._register_default_materializers()
+        self._register_default_materializers()
         
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
@@ -788,11 +786,15 @@ class Registry(Mindtrace):
 
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
-    def _register_default_materializers(self):
-        """Register default materializers from the class-level registry."""
+    def _register_default_materializers(self, override_preexisting_materializers: bool = False):
+        """Register default materializers from the class-level registry.
+        
+        By default, the registry will only register materializers that are not already registered.
+        """
         self.logger.info("Registering default materializers...")
         for object_class, materializer_class in self.get_default_materializers().items():
-            self.register_materializer(object_class, materializer_class)
+            if override_preexisting_materializers or object_class not in self.backend.registered_materializers():
+                self.register_materializer(object_class, materializer_class)
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):
