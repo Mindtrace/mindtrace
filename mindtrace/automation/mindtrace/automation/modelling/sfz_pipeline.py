@@ -9,6 +9,8 @@ from enum import Enum
 from PIL import Image
 import cv2
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 from mindtrace.automation.modelling import ModelInference, ExportType
 from mindtrace.storage.gcs import GCSStorageHandler
 from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logits_to_mask, get_updated_key
@@ -315,7 +317,111 @@ class SFZPipeline:
                 'error': str(e)
             }
 
-    def run_inference_on_folder(self, 
+    def run_inference_on_folder(
+        self, 
+        input_folder: str,
+        output_folder: str,
+        export_types: Optional[Dict[str, ExportType]] = None,
+        threshold: float = 0.4,
+        save_visualizations: bool = True,
+        supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'),
+        num_workers: int = 4) -> Dict[str, Any]:
+        """Run inference concurrently on all images in a folder and its subfolders.
+        
+        Args:
+            input_folder: Path to folder containing images
+            output_folder: Path to save results and visualizations
+            export_types: Dictionary mapping task names to export types
+            threshold: Confidence threshold for detections
+            save_visualizations: Whether to save visualization images
+            supported_formats: Image formats to process
+            num_workers: Number of worker threads for concurrent processing
+            
+        Returns:
+            Dictionary with results summary
+        """
+        if not os.path.exists(input_folder):
+            raise ValueError(f"Input folder does not exist: {input_folder}")
+
+        # Create output folder structure
+        os.makedirs(output_folder, exist_ok=True)
+        images_folder = os.path.join(output_folder, "images")
+        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        boxes_folder = os.path.join(output_folder, "boxes")
+        visualizations_folder = os.path.join(output_folder, "visualizations")
+        
+        os.makedirs(images_folder, exist_ok=True)
+        os.makedirs(raw_masks_folder, exist_ok=True)
+        os.makedirs(boxes_folder, exist_ok=True)
+        os.makedirs(visualizations_folder, exist_ok=True)
+
+        # Get list of image files from all subfolders
+        image_files = []
+        for root, _, files in os.walk(input_folder):
+            for file in files:
+                if file.lower().endswith(supported_formats):
+                    image_files.append(os.path.join(root, file))
+
+        if not image_files:
+            print(f"No supported image files found in {input_folder} or its subfolders")
+            return {'error': 'No supported images found'}
+
+        print(f"Found {len(image_files)} images to process in {input_folder} and its subfolders using {num_workers} workers.")
+
+        results_summary = {
+            'total_images': len(image_files),
+            'processed_images': 0,
+            'failed_images': 0,
+            'results': {}
+        }
+
+        def _process_image(image_path):
+            try:
+                print(f"Processing image: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
+                
+                # Copy original image to images folder
+                image_filename = os.path.basename(image_path)
+                image_dest = os.path.join(images_folder, image_filename)
+                shutil.copy2(image_path, image_dest)
+                
+                # Run inference
+                results = self.run_inference_on_models(
+                    image=image_path,
+                    export_types=export_types,
+                    threshold=threshold
+                )
+                
+                # Save structured outputs
+                image_name = os.path.splitext(os.path.basename(image_path))[0]
+                self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
+                
+                # Save visualizations if requested
+                if save_visualizations:
+                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+                
+                return image_name, results, None
+            except Exception as e:
+                print(f"Error processing {image_path}: {e}")
+                return os.path.splitext(os.path.basename(image_path))[0], None, e
+
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            # Use executor.map to preserve order
+            results_iterator = executor.map(_process_image, image_files)
+            
+            # Iterate over results which are now in order
+            for result in tqdm(results_iterator, total=len(image_files), desc="Processing images"):
+                image_name, results, error = result
+                if error is None:
+                    results_summary['results'][image_name] = results
+                    results_summary['processed_images'] += 1
+                else:
+                    results_summary['failed_images'] += 1
+                    results_summary['results'][image_name] = {'error': str(error)}
+
+        print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
+        return results_summary
+        
+    def run_inference_on_folder1(self, 
                                input_folder: str,
                                output_folder: str,
                                export_types: Optional[Dict[str, ExportType]] = None,

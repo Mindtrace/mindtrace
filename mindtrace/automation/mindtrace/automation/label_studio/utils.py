@@ -1,4 +1,5 @@
 from label_studio_sdk.converter.brush import image2rle
+from tqdm import tqdm
 import os
 import numpy as np
 from PIL import Image
@@ -108,6 +109,8 @@ def detections_to_label_studio(
                     class_name = bbox_data['class_name']
                     
                     rect_annotation = {
+                        "original_width": img_width,
+                        "original_height": img_height,
                         "from_name": "bbox",
                         "to_name": "image",
                         "type": "rectanglelabels",
@@ -484,60 +487,22 @@ def create_individual_label_studio_files_with_gcs(
     for filename, gcs_url in filename_to_gcs.items():
         print(f"  {filename} -> {gcs_url}")
     
-    annotations = detections_to_label_studio(
-        detections,
-        mask_from_name=mask_from_name,
-        mask_tool_type=mask_tool_type,
-        polygon_epsilon_factor=polygon_epsilon_factor,
-    )
-    
     created_files = []
-    annotation_index = 0
     
-    for detection in detections:
+    for detection in tqdm(detections, desc="Creating Label Studio JSON files"):
         local_filename = os.path.basename(detection['image_path'])
         gcs_url = filename_to_gcs.get(local_filename)
         
         if not gcs_url:
             print(f"Skipping {local_filename} - no GCS URL available")
-            num_bboxes = len(detection.get('bboxes', []))
-            num_masks = len(detection.get('masks', []))
-            total_annotations = num_bboxes + num_masks
-            annotation_index += total_annotations
             continue
         
-        try:
-            with Image.open(detection['image_path']) as img:
-                original_width, original_height = img.size
-        except Exception as e:
-            raise Exception(f"Failed to get image dimensions for {detection['image_path']}: {e}")
-        
-        num_bboxes = len(detection.get('bboxes', []))
-        num_masks = len(detection.get('masks', []))
-        total_annotations = num_bboxes + num_masks
-        
-        image_annotations = []
-        for i in range(total_annotations):
-            if annotation_index < len(annotations):
-                annotation = annotations[annotation_index].copy()
-                
-                annotation.pop('original_width', None)
-                annotation.pop('original_height', None)
-                
-                if annotation.get('type') == 'rectanglelabels' and 'value' in annotation:
-                    value = annotation['value']
-                
-                if 'from_name' not in annotation:
-                    if annotation.get('type') == 'rectanglelabels':
-                        annotation['from_name'] = 'bbox'
-                    elif annotation.get('type') == 'brushlabels':
-                        annotation['from_name'] = 'brush'
-                
-                if 'to_name' not in annotation:
-                    annotation['to_name'] = 'image'
-                
-                image_annotations.append(annotation)
-                annotation_index += 1
+        image_annotations = detections_to_label_studio(
+            [detection],
+            mask_from_name=mask_from_name,
+            mask_tool_type=mask_tool_type,
+            polygon_epsilon_factor=polygon_epsilon_factor,
+        )
         
         prediction = {
             "data": {
@@ -558,8 +523,7 @@ def create_individual_label_studio_files_with_gcs(
             json.dump(prediction, f, indent=2)
         
         created_files.append(json_path)
-        print(f"Created JSON for {local_filename}: {json_path}")
-    
+
     return created_files
 
 
@@ -577,7 +541,7 @@ def upload_label_studio_jsons_to_gcs(
     
     uploaded_urls = []
     
-    for local_json_path in local_json_files:
+    for local_json_path in tqdm(local_json_files, desc="Uploading Label Studio JSONs to GCS"):
         filename = os.path.basename(local_json_path)
         remote_path = f"{gcs_config['prefix']}/{job_id}/{filename}"
         
