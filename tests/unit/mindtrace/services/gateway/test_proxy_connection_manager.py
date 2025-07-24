@@ -25,7 +25,7 @@ class DummySchema:
     name = "dummy"
 
 class DummyCM(ConnectionManager):
-    _service_endpoints: dict[str, Any] = {}
+    pass
 
 def test_initialization():
     """Test that ProxyConnectionManager initializes correctly."""
