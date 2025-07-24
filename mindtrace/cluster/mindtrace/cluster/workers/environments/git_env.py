@@ -3,7 +3,6 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-from turtle import pensize
 from typing import Optional, List, Dict, Union, Tuple
 
 import git
