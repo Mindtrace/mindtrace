@@ -36,22 +36,51 @@ def main(config_path: str, project_id: int = None):
     description = datalake_config.get('description', f"Defect detection dataset exported from Label Studio project {project_id}")
     new_dataset = datalake_config.get('new_dataset', True)
     
-    # Extract detection classes from Label Studio interface config
+    # Get mask generation config
+    sam_config = config.get('sam', {})
+    labelstudio_config = config.get('label_studio', {})
+    sam_all_masks = sam_config.get('generate_masks', False)
+    labelstudio_all_masks = labelstudio_config.get('generate_mask', False)
+    
+    # Prepare SAM config with mask generation settings
+    if sam_config:
+        # Add mask generation config to SAM config for backward compatibility
+        sam_config['mask_generation'] = {'sam': {'generate_all_masks': sam_all_masks}}
+    
+    # Extract detection and segmentation classes from Label Studio interface config
     interface_config = config['label_studio']['interface_config']
     detection_classes = []
-    if '<RectangleLabels' in interface_config:
-        # Extract classes from RectangleLabels section
-        matches = re.findall(r'<Label value="([^"]+)"[^>]*?/>', interface_config)
+    segmentation_classes = []
+
+    # Extract classes from RectangleLabels sections (detection)
+    rectangle_sections = re.findall(r'<RectangleLabels.*?>(.*?)</RectangleLabels>', interface_config, re.DOTALL)
+    for section in rectangle_sections:
+        matches = re.findall(r'<Label value="([^"]+)"[^>]*?/>', section)
         detection_classes.extend(matches)
-    
+
+    # Extract classes from PolygonLabels sections (segmentation)
+    polygon_sections = re.findall(r'<PolygonLabels.*?>(.*?)</PolygonLabels>', interface_config, re.DOTALL)
+    for section in polygon_sections:
+        matches = re.findall(r'<Label value="([^"]+)"[^>]*?/>', section)
+        segmentation_classes.extend(matches)
+
+    # Validate that we found some classes
+    if not detection_classes:
+        print("No detection classes found")
+    if not segmentation_classes:
+        print("No segmentation classes found")
+
     print(f"Testing datalake export for project {project_id}")
     print(f"Output directory: {output_dir}")
     print(f"Download path: {download_path}")
     print(f"Dataset name: {dataset_name}")
     print(f"Version: {version}")
     print(f"Operation: {'Creating new' if new_dataset else 'Updating existing'} dataset")
-    print(f"Detection classes: {detection_classes}")
+    print(f"Detection classes (from RectangleLabels): {detection_classes}")
+    print(f"Segmentation classes (from PolygonLabels): {segmentation_classes}")
     print(f"Using datalake GCP credentials: {datalake_config.get('gcp_creds_path')}")
+    print(f"Label Studio all masks generation: {'Enabled' if labelstudio_all_masks else 'Disabled'}")
+    print(f"SAM all masks generation: {'Enabled' if sam_all_masks else 'Disabled'}")
     
     try:
         result = label_studio.convert_and_publish_to_datalake(
@@ -64,11 +93,14 @@ def main(config_path: str, project_id: int = None):
             test_split=0.2,
             download_images=True,
             generate_masks=True,
+            all_masks=labelstudio_all_masks,
             description=description,
             hf_token=datalake_config.get('hf_token'),
             gcp_creds_path=datalake_config.get('gcp_creds_path'),
             new_dataset=new_dataset,
-            detection_classes=detection_classes
+            detection_classes=detection_classes,
+            segmentation_classes=segmentation_classes,
+            sam_config=sam_config  # Pass SAM config with mask generation settings
         )
         
         print("\nExport completed successfully!")

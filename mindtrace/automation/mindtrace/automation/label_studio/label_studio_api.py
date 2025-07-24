@@ -755,7 +755,7 @@ class LabelStudio(Mindtrace):
         self.logger.info(f"Total unique GCS paths found: {len(gcs_paths)}")
         return gcs_paths
 
-    def _transform_annotation_to_datalake(self, data: list, output_dir: Path, class_mapping: dict) -> dict:
+    def _transform_annotation_to_datalake(self, data: list, output_dir: Path, class_mapping: dict, all_masks: bool = False) -> dict:
         images = {}
         for task in data:
             filename = task['data']['image'].split('/')[-1]
@@ -778,10 +778,12 @@ class LabelStudio(Mindtrace):
                         mask_labels.append(label)
 
             mask_file = (output_dir / "masks" / f"{Path(filename).stem}_mask.png")
-            if mask_file.exists() and mask_labels:
+            
+            # Include mask if it exists and has labels, OR if all_masks is enabled and mask file exists
+            if mask_file.exists() and (mask_labels or all_masks):
                 image_entry['masks'] = {
                     "file_name": str(mask_file.name),
-                    "labels": sorted(mask_labels) 
+                    "labels": sorted(mask_labels) if mask_labels else []
                 }
 
             images[filename] = image_entry
@@ -794,6 +796,7 @@ class LabelStudio(Mindtrace):
         download_path: str,
         download_images: bool = False,
         generate_masks: bool = False,
+        all_masks: bool = False,
         splits: Optional[Dict[str, List[str]]] = None,
         version: str = "1.0.0"
     ) -> Dict[str, any]:
@@ -805,6 +808,7 @@ class LabelStudio(Mindtrace):
             download_path: Path where images should be downloaded
             download_images: Whether to download images from GCS
             generate_masks: Whether to generate segmentation masks from polygon annotations
+            all_masks: Whether to generate mask files for all images (including empty ones)
             splits: Optional dictionary of split names to lists of image filenames
             version: Dataset version (default: "1.0.0")
         
@@ -905,9 +909,6 @@ class LabelStudio(Mindtrace):
                             has_polygons = True
                             polygon_results.append(result)
                 
-                if not has_polygons:
-                    continue
-                        
                 image_path = task['data']['image']
                 local_path = local_image_paths.get(image_path)
                 if not local_path:
@@ -919,37 +920,55 @@ class LabelStudio(Mindtrace):
                
                     mask = np.zeros((h, w), dtype=np.uint8) 
                     
-                    polygon_results.sort(key=lambda x: class2idx[x['value']['polygonlabels'][0]])
-                    
-                    for result in polygon_results:
-                        label = result['value']['polygonlabels'][0]
-                        class_id = class2idx[label]
+                    # Only process polygons if they exist
+                    if has_polygons:
+                        polygon_results.sort(key=lambda x: class2idx[x['value']['polygonlabels'][0]])
                         
-                        points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
-                        points = points.reshape((-1, 1, 2))
-                        
-                        cv2.fillPoly(mask, [points], color=class_id)
+                        for result in polygon_results:
+                            label = result['value']['polygonlabels'][0]
+                            class_id = class2idx[label]
+                            
+                            points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
+                            points = points.reshape((-1, 1, 2))
+                            
+                            cv2.fillPoly(mask, [points], color=class_id)
                     
-                    mask_filename = f"{Path(local_path).stem}_mask.png"
-                    mask_path = masks_dir / mask_filename
-                    cv2.imwrite(str(mask_path), mask)
+                    # Generate mask file if we have polygons
+                    if has_polygons:
+                        mask_filename = f"{Path(local_path).stem}_mask.png"
+                        mask_path = masks_dir / mask_filename
+                        cv2.imwrite(str(mask_path), mask)
+                        self.logger.debug(f"Generated mask with polygons: {mask_filename}")
+                    # Generate empty mask file if all_masks is enabled and we don't have polygons
+                    elif all_masks:
+                        mask_filename = f"{Path(local_path).stem}_mask.png"
+                        mask_path = masks_dir / mask_filename
+                        cv2.imwrite(str(mask_path), mask)
+                        self.logger.debug(f"Generated empty mask: {mask_filename}")
                     
                 except Exception as e:
                     self.logger.error(f"Failed to generate mask for {image_path}: {e}")
                 
             self.logger.info("✅ Mask generation completed")
 
-            data = self._transform_annotation_to_datalake(data, output_dir, class_mapping)
+            data = self._transform_annotation_to_datalake(data, output_dir, class_mapping, all_masks)
         
         with open(output_dir / "annotations.json", 'w') as f:
             json.dump(data, f, indent=2)
         
         json_export_path.unlink()
         
+        # Count generated masks
+        generated_mask_count = 0
+        if generate_masks:
+            masks_dir = output_dir / "masks"
+            if masks_dir.exists():
+                generated_mask_count = len(list(masks_dir.glob("*.png")))
+        
         stats = {
             'total_tasks': len(data),
             'downloaded_images': len(local_image_paths) if download_images or generate_masks else 0,
-            'generated_masks': len(local_image_paths) if generate_masks else 0,
+            'generated_masks': generated_mask_count,
             'class_mapping': class2idx if generate_masks else None,
             'images': data['images']  # Include the transformed data
         }
@@ -960,6 +979,9 @@ class LabelStudio(Mindtrace):
             self.logger.info(f"Images downloaded to: {temp_images_dir}")
         if generate_masks:
             self.logger.info(f"Masks generated in: {masks_dir}")
+            self.logger.info(f"Generated {stats['generated_masks']} mask files")
+            if all_masks:
+                self.logger.info(f"Generated masks for all images (including empty ones)")
             self.logger.info(f"Classes: {list(class2idx.keys())}")
         
         return stats
@@ -975,12 +997,15 @@ class LabelStudio(Mindtrace):
         test_split: float = 0.2,
         download_images: bool = True,
         generate_masks: bool = True,
+        all_masks: bool = False,
         description: str = "",
         seed: int = 42,
         hf_token: str = None,
         gcp_creds_path: str = None,
         new_dataset: bool = True,
-        detection_classes: Optional[List[str]] = None
+        detection_classes: Optional[List[str]] = None,
+        segmentation_classes: Optional[List[str]] = None,
+        sam_config: Optional[Dict] = None  # Add SAM config parameter
     ) -> Dict[str, Any]:
         """Convert Label Studio project to datalake format with train/test splits."""
         # Validate splits
@@ -998,7 +1023,8 @@ class LabelStudio(Mindtrace):
             output_dir=temp_dir,
             download_path=download_path,
             download_images=download_images,
-            generate_masks=generate_masks
+            generate_masks=generate_masks,
+            all_masks=all_masks
         )
         
         if not export_result['images']:
@@ -1018,17 +1044,96 @@ class LabelStudio(Mindtrace):
             source_images_dir=temp_dir,
             source_masks_dir=temp_dir / "masks" if generate_masks else None
         )
+
+        sam = None
+        sam_generate_all_masks = False
+        if sam_config:
+            from mtrix.models import SegmentAnything as SAM
+            sam = SAM(
+                model=sam_config.get('model_version', 'vit_l'),
+                device=sam_config.get('device', 'cuda')
+            )
+            sam_generate_all_masks = sam_config.get('generate_masks', False)
         
         for split_name, filenames in split_result['splits'].items():
             if not filenames:  # Skip empty splits
                 continue
-            split_dir = dataset_dir / "splits" / split_name
+
+            split_dir = dataset_dir / 'splits' / split_name
             split_annotations = {
                 "images": {
                     img: export_result['images'][img]
                     for img in filenames
                 }
             }
+
+            # Process SAM masks if enabled
+            if sam:
+                print(f"Processing SAM masks for {split_name} split...")
+                
+                # Create sam_masks directory for this split
+                sam_masks_dir = split_dir / 'sam_masks'
+                sam_masks_dir.mkdir(exist_ok=True)
+
+
+                for img_name, img_data in tqdm(split_annotations['images'].items(), desc=f"Processing SAM masks for {split_name}"):
+                    image_path = split_dir / 'images' / img_name
+                    if not image_path.exists():
+                        continue
+
+                    image = Image.open(image_path)
+                    img_width, img_height = image.size
+
+                    # Check if we have bounding boxes
+                    has_bboxes = bool(img_data.get('bboxes'))
+                    
+                    # Skip if no bboxes and we're not generating all masks
+                    if not has_bboxes and not sam_generate_all_masks:
+                        continue
+
+                    # Convert bboxes to format SAM expects [x1, y1, x2, y2] (convert from percentage to pixels)
+                    bboxes = []
+                    if has_bboxes:
+                        for bbox in img_data['bboxes']:
+                            # Convert percentage to pixels
+                            x1 = int(bbox['x'] * img_width / 100)
+                            y1 = int(bbox['y'] * img_height / 100)
+                            x2 = int((bbox['x'] + bbox['width']) * img_width / 100)
+                            y2 = int((bbox['y'] + bbox['height']) * img_height / 100)
+                            bboxes.append([x1, y1, x2, y2])
+                    sam.set_image(image)
+
+                    # Combine all masks into one image
+                    combined_mask = np.zeros((img_height, img_width), dtype=np.uint8)
+                    bbox_references = []
+
+                    # Process bounding boxes if they exist
+                    if has_bboxes and bboxes:
+                        for idx, (bbox_coords, bbox) in enumerate(zip(bboxes, img_data['bboxes'])):
+                            
+                            mask = sam.compute_mask(bbox=np.array(bbox_coords), image=None)
+                            
+                            if mask.shape != (img_height, img_width):
+                                print(f"Warning: Mask shape {mask.shape} doesn't match image shape ({img_height}, {img_width})")
+                                continue
+                            
+                            combined_mask[mask] = 255
+                            bbox_references.append({
+                                'bbox_id': str(idx + 1),
+                                'label': bbox['label']
+                            })
+
+                    mask_filename = f"{Path(img_name).stem}_sam_masks.png"
+                    cv2.imwrite(
+                        str(sam_masks_dir / mask_filename),
+                        combined_mask
+                    )
+
+                    img_data['sam_masks'] = {
+                        'file_name': mask_filename,
+                        'bbox_references': bbox_references
+                    }
+
             annotations_file = split_dir / f"annotations_v{version}.json"
             with open(annotations_file, 'w') as f:
                 json.dump(split_annotations, f, indent=2)
@@ -1040,37 +1145,30 @@ class LabelStudio(Mindtrace):
             splits=moved_files,
             class_mapping=export_result['class_mapping'],
             description=description,
-            detection_classes=detection_classes
+            detection_classes=detection_classes,
+            segmentation_classes=segmentation_classes
         )
 
         # Create and publish dataset using Datalake
         if hf_token and gcp_creds_path:            
             self.logger.info(f"{'Creating new' if new_dataset else 'Updating existing'} dataset: {dataset_name}")
-            
-            if new_dataset:
-                # Create new dataset
-                datalake = Datalake(
+            datalake = Datalake(
                     hf_token=hf_token,
                     gcp_creds_path=gcp_creds_path
                 )
+            if new_dataset:
                 datalake.create_dataset(
                     source=str(dataset_dir),
                     dataset_name=dataset_name,
                     version=version
                 )
             else:
-                # Update existing dataset
-                datalake = Datalake(
-                    hf_token=hf_token,
-                    gcp_creds_path=gcp_creds_path
-                )
                 datalake.update_dataset(
                     src=str(dataset_dir),
                     dataset_name=dataset_name,
                     version=version
                 )
             
-            # Publish the dataset
             datalake.publish_dataset(
                 dataset_name=dataset_name,
                 version=version
