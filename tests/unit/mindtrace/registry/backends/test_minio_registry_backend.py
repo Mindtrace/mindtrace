@@ -137,7 +137,7 @@ def test_delete_metadata_no_such_key(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )
@@ -159,7 +159,7 @@ def test_delete_metadata_other_error(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )
@@ -217,7 +217,7 @@ def test_register_materializer_no_such_key(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -253,7 +253,7 @@ def test_register_materializer_other_error(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -279,7 +279,7 @@ def test_registered_materializers_no_such_key(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -308,7 +308,7 @@ def test_registered_materializer_other_error(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -367,7 +367,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -380,7 +380,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -429,7 +429,7 @@ def test_release_lock_unexpected_error(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -502,7 +502,7 @@ def test_check_lock_no_such_key(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -526,7 +526,7 @@ def test_check_lock_other_error(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -806,7 +806,7 @@ def test_overwrite_handles_nosuchkey_error(backend, monkeypatch):
                 resource="/test-bucket/objects/test:target/2.0.0/test.txt",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None, # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -860,7 +860,7 @@ def test_overwrite_handles_other_s3error(backend, monkeypatch):
             resource="/test-bucket/objects/test:target/2.0.0/test.txt",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="objects/test:target/2.0.0/test.txt",
         )
@@ -1011,7 +1011,7 @@ def test_overwrite_handles_nosuchkey_metadata_error(backend, monkeypatch):
                 resource="/test-bucket/_meta_test_source@1.0.0.json",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None, # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -1064,7 +1064,7 @@ def test_overwrite_handles_other_metadata_error(backend, monkeypatch):
                 resource="/test-bucket/_meta_test_source@1.0.0.json",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None, # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -1293,7 +1293,7 @@ def test_acquire_lock_unexpected_s3error(backend, monkeypatch, caplog):
             resource="/test-bucket/_lock_test-key",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None, # type: ignore
             bucket_name="test-bucket",
             object_name="_lock_test-key",
         )
