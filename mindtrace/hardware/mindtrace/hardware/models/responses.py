@@ -71,6 +71,7 @@ class CaptureResponse(BaseResponse):
     """Response model for image capture operations."""
     image_data: Optional[str] = None  # Base64 encoded image
     save_path: Optional[str] = None
+    gcs_uri: Optional[str] = None  # GCS URI of uploaded image
     media_type: str = "image/jpeg"
 
 
@@ -78,6 +79,7 @@ class HDRCaptureResponse(BaseResponse):
     """Response model for HDR capture operations."""
     images: Optional[List[str]] = None  # Base64 encoded images
     exposure_levels: Optional[List[float]] = None
+    gcs_uris: Optional[List[str]] = None  # GCS URIs of uploaded images
     successful_captures: int
 
 

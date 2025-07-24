@@ -7,6 +7,7 @@ The Mindtrace Hardware Component provides a unified interface for managing indus
 This component offers:
 - **Unified Configuration System**: Single configuration for all hardware components
 - **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with comprehensive mock implementations
+- **Cloud Storage Integration**: Automatic upload of captured images to Google Cloud Storage (GCS)
 - **Network Bandwidth Management**: Intelligent concurrent capture limiting for GigE cameras
 - **Multiple PLC Backends**: Support for Allen Bradley PLCs with LogixDriver, SLCDriver, and CIPDriver
 - **Async Operations**: Thread-safe asynchronous operations for both cameras and PLCs
@@ -303,6 +304,12 @@ async def camera_setup():
 
 ### Image Capture and Configuration
 
+The camera system supports three output formats for captured images:
+
+1. **Binary Image Data**: Return image as numpy array for immediate processing
+2. **Local File Storage**: Save image to local filesystem
+3. **Google Cloud Storage**: Upload image directly to GCS bucket
+
 ```python
 async def image_operations():
     async with CameraManager() as manager:
@@ -310,11 +317,33 @@ async def image_operations():
         await manager.initialize_camera('Daheng:cam1')
         camera = manager.get_camera('Daheng:cam1')
         
-        # Basic capture
+        # Basic capture - returns binary image data
         image = await camera.capture()
+        print(f"Captured image shape: {image.shape}")
         
-        # Capture with save
+        # Capture with local file save
         image = await camera.capture(save_path='captured.jpg')
+        
+        # Capture with GCS upload
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/camera_001.jpg",
+            gcs_metadata={
+                "camera_id": "cam_001",
+                "capture_type": "quality_inspection"
+            }
+        )
+        
+        # Capture with both local save and GCS upload
+        image = await camera.capture(
+            save_path="local_captured.jpg",
+            gcs_bucket="my-camera-bucket", 
+            gcs_path="images/camera_001.jpg"
+        )
+        
+        # Auto-upload using default configuration
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        image = await camera.capture()  # Will auto-upload to configured bucket if enabled
         
         # HDR capture with multiple exposure levels
         hdr_images = await camera.capture_hdr(
@@ -322,6 +351,27 @@ async def image_operations():
             exposure_multiplier=2.0,
             return_images=True
         )
+        
+        # HDR capture with GCS upload (explicit parameters)
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True,
+            gcs_bucket="my-camera-bucket",
+            gcs_path_pattern="hdr_images/exposure_{exposure}.jpg",
+            gcs_metadata={
+                "capture_type": "hdr",
+                "camera_id": "cam_001"
+            }
+        )
+        
+        # HDR capture with auto-upload (uses config defaults)
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )  # Will auto-upload to configured bucket if enabled
         
         # Comprehensive configuration
         await camera.configure(
@@ -358,6 +408,252 @@ async def image_operations():
         pixel_formats = await camera.get_available_pixel_formats()
         wb_modes = await camera.get_available_white_balance_modes()
 ```
+
+### Google Cloud Storage Integration
+
+The hardware component includes built-in GCS integration for automatic image uploads. This feature requires the `mindtrace-storage` dependency and proper GCS configuration.
+
+#### GCS Setup
+
+1. **Install Dependencies**: The `mindtrace-storage` dependency is automatically included
+2. **Configure Authentication**: Set up Google Cloud credentials
+3. **Create GCS Bucket**: Ensure your bucket exists and is accessible
+
+```bash
+# Set up GCS authentication
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+
+# Create GCS bucket (if needed)
+gsutil mb gs://my-camera-bucket
+```
+
+#### GCS Configuration
+
+The hardware component supports comprehensive GCS configuration through environment variables or configuration files:
+
+```bash
+# GCS Configuration Environment Variables
+export MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-camera-bucket"
+export MINDTRACE_HW_GCS_PROJECT_ID="my-project-id"
+export MINDTRACE_HW_GCS_CREDENTIALS_PATH="/path/to/service-account.json"
+export MINDTRACE_HW_GCS_CREATE_IF_MISSING="true"
+export MINDTRACE_HW_GCS_LOCATION="US"
+export MINDTRACE_HW_GCS_STORAGE_CLASS="STANDARD"
+export MINDTRACE_HW_GCS_DEFAULT_IMAGE_FORMAT="jpg"
+export MINDTRACE_HW_GCS_DEFAULT_IMAGE_QUALITY="95"
+export MINDTRACE_HW_GCS_AUTO_UPLOAD="false"
+export MINDTRACE_HW_GCS_UPLOAD_METADATA="true"
+export MINDTRACE_HW_GCS_RETRY_COUNT="3"
+export MINDTRACE_HW_GCS_TIMEOUT_SECONDS="30"
+```
+
+Or configure via JSON file (`hardware_config.json`):
+
+```json
+{
+  "gcs": {
+    "default_bucket": "my-camera-bucket",
+    "project_id": "my-project-id",
+    "credentials_path": "/path/to/service-account.json",
+    "create_if_missing": true,
+    "location": "US",
+    "storage_class": "STANDARD",
+    "default_image_format": "jpg",
+    "default_image_quality": 95,
+    "auto_upload": false,
+    "upload_metadata": true,
+    "retry_count": 3,
+    "timeout_seconds": 30.0
+  }
+}
+```
+
+#### GCS Usage Examples
+
+The system provides flexible options for image storage - you can choose to save locally, upload to GCS, or both:
+
+```python
+async def gcs_capture_examples():
+    async with CameraManager() as manager:
+        await manager.initialize_camera('OpenCV:0')
+        camera = manager.get_camera('OpenCV:0')
+        
+        # Option 1: Local storage only
+        image = await camera.capture(save_path="local_capture.jpg")
+        
+        # Option 2: GCS upload only (requires explicit bucket and path)
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/capture_001.jpg"
+        )
+        
+        # Option 3: Both local and GCS storage
+        image = await camera.capture(
+            save_path="local_capture.jpg",
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/capture_001.jpg"
+        )
+        
+        # Option 4: Auto-upload using configuration defaults
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        image = await camera.capture()  # Will auto-upload if enabled in config
+        
+        # GCS upload with metadata
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="quality_inspection/batch_001/image_001.jpg",
+            gcs_metadata={
+                "camera_id": "cam_001",
+                "batch_id": "batch_20240115_001",
+                "inspection_type": "quality_check",
+                "operator": "user_123"
+            }
+        )
+        
+        # HDR capture with explicit GCS parameters
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True,
+            gcs_bucket="my-camera-bucket",
+            gcs_path_pattern="hdr_images/exposure_{exposure}.jpg",
+            gcs_metadata={
+                "capture_type": "hdr",
+                "camera_id": "cam_001"
+            }
+        )
+        
+        # HDR capture with auto-upload
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )  # Will auto-upload if enabled in config
+```
+
+#### API Endpoints with GCS
+
+The REST API supports GCS upload for all capture operations:
+
+```bash
+# Single image capture with GCS upload
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "save_path": "local_capture.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path": "images/capture_001.jpg",
+    "gcs_metadata": {
+      "camera_id": "cam_001",
+      "capture_type": "single",
+      "batch_id": "batch_20240115_001"
+    }
+  }'
+
+# HDR capture with GCS upload
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "save_path_pattern": "hdr_local/exposure_{exposure}.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "hdr_images/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "hdr",
+      "camera_id": "cam_001"
+    }
+  }'
+
+# Batch HDR capture with GCS upload
+curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cameras": ["OpenCV:0", "OpenCV:1"],
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "save_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "batch_hdr",
+      "session_id": "session_20240115_001"
+    }
+  }'
+```
+
+#### API Response Examples
+
+**Single Capture Response:**
+```json
+{
+  "success": true,
+  "message": "Image captured from 'OpenCV:0' and saved to 'local_capture.jpg' and uploaded to GCS",
+  "image_data": "base64_encoded_image_data",
+  "save_path": "local_capture.jpg",
+  "gcs_uri": "gs://my-camera-bucket/images/capture_001.jpg",
+  "media_type": "image/jpeg",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**HDR Capture Response:**
+```json
+{
+  "success": true,
+  "message": "HDR capture completed for 'OpenCV:0' and saved locally and uploaded to GCS",
+  "images": ["base64_image_1", "base64_image_2", "base64_image_3"],
+  "exposure_levels": [1000, 2000, 4000],
+  "gcs_uris": [
+    "gs://my-camera-bucket/hdr_images/exposure_1000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_2000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_4000.jpg"
+  ],
+  "successful_captures": 3,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+#### GCS Parameter Decision Logic
+
+The system uses a clear decision-making process for GCS uploads:
+
+1. **Explicit Parameters**: If you provide `gcs_bucket` and `gcs_path`/`gcs_path_pattern`, the system uses those values
+2. **Auto-Upload**: If you don't provide explicit parameters but have `auto_upload=true` and `default_bucket` configured, the system uses config defaults
+3. **No Upload**: If neither explicit parameters nor auto-upload are configured, no GCS upload occurs
+
+**Examples:**
+```python
+# Explicit parameters (always used)
+image = await camera.capture(gcs_bucket="my-bucket", gcs_path="image.jpg")
+
+# Auto-upload (uses config defaults)
+# Requires: MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+image = await camera.capture()  # Auto-uploads to configured bucket
+
+# No upload (neither explicit nor auto-upload configured)
+image = await camera.capture()  # No GCS upload
+```
+
+#### GCS Error Handling
+
+GCS upload failures are handled gracefully:
+- Local capture continues even if GCS upload fails
+- Upload errors are logged but don't stop the capture process
+- Temporary files are automatically cleaned up
+- System continues operating normally
+
+#### GCS Metadata
+
+The system automatically adds these metadata fields to uploaded images:
+- `camera_name`: Name of the camera
+- `camera_backend`: Camera backend type (OpenCV, Daheng, Basler, etc.)
+- `capture_timestamp`: ISO timestamp of capture
+- `upload_timestamp`: ISO timestamp of upload
+- `image_format`: Image format (jpg, png, etc.)
+- `image_shape`: Image dimensions (width x height)
+- `image_channels`: Number of color channels
 
 ### Batch Operations
 
@@ -1234,6 +1530,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 ## 📄 License
 
 This component is part of the Mindtrace project. See the main project LICENSE file for details.
+
 
 
 

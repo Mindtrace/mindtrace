@@ -447,10 +447,10 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
     
     Args:
         camera: Camera name in format 'Backend:device_name'
-        payload: Optional capture parameters including save path
+        payload: Optional capture parameters including save path and GCS settings
         
     Returns:
-        CaptureResponse with base64 encoded image data
+        CaptureResponse with base64 encoded image data and GCS URI
         
     Raises:
         ValueError: If camera name format is invalid
@@ -464,20 +464,51 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
     if camera not in active_cameras:
         raise CameraNotFoundError(f"Camera '{camera}' not initialized")
     camera_proxy = manager.get_camera(camera)
+    
+    # Extract parameters from payload
     save_path = payload.save_path if payload else None
-    capture_result = await camera_proxy.capture(save_path=save_path)
-    success, image_data = capture_result if isinstance(capture_result, tuple) else (True, capture_result)
-    if not success:
-        raise CameraCaptureError(f"Failed to capture from '{camera}'")
+    gcs_bucket = payload.gcs_bucket if payload else None
+    gcs_path = payload.gcs_path if payload else None
+    gcs_metadata = payload.gcs_metadata if payload else None
+    
+    capture_result = await camera_proxy.capture(
+        save_path=save_path,
+        gcs_bucket=gcs_bucket,
+        gcs_path=gcs_path,
+        gcs_metadata=gcs_metadata
+    )
+    
+    # Handle different return types
+    if isinstance(capture_result, dict) and "image" in capture_result:
+        # New structured response with GCS URI
+        image_data = capture_result["image"]
+        gcs_uri = capture_result.get("gcs_uri")
+    elif isinstance(capture_result, tuple):
+        # Legacy tuple response (success, image)
+        success, image_data = capture_result
+        if not success:
+            raise CameraCaptureError(f"Failed to capture from '{camera}'")
+        gcs_uri = None
+    else:
+        # Direct image return
+        image_data = capture_result
+        gcs_uri = None
     
     image_base64 = _encode_image_to_base64(image_data)
     
+    # Build response message
+    message_parts = [f"Image captured from '{camera}'"]
+    if save_path:
+        message_parts.append(f"saved to '{save_path}'")
+    if gcs_uri:
+        message_parts.append("uploaded to GCS")
+    
     return CaptureResponse(
         success=True,
-        message=f"Image captured from '{camera}'"
-               + (f" and saved to '{save_path}'" if save_path else ""),
+        message=" and ".join(message_parts),
         image_data=image_base64,
         save_path=save_path,
+        gcs_uri=gcs_uri,
         media_type="image/jpeg"
     )
 
@@ -518,10 +549,10 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     
     Args:
         camera: Camera name in format 'Backend:device_name'
-        payload: Optional HDR capture parameters
+        payload: Optional HDR capture parameters including GCS settings
         
     Returns:
-        HDRCaptureResponse with multiple images at different exposure levels
+        HDRCaptureResponse with multiple images at different exposure levels and GCS URIs
         
     Raises:
         ValueError: If camera name format is invalid
@@ -539,25 +570,35 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     exposure_levels = payload.exposure_levels if payload else 3
     exposure_multiplier = payload.exposure_multiplier if payload else 2.0
     return_images = payload.return_images if payload else True
+    gcs_bucket = payload.gcs_bucket if payload else None
+    gcs_path_pattern = payload.gcs_path_pattern if payload else None
+    gcs_metadata = payload.gcs_metadata if payload else None
     
     camera_proxy = manager.get_camera(camera)
     hdr_result = await camera_proxy.capture_hdr(
         save_path_pattern=save_path_pattern,
         exposure_levels=exposure_levels,
         exposure_multiplier=exposure_multiplier,
-        return_images=return_images
+        return_images=return_images,
+        gcs_bucket=gcs_bucket,
+        gcs_path_pattern=gcs_path_pattern,
+        gcs_metadata=gcs_metadata
     )
     
     images_base64 = []
     exposure_levels_list = []
+    gcs_uris = None
     
     if return_images and isinstance(hdr_result, dict) and hdr_result.get("images"):
+        # New structured response with GCS URIs
         for img in hdr_result["images"]:
             img_b64 = _encode_image_to_base64(img)
             if img_b64:
                 images_base64.append(img_b64)
         exposure_levels_list = hdr_result.get("exposure_levels", [])
+        gcs_uris = hdr_result.get("gcs_uris", [])
     elif return_images and isinstance(hdr_result, list):
+        # Legacy list response (no GCS URIs)
         for img in hdr_result:
             img_b64 = _encode_image_to_base64(img)
             if img_b64:
@@ -565,12 +606,20 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     
     successful_captures = len(images_base64) if return_images else exposure_levels
     
+    # Build response message
+    message_parts = [f"HDR capture completed for '{camera}'"]
+    if save_path_pattern:
+        message_parts.append("saved locally")
+    if gcs_uris:
+        message_parts.append("uploaded to GCS")
+    
     return HDRCaptureResponse(
         success=True,
         images=images_base64 if images_base64 else None,
         exposure_levels=exposure_levels_list if exposure_levels_list else None,
+        gcs_uris=gcs_uris,
         successful_captures=successful_captures,
-        message=f"HDR capture completed for '{camera}'"
+        message=" and ".join(message_parts)
     )
 
 async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureResponse:
@@ -601,12 +650,41 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
         save_path_pattern=payload.save_path_pattern,
         exposure_levels=payload.exposure_levels,
         exposure_multiplier=payload.exposure_multiplier,
-        return_images=payload.return_images
+        return_images=payload.return_images,
+        gcs_bucket=payload.gcs_bucket,
+        gcs_path_pattern=payload.gcs_path_pattern,
+        gcs_metadata=payload.gcs_metadata
     )
     
     response_results = {}
     for camera_name, hdr_result in hdr_results.items():
-        if payload.return_images and isinstance(hdr_result, list):
+        if payload.return_images and isinstance(hdr_result, dict) and hdr_result.get("images"):
+            # New structured response with GCS URIs
+            encoded_images = []
+            for image in hdr_result["images"]:
+                encoded_image = _encode_image_to_base64(image)
+                if encoded_image:
+                    encoded_images.append(encoded_image)
+            
+            successful_captures = len(encoded_images)
+            gcs_uris = hdr_result.get("gcs_uris", [])
+            exposure_levels = hdr_result.get("exposure_levels", [])
+            
+            # Build response message
+            message_parts = [f"HDR capture completed: {successful_captures} images"]
+            if gcs_uris:
+                message_parts.append("uploaded to GCS")
+            
+            response_results[camera_name] = HDRCaptureResponse(
+                success=successful_captures > 0,
+                message=" and ".join(message_parts),
+                images=encoded_images,
+                exposure_levels=exposure_levels,
+                gcs_uris=gcs_uris,
+                successful_captures=successful_captures
+            )
+        elif payload.return_images and isinstance(hdr_result, list):
+            # Legacy list response (no GCS URIs)
             encoded_images = []
             for image in hdr_result:
                 encoded_image = _encode_image_to_base64(image)
