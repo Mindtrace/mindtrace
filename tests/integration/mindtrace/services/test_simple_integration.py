@@ -1,9 +1,13 @@
+import json
+
 import pytest
 import requests
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput
-from mindtrace.services.sample.echo_service import EchoOutput, EchoService
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService
 
 
 class TestServiceIntegration:
@@ -53,6 +57,33 @@ class TestServiceIntegration:
         async_result = await echo_service_manager.aecho(message="Async integration test")
         assert isinstance(async_result, EchoOutput)
         assert async_result.echoed == "Async integration test"
+
+        input_message = EchoInput(message="Pre-validated test message")
+        result = echo_service_manager.echo(input_message)
+        assert isinstance(result, EchoOutput)
+        assert result.echoed == "Pre-validated test message"
+
+        async_result = await echo_service_manager.aecho(input_message)
+        assert isinstance(async_result, EchoOutput)
+        assert async_result.echoed == "Pre-validated test message"
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoOutput(echoed="should fail"))
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoInput(message="should fail"), "can't have a second argument")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            echo_service_manager.echo(EchoInput(message="should fail"), message="can't have things both ways")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoOutput(echoed="should fail"))
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoInput(message="should fail"), "can't have a second argument")
+
+        with pytest.raises(ValueError, match="must be called with"):
+            await echo_service_manager.aecho(EchoInput(message="should fail"), message="can't have things both ways")
 
         print("All integration tests passed!")
 
@@ -191,3 +222,33 @@ class TestServiceIntegration:
 
         assert "echo" in echo_method.__doc__
         assert "Async version" in aecho_method.__doc__
+
+
+
+class TestMCPServiceIntegration:
+    """Integration tests for MCP functionality"""
+
+    @pytest.mark.asyncio
+    async def test_mcp_server_accessible(self, echo_mcp_manager):
+        endpoints_result = echo_mcp_manager.endpoints()
+        # The MCP app is mounted at /mcp-server
+        base_url = "http://localhost:8093"
+        mcp_url = f"{base_url}/mcp-server/mcp/"
+        # Use the MCP client to connect and call the 'echo' tool
+        async with streamablehttp_client(mcp_url) as (read, write, session_id):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                # List available tools
+                tools = await session.list_tools()
+                tool_names = [tool.name for tool in tools.tools]
+                assert "echo" in tool_names
+
+                # Call the 'echo' tool
+                result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
+                # The result is in result.content[0].text as a JSON string
+                assert hasattr(result, "content")
+                assert len(result.content) > 0
+                text_content = result.content[0].text
+                data = json.loads(text_content)
+                assert "echoed" in data
+                assert data["echoed"] == "Alice"
