@@ -1,6 +1,8 @@
+import functools
 import os
 from typing import Any, ClassVar, Tuple, Type, TYPE_CHECKING
 
+import torch
 from ultralytics import SAM
 from zenml.enums import ArtifactType
 
