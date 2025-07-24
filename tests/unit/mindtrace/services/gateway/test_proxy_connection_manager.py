@@ -263,12 +263,12 @@ def test_extract_service_endpoints_from_instance_service_class():
             }
     
     # Create a mock connection manager instance with _service_class set on the instance
-    class MockConnectionManager:
-        pass
+    class MockConnectionManager(ConnectionManager):
+        def __init__(self, **kwargs):
+            self._service_class = MockService
     
     mock_cm = MockConnectionManager()
     # This simulates a case where the instance stores the service class reference
-    mock_cm._service_class = MockService
     
     proxy_cm = ProxyConnectionManager(
         gateway_url="http://gateway", app_name="app", original_cm=mock_cm
@@ -482,7 +482,7 @@ async def test_async_proxy_method_missing_input_schema_attribute(mock_client_cla
 
 def test_infer_endpoints_from_methods():
     """Test fallback endpoint inference when service endpoints are not available."""
-    class MockCM:
+    class MockCM(ConnectionManager):
         def some_method(self):
             pass
         
@@ -516,7 +516,7 @@ def test_extract_service_endpoints_from_class_service_class():
             }
     
     # Create a mock connection manager class with _service_class set on the class
-    class MockConnectionManagerClass:
+    class MockConnectionManagerClass(ConnectionManager):
         _service_class = MockService  # This simulates the first branch in _extract_service_endpoints
     
     mock_cm = MockConnectionManagerClass()
