@@ -1,10 +1,35 @@
+"""Populate the model registry with Ultralytics YOLO, YOLOE, and SAM models.
+"""
 import argparse
 import os
 from PIL import Image
 import tempfile
 
+import ultralytics
+
 from mindtrace.registry import Registry, MinioRegistryBackend
 
+EXAMPLES = """
+Examples:
+
+  # Show help and all options
+  uv run python scripts/populate_model_registry.py --help
+
+  # Populate a local registry
+  uv run python scripts/populate_model_registry.py \\
+      --backend local \\
+      --registry-path ~/.cache/mindtrace/model-registry
+
+  # Populate a MinIO registry and cache models
+  uv run python scripts/populate_model_registry.py \\
+      --backend minio \\
+      --minio-endpoint localhost:9000 \\
+      --minio-access-key minioadmin \\
+      --minio-secret-key minioadmin \\
+      --minio-bucket model-registry \\
+      --minio-uri ~/.cache/mindtrace/model-registry \\
+      --cache-models
+"""
 
 # Model variants and their associated tasks
 YOLO_VARIANTS = [
@@ -64,7 +89,10 @@ SAM_MODELS = [
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Populate the model registry with Ultralytics YOLO models.")
+    parser = argparse.ArgumentParser(
+        description="Populate the model registry with Ultralytics YOLO, YOLOE, and SAM models.\n\n" + EXAMPLES,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
     parser.add_argument(
         "--backend",
         choices=["local", "minio"],
@@ -106,20 +134,24 @@ def main():
         action="store_true",
         help="Use secure connection for MinIO (for minio backend).",
     )
+    parser.add_argument(
+        "--cache-models",
+        action="store_true",
+        help="Downloaded models will not be discarded after the script is run, but kept in the "
+            "'~/.cache/mindtrace/models' cache directory.",
+    )
     args = parser.parse_args()
 
     registry = init_registry(args)
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Set the weights directory to the temporary directory before importing ultralytics
-        os.environ["ULTRALYTICS_WEIGHTS_DIR"] = temp_dir
-        import ultralytics
-
+        if args.cache_models:
+            temp_dir = os.path.expanduser("~/.cache/mindtrace/models")
         register_test_image(registry)
-        register_yolo_models(registry)
-        register_yolo_world_models(registry)
-        register_yolo_e_models(registry)
-        register_sam_models(registry)
+        register_yolo_models(registry, temp_dir)
+        register_yolo_world_models(registry, temp_dir)
+        register_yolo_e_models(registry, temp_dir)
+        register_sam_models(registry, temp_dir)
 
 
 def init_registry(args: argparse.Namespace) -> Registry:
@@ -170,7 +202,7 @@ def register_test_image(registry: Registry):
         print(f"Failed to register data:images:hopper: {e}")
 
 
-def register_yolo_models(registry: Registry):
+def register_yolo_models(registry: Registry, dir_path: str):
     from ultralytics import YOLO
     print("\nRegistering YOLO models...")
     for version, variants in YOLO_MODELS.items():
@@ -182,14 +214,14 @@ def register_yolo_models(registry: Registry):
                 try:
                     reg_key = key.replace("v", "")  # remove the v from the version name, if present
                     if key not in registry:
-                        yolo = YOLO(model_filename, task=None)
+                        yolo = YOLO(os.path.join(dir_path, model_filename), task=None)
                         registry.save(key, yolo, metadata={"Task": task})
                     print(f"Registered: {key}")
                 except Exception as e:
                     print(f"Failed to register {key}: {e}")
 
 
-def register_yolo_world_models(registry: Registry):
+def register_yolo_world_models(registry: Registry, dir_path: str):
     from ultralytics import YOLO
     print("\nRegistering YOLO-World models...")
     for model in YOLO_WORLD_MODELS:
@@ -200,14 +232,14 @@ def register_yolo_world_models(registry: Registry):
         print(f"Registering {model_filename} as {key} (Task: Detection)")
         try:
             if key not in registry:
-                yolo = YOLO(model_filename, task=None)
+                yolo = YOLO(os.path.join(dir_path, model_filename), task=None)
                 registry.save(key, yolo, metadata={"Task": "Detection"})
             print(f"Registered: {key}")
         except Exception as e:
             print(f"Failed to register {key}: {e}")
 
 
-def register_yolo_e_models(registry: Registry):
+def register_yolo_e_models(registry: Registry, dir_path: str):
     from ultralytics import YOLOE
     print("\nRegistering YOLO-E models...")
     for model in YOLOE_MODELS:
@@ -218,14 +250,14 @@ def register_yolo_e_models(registry: Registry):
                 print(f"Registering {model_filename} as {key} (Task: {task})")
                 try:
                     if key not in registry:
-                        yolo = YOLOE(model_filename, task=None)
+                        yolo = YOLOE(os.path.join(dir_path, model_filename), task=None)
                         registry.save(key, yolo, metadata={"Task": task})
                     print(f"Registered: {key}")
                 except Exception as e:
                     print(f"Failed to register {key}: {e}")
 
 
-def register_sam_models(registry: Registry):
+def register_sam_models(registry: Registry, dir_path: str):
     from ultralytics import SAM
     print("\nRegistering SAM models...")
     for model in SAM_MODELS:
@@ -234,7 +266,7 @@ def register_sam_models(registry: Registry):
         print(f"Registering {model_filename} as {key} (Task: Segmentation)")
         try:
             if key not in registry:
-                sam = SAM(model_filename)
+                sam = SAM(os.path.join(dir_path, model_filename))
                 registry.save(key, sam, metadata={"Task": "Segmentation"})
             print(f"Registered: {key}")
         except Exception as e:

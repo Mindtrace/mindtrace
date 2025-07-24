@@ -102,6 +102,7 @@ class Registry(Mindtrace):
         self,
         name: str,
         obj: Any,
+        *,
         materializer: Type[BaseMaterializer] | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
