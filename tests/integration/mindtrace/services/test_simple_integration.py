@@ -1,6 +1,8 @@
 import json
 
 import pytest
+
+from urllib3.util.url import Url
 import requests
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -22,7 +24,7 @@ class TestServiceIntegration:
         assert hasattr(ConnectionManager, "aecho")
 
         # Create an instance (won't work for actual calls but tests the creation)
-        manager = ConnectionManager(url="http://localhost:8080")
+        manager = ConnectionManager(url=Url("http://localhost:8080"))
         assert str(manager.url) == "http://localhost:8080"
 
     @pytest.mark.asyncio
@@ -33,7 +35,7 @@ class TestServiceIntegration:
             print("Service didn't start, testing connection manager behavior")
 
             ConnectionManager = generate_connection_manager(EchoService)
-            manager = ConnectionManager(url="http://localhost:8090")
+            manager = ConnectionManager(url=Url("http://localhost:8090"))
 
             # These should fail with connection errors, not other errors
             with pytest.raises((requests.exceptions.ConnectionError, Exception)) as exc_info:
@@ -168,7 +170,7 @@ class TestServiceIntegration:
         ]
 
         for url in test_urls:
-            manager = ConnectionManager(url=url)
+            manager = ConnectionManager(url=Url(url))
             assert manager.url is not None
 
             # The URL should be stored properly
