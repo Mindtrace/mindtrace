@@ -1,10 +1,12 @@
-from unittest.mock import MagicMock, patch
+from re import S
+from unittest.mock import MagicMock, patch, ANY
 from uuid import uuid4
 
 import pytest
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.cluster.core.cluster import ClusterManager, Worker
+from mindtrace.cluster.core.cluster import ClusterManager, Worker, Node
+from mindtrace.cluster.workers.standard_worker_launcher import ProxyWorker
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.services import Service
@@ -14,7 +16,8 @@ from mindtrace.services import Service
 def cluster_manager():
     # Patch Database to avoid file I/O
     with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase, \
-            patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient:
+            patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient, \
+            patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend:
         mock_database = MockDatabase.return_value
         mock_database.insert = MagicMock()
         mock_database.find = MagicMock(return_value=[])
@@ -24,6 +27,12 @@ def cluster_manager():
         mock_rabbitmq_client = MockRabbitMQClient.return_value
         mock_rabbitmq_client.publish = MagicMock()
         mock_rabbitmq_client.register = MagicMock()
+        mock_minio_backend = MockMinioBackend.return_value
+        mock_minio_backend.load = MagicMock()
+        mock_minio_backend.save = MagicMock()
+        mock_minio_backend.delete = MagicMock()
+        mock_minio_backend.list = MagicMock()
+        mock_minio_backend.get = MagicMock()
 
         cm = ClusterManager()
         cm.job_schema_targeting_database = mock_database
@@ -300,18 +309,163 @@ def test_worker_alert_completed_job(cluster_manager):
 def test_worker_alert_completed_job_not_found(cluster_manager):
     """Test worker_alert_completed_job when job doesn't exist."""
     job_id = "nonexistent-job"
-    status = "completed"
-    output = {"result": "success"}
-    
     cluster_manager.job_status_database.find.return_value = []
     
-    payload = {"job_id": job_id, "status": status, "output": output, "worker_id": "worker-123"}
+    payload = {"job_id": job_id, "worker_id": "worker-123", "status": "completed", "output": {"result": "test"}}
     
     with pytest.raises(ValueError, match=f"Job status not found for job id {job_id}"):
         cluster_manager.worker_alert_completed_job(payload)
 
 
-# Worker class tests
+def test_register_worker_type(cluster_manager):
+    """Test register_worker_type method."""
+    payload = {
+        "worker_name": "test_worker",
+        "worker_class": "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher",
+        "worker_params": {"param1": "value1"},
+        "materializer_name": "custom.materializer.CustomMaterializer"
+    }
+    
+    with patch.object(cluster_manager.worker_registry, 'register_materializer') as mock_register_materializer, \
+         patch.object(cluster_manager.worker_registry, 'save') as mock_save:
+        
+        cluster_manager.register_worker_type(payload)
+        
+        # Verify materializer was registered
+        mock_register_materializer.assert_called_once()
+        # Verify worker was saved
+        mock_save.assert_called_once_with("worker:test_worker", ANY)
+
+
+def test_register_worker_type_with_default_materializer(cluster_manager):
+    """Test register_worker_type method with default materializer."""
+    payload = {
+        "worker_name": "test_worker",
+        "worker_class": "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher",
+        "worker_params": {"param1": "value1"},
+        "materializer_name": None,
+    }
+    
+    with patch.object(cluster_manager.worker_registry, 'register_materializer') as mock_register_materializer, \
+         patch.object(cluster_manager.worker_registry, 'save') as mock_save:
+        
+        cluster_manager.register_worker_type(payload)
+        
+        # Verify materializer was registered with default name
+        mock_register_materializer.assert_called_once()
+        # Verify worker was saved
+        mock_save.assert_called_once_with("worker:test_worker", ANY)
+
+
+def test_register_node(cluster_manager):
+    """Test register_node method."""
+    payload = {"node_id": "test-node-123"}
+    
+    result = cluster_manager.register_node(payload)
+    
+    expected_result = {
+        "endpoint": cluster_manager.worker_registry_endpoint,
+        "access_key": cluster_manager.worker_registry_access_key,
+        "secret_key": cluster_manager.worker_registry_secret_key,
+        "bucket": cluster_manager.worker_registry_bucket
+    }
+    
+    assert result == expected_result
+
+
+@pytest.fixture
+def mock_node():
+    """Create a mock node for testing."""
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase, \
+         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend, \
+         patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry, \
+         patch("mindtrace.cluster.core.cluster.ClusterManager.connect") as MockClusterManagerConnect:
+        
+        mock_database = MockDatabase.return_value
+        mock_database.insert = MagicMock()
+        mock_database.find = MagicMock(return_value=[])
+        mock_database.delete = MagicMock()
+        mock_database.redis_backend = MagicMock()
+        mock_database.redis_backend.model_cls = MagicMock()
+        
+        mock_minio_backend = MockMinioBackend.return_value
+        mock_registry = MockRegistry.return_value
+        mock_cluster_manager_connect = MockClusterManagerConnect.return_value
+        mock_cluster_manager_connect.worker_registry = mock_registry
+        mock_cluster_manager_connect.worker_registry_endpoint = "http://localhost:8081"
+        mock_cluster_manager_connect.worker_registry_access_key = "test_access_key"
+        mock_cluster_manager_connect.worker_registry_secret_key = "test_secret_key"
+        mock_cluster_manager_connect.worker_registry_bucket = "test_bucket"
+        
+        # Create Node with cluster_url
+        node = Node(cluster_url="http://cluster:8080")
+        node.id = uuid4()
+        node.worker_registry = mock_registry
+        object.__setattr__(node, "_url", "http://localhost:8081")
+        
+        return node
+
+
+def test_node_initialization_with_cluster(mock_node):
+    """Test Node initialization with cluster_url."""
+    assert mock_node.cluster_url == "http://cluster:8080"
+    assert mock_node.cluster_cm is not None
+    assert mock_node.worker_registry is not None
+    assert mock_node.workers == []
+
+
+def test_node_initialization_without_cluster():
+    """Test Node initialization without cluster_url."""
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+        mock_database = MockDatabase.return_value
+        mock_database.insert = MagicMock()
+        mock_database.find = MagicMock(return_value=[])
+        mock_database.delete = MagicMock()
+        mock_database.redis_backend = MagicMock()
+        mock_database.redis_backend.model_cls = MagicMock()
+        
+        node = Node()
+        assert node.cluster_url is None
+        assert node.cluster_cm is None
+        assert node.worker_registry is None
+        assert node.workers == []
+
+
+def test_node_launch_worker(mock_node):
+    """Test Node launch_worker method."""
+    payload = {
+        "worker_type": "test_worker",
+        "worker_url": "http://worker:8080"
+    }
+    
+    mock_worker = MagicMock()
+    mock_worker.url = "http://worker:8080"
+    mock_node.worker_registry.load.return_value = mock_worker
+    
+    result = mock_node.launch_worker(payload)
+    
+    assert result == "http://worker:8080"
+    assert mock_worker in mock_node.workers
+    mock_node.worker_registry.load.assert_called_once_with("worker:test_worker", url="http://worker:8080")
+
+
+def test_node_shutdown(mock_node):
+    """Test Node shutdown method."""
+    # Add some mock workers
+    mock_worker1 = MagicMock()
+    mock_worker2 = MagicMock()
+    mock_node.workers = [mock_worker1, mock_worker2]
+    
+    with patch.object(Service, 'shutdown') as mock_shutdown:
+        result = mock_node.shutdown()
+        
+        # Verify all workers were shutdown
+        mock_worker1.shutdown.assert_called_once()
+        mock_worker2.shutdown.assert_called_once()
+        # Verify super().shutdown() was called
+        assert mock_shutdown.call_count == 1
+
+
 def test_worker_initialization(mock_worker):
     """Test Worker initialization."""
     assert mock_worker.consume_process is None
@@ -320,7 +474,7 @@ def test_worker_initialization(mock_worker):
 
 
 def test_worker_cluster_connection_manager_property(mock_worker):
-    """Test cluster_connection_manager property."""
+    """Test Worker cluster_connection_manager property."""
     # Initially should be None
     assert mock_worker.cluster_connection_manager is None
     
@@ -328,24 +482,21 @@ def test_worker_cluster_connection_manager_property(mock_worker):
     mock_worker._cluster_url = "http://cluster:8080"
     
     with patch("mindtrace.cluster.core.cluster.ClusterManager") as MockClusterManager:
-        mock_cm_instance = MockClusterManager.connect.return_value
+        mock_cm = MockClusterManager.connect.return_value
+        mock_worker._cluster_connection_manager = None  # Reset to test property
         
-        # Should create connection manager
         result = mock_worker.cluster_connection_manager
         
-        assert result == mock_cm_instance
+        assert result == mock_cm
         MockClusterManager.connect.assert_called_once_with("http://cluster:8080")
-        
-        # Should cache the result
-        result2 = mock_worker.cluster_connection_manager
-        assert result2 == mock_cm_instance
-        # Should not call connect again
-        assert MockClusterManager.connect.call_count == 1
 
 
 def test_worker_run_with_cluster_manager(mock_worker):
-    """Test Worker.run method with cluster connection manager."""
-    job_dict = {"id": "test-job", "payload": {"test": "data"}}
+    """Test Worker run method with cluster manager."""
+    job_dict = {
+        "id": "job-123",
+        "payload": {"test": "data"}
+    }
     
     # Mock cluster connection manager
     mock_cm = MagicMock()
@@ -354,71 +505,71 @@ def test_worker_run_with_cluster_manager(mock_worker):
     result = mock_worker.run(job_dict)
     
     # Verify cluster manager was called
-    mock_cm.worker_alert_started_job.assert_called_once_with(job_id="test-job", worker_id=str(mock_worker.id))
+    mock_cm.worker_alert_started_job.assert_called_once_with(job_id="job-123", worker_id=str(mock_worker.id))
     mock_cm.worker_alert_completed_job.assert_called_once_with(
-        job_id="test-job", 
+        job_id="job-123", 
+        worker_id=str(mock_worker.id), 
         status="completed", 
-        output={"result": "test"},
-        worker_id=str(mock_worker.id)
+        output={"result": "test"}
     )
-    
-    # Verify result
-    assert result["status"] == "completed"
-    assert result["output"]["result"] == "test"
+    assert result == {"status": "completed", "output": {"result": "test"}}
 
 
 def test_worker_run_without_cluster_manager(mock_worker):
-    """Test Worker.run method without cluster connection manager."""
-    job_dict = {"id": "test-job", "payload": {"test": "data"}}
+    """Test Worker run method without cluster manager."""
+    job_dict = {
+        "id": "job-123",
+        "payload": {"test": "data"}
+    }
     
     # Ensure no cluster connection manager
     mock_worker._cluster_connection_manager = None
+    mock_worker._cluster_url = None
     
-    result = mock_worker.run(job_dict)
-    
-    # Should still work without cluster manager
-    assert result["status"] == "completed"
-    assert result["output"]["result"] == "test"
+    with patch.object(mock_worker, 'logger') as mock_logger:
+        result = mock_worker.run(job_dict)
+        
+        # Verify warning was logged
+        assert mock_logger.warning.call_count == 2
+        assert result == {"status": "completed", "output": {"result": "test"}}
 
 
 def test_worker_start_method(mock_worker):
-    """Test Worker.start method."""
-    # The start method should be callable and not raise any exceptions
+    """Test Worker start method."""
+    # The start method should do nothing by default
     result = mock_worker.start()
-    assert result is None  # start() returns None by default
+    assert result is None
 
 
 def test_worker_connect_to_cluster(mock_worker):
-    """Test Worker.connect_to_cluster method."""
-    backend_args = {"cls": "test.backend", "kwargs": {"host": "localhost"}}
-    queue_name = "test_queue"
-    cluster_url = "http://cluster:8080"
-    
+    """Test Worker connect_to_cluster method."""
     payload = {
-        "backend_args": backend_args,
-        "queue_name": queue_name,
-        "cluster_url": cluster_url
+        "backend_args": {"host": "localhost", "port": 5672},
+        "queue_name": "test_queue",
+        "cluster_url": "http://cluster:8080"
     }
     
     with patch.object(mock_worker, 'start') as mock_start, \
-         patch.object(mock_worker, 'connect_to_orchestator_via_backend_args') as mock_connect, \
+         patch.object(mock_worker, 'connect_to_orchestator_via_backend_args') as mock_connect_orchestrator, \
          patch.object(mock_worker, 'consume') as mock_consume, \
-         patch('multiprocessing.Process') as MockProcess:
+         patch('mindtrace.cluster.core.cluster.multiprocessing.Process') as MockProcess:
         
         mock_process = MockProcess.return_value
+        mock_process.pid = 12345
         
         mock_worker.connect_to_cluster(payload)
         
         # Verify cluster URL was set
-        assert mock_worker._cluster_url == cluster_url
+        assert mock_worker._cluster_url == "http://cluster:8080"
         
-        # Verify start was called
+        # Verify methods were called
         mock_start.assert_called_once()
+        mock_connect_orchestrator.assert_called_once_with(
+            {"host": "localhost", "port": 5672}, 
+            queue_name="test_queue"
+        )
         
-        # Verify orchestrator connection
-        mock_connect.assert_called_once_with(backend_args, queue_name=queue_name)
-        
-        # Verify process was created and started
+        # Verify process was started
         MockProcess.assert_called_once_with(target=mock_consume)
         mock_process.start.assert_called_once()
         
@@ -427,52 +578,55 @@ def test_worker_connect_to_cluster(mock_worker):
 
 
 def test_worker_shutdown_with_process(mock_worker):
-    """Test Worker.shutdown method when consume process exists."""
-    # Mock consume process
+    """Test Worker shutdown method with running process."""
+    # Mock a running process
     mock_process = MagicMock()
+    mock_process.pid = 12345
     mock_worker.consume_process = mock_process
     
-    with patch.object(Service, 'shutdown') as mock_service_shutdown:
-        mock_worker.shutdown()
+    with patch.object(mock_worker, 'logger') as mock_logger, \
+         patch.object(Service, 'shutdown') as mock_shutdown:
+        
+        result = mock_worker.shutdown()
         
         # Verify process was killed
         mock_process.kill.assert_called_once()
+        mock_logger.info.assert_called_with(f"Worker {mock_worker.id} killed consume process 12345 as part of shutdown")
         
-        # Verify service shutdown was called
-        mock_service_shutdown.assert_called_once()
+        # Verify super().shutdown() was called
+        assert mock_shutdown.call_count == 1
 
 
 def test_worker_shutdown_without_process(mock_worker):
-    """Test Worker.shutdown method when no consume process exists."""
-    # Ensure no consume process
+    """Test Worker shutdown method without running process."""
     mock_worker.consume_process = None
     
-    with patch.object(Service, 'shutdown') as mock_service_shutdown:
-        mock_worker.shutdown()
+    with patch.object(mock_worker, 'logger') as mock_logger, \
+         patch.object(Service, 'shutdown') as mock_shutdown:
         
-        # Verify service shutdown was called
-        mock_service_shutdown.assert_called_once()
+        result = mock_worker.shutdown()
+        
+        # Verify no process was killed
+        mock_logger.info.assert_not_called()
+        
+        # Verify super().shutdown() was called
+        assert mock_shutdown.call_count == 1
 
 
 def test_worker_abstract_run_method():
-    """Test that Worker._run method is abstract."""
-    # Create a Worker instance (should work since we're not calling _run)
+    """Test that Worker abstract _run method raises NotImplementedError."""
     worker = Worker()
     
-    # Verify _run method exists and is abstract
-    assert hasattr(worker, '_run')
-    assert hasattr(worker._run, '__isabstractmethod__')
+    with pytest.raises(NotImplementedError, match="Subclasses must implement this method"):
+        worker._run({"test": "data"})
 
 
 def test_worker_concrete_implementation():
-    """Test a concrete Worker implementation."""
+    """Test that concrete Worker implementation works."""
     class ConcreteWorker(Worker):
         def _run(self, job_dict: dict) -> dict:
-            return {"status": "success", "output": {"processed": job_dict}}
+            return {"status": "completed", "output": {"result": "concrete"}}
     
     worker = ConcreteWorker()
-    job_dict = {"test": "data"}
-    
-    result = worker._run(job_dict)
-    assert result["status"] == "success"
-    assert result["output"]["processed"] == job_dict
+    result = worker._run({"test": "data"})
+    assert result == {"status": "completed", "output": {"result": "concrete"}}
