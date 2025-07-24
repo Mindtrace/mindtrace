@@ -28,8 +28,17 @@ def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     )
 
 
-def check_libs(required_libs: list[str]) -> list[str]:
-    """Check if all required libraries are available."""
+def check_libs(required_libs: str | list[str]) -> list[str]:
+    """Check if all required libraries are available.
+
+    Args:
+        required_libs: A list of library names to check.
+
+    Returns:
+        A list of missing libraries.
+    """
+    if isinstance(required_libs, str):
+        required_libs = [required_libs]
     missing_libs = []
     for lib in required_libs:
         try:
