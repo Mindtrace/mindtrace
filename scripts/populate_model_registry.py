@@ -5,6 +5,7 @@ import tempfile
 
 from mindtrace.registry import Registry, MinioRegistryBackend
 
+
 # Model variants and their associated tasks
 YOLO_VARIANTS = [
     ("", "Detection"),
@@ -24,6 +25,42 @@ YOLO_MODELS = {
     "yolo11": YOLO_VARIANTS,  # all variants
     "yolo12": [("", "Detection")],  # detection only
 }
+
+YOLO_WORLD_MODELS = [
+    "yolov8s-world",
+    "yolov8s-worldv2",
+    "yolov8m-world",
+    "yolov8m-worldv2",
+    "yolov8l-world",
+    "yolov8l-worldv2",
+    "yolov8x-world",
+    "yolov8x-worldv2",
+]
+
+YOLOE_SIZES = ["s", "m", "l"]
+
+YOLOE_VARIANTS = [
+    ("-seg", "Segmentation"),
+    ("-seg-pf", "Segmentation"),
+]
+
+YOLOE_MODELS = [
+    "yoloe-v8",
+    "yoloe-11",
+]
+
+SAM_MODELS = [
+    "sam_b", 
+    "sam_l", 
+    "sam2_t", 
+    "sam2_s", 
+    "sam2_b", 
+    "sam2_l", 
+    "sam2.1_t", 
+    "sam2.1_s", 
+    "sam2.1_b", 
+    "sam2.1_l"
+]
 
 
 def main():
@@ -71,6 +108,21 @@ def main():
     )
     args = parser.parse_args()
 
+    registry = init_registry(args)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Set the weights directory to the temporary directory before importing ultralytics
+        os.environ["ULTRALYTICS_WEIGHTS_DIR"] = temp_dir
+        import ultralytics
+
+        register_test_image(registry)
+        register_yolo_models(registry)
+        register_yolo_world_models(registry)
+        register_yolo_e_models(registry)
+        register_sam_models(registry)
+
+
+def init_registry(args: argparse.Namespace) -> Registry:
     if args.backend == "local":
         if not args.registry_path:
             parser.error("--registry-path is required for local backend")
@@ -98,41 +150,96 @@ def main():
     else:
         parser.error("Unknown backend type")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Set the weights directory to the temporary directory before importing ultralytics
-        os.environ["ULTRALYTICS_WEIGHTS_DIR"] = temp_dir
-        from ultralytics import YOLO
+    return registry
 
-        for version, variants in YOLO_MODELS.items():
-            for size in YOLO_SIZES:
-                for suffix, task in variants:
-                    model_filename = f"{version}{size}{suffix}.pt"
-                    key = f"models:ultralytics:{version}:{size}{suffix}"
-                    print(f"Registering {model_filename} as {key} (Task: {task})")
-                    try:
-                        model = YOLO(model_filename, task=None)
-                        if "v" in version:
-                            key = key.replace("v", "")  # remove the v from the version name, if present
-                        registry.save(key, model, metadata={"Task": task})
-                        print(f"Registered: {key}")
-                    except Exception as e:
-                        print(f"Failed to register {key}: {e}")
 
-    # Register a test image
-    print(f"Registering Hopper image as images:hopper")
+def register_test_image(registry: Registry):
+    print(f"\nRegistering Hopper image as images:hopper")
     try:
         image = Image.open("tests/resources/hopper.png")
         registry.save(
-            "images:hopper",
+            "data:images:hopper",
             image,
             metadata={
-                "Description": "Self-portrait of Edward Hopper in a suit and tie. Useful for testing YOLO models.",
+                "Description": "Self-portrait of Edward Hopper in a suit and tie.",
                 "Source": "tests/resources/hopper.png"
             },
         )
-        print("Registered: images:hopper")
+        print("Registered: data:images:hopper")
     except Exception as e:
-        print(f"Failed to register images:hopper: {e}")
+        print(f"Failed to register data:images:hopper: {e}")
 
+
+def register_yolo_models(registry: Registry):
+    from ultralytics import YOLO
+    print("\nRegistering YOLO models...")
+    for version, variants in YOLO_MODELS.items():
+        for size in YOLO_SIZES:
+            for suffix, task in variants:
+                model_filename = f"{version}{size}{suffix}.pt"
+                key = f"models:ultralytics:{version}:{size}{suffix}"
+                print(f"Registering {model_filename} as {key} (Task: {task})")
+                try:
+                    reg_key = key.replace("v", "")  # remove the v from the version name, if present
+                    if key not in registry:
+                        yolo = YOLO(model_filename, task=None)
+                        registry.save(key, yolo, metadata={"Task": task})
+                    print(f"Registered: {key}")
+                except Exception as e:
+                    print(f"Failed to register {key}: {e}")
+
+
+def register_yolo_world_models(registry: Registry):
+    from ultralytics import YOLO
+    print("\nRegistering YOLO-World models...")
+    for model in YOLO_WORLD_MODELS:
+        model_filename = f"{model}.pt"
+        key = f"models:ultralytics:{model.replace('_', ':').replace('v', '')}"
+        size = key[24]
+        key = key[:24] + key[25:] + ":" + size
+        print(f"Registering {model_filename} as {key} (Task: Detection)")
+        try:
+            if key not in registry:
+                yolo = YOLO(model_filename, task=None)
+                registry.save(key, yolo, metadata={"Task": "Detection"})
+            print(f"Registered: {key}")
+        except Exception as e:
+            print(f"Failed to register {key}: {e}")
+
+
+def register_yolo_e_models(registry: Registry):
+    from ultralytics import YOLOE
+    print("\nRegistering YOLO-E models...")
+    for model in YOLOE_MODELS:
+        for size in YOLOE_SIZES:
+            for suffix, task in YOLOE_VARIANTS:
+                model_filename = f"{model}{size}{suffix}.pt"
+                key = f"models:ultralytics:{model}{suffix}:{size}"
+                print(f"Registering {model_filename} as {key} (Task: {task})")
+                try:
+                    if key not in registry:
+                        yolo = YOLOE(model_filename, task=None)
+                        registry.save(key, yolo, metadata={"Task": task})
+                    print(f"Registered: {key}")
+                except Exception as e:
+                    print(f"Failed to register {key}: {e}")
+
+
+def register_sam_models(registry: Registry):
+    from ultralytics import SAM
+    print("\nRegistering SAM models...")
+    for model in SAM_MODELS:
+        model_filename = f"{model}.pt"
+        key = f"models:ultralytics:{model.replace("_", ":")}"
+        print(f"Registering {model_filename} as {key} (Task: Segmentation)")
+        try:
+            if key not in registry:
+                sam = SAM(model_filename)
+                registry.save(key, sam, metadata={"Task": "Segmentation"})
+            print(f"Registered: {key}")
+        except Exception as e:
+            print(f"Failed to register {key}: {e}")
+
+ 
 if __name__ == "__main__":
     main()
