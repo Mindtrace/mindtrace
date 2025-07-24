@@ -19,8 +19,10 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 # Import platform-specific modules safely
 if platform.system() != "Windows":
     import fcntl
+    msvcrt = None
 else:
     import msvcrt
+    fcntl = None
 
 
 @pytest.fixture
@@ -946,6 +948,7 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
 
     # Clean up
     if platform.system() == "Windows":
+        import stat
         lock_path.chmod(stat.S_IWRITE | stat.S_IREAD)  # Restore read/write
     else:
         lock_path.chmod(0o666)  # Restore permissions
@@ -1080,7 +1083,7 @@ def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
         assert result is False
 
 
-def test_acquire_existing_lock_file_not_found_error(backend):
+def test_acquire_existing_lock_file_not_found_error_v2(backend):
     """Test _acquire_existing_lock FileNotFoundError handling."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
