@@ -223,13 +223,13 @@ class TestEchoServiceIntegration:
         assert echo_task.output_schema == EchoOutput
 
         # Test that we can create instances of the schema types
-        test_input = echo_task.input_schema(message="test")
+        test_input = EchoInput(message="test")
         assert isinstance(test_input, EchoInput)
 
         # Test method with schema-created input
         service = EchoService.__new__(EchoService)
         result = service.echo(test_input)
-        assert isinstance(result, echo_task.output_schema)
+        assert isinstance(result, EchoOutput)
 
     @patch("mindtrace.services.sample.echo_service.Service.__init__")
     def test_service_with_mock_dependencies(self, mock_super_init):
