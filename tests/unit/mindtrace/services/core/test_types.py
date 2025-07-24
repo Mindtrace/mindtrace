@@ -264,10 +264,10 @@ class TestIntegration:
         """Test that Pydantic validation works correctly for output models."""
         # Test that invalid types raise validation errors
         with pytest.raises(Exception):  # Pydantic validation error
-            EndpointsOutput(endpoints="not a list")
+            EndpointsOutput(endpoints="not a list") # type: ignore
 
         with pytest.raises(Exception):  # Pydantic validation error
-            ServerIDOutput(server_id="not a uuid")
+            ServerIDOutput(server_id="not a uuid") # type: ignore
 
         with pytest.raises(Exception):  # Pydantic validation error
-            ShutdownOutput(shutdown="not a boolean")
+            ShutdownOutput(shutdown="not a boolean") # type: ignore

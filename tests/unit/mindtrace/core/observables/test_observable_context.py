@@ -61,7 +61,7 @@ def test_raise_error_if_vars_is_not_str_list_or_dict():
         "or a dictionary of variable names and their types.",
     ):
 
-        @ObservableContext(vars=42)
+        @ObservableContext(vars=42) # type: ignore
         class Example:
             pass
 

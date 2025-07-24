@@ -21,7 +21,7 @@ class TestEchoInput:
 
         # Test that message field is required
         with pytest.raises(ValueError):
-            EchoInput()
+            EchoInput() # type: ignore
 
     def test_echo_input_serialization(self):
         """Test EchoInput model serialization."""
@@ -67,7 +67,7 @@ class TestEchoOutput:
 
         # Test that echoed field is required
         with pytest.raises(ValueError):
-            EchoOutput()
+            EchoOutput() # type: ignore
 
     def test_echo_output_serialization(self):
         """Test EchoOutput model serialization."""
