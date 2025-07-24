@@ -1,9 +1,11 @@
 from unittest.mock import Mock, patch, AsyncMock
+from typing import Any
 
 import httpx
 import pytest
 import requests
 
+from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 
 
@@ -22,8 +24,8 @@ class DummySchema:
     output_schema = DummyOutput
     name = "dummy"
 
-class DummyCM:
-    pass
+class DummyCM(ConnectionManager):
+    _service_endpoints: dict[str, Any] = {}
 
 def test_initialization():
     """Test that ProxyConnectionManager initializes correctly."""
