@@ -4,4 +4,3 @@ assets/external/
 __pycache__/
 *.py[cod]
 .web
-backend/core/paz-portal.json
