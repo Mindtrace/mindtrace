@@ -301,7 +301,7 @@ class SFZPipeline:
                 'total_images': 1,
                 'processed_images': 1,
                 'failed_images': 0,
-                'results': {image_name: results}
+                'results': {}
             }
             
             print(f"Single image inference completed successfully")
@@ -399,24 +399,22 @@ class SFZPipeline:
                 if save_visualizations:
                     self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
                 
-                return image_name, results, None
+                return image_name, None
             except Exception as e:
                 print(f"Error processing {image_path}: {e}")
-                return os.path.splitext(os.path.basename(image_path))[0], None, e
+                return os.path.splitext(os.path.basename(image_path))[0], str(e)
 
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             # Use executor.map to preserve order
             results_iterator = executor.map(_process_image, image_files)
             
             # Iterate over results which are now in order
-            for result in tqdm(results_iterator, total=len(image_files), desc="Processing images"):
-                image_name, results, error = result
+            for image_name, error in tqdm(results_iterator, total=len(image_files), desc="Processing images"):
                 if error is None:
-                    results_summary['results'][image_name] = results
                     results_summary['processed_images'] += 1
                 else:
                     results_summary['failed_images'] += 1
-                    results_summary['results'][image_name] = {'error': str(error)}
+                    results_summary['results'][image_name] = {'error': error}
 
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
