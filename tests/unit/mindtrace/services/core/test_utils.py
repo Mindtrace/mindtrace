@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
-from urllib3.util.url import Url
+from urllib3.util.url import parse_url
 
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.utils import (
@@ -288,7 +288,7 @@ class TestGenerateConnectionManager:
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
 
         # Create instance and call method
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
         _ = manager.test_endpoint(test_param="value")
 
         # Verify httpx call
@@ -326,7 +326,7 @@ class TestGenerateConnectionManager:
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
 
         # Create instance and call async method
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
         _ = await manager.atest_endpoint(async_param="value")
 
         # Verify async client call
@@ -348,7 +348,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Should raise HTTPException
         with pytest.raises(HTTPException) as exc_info:
@@ -373,7 +373,7 @@ class TestGenerateConnectionManager:
         mock_endpoint2.output_schema.return_value = {"processed": "no_input"}
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         _ = manager.no_input_endpoint(raw_param="value")
 
@@ -396,7 +396,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema.return_value = {"default": "response"}
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         _ = manager.test_endpoint()
 
@@ -418,7 +418,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Test with validation disabled
         result = manager.test_endpoint(validate_input=False, validate_output=False, raw_param="value")
@@ -451,7 +451,7 @@ class TestGenerateConnectionManager:
         mock_endpoint2.output_schema.return_value = {"processed": "no_input"}
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Call with validate_input=False and kwargs
         _ = manager.no_input_endpoint(validate_input=False, raw_param="value")
@@ -482,7 +482,7 @@ class TestGenerateConnectionManager:
         mock_endpoint2.output_schema.return_value = {"processed": "async_no_input"}
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Call async method with validate_input=False and kwargs
         _ = await manager.ano_input_endpoint(validate_input=False, async_param="value")
@@ -510,7 +510,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Should raise HTTPException
         with pytest.raises(HTTPException) as exc_info:
@@ -538,7 +538,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema.return_value = {"default": "async_response"}
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         _ = await manager.atest_endpoint()
 
@@ -563,7 +563,7 @@ class TestGenerateConnectionManager:
         mock_endpoint1.output_schema = Mock()
 
         ConnectionManagerClass = generate_connection_manager(mock_service_class)
-        manager = ConnectionManagerClass(url=Url("http://test.com"))
+        manager = ConnectionManagerClass(url=parse_url("http://test.com"))
 
         # Call with validate_output=False
         result = await manager.atest_endpoint(validate_output=False)
