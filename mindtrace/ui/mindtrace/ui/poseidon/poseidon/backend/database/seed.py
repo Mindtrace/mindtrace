@@ -50,19 +50,14 @@ async def create_superadmin_user(organization: Organization) -> User:
     """Create the initial superadmin user"""
     print("Creating superadmin user...")
     
-    # Check if user already exists
-    existing_user = await User.find_one(User.username == "mindtracesuperadmin")
-    if existing_user:
-        print(f"✓ User 'mindtracesuperadmin' already exists (ID: {existing_user.id})")
-        return existing_user
-    
     # Generate a secure default password
     default_password = secrets.token_urlsafe(16)
     password_hash = hash_password(default_password)
     
     # Create the superadmin user
     user_data = {
-        "username": "mindtracesuperadmin",
+        "first_name": "MindTrace",
+        "last_name": "SuperAdmin",
         "email": "superadmin@mindtrace.com",
         "password_hash": password_hash,
         "organization": organization,
@@ -100,12 +95,6 @@ async def verify_setup():
         print("❌ Organization 'mindtrace' not found!")
         return False
     
-    # Check user
-    user = await User.find_one(User.username == "mindtracesuperadmin")
-    if not user:
-        print("❌ User 'mindtracesuperadmin' not found!")
-        return False
-    
     # Fetch user's organization link
     await user.fetch_all_links()
     
@@ -121,7 +110,7 @@ async def verify_setup():
     
     print("✓ Setup verification successful!")
     print(f"  - Organization: {org.name} (ID: {org.id})")
-    print(f"  - User: {user.username} (ID: {user.id})")
+    print(f"  - User: {user.first_name} {user.last_name} (ID: {user.id})")
     print(f"  - Role: {user.org_role}")
     print(f"  - Active: {user.is_active}")
     

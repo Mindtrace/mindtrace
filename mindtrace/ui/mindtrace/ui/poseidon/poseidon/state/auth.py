@@ -12,7 +12,8 @@ class ProjectAssignment:
 
 class AuthState(rx.State):
     email: str = ""
-    username: str = ""
+    first_name: str = ""
+    last_name: str = ""
     password: str = ""
     organization_id: str = ""
     error: str = ""
@@ -23,7 +24,6 @@ class AuthState(rx.State):
     organizations_loaded: bool = False
     
     user_id: str = ""
-    current_username: str = ""
     user_organization_id: str = ""
     user_org_role: str = ""  # Changed from list to single string
     user_project_assignments: List[ProjectAssignment] = []
@@ -35,7 +35,8 @@ class AuthState(rx.State):
             try:
                 payload = decode_jwt(self.token)
                 self.user_id = payload.get("user_id", "")
-                self.current_username = payload.get("username", "")
+                self.first_name = payload.get("first_name", "")
+                self.last_name = payload.get("last_name", "")
                 self.user_organization_id = payload.get("organization_id", "")
                 self.user_org_role = payload.get("org_role", "")  # Single role
                 self.user_project_assignments = payload.get("project_assignments", [])
@@ -142,7 +143,6 @@ class AuthState(rx.State):
         """Clear all session data"""
         self.token = ""
         self.user_id = ""
-        self.current_username = ""
         self.user_organization_id = ""
         self.user_org_role = ""
         self.user_project_assignments = []
@@ -201,8 +201,8 @@ class AuthState(rx.State):
     async def register(self, form_data):
         try:
             # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
+            if not form_data.get("email") or not form_data.get("password"):
+                self.error = "Email and password are required."
                 return
             
             # Convert organization name to ID if needed
@@ -226,7 +226,8 @@ class AuthState(rx.State):
             # Normal registration can only create regular users (security measure)
             # Organization admins must be created through register_admin method
             result = await AuthService.register_user(
-                form_data["username"],
+                form_data["first_name"],
+                form_data["last_name"],
                 form_data["email"],
                 form_data["password"],
                 organization_id,
@@ -242,8 +243,8 @@ class AuthState(rx.State):
     async def register_admin(self, form_data):
         try:
             # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
+            if not form_data.get("email") or not form_data.get("password"):
+                self.error = "Email and password are required."
                 return
             
             # Convert organization name to ID if needed
@@ -278,7 +279,8 @@ class AuthState(rx.State):
                 return
                 
             result = await AuthService.register_organization_admin(
-                form_data["username"],
+                form_data["first_name"],
+                form_data["last_name"],
                 form_data["email"],
                 form_data["password"],
                 organization_id
@@ -294,8 +296,8 @@ class AuthState(rx.State):
         """Register the first super admin user."""
         try:
             # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
+            if not form_data.get("email") or not form_data.get("password"):
+                self.error = "Email and password are required."
                 return
             
             if not form_data.get("super_admin_key"):
@@ -309,7 +311,8 @@ class AuthState(rx.State):
                 return
                 
             result = await AuthService.register_super_admin(
-                form_data["username"],
+                form_data["first_name"],
+                form_data["last_name"],
                 form_data["email"],
                 form_data["password"]
             )

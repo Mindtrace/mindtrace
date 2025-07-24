@@ -20,15 +20,6 @@ class UserRepository:
         return user
 
     @staticmethod
-    async def get_by_username(username: str) -> Optional[User]:
-        """Get user by username"""
-        await UserRepository._ensure_init()
-        user = await User.find_one(User.username == username)
-        if user:
-            await user.fetch_all_links()
-        return user
-
-    @staticmethod
     async def get_by_id(user_id: str) -> Optional[User]:
         """Get user by ID"""
         await UserRepository._ensure_init()

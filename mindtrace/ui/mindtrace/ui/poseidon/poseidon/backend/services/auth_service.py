@@ -3,7 +3,7 @@
 This module provides secure authentication functionality including:
 - User registration with validation and password hashing
 - User authentication with JWT token generation
-- Email and username uniqueness validation
+- Email uniqueness validation
 - Multi-tenant organization support
 
 The service uses bcrypt for password hashing and JWT for session management,
@@ -23,16 +23,18 @@ class AuthService:
     
     @staticmethod
     async def register_user(
-        username: str, 
-        email: str, 
-        password: str, 
+        first_name: str,
+        last_name: str,
+        email: str,
+        password: str,
         organization_id: str,
         org_role: Optional[str] = None
     ) -> dict:
         """Register a new user with validation and secure password storage.
         
         Args:
-            username: Unique username for the user
+            first_name: User's first name
+            last_name: User's last name
             email: User's email address (must be unique)
             password: Plain text password (will be hashed)
             organization_id: Required organization ID for multi-tenancy
@@ -42,7 +44,7 @@ class AuthService:
             dict: Success response with user data or error information
             
         Raises:
-            UserAlreadyExistsError: If email or username already exists
+            UserAlreadyExistsError: If email already exists
             ValueError: If organization doesn't exist
         """
         # Validate organization exists
@@ -53,17 +55,14 @@ class AuthService:
         # Validate email uniqueness
         if await UserRepository.get_by_email(email):
             raise UserAlreadyExistsError("Email already registered.")
-            
-        # Validate username uniqueness
-        if await UserRepository.get_by_username(username):
-            raise UserAlreadyExistsError("Username already taken.")
         
         # Hash password securely
         password_hash = hash_password(password)
         
         # Prepare user data with new structure
         user_data = {
-            "username": username,
+            "first_name": first_name,
+            "last_name": last_name,
             "email": email,
             "password_hash": password_hash,
             "organization_id": organization_id,  # Will be converted to Link in repository
@@ -109,7 +108,8 @@ class AuthService:
         # Create JWT payload with user information
         payload = {
             "user_id": str(user.id), 
-            "username": user.username, 
+            "first_name": user.first_name,
+            "last_name": user.last_name,
             "organization_id": str(user.organization.id),
             "org_role": user.org_role,
             "project_assignments": []  # Will be populated based on user.projects
@@ -121,7 +121,8 @@ class AuthService:
     
     @staticmethod
     async def register_organization_admin(
-        username: str,
+        first_name: str,
+        last_name: str,
         email: str,
         password: str,
         organization_id: str
@@ -129,7 +130,8 @@ class AuthService:
         """Register a new organization admin user.
         
         Args:
-            username: Admin username
+            first_name: Admin first name
+            last_name: Admin last name
             email: Admin email
             password: Admin password
             organization_id: Organization ID
@@ -138,7 +140,8 @@ class AuthService:
             dict: Success response with admin user data
         """
         return await AuthService.register_user(
-            username=username,
+            first_name=first_name,
+            last_name=last_name,
             email=email,
             password=password,
             organization_id=organization_id,
@@ -147,14 +150,16 @@ class AuthService:
     
     @staticmethod
     async def register_super_admin(
-        username: str,
+        first_name: str,
+        last_name: str,
         email: str,
         password: str
     ) -> dict:
         """Register the first super admin user.
         
         Args:
-            username: Super admin username
+            first_name: Super admin first name
+            last_name: Super admin last name
             email: Super admin email
             password: Super admin password
             
@@ -176,7 +181,8 @@ class AuthService:
         system_org = await OrganizationRepository.create(system_org_data)
         
         return await AuthService.register_user(
-            username=username,
+            first_name=first_name,
+            last_name=last_name,
             email=email,
             password=password,
             organization_id=str(system_org.id),
