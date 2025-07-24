@@ -14,7 +14,7 @@ from .mindtrace_forms import (
 )
 
 
-def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
+def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large", error_message = ""):
     """Form input with label - using mindtrace styling. Supports size variants: small, medium, large (default)."""
     return input_with_label_mindtrace(
         label=label,
@@ -23,6 +23,7 @@ def form_input_with_label(label: str, placeholder: str, input_type: str = "text"
         input_type=input_type,
         required=required,
         size=size,
+        error_message=error_message,
     )
 
 
@@ -58,8 +59,8 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
         ),
         rx.form(
             rx.vstack(
-                form_input_with_label("Email", "example@company.com", "email", "email", True, "medium"),
-                form_input_with_label("Password", "Enter your password", "password", "password", True, "medium"),
+                form_input_with_label("Email", "example@company.com", "email", "email", True, "medium", error_message=AuthState.field_errors.get("email", "")),
+                form_input_with_label("Password", "Enter your password", "password", "password", True, "medium", error_message=AuthState.field_errors.get("password", "")),
                 modern_button("Sign In", "submit", "medium"),
                 # Error display
                 rx.cond(

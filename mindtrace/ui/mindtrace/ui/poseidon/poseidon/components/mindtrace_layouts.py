@@ -135,168 +135,168 @@ def css_animations_mindtrace() -> rx.Component:
             
             /* Global input styling */
             input {
-                border-radius: 12px !important;
-                background: rgba(248, 250, 252, 0.8) !important;
-                border: 2px solid rgba(226, 232, 240, 0.6) !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                color: rgb(51, 65, 85) !important;
-                font-family: "Inter", system-ui, sans-serif !important;
-                backdrop-filter: blur(10px) !important;
-                outline: none !important;
+                border-radius: 12px;
+                background: rgba(248, 250, 252, 0.8);
+                border: 2px solid rgba(226, 232, 240, 0.6);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                color: rgb(51, 65, 85);
+                font-family: "Inter", system-ui, sans-serif;
+                backdrop-filter: blur(10px);
+                outline: none;
             }
             
             /* Input size variants */
             input[data-size="small"] {
-                padding: 0.5rem 0.75rem !important;
-                font-size: 0.875rem !important;
+                padding: 0.5rem 0.75rem;
+                font-size: 0.875rem;
             }
             
             input[data-size="medium"] {
-                padding: 0.75rem 1rem !important;
-                font-size: 0.925rem !important;
+                padding: 0.75rem 1rem;
+                font-size: 0.925rem;
             }
             
             input[data-size="large"], input:not([data-size]) {
-                padding: 1rem 1.25rem !important;
-                font-size: 0.95rem !important;
+                padding: 1rem 1.25rem;
+                font-size: 0.95rem;
             }
             
             input:focus {
-                border-color: #0057FF !important;
-                background: rgba(255, 255, 255, 0.95) !important;
-                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1), 0 4px 12px rgba(0, 87, 255, 0.15) !important;
-                transform: translateY(-1px) !important;
+                border-color: #0057FF;
+                background: rgba(255, 255, 255, 0.95);
+                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1), 0 4px 12px rgba(0, 87, 255, 0.15);
+                transform: translateY(-1px);
             }
             
             input:hover {
-                border-color: rgba(0, 87, 255, 0.3) !important;
-                background: rgba(255, 255, 255, 0.9) !important;
+                border-color: rgba(0, 87, 255, 0.3);
+                background: rgba(255, 255, 255, 0.9);
             }
             
             /* Global button styling */
             button {
-                font-weight: 600 !important;
-                font-family: "Inter", system-ui, sans-serif !important;
-                border-radius: 12px !important;
-                background: linear-gradient(135deg, #0057FF 0%, #0041CC 100%) !important;
-                color: white !important;
-                border: none !important;
-                cursor: pointer !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 16px rgba(0, 87, 255, 0.3) !important;
+                font-weight: 600;
+                font-family: "Inter", system-ui, sans-serif;
+                border-radius: 12px;
+                background: linear-gradient(135deg, #0057FF 0%, #0041CC 100%);
+                color: white;
+                border: none;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 4px 16px rgba(0, 87, 255, 0.3);
             }
             
             /* Button size variants */
             button[data-size="small"] {
-                padding: 0.5rem 1rem !important;
-                font-size: 0.875rem !important;
+                padding: 0.5rem 1rem;
+                font-size: 0.875rem;
             }
             
             button[data-size="medium"] {
-                padding: 0.75rem 1.5rem !important;
-                font-size: 0.925rem !important;
+                padding: 0.75rem 1.5rem;
+                font-size: 0.925rem;
             }
             
             button[data-size="large"], button:not([data-size]) {
-                padding: 1rem 2rem !important;
-                font-size: 1rem !important;
+                padding: 1rem 2rem;
+                font-size: 1rem;
             }
             
             button:hover {
-                transform: translateY(-2px) !important;
-                box-shadow: 0 8px 24px rgba(0, 87, 255, 0.4) !important;
-                background: linear-gradient(135deg, #0041CC 0%, #003399 100%) !important;
+                transform: translateY(-2px);
+                box-shadow: 0 8px 24px rgba(0, 87, 255, 0.4);
+                background: linear-gradient(135deg, #0041CC 0%, #003399 100%);
             }
             
             /* Global select styling */
             select {
-                border-radius: 12px !important;
-                background: rgba(248, 250, 252, 0.8) !important;
-                border: 2px solid rgba(226, 232, 240, 0.6) !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                color: rgb(51, 65, 85) !important;
-                font-family: "Inter", system-ui, sans-serif !important;
-                backdrop-filter: blur(10px) !important;
-                outline: none !important;
-                cursor: pointer !important;
+                border-radius: 12px;
+                background: rgba(248, 250, 252, 0.8);
+                border: 2px solid rgba(226, 232, 240, 0.6);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                color: rgb(51, 65, 85);
+                font-family: "Inter", system-ui, sans-serif;
+                backdrop-filter: blur(10px);
+                outline: none;
+                cursor: pointer;
             }
             
             /* Select size variants */
             select[data-size="small"] {
-                padding: 0.5rem 0.75rem !important;
-                font-size: 0.875rem !important;
+                padding: 0.5rem 0.75rem;
+                font-size: 0.875rem;
             }
             
             select[data-size="medium"] {
-                padding: 0.75rem 1rem !important;
-                font-size: 0.925rem !important;
+                padding: 0.75rem 1rem;
+                font-size: 0.925rem;
             }
             
             select[data-size="large"], select:not([data-size]) {
-                padding: 1rem 1.25rem !important;
-                font-size: 0.95rem !important;
+                padding: 1rem 1.25rem;
+                font-size: 0.95rem;
             }
             
             select:focus {
-                border-color: #0057FF !important;
-                background: rgba(255, 255, 255, 0.95) !important;
-                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1) !important;
+                border-color: #0057FF;
+                background: rgba(255, 255, 255, 0.95);
+                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1);
             }
             
             select:hover {
-                border-color: rgba(0, 87, 255, 0.3) !important;
-                background: rgba(255, 255, 255, 0.9) !important;
+                border-color: rgba(0, 87, 255, 0.3);
+                background: rgba(255, 255, 255, 0.9);
             }
             
             /* Radix UI Select styling */
             .rt-SelectTrigger {
-                color: rgb(51, 65, 85) !important;
-                background: rgba(248, 250, 252, 0.8) !important;
-                border: 2px solid rgba(226, 232, 240, 0.6) !important;
-                border-radius: 12px !important;
-                padding: 1rem 1.25rem !important;
-                font-size: 0.95rem !important;
-                font-family: "Inter", system-ui, sans-serif !important;
-                backdrop-filter: blur(10px) !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                min-height: 3rem !important;
+                color: rgb(51, 65, 85);
+                background: rgba(248, 250, 252, 0.8);
+                border: 2px solid rgba(226, 232, 240, 0.6);
+                border-radius: 12px;
+                padding: 1rem 1.25rem;
+                font-size: 0.95rem;
+                font-family: "Inter", system-ui, sans-serif;
+                backdrop-filter: blur(10px);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                min-height: 3rem;
             }
             
             .rt-SelectTrigger:focus {
-                border-color: #0057FF !important;
-                background: rgba(255, 255, 255, 0.95) !important;
-                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1) !important;
+                border-color: #0057FF;
+                background: rgba(255, 255, 255, 0.95);
+                box-shadow: 0 0 0 4px rgba(0, 87, 255, 0.1);
             }
             
             .rt-SelectTrigger:hover {
-                border-color: rgba(0, 87, 255, 0.3) !important;
-                background: rgba(255, 255, 255, 0.9) !important;
+                border-color: rgba(0, 87, 255, 0.3);
+                background: rgba(255, 255, 255, 0.9);
             }
             
             .rt-SelectContent {
-                background: rgba(255, 255, 255, 0.95) !important;
-                backdrop-filter: blur(20px) !important;
-                border: 1px solid rgba(226, 232, 240, 0.8) !important;
-                border-radius: 12px !important;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
-                z-index: 1000 !important;
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(20px);
+                border: 1px solid rgba(226, 232, 240, 0.8);
+                border-radius: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+                z-index: 1000;
             }
             
             .rt-SelectItem {
-                color: rgb(51, 65, 85) !important;
-                padding: 0.75rem 1rem !important;
-                transition: all 0.2s ease !important;
+                color: rgb(51, 65, 85);
+                padding: 0.75rem 1rem;
+                transition: all 0.2s ease;
             }
             
             .rt-SelectItem:hover {
-                background: rgba(0, 87, 255, 0.08) !important;
-                color: #0057FF !important;
+                background: rgba(0, 87, 255, 0.08);
+                color: #0057FF;
             }
             
             .rt-SelectItem[data-state='checked'] {
-                background: rgba(0, 87, 255, 0.12) !important;
-                color: #0057FF !important;
+                background: rgba(0, 87, 255, 0.12);
+                color: #0057FF;
             }
         </style>
         """
-    ) 
+    )
