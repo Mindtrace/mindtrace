@@ -57,10 +57,15 @@ class PipelineOrchestrator:
     def run_conversion(self, job_info: Dict[str, Any]) -> Dict[str, Any]:
         """Run Label Studio conversion and return structured results."""
         label_studio_config = job_info['config']['label_studio']
+        generate_all_masks = label_studio_config.get('generate_mask', False)
+        mask_source = 'sam'
+        
         mask_from_name = label_studio_config.get('mask_from_name')
         mask_tool_type = label_studio_config.get('mask_tool_type')
         polygon_epsilon_factor = label_studio_config.get('polygon_epsilon_factor', 0.005)
 
+        print(f"Mask source: {mask_source}", '--------------------------------')
+        print(f"Label Studio generate all masks: {generate_all_masks}", '--------------------------------')
         print(f"Mask from name: {mask_from_name}", '--------------------------------')
         print(f"Mask tool type: {mask_tool_type}", '--------------------------------')
 
@@ -79,7 +84,7 @@ class PipelineOrchestrator:
             class_mapping=None,
             mask_task_names=job_info['config'].get('mask_tasks', ['zone_segmentation']),
             box_task_names=job_info['config'].get('bounding_box_tasks', ['zone_segmentation']),
-            polygon_epsilon_factor=polygon_epsilon_factor,
+            polygon_epsilon_factor=polygon_epsilon_factor
         )
         
         uploaded_urls = []
