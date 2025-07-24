@@ -274,7 +274,7 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
 
 

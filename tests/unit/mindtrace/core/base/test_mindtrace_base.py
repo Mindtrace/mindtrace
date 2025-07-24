@@ -652,7 +652,7 @@ class TestMindtrace:
 
         # Verify metadata is preserved
         assert decorated_func.__name__ == "documented_async_function"
-        assert "This is a documented async function" in decorated_func.__doc__
+        assert decorated_func.__doc__ is not None and "This is a documented async function" in decorated_func.__doc__
         assert decorated_func.__annotations__ == documented_async_function.__annotations__
 
         # Verify the function still works correctly

@@ -186,8 +186,8 @@ class TestServiceIntegration:
             # Verify service has the expected endpoints
             assert "echo" in service.endpoints
             assert service.endpoints["echo"].name == "echo"
-            assert service.endpoints["echo"].input_schema.__name__ == "EchoInput"
-            assert service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
+            assert service.endpoints["echo"].input_schema is not None and service.endpoints["echo"].input_schema.__name__ == "EchoInput"
+            assert service.endpoints["echo"].output_schema is not None and service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
 
             # Verify connection manager generation works
             ConnectionManager = generate_connection_manager(EchoService)
@@ -208,8 +208,8 @@ class TestServiceIntegration:
         echo_task = service.endpoints["echo"]
 
         assert echo_task.name == "echo"
-        assert echo_task.input_schema.__name__ == "EchoInput"
-        assert echo_task.output_schema.__name__ == "EchoOutput"
+        assert echo_task.input_schema is not None and echo_task.input_schema.__name__ == "EchoInput"
+        assert echo_task.output_schema is not None and echo_task.output_schema.__name__ == "EchoOutput"
 
         # Verify the generated connection manager has the right methods
         ConnectionManager = generate_connection_manager(EchoService)
