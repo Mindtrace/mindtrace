@@ -537,7 +537,7 @@ async def gcs_capture_examples():
 The REST API supports GCS upload for all capture operations:
 
 ```bash
-# Single image capture with GCS upload
+# Single image capture with GCS upload (returns image data)
 curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
   -H "Content-Type: application/json" \
   -d '{
@@ -548,10 +548,24 @@ curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
       "camera_id": "cam_001",
       "capture_type": "single",
       "batch_id": "batch_20240115_001"
-    }
+    },
+    "return_image": true
   }'
 
-# HDR capture with GCS upload
+# Single image capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path": "images/capture_001.jpg",
+    "gcs_metadata": {
+      "camera_id": "cam_001",
+      "capture_type": "single"
+    },
+    "return_image": false
+  }'
+
+# HDR capture with GCS upload (returns image data)
 curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
   -H "Content-Type: application/json" \
   -d '{
@@ -563,10 +577,26 @@ curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
     "gcs_metadata": {
       "capture_type": "hdr",
       "camera_id": "cam_001"
-    }
+    },
+    "return_images": true
   }'
 
-# Batch HDR capture with GCS upload
+# HDR capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "hdr_images/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "hdr",
+      "camera_id": "cam_001"
+    },
+    "return_images": false
+  }'
+
+# Batch HDR capture with GCS upload (returns image data)
 curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
   -H "Content-Type: application/json" \
   -d '{
@@ -579,13 +609,30 @@ curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
     "gcs_metadata": {
       "capture_type": "batch_hdr",
       "session_id": "session_20240115_001"
-    }
+    },
+    "return_images": true
+  }'
+
+# Batch HDR capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cameras": ["OpenCV:0", "OpenCV:1"],
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "batch_hdr",
+      "session_id": "session_20240115_001"
+    },
+    "return_images": false
   }'
 ```
 
 #### API Response Examples
 
-**Single Capture Response:**
+**Single Capture Response (with image data):**
 ```json
 {
   "success": true,
@@ -598,12 +645,42 @@ curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
 }
 ```
 
-**HDR Capture Response:**
+**Single Capture Response (without image data):**
+```json
+{
+  "success": true,
+  "message": "Image captured from 'OpenCV:0' uploaded to GCS (image data excluded)",
+  "image_data": null,
+  "save_path": null,
+  "gcs_uri": "gs://my-camera-bucket/images/capture_001.jpg",
+  "media_type": null,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**HDR Capture Response (with image data):**
 ```json
 {
   "success": true,
   "message": "HDR capture completed for 'OpenCV:0' and saved locally and uploaded to GCS",
   "images": ["base64_image_1", "base64_image_2", "base64_image_3"],
+  "exposure_levels": [1000, 2000, 4000],
+  "gcs_uris": [
+    "gs://my-camera-bucket/hdr_images/exposure_1000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_2000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_4000.jpg"
+  ],
+  "successful_captures": 3,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**HDR Capture Response (without image data):**
+```json
+{
+  "success": true,
+  "message": "HDR capture completed for 'OpenCV:0' uploaded to GCS (image data excluded)",
+  "images": null,
   "exposure_levels": [1000, 2000, 4000],
   "gcs_uris": [
     "gs://my-camera-bucket/hdr_images/exposure_1000.jpg",
@@ -634,6 +711,43 @@ image = await camera.capture()  # Auto-uploads to configured bucket
 
 # No upload (neither explicit nor auto-upload configured)
 image = await camera.capture()  # No GCS upload
+```
+
+#### Image Data Return Control
+
+The capture endpoints now support controlling whether image data is returned in the response:
+
+**Parameters:**
+- `return_image` (single capture): Controls whether to return base64-encoded image data
+- `return_images` (HDR/batch capture): Controls whether to return base64-encoded image data
+
+**Benefits:**
+- **Reduced Response Size**: When you only need GCS upload or local save, exclude image data to reduce bandwidth
+- **Performance**: Faster API responses when image data isn't needed
+- **Flexibility**: Choose what data you need based on your use case
+
+**Examples:**
+```python
+# Return image data (default behavior)
+image = await camera.capture(return_image=True)
+# Response includes: image_data, gcs_uri, save_path
+
+# Exclude image data (only metadata)
+result = await camera.capture(
+    gcs_bucket="my-bucket",
+    gcs_path="image.jpg",
+    return_image=False
+)
+# Response includes: gcs_uri, save_path (image_data is null)
+
+# HDR capture without image data
+hdr_result = await camera.capture_hdr(
+    exposure_levels=3,
+    gcs_bucket="my-bucket",
+    gcs_path_pattern="hdr_{exposure}.jpg",
+    return_images=False
+)
+# Response includes: gcs_uris, exposure_levels (images is null)
 ```
 
 #### GCS Error Handling
