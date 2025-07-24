@@ -7,6 +7,7 @@ import os
 import re
 import signal
 import subprocess
+import time
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
@@ -19,6 +20,8 @@ import psutil
 import requests
 from fastapi import FastAPI, HTTPException
 from fastmcp import FastMCP
+from urllib3.util.url import Url, parse_url
+
 from mindtrace.core import (Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url,
                             named_lambda)
 from mindtrace.services.core.connection_manager import ConnectionManager
@@ -27,7 +30,6 @@ from mindtrace.services.core.types import (EndpointsSchema, Heartbeat,
                                            ServerIDSchema, ServerStatus,
                                            ShutdownSchema, StatusSchema)
 from mindtrace.services.core.utils import generate_connection_manager
-from urllib3.util.url import Url, parse_url
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -206,6 +208,26 @@ class Service(Mindtrace):
 
         status = ServerStatus(response.json()["status"])
         return status
+    
+    @classmethod
+    def _connect_with_interrupt_handling(cls, url, process, timeout):
+        """Connect while checking if the subprocess died."""
+        poll_interval = 0.5
+        max_attempts = int(timeout / poll_interval)
+
+        for _ in range(max_attempts):
+            if process.poll() is not None:
+                if process.returncode == 0:
+                    raise SystemExit("Service exited cleanly.")
+                elif process.returncode == -signal.SIGINT:
+                    raise KeyboardInterrupt("Service terminated by SIGINT.")
+                else:
+                    raise RuntimeError(f"Server exited with code {process.returncode}")
+            try:
+                return cls.connect(url=url)
+            except (ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException):
+                time.sleep(poll_interval)
+        raise TimeoutError(f"Timed out waiting for server to become available at {url}")
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> C:
@@ -319,7 +341,15 @@ class Service(Mindtrace):
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
             try:
-                connection_manager = timeout_handler.run(cls.connect, url=launch_url)
+                connection_manager = timeout_handler.run(cls._connect_with_interrupt_handling, url=launch_url, process=process, timeout=timeout)
+            except KeyboardInterrupt:
+                cls.logger.warning("User interrupted the launch (Ctrl+C).")
+                cls._cleanup_server(server_id)
+                return None
+            except SystemExit as e:
+                cls.logger.info(str(e))
+                cls._cleanup_server(server_id)
+                return None
             except Exception as e:
                 cls._cleanup_server(server_id)
                 raise e
