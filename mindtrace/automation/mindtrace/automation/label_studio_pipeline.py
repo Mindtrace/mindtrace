@@ -158,15 +158,22 @@ class PipelineOrchestrator:
 
     def run_complete_pipeline(self, custom_job_id: Optional[str] = None, delay_seconds: int = 30) -> Dict[str, Any]:
         """Run the complete pipeline and return structured results."""
+        print("\n=== STARTING INFERENCE STAGE ===")
         job_info = self.run_inference(custom_job_id)
+        print("=== INFERENCE STAGE COMPLETE ===\n")
+
+        print("=== STARTING LABEL STUDIO CONVERSION STAGE ===")
         job_info = self.run_conversion(job_info)
+        print("=== LABEL STUDIO CONVERSION COMPLETE ===\n")
         
         if job_info.get('conversion_results', {}).get('uploaded_urls'):
             if delay_seconds > 0:
                 print(f"Waiting {delay_seconds} seconds for GCS uploads to complete...")
                 time.sleep(delay_seconds)
         
+        print("=== STARTING LABEL STUDIO PROJECT CREATION STAGE ===")
         job_info = self.create_label_studio_project(job_info, delay_seconds=0)
+        print("=== LABEL STUDIO PROJECT CREATION COMPLETE ===\n")
         
         return job_info
 
