@@ -470,6 +470,7 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
     gcs_bucket = payload.gcs_bucket if payload else None
     gcs_path = payload.gcs_path if payload else None
     gcs_metadata = payload.gcs_metadata if payload else None
+    return_image = payload.return_image if payload else True
     
     capture_result = await camera_proxy.capture(
         save_path=save_path,
@@ -494,7 +495,10 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
         image_data = capture_result
         gcs_uri = None
     
-    image_base64 = _encode_image_to_base64(image_data)
+    # Conditionally encode and include image data
+    image_base64 = None
+    if return_image:
+        image_base64 = _encode_image_to_base64(image_data)
     
     # Build response message
     message_parts = [f"Image captured from '{camera}'"]
@@ -502,6 +506,8 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
         message_parts.append(f"saved to '{save_path}'")
     if gcs_uri:
         message_parts.append("uploaded to GCS")
+    if not return_image:
+        message_parts.append("(image data excluded)")
     
     return CaptureResponse(
         success=True,
@@ -509,7 +515,7 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
         image_data=image_base64,
         save_path=save_path,
         gcs_uri=gcs_uri,
-        media_type="image/jpeg"
+        media_type="image/jpeg" if image_base64 else None
     )
 
 async def capture_batch(payload: BatchCaptureRequest) -> BatchOperationResponse:
@@ -533,15 +539,24 @@ async def capture_batch(payload: BatchCaptureRequest) -> BatchOperationResponse:
     uninitialized = [cam for cam in payload.cameras if cam not in active_cameras]
     if uninitialized:
         raise CameraNotFoundError(f"Cameras not initialized: {', '.join(uninitialized)}")
+    # Extract return_images parameter
+    return_images = payload.return_images if payload else True
+    
     capture_results = await manager.batch_capture(payload.cameras)
     results = {camera: data is not None for camera, data in capture_results.items()}
     successful_count = sum(results.values())
+    
+    # Build message based on return_images setting
+    message = f"Batch capture: {successful_count} successful"
+    if not return_images:
+        message += " (image data excluded)"
+    
     return BatchOperationResponse(
         success=len(payload.cameras) - successful_count == 0,
         results=results,
         successful_count=successful_count,
         failed_count=len(payload.cameras) - successful_count,
-        message=f"Batch capture: {successful_count} successful"
+        message=message
     )
 
 async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCaptureResponse:
@@ -612,6 +627,8 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
         message_parts.append("saved locally")
     if gcs_uris:
         message_parts.append("uploaded to GCS")
+    if not return_images:
+        message_parts.append("(image data excluded)")
     
     return HDRCaptureResponse(
         success=True,
@@ -674,6 +691,8 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
             message_parts = [f"HDR capture completed: {successful_captures} images"]
             if gcs_uris:
                 message_parts.append("uploaded to GCS")
+            if not payload.return_images:
+                message_parts.append("(image data excluded)")
             
             response_results[camera_name] = HDRCaptureResponse(
                 success=successful_captures > 0,
@@ -692,17 +711,23 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
                     encoded_images.append(encoded_image)
             
             successful_captures = len(encoded_images)
+            message = f"HDR capture completed: {successful_captures} images"
+            if not payload.return_images:
+                message += " (image data excluded)"
             response_results[camera_name] = HDRCaptureResponse(
                 success=successful_captures > 0,
-                message=f"HDR capture completed: {successful_captures} images",
+                message=message,
                 images=encoded_images,
                 successful_captures=successful_captures
             )
         elif isinstance(hdr_result, bool):
             successful_captures = payload.exposure_levels if hdr_result else 0
+            message = f"HDR capture {'completed' if hdr_result else 'failed'}"
+            if not payload.return_images:
+                message += " (image data excluded)"
             response_results[camera_name] = HDRCaptureResponse(
                 success=hdr_result,
-                message=f"HDR capture {'completed' if hdr_result else 'failed'}",
+                message=message,
                 successful_captures=successful_captures
             )
         else:

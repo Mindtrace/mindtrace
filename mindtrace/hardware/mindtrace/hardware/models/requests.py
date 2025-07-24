@@ -39,11 +39,13 @@ class CaptureRequest(BaseModel):
     gcs_bucket: Optional[str] = Field(None, description="GCS bucket name for cloud storage")
     gcs_path: Optional[str] = Field(None, description="GCS path within bucket for cloud storage")
     gcs_metadata: Optional[Dict[str, str]] = Field(None, description="Optional metadata for GCS upload")
+    return_image: bool = Field(True, description="Whether to return captured image in response")
 
 
 class BatchCaptureRequest(BaseModel):
     """Request model for batch image capture."""
     cameras: List[str] = Field(..., description="List of camera names to capture from")
+    return_images: bool = Field(True, description="Whether to return captured images in response")
 
 
 class HDRCaptureRequest(BaseModel):
