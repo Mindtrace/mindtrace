@@ -15,6 +15,14 @@ from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.services import Service, ServerStatus
 
+def create_mock_database():
+    mock_database = MagicMock()
+    mock_database.insert = MagicMock()
+    mock_database.find = MagicMock(return_value=[])
+    mock_database.delete = MagicMock()
+    mock_database.redis_backend = MagicMock()
+    mock_database.redis_backend.model_cls = MagicMock()
+    return mock_database
 
 @pytest.fixture
 def cluster_manager():
@@ -22,15 +30,6 @@ def cluster_manager():
     with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase, \
             patch("mindtrace.cluster.core.cluster.RabbitMQClient") as MockRabbitMQClient, \
             patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend:
-        
-        def create_mock_database():
-            mock_database = MagicMock()
-            mock_database.insert = MagicMock()
-            mock_database.find = MagicMock(return_value=[])
-            mock_database.delete = MagicMock()
-            mock_database.redis_backend = MagicMock()
-            mock_database.redis_backend.model_cls = MagicMock()
-            return mock_database
         
         MockDatabase.side_effect = [create_mock_database(), create_mock_database(), create_mock_database(), create_mock_database()]
 
@@ -1135,10 +1134,12 @@ def test_worker_shutdown_without_process(mock_worker):
 
 def test_worker_abstract_run_method():
     """Test that Worker abstract _run method raises NotImplementedError."""
-    worker = Worker()
-    
-    with pytest.raises(NotImplementedError, match="Subclasses must implement this method"):
-        worker._run({"test": "data"})
+    with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+        MockDatabase.return_value = create_mock_database()
+        worker = Worker()
+        
+        with pytest.raises(NotImplementedError, match="Subclasses must implement this method"):
+            worker._run({"test": "data"})
 
 
 def test_get_worker_status_success(cluster_manager):

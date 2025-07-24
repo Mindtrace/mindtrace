@@ -5,13 +5,25 @@ from unittest.mock import Mock, patch, MagicMock
 from mindtrace.cluster.workers.run_script_worker import RunScriptWorker, RunScriptWorkerInput, RunScriptWorkerOutput
 
 
+def create_mock_database():
+    mock_database = MagicMock()
+    mock_database.insert = MagicMock()
+    mock_database.find = MagicMock(return_value=[])
+    mock_database.delete = MagicMock()
+    mock_database.redis_backend = MagicMock()
+    mock_database.redis_backend.model_cls = MagicMock()
+    return mock_database
+
 class TestRunScriptWorker:
     """Test RunScriptWorker class."""
 
     @pytest.fixture
     def worker(self):
         """Create a RunScriptWorker instance for testing."""
-        worker = RunScriptWorker()
+        with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase:
+            MockDatabase.return_value = create_mock_database()
+            worker = RunScriptWorker()
+            
         worker.start()
         return worker
 
