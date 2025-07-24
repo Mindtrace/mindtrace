@@ -36,6 +36,9 @@ class BatchCameraConfigRequest(BaseModel):
 class CaptureRequest(BaseModel):
     """Request model for image capture."""
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
+    gcs_bucket: Optional[str] = Field(None, description="GCS bucket name for cloud storage")
+    gcs_path: Optional[str] = Field(None, description="GCS path within bucket for cloud storage")
+    gcs_metadata: Optional[Dict[str, str]] = Field(None, description="Optional metadata for GCS upload")
 
 
 class BatchCaptureRequest(BaseModel):
@@ -54,6 +57,9 @@ class HDRCaptureRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern for saving images. Use {exposure} placeholder"
     )
+    gcs_bucket: Optional[str] = Field(None, description="GCS bucket name for cloud storage")
+    gcs_path_pattern: Optional[str] = Field(None, description="GCS path pattern. Use {exposure} placeholder")
+    gcs_metadata: Optional[Dict[str, str]] = Field(None, description="Optional metadata for GCS upload")
     return_images: bool = Field(True, description="Whether to return captured images in response")
 
 
@@ -69,6 +75,9 @@ class BatchHDRCaptureRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern. Use {camera} and {exposure} placeholders"
     )
+    gcs_bucket: Optional[str] = Field(None, description="GCS bucket name for cloud storage")
+    gcs_path_pattern: Optional[str] = Field(None, description="GCS path pattern. Use {camera} and {exposure} placeholders")
+    gcs_metadata: Optional[Dict[str, str]] = Field(None, description="Optional metadata for GCS upload")
     return_images: bool = Field(True, description="Whether to return captured images in response")
 
 

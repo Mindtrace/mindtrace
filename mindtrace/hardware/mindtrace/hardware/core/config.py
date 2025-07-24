@@ -48,6 +48,18 @@ Environment Variables:
     - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
     - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
+    - MINDTRACE_HW_GCS_DEFAULT_BUCKET: Default GCS bucket name for image uploads
+    - MINDTRACE_HW_GCS_PROJECT_ID: Default GCP project ID
+    - MINDTRACE_HW_GCS_CREDENTIALS_PATH: Path to service account credentials file
+    - MINDTRACE_HW_GCS_CREATE_IF_MISSING: Create bucket if it doesn't exist
+    - MINDTRACE_HW_GCS_LOCATION: Default bucket location (US, EU, ASIA, etc.)
+    - MINDTRACE_HW_GCS_STORAGE_CLASS: Default storage class (STANDARD, NEARLINE, COLDLINE, ARCHIVE)
+    - MINDTRACE_HW_GCS_DEFAULT_IMAGE_FORMAT: Default image format for uploads (jpg, png)
+    - MINDTRACE_HW_GCS_DEFAULT_IMAGE_QUALITY: Default JPEG quality (1-100)
+    - MINDTRACE_HW_GCS_AUTO_UPLOAD: Automatically upload captured images to GCS
+    - MINDTRACE_HW_GCS_UPLOAD_METADATA: Include automatic metadata with uploads
+    - MINDTRACE_HW_GCS_RETRY_COUNT: Number of retry attempts for GCS operations
+    - MINDTRACE_HW_GCS_TIMEOUT_SECONDS: GCS operation timeout in seconds
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -240,6 +252,39 @@ class ActuatorSettings:
 
 
 @dataclass
+class GCSSettings:
+    """
+    Configuration for Google Cloud Storage integration.
+    
+    Attributes:
+        default_bucket: Default GCS bucket name for image uploads
+        project_id: Default GCP project ID
+        credentials_path: Path to service account credentials file
+        create_if_missing: Create bucket if it doesn't exist
+        location: Default bucket location (US, EU, ASIA, etc.)
+        storage_class: Default storage class (STANDARD, NEARLINE, COLDLINE, ARCHIVE)
+        default_image_format: Default image format for uploads (jpg, png)
+        default_image_quality: Default JPEG quality (1-100)
+        auto_upload: Automatically upload captured images to GCS
+        upload_metadata: Include automatic metadata with uploads
+        retry_count: Number of retry attempts for GCS operations
+        timeout_seconds: GCS operation timeout in seconds
+    """
+    default_bucket: str = "mtrix-datasets"
+    project_id: str = "datalake-426010"
+    credentials_path: str = "/home/yasser/Desktop/datalake-sa-key.json"
+    create_if_missing: bool = False
+    location: str = "US"
+    storage_class: str = "STANDARD"
+    default_image_format: str = "jpg"
+    default_image_quality: int = 95
+    auto_upload: bool = False
+    upload_metadata: bool = True
+    retry_count: int = 3
+    timeout_seconds: float = 30.0
+
+
+@dataclass
 class PLCSettings:
     """
     Configuration for PLC components.
@@ -301,6 +346,7 @@ class HardwareConfig:
         actuators: Actuator component configuration
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
+        gcs: Google Cloud Storage configuration
     """
     cameras: CameraSettings = field(default_factory=CameraSettings)
     backends: CameraBackends = field(default_factory=CameraBackends)
@@ -310,6 +356,7 @@ class HardwareConfig:
     actuators: ActuatorSettings = field(default_factory=ActuatorSettings)
     plcs: PLCSettings = field(default_factory=PLCSettings)
     plc_backends: PLCBackends = field(default_factory=PLCBackends)
+    gcs: GCSSettings = field(default_factory=GCSSettings)
 
 
 class HardwareConfigManager:
@@ -533,6 +580,43 @@ class HardwareConfigManager:
         
         if env_val := os.getenv("MINDTRACE_HW_PLC_DEFAULT_SCAN_RATE"):
             self._config.plc_backends.default_scan_rate = int(env_val)
+        
+        # GCS settings
+        if env_val := os.getenv("MINDTRACE_HW_GCS_DEFAULT_BUCKET"):
+            self._config.gcs.default_bucket = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_PROJECT_ID"):
+            self._config.gcs.project_id = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_CREDENTIALS_PATH"):
+            self._config.gcs.credentials_path = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_CREATE_IF_MISSING"):
+            self._config.gcs.create_if_missing = env_val.lower() == "true"
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_LOCATION"):
+            self._config.gcs.location = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_STORAGE_CLASS"):
+            self._config.gcs.storage_class = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_DEFAULT_IMAGE_FORMAT"):
+            self._config.gcs.default_image_format = env_val
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_DEFAULT_IMAGE_QUALITY"):
+            self._config.gcs.default_image_quality = int(env_val)
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_AUTO_UPLOAD"):
+            self._config.gcs.auto_upload = env_val.lower() == "true"
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_UPLOAD_METADATA"):
+            self._config.gcs.upload_metadata = env_val.lower() == "true"
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_RETRY_COUNT"):
+            self._config.gcs.retry_count = int(env_val)
+        
+        if env_val := os.getenv("MINDTRACE_HW_GCS_TIMEOUT_SECONDS"):
+            self._config.gcs.timeout_seconds = float(env_val)
     
     def _load_from_file(self, config_file: str):
         """
@@ -583,6 +667,11 @@ class HardwareConfigManager:
             for key, value in config_data["plc_backends"].items():
                 if hasattr(self._config.plc_backends, key):
                     setattr(self._config.plc_backends, key, value)
+        
+        if "gcs" in config_data:
+            for key, value in config_data["gcs"].items():
+                if hasattr(self._config.gcs, key):
+                    setattr(self._config.gcs, key, value)
     
     def save_to_file(self, config_file: Optional[str] = None):
         """
@@ -636,6 +725,8 @@ class HardwareConfigManager:
             return asdict(self._config.plcs)
         elif key == "plc_backends":
             return asdict(self._config.plc_backends)
+        elif key == "gcs":
+            return asdict(self._config.gcs)
         else:
             return getattr(self._config, key, None)
 
