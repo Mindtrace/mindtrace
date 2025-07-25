@@ -15,4 +15,4 @@ Test Files:
   - Configuration tests
 
 All tests use mock implementations to avoid hardware dependencies.
-""" 
+"""

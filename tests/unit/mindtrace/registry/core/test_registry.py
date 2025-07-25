@@ -1822,6 +1822,7 @@ def test_validate_version_none_or_latest(registry):
 
 def test_materializer_cache_warming_error(registry):
     """Test that materializer cache warming errors are properly handled and logged."""
+
     # Create a mock backend that raises an exception during registered_materializers call
     class MockBackend(registry.backend.__class__):
         def registered_materializers(self):
@@ -1835,21 +1836,18 @@ def test_materializer_cache_warming_error(registry):
     try:
         # Directly call the cache warming method to trigger the error handling
         registry._warm_materializer_cache()
-        
+
         # Verify the registry is still functional despite cache warming failure
         assert registry is not None
         assert isinstance(registry.backend, LocalRegistryBackend)
-        
+
     finally:
         # Restore the original backend
         registry.backend = original_backend
-        
+
         # Verify that basic operations still work with the restored backend
         registry.save("test:str", "hello", version="1.0.0")
         assert registry.has_object("test:str", "1.0.0")
-        
+
         loaded_obj = registry.load("test:str", version="1.0.0")
         assert loaded_obj == "hello"
-
-
-

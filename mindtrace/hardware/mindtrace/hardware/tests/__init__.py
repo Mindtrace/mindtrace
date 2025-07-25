@@ -9,5 +9,4 @@ Test Structure:
   - test_plcs.py: PLC backend and manager unit tests
 """
 
-
-__all__ = [] 
+__all__ = []

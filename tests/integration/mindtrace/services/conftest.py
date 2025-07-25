@@ -9,9 +9,9 @@ from mindtrace.services.sample.echo_service import EchoService
 async def echo_service_manager():
     """Launch EchoService and provide a connection manager for testing.
 
-    This fixture uses the EchoService.launch context manager to properly start and stop the service, yielding a 
+    This fixture uses the EchoService.launch context manager to properly start and stop the service, yielding a
     connection manager that tests can use to interact with the running service.
-    
+
     Session-scoped for performance - service is launched once and reused across all tests in the session.
     """
     try:
@@ -26,9 +26,9 @@ async def echo_service_manager():
 async def gateway_manager():
     """Launch Gateway and provide a connection manager for testing.
 
-    This fixture uses the Gateway.launch context manager to properly start and stop the gateway, yielding a connection 
+    This fixture uses the Gateway.launch context manager to properly start and stop the gateway, yielding a connection
     manager that tests can use to interact with the running gateway.
-    
+
     Session-scoped for performance - gateway is launched once and reused across all tests in the session.
     """
     try:
@@ -42,9 +42,9 @@ async def gateway_manager():
 @pytest_asyncio.fixture(scope="session")
 async def echo_service_for_gateway():
     """Launch EchoService on a different port for Gateway integration testing.
-    
+
     This runs EchoService on port 8092 to avoid conflicts with the main echo_service_manager fixture.
-    
+
     Session-scoped for performance - service is launched once and reused across all tests in the session.
     """
     try:

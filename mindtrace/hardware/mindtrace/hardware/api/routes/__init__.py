@@ -14,17 +14,17 @@ from .config_sync import router as config_sync_router
 from .network import router as network_router
 
 # Create module-level router objects for easy import
-backends = type('Module', (), {'router': backends_router})()
-cameras = type('Module', (), {'router': cameras_router})()
-capture = type('Module', (), {'router': capture_router})()
-config_async = type('Module', (), {'router': config_async_router})()
-config_sync = type('Module', (), {'router': config_sync_router})()
-config_persistence = type('Module', (), {'router': config_persistence_router})()
-network = type('Module', (), {'router': network_router})()
+backends = type("Module", (), {"router": backends_router})()
+cameras = type("Module", (), {"router": cameras_router})()
+capture = type("Module", (), {"router": capture_router})()
+config_async = type("Module", (), {"router": config_async_router})()
+config_sync = type("Module", (), {"router": config_sync_router})()
+config_persistence = type("Module", (), {"router": config_persistence_router})()
+network = type("Module", (), {"router": network_router})()
 
 __all__ = [
     "backends",
-    "cameras", 
+    "cameras",
     "capture",
     "config_async",
     "config_sync",
@@ -37,5 +37,5 @@ __all__ = [
     "config_async_router",
     "config_sync_router",
     "config_persistence_router",
-    "network_router"
-] 
+    "network_router",
+]

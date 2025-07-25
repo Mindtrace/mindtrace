@@ -7,7 +7,7 @@ from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 def main():
     cluster_manager = ClusterManager.connect(url="http://localhost:8002")
-    node_url = "http://localhost:8003"  
+    node_url = "http://localhost:8003"
     node = Node.connect(node_url)
     try:
         cluster_manager.register_worker_type(

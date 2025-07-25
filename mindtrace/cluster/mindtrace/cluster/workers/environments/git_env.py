@@ -25,7 +25,7 @@ class GitEnvironment(Mindtrace):
         self.branch = branch  # Use provided branch or get default from config
         self.commit = commit
         self.working_dir = working_dir
-        self.temp_dir: str = None # type: ignore
+        self.temp_dir: str = None  # type: ignore
         self.repo = None
         self.allowed_owners = ["Mindtrace"]  # private allowed repos  TODO: get from env or config
 
@@ -165,12 +165,16 @@ class GitEnvironment(Mindtrace):
         """Cleanup temporary directory."""
         if self.temp_dir and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
-        self.temp_dir = None # type: ignore
+        self.temp_dir = None  # type: ignore
         self.repo = None
 
     # TODO CHECK COMMAND USAGE FOR SHELL=TRYE CORRESPONDANCE(should be more usefully shell = False)
     def execute(
-        self, command: Union[str, List[str]], env: Optional[Dict[str, str]] = None, cwd: Optional[str] = None, detach: bool = False
+        self,
+        command: Union[str, List[str]],
+        env: Optional[Dict[str, str]] = None,
+        cwd: Optional[str] = None,
+        detach: bool = False,
     ) -> Tuple[int, str, str]:
         """Execute command in git synced environment.
 
@@ -192,10 +196,10 @@ class GitEnvironment(Mindtrace):
             else:
                 if not command.startswith("uv"):
                     command = ["uv run " + command]
-        else:        
+        else:
             if isinstance(command, list):
                 command = " ".join(command)
-        
+
             if not command.startswith("uv"):
                 command = "uv run " + command
 
@@ -209,9 +213,7 @@ class GitEnvironment(Mindtrace):
                 )
                 return result.returncode, result.stdout, result.stderr
             else:
-                process = subprocess.Popen(
-                    command, cwd=working_dir, env=environment_vars
-                )
+                process = subprocess.Popen(command, cwd=working_dir, env=environment_vars)
                 return process.pid, "", ""
         except Exception as e:
             return 1, "", str(e)

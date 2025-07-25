@@ -55,7 +55,7 @@ from .responses import (
 __all__ = [
     # Response models
     "BaseResponse",
-    "BoolResponse", 
+    "BoolResponse",
     "ListResponse",
     "DictResponse",
     "FloatResponse",
@@ -98,4 +98,4 @@ __all__ = [
     "CameraQueryRequest",
     "BackendFilterRequest",
     "CameraPropertiesRequest",
-] 
+]

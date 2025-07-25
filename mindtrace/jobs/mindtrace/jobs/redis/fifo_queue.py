@@ -9,6 +9,7 @@ class RedisQueue:
     This class uses a Redis list to store serialized messages. The `put` method pushes items to the tail of the list,
     while the `get` method pops from the head. Blocking retrieval is implemented using Redis' BLPOP command.
     """
+
     def __init__(self, name, namespace="queue", **redis_kwargs):
         """Initialize a RedisQueue object.
         Args:
@@ -18,9 +19,11 @@ class RedisQueue:
         """
         self.__db = redis.Redis(**redis_kwargs)
         self.key = f"{namespace}:{name}"
+
     def push(self, item):
         """Serialize and add an item to the queue."""
         self.__db.rpush(self.key, pickle.dumps(item))
+
     def pop(self, block=True, timeout=None):
         """Remove and return an item from the queue.
         Args:
@@ -41,9 +44,11 @@ class RedisQueue:
                 return pickle.loads(item)
             else:
                 raise Empty
+
     def qsize(self):
         """Return the approximate size of the queue."""
         return self.__db.llen(self.key)
+
     def empty(self):
         """Return True if the queue is empty, False otherwise."""
         return self.qsize() == 0

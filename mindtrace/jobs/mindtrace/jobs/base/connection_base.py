@@ -7,9 +7,10 @@ from mindtrace.core import MindtraceABC
 
 class BrokerConnectionBase(MindtraceABC):
     """Abstract base class for broker connections."""
+
     def __init__(self, *args, **kwargs):
         super().__init__()
-        
+
     @abstractmethod
     def connect(self):
         raise NotImplementedError

@@ -18,18 +18,21 @@ def __getattr__(name):
     if name == "DAHENG_AVAILABLE":
         try:
             from .backends.daheng import DAHENG_AVAILABLE
+
             return DAHENG_AVAILABLE
         except ImportError:
             return False
     elif name == "BASLER_AVAILABLE":
         try:
             from .backends.basler import BASLER_AVAILABLE
+
             return BASLER_AVAILABLE
         except ImportError:
             return False
     elif name == "OPENCV_AVAILABLE":
         try:
             from .backends.opencv import OPENCV_AVAILABLE
+
             return OPENCV_AVAILABLE
         except ImportError:
             return False
@@ -43,11 +46,18 @@ def __getattr__(name):
                 uninstall_daheng_sdk,
                 uninstall_pylon_sdk,
             )
+
             return True
         except ImportError:
             return False
-    elif name in ["install_pylon_sdk", "uninstall_pylon_sdk", "install_daheng_sdk", 
-                  "uninstall_daheng_sdk", "setup_all_cameras", "configure_firewall"]:
+    elif name in [
+        "install_pylon_sdk",
+        "uninstall_pylon_sdk",
+        "install_daheng_sdk",
+        "uninstall_daheng_sdk",
+        "setup_all_cameras",
+        "configure_firewall",
+    ]:
         try:
             from .setup import (
                 configure_firewall,
@@ -57,28 +67,28 @@ def __getattr__(name):
                 uninstall_daheng_sdk,
                 uninstall_pylon_sdk,
             )
+
             return locals()[name]
         except ImportError:
             raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
+
 __all__ = [
     # Core camera functionality
     "CameraManager",
-    "BaseCamera", 
-    
+    "BaseCamera",
     # Availability flags
     "DAHENG_AVAILABLE",
     "BASLER_AVAILABLE",
     "OPENCV_AVAILABLE",
     "SETUP_AVAILABLE",
-    
     # Setup utilities (available if setup module can be imported)
     "install_pylon_sdk",
-    "uninstall_pylon_sdk", 
+    "uninstall_pylon_sdk",
     "install_daheng_sdk",
     "uninstall_daheng_sdk",
     "setup_all_cameras",
     "configure_firewall",
-] 
+]

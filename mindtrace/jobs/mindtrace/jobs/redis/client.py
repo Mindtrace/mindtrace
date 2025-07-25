@@ -23,19 +23,13 @@ class RedisClient(OrchestratorBackend):
         super().__init__()
         self.redis_params = {"host": host, "port": port, "db": db}
         self.connection = RedisConnection(**self.redis_params)
-        
 
     @property
     def consumer_backend_args(self):
-        return {    
-            "cls": "mindtrace.jobs.redis.consumer_backend.RedisConsumerBackend",
-            "kwargs": self.redis_params
-        }
+        return {"cls": "mindtrace.jobs.redis.consumer_backend.RedisConsumerBackend", "kwargs": self.redis_params}
 
     def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RedisConsumerBackend:
         return RedisConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
-
-        
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
@@ -77,9 +71,7 @@ class RedisClient(OrchestratorBackend):
                 raise TypeError(f"Unknown queue type '{queue_type}'.")
             with self.connection._local_lock:
                 self.connection.queues[queue_name] = instance
-            event_data = json.dumps(
-                {"event": "declare", "queue": queue_name, "queue_type": queue_type}
-            )
+            event_data = json.dumps({"event": "declare", "queue": queue_name, "queue_type": queue_type})
             self.connection.connection.publish(self.connection.EVENTS_CHANNEL, event_data)
             return {
                 "status": "success",
@@ -87,7 +79,7 @@ class RedisClient(OrchestratorBackend):
             }
         finally:
             lock.release()
-            
+
     def delete_queue(self, queue_name: str, **kwargs) -> dict:
         """Delete a declared queue.
         Uses distributed locking and transactions to remove the queue from the centralized metadata, and publishes an
@@ -134,7 +126,6 @@ class RedisClient(OrchestratorBackend):
             return message_dict["job_id"]
         except Exception:
             raise
-
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Clean (purge) a specified Redis queue by deleting its underlying key.
