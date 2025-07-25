@@ -7,15 +7,12 @@ from fastapi.responses import JSONResponse
 from urllib3.util.url import Url
 
 from mindtrace.core import ifnone_url
-from mindtrace.services import (
-    AppConfig,
-    ConnectionManager,
-    ProxyConnectionManager,
-    RegisterAppTaskSchema,
-    ServerStatus,
-    Service,
-    generate_connection_manager,
-)
+from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.service import Service
+from mindtrace.services.core.types import ServerStatus
+from mindtrace.services.core.utils import generate_connection_manager
+from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
+from mindtrace.services.gateway.types import AppConfig, RegisterAppTaskSchema
 
 
 class Gateway(Service):
