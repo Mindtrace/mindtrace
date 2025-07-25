@@ -458,11 +458,11 @@ async def test_unified_backend_cross_backend_data_isolation(dual_unified_backend
     
     # Insert into MongoDB
     dual_unified_backend.switch_backend(BackendType.MONGO)
-    mongo_inserted = await dual_unified_backend.insert_async(user1)
+    await dual_unified_backend.insert_async(user1)
     
     # Insert into Redis
     dual_unified_backend.switch_backend(BackendType.REDIS)
-    redis_inserted = await dual_unified_backend.insert_async(user2)
+    await dual_unified_backend.insert_async(user2)
     
     # Check MongoDB data is not in Redis
     dual_unified_backend.switch_backend(BackendType.REDIS)

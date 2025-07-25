@@ -220,7 +220,7 @@ class RabbitMQClient(OrchestratorBackend):
         job_id = str(uuid.uuid1())
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
-        durable = kwargs.get("durable", True)
+        # durable = kwargs.get("durable", True)
         delivery_mode = kwargs.get("delivery_mode", DeliveryMode.Persistent)
         mandatory = kwargs.get("mandatory", True)
         priority = kwargs.get("priority", 0)

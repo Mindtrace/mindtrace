@@ -352,7 +352,15 @@ class OpenCVCamera(BaseCamera):
                 self.logger.warning(f"Width mismatch for camera '{self.camera_name}': requested {self._width}, got {actual_width}")
             if abs(actual_height - self._height) > 10:
                 self.logger.warning(f"Height mismatch for camera '{self.camera_name}': requested {self._height}, got {actual_height}")
-                       
+            if not width_set:
+                self.logger.warning(f"Width setting failed for camera '{self.camera_name}'")
+            if not height_set:
+                self.logger.warning(f"Height setting failed for camera '{self.camera_name}'")
+            if not fps_set:
+                self.logger.warning(f"FPS setting failed for camera '{self.camera_name}'")
+            if not exposure_set:
+                self.logger.warning(f"Exposure setting failed for camera '{self.camera_name}'")
+
         except Exception as e:
             self.logger.error(f"Camera configuration failed for '{self.camera_name}': {e}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
@@ -415,7 +423,7 @@ class OpenCVCamera(BaseCamera):
                         else:
                             # Camera opened but can't capture - might be in use
                             pass
-                except Exception as e:
+                except Exception:
                     # Camera index might not exist or be accessible
                     pass
                 finally:

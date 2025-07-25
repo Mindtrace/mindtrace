@@ -112,7 +112,7 @@ def test_tarball_mode_detection(tmp_path):
 
 def test_download_and_extract_zip_failure_no_file_to_unlink(tmp_path):
     with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False) as mock_exists, \
+         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False), \
          mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink:
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_zip("http://example.com/fail.zip", tmp_path)
@@ -128,7 +128,7 @@ def test_download_and_extract_zip_failure_unlink_raises(tmp_path):
 
 def test_download_and_extract_tarball_failure_no_file_to_unlink(tmp_path):
     with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False) as mock_exists, \
+         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False), \
          mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink:
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_tarball("http://example.com/fail.tar.gz", tmp_path)

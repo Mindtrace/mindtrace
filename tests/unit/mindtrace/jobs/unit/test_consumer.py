@@ -41,7 +41,7 @@ class TestConsumer:
         consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
         
         test_job = create_test_job("consumer_test_job")
-        job_id = self.orchestrator.publish(self.test_queue, test_job)
+        _ = self.orchestrator.publish(self.test_queue, test_job)
         
         consumer.consume(num_messages=1)
         

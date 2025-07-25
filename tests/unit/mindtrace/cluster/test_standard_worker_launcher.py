@@ -318,7 +318,7 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler = MagicMock()
         mock_timeout_handler.run.side_effect = ConnectionRefusedError("Connection refused")
         
-        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment) as mock_git_env_class, \
+        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment), \
              patch('mindtrace.cluster.core.cluster.Timeout', return_value=mock_timeout_handler), \
              patch('mindtrace.cluster.core.cluster.Worker'):
             
@@ -339,7 +339,7 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler = MagicMock()
         mock_timeout_handler.run.side_effect = TimeoutError("Connection timeout")
         
-        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment) as mock_git_env_class, \
+        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment), \
              patch('mindtrace.cluster.core.cluster.Timeout', return_value=mock_timeout_handler), \
              patch('mindtrace.cluster.core.cluster.Worker'):
             
@@ -360,7 +360,7 @@ class TestStandardWorkerLauncher:
         mock_timeout_handler = MagicMock()
         mock_timeout_handler.run.side_effect = Exception("HTTP 500 error")
         
-        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment) as mock_git_env_class, \
+        with patch('mindtrace.cluster.core.cluster.GitEnvironment', return_value=mock_environment), \
              patch('mindtrace.cluster.core.cluster.Timeout', return_value=mock_timeout_handler), \
              patch('mindtrace.cluster.core.cluster.Worker'):
             

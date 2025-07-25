@@ -79,7 +79,7 @@ class UnifiedMindtraceDocument(BaseModel):
         # Use a simpler approach without exec to avoid annotation issues
         
         # Build field dictionary properly
-        fields = {}
+        # fields = {}
         annotations = {}
         
         for field_name, field_type in cls_annotations.items():
@@ -572,7 +572,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         if self.mongo_backend:
             try:
                 # Check if we're already in an async context
-                loop = asyncio.get_running_loop()
+                _ = asyncio.get_running_loop()
                 # We're in an async context, so we can't use asyncio.run()
                 # The caller should use initialize_async() directly
                 # For now, just log a warning and skip async initialization

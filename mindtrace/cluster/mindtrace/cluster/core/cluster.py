@@ -701,7 +701,7 @@ class StandardWorkerLauncher(Archiver):
                 commit=worker_dict["git_commit"],
                 working_dir=worker_dict["git_working_dir"]
             )
-            wd = environment.setup()
+            _ = environment.setup()
             
             # All kwargs (including URL params) go directly to init_params
             init_params = {"url": str(url), **worker_dict["worker_params"]}

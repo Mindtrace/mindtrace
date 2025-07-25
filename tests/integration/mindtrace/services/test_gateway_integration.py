@@ -30,7 +30,7 @@ class TestGatewayCoreFunctionality:
     async def test_gateway_app_registration_sync(self, gateway_manager, echo_service_for_gateway):
         """Test synchronous app registration with Gateway."""
         # Register echo service with gateway
-        result = gateway_manager.register_app(
+        _ = gateway_manager.register_app(
             name="echoer", 
             url=str(echo_service_for_gateway.url)
         )
@@ -51,7 +51,7 @@ class TestGatewayCoreFunctionality:
     async def test_gateway_app_registration_async(self, gateway_manager, echo_service_for_gateway):
         """Test asynchronous app registration with Gateway."""
         # Register echo service with gateway asynchronously
-        result = await gateway_manager.aregister_app(
+        _ = await gateway_manager.aregister_app(
             name="async_echoer", 
             url=str(echo_service_for_gateway.url)
         )
