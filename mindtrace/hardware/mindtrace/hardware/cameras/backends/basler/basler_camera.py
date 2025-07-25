@@ -77,7 +77,7 @@ import cv2
 import numpy as np
 
 try:
-    from pypylon import genicam, pylon # type: ignore
+    from pypylon import genicam, pylon  # type: ignore
 
     PYPYLON_AVAILABLE = True
 except ImportError:

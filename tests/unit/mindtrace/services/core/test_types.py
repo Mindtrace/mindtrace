@@ -5,19 +5,13 @@ import pytest
 
 from mindtrace.services.core.types import (
     EndpointsOutput,
-    EndpointsSchema,
     Heartbeat,
     HeartbeatOutput,
-    HeartbeatSchema,
     PIDFileOutput,
-    PIDFileSchema,
     ServerIDOutput,
-    ServerIDSchema,
     ServerStatus,
     ShutdownOutput,
-    ShutdownSchema,
     StatusOutput,
-    StatusSchema,
 )
 
 

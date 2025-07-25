@@ -77,7 +77,7 @@ import cv2
 import numpy as np
 
 try:
-    import gxipy as gx # type: ignore
+    import gxipy as gx  # type: ignore
 
     GXIPY_AVAILABLE = True
 except ImportError:

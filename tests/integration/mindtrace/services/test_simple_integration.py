@@ -1,11 +1,10 @@
 import json
 
 import pytest
-
-from urllib3.util.url import parse_url
 import requests
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from urllib3.util.url import parse_url
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput

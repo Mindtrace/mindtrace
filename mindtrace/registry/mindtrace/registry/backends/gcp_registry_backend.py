@@ -1,7 +1,4 @@
 from pathlib import Path
-from typing import Any
-
-from pydantic import BaseModel
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 
