@@ -487,7 +487,7 @@ async def test_unified_model_crud_mongodb(unified_model_backend):
     
     # Test that the backend is properly configured
     assert unified_model_backend.get_current_backend_type() == BackendType.MONGO
-    assert unified_model_backend.is_async() == True
+    assert unified_model_backend.is_async() is True
     
     # Test that we can get the raw model (it will be auto-generated from unified model)
     mongo_model = unified_model_backend.get_raw_model()
@@ -497,7 +497,7 @@ async def test_unified_model_crud_mongodb(unified_model_backend):
     if unified_model_backend.has_redis_backend():
         unified_model_backend.switch_backend(BackendType.REDIS)
         assert unified_model_backend.get_current_backend_type() == BackendType.REDIS
-        assert unified_model_backend.is_async() == False
+        assert unified_model_backend.is_async() is False
         
         # Switch back
         unified_model_backend.switch_backend(BackendType.MONGO)
@@ -577,7 +577,7 @@ async def test_unified_model_crud_redis(unified_model_backend):
     
     # Test that the backend is properly configured
     assert unified_model_backend.get_current_backend_type() == BackendType.REDIS
-    assert unified_model_backend.is_async() == False
+    assert unified_model_backend.is_async() is False
     
     # Test that we can get the raw model (it will be auto-generated from unified model)
     redis_model = unified_model_backend.get_raw_model()
@@ -587,7 +587,7 @@ async def test_unified_model_crud_redis(unified_model_backend):
     if unified_model_backend.has_mongo_backend():
         unified_model_backend.switch_backend(BackendType.MONGO)
         assert unified_model_backend.get_current_backend_type() == BackendType.MONGO
-        assert unified_model_backend.is_async() == True
+        assert unified_model_backend.is_async() is True
         
         # Switch back
         unified_model_backend.switch_backend(BackendType.REDIS)
