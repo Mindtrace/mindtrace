@@ -44,6 +44,10 @@ dev = [
     "ruff>=0.1.0",
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

@@ -14,6 +14,10 @@ dependencies = [
     "google-cloud-storage",
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/storage"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

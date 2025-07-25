@@ -17,6 +17,10 @@ dependencies = [
     "mindtrace-services",
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/datalake"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
