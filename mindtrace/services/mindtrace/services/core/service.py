@@ -4,19 +4,21 @@ import atexit
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Type, TypeVar
+from typing import Any, Dict, Literal, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
 import psutil
 import requests
 from fastapi import FastAPI, HTTPException
+from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
@@ -41,7 +43,6 @@ class Service(Mindtrace):
     """Base class for all Mindtrace services."""
 
     _status = ServerStatus.DOWN
-    _endpoints: dict[str, TaskSchema] = {}
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
 
@@ -54,7 +55,7 @@ class Service(Mindtrace):
         summary: str | None = None,
         description: str | None = None,
         terms_of_service: str | None = None,
-        license_info: str | None = None,
+        license_info: Dict[str, str | Any] | None = None,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -72,6 +73,7 @@ class Service(Mindtrace):
         """
         super().__init__()
         self._status: ServerStatus = ServerStatus.AVAILABLE
+        self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file()
 
         # Build URL with the following priority:
@@ -89,16 +91,26 @@ class Service(Mindtrace):
         )
         """
 
-        description = ifnone(description, default=f"{self.name} server.")
+        description = str(ifnone(description, default=f"{self.name} server."))
         version_str = "Mindtrace " + version("mindtrace-services")
 
+        self.mcp = FastMCP(
+            name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
+            version=version_str,
+        )
+        self.mcp_app = self.mcp.http_app(path="/mcp")
+
         @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            """Lifespan for the FastAPI app."""
-            self.logger.info(f"Server {self.id} starting up.")
-            yield
-            await self.shutdown_cleanup()
-            self.logger.info(f"Server {self.id} shut down.")
+        async def combined_lifespan(app: FastAPI):
+            """Combined lifespan for FastAPI and MCP app."""
+            async with AsyncExitStack() as stack:
+                # Enter MCP app lifespan
+                await stack.enter_async_context(self.mcp_app.lifespan(app))
+                # Service's own startup logic
+                self.logger.info(f"Server {self.id} starting up.")
+                yield
+                await self.shutdown_cleanup()
+                self.logger.info(f"Server {self.id} shut down.")
 
         self.app = FastAPI(
             title=self.name,
@@ -107,30 +119,44 @@ class Service(Mindtrace):
             version=version_str,
             terms_of_service=terms_of_service,
             license_info=license_info,
-            lifespan=lifespan,
+            lifespan=combined_lifespan,
         )
+
+        self.app.mount("/mcp-server", self.mcp_app)
         self.add_endpoint(
             path="/endpoints",
-            func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
-            schema=EndpointsSchema(),
+            func=self.endpoints_func,
+            schema=EndpointsSchema,
+            as_tool=True,
         )
-        self.add_endpoint(
-            path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema()
-        )
+        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema, as_tool=True)
         self.add_endpoint(
             path="/heartbeat",
-            func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}),
-            schema=HeartbeatSchema(),
+            func=self.heartbeat_func,
+            schema=HeartbeatSchema,
+            as_tool=True,
         )
         self.add_endpoint(
-            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
+            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
         )
         self.add_endpoint(
-            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema()
+            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
         )
         self.add_endpoint(
-            path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
+            path="/shutdown", func=self.shutdown, schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
         )
+
+    def endpoints_func(self):
+        """List all available endpoints for the service."""
+        return {"endpoints": list(self._endpoints.keys())}
+
+    def status_func(self):
+        """Get the current status of the service."""
+        return {"status": self.status.value}
+
+    def heartbeat_func(self):
+        """Perform a heartbeat check for the service."""
+        return {"heartbeat": self.heartbeat()}
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -186,7 +212,7 @@ class Service(Mindtrace):
         return status
 
     @classmethod
-    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> C:
+    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
         """Connect to an existing service.
 
         The returned connection manager is determined by the registered connection manager for the service. If one has
@@ -209,6 +235,38 @@ class Service(Mindtrace):
             else:
                 return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
+
+    @overload
+    @classmethod
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[False],
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> None: ...
+
+    @overload
+    @classmethod
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[True] | bool = True,
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> Any: ...
 
     @classmethod
     def launch(
@@ -284,8 +342,13 @@ class Service(Mindtrace):
         cls._active_servers[server_id] = process
         if len(cls._active_servers) == 1:
             atexit.register(cls._cleanup_all_servers)
-            signal.signal(signal.SIGTERM, lambda sig, frame: cls._cleanup_all_servers())
-            signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
+            try:
+                signal.signal(signal.SIGTERM, lambda sig, frame: cls._cleanup_all_servers())
+                signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
+            except ValueError:
+                cls.logger.warning(
+                    "Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service."
+                )
 
         # Wait for server to be available and get connection manager
         connection_manager = None
@@ -441,16 +504,35 @@ class Service(Mindtrace):
         autolog_kwargs=None,
         methods: list[str] | None = None,
         scope: str = "public",
+        as_tool: bool = False,
     ):
         """Register a new endpoint with optional role."""
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         autolog_kwargs = ifnone(autolog_kwargs, default={})
-
         self._endpoints[path] = schema
+        if as_tool:
+            self.add_tool(tool_name=path, func=func)
+        else:
+            # Warn if the function has no docstring
+            if not func.__doc__:
+                service_name = getattr(self, "name", self.__class__.__name__)
+                self.logger.warning(f"Function '{path}' for service '{service_name}' has no docstring.")
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
+
+    def add_tool(self, tool_name, func):
+        """Add a tool to the MCP server, with an informative description including the tool and service name."""
+        service_name = getattr(self, "name", self.__class__.__name__)
+        # Use the function's docstring if available, otherwise log and use a default description
+        if doc := func.__doc__:
+            base_desc = doc.strip()
+        else:
+            base_desc = "No description provided."
+            self.logger.warning(f"Function '{tool_name}' for service '{service_name}' has no docstring.")
+        full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
+        self.mcp.tool(name=tool_name, description=full_desc)(func)

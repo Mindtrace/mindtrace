@@ -42,11 +42,11 @@ class TestTimer:
 
     @patch("time.perf_counter")
     def test_timer_stop_without_start(self, mock_perf_counter):
-        """Test stopping timer without starting raises TypeError due to None arithmetic."""
+        """Test stopping timer without starting raises ValueError."""
         mock_perf_counter.return_value = 15.0
         timer = Timer()
-        # This should raise TypeError because _start_time is None
-        with pytest.raises(TypeError):
+        # This should raise ValueError because _start_time is None
+        with pytest.raises(ValueError):
             timer.stop()
 
     @patch("time.perf_counter")
@@ -477,3 +477,191 @@ class TestTimeout:
         result = wrapped_func(5)
 
         assert result == 10
+
+
+class TestTimerContextManager:
+    """Test suite for Timer context manager functionality."""
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_basic(self, mock_perf_counter):
+        """Test Timer as a context manager."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        timer = Timer()
+
+        with timer:
+            pass
+
+        assert timer._start_time == 10.0
+        assert timer._stop_time == 15.0
+        assert timer.duration() == 5.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_returns_self(self, mock_perf_counter):
+        """Test Timer context manager returns the timer instance."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        timer = Timer()
+
+        with timer as ctx_timer:
+            assert ctx_timer is timer
+            assert ctx_timer._start_time == 10.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_with_exception(self, mock_perf_counter):
+        """Test Timer context manager properly handles exceptions."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        timer = Timer()
+
+        with pytest.raises(ValueError, match="test exception"):
+            with timer:
+                raise ValueError("test exception")
+
+        # Timer should still be stopped even with exception
+        assert timer._stop_time == 15.0
+        assert timer.duration() == 5.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_cumulative(self, mock_perf_counter):
+        """Test Timer context manager with cumulative timing."""
+        mock_perf_counter.side_effect = [10.0, 15.0, 20.0, 25.0]
+        timer = Timer()
+
+        # First context
+        with timer:
+            pass
+        assert timer.duration() == 5.0
+
+        # Second context (should accumulate)
+        with timer:
+            pass
+        assert timer.duration() == 10.0
+
+
+class TestTimerCollectionContextManager:
+    """Test suite for TimerCollection context manager functionality via TimerContext."""
+
+    @patch("time.perf_counter")
+    def test_timer_collection_start_returns_context_manager(self, mock_perf_counter):
+        """Test TimerCollection.start() returns a context manager."""
+        from mindtrace.core.utils.timers import TimerContext
+
+        mock_perf_counter.return_value = 10.0
+        tc = TimerCollection()
+
+        context_manager = tc.start("test_timer")
+
+        assert isinstance(context_manager, TimerContext)
+        assert context_manager.timer_collection is tc
+        assert context_manager.name == "test_timer"
+        assert tc._timers["test_timer"]._start_time == 10.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_basic(self, mock_perf_counter):
+        """Test TimerContext as a context manager."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        tc = TimerCollection()
+
+        with tc.start("timer1"):
+            pass
+
+        # Timer should be stopped automatically
+        assert tc.duration("timer1") == 5.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_nested(self, mock_perf_counter):
+        """Test nested TimerContext managers."""
+        mock_perf_counter.side_effect = [10.0, 20.0, 30.0, 40.0]
+        tc = TimerCollection()
+
+        with tc.start("Timer 1"):
+            with tc.start("Timer 2"):
+                pass  # Timer 2 stops here at 30.0
+            # Timer 2 should be stopped, Timer 1 still running
+            pass
+        # Timer 1 stops here at 40.0
+
+        assert tc.duration("Timer 1") == 30.0  # 40.0 - 10.0
+        assert tc.duration("Timer 2") == 10.0  # 30.0 - 20.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_with_exception(self, mock_perf_counter):
+        """Test TimerContext properly handles exceptions."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        tc = TimerCollection()
+
+        with pytest.raises(ValueError, match="test exception"):
+            with tc.start("timer1"):
+                raise ValueError("test exception")
+
+        # Timer should still be stopped even with exception
+        assert tc.duration("timer1") == 5.0
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_returns_context(self, mock_perf_counter):
+        """Test TimerContext manager returns the context object."""
+        mock_perf_counter.side_effect = [10.0, 15.0]
+        tc = TimerCollection()
+
+        with tc.start("timer1") as ctx:
+            assert ctx.name == "timer1"
+            assert ctx.timer_collection is tc
+
+    @patch("time.perf_counter")
+    def test_timer_context_manager_multiple_sequential(self, mock_perf_counter):
+        """Test multiple sequential context managers work correctly."""
+        mock_perf_counter.side_effect = [10.0, 15.0, 20.0, 25.0]
+        tc = TimerCollection()
+
+        with tc.start("Timer 1"):
+            pass
+        # Timer 1 stopped at 15.0
+
+        with tc.start("Timer 2"):
+            pass
+        # Timer 2 stopped at 25.0
+
+        assert tc.duration("Timer 1") == 5.0  # 15.0 - 10.0
+        assert tc.duration("Timer 2") == 5.0  # 25.0 - 20.0
+
+
+class TestTimerCollectionAddTimer:
+    """Test suite for TimerCollection add_timer method."""
+
+    def test_add_timer_new(self):
+        """Test adding a new timer."""
+        tc = TimerCollection()
+        tc.add_timer("test_timer")
+
+        assert "test_timer" in tc._timers
+        assert isinstance(tc._timers["test_timer"], Timer)
+
+    def test_add_timer_replace_existing(self):
+        """Test adding a timer that replaces an existing one."""
+        tc = TimerCollection()
+        tc.add_timer("test_timer")
+        old_timer = tc._timers["test_timer"]
+        old_timer._duration = 5.0  # Set some state
+
+        tc.add_timer("test_timer")  # Replace
+        new_timer = tc._timers["test_timer"]
+
+        assert new_timer is not old_timer
+        assert new_timer._duration == 0.0  # New timer is fresh
+
+
+class TestTimerCollectionStartReturnValue:
+    """Test suite for TimerCollection start method return value."""
+
+    @patch("time.perf_counter")
+    def test_start_returns_timer_context(self, mock_perf_counter):
+        """Test that start method returns a TimerContext instance."""
+        from mindtrace.core.utils.timers import TimerContext
+
+        mock_perf_counter.return_value = 10.0
+        tc = TimerCollection()
+
+        returned_context = tc.start("test_timer")
+
+        assert isinstance(returned_context, TimerContext)
+        assert returned_context.timer_collection is tc
+        assert returned_context.name == "test_timer"
+        assert tc._timers["test_timer"]._start_time == 10.0

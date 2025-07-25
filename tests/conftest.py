@@ -3,7 +3,7 @@ import logging
 import pytest
 from _pytest.mark import Mark
 
-empty_mark = Mark("", [], {})
+empty_mark = Mark("", (), {})
 
 
 def by_slow_marker(item):

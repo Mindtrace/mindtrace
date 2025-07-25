@@ -328,7 +328,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
                 resource="/test-bucket/registry_metadata.yaml",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None,  # type: ignore
                 bucket_name="test-bucket",
                 object_name="registry_metadata.yaml",
             )
@@ -362,7 +362,7 @@ def test_delete_metadata_no_such_key(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )
@@ -384,7 +384,7 @@ def test_delete_metadata_other_error(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-models"
-version = "0.1.0"
+version = "0.2.0"
 description = "Models for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -15,6 +15,10 @@ dependencies = [
     "mindtrace-registry",
     "mindtrace-services"
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/models"
 
 [build-system]
 requires = ["setuptools"]

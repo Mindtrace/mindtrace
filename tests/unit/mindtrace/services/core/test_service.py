@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:
@@ -274,8 +274,83 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
+
+
+class TestServiceMCP:
+    """Test Service MCP app integration and mounting."""
+
+    def test_service_creates_mcp_and_mcp_app(self):
+        service = Service()
+        # FastMCP instance should be created
+        assert hasattr(service, "mcp"), "Service should have an 'mcp' attribute."
+        # mcp_app should be created
+        assert hasattr(service, "mcp_app"), "Service should have an 'mcp_app' attribute."
+        # mcp_app should be a FastAPI app (or compatible)
+        from fastapi import FastAPI
+        from starlette.applications import Starlette
+
+        assert isinstance(service.mcp_app, (FastAPI, Starlette)), "mcp_app should be a FastAPI or Starlette app."
+
+    def test_service_mounts_mcp_app(self):
+        service = Service()
+        # The /mcp-server route should be mounted
+        routes = [route for route in service.app.routes if hasattr(route, "path")]
+        mcp_mounts = [route for route in routes if getattr(route, "path", None) == "/mcp-server"]
+        assert mcp_mounts, "Service.app should have /mcp-server mounted."
+        # The mounted app should be the mcp_app
+        # In FastAPI, mounts are in app.routes as Mount objects
+        from fastapi.routing import Mount
+
+        found = False
+        for route in service.app.routes:
+            if isinstance(route, Mount) and route.path == "/mcp-server":
+                assert route.app is service.mcp_app, "Mounted /mcp-server should be service.mcp_app."
+                found = True
+        assert found, "/mcp-server mount not found as a Mount route."
+
+    def test_add_tool_registers_with_mcp(self):
+        service = Service()
+        # Patch the mcp.tool decorator to track registration
+        called = {}
+
+        def fake_tool(name, **kwargs):
+            def decorator(func):
+                called["name"] = name
+                called["func"] = func
+                called["kwargs"] = kwargs
+                return func
+
+            return decorator
+
+        service.mcp.tool = fake_tool
+
+        def dummy_func():
+            return "ok"
+
+        service.add_tool("dummy_tool", dummy_func)
+        assert called["name"] == "dummy_tool"
+        assert called["func"] is dummy_func
+
+    def test_add_endpoint_with_as_tool_calls_add_tool(self):
+        service = Service()
+        # Patch add_tool to track calls
+        called = {}
+
+        def fake_add_tool(tool_name, func):
+            called["tool_name"] = tool_name
+            called["func"] = func
+
+        service.add_tool = fake_add_tool
+
+        def dummy_func():
+            return "ok"
+
+        test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
+        service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
+        assert called["tool_name"] == "dummy"
+        assert called["func"] is dummy_func
 
 
 class TestServiceUrlBuilding:
@@ -779,3 +854,43 @@ class TestServiceCleanupMethods:
 
         finally:
             Service._active_servers = original_servers
+
+
+class TestServiceGlobalEndpointPollution:
+    """Test for global endpoint pollution due to class-level _endpoints."""
+
+    def test_no_global_endpoint_pollution(self):
+        from mindtrace.services.core.utils import generate_connection_manager
+        from mindtrace.services.sample.echo_service import EchoService
+
+        # Ensure clean state
+        if hasattr(Service, "_endpoints"):
+            Service._endpoints.clear()
+        if hasattr(EchoService, "_endpoints"):
+            EchoService._endpoints.clear()
+
+        # Create EchoService instance
+        echo_service = EchoService()
+        echo_endpoints = list(echo_service._endpoints.keys())
+        # Should contain 'echo' and system endpoints
+        assert "echo" in echo_endpoints
+        # Create a regular Service instance
+        regular_service = Service()
+        service_endpoints = list(regular_service._endpoints.keys())
+        # Should NOT contain 'echo'
+        assert "echo" not in service_endpoints, (
+            f"Global pollution detected: Service._endpoints contains: {service_endpoints}"
+        )
+
+        # Generate connection managers
+        EchoCM = generate_connection_manager(EchoService)
+        ServiceCM = generate_connection_manager(Service)
+        echo_methods = [attr for attr in dir(EchoCM) if not attr.startswith("_") and callable(getattr(EchoCM, attr))]
+        service_methods = [
+            attr for attr in dir(ServiceCM) if not attr.startswith("_") and callable(getattr(ServiceCM, attr))
+        ]
+        # EchoCM should have 'echo', ServiceCM should NOT
+        assert "echo" in echo_methods
+        assert "echo" not in service_methods, (
+            f"Global pollution detected: Service connection manager has methods: {service_methods}"
+        )
