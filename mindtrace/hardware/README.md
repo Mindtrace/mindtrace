@@ -78,8 +78,9 @@ mindtrace-setup-cameras
 
 #### Individual Camera Backend Setup
 ```bash
-# Setup Daheng cameras (installs gxipy SDK)
+# Setup Daheng cameras (gxipy SDK needs to be installed separately)
 mindtrace-setup-daheng
+pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
 
 # Setup Basler cameras (installs pypylon SDK)
 mindtrace-setup-basler

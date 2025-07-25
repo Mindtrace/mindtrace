@@ -125,16 +125,18 @@ class Service(Mindtrace):
         self.app.mount("/mcp-server", self.mcp_app)
         self.add_endpoint(
             path="/endpoints",
-            func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
+            func=self.endpoints_func,
             schema=EndpointsSchema(),
+            as_tool=True,
         )
         self.add_endpoint(
-            path="/status", func=named_lambda("status", lambda: {"status": self.status.value}), schema=StatusSchema()
+            path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True
         )
         self.add_endpoint(
             path="/heartbeat",
-            func=named_lambda("heartbeat", lambda: {"heartbeat": self.heartbeat()}),
+            func=self.heartbeat_func,
             schema=HeartbeatSchema(),
+            as_tool=True,
         )
         self.add_endpoint(
             path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
@@ -145,6 +147,18 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
         )
+
+    def endpoints_func(self):
+        """List all available endpoints for the service."""
+        return {"endpoints": list(self._endpoints.keys())}
+
+    def status_func(self):
+        """Get the current status of the service."""
+        return {"status": self.status.value}
+
+    def heartbeat_func(self):
+        """Perform a heartbeat check for the service."""
+        return {"heartbeat": self.heartbeat()}
 
     @classmethod
     def _generate_id_and_pid_file(cls, unique_id: UUID | None = None, pid_file: str | None = None) -> tuple[UUID, str]:
@@ -464,17 +478,33 @@ class Service(Mindtrace):
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
         autolog_kwargs = ifnone(autolog_kwargs, default={})
-
         self._endpoints[path] = schema
+        if as_tool:
+            self.add_tool(tool_name=path, func=func)
+        else:
+            # Warn if the function has no docstring
+            if not func.__doc__:
+                service_name = getattr(self, 'name', self.__class__.__name__)
+                self.logger.warning(
+                    f"Function '{path}' for service '{service_name}' has no docstring."
+                )
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
-        if as_tool:
-            self.add_tool(tool_name=path, func=func)
 
     def add_tool(self, tool_name, func):
-        """Add a tool to the MCP server."""
-        self.mcp.tool(name=tool_name)(func)
+        """Add a tool to the MCP server, with an informative description including the tool and service name."""
+        service_name = getattr(self, 'name', self.__class__.__name__)
+        # Use the function's docstring if available, otherwise log and use a default description
+        if (doc := func.__doc__):
+            base_desc = doc.strip()
+        else:
+            base_desc = f"No description provided."
+            self.logger.warning(
+                f"Function '{tool_name}' for service '{service_name}' has no docstring."
+            )
+        full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
+        self.mcp.tool(name=tool_name, description=full_desc)(func)
