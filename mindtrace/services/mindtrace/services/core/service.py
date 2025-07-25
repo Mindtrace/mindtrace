@@ -502,7 +502,7 @@ class Service(Mindtrace):
         if (doc := func.__doc__):
             base_desc = doc.strip()
         else:
-            base_desc = f"No description provided."
+            base_desc = "No description provided."
             self.logger.warning(
                 f"Function '{tool_name}' for service '{service_name}' has no docstring."
             )
