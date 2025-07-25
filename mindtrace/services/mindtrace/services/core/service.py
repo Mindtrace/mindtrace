@@ -4,34 +4,30 @@ import atexit
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Type, TypeVar
+from typing import Any, Dict, Type, TypeVar
 from uuid import UUID
 
 import fastapi
 import psutil
 import requests
 from fastapi import FastAPI, HTTPException
-from urllib3.util.url import Url, parse_url
-
-from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from fastmcp import FastMCP
+from mindtrace.core import (Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url,
+                            named_lambda)
 from mindtrace.services.core.connection_manager import ConnectionManager
-from mindtrace.services.core.types import (
-    EndpointsSchema,
-    Heartbeat,
-    HeartbeatSchema,
-    PIDFileSchema,
-    ServerIDSchema,
-    ServerStatus,
-    ShutdownSchema,
-    StatusSchema,
-)
+from mindtrace.services.core.types import (EndpointsSchema, Heartbeat,
+                                           HeartbeatSchema, PIDFileSchema,
+                                           ServerIDSchema, ServerStatus,
+                                           ShutdownSchema, StatusSchema)
 from mindtrace.services.core.utils import generate_connection_manager
+from urllib3.util.url import Url, parse_url
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -53,7 +49,7 @@ class Service(Mindtrace):
         summary: str | None = None,
         description: str | None = None,
         terms_of_service: str | None = None,
-        license_info: str | None = None,
+        license_info: Dict[str, str | Any] | None = None,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -89,16 +85,26 @@ class Service(Mindtrace):
         )
         """
 
-        description = ifnone(description, default=f"{self.name} server.")
+        description = str(ifnone(description, default=f"{self.name} server."))
         version_str = "Mindtrace " + version("mindtrace-services")
 
+        self.mcp = FastMCP(
+            name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
+            version=version_str,
+        )
+        self.mcp_app = self.mcp.http_app(path='/mcp')
+
         @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            """Lifespan for the FastAPI app."""
-            self.logger.info(f"Server {self.id} starting up.")
-            yield
-            await self.shutdown_cleanup()
-            self.logger.info(f"Server {self.id} shut down.")
+        async def combined_lifespan(app: FastAPI):
+            """Combined lifespan for FastAPI and MCP app."""
+            async with AsyncExitStack() as stack:
+                # Enter MCP app lifespan
+                await stack.enter_async_context(self.mcp_app.lifespan(app))
+                # Service's own startup logic
+                self.logger.info(f"Server {self.id} starting up.")
+                yield
+                await self.shutdown_cleanup()
+                self.logger.info(f"Server {self.id} shut down.")
 
         self.app = FastAPI(
             title=self.name,
@@ -107,8 +113,10 @@ class Service(Mindtrace):
             version=version_str,
             terms_of_service=terms_of_service,
             license_info=license_info,
-            lifespan=lifespan,
+            lifespan=combined_lifespan,
         )
+
+        self.app.mount("/mcp-server", self.mcp_app)
         self.add_endpoint(
             path="/endpoints",
             func=named_lambda("endpoints", lambda: {"endpoints": list(self._endpoints.keys())}),
@@ -441,6 +449,7 @@ class Service(Mindtrace):
         autolog_kwargs=None,
         methods: list[str] | None = None,
         scope: str = "public",
+        as_tool: bool = False,
     ):
         """Register a new endpoint with optional role."""
         path = path.removeprefix("/")
@@ -454,3 +463,9 @@ class Service(Mindtrace):
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
+        if as_tool:
+            self.add_tool(tool_name=path, func=func)
+
+    def add_tool(self, tool_name, func):
+        """Add a tool to the MCP server."""
+        self.mcp.tool(name=tool_name)(func)

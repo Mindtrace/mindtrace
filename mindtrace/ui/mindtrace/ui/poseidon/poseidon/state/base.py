@@ -1,5 +1,5 @@
 import reflex as rx
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable, Awaitable
 from poseidon.state.auth import AuthState
 
 
@@ -15,6 +15,16 @@ class BaseManagementState(rx.State):
         """Clear success and error messages"""
         self.error = ""
         self.success = ""
+    
+    def set_error(self, message: str):
+        """Set error message and clear success"""
+        self.error = message
+        self.success = ""
+    
+    def set_success(self, message: str):
+        """Set success message and clear error"""
+        self.success = message
+        self.error = ""
     
     async def get_auth_state(self) -> AuthState:
         """Get the current auth state"""
@@ -36,6 +46,46 @@ class BaseManagementState(rx.State):
         if auth_state.is_authenticated and (auth_state.is_admin or auth_state.is_super_admin):
             return auth_state.user_organization_id
         return None
+    
+    async def handle_async_operation(
+        self, 
+        operation: Callable[[], Awaitable[bool]], 
+        success_message: str,
+        loading_message: Optional[str] = None
+    ) -> bool:
+        """
+        Handle common async operation pattern with loading states and error handling.
+        
+        Args:
+            operation: Async function that returns True on success, False on failure
+            success_message: Message to show on success
+            loading_message: Optional loading message
+            
+        Returns:
+            bool: True if operation succeeded, False otherwise
+        """
+        try:
+            self.loading = True
+            self.clear_messages()
+            
+            if loading_message:
+                self.success = loading_message
+            
+            result = await operation()
+            
+            if result:
+                self.set_success(success_message)
+                return True
+            else:
+                if not self.error:  # Only set generic error if no specific error was set
+                    self.set_error("Operation failed")
+                return False
+                
+        except Exception as e:
+            self.set_error(f"Operation failed: {str(e)}")
+            return False
+        finally:
+            self.loading = False
 
 
 class BaseFilterState(BaseManagementState):
@@ -67,6 +117,19 @@ class BaseFilterState(BaseManagementState):
             return [item for item in items if not getattr(item, status_field, True)]
         # "all" shows all items
         return items
+    
+    def set_search_query(self, query: str):
+        """Set search query"""
+        self.search_query = query
+    
+    def set_status_filter(self, status: str):
+        """Set status filter"""
+        self.status_filter = status
+    
+    def clear_filters(self):
+        """Clear all filters"""
+        self.search_query = ""
+        self.status_filter = "active"
 
 
 class BaseFormState(BaseFilterState):
@@ -74,72 +137,79 @@ class BaseFormState(BaseFilterState):
     
     def validate_required_field(self, field_value: str, field_name: str) -> bool:
         """Validate a required field and set error if empty"""
-        if not field_value.strip():
-            self.error = f"{field_name} is required"
+        if not field_value or not field_value.strip():
+            self.set_error(f"{field_name} is required")
             return False
         return True
     
     def validate_email(self, email: str) -> bool:
         """Basic email validation"""
         if not email or "@" not in email:
-            self.error = "Valid email is required"
+            self.set_error("Valid email is required")
             return False
         return True
     
-    async def handle_async_operation(self, operation_func, success_message: str):
-        """Handle common async operation pattern with loading states"""
-        try:
-            self.loading = True
-            self.clear_messages()
-            
-            result = await operation_func()
-            
-            if result:
-                self.success = success_message
-                return True
-            else:
-                self.error = "Operation failed"
-                return False
-                
-        except Exception as e:
-            self.error = f"Operation failed: {str(e)}"
+    def validate_positive_integer(self, value: str, field_name: str) -> bool:
+        """Validate positive integer field"""
+        if not value.isdigit() or int(value) <= 0:
+            self.set_error(f"{field_name} must be a positive number")
             return False
-        finally:
-            self.loading = False
+        return True
 
 
 class BaseDialogState(BaseFormState):
     """Base state with common dialog patterns."""
     
-    def create_dialog_methods(self, dialog_name: str):
-        """Create standard dialog methods for a given dialog name"""
-        # This is a helper method to document the pattern
-        # Individual states should implement these methods:
-        # - open_{dialog_name}_dialog()
-        # - close_{dialog_name}_dialog()  
-        # - set_{dialog_name}_dialog_open(open: bool)
-        pass
-    
-    def get_dialog_control_pattern(self, dialog_name: str) -> Dict[str, Any]:
-        """Get the standard dialog control pattern"""
-        return {
-            f"{dialog_name}_dialog_open": False,
-            f"open_{dialog_name}_dialog": lambda: self._open_dialog(dialog_name),
-            f"close_{dialog_name}_dialog": lambda: self._close_dialog(dialog_name),
-            f"set_{dialog_name}_dialog_open": lambda open: self._set_dialog_open(dialog_name, open),
-        }
-    
-    def _open_dialog(self, dialog_name: str):
+    def open_dialog(self, dialog_name: str):
         """Generic dialog open method"""
         setattr(self, f"{dialog_name}_dialog_open", True)
+        self.clear_messages()
     
-    def _close_dialog(self, dialog_name: str):
+    def close_dialog(self, dialog_name: str):
         """Generic dialog close method"""
         setattr(self, f"{dialog_name}_dialog_open", False)
+        self.clear_messages()
     
-    def _set_dialog_open(self, dialog_name: str, open: bool):
+    def set_dialog_open(self, dialog_name: str, open: bool):
         """Generic dialog state setter"""
         setattr(self, f"{dialog_name}_dialog_open", open)
+        if not open:
+            self.clear_messages()
+
+
+class BasePaginationState(BaseDialogState):
+    """Base state with pagination patterns."""
+    
+    # Pagination
+    current_page: int = 1
+    items_per_page: int = 10
+    
+    def calculate_total_pages(self, items: List[Any]) -> int:
+        """Calculate total number of pages for given items"""
+        if not items:
+            return 1
+        return (len(items) + self.items_per_page - 1) // self.items_per_page
+    
+    def next_page(self):
+        """Go to next page"""
+        if self.current_page < self.total_pages:
+            self.current_page += 1
+    
+    def previous_page(self):
+        """Go to previous page"""
+        if self.current_page > 1:
+            self.current_page -= 1
+    
+    def go_to_page(self, page: int):
+        """Go to specific page"""
+        if 1 <= page <= self.total_pages:
+            self.current_page = page
+    
+    def get_paginated_items(self, items: List[Any]) -> List[Any]:
+        """Get items for current page"""
+        start_index = (self.current_page - 1) * self.items_per_page
+        end_index = start_index + self.items_per_page
+        return items[start_index:end_index]
 
 
 class RoleBasedAccessMixin:

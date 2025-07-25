@@ -1,21 +1,17 @@
 #!/usr/bin/env python3
 """
 Database seed file to create the initial organization and superadmin user.
+This file is safe to run in production as it only creates data if it doesn't exist.
 """
 
 import asyncio
-import hashlib
 import secrets
 
 from .init import initialize_database
 from .models.organization import Organization
 from .models.user import User
 from .models.enums import OrgRole, SubscriptionPlan
-
-
-def hash_password(password: str) -> str:
-    """Hash a password using SHA-256 (simple hashing for demo purposes)"""
-    return hashlib.sha256(password.encode()).hexdigest()
+from poseidon.backend.utils.security import hash_password
 
 
 async def create_initial_organization() -> Organization:
@@ -129,7 +125,7 @@ async def verify_setup():
 
 
 async def seed_database():
-    """Main seed function"""
+    """Main seed function - safe to run in production"""
     print("=" * 60)
     print("Starting database seeding...")
     print("=" * 60)
@@ -168,44 +164,9 @@ async def seed_database():
     return True
 
 
-async def reset_and_seed():
-    """Reset and seed the database (WARNING: This will delete existing data)"""
-    print("⚠️  WARNING: This will delete all existing organizations and users!")
-    
-    try:
-        await initialize_database()
-        
-        # Delete all users and organizations
-        await User.delete_all()
-        await Organization.delete_all()
-        
-        print("✓ Cleared existing data")
-        
-        # Run seed
-        return await seed_database()
-        
-    except Exception as e:
-        print(f"❌ Reset and seed failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-
 if __name__ == "__main__":
     print("MindTrace Database Seeding Tool")
-    print("Choose an option:")
-    print("1. Seed database (safe - won't overwrite existing data)")
-    print("2. Reset and seed database (WARNING - will delete all data)")
+    print("This tool is safe to run in production - it only creates data if it doesn't exist.")
+    print("=" * 60)
     
-    choice = input("Enter your choice (1 or 2): ").strip()
-    
-    if choice == "1":
-        asyncio.run(seed_database())
-    elif choice == "2":
-        confirm = input("Are you sure you want to delete all data? Type 'yes' to confirm: ").strip().lower()
-        if confirm == "yes":
-            asyncio.run(reset_and_seed())
-        else:
-            print("Operation cancelled.")
-    else:
-        print("Invalid choice. Exiting.") 
+    asyncio.run(seed_database()) 

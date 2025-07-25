@@ -1,5 +1,6 @@
 import json
 import platform
+import os
 import shutil
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ else:
     import fcntl
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class LocalRegistryBackend(RegistryBackend):
@@ -283,6 +285,12 @@ class LocalRegistryBackend(RegistryBackend):
         """Get the path for a lock file."""
         return self._full_path(f"_lock_{key}")
 
+    def _get_key_from_path(self, lock_path: Path) -> str:
+        """Extract the key from a lock file path."""
+        # Remove the _lock_ prefix and convert back to original key
+        key_part = lock_path.name.replace("_lock_", "")
+        return key_part
+
     def _acquire_file_lock(self, file_obj) -> bool:
         """Acquire a file lock using the appropriate mechanism for the OS."""
         try:
@@ -327,8 +335,8 @@ class LocalRegistryBackend(RegistryBackend):
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using atomic file operations.
 
-        Uses platform-specific file locking mechanisms to ensure atomic operations. The lock file contains both the
-        lock_id and expiration time in JSON format.
+        Uses atomic file creation with O_EXCL to ensure only one process can create the lock file.
+        The lock file contains both the lock_id and expiration time in JSON format.
 
         Args:
             key: The key to acquire the lock for.
@@ -342,63 +350,95 @@ class LocalRegistryBackend(RegistryBackend):
         lock_path = self._lock_path(key)
 
         try:
-            # Create lock file if it doesn't exist
-            if not lock_path.exists():
-                lock_path.touch()
-
-            # Open the lock file for reading and writing
-            with open(lock_path, "r+") as f:
-                # For shared locks, we need to check if there's an exclusive lock first
-                if shared:
-                    try:
-                        content = f.read().strip()
-                        if content:
-                            metadata = json.loads(content)
-                            # If there's an exclusive lock that's not expired, we can't acquire a shared lock
-                            if not metadata.get("shared", False) and time.time() < metadata.get("expires_at", 0):
-                                return False
-                    except (json.JSONDecodeError, IOError):
-                        # Invalid content, we can proceed
-                        pass
-
-                # Try to acquire the appropriate type of file lock
-                if shared:
-                    if not self._acquire_shared_lock(f):
-                        return False
+            # Try atomic file creation first - only one process can create the file
+            try:
+                # Use O_EXCL flag to ensure atomic creation
+                if platform.system() == "Windows":
+                    # Windows: Use exclusive creation
+                    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
                 else:
-                    if not self._acquire_file_lock(f):
-                        return False
-
-                try:
-                    # For exclusive locks, check if there are any active shared locks
-                    if not shared:
-                        try:
-                            content = f.read().strip()
-                            if content:
-                                metadata = json.loads(content)
-                                if metadata.get("shared", False) and time.time() < metadata.get("expires_at", 0):
-                                    # There are active shared locks, we can't acquire an exclusive lock
-                                    return False
-                        except (json.JSONDecodeError, IOError):
-                            # Invalid content, we can proceed
-                            pass
-
+                    # Unix: Use O_EXCL for atomic creation
+                    fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+                
+                # File created successfully - we have the lock
+                with os.fdopen(fd, "r+") as f:
                     # Write our lock information
-                    f.seek(0)
-                    f.truncate()
                     metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
                     f.write(json.dumps(metadata))
-
-                    # Keep the file locked
+                    f.flush()
+                    os.fsync(fd)  # Ensure data is written to disk
                     return True
-
-                except Exception as e:
-                    self._release_file_lock(f)  # Release lock on error
-                    self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
-                    return False
-
+                    
+            except FileExistsError:
+                # File already exists - try to acquire existing lock
+                if not self._acquire_existing_lock(lock_path, lock_id, timeout, shared):
+                    raise LockAcquisitionError(f"Lock {key} is currently in use")
+                return True
+                
+        except LockAcquisitionError:
+            # Re-raise LockAcquisitionError
+            raise
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
+            return False
+
+    def _acquire_existing_lock(self, lock_path: Path, lock_id: str, timeout: int, shared: bool = False) -> bool:
+        """Acquire a lock on an existing lock file.
+        
+        This method handles the case where the lock file already exists and we need to
+        check if the existing lock is expired and potentially acquire it.
+        
+        Args:
+            lock_path: Path to the lock file.
+            lock_id: The ID of the lock to acquire.
+            timeout: The timeout in seconds for the lock.
+            shared: Whether to acquire a shared (read) lock.
+            
+        Returns:
+            True if the lock was acquired, False otherwise.
+        """
+        try:
+            # Check if lock file exists and read current lock info
+            if not lock_path.exists():
+                return False
+                
+            try:
+                with open(lock_path, "r") as f:
+                    content = f.read().strip()
+                    if not content:
+                        return False
+                    metadata = json.loads(content)
+            except (json.JSONDecodeError, IOError):
+                # Corrupted lock file - remove it and retry
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+                return False
+            
+            # Check if existing lock is expired
+            if time.time() > metadata.get("expires_at", 0):
+                # Lock is expired - remove it and retry acquisition
+                lock_path.unlink()
+
+                # Retry acquisition with the original key
+                return self.acquire_lock(self._get_key_from_path(lock_path), lock_id, timeout, shared)
+            
+            # Lock is still valid - check if we can acquire it
+            existing_shared = metadata.get("shared", False)
+            
+            if shared:
+                # For shared locks, we can acquire if existing lock is also shared
+                if existing_shared:
+                    return True
+                else:
+                    return False
+            else:
+                # For exclusive locks, we can only acquire if no lock exists
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error acquiring existing lock for {lock_path}: {e}")
             return False
 
     def release_lock(self, key: str, lock_id: str) -> bool:
@@ -435,8 +475,12 @@ class LocalRegistryBackend(RegistryBackend):
                         self._release_file_lock(f)  # Release lock on error
                         return False
 
-                    # Remove the lock file
-                    lock_path.unlink()
+                    # Remove the lock file - use unlink with missing_ok=True to handle race conditions
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        # File was already deleted by another thread, which is fine
+                        pass
                     return True
 
                 except Exception as e:
@@ -536,7 +580,7 @@ class LocalRegistryBackend(RegistryBackend):
                 metadata["path"] = str(target_path)
 
                 with open(target_meta_path, "w") as f:
-                    yaml.safe_dump(metadata, f)
+                    yaml.dump(metadata, f)
 
             self.logger.debug(f"Successfully overwrote {target_name}@{target_version}")
 

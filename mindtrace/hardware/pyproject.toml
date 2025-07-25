@@ -1,11 +1,19 @@
 [project]
 name = "mindtrace-hardware"
 version = "0.1.0"
-description = "Hardware abstraction layer for cameras, sensors, PLCs and other devices"
-requires-python = ">=3.12"
+description = "Hardware integration for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mindtrace-core",
     "mindtrace-services",
+    "mindtrace-storage",
     "opencv-python>=4.8.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",

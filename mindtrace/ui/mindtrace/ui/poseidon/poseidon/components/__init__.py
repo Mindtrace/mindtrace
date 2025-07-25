@@ -2,6 +2,11 @@
 
 Modern component library with mindtrace styling as the primary choice.
 Mindtrace components provide superior animations, styling, and user experience.
+
+ARCHITECTURE:
+- PRIMARY: Mindtrace components (recommended for new development)
+- SECONDARY: Functional components for specific use cases  
+- BASE: Reusable management patterns and utilities
 """
 
 # === PRIMARY MINDTRACE COMPONENTS (RECOMMENDED) ===

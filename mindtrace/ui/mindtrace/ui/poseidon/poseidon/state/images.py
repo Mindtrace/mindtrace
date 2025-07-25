@@ -88,8 +88,6 @@ class ImageState(rx.State):
                     page, self.page_size
                 )
             
-            print(f"Database result: {result}")  # Debug output
-            
             # Convert to ImageDict objects with safe conversion
             image_list = []
             for img in result["images"]:
@@ -105,8 +103,6 @@ class ImageState(rx.State):
             self.total_count = result["total_count"]
             self.total_pages = result["total_pages"]
             self.current_page = result["page"]
-            
-            print(f"Successfully loaded {len(self.images)} images")  # Debug output
             
         except Exception as e:
             print(f"Error loading images: {e}")
