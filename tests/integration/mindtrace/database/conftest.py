@@ -111,7 +111,7 @@ def pytest_sessionfinish(session, exitstatus):
     for client in _test_clients[:]:  # Copy list to avoid modification during iteration
         try:
             client.close()
-        except:
+        except Exception:
             pass
     _test_clients.clear()
     

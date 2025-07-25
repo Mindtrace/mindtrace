@@ -388,7 +388,7 @@ class ClusterManager(Gateway):
         worker_url = worker_status_list[0].worker_url
         try:
             worker_cm = Worker.connect(worker_url)
-        except:
+        except Exception:
             worker_cm = None
         if worker_cm is None or worker_cm.heartbeat().heartbeat.status == ServerStatus.DOWN:
             our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": cluster_types.WorkerStatusEnum.NONEXISTENT, "job_id": None, "last_heartbeat": datetime.now()})

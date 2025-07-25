@@ -117,5 +117,5 @@ class TestStackEquivalence:
         finally:
             try:
                 redis_stack.__db.delete(redis_stack.key)
-            except:
+            except Exception:
                 pass 
