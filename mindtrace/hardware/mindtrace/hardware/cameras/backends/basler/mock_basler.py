@@ -477,11 +477,11 @@ class MockBaslerCamera(BaseCamera):
         try:
             # Convert to LAB color space
             lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
+            length, a, b = cv2.split(lab)
             
             # Apply CLAHE to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            cl = clahe.apply(l)
+            cl = clahe.apply(length)
             
             # Merge channels and convert back to BGR
             enhanced_lab = cv2.merge((cl, a, b))

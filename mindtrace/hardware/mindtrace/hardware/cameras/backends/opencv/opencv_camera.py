@@ -527,11 +527,11 @@ class OpenCVCamera(BaseCamera):
         try:
             # Convert RGB to LAB color space for better enhancement
             lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
-            l, a, b = cv2.split(lab)
+            length, a, b = cv2.split(lab)
             
             # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            cl = clahe.apply(l)
+            cl = clahe.apply(length)
             
             # Merge channels and convert back to RGB
             enhanced_lab = cv2.merge((cl, a, b))

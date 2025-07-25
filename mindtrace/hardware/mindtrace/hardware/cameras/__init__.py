@@ -5,6 +5,9 @@ Provides unified camera management across different camera manufacturers
 with graceful SDK handling and comprehensive error management.
 """
 
+# ruff: noqa
+# this is too weird for ruff to work out what's going on
+
 from .backends.base import BaseCamera
 from .camera_manager import CameraManager
 

@@ -7,7 +7,7 @@ Allen Bradley, Siemens, Modbus, and other industrial protocols.
 
 # Import available backends
 try:
-    from .allen_bradley import AllenBradleyPLC
+    from .allen_bradley import AllenBradleyPLC # noqa
     ALLEN_BRADLEY_AVAILABLE = True
 except ImportError:
     ALLEN_BRADLEY_AVAILABLE = False
