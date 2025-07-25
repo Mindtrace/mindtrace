@@ -1617,7 +1617,7 @@ def test_distributed_lock_save_concurrent(registry):
 def test_distributed_lock_save_conflict(registry):
     """Test that saving to the same version is properly prevented by locks."""
 
-    from mindtrace.registry.core.registry import LockTimeoutError
+    from mindtrace.registry.core.exceptions import LockTimeoutError
 
     test_obj = Config(
         MINDTRACE_TEMP_DIR="/custom/temp/dir",
