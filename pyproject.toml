@@ -42,6 +42,10 @@ dev-dependencies = [
     "pre-commit>=4.2.0",
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace"
+
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
 mindtrace-services = { workspace = true }

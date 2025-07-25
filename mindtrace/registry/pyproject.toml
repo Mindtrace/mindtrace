@@ -17,6 +17,10 @@ dependencies = [
     "zenml>=0.82.1",
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

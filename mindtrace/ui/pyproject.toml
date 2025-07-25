@@ -15,6 +15,10 @@ dependencies = [
     "mindtrace-core"
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/ui"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

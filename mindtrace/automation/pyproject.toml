@@ -20,6 +20,10 @@ dependencies = [
     "mindtrace-cluster"
 ]
 
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/automation"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
