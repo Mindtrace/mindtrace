@@ -17,13 +17,13 @@ class TestDockerEnvironment:
             environment={"TEST_VAR": "test_value"},
             volumes={"/host/path": {"bind": "/container/path", "mode": "rw"}},
             devices=["0", "1"],
-            working_dir="/workspace"
+            working_dir="/workspace",
         )
 
     @pytest.fixture
     def mock_docker_client(self):
         """Mock Docker client."""
-        with patch('mindtrace.cluster.workers.environments.docker_env.docker.from_env') as mock_client:
+        with patch("mindtrace.cluster.workers.environments.docker_env.docker.from_env") as mock_client:
             # Mock the client and its components
             mock_client.return_value.images.pull = Mock()
             mock_client.return_value.containers.run = Mock()
@@ -37,7 +37,7 @@ class TestDockerEnvironment:
             environment={"TEST_VAR": "test_value"},
             volumes={"/host/path": {"bind": "/container/path", "mode": "rw"}},
             devices=["0", "1"],
-            working_dir="/workspace"
+            working_dir="/workspace",
         )
 
     def test_initialization(self):
@@ -47,7 +47,7 @@ class TestDockerEnvironment:
             environment={"TEST_VAR": "test_value"},
             volumes={"/host/path": {"bind": "/container/path", "mode": "rw"}},
             devices=["0", "1"],
-            working_dir="/workspace"
+            working_dir="/workspace",
         )
 
         assert env.image == "test-image:latest"
@@ -84,10 +84,7 @@ class TestDockerEnvironment:
 
     def test_setup_with_device_requests(self, mock_docker_client):
         """Test container setup with GPU device requests."""
-        env = DockerEnvironment(
-            image="test-image:latest",
-            devices=["0", "1"]
-        )
+        env = DockerEnvironment(image="test-image:latest", devices=["0", "1"])
 
         mock_container = Mock()
         mock_container.id = "test-container-id"
@@ -107,10 +104,7 @@ class TestDockerEnvironment:
 
     def test_setup_without_devices(self, mock_docker_client):
         """Test container setup without GPU devices."""
-        env = DockerEnvironment(
-            image="test-image:latest",
-            devices=[]
-        )
+        env = DockerEnvironment(image="test-image:latest", devices=[])
 
         mock_container = Mock()
         mock_container.id = "test-container-id"

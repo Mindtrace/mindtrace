@@ -359,7 +359,7 @@ class LocalRegistryBackend(RegistryBackend):
                 else:
                     # Unix: Use O_EXCL for atomic creation
                     fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
-                
+
                 # File created successfully - we have the lock
                 with os.fdopen(fd, "r+") as f:
                     # Write our lock information
@@ -368,13 +368,13 @@ class LocalRegistryBackend(RegistryBackend):
                     f.flush()
                     os.fsync(fd)  # Ensure data is written to disk
                     return True
-                    
+
             except FileExistsError:
                 # File already exists - try to acquire existing lock
                 if not self._acquire_existing_lock(lock_path, lock_id, timeout, shared):
                     raise LockAcquisitionError(f"Lock {key} is currently in use")
                 return True
-                
+
         except LockAcquisitionError:
             # Re-raise LockAcquisitionError
             raise
@@ -384,16 +384,16 @@ class LocalRegistryBackend(RegistryBackend):
 
     def _acquire_existing_lock(self, lock_path: Path, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock on an existing lock file.
-        
+
         This method handles the case where the lock file already exists and we need to
         check if the existing lock is expired and potentially acquire it.
-        
+
         Args:
             lock_path: Path to the lock file.
             lock_id: The ID of the lock to acquire.
             timeout: The timeout in seconds for the lock.
             shared: Whether to acquire a shared (read) lock.
-            
+
         Returns:
             True if the lock was acquired, False otherwise.
         """
@@ -401,7 +401,7 @@ class LocalRegistryBackend(RegistryBackend):
             # Check if lock file exists and read current lock info
             if not lock_path.exists():
                 return False
-                
+
             try:
                 with open(lock_path, "r") as f:
                     content = f.read().strip()
@@ -415,7 +415,7 @@ class LocalRegistryBackend(RegistryBackend):
                 except FileNotFoundError:
                     pass
                 return False
-            
+
             # Check if existing lock is expired
             if time.time() > metadata.get("expires_at", 0):
                 # Lock is expired - remove it and retry acquisition
@@ -423,10 +423,10 @@ class LocalRegistryBackend(RegistryBackend):
 
                 # Retry acquisition with the original key
                 return self.acquire_lock(self._get_key_from_path(lock_path), lock_id, timeout, shared)
-            
+
             # Lock is still valid - check if we can acquire it
             existing_shared = metadata.get("shared", False)
-            
+
             if shared:
                 # For shared locks, we can acquire if existing lock is also shared
                 if existing_shared:
@@ -436,7 +436,7 @@ class LocalRegistryBackend(RegistryBackend):
             else:
                 # For exclusive locks, we can only acquire if no lock exists
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error acquiring existing lock for {lock_path}: {e}")
             return False

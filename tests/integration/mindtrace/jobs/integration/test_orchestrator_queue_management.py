@@ -76,4 +76,4 @@ class TestOrchestratorQueueManagement:
         # Delete queue
         orchestrator.delete_queue(queue_name)
         with pytest.raises(Exception):  # Could be KeyError or ConnectionError depending on backend impl
-            orchestrator.count_queue_messages(queue_name) 
+            orchestrator.count_queue_messages(queue_name)

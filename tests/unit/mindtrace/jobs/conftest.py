@@ -18,7 +18,9 @@ class SampleJobOutput(BaseModel):
     timestamp: str = "2024-01-01T00:00:00"
 
 
-def create_test_job(name: str = "test_job", schema_name: str = "default_schema", input_data_str: str | None = None) -> Job:
+def create_test_job(
+    name: str = "test_job", schema_name: str = "default_schema", input_data_str: str | None = None
+) -> Job:
     if input_data_str is None:
         test_input = SampleJobInput()
     else:
@@ -39,6 +41,7 @@ def create_test_job(name: str = "test_job", schema_name: str = "default_schema",
 def unique_queue_name():
     def _unique_name(prefix="test_queue"):
         return f"{prefix}_{int(time.time())}"
+
     return _unique_name
 
 
@@ -48,28 +51,20 @@ def test_timestamp():
 
 
 def pytest_configure(config):
-    config.addinivalue_line(
-        "markers", "redis: mark test as requiring Redis server"
-    )
-    config.addinivalue_line(
-        "markers", "rabbitmq: mark test as requiring RabbitMQ server"
-    )
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"
-    )
-    config.addinivalue_line(
-        "markers", "unit: mark test as unit test not requiring external services"
-    )
+    config.addinivalue_line("markers", "redis: mark test as requiring Redis server")
+    config.addinivalue_line("markers", "rabbitmq: mark test as requiring RabbitMQ server")
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "unit: mark test as unit test not requiring external services")
 
 
 def pytest_collection_modifyitems(config, items):
     for item in items:
         if "redis" in item.name.lower() or "Redis" in str(item.cls):
             item.add_marker(pytest.mark.redis)
-        
+
         if "rabbitmq" in item.name.lower() or "RabbitMQ" in str(item.cls):
             item.add_marker(pytest.mark.rabbitmq)
-        
+
         if "orchestrator" in item.name.lower() or "Orchestrator" in str(item.cls):
             item.add_marker(pytest.mark.integration)
 
@@ -80,4 +75,4 @@ def pytest_collection_modifyitems(config, items):
             and item.get_closest_marker("rabbitmq") is None
             and item.get_closest_marker("integration") is None
         ):
-            item.add_marker(pytest.mark.unit) 
+            item.add_marker(pytest.mark.unit)

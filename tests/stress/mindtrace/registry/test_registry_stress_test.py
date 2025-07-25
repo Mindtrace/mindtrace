@@ -82,7 +82,7 @@ class TestRegistryThroughput:
         with tqdm(total=iterations * 2, desc="Sequential operations", file=sys.stderr) as pbar:
             for i in range(iterations):
                 obj_name = f"test:obj:{i}"
-                
+
                 # Save operation
                 save_start = time.time()
                 try:
@@ -110,13 +110,15 @@ class TestRegistryThroughput:
 
                 # Update progress
                 if i % 10 == 0:
-                    pbar.set_postfix({
-                        "saves": successful_saves,
-                        "loads": successful_loads,
-                        "failed": failed_operations,
-                        "save_avg_ms": f"{mean(save_times[-10:]) * 1000:.1f}" if save_times else "0",
-                        "load_avg_ms": f"{mean(load_times[-10:]) * 1000:.1f}" if load_times else "0",
-                    })
+                    pbar.set_postfix(
+                        {
+                            "saves": successful_saves,
+                            "loads": successful_loads,
+                            "failed": failed_operations,
+                            "save_avg_ms": f"{mean(save_times[-10:]) * 1000:.1f}" if save_times else "0",
+                            "load_avg_ms": f"{mean(load_times[-10:]) * 1000:.1f}" if load_times else "0",
+                        }
+                    )
 
         total_time = time.time() - start_time
         total_operations = successful_saves + successful_loads
@@ -125,10 +127,10 @@ class TestRegistryThroughput:
         save_throughput = successful_saves / total_time
         load_throughput = successful_loads / total_time
         overall_throughput = total_operations / total_time
-        
+
         avg_save_time = mean(save_times) if save_times else 0
         avg_load_time = mean(load_times) if load_times else 0
-        
+
         p95_save_time = sorted(save_times)[int(0.95 * len(save_times))] if save_times else 0
         p95_load_time = sorted(load_times)[int(0.95 * len(load_times))] if load_times else 0
 
@@ -164,18 +166,31 @@ class TestRegistryThroughput:
         test_obj = test_objects["medium_string"]
 
         # Results tracking with thread-safe counters
-        results = {"successful_saves": 0, "successful_loads": 0, "failed": 0, "save_times": [], "load_times": [], "fallback_ops": 0}
+        results = {
+            "successful_saves": 0,
+            "successful_loads": 0,
+            "failed": 0,
+            "save_times": [],
+            "load_times": [],
+            "fallback_ops": 0,
+        }
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function for concurrent save/load operations."""
-            worker_results = {"successful_saves": 0, "successful_loads": 0, "failed": 0, "save_times": [], "load_times": []}
+            worker_results = {
+                "successful_saves": 0,
+                "successful_loads": 0,
+                "failed": 0,
+                "save_times": [],
+                "load_times": [],
+            }
 
             for i in range(operations_per_worker):
                 obj_name = f"concurrent:obj:{worker_id}:{i}"
-                
+
                 # Save operation
                 save_start = time.time()
                 try:
@@ -187,7 +202,7 @@ class TestRegistryThroughput:
                     worker_results["failed"] += 1
                     print(f"Worker {worker_id} save {i} failed: {e}")
 
-                # Load operation  
+                # Load operation
                 load_start = time.time()
                 try:
                     loaded_obj = registry.load(obj_name)
@@ -211,7 +226,9 @@ class TestRegistryThroughput:
                 results["save_times"].extend(worker_results["save_times"])
                 results["load_times"].extend(worker_results["load_times"])
 
-        print(f"\nStarting concurrent save/load throughput test ({max_workers} workers × {operations_per_worker} ops × 2)")
+        print(
+            f"\nStarting concurrent save/load throughput test ({max_workers} workers × {operations_per_worker} ops × 2)"
+        )
         start_time = time.time()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -222,14 +239,14 @@ class TestRegistryThroughput:
                 last_completed = 0
                 while any(not f.done() for f in futures):
                     time.sleep(0.1)
-                    
+
                     with counter_lock:
                         current_completed = completed_counter["count"]
-                    
+
                     if current_completed > last_completed:
                         pbar.update(current_completed - last_completed)
                         last_completed = current_completed
-                    
+
                     active_workers = sum(1 for f in futures if not f.done())
                     pbar.set_postfix({"completed": current_completed, "active_workers": active_workers})
 
@@ -245,17 +262,21 @@ class TestRegistryThroughput:
 
         total_time = time.time() - start_time
         total_successful = results["successful_saves"] + results["successful_loads"]
-        
+
         # Calculate metrics
         save_throughput = results["successful_saves"] / total_time
         load_throughput = results["successful_loads"] / total_time
         overall_throughput = total_successful / total_time
-        
+
         avg_save_time = mean(results["save_times"]) if results["save_times"] else 0
         avg_load_time = mean(results["load_times"]) if results["load_times"] else 0
-        
-        p95_save_time = sorted(results["save_times"])[int(0.95 * len(results["save_times"]))] if results["save_times"] else 0
-        p95_load_time = sorted(results["load_times"])[int(0.95 * len(results["load_times"]))] if results["load_times"] else 0
+
+        p95_save_time = (
+            sorted(results["save_times"])[int(0.95 * len(results["save_times"]))] if results["save_times"] else 0
+        )
+        p95_load_time = (
+            sorted(results["load_times"])[int(0.95 * len(results["load_times"]))] if results["load_times"] else 0
+        )
 
         print("\nConcurrent save/load throughput test completed:")
         print(f"   - Total operations: {total_operations * 2}")
@@ -274,7 +295,9 @@ class TestRegistryThroughput:
         print(f"   - 95th percentile load: {p95_load_time * 1000:.1f}ms")
 
         # Assertions
-        assert total_successful > (total_operations * 2) * 0.90, f"Success rate too low: {total_successful}/{total_operations * 2}"
+        assert total_successful > (total_operations * 2) * 0.90, (
+            f"Success rate too low: {total_successful}/{total_operations * 2}"
+        )
         assert overall_throughput > 5, f"Concurrent throughput too low: {overall_throughput:.1f} ops/sec"
 
     @pytest.mark.slow
@@ -287,33 +310,47 @@ class TestRegistryThroughput:
         total_operations = max_workers * operations_per_worker
 
         # Results tracking
-        results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
+        results = {
+            "saves": 0,
+            "loads": 0,
+            "deletes": 0,
+            "infos": 0,
+            "failed": 0,
+            "operation_times": [],
+            "fallback_ops": 0,
+        }
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function for mixed operations."""
-            worker_results = {"saves": 0, "loads": 0, "deletes": 0, "infos": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
-            
+            worker_results = {
+                "saves": 0,
+                "loads": 0,
+                "deletes": 0,
+                "infos": 0,
+                "failed": 0,
+                "operation_times": [],
+                "fallback_ops": 0,
+            }
+
             for i in range(operations_per_worker):
                 obj_name = f"mixed:obj:{worker_id}:{i}"
                 operation_start = time.time()
-                
+
                 try:
                     # Choose operation type based on probability
                     import random
-                    op_type = random.choices(
-                        ["save", "load", "delete", "info"], 
-                        weights=[0.4, 0.3, 0.2, 0.1]
-                    )[0]
-                    
+
+                    op_type = random.choices(["save", "load", "delete", "info"], weights=[0.4, 0.3, 0.2, 0.1])[0]
+
                     if op_type == "save":
                         # Save operation
                         test_obj = test_objects["small_string"]
                         registry.save(obj_name, test_obj)
                         worker_results["saves"] += 1
-                        
+
                     elif op_type == "load":
                         # Load operation (might fail if object doesn't exist)
                         try:
@@ -326,7 +363,7 @@ class TestRegistryThroughput:
                             worker_results["saves"] += 1
                             worker_results["loads"] += 1
                             worker_results["fallback_ops"] += 1
-                            
+
                     elif op_type == "delete":
                         # Delete operation (might fail if object doesn't exist)
                         try:
@@ -339,15 +376,15 @@ class TestRegistryThroughput:
                             worker_results["saves"] += 1
                             worker_results["deletes"] += 1
                             worker_results["fallback_ops"] += 1
-                            
+
                     elif op_type == "info":
                         # Info operation
                         registry.info()
                         worker_results["infos"] += 1
-                        
+
                     operation_end = time.time()
                     worker_results["operation_times"].append(operation_end - operation_start)
-                    
+
                 except Exception as e:
                     worker_results["failed"] += 1
                     print(f"Worker {worker_id} operation {i} ({op_type}) failed: {e}")
@@ -375,21 +412,23 @@ class TestRegistryThroughput:
                 last_completed = 0
                 while any(not f.done() for f in futures):
                     time.sleep(0.1)
-                    
+
                     with counter_lock:
                         current_completed = completed_counter["count"]
-                    
+
                     if current_completed > last_completed:
                         pbar.update(current_completed - last_completed)
                         last_completed = current_completed
-                    
-                    pbar.set_postfix({
-                        "completed": current_completed,
-                        "saves": results["saves"],
-                        "loads": results["loads"],
-                        "deletes": results["deletes"],
-                        "failed": results["failed"]
-                    })
+
+                    pbar.set_postfix(
+                        {
+                            "completed": current_completed,
+                            "saves": results["saves"],
+                            "loads": results["loads"],
+                            "deletes": results["deletes"],
+                            "failed": results["failed"],
+                        }
+                    )
 
                 # Final update
                 with counter_lock:
@@ -423,7 +462,9 @@ class TestRegistryThroughput:
         print(f"   - Avg operation time: {avg_operation_time * 1000:.1f}ms")
 
         # Assertions
-        assert effective_successful > total_operations * 0.85, f"Success rate too low: {effective_successful}/{total_operations}"
+        assert effective_successful > total_operations * 0.85, (
+            f"Success rate too low: {effective_successful}/{total_operations}"
+        )
         assert throughput > 3, f"Mixed operations throughput too low: {throughput:.1f} ops/sec"
 
     @pytest.mark.slow
@@ -432,7 +473,7 @@ class TestRegistryThroughput:
         Test performance with different object sizes.
         """
         iterations_per_size = 50
-        
+
         # Test different object sizes
         test_cases = [
             ("small:string", test_objects["small_string"]),
@@ -443,14 +484,14 @@ class TestRegistryThroughput:
             ("small:dict", test_objects["small_dict"]),
             ("large:dict", test_objects["large_dict"]),
         ]
-        
+
         results_by_size = {}
 
         print("\nStarting object size performance test")
 
         for size_name, test_obj in test_cases:
             print(f"\nTesting {size_name} (size: ~{len(str(test_obj))} chars)")
-            
+
             save_times = []
             load_times = []
             successful_saves = 0
@@ -460,7 +501,7 @@ class TestRegistryThroughput:
             with tqdm(total=iterations_per_size * 2, desc=f"{size_name}", file=sys.stderr) as pbar:
                 for i in range(iterations_per_size):
                     obj_name = f"size:test:{size_name}:{i}"
-                    
+
                     # Save operation
                     save_start = time.time()
                     try:
@@ -490,7 +531,7 @@ class TestRegistryThroughput:
             avg_save_time = mean(save_times) if save_times else 0
             avg_load_time = mean(load_times) if load_times else 0
             total_successful = successful_saves + successful_loads
-            
+
             results_by_size[size_name] = {
                 "object_size": len(str(test_obj)),
                 "successful_saves": successful_saves,
@@ -498,15 +539,17 @@ class TestRegistryThroughput:
                 "failed_ops": failed_ops,
                 "avg_save_time": avg_save_time,
                 "avg_load_time": avg_load_time,
-                "success_rate": (total_successful / (iterations_per_size * 2)) * 100
+                "success_rate": (total_successful / (iterations_per_size * 2)) * 100,
             }
 
         print("\nObject size performance test completed:")
         print(f"{'Size':<15} {'Obj Size':<10} {'Save (ms)':<10} {'Load (ms)':<10} {'Success %':<10}")
         print("-" * 65)
-        
+
         for size_name, results in results_by_size.items():
-            print(f"{size_name:<15} {results['object_size']:<10} {results['avg_save_time']*1000:<10.1f} {results['avg_load_time']*1000:<10.1f} {results['success_rate']:<10.1f}")
+            print(
+                f"{size_name:<15} {results['object_size']:<10} {results['avg_save_time'] * 1000:<10.1f} {results['avg_load_time'] * 1000:<10.1f} {results['success_rate']:<10.1f}"
+            )
 
         # Assertions
         for size_name, results in results_by_size.items():
@@ -520,7 +563,7 @@ class TestRegistryThroughput:
         object_name = "version:test:obj"
         num_versions = 100
         test_value = "test_value_for_versioning"
-        
+
         save_times = []
         load_times = []
         successful_saves = 0
@@ -534,7 +577,7 @@ class TestRegistryThroughput:
             for i in range(num_versions):
                 version = f"1.0.{i}"
                 versioned_value = f"{test_value}_{i}"
-                
+
                 # Save with explicit version
                 save_start = time.time()
                 try:
@@ -590,7 +633,9 @@ class TestRegistryThroughput:
         print(f"   - Version list time: {list_time * 1000:.1f}ms")
 
         # Assertions
-        assert total_successful > (num_versions * 2) * 0.95, f"Success rate too low: {total_successful}/{num_versions * 2}"
+        assert total_successful > (num_versions * 2) * 0.95, (
+            f"Success rate too low: {total_successful}/{num_versions * 2}"
+        )
         assert throughput > 2, f"Version management throughput too low: {throughput:.1f} ops/sec"
 
     @pytest.mark.slow
@@ -601,7 +646,7 @@ class TestRegistryThroughput:
         max_workers = 15
         operations_per_worker = 50
         shared_objects = ["shared:obj:1", "shared:obj:2", "shared:obj:3"]
-        
+
         # Results tracking
         results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": [], "fallback_ops": 0}
         results_lock = threading.Lock()
@@ -611,14 +656,15 @@ class TestRegistryThroughput:
         def worker_function(worker_id):
             """Worker function that creates lock contention."""
             worker_results = {"saves": 0, "loads": 0, "failed": 0, "lock_wait_times": [], "fallback_ops": 0}
-            
+
             for i in range(operations_per_worker):
                 import random
+
                 obj_name = random.choice(shared_objects)
-                
+
                 # Measure lock wait time
                 lock_start = time.time()
-                
+
                 try:
                     # Randomly save or load
                     if random.random() < 0.5:
@@ -638,10 +684,10 @@ class TestRegistryThroughput:
                             worker_results["saves"] += 1
                             worker_results["loads"] += 1
                             worker_results["fallback_ops"] += 1  # Track fallback operations
-                    
+
                     lock_end = time.time()
                     worker_results["lock_wait_times"].append(lock_end - lock_start)
-                    
+
                 except Exception as e:
                     worker_results["failed"] += 1
                     print(f"Worker {worker_id} operation {i} failed: {e}")
@@ -670,20 +716,22 @@ class TestRegistryThroughput:
                 last_completed = 0
                 while any(not f.done() for f in futures):
                     time.sleep(0.1)
-                    
+
                     with counter_lock:
                         current_completed = completed_counter["count"]
-                    
+
                     if current_completed > last_completed:
                         pbar.update(current_completed - last_completed)
                         last_completed = current_completed
-                    
-                    pbar.set_postfix({
-                        "completed": current_completed,
-                        "saves": results["saves"],
-                        "loads": results["loads"],
-                        "failed": results["failed"]
-                    })
+
+                    pbar.set_postfix(
+                        {
+                            "completed": current_completed,
+                            "saves": results["saves"],
+                            "loads": results["loads"],
+                            "failed": results["failed"],
+                        }
+                    )
 
                 # Final update
                 with counter_lock:
@@ -702,7 +750,11 @@ class TestRegistryThroughput:
         effective_successful = total_successful - fallback_ops  # Subtract fallback ops to get true success rate
         throughput = total_successful / total_time
         avg_lock_wait = mean(results["lock_wait_times"]) if results["lock_wait_times"] else 0
-        p95_lock_wait = sorted(results["lock_wait_times"])[int(0.95 * len(results["lock_wait_times"]))] if results["lock_wait_times"] else 0
+        p95_lock_wait = (
+            sorted(results["lock_wait_times"])[int(0.95 * len(results["lock_wait_times"]))]
+            if results["lock_wait_times"]
+            else 0
+        )
 
         # Prepare results summary
         summary = {
@@ -711,9 +763,9 @@ class TestRegistryThroughput:
             "total_operations": total_ops,
             "concurrent_workers": max_workers,
             "shared_objects": len(shared_objects),
-            "successful_saves": results['saves'],
-            "successful_loads": results['loads'],
-            "failed_operations": results['failed'],
+            "successful_saves": results["saves"],
+            "successful_loads": results["loads"],
+            "failed_operations": results["failed"],
             "fallback_operations": fallback_ops,
             "effective_successful": effective_successful,
             "success_rate_percent": (effective_successful / total_ops) * 100,
@@ -722,7 +774,7 @@ class TestRegistryThroughput:
             "avg_lock_wait_ms": avg_lock_wait * 1000,
             "p95_lock_wait_ms": p95_lock_wait * 1000,
             "test_passed": True,
-            "final_registry_state": registry.__str__(latest_only=False)
+            "final_registry_state": registry.__str__(latest_only=False),
         }
 
         # Print summary to console
@@ -764,28 +816,45 @@ class TestRegistryThroughput:
         total_operations = max_workers * operations_per_worker
 
         # Results tracking
-        results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
+        results = {
+            "gets": 0,
+            "sets": 0,
+            "dels": 0,
+            "contains": 0,
+            "failed": 0,
+            "operation_times": [],
+            "fallback_ops": 0,
+        }
         results_lock = threading.Lock()
         completed_counter = {"count": 0}
         counter_lock = threading.Lock()
 
         def worker_function(worker_id):
             """Worker function for dictionary interface operations."""
-            worker_results = {"gets": 0, "sets": 0, "dels": 0, "contains": 0, "failed": 0, "operation_times": [], "fallback_ops": 0}
-            
+            worker_results = {
+                "gets": 0,
+                "sets": 0,
+                "dels": 0,
+                "contains": 0,
+                "failed": 0,
+                "operation_times": [],
+                "fallback_ops": 0,
+            }
+
             for i in range(operations_per_worker):
                 obj_name = f"dict:obj:{worker_id}:{i}"
                 operation_start = time.time()
-                
+
                 try:
                     import random
+
                     op_type = random.choice(["set", "get", "del", "contains"])
-                    
+
                     if op_type == "set":
                         # Dictionary set operation
                         registry[obj_name] = test_objects["small_string"]
                         worker_results["sets"] += 1
-                        
+
                     elif op_type == "get":
                         # Dictionary get operation
                         try:
@@ -798,7 +867,7 @@ class TestRegistryThroughput:
                             worker_results["sets"] += 1
                             worker_results["gets"] += 1
                             worker_results["fallback_ops"] += 1
-                            
+
                     elif op_type == "del":
                         # Dictionary delete operation
                         try:
@@ -811,15 +880,15 @@ class TestRegistryThroughput:
                             worker_results["sets"] += 1
                             worker_results["dels"] += 1
                             worker_results["fallback_ops"] += 1
-                            
+
                     elif op_type == "contains":
                         # Dictionary contains operation
                         _ = obj_name in registry
                         worker_results["contains"] += 1
-                    
+
                     operation_end = time.time()
                     worker_results["operation_times"].append(operation_end - operation_start)
-                    
+
                 except Exception as e:
                     worker_results["failed"] += 1
                     print(f"Worker {worker_id} dict operation {i} ({op_type}) failed: {e}")
@@ -847,21 +916,23 @@ class TestRegistryThroughput:
                 last_completed = 0
                 while any(not f.done() for f in futures):
                     time.sleep(0.1)
-                    
+
                     with counter_lock:
                         current_completed = completed_counter["count"]
-                    
+
                     if current_completed > last_completed:
                         pbar.update(current_completed - last_completed)
                         last_completed = current_completed
-                    
-                    pbar.set_postfix({
-                        "completed": current_completed,
-                        "gets": results["gets"],
-                        "sets": results["sets"],
-                        "dels": results["dels"],
-                        "failed": results["failed"]
-                    })
+
+                    pbar.set_postfix(
+                        {
+                            "completed": current_completed,
+                            "gets": results["gets"],
+                            "sets": results["sets"],
+                            "dels": results["dels"],
+                            "failed": results["failed"],
+                        }
+                    )
 
                 # Final update
                 with counter_lock:
@@ -888,18 +959,18 @@ class TestRegistryThroughput:
             "total_operations": total_operations,
             "concurrent_workers": max_workers,
             "operations_per_worker": operations_per_worker,
-            "successful_gets": results['gets'],
-            "successful_sets": results['sets'],
-            "successful_dels": results['dels'],
-            "successful_contains": results['contains'],
-            "failed_operations": results['failed'],
+            "successful_gets": results["gets"],
+            "successful_sets": results["sets"],
+            "successful_dels": results["dels"],
+            "successful_contains": results["contains"],
+            "failed_operations": results["failed"],
             "fallback_operations": fallback_ops,
             "effective_successful": effective_successful,
             "success_rate_percent": (effective_successful / total_operations) * 100,
             "total_time_seconds": total_time,
             "throughput_ops_per_sec": throughput,
             "avg_operation_time_ms": avg_operation_time * 1000,
-            "test_passed": True
+            "test_passed": True,
         }
 
         # Print summary to console
@@ -921,7 +992,9 @@ class TestRegistryThroughput:
 
         # Assertions
         try:
-            assert effective_successful > total_operations * 0.85, f"Success rate too low: {effective_successful}/{total_operations}"
+            assert effective_successful > total_operations * 0.85, (
+                f"Success rate too low: {effective_successful}/{total_operations}"
+            )
             assert throughput > 3, f"Dictionary interface throughput too low: {throughput:.1f} ops/sec"
         except AssertionError as e:
             summary["test_passed"] = False
@@ -936,13 +1009,13 @@ class TestRegistryThroughput:
         # Create results directory if it doesn't exist
         results_dir = Path("stress_test_results")
         results_dir.mkdir(exist_ok=True)
-        
+
         # Save to results directory
         filepath = results_dir / filename
         timestamp = datetime.now().isoformat()
         results_with_timestamp = {"timestamp": timestamp, "results": results}
-        
+
         with open(filepath, "w") as f:
             json.dump(results_with_timestamp, f, indent=2)
-        
+
         print(f"Results saved to: {filepath}")

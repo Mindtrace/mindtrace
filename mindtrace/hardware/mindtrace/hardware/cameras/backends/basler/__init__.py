@@ -19,7 +19,7 @@ Installation:
 
 Usage:
     from mindtrace.hardware.cameras.backends.basler import BaslerCamera, MockBaslerCamera
-    
+
     # Real camera
     if BASLER_AVAILABLE:
         camera = BaslerCamera("camera_name")
@@ -27,7 +27,7 @@ Usage:
         if success:
             success, image = await camera.capture()
             await camera.close()
-    
+
     # Mock camera (always available)
     mock_camera = MockBaslerCamera("mock_cam_0")
     success, cam_obj, remote_obj = await mock_camera.initialize()  # Initialize first
@@ -39,6 +39,7 @@ Usage:
 # Try to import real Basler camera implementation
 try:
     from .basler_camera import PYPYLON_AVAILABLE, BaslerCamera
+
     BASLER_AVAILABLE = PYPYLON_AVAILABLE
 except ImportError:
     BaslerCamera = None
@@ -47,4 +48,4 @@ except ImportError:
 # Import mock camera (always available)
 from .mock_basler import MockBaslerCamera
 
-__all__ = ["BaslerCamera", "MockBaslerCamera", "BASLER_AVAILABLE"] 
+__all__ = ["BaslerCamera", "MockBaslerCamera", "BASLER_AVAILABLE"]

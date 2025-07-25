@@ -13,6 +13,7 @@ class RunScriptWorker(Worker):
     Each job gets its own isolated environment based on the job message configuration. The environment is cleaned up
     after each job completes execution.
     """
+
     def start(self):
         super().start()
         self.devices = None
@@ -90,9 +91,11 @@ class RunScriptWorker(Worker):
             local_devices = ",".join(map(str, range(len(self.devices))))
         return visible_devices, local_devices
 
+
 class RunScriptWorkerInput(BaseModel):
     environment: dict
     command: str
+
 
 class RunScriptWorkerOutput(BaseModel):
     output: str

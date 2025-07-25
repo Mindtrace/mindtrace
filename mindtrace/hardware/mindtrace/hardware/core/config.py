@@ -51,7 +51,7 @@ Environment Variables:
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
-    
+
     config = get_hardware_config()
     camera_settings = config.get_config().cameras
     backend_settings = config.get_config().backends
@@ -72,7 +72,7 @@ logger = structlog.get_logger(__name__)
 class CameraSettings:
     """
     Configuration for camera settings.
-    
+
     Attributes:
         # Core camera settings (actively used)
         image_quality_enhancement: Enable image quality enhancement processing
@@ -82,7 +82,7 @@ class CameraSettings:
         white_balance: White balance mode (auto, off, once)
         gain: Camera gain value
         max_concurrent_captures: Maximum number of concurrent captures across all cameras (network bandwidth management)
-        
+
         # OpenCV-specific settings (actively used)
         opencv_default_width: OpenCV default frame width
         opencv_default_height: OpenCV default frame height
@@ -94,18 +94,19 @@ class CameraSettings:
         opencv_width_range_max: OpenCV maximum frame width
         opencv_height_range_min: OpenCV minimum frame height
         opencv_height_range_max: OpenCV maximum frame height
-        
+
         # Timeout and discovery settings (actively used)
         timeout_ms: Operation timeout in milliseconds
         max_camera_index: Maximum camera index to test during discovery
-        
+
         # Mock settings (for testing)
         mock_camera_count: Number of mock cameras to simulate
-        
+
         # Image enhancement settings (for quality enhancement)
         enhancement_gamma: Gamma correction value for image enhancement
         enhancement_contrast: Contrast factor for image enhancement
     """
+
     # Core camera settings
     image_quality_enhancement: bool = False
     retrieve_retry_count: int = 3
@@ -114,7 +115,7 @@ class CameraSettings:
     white_balance: str = "auto"
     gain: float = 1.0
     max_concurrent_captures: int = 2  # Network bandwidth management for GigE cameras
-    
+
     # OpenCV-specific settings
     opencv_default_width: int = 1280
     opencv_default_height: int = 720
@@ -126,14 +127,14 @@ class CameraSettings:
     opencv_width_range_max: int = 1920
     opencv_height_range_min: int = 120
     opencv_height_range_max: int = 1080
-    
+
     # Timeout and discovery settings
     timeout_ms: int = 5000
     max_camera_index: int = 1
-    
+
     # Mock settings
     mock_camera_count: int = 10
-    
+
     # Image enhancement settings
     enhancement_gamma: float = 2.2
     enhancement_contrast: float = 1.2
@@ -143,7 +144,7 @@ class CameraSettings:
 class CameraBackends:
     """
     Configuration for camera backends.
-    
+
     Attributes:
         daheng_enabled: Enable Daheng camera backend
         basler_enabled: Enable Basler camera backend
@@ -151,6 +152,7 @@ class CameraBackends:
         mock_enabled: Enable mock camera backend for testing
         discovery_timeout: Camera discovery timeout in seconds
     """
+
     daheng_enabled: bool = True
     basler_enabled: bool = True
     opencv_enabled: bool = True
@@ -162,7 +164,7 @@ class CameraBackends:
 class PathSettings:
     """
     Configuration for installation and library paths.
-    
+
     Attributes:
         lib_dir: Directory for library installations (default: ~/.local/lib)
         bin_dir: Directory for binary installations (default: ~/.local/bin)
@@ -172,6 +174,7 @@ class PathSettings:
         log_dir: Directory for log files (default: ~/.cache/mindtrace/logs)
         config_dir: Directory for configuration files (default: ~/.config/mindtrace)
     """
+
     lib_dir: str = "~/.local/lib"
     bin_dir: str = "~/.local/bin"
     include_dir: str = "~/.local/include"
@@ -185,7 +188,7 @@ class PathSettings:
 class NetworkSettings:
     """
     Configuration for network settings and firewall management.
-    
+
     Attributes:
         camera_ip_range: IP range for camera network communication (default: 192.168.50.0/24)
         firewall_rule_name: Name for firewall rules (default: "Allow Camera Network")
@@ -196,6 +199,7 @@ class NetworkSettings:
         jumbo_frames_enabled: Enable jumbo frames for GigE camera optimization
         multicast_enabled: Enable multicast for camera discovery
     """
+
     camera_ip_range: str = "192.168.50.0/24"
     firewall_rule_name: str = "Allow Camera Network"
     timeout_seconds: float = 30.0
@@ -210,13 +214,14 @@ class NetworkSettings:
 class SensorSettings:
     """
     Configuration for sensor components.
-    
+
     Attributes:
         auto_discovery: Automatically discover connected sensors
         polling_interval: Sensor polling interval in seconds
         timeout: Sensor operation timeout in seconds
         retry_count: Number of retry attempts for sensor operations
     """
+
     auto_discovery: bool = True
     polling_interval: float = 1.0
     timeout: float = 5.0
@@ -227,13 +232,14 @@ class SensorSettings:
 class ActuatorSettings:
     """
     Configuration for actuator components.
-    
+
     Attributes:
         auto_discovery: Automatically discover connected actuators
         default_speed: Default actuator movement speed
         timeout: Actuator operation timeout in seconds
         retry_count: Number of retry attempts for actuator operations
     """
+
     auto_discovery: bool = True
     default_speed: float = 1.0
     timeout: float = 10.0
@@ -244,7 +250,7 @@ class ActuatorSettings:
 class PLCSettings:
     """
     Configuration for PLC components.
-    
+
     Attributes:
         auto_discovery: Automatically discover connected PLCs
         connection_timeout: PLC connection timeout in seconds
@@ -257,6 +263,7 @@ class PLCSettings:
         reconnect_attempts: Number of reconnection attempts
         default_scan_rate: Default tag scanning rate in milliseconds
     """
+
     auto_discovery: bool = True
     connection_timeout: float = 10.0
     read_timeout: float = 5.0
@@ -273,7 +280,7 @@ class PLCSettings:
 class PLCBackends:
     """
     Configuration for PLC backends.
-    
+
     Attributes:
         allen_bradley_enabled: Enable Allen Bradley PLC backend (pycomm3)
         siemens_enabled: Enable Siemens PLC backend (python-snap7)
@@ -281,6 +288,7 @@ class PLCBackends:
         mock_enabled: Enable mock PLC backend for testing
         discovery_timeout: PLC discovery timeout in seconds
     """
+
     allen_bradley_enabled: bool = True
     siemens_enabled: bool = True
     modbus_enabled: bool = True
@@ -292,7 +300,7 @@ class PLCBackends:
 class HardwareConfig:
     """
     Main hardware configuration container.
-    
+
     Attributes:
         cameras: Camera-specific settings and parameters
         backends: Camera backend availability and configuration
@@ -303,6 +311,7 @@ class HardwareConfig:
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
     """
+
     cameras: CameraSettings = field(default_factory=CameraSettings)
     backends: CameraBackends = field(default_factory=CameraBackends)
     paths: PathSettings = field(default_factory=PathSettings)
@@ -316,31 +325,31 @@ class HardwareConfig:
 class HardwareConfigManager:
     """
     Hardware configuration manager for Mindtrace project.
-    
+
     Manages hardware configuration from multiple sources including environment
     variables, JSON files, and default values. Provides a unified interface
     for accessing hardware settings across the application.
-    
+
     Attributes:
         config_file: Path to the configuration file
         _config: Internal configuration data structure
     """
-    
+
     def __init__(self, config_file: Optional[str] = None):
         """
         Initialize hardware configuration manager.
-        
+
         Args:
             config_file: Path to configuration file (uses environment variable or default if None)
         """
         self.config_file = config_file or os.getenv("MINDTRACE_HW_CONFIG", "hardware_config.json")
         self._config = HardwareConfig()
         self._load_config()
-    
+
     def _load_config(self):
         """Load configuration from environment variables and config file."""
         self._load_from_env()
-        
+
         if os.path.exists(Path(self.config_file).expanduser()):
             try:
                 self._load_from_file(str(Path(self.config_file).expanduser()))
@@ -349,275 +358,275 @@ class HardwareConfigManager:
                 logger.warning("hardware_config_load_failed", source="file", file=self.config_file, error=str(e))
         else:
             logger.info("hardware_config_file_not_found", file=self.config_file, message="Using default configuration")
-    
+
     def _load_from_env(self):
         """Load configuration from environment variables with MINDTRACE_HW_ prefix."""
         # Camera settings
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_IMAGE_QUALITY"):
             self._config.cameras.image_quality_enhancement = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_RETRY_COUNT"):
             self._config.cameras.retrieve_retry_count = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE"):
             self._config.cameras.exposure_time = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_WHITE_BALANCE"):
             self._config.cameras.white_balance = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT"):
             self._config.cameras.timeout_ms = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_WIDTH"):
             self._config.cameras.opencv_default_width = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_HEIGHT"):
             self._config.cameras.opencv_default_height = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_FPS"):
             self._config.cameras.opencv_default_fps = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_EXPOSURE"):
             self._config.cameras.opencv_default_exposure = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT_MS"):
             self._config.cameras.timeout_ms = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_INDEX"):
             self._config.cameras.max_camera_index = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_COUNT"):
             self._config.cameras.mock_camera_count = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_GAMMA"):
             self._config.cameras.enhancement_gamma = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_CONTRAST"):
             self._config.cameras.enhancement_contrast = float(env_val)
-        
+
         # Network bandwidth management
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
             self._config.cameras.max_concurrent_captures = int(env_val)
-        
+
         # Camera backends
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DAHENG_ENABLED"):
             self._config.backends.daheng_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_ENABLED"):
             self._config.backends.basler_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_ENABLED"):
             self._config.backends.opencv_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_ENABLED"):
             self._config.backends.mock_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DISCOVERY_TIMEOUT"):
             self._config.backends.discovery_timeout = float(env_val)
-        
+
         # Path settings
         if env_val := os.getenv("MINDTRACE_HW_PATHS_LIB_DIR"):
             self._config.paths.lib_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_BIN_DIR"):
             self._config.paths.bin_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_INCLUDE_DIR"):
             self._config.paths.include_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_SHARE_DIR"):
             self._config.paths.share_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_CACHE_DIR"):
             self._config.paths.cache_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_LOG_DIR"):
             self._config.paths.log_dir = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PATHS_CONFIG_DIR"):
             self._config.paths.config_dir = env_val
-        
+
         # Network settings
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE"):
             self._config.network.camera_ip_range = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME"):
             self._config.network.firewall_rule_name = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
             self._config.network.timeout_seconds = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
             self._config.network.firewall_timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
             self._config.network.retry_count = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
             self._config.network.network_interface = env_val
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED"):
             self._config.network.jumbo_frames_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_MULTICAST_ENABLED"):
             self._config.network.multicast_enabled = env_val.lower() == "true"
-        
+
         # Sensor settings
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_AUTO_DISCOVERY"):
             self._config.sensors.auto_discovery = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_POLLING_INTERVAL"):
             self._config.sensors.polling_interval = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_TIMEOUT"):
             self._config.sensors.timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_RETRY_COUNT"):
             self._config.sensors.retry_count = int(env_val)
-        
+
         # Actuator settings
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_AUTO_DISCOVERY"):
             self._config.actuators.auto_discovery = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_DEFAULT_SPEED"):
             self._config.actuators.default_speed = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_TIMEOUT"):
             self._config.actuators.timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_RETRY_COUNT"):
             self._config.actuators.retry_count = int(env_val)
-        
+
         # PLC settings
         if env_val := os.getenv("MINDTRACE_HW_PLC_AUTO_DISCOVERY"):
             self._config.plcs.auto_discovery = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_CONNECTION_TIMEOUT"):
             self._config.plcs.connection_timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_READ_TIMEOUT"):
             self._config.plcs.read_timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_WRITE_TIMEOUT"):
             self._config.plcs.write_timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_COUNT"):
             self._config.plcs.retry_count = int(env_val)
-        
+
         # PLC backends
         if env_val := os.getenv("MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED"):
             self._config.plc_backends.allen_bradley_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_SIEMENS_ENABLED"):
             self._config.plc_backends.siemens_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_MODBUS_ENABLED"):
             self._config.plc_backends.modbus_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_MOCK_ENABLED"):
             self._config.plc_backends.mock_enabled = env_val.lower() == "true"
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_DISCOVERY_TIMEOUT"):
             self._config.plc_backends.discovery_timeout = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_DELAY"):
             self._config.plcs.retry_delay = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS"):
             self._config.plc_backends.max_concurrent_connections = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_KEEP_ALIVE_INTERVAL"):
             self._config.plc_backends.keep_alive_interval = float(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_RECONNECT_ATTEMPTS"):
             self._config.plc_backends.reconnect_attempts = int(env_val)
-        
+
         if env_val := os.getenv("MINDTRACE_HW_PLC_DEFAULT_SCAN_RATE"):
             self._config.plc_backends.default_scan_rate = int(env_val)
-    
+
     def _load_from_file(self, config_file: str):
         """
         Load configuration from JSON file.
-        
+
         Args:
             config_file: Path to JSON configuration file
         """
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             config_data = json.load(f)
-        
+
         if "cameras" in config_data:
             for key, value in config_data["cameras"].items():
                 if hasattr(self._config.cameras, key):
                     setattr(self._config.cameras, key, value)
-        
+
         if "backends" in config_data:
             for key, value in config_data["backends"].items():
                 if hasattr(self._config.backends, key):
                     setattr(self._config.backends, key, value)
-        
+
         if "paths" in config_data:
             for key, value in config_data["paths"].items():
                 if hasattr(self._config.paths, key):
                     setattr(self._config.paths, key, value)
-        
+
         if "network" in config_data:
             for key, value in config_data["network"].items():
                 if hasattr(self._config.network, key):
                     setattr(self._config.network, key, value)
-        
+
         if "sensors" in config_data:
             for key, value in config_data["sensors"].items():
                 if hasattr(self._config.sensors, key):
                     setattr(self._config.sensors, key, value)
-        
+
         if "actuators" in config_data:
             for key, value in config_data["actuators"].items():
                 if hasattr(self._config.actuators, key):
                     setattr(self._config.actuators, key, value)
-        
+
         if "plcs" in config_data:
             for key, value in config_data["plcs"].items():
                 if hasattr(self._config.plcs, key):
                     setattr(self._config.plcs, key, value)
-        
+
         if "plc_backends" in config_data:
             for key, value in config_data["plc_backends"].items():
                 if hasattr(self._config.plc_backends, key):
                     setattr(self._config.plc_backends, key, value)
-    
+
     def save_to_file(self, config_file: Optional[str] = None):
         """
         Save current configuration to JSON file.
-        
+
         Args:
             config_file: Path to save configuration file (uses default if None)
         """
         file_path = config_file or self.config_file
         config_dict = asdict(self._config)
-        
+
         Path(file_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(Path(file_path).expanduser(), 'w') as f:
+
+        with open(Path(file_path).expanduser(), "w") as f:
             json.dump(config_dict, f, indent=2)
-        
+
         logger.info("hardware_config_saved", file=file_path)
-    
+
     def get_config(self) -> HardwareConfig:
         """
         Get current hardware configuration.
-        
+
         Returns:
             Current hardware configuration object
         """
         return self._config
-    
+
     def __getitem__(self, key):
         """
         Allow dictionary-style access to configuration.
-        
+
         Args:
             key: Configuration section key ("cameras", "backends", "sensors", "actuators", "plcs", "plc_backends")
-            
+
         Returns:
             Configuration section as dictionary
         """
@@ -647,7 +656,7 @@ _hardware_config_instance: Optional[HardwareConfigManager] = None
 def get_hardware_config() -> HardwareConfigManager:
     """
     Get the global hardware configuration instance.
-    
+
     Returns:
         Global hardware configuration manager instance
     """
@@ -661,7 +670,7 @@ def get_hardware_config() -> HardwareConfigManager:
 def get_camera_config() -> HardwareConfigManager:
     """
     Get camera configuration (backward compatibility alias).
-    
+
     Returns:
         Hardware configuration manager instance
     """

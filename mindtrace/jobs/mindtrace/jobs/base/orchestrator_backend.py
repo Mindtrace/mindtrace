@@ -6,15 +6,16 @@ import pydantic
 from mindtrace.core import MindtraceABC
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 
-if TYPE_CHECKING: # pragma: no cover
+if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
+
 
 class OrchestratorBackend(MindtraceABC):
     """Abstract base class for orchestrator backends.
-    
+
     Defines the interface that all backend implementations must follow for queue management operations.
     """
-    
+
     def __init__(self):
         super().__init__()
 
@@ -29,52 +30,52 @@ class OrchestratorBackend(MindtraceABC):
     @abstractmethod
     def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a queue
-        
+
         Args:
             queue_name: Name of the queue to declare
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs) -> str:
         """Publish a message to the specified queue
-        
+
         Args:
             queue_name: Name of the queue to publish to
             message: Pydantic model to publish
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from the specified queue
-        
+
         Args:
             queue_name: Name of the queue to clean
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Delete the specified queue
-        
+
         Args:
             queue_name: Name of the queue to delete
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         """Count the number of messages in the specified queue
-        
+
         Args:
             queue_name: Name of the queue to count
-        
+
         Returns:
             Number of messages in the queue
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def move_to_dlq(
         self,

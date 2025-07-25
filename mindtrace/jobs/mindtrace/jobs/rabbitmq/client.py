@@ -29,9 +29,7 @@ class RabbitMQClient(OrchestratorBackend):
             password: Password for RabbitMQ authentication.
         """
         super().__init__()
-        self.connection = RabbitMQConnection(
-            host=host, port=port, username=username, password=password
-        )
+        self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
         self.connection.connect()
         self.channel = self.connection.get_channel()
         self._host = self.connection.host
@@ -42,20 +40,19 @@ class RabbitMQClient(OrchestratorBackend):
 
     @property
     def consumer_backend_args(self):
-        return {    
+        return {
             "cls": "mindtrace.jobs.rabbitmq.consumer_backend.RabbitMQConsumerBackend",
             "kwargs": {
                 "host": self._host,
                 "port": self._port,
                 "username": self._username,
                 "password": self._password,
-            }
+            },
         }
 
     def create_consumer_backend(self, consumer_frontend: Consumer, queue_name: str) -> RabbitMQConsumerBackend:
         return RabbitMQConsumerBackend(queue_name, consumer_frontend, **self.consumer_backend_args["kwargs"])
 
-        
     def declare_exchange(
         self,
         *,
@@ -73,21 +70,15 @@ class RabbitMQClient(OrchestratorBackend):
             auto_delete: Automatically delete the exchange when no queues are bound.
         """
         try:
-            self.channel.exchange_declare(
-                exchange=exchange, passive=True
-            )
-            self.logger.debug(
-                f"Exchange '{exchange}' already exists. Not declaring it again."
-            )
+            self.channel.exchange_declare(exchange=exchange, passive=True)
+            self.logger.debug(f"Exchange '{exchange}' already exists. Not declaring it again.")
             return {
                 "status": "success",
                 "message": f"Exchange '{exchange}' already exists. Not declaring it again.",
             }
         except pika.exceptions.ChannelClosedByBroker:
             try:
-                self.channel = (
-                    self.connection.get_channel()
-                )  # Re-establish channel after it was closed
+                self.channel = self.connection.get_channel()  # Re-establish channel after it was closed
                 self.channel.exchange_declare(
                     exchange=exchange,
                     exchange_type=exchange_type,
@@ -103,6 +94,7 @@ class RabbitMQClient(OrchestratorBackend):
                 raise RuntimeError(f"Could not declare exchange '{exchange}': {str(e)}")
         except Exception as e:
             raise RuntimeError(f"Could not declare exchange '{exchange}': {str(e)}")
+
     def declare_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Declare a RabbitMQ queue.
         Args:
@@ -138,14 +130,10 @@ class RabbitMQClient(OrchestratorBackend):
                     self.logger.info(f"Using provided exchange: {exchange}.")
                 else:
                     exchange = "default"
-                    self.logger.info(
-                        f"Exchange not provided. Using default exchange: {exchange}."
-                    )
+                    self.logger.info(f"Exchange not provided. Using default exchange: {exchange}.")
                 try:
                     self.channel.exchange_declare(exchange=exchange, passive=True)
-                    self.logger.debug(
-                        f"Exchange '{exchange}' exists. Binding queue '{queue}' to it."
-                    )
+                    self.logger.debug(f"Exchange '{exchange}' exists. Binding queue '{queue}' to it.")
                     self.channel.queue_declare(
                         queue=queue,
                         durable=durable,
@@ -166,12 +154,8 @@ class RabbitMQClient(OrchestratorBackend):
                 except pika.exceptions.ChannelClosedByBroker:
                     self.channel = self.connection.get_channel()
                     if force:
-                        self.channel.exchange_declare(
-                            exchange=exchange, exchange_type="direct", durable=True
-                        )
-                        self.logger.debug(
-                            f"Exchange '{exchange}' declared successfully."
-                        )
+                        self.channel.exchange_declare(exchange=exchange, exchange_type="direct", durable=True)
+                        self.logger.debug(f"Exchange '{exchange}' declared successfully.")
                         self.channel.queue_declare(
                             queue=queue,
                             durable=durable,
@@ -204,6 +188,7 @@ class RabbitMQClient(OrchestratorBackend):
         except Exception as e:
             self.logger.error(f"Unexpected error: {str(e)}")
             return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
     def publish(self, queue_name: str, message: pydantic.BaseModel, **kwargs):
         """Publish a message to the specified exchange using RabbitMQ.
         Args:
@@ -249,19 +234,15 @@ class RabbitMQClient(OrchestratorBackend):
             self.logger.error("Unroutable Message error: %s \n ", e)
             raise
         except pika.exceptions.ChannelClosedByBroker:
-            self.logger.error(
-                f"Channel closed by broker, Check {exchange} existence"
-            )
+            self.logger.error(f"Channel closed by broker, Check {exchange} existence")
             raise
         except pika.exceptions.ConnectionClosedByBroker:
-            self.logger.error(
-                "Connection closed by broker. RabbitMQClient failed to publish the message."
-            )
+            self.logger.error("Connection closed by broker. RabbitMQClient failed to publish the message.")
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error in publish: {e}")
             raise e
-        
+
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from a queue."""
         try:
@@ -269,6 +250,7 @@ class RabbitMQClient(OrchestratorBackend):
             return {"status": "success", "message": f"Cleaned queue '{queue_name}'."}
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not clean queue '{queue_name}': {str(e)}")
+
     def delete_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Delete a queue."""
         try:
@@ -276,7 +258,7 @@ class RabbitMQClient(OrchestratorBackend):
             return {"status": "success", "message": f"Deleted queue '{queue_name}'."}
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not delete queue '{queue_name}': {str(e)}")
-    
+
     def count_exchanges(self, *, exchange: str, **kwargs):
         """Get the number of exchanges in the RabbitMQ server.
         Args:
@@ -287,6 +269,7 @@ class RabbitMQClient(OrchestratorBackend):
             return result
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not count exchanges: {str(e)}")
+
     def delete_exchange(self, *, exchange: str, **kwargs):
         """Delete an exchange."""
         try:
@@ -294,6 +277,7 @@ class RabbitMQClient(OrchestratorBackend):
             return {"status": "success", "message": f"Deleted exchange '{exchange}'."}
         except pika.exceptions.ChannelClosedByBroker as e:
             raise ConnectionError(f"Could not delete exchange '{exchange}': {str(e)}")
+
     def move_to_dlq(
         self,
         source_queue: str,

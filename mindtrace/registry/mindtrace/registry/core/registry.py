@@ -74,7 +74,7 @@ class Registry(Mindtrace):
         if len(self.registered_materializers()) == 0:
             self.logger.info("No materializers found, registering defaults...")
             self._register_default_materializers()
-        
+
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
 
@@ -106,13 +106,15 @@ class Registry(Mindtrace):
                     progress_bar=False,  # Don't show progress bar for lock acquisition
                     desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
                 )
-                
+
                 def acquire_lock_with_retry():
                     """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
                     if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                        raise LockAcquisitionError(
+                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
+                        )
                     return True
-                
+
                 # Use the timeout handler to retry lock acquisition
                 timeout_handler.run(acquire_lock_with_retry)
                 yield
@@ -475,10 +477,10 @@ class Registry(Mindtrace):
         """
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
-        
+
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
-            
+
             # Update cache
             with self._materializer_cache_lock:
                 self._materializer_cache[object_class] = materializer_class
@@ -496,15 +498,15 @@ class Registry(Mindtrace):
         with self._materializer_cache_lock:
             if object_class in self._materializer_cache:
                 return self._materializer_cache[object_class]
-        
+
         # Cache miss - need to check backend (slow path)
         with self._get_object_lock("_registry", "materializers", shared=True):
             materializer = self.backend.registered_materializer(object_class)
-            
+
             # Cache the result (even if None)
             with self._materializer_cache_lock:
                 self._materializer_cache[object_class] = materializer
-            
+
             return materializer
 
     def registered_materializers(self) -> Dict[str, str]:
@@ -767,7 +769,7 @@ class Registry(Mindtrace):
     def _register_default_materializers(self):
         """Register default materializers."""
         self.logger.info("Registering default materializers...")
-        
+
         # Core zenml materializers
         self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
         self.register_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
@@ -788,24 +790,24 @@ class Registry(Mindtrace):
 
         # (Optional) Huggingface materializers
         self.register_materializer(
-            "datasets.Dataset", 
+            "datasets.Dataset",
             "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
         )
         self.register_materializer(
-            "datasets.DatasetDict", 
+            "datasets.DatasetDict",
             "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
         )
         self.register_materializer(
-            "datasets.IterableDataset", 
+            "datasets.IterableDataset",
             "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
         )
 
         self.register_materializer(
-            "transformers.PreTrainedModel", 
+            "transformers.PreTrainedModel",
             "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
         )
         self.register_materializer(
-            "transformers.TFPreTrainedModel", 
+            "transformers.TFPreTrainedModel",
             "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
         )
 
@@ -816,29 +818,29 @@ class Registry(Mindtrace):
 
         # (Optional) Pillow materializers
         self.register_materializer(
-            "PIL.Image.Image", 
+            "PIL.Image.Image",
             "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
         )
 
         # (Optional) PyTorch materializers
         self.register_materializer(
-            "torch.utils.data.DataLoader", 
+            "torch.utils.data.DataLoader",
             "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
         )
         self.register_materializer(
-            "torch.utils.data.Dataset", 
+            "torch.utils.data.Dataset",
             "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
         )
         self.register_materializer(
-            "torch.utils.data.IterableDataset", 
+            "torch.utils.data.IterableDataset",
             "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
         )
         self.register_materializer(
-            "torch.nn.Module", 
+            "torch.nn.Module",
             "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
         )
         self.register_materializer(
-            "torch.jit.ScriptModule", 
+            "torch.jit.ScriptModule",
             "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
         )
 
@@ -850,10 +852,10 @@ class Registry(Mindtrace):
             # Get all registered materializers and cache them
             with self._get_object_lock("_registry", "materializers", shared=True):
                 all_materializers = self.backend.registered_materializers()
-                
+
                 with self._materializer_cache_lock:
                     self._materializer_cache.update(all_materializers)
-            
+
             self.logger.debug(f"Warmed materializer cache with {len(all_materializers)} entries")
         except Exception as e:
             self.logger.warning(f"Failed to warm materializer cache: {e}")

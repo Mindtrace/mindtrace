@@ -12,13 +12,13 @@ from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConnection(BrokerConnectionBase):
-
     METADATA_KEY = "mtrix:queue_metadata"  # Centralized metadata key
     EVENTS_CHANNEL = "mtrix:queue_events"  # Pub/Sub channel for queue events
     """Singleton class for Redis connection.
     This class establishes and maintains a connection to the Redis server. It uses a retry loop and a PING command to
     verify connectivity.
     """
+
     def __init__(
         self,
         host: str | None = None,
@@ -45,7 +45,7 @@ class RedisConnection(BrokerConnectionBase):
         self.password = password  # Use password if provided, None otherwise
         self.socket_timeout = ifnone(socket_timeout, default=5.0)
         self.socket_connect_timeout = ifnone(socket_connect_timeout, default=2.0)
-        self.connection: redis.Redis = None # type: ignore
+        self.connection: redis.Redis = None  # type: ignore
         try:
             self.connect(max_tries=1)
         except redis.ConnectionError as e:
@@ -53,7 +53,7 @@ class RedisConnection(BrokerConnectionBase):
         self.queues = {}
         self._local_lock = threading.Lock()  # Thread lock for local state modificationse events.
         self._load_queue_metadata()  # Load previously declared queues from metadata.
-        self._start_event_listener() # Start a background thread to listen for queue events.
+        self._start_event_listener()  # Start a background thread to listen for queue events.
 
     def connect(self, max_tries: int = 10):
         """Connect to the Redis server using a retry loop."""
@@ -71,23 +71,17 @@ class RedisConnection(BrokerConnectionBase):
                     conn_params["password"] = self.password
                 self.connection = redis.Redis(**conn_params)
                 if self.connection.ping():
-                    self.logger.debug(
-                        f"{self.name} connected to Redis at {self.host}:{self.port}, db: {self.db}."
-                    )
+                    self.logger.debug(f"{self.name} connected to Redis at {self.host}:{self.port}, db: {self.db}.")
                     return
                 else:
                     raise redis.ConnectionError("Ping failed.")
             except redis.ConnectionError:
                 retries += 1
                 wait_time = min(2**retries, 30)  # Cap wait time at 30 seconds
-                self.logger.debug(
-                    f"{self.name} failed to connect to Redis, retrying in {wait_time} seconds..."
-                )
+                self.logger.debug(f"{self.name} failed to connect to Redis, retrying in {wait_time} seconds...")
                 if retries < max_tries:
                     time.sleep(wait_time)
-        self.logger.debug(
-            f"{self.name} exceeded maximum number of connection retries to Redis."
-        )
+        self.logger.debug(f"{self.name} exceeded maximum number of connection retries to Redis.")
         raise redis.ConnectionError("Failed to connect to Redis.")
 
     def is_connected(self) -> bool:
@@ -104,9 +98,8 @@ class RedisConnection(BrokerConnectionBase):
                 self.connection.close()
             except Exception as e:
                 self.logger.error(f"Error closing Redis connection: {str(e)}")
-            self.connection = None # type: ignore
+            self.connection = None  # type: ignore
             self.logger.debug(f"{self.name} closed Redis connection.")
-
 
     def _start_event_listener(self):
         """Start a background thread to subscribe to queue events and update local state."""
@@ -155,17 +148,12 @@ class RedisConnection(BrokerConnectionBase):
                 except Exception:
                     pass
 
-
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
         metadata = self.connection.hgetall(self.METADATA_KEY)
         for queue, queue_type in metadata.items():
             qname = queue.decode("utf-8") if isinstance(queue, bytes) else queue
-            qtype = (
-                queue_type.decode("utf-8")
-                if isinstance(queue_type, bytes)
-                else queue_type
-            )
+            qtype = queue_type.decode("utf-8") if isinstance(queue_type, bytes) else queue_type
             with self._local_lock:
                 if qtype.lower() == "fifo":
                     instance = RedisQueue(

@@ -20,6 +20,7 @@ class ExecutionStatus(str, Enum):
 
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
+
     name: str
     input: type[BaseModel]
     output: Optional[type[BaseModel]] = None
@@ -27,6 +28,7 @@ class JobSchema(BaseModel):
 
 class Job(BaseModel):
     """A job instance ready for execution - system routes based on schema_name"""
+
     id: str
     name: str
     schema_name: str  # References the JobSchema this job uses

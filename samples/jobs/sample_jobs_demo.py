@@ -37,6 +37,7 @@ maths_schema = JobSchema(
 
 class MathsConsumer(Consumer):
     """Consumer for processing maths operations."""
+
     def run(self, job_dict: dict) -> dict:
         """Process a maths job."""
         input_data = job_dict.get("payload", {})
@@ -66,7 +67,7 @@ class MathsConsumer(Consumer):
 def setup_backend(backend_type: str):
     """Set up the appropriate backend based on the type."""
     print(f"Setting up {backend_type} backend...")
-    
+
     backend = None
     try:
         if backend_type == "local":
@@ -83,12 +84,7 @@ def setup_backend(backend_type: str):
                     backend.connection.connection.close()
                 raise
         elif backend_type == "rabbitmq":
-            backend = RabbitMQClient(
-                host="localhost",
-                port=5672,
-                username="user",
-                password="password"
-            )
+            backend = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
             # Use a short timeout for connection check
             try:
                 if not backend.connection.is_connected():
@@ -101,7 +97,7 @@ def setup_backend(backend_type: str):
                 raise
         else:
             raise ValueError(f"Unknown backend type: {backend_type}")
-        
+
         return backend
     except Exception:
         raise
@@ -164,27 +160,17 @@ def demo_priority(orchestrator: Orchestrator):
             except Exception as e:
                 print(f"No existing queue to delete: {e}")
 
-            result = orchestrator.backend.declare_queue(
-                priority_queue, max_priority=255
-            )
+            result = orchestrator.backend.declare_queue(priority_queue, max_priority=255)
             print("RabbitMQ priority queue (max_priority=255)")
             print(f"Queue declaration result: {result}")
         else:
-            result = orchestrator.backend.declare_queue(
-                priority_queue, queue_type="priority"
-            )
+            result = orchestrator.backend.declare_queue(priority_queue, queue_type="priority")
             print(f"{backend_type} priority queue")
             print(f"Queue declaration result: {result}")
 
-        low_priority_job = job_from_schema(
-            maths_schema, MathsInput(operation="add", a=1, b=1)
-        )
-        high_priority_job = job_from_schema(
-            maths_schema, MathsInput(operation="multiply", a=10, b=10)
-        )
-        urgent_job = job_from_schema(
-            maths_schema, MathsInput(operation="power", a=2, b=3)
-        )
+        low_priority_job = job_from_schema(maths_schema, MathsInput(operation="add", a=1, b=1))
+        high_priority_job = job_from_schema(maths_schema, MathsInput(operation="multiply", a=10, b=10))
+        urgent_job = job_from_schema(maths_schema, MathsInput(operation="power", a=2, b=3))
 
         print("Publishing jobs in wrong order to test priority:")
         print("Publishing low priority job first...")

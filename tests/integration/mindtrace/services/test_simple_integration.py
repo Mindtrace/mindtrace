@@ -224,7 +224,6 @@ class TestServiceIntegration:
         assert "Async version" in aecho_method.__doc__
 
 
-
 class TestMCPServiceIntegration:
     """Integration tests for MCP functionality"""
 

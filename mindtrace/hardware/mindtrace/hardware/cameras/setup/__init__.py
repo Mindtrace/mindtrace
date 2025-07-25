@@ -23,9 +23,9 @@ __all__ = [
     "install_pylon_sdk",
     "uninstall_pylon_sdk",
     # Daheng SDK setup
-    "install_daheng_sdk", 
+    "install_daheng_sdk",
     "uninstall_daheng_sdk",
     # Combined camera setup
     "setup_all_cameras",
     "configure_firewall",
-] 
+]

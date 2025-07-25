@@ -98,7 +98,7 @@ class Service(Mindtrace):
             name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
             version=version_str,
         )
-        self.mcp_app = self.mcp.http_app(path='/mcp')
+        self.mcp_app = self.mcp.http_app(path="/mcp")
 
         @asynccontextmanager
         async def combined_lifespan(app: FastAPI):
@@ -129,9 +129,7 @@ class Service(Mindtrace):
             schema=EndpointsSchema(),
             as_tool=True,
         )
-        self.add_endpoint(
-            path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True
-        )
+        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True)
         self.add_endpoint(
             path="/heartbeat",
             func=self.heartbeat_func,
@@ -316,7 +314,9 @@ class Service(Mindtrace):
                 signal.signal(signal.SIGTERM, lambda sig, frame: cls._cleanup_all_servers())
                 signal.signal(signal.SIGINT, lambda sig, frame: cls._cleanup_all_servers())
             except ValueError:
-                cls.logger.warning("Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service.")
+                cls.logger.warning(
+                    "Could not register signal handlers for server shutdown. This is normal if you launch a Service from another Service."
+                )
 
         # Wait for server to be available and get connection manager
         connection_manager = None
@@ -484,10 +484,8 @@ class Service(Mindtrace):
         else:
             # Warn if the function has no docstring
             if not func.__doc__:
-                service_name = getattr(self, 'name', self.__class__.__name__)
-                self.logger.warning(
-                    f"Function '{path}' for service '{service_name}' has no docstring."
-                )
+                service_name = getattr(self, "name", self.__class__.__name__)
+                self.logger.warning(f"Function '{path}' for service '{service_name}' has no docstring.")
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
@@ -497,14 +495,12 @@ class Service(Mindtrace):
 
     def add_tool(self, tool_name, func):
         """Add a tool to the MCP server, with an informative description including the tool and service name."""
-        service_name = getattr(self, 'name', self.__class__.__name__)
+        service_name = getattr(self, "name", self.__class__.__name__)
         # Use the function's docstring if available, otherwise log and use a default description
-        if (doc := func.__doc__):
+        if doc := func.__doc__:
             base_desc = doc.strip()
         else:
             base_desc = "No description provided."
-            self.logger.warning(
-                f"Function '{tool_name}' for service '{service_name}' has no docstring."
-            )
+            self.logger.warning(f"Function '{tool_name}' for service '{service_name}' has no docstring.")
         full_desc = f"{base_desc} \n This tool ('{tool_name}') belongs to the service '{service_name}'."
         self.mcp.tool(name=tool_name, description=full_desc)(func)

@@ -16,7 +16,7 @@ Installation:
 
 Usage:
     from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
-    
+
     # USB camera (index 0)
     if OPENCV_AVAILABLE:
         camera = OpenCVCamera("0")
@@ -33,4 +33,4 @@ except ImportError:
     OpenCVCamera = None
     OPENCV_AVAILABLE = False
 
-__all__ = ["OpenCVCamera", "OPENCV_AVAILABLE"] 
+__all__ = ["OpenCVCamera", "OPENCV_AVAILABLE"]

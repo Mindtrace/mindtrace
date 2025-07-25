@@ -38,4 +38,4 @@ class TestRabbitMQConnection:
             assert conn.is_connected() is True
             assert hasattr(conn, "connection")
 
-        assert connection.is_connected() is False 
+        assert connection.is_connected() is False
