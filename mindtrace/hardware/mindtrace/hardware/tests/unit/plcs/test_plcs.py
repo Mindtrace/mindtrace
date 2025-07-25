@@ -12,7 +12,6 @@ import pytest
 import pytest_asyncio
 
 
-
 # Fixtures
 @pytest.fixture(scope="session")
 def event_loop():
