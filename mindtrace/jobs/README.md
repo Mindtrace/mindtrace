@@ -1,3 +1,6 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-jobs)](https://pypi.org/project/mindtrace-jobs/)
+[![License](https://img.shields.io/pypi/l/mindtrace-jobs)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/jobs/LICENSE)
+
 # Mindtrace Jobs
 
 A job queue system that works with different backends (local, Redis, RabbitMQ).
