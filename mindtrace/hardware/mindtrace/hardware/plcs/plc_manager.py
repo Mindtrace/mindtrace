@@ -100,11 +100,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
-    HardwareOperationError,
-    PLCCommunicationError,
     PLCConnectionError,
-    PLCError,
-    PLCInitializationError,
     PLCNotFoundError,
     PLCTagError,
     PLCTagReadError,

@@ -6,7 +6,7 @@ from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.types.job_specs import JobSchema
 
-from ..conftest import SampleJobInput, SampleJobOutput, create_test_job, unique_queue_name
+from ..conftest import SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestOrchestratorQueueManagement:

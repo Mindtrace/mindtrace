@@ -988,7 +988,6 @@ def test_acquire_lock_windows_atomic_creation(backend):
 
 def test_acquire_lock_windows_atomic_creation_failure(backend):
     """Test Windows-specific atomic file creation failure in acquire_lock (lines 356-358)."""
-    import os
     
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
@@ -1006,7 +1005,6 @@ def test_acquire_lock_windows_atomic_creation_failure(backend):
 
 def test_acquire_lock_windows_os_error(backend):
     """Test Windows-specific atomic file creation with OS error in acquire_lock (lines 356-358)."""
-    import os
     
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())

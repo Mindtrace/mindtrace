@@ -1,4 +1,3 @@
-import copy
 import json
 import uuid
 from datetime import datetime
@@ -11,7 +10,6 @@ from urllib3.exceptions import ConnectionError
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
-from mindtrace.cluster.core.types import ProxyWorker
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
 from mindtrace.services import ServerStatus, Service

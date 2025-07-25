@@ -9,7 +9,6 @@ This module provides endpoints for camera settings that are synchronous operatio
 """
 
 import logging
-from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 

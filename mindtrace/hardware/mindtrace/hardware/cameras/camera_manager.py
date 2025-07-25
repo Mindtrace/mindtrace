@@ -44,11 +44,9 @@ from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
-    CameraError,
     CameraInitializationError,
     CameraNotFoundError,
     CameraTimeoutError,
-    SDKNotAvailableError,
 )
 
 # Backend discovery and lazy loading

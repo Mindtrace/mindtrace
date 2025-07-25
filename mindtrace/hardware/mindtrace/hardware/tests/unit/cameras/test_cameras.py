@@ -10,8 +10,6 @@ import asyncio
 import json
 import os
 import tempfile
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -21,11 +19,8 @@ from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
-    CameraError,
-    CameraInitializationError,
     CameraNotFoundError,
     CameraTimeoutError,
-    SDKNotAvailableError,
 )
 
 

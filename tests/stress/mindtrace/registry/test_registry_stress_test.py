@@ -10,17 +10,16 @@ import logging
 import sys
 import threading
 import time
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from statistics import mean, median
+from statistics import mean
 from tempfile import TemporaryDirectory
 
 import pytest
 from tqdm import tqdm
 
-from mindtrace.registry import LocalRegistryBackend, Registry
+from mindtrace.registry import Registry
 
 # Suppress verbose logging during stress tests
 logging.getLogger("mindtrace.registry").setLevel(logging.WARNING)

@@ -6,13 +6,11 @@ Provides endpoints for monitoring and controlling network usage across cameras.
 """
 
 import logging
-from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from mindtrace.hardware.api.dependencies import get_camera_manager
 from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.core.exceptions import CameraError
 from mindtrace.hardware.models.requests import NetworkConcurrentLimitRequest
 from mindtrace.hardware.models.responses import (
     BoolResponse,

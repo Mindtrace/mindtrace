@@ -1,20 +1,11 @@
 import asyncio
-import inspect
-import logging
 import time
-import unittest.mock
-from unittest.mock import Mock, patch
 
-import httpx
 import pytest
-import pytest_asyncio
 import requests
-from pydantic import BaseModel
-from urllib3.util.url import Url, parse_url
 
-from mindtrace.core import TaskSchema
-from mindtrace.services import AppConfig, Gateway, Service, generate_connection_manager
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService
+from mindtrace.services import Gateway
+from mindtrace.services.sample.echo_service import EchoService
 
 
 class TestGatewayCoreFunctionality:
