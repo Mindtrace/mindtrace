@@ -96,12 +96,14 @@ class TestDockerEnvironment:
         container_id = env.setup()
 
         assert container_id == "test-container-id"
-        # Verify device_requests was called with proper parameters
+        # Device requests has been removed as a quick fix - this wants to come back in when we do this properly
+        # so asserting that it's not there to force me to fix this test at the same time
         call_args = mock_docker_client.return_value.containers.run.call_args
-        device_requests = call_args[1]['device_requests']
-        assert len(device_requests) == 1
-        assert device_requests[0].device_ids == ["0", "1"]
-        assert device_requests[0].capabilities == [["gpu"]]
+        assert "device_requests" not in call_args[1]
+        # device_requests = call_args[1]['device_requests']
+        # assert len(device_requests) == 1
+        # assert device_requests[0].device_ids == ["0", "1"]
+        # assert device_requests[0].capabilities == [["gpu"]]
 
     def test_setup_without_devices(self, mock_docker_client):
         """Test container setup without GPU devices."""
@@ -117,11 +119,13 @@ class TestDockerEnvironment:
         container_id = env.setup()
 
         assert container_id == "test-container-id"
-        # Verify device_requests was called with empty device list
+        # Device requests has been removed as a quick fix - this wants to come back in when we do this properly
+        # so asserting that it's not there to force me to fix this test at the same time
         call_args = mock_docker_client.return_value.containers.run.call_args
-        device_requests = call_args[1]['device_requests']
-        assert len(device_requests) == 1
-        assert device_requests[0].device_ids == []
+        assert "device_requests" not in call_args[1]
+        # device_requests = call_args[1]['device_requests']
+        # assert len(device_requests) == 1
+        # assert device_requests[0].device_ids == []
 
     def test_setup_image_pull_failure(self, docker_env_with_mock, mock_docker_client):
         """Test setup failure when image pull fails."""
