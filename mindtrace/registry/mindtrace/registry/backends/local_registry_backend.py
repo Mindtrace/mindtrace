@@ -11,9 +11,11 @@ import yaml
 # Import appropriate locking mechanism based on OS
 if platform.system() == "Windows":
     import msvcrt
+
     fcntl = None
 else:
     import fcntl
+
     msvcrt = None
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend

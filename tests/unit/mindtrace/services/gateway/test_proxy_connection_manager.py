@@ -28,18 +28,18 @@ class DummySchema:
 class DummyCM(ConnectionManager):
     pass
 
+
 class DummyCMWithServiceEndpoints(ConnectionManager):
     def __init__(self, **kwargs):
         self._service_endpoints: dict[str, type] = {"test": DummySchema}
 
+
 def test_initialization():
     """Test that ProxyConnectionManager initializes correctly."""
     dummy_cm = DummyCMWithServiceEndpoints()
-    
-    proxy_cm = ProxyConnectionManager(
-        gateway_url="http://gateway", app_name="app", original_cm=dummy_cm
-    )
-    
+
+    proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
+
     # Use object.__getattribute__ to avoid triggering the custom __getattribute__
     assert object.__getattribute__(proxy_cm, "gateway_url") == "http://gateway"
     assert object.__getattribute__(proxy_cm, "app_name") == "app"
@@ -49,11 +49,9 @@ def test_initialization():
 def test_url_normalization():
     """Test that gateway URL is properly normalized (no trailing slash)."""
     dummy_cm = DummyCMWithServiceEndpoints()
-    
-    proxy_cm = ProxyConnectionManager(
-        gateway_url="http://gateway/", app_name="app", original_cm=dummy_cm
-    )
-    
+
+    proxy_cm = ProxyConnectionManager(gateway_url="http://gateway/", app_name="app", original_cm=dummy_cm)
+
     assert object.__getattribute__(proxy_cm, "gateway_url") == "http://gateway"
 
 
@@ -76,7 +74,7 @@ def test_sync_proxy_method_success(mock_post):
     mock_response.status_code = 200
     mock_response.json.return_value = {"result": "ok"}
     mock_post.return_value = mock_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
@@ -101,7 +99,7 @@ def test_sync_proxy_method_http_error(mock_post):
     mock_response.status_code = 500
     mock_response.text = "Internal Server Error"
     mock_post.return_value = mock_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
@@ -121,7 +119,7 @@ def test_sync_proxy_method_json_error(mock_post):
     mock_response.status_code = 200
     mock_response.json.side_effect = Exception("bad json")
     mock_post.return_value = mock_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
@@ -146,7 +144,7 @@ async def test_async_proxy_method_success(mock_client_class):
     mock_response.json.return_value = {"result": "ok"}  # json() is synchronous in httpx
     mock_client.post.return_value = mock_response
     mock_client_class.return_value.__aenter__.return_value = mock_client
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
@@ -166,11 +164,9 @@ async def test_async_proxy_method_success(mock_client_class):
 def test_getattribute_internal_attrs():
     """Test that internal attributes are accessed directly."""
     dummy_cm = DummyCMWithServiceEndpoints()
-    
-    proxy_cm = ProxyConnectionManager(
-        gateway_url="http://gateway", app_name="app", original_cm=dummy_cm
-    )
-    
+
+    proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
+
     # These should be accessible via the normal __getattribute__ without HTTP calls
     assert proxy_cm.gateway_url == "http://gateway"
     assert proxy_cm.app_name == "app"
@@ -184,13 +180,11 @@ def test_getattribute_proxy_property_get_success(mock_get):
     mock_response.status_code = 200
     mock_response.json.return_value = {"foo": "bar"}
     mock_get.return_value = mock_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
-    
-    proxy_cm = ProxyConnectionManager(
-        gateway_url="http://gateway", app_name="app", original_cm=dummy_cm
-    )
-    
+
+    proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
+
     result = proxy_cm.some_property
     assert result["foo"] == "bar"
     mock_get.assert_called_once_with("http://gateway/app/some_property", timeout=60)
@@ -253,14 +247,12 @@ def test_extract_service_endpoints_from_instance_service_class():
     class MockConnectionManager(ConnectionManager):
         def __init__(self, **kwargs):
             self._service_class = MockService
-    
+
     mock_cm = MockConnectionManager()
     # This simulates a case where the instance stores the service class reference
-    
-    proxy_cm = ProxyConnectionManager(
-        gateway_url="http://gateway", app_name="app", original_cm=mock_cm
-    )
-    
+
+    proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=mock_cm)
+
     # Verify that the endpoints were extracted from the service class via instance attribute
     service_endpoints = object.__getattribute__(proxy_cm, "_service_endpoints")
 
@@ -470,6 +462,7 @@ async def test_async_proxy_method_missing_input_schema_attribute(mock_client_cla
 
 def test_infer_endpoints_from_methods():
     """Test fallback endpoint inference when service endpoints are not available."""
+
     class MockCM(ConnectionManager):
         def some_method(self):
             pass
@@ -658,7 +651,7 @@ def test_getattribute_get_request_json_error(mock_get):
     mock_response.json.side_effect = Exception("JSON parse error")
     mock_response.text = "raw response text"
     mock_get.return_value = mock_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
@@ -687,7 +680,7 @@ def test_getattribute_get_fails_post_succeeds_json_error(mock_post, mock_get):
     mock_post_response.json.side_effect = Exception("JSON parse error")
     mock_post_response.text = "post response text"
     mock_post.return_value = mock_post_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
@@ -835,7 +828,7 @@ def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
     mock_post_response.status_code = 500
     mock_post_response.text = "Internal Server Error"
     mock_post.return_value = mock_post_response
-    
+
     dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 

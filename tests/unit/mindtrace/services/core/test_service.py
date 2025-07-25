@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler) # type: ignore
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:

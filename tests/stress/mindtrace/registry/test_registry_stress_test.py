@@ -340,11 +340,9 @@ class TestRegistryThroughput:
                 operation_start = time.time()
                 # Choose operation type based on probability
                 import random
-                op_type = random.choices(
-                        ["save", "load", "delete", "info"], 
-                        weights=[0.4, 0.3, 0.2, 0.1]
-                )[0]
-                try:                   
+
+                op_type = random.choices(["save", "load", "delete", "info"], weights=[0.4, 0.3, 0.2, 0.1])[0]
+                try:
                     if op_type == "save":
                         # Save operation
                         test_obj = test_objects["small_string"]
@@ -844,8 +842,9 @@ class TestRegistryThroughput:
             for i in range(operations_per_worker):
                 obj_name = f"dict:obj:{worker_id}:{i}"
                 operation_start = time.time()
-                
+
                 import random
+
                 op_type = random.choice(["set", "get", "del", "contains"])
 
                 try:

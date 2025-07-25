@@ -56,6 +56,7 @@ class EndpointsOutput(BaseModel):
 
 EndpointsSchema = TaskSchema(name="endpoints", output_schema=EndpointsOutput)
 
+
 class StatusOutput(BaseModel):
     status: ServerStatus
 

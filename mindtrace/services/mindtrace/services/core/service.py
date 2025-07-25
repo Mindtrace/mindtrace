@@ -129,9 +129,7 @@ class Service(Mindtrace):
             schema=EndpointsSchema,
             as_tool=True,
         )
-        self.add_endpoint(
-            path="/status", func=self.status_func, schema=StatusSchema, as_tool=True
-        )
+        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema, as_tool=True)
         self.add_endpoint(
             path="/heartbeat",
             func=self.heartbeat_func,
@@ -240,11 +238,35 @@ class Service(Mindtrace):
 
     @overload
     @classmethod
-    def launch(cls: Type[T], *, url: str | Url | None = None, host: str | None = None, port: int | None = None, block: bool = False, num_workers: int = 1, wait_for_launch: Literal[False], timeout: int = 60, progress_bar: bool = True, **kwargs) -> None: ...
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[False],
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> None: ...
 
     @overload
     @classmethod
-    def launch(cls: Type[T], *, url: str | Url | None = None, host: str | None = None, port: int | None = None, block: bool = False, num_workers: int = 1, wait_for_launch: Literal[True] | bool = True, timeout: int = 60, progress_bar: bool = True, **kwargs) -> Any: ...
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[True] | bool = True,
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> Any: ...
 
     @classmethod
     def launch(

@@ -634,8 +634,8 @@ class Registry(Mindtrace):
             return "Registry is empty."
 
         if use_rich:
-            console = Console() # type: ignore
-            table = Table(title=f"Registry at {self.backend.uri}") # type: ignore
+            console = Console()  # type: ignore
+            table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
 
             table.add_column("Object", style="bold cyan")
             table.add_column("Version", style="green")

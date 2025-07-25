@@ -155,7 +155,6 @@ class BaslerCamera(BaseCamera):
             )
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
-        
 
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
 
@@ -206,13 +205,10 @@ class BaslerCamera(BaseCamera):
             HardwareOperationError: If camera discovery fails
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon", 
-                "Basler SDK (pypylon) is not available for camera discovery"
-            )
+            raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available for camera discovery")
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
-        
+
         try:
             available_cameras = []
             camera_details = {}
@@ -258,10 +254,7 @@ class BaslerCamera(BaseCamera):
             CameraConnectionError: If camera connection fails
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon", 
-                "Basler SDK (pypylon) is not available for camera discovery"
-            )
+            raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available for camera discovery")
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
         try:
@@ -322,10 +315,7 @@ class BaslerCamera(BaseCamera):
             CameraConfigurationError: If camera configuration fails
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon", 
-                "Basler SDK (pypylon) is not available for camera discovery"
-            )
+            raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available for camera discovery")
         else:
             assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
         try:
@@ -1277,7 +1267,7 @@ class BaslerCamera(BaseCamera):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         else:
             assert genicam is not None, "camera is initialized but genicam is not available"
-            
+
         try:
             was_open = self.camera.IsOpen()
             if not was_open:
@@ -1387,7 +1377,7 @@ class BaslerCamera(BaseCamera):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
         else:
             assert genicam is not None, "camera is initialized but genicam is not available"
-            
+
         try:
             was_open = self.camera.IsOpen()
             if not was_open:
@@ -1452,9 +1442,11 @@ class BaslerCamera(BaseCamera):
                 self.camera.BalanceWhiteAuto.SetValue("Continuous")
                 target_mode = "Continuous"
             else:
-                raise CameraConfigurationError(f"Invalid white balance mode '{value}' for camera '{self.camera_name}'. "
-                "Must be 'off', 'once', or 'continuous'")
-                
+                raise CameraConfigurationError(
+                    f"Invalid white balance mode '{value}' for camera '{self.camera_name}'. "
+                    "Must be 'off', 'once', or 'continuous'"
+                )
+
             actual_mode = self.camera.BalanceWhiteAuto.GetValue()
             success = actual_mode == target_mode
 
