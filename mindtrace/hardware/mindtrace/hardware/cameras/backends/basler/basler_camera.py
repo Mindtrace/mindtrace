@@ -93,7 +93,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
     CameraTimeoutError,
     HardwareOperationError,
-    HardwareTimeoutError,
     SDKNotAvailableError,
 )
 

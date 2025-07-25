@@ -1,15 +1,10 @@
-import json
-import threading
-import time
-from queue import Empty
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import pydantic
 import pytest
 
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.local.client import LocalClient
-from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.orchestrator import Orchestrator
 
 

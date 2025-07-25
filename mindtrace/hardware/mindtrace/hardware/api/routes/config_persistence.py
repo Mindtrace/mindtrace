@@ -6,9 +6,8 @@ Provides endpoints for saving and loading camera configurations to/from files.
 """
 
 import logging
-from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 
 from mindtrace.hardware.api.dependencies import get_camera_manager, validate_camera_exists
 from mindtrace.hardware.cameras.camera_manager import CameraManager
@@ -17,8 +16,6 @@ from mindtrace.hardware.models.requests import ConfigFileRequest
 from mindtrace.hardware.models.responses import (
     BatchOperationResponse,
     BoolResponse,
-    DictResponse,
-    StringResponse,
 )
 
 logger = logging.getLogger(__name__)

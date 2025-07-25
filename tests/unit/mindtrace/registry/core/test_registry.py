@@ -9,8 +9,8 @@ import pytest
 from minio import S3Error
 from pydantic import BaseModel
 
-from mindtrace.core import Config, check_libs
-from mindtrace.registry import LocalRegistryBackend, LockTimeoutError, Registry
+from mindtrace.core import Config
+from mindtrace.registry import LocalRegistryBackend, Registry
 
 
 class SampleModel(BaseModel):

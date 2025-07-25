@@ -1,8 +1,6 @@
 from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
 import pytest
-import requests
 
 from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 

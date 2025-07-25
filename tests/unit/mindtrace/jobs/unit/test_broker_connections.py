@@ -1,11 +1,8 @@
 from unittest.mock import Mock, patch
 
-import pytest
-import redis
 
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.redis.connection import RedisConnection
 
 
 class MockConnection(BrokerConnectionBase):

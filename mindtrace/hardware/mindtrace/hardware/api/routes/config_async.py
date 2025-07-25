@@ -8,7 +8,6 @@ This module provides endpoints for camera settings that require async operations
 """
 
 import logging
-from typing import Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 

@@ -1,13 +1,12 @@
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.cluster.core.cluster import StandardWorkerLauncher, Worker
+from mindtrace.cluster.core.cluster import StandardWorkerLauncher
 from mindtrace.cluster.core.types import ProxyWorker
-from mindtrace.services import ConnectionManager
 
 
 class TestProxyWorker:

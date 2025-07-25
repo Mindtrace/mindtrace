@@ -60,8 +60,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraInitializationError,
     CameraNotFoundError,
     CameraTimeoutError,
-    HardwareOperationError,
-    SDKNotAvailableError,
 )
 
 

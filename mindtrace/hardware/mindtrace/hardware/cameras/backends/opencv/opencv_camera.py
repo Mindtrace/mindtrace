@@ -97,8 +97,6 @@ Performance Notes:
     - Consider camera-specific optimizations for production use
 """
 
-import asyncio
-import glob
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -121,7 +119,6 @@ from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
     CameraTimeoutError,
     HardwareOperationError,
-    HardwareTimeoutError,
     SDKNotAvailableError,
 )
 

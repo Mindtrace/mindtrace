@@ -17,7 +17,6 @@ from mindtrace.hardware.core.exceptions import (
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
-    PLCTimeoutError,
     SDKNotAvailableError,
 )
 from mindtrace.hardware.plcs.backends.base import BasePLC

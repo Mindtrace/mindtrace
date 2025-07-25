@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from urllib3.util.url import Url
 
-from mindtrace.core import TaskSchema, ifnone_url
+from mindtrace.core import ifnone_url
 from mindtrace.services import (
     AppConfig,
     ConnectionManager,

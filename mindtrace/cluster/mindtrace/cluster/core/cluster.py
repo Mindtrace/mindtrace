@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.core import TaskSchema, Timeout, get_class, ifnone
+from mindtrace.core import TaskSchema, Timeout, get_class
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry

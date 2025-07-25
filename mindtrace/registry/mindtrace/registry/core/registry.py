@@ -9,10 +9,10 @@ from typing import Any, Dict, List, Type
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, Timeout, check_libs, first_not_none, ifnone, instantiate_target
+from mindtrace.core import Mindtrace, Timeout, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
-from mindtrace.registry.core.exceptions import LockAcquisitionError, LockTimeoutError
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):

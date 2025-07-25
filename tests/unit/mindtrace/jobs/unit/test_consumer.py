@@ -1,8 +1,6 @@
 import time
-from unittest.mock import Mock
 
 import pytest
-from pydantic import BaseModel
 
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.local.client import LocalClient

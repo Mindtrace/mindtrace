@@ -1,6 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pika
 import pydantic
 import pytest
 from pika.exceptions import ChannelClosedByBroker, ConnectionClosedByBroker, UnroutableError

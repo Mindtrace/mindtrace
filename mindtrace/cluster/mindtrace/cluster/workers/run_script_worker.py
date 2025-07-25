@@ -1,12 +1,10 @@
 import os
-import uuid
 
 from pydantic import BaseModel
 
 from mindtrace.cluster import Worker
 from mindtrace.cluster.workers.environments.docker_env import DockerEnvironment
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.jobs import JobSchema
 
 
 class RunScriptWorker(Worker):

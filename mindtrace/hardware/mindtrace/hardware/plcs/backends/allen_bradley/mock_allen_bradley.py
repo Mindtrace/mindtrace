@@ -35,7 +35,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.hardware.core.exceptions import (
     PLCCommunicationError,
-    PLCConfigurationError,
     PLCConnectionError,
     PLCInitializationError,
     PLCTagError,
