@@ -1432,6 +1432,7 @@ source = { editable = "mindtrace/hardware" }
 dependencies = [
     { name = "mindtrace-core" },
     { name = "mindtrace-services" },
+    { name = "mindtrace-storage" },
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pycomm3" },
@@ -1475,6 +1476,7 @@ requires-dist = [
     { name = "mindtrace-hardware", extras = ["cameras-all"], marker = "extra == 'hardware-all'", editable = "mindtrace/hardware" },
     { name = "mindtrace-hardware", extras = ["cameras-basler", "cameras-daheng"], marker = "extra == 'cameras-all'", editable = "mindtrace/hardware" },
     { name = "mindtrace-services", editable = "mindtrace/services" },
+    { name = "mindtrace-storage", editable = "mindtrace/storage" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "opencv-python", specifier = ">=4.8.0" },
     { name = "pycomm3", specifier = ">=1.2.14" },

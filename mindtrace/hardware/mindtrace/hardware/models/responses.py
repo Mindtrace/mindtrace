@@ -72,7 +72,7 @@ class CaptureResponse(BaseResponse):
     image_data: Optional[str] = None  # Base64 encoded image
     save_path: Optional[str] = None
     gcs_uri: Optional[str] = None  # GCS URI of uploaded image
-    media_type: str = "image/jpeg"
+    media_type: Optional[str] = "image/jpeg"
 
 
 class HDRCaptureResponse(BaseResponse):

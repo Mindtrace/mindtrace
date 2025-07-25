@@ -272,6 +272,7 @@ class CameraProxy:
                                         
                         except Exception as e:
                             self._camera.logger.warning(f"Failed to upload image to GCS: {e}")
+                            print(f"Failed to upload image to GCS: {e}")
                             # Continue with capture even if GCS upload fails
                         
                         # Return both image and GCS URI if upload was successful

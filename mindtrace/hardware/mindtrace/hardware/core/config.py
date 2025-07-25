@@ -270,9 +270,9 @@ class GCSSettings:
         retry_count: Number of retry attempts for GCS operations
         timeout_seconds: GCS operation timeout in seconds
     """
-    default_bucket: str = "mtrix-datasets"
-    project_id: str = "datalake-426010"
-    credentials_path: str = "/home/yasser/Desktop/datalake-sa-key.json"
+    default_bucket: str = "paz-test-bucket"
+    project_id: str = "paz-portal"
+    credentials_path: str = "/home/yasser/mindtrace/paz-portal-bcc97ebc8ea8-usair.json"
     create_if_missing: bool = False
     location: str = "US"
     storage_class: str = "STANDARD"

@@ -212,6 +212,7 @@ def camera_configurator_content() -> rx.Component:
                         _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
                         transition="all 0.2s ease",
                     ),
+
                     rx.spacer(),
                     rx.cond(
                         CameraState.is_admin | CameraState.is_super_admin,

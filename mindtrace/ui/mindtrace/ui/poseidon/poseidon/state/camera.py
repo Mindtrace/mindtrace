@@ -55,7 +55,7 @@ class CameraState(BaseManagementState):
     assignment_dialog_open: bool = False
     assignment_camera_name: str = ""
     assignment_project_id: str = ""
-    API_BASE = "http://localhost:8001"
+    API_BASE = "http://192.168.50.32:8001"
     
     # Override loading property to use is_loading for camera-specific operations
     @property
@@ -548,6 +548,127 @@ class CameraState(BaseManagementState):
             self.set_error(f"Error capturing from {self.selected_camera}: {str(e)}")
         finally:
             self.capture_loading = False
+
+    async def capture_image_from_card(self, camera: str):
+        """Capture image from camera card and upload to GCS."""
+        if not self.can_configure(camera):
+            self.set_error("Camera not in current project/organization scope")
+            return
+        
+        self.capture_loading = True
+        self.clear_messages()
+        
+        try:
+            # Import datetime for timestamp
+            from datetime import datetime
+            import re
+            
+            # Create timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Clean camera name for filename (remove special characters)
+            camera_clean = re.sub(r'[^a-zA-Z0-9]', '_', camera)
+            
+            # Create filename
+            filename = f"{camera_clean}_{timestamp}.jpg"
+            
+            # Prepare capture request with GCS upload
+            capture_payload = {
+                "gcs_bucket": "mtrix-datasets",
+                "gcs_path": f"test_capture/{filename}",
+                "gcs_metadata": {
+                    "camera_name": camera,
+                    "capture_type": "test_capture",
+                    "project": self.selected_project_name,
+                    "organization": self.organization_id,
+                    "captured_by": self.user_id,
+                    "timestamp": timestamp
+                },
+                "return_image": False  # Don't return image data to reduce response size
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.API_BASE}/cameras/{camera}/capture",
+                    json=capture_payload,
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        gcs_uri = data.get("gcs_uri", "")
+                        if gcs_uri:
+                            # Save image metadata to database
+                            await self.save_image_to_database(
+                                gcs_uri=gcs_uri,
+                                filename=filename,
+                                metadata=capture_payload["gcs_metadata"]
+                            )
+                            self.set_success(f"Image captured and uploaded to GCS: {gcs_uri}")
+                            # Refresh images to show the new capture
+                            await self.refresh_captured_images()
+                        else:
+                            self.set_error("Image captured but GCS upload failed")
+                    else:
+                        self.set_error(data.get("message", f"Failed to capture from {camera}"))
+                else:
+                    self.set_error(f"Failed to capture from {camera}: {response.status_code}")
+        except Exception as e:
+            self.set_error(f"Error capturing from {camera}: {str(e)}")
+        finally:
+            self.capture_loading = False
+
+    async def refresh_captured_images(self):
+        """Refresh the captured images list."""
+        try:
+            # Import ImageState to refresh images
+            from poseidon.state.images import ImageState
+            await ImageState.load_images(1)  # Reload first page
+        except Exception as e:
+            print(f"Error refreshing images: {e}")
+
+    async def save_image_to_database(self, gcs_uri: str, filename: str, metadata: dict):
+        """Save image metadata to database after GCS upload."""
+        try:
+            from poseidon.backend.database.repositories.image_repository import ImageRepository
+            from datetime import datetime
+            
+            # Extract GCS path from URI (gcs_uri format: gs://bucket-name/path)
+            # We want to store just the relative path within the bucket
+            if gcs_uri.startswith("gs://"):
+                full_path = gcs_uri[5:]  # Remove "gs://" prefix
+                # Extract bucket name and remove it to get relative path
+                if "/" in full_path:
+                    bucket_name, relative_path = full_path.split("/", 1)
+                    gcs_path = relative_path
+                else:
+                    gcs_path = full_path
+            else:
+                gcs_path = gcs_uri
+            
+            # Prepare image data for database
+            image_data = {
+                "filename": filename,
+                "gcp_path": gcs_path,
+                "file_size": None,  # Could be extracted from GCS metadata
+                "content_type": "image/jpeg",
+                "width": None,  # Could be extracted from image
+                "height": None,  # Could be extracted from image
+                "tags": metadata.get("tags", []),
+                "uploaded_by_id": self.user_id,
+                "project_id": self.project_id,
+                "organization_id": self.organization_id,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+            
+            # Save to database
+            await ImageRepository.create(image_data)
+            print(f"Image metadata saved to database: {filename}")
+            
+        except Exception as e:
+            print(f"Error saving image to database: {e}")
 
     def start_stream(self, camera: str):
         """Start MJPEG video stream for the given camera (scoped)."""

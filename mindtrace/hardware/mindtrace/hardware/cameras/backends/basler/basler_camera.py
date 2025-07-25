@@ -736,7 +736,7 @@ class BaslerCamera(BaseCamera):
                         await asyncio.to_thread(grab_result.Release)
                         return True, image
                     else:
-                        error_desc = await asyncio.to_thread(grab_result.ErrorDescription)
+                        error_desc = grab_result.ErrorDescription
                         self.logger.warning(f"Grab failed for camera '{self.camera_name}': {error_desc}")
                         await asyncio.to_thread(grab_result.Release)
                         
