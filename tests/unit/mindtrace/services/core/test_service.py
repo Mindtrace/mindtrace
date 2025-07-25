@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:
@@ -274,7 +274,7 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
 
 

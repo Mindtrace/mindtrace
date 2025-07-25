@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Any, Type
 
 import httpx
 from fastapi import HTTPException, Path, Request
@@ -31,7 +31,7 @@ class Gateway(Service):
             allow_headers=["*"],
         )
 
-        self.add_endpoint("/register_app", func=self.register_app, schema=RegisterAppTaskSchema(), methods=["POST"])
+        self.add_endpoint("/register_app", func=self.register_app, schema=RegisterAppTaskSchema, methods=["POST"])
 
     def register_app(self, payload: AppConfig):
         """Register a FastAPI app with the gateway."""
@@ -71,7 +71,7 @@ class Gateway(Service):
             raise HTTPException(status_code=500, detail=str(e))
 
     @classmethod
-    def connect(cls: Type["Gateway"], url: str | Url | None = None, timeout: int = 60):
+    def connect(cls: Type["Gateway"], url: str | Url | None = None, timeout: int = 60) -> Any:
         """Connect to an existing Gateway service with enhanced connection manager."""
         url = ifnone_url(url, default=cls.default_url())
         host_status = cls.status_at_host(url, timeout=timeout)

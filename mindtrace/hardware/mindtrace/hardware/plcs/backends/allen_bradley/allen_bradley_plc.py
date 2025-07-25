@@ -22,7 +22,7 @@ from mindtrace.hardware.core.exceptions import (
 from mindtrace.hardware.plcs.backends.base import BasePLC
 
 try:
-    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag
+    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag  # type; ignore
 
     PYCOMM3_AVAILABLE = True
 except ImportError:
@@ -649,7 +649,8 @@ class AllenBradleyPLC(BasePLC):
                                 ]
                             )
 
-            else:  # CIPDriver - Enhanced tag discovery using proper CIP methods
+            else:  # CIPDriver - Enhanced tag discovery using proper CIP method
+                assert CIPDriver is not None, "CIPDriver is required but CIPDriver is not available"
                 # Enhanced CIP tag discovery using official pycomm3 methods
                 self._tags_cache = []
 

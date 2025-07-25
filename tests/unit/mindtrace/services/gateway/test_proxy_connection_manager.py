@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 
 
@@ -24,14 +25,18 @@ class DummySchema:
     name = "dummy"
 
 
-class DummyCM:
+class DummyCM(ConnectionManager):
     pass
+
+
+class DummyCMWithServiceEndpoints(ConnectionManager):
+    def __init__(self, **kwargs):
+        self._service_endpoints: dict[str, type] = {"test": DummySchema}
 
 
 def test_initialization():
     """Test that ProxyConnectionManager initializes correctly."""
-    dummy_cm = DummyCM()
-    dummy_cm._service_endpoints = {"test": DummySchema}
+    dummy_cm = DummyCMWithServiceEndpoints()
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
 
@@ -43,8 +48,7 @@ def test_initialization():
 
 def test_url_normalization():
     """Test that gateway URL is properly normalized (no trailing slash)."""
-    dummy_cm = DummyCM()
-    dummy_cm._service_endpoints = {"test": DummySchema}
+    dummy_cm = DummyCMWithServiceEndpoints()
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway/", app_name="app", original_cm=dummy_cm)
 
@@ -53,7 +57,7 @@ def test_url_normalization():
 
 def test_service_endpoints_extraction():
     """Test that service endpoints are properly extracted from the connection manager."""
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -71,7 +75,7 @@ def test_sync_proxy_method_success(mock_post):
     mock_response.json.return_value = {"result": "ok"}
     mock_post.return_value = mock_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -96,7 +100,7 @@ def test_sync_proxy_method_http_error(mock_post):
     mock_response.text = "Internal Server Error"
     mock_post.return_value = mock_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -116,7 +120,7 @@ def test_sync_proxy_method_json_error(mock_post):
     mock_response.json.side_effect = Exception("bad json")
     mock_post.return_value = mock_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -141,7 +145,7 @@ async def test_async_proxy_method_success(mock_client_class):
     mock_client.post.return_value = mock_response
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"dummy": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -159,8 +163,7 @@ async def test_async_proxy_method_success(mock_client_class):
 
 def test_getattribute_internal_attrs():
     """Test that internal attributes are accessed directly."""
-    dummy_cm = DummyCM()
-    dummy_cm._service_endpoints = {"dummy": DummySchema}
+    dummy_cm = DummyCMWithServiceEndpoints()
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
 
@@ -178,8 +181,7 @@ def test_getattribute_proxy_property_get_success(mock_get):
     mock_response.json.return_value = {"foo": "bar"}
     mock_get.return_value = mock_response
 
-    dummy_cm = DummyCM()
-    dummy_cm._service_endpoints = {"dummy": DummySchema}
+    dummy_cm = DummyCMWithServiceEndpoints()
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
 
@@ -190,7 +192,7 @@ def test_getattribute_proxy_property_get_success(mock_get):
 
 def test_dynamic_method_creation():
     """Test that sync and async methods are created for each endpoint."""
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test_endpoint": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -242,12 +244,12 @@ def test_extract_service_endpoints_from_instance_service_class():
             self._endpoints = {"instance_endpoint": DummySchema, "service_endpoint": DummySchema}
 
     # Create a mock connection manager instance with _service_class set on the instance
-    class MockConnectionManager:
-        pass
+    class MockConnectionManager(ConnectionManager):
+        def __init__(self, **kwargs):
+            self._service_class = MockService
 
     mock_cm = MockConnectionManager()
     # This simulates a case where the instance stores the service class reference
-    mock_cm._service_class = MockService
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=mock_cm)
 
@@ -296,7 +298,7 @@ async def test_async_proxy_method_input_validation_fallback(mock_client_class):
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with failing input schema
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"failing_input": SchemaWithFailingInput}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -345,7 +347,7 @@ def test_sync_proxy_method_input_validation_fallback(mock_post):
     mock_post.return_value = mock_response
 
     # Create connection manager with failing input schema
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"failing_input": SchemaWithFailingInput}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -390,7 +392,7 @@ async def test_async_proxy_method_no_input_schema(mock_client_class):
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with schema that has no input validation
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"no_input_schema": SchemaWithoutInputSchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -434,7 +436,7 @@ async def test_async_proxy_method_missing_input_schema_attribute(mock_client_cla
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with schema that has no input_schema attribute
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"missing_input_schema": SchemaWithMissingInputSchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -461,7 +463,7 @@ async def test_async_proxy_method_missing_input_schema_attribute(mock_client_cla
 def test_infer_endpoints_from_methods():
     """Test fallback endpoint inference when service endpoints are not available."""
 
-    class MockCM:
+    class MockCM(ConnectionManager):
         def some_method(self):
             pass
 
@@ -492,7 +494,7 @@ def test_extract_service_endpoints_from_class_service_class():
             self._endpoints = {"class_service_endpoint": DummySchema, "another_class_endpoint": DummySchema}
 
     # Create a mock connection manager class with _service_class set on the class
-    class MockConnectionManagerClass:
+    class MockConnectionManagerClass(ConnectionManager):
         _service_class = MockService  # This simulates the first branch in _extract_service_endpoints
 
     mock_cm = MockConnectionManagerClass()
@@ -529,7 +531,7 @@ async def test_async_proxy_method_http_error(mock_client_class):
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with schema
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"error_endpoint": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -556,7 +558,7 @@ async def test_async_proxy_method_json_parsing_error(mock_client_class):
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with schema that has no output validation
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"json_error_endpoint": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -598,7 +600,7 @@ async def test_async_proxy_method_output_validation_error(mock_client_class):
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with failing output schema
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"failing_output": SchemaWithFailingOutput}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -624,7 +626,7 @@ def test_sync_proxy_method_json_parsing_error(mock_post):
     mock_post.return_value = mock_response
 
     # Create connection manager with schema that has no output validation
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"json_error_endpoint": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -650,7 +652,7 @@ def test_getattribute_get_request_json_error(mock_get):
     mock_response.text = "raw response text"
     mock_get.return_value = mock_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -679,7 +681,7 @@ def test_getattribute_get_fails_post_succeeds_json_error(mock_post, mock_get):
     mock_post_response.text = "post response text"
     mock_post.return_value = mock_post_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -695,7 +697,7 @@ def test_getattribute_get_fails_post_succeeds_json_error(mock_post, mock_get):
 
 def test_getattr_fallback():
     """Test __getattr__ fallback method."""
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -726,7 +728,7 @@ async def test_async_proxy_method_output_schema_no_validation(mock_client_class)
     mock_client_class.return_value.__aenter__.return_value = mock_client
 
     # Create connection manager with schema that has no output validation
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"no_output_schema": SchemaWithoutOutputSchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -759,7 +761,7 @@ def test_sync_proxy_method_output_schema_no_validation(mock_post):
     mock_post.return_value = mock_response
 
     # Create connection manager with schema that has no output validation
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"no_output_schema": SchemaWithoutOutputSchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -797,7 +799,7 @@ def test_sync_proxy_method_output_validation_error(mock_post):
     mock_post.return_value = mock_response
 
     # Create connection manager with failing output schema
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"failing_output": SchemaWithFailingOutput}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -827,7 +829,7 @@ def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
     mock_post_response.text = "Internal Server Error"
     mock_post.return_value = mock_post_response
 
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)
@@ -844,7 +846,7 @@ def test_getattribute_both_get_and_post_fail(mock_post, mock_get):
 
 def test_getattribute_line_195_proxy_method_access():
     """Test that line 195 is executed when accessing proxy methods from instance dict."""
-    dummy_cm = DummyCM()
+    dummy_cm = DummyCMWithServiceEndpoints()
     dummy_cm._service_endpoints = {"test_method": DummySchema}
 
     proxy_cm = ProxyConnectionManager(gateway_url="http://gateway", app_name="app", original_cm=dummy_cm)

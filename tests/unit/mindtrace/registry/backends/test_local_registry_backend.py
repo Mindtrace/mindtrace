@@ -19,8 +19,12 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 # Import platform-specific modules safely
 if platform.system() != "Windows":
     import fcntl
+
+    msvcrt = None
 else:
     import msvcrt
+
+    fcntl = None
 
 
 @pytest.fixture
@@ -604,7 +608,7 @@ class TestPlatformSpecificImports:
 
             # Verify that msvcrt is imported and fcntl is not
             assert hasattr(module, "msvcrt")
-            assert not hasattr(module, "fcntl")
+            assert not hasattr(module, "fcntl") or module.fcntl is None
 
     def test_unix_imports(self):
         """Test that Unix-specific imports are used on Unix systems."""
@@ -624,7 +628,7 @@ class TestPlatformSpecificImports:
 
             # Verify that fcntl is imported and msvcrt is not
             assert hasattr(module, "fcntl")
-            assert not hasattr(module, "msvcrt")
+            assert not hasattr(module, "msvcrt") or module.msvcrt is None
 
     def test_unknown_platform_imports(self):
         """Test that Unix-specific imports are used as fallback for unknown platforms."""
@@ -644,7 +648,7 @@ class TestPlatformSpecificImports:
 
             # Verify that fcntl is imported and msvcrt is not
             assert hasattr(module, "fcntl")
-            assert not hasattr(module, "msvcrt")
+            assert not hasattr(module, "msvcrt") or module.msvcrt is None
 
 
 def test_delete_parent_directory_error(backend, sample_object_dir, caplog):
@@ -946,6 +950,8 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
 
     # Clean up
     if platform.system() == "Windows":
+        import stat
+
         lock_path.chmod(stat.S_IWRITE | stat.S_IREAD)  # Restore read/write
     else:
         lock_path.chmod(0o666)  # Restore permissions
@@ -1078,7 +1084,7 @@ def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
         assert result is False
 
 
-def test_acquire_existing_lock_file_not_found_error_2(backend):
+def test_acquire_existing_lock_file_not_found_error_v2(backend):
     """Test _acquire_existing_lock FileNotFoundError handling."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
