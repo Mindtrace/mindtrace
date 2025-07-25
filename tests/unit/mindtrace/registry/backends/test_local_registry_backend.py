@@ -1078,7 +1078,7 @@ def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
         assert result is False
 
 
-def test_acquire_existing_lock_file_not_found_error(backend):
+def test_acquire_existing_lock_file_not_found_error_2(backend):
     """Test _acquire_existing_lock FileNotFoundError handling."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
