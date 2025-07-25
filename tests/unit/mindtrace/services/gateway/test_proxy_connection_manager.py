@@ -135,7 +135,7 @@ def test_sync_proxy_method_json_error(mock_post):
     result = dummy_method(foo="bar")
     # When JSON parsing fails, it falls back to {"success": True} and then applies output validation
     assert isinstance(result, DummyOutput)
-    assert result.success == True
+    assert result.success is True
 
 @patch('httpx.AsyncClient')
 @pytest.mark.asyncio
@@ -596,7 +596,7 @@ async def test_async_proxy_method_json_parsing_error(mock_client_class):
     
     # Should get the fallback result wrapped in output schema
     assert isinstance(result, DummyOutput)
-    assert result.success == True
+    assert result.success is True
 
 @patch('httpx.AsyncClient')
 @pytest.mark.asyncio
@@ -665,7 +665,7 @@ def test_sync_proxy_method_json_parsing_error(mock_post):
     
     # Should get the fallback result wrapped in output schema
     assert isinstance(result, DummyOutput)
-    assert result.success == True
+    assert result.success is True
 
 @patch('requests.get')
 def test_getattribute_get_request_json_error(mock_get):
