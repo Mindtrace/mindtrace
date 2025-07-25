@@ -1,13 +1,23 @@
 from mindtrace.database.backends.local_odm_backend import LocalMindtraceODMBackend
-from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
-from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
-from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-from mindtrace.database.core.mindtrace_odm import MindtraceODM
+from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument, MongoMindtraceODMBackend
+from mindtrace.database.backends.redis_odm_backend import MindtraceRedisDocument, RedisMindtraceODMBackend
+from mindtrace.database.backends.unified_odm_backend import (
+    BackendType,
+    UnifiedMindtraceDocument,
+    UnifiedMindtraceODMBackend,
+)
+from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
 __all__ = [
-    "LocalMindtraceODMBackend",
-    "MindtraceODM",
+    "BackendType",
     "MindtraceODMBackend",
+    "DocumentNotFoundError",
+    "DuplicateInsertError",
+    "LocalMindtraceODMBackend",
+    "MindtraceDocument",
+    "MindtraceRedisDocument",
     "MongoMindtraceODMBackend",
     "RedisMindtraceODMBackend",
+    "UnifiedMindtraceDocument",
+    "UnifiedMindtraceODMBackend",
 ]

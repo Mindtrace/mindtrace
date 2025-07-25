@@ -7,39 +7,35 @@ necessary middleware, exception handlers, and route configurations.
 
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from mindtrace.hardware.core.exceptions import (
-    CameraError,
-    CameraNotFoundError,
-    CameraInitializationError,
-    CameraCaptureError,
-    CameraConfigurationError,
-    CameraConnectionError,
-    SDKNotAvailableError,
-    CameraTimeoutError,
-)
-from mindtrace.hardware.models.responses import ErrorResponse
 from mindtrace.hardware.api.routes import (
     backends,
     cameras,
-    config_async,
-    config_sync,
     capture,
+    config_async,
     config_persistence,
+    config_sync,
     network,
 )
-
+from mindtrace.hardware.core.exceptions import (
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    SDKNotAvailableError,
+)
+from mindtrace.hardware.models.responses import ErrorResponse
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -49,7 +45,7 @@ app = FastAPI(
     description="REST API for camera management and control using CameraManager",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 
@@ -84,9 +80,9 @@ EXCEPTION_MAPPING = {
 async def camera_error_handler(request: Request, exc: CameraError):
     """Handle camera-specific exceptions."""
     status_code, error_code = EXCEPTION_MAPPING.get(type(exc), (500, "UNKNOWN_CAMERA_ERROR"))
-    
+
     logger.error(f"Camera error: {exc} (Request: {request.method} {request.url})")
-    
+
     return JSONResponse(
         status_code=status_code,
         content=ErrorResponse(
@@ -94,8 +90,8 @@ async def camera_error_handler(request: Request, exc: CameraError):
             message=str(exc),
             error_type=type(exc).__name__,
             error_code=error_code,
-            timestamp=datetime.utcnow()
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -103,7 +99,7 @@ async def camera_error_handler(request: Request, exc: CameraError):
 async def value_error_handler(request: Request, exc: ValueError):
     """Handle value errors (typically validation errors)."""
     logger.warning(f"Value error: {exc} (Request: {request.method} {request.url})")
-    
+
     return JSONResponse(
         status_code=400,
         content=ErrorResponse(
@@ -111,8 +107,8 @@ async def value_error_handler(request: Request, exc: ValueError):
             message=str(exc),
             error_type="ValueError",
             error_code="VALIDATION_ERROR",
-            timestamp=datetime.utcnow()
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -120,7 +116,7 @@ async def value_error_handler(request: Request, exc: ValueError):
 async def key_error_handler(request: Request, exc: KeyError):
     """Handle key errors (typically missing camera or resource)."""
     logger.warning(f"Key error: {exc} (Request: {request.method} {request.url})")
-    
+
     return JSONResponse(
         status_code=404,
         content=ErrorResponse(
@@ -128,8 +124,8 @@ async def key_error_handler(request: Request, exc: KeyError):
             message=f"Resource not found: {exc}",
             error_type="KeyError",
             error_code="RESOURCE_NOT_FOUND",
-            timestamp=datetime.utcnow()
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -137,7 +133,7 @@ async def key_error_handler(request: Request, exc: KeyError):
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions."""
     logger.error(f"Unexpected error: {exc} (Request: {request.method} {request.url})", exc_info=True)
-    
+
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
@@ -145,8 +141,8 @@ async def general_exception_handler(request: Request, exc: Exception):
             message="An unexpected error occurred",
             error_type=type(exc).__name__,
             error_code="INTERNAL_SERVER_ERROR",
-            timestamp=datetime.utcnow()
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
 
@@ -157,7 +153,7 @@ async def health_check() -> Dict[str, Any]:
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
-        "service": "Camera API"
+        "service": "Camera API",
     }
 
 
@@ -169,7 +165,7 @@ async def root():
         "version": "1.0.0",
         "docs_url": "/docs",
         "redoc_url": "/redoc",
-        "health_url": "/health"
+        "health_url": "/health",
     }
 
 
@@ -178,17 +174,13 @@ async def root():
 async def log_requests(request: Request, call_next):
     """Log all incoming requests."""
     start_time = datetime.utcnow()
-    
+
     response = await call_next(request)
-    
+
     process_time = (datetime.utcnow() - start_time).total_seconds()
-    
-    logger.info(
-        f"{request.method} {request.url} - "
-        f"Status: {response.status_code} - "
-        f"Time: {process_time:.4f}s"
-    )
-    
+
+    logger.info(f"{request.method} {request.url} - Status: {response.status_code} - Time: {process_time:.4f}s")
+
     return response
 
 
@@ -204,4 +196,5 @@ app.include_router(network.router, prefix="/api/v1/network", tags=["network"])
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info") 
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

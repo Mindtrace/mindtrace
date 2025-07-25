@@ -31,7 +31,7 @@ class StorageHandler(MindtraceABC, ABC):
         local_path: str,
         remote_path: str,
         metadata: Optional[Dict[str, str]] = None,
-    ) -> str: 
+    ) -> str:
         """Upload a file from local_path to remote_path in storage.
         Args:
             local_path: Path to the local file to upload.
@@ -43,7 +43,7 @@ class StorageHandler(MindtraceABC, ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:  
+    def download(self, remote_path: str, local_path: str, skip_if_exists: bool = False) -> None:
         """Download a file from remote_path in storage to local_path.
         Args:
             remote_path: Path in the storage backend to download from.
