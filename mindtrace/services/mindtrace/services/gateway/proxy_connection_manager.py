@@ -1,11 +1,11 @@
 import inspect
 from functools import wraps
-from typing import Dict, Any
+from typing import Any, Dict
 
 import httpx
 import requests
-from urllib3.util.url import Url
 from fastapi import HTTPException
+from urllib3.util.url import Url
 
 from mindtrace.services.core.connection_manager import ConnectionManager
 

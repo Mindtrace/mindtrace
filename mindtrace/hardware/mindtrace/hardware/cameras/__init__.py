@@ -5,8 +5,9 @@ Provides unified camera management across different camera manufacturers
 with graceful SDK handling and comprehensive error management.
 """
 
-from .camera_manager import CameraManager
 from .backends.base import BaseCamera
+from .camera_manager import CameraManager
+
 
 # Lazy import availability flags to avoid loading SDKs unnecessarily
 def __getattr__(name):
@@ -32,12 +33,12 @@ def __getattr__(name):
     elif name == "SETUP_AVAILABLE":
         try:
             from .setup import (
-                install_pylon_sdk,
-                uninstall_pylon_sdk,
-                install_daheng_sdk,
-                uninstall_daheng_sdk,
-                setup_all_cameras,
                 configure_firewall,
+                install_daheng_sdk,
+                install_pylon_sdk,
+                setup_all_cameras,
+                uninstall_daheng_sdk,
+                uninstall_pylon_sdk,
             )
             return True
         except ImportError:
@@ -46,12 +47,12 @@ def __getattr__(name):
                   "uninstall_daheng_sdk", "setup_all_cameras", "configure_firewall"]:
         try:
             from .setup import (
-                install_pylon_sdk,
-                uninstall_pylon_sdk,
-                install_daheng_sdk,
-                uninstall_daheng_sdk,
-                setup_all_cameras,
                 configure_firewall,
+                install_daheng_sdk,
+                install_pylon_sdk,
+                setup_all_cameras,
+                uninstall_daheng_sdk,
+                uninstall_pylon_sdk,
             )
             return locals()[name]
         except ImportError:

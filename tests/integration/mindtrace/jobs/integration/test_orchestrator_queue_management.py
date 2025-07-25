@@ -1,11 +1,13 @@
 import pytest
-from mindtrace.jobs.orchestrator import Orchestrator
+
 from mindtrace.jobs.local.client import LocalClient
-from mindtrace.jobs.redis.client import RedisClient
+from mindtrace.jobs.orchestrator import Orchestrator
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
+from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.types.job_specs import JobSchema
 
-from ..conftest import create_test_job, unique_queue_name, SampleJobInput, SampleJobOutput
+from ..conftest import SampleJobInput, SampleJobOutput, create_test_job, unique_queue_name
+
 
 class TestOrchestratorQueueManagement:
     def test_local_backend_clean_and_delete_queue(self, unique_queue_name):

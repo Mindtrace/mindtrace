@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+
 
 @pytest.fixture
 def consumer_frontend():

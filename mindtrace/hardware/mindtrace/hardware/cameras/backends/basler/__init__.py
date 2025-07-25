@@ -38,7 +38,7 @@ Usage:
 
 # Try to import real Basler camera implementation
 try:
-    from .basler_camera import BaslerCamera, PYPYLON_AVAILABLE
+    from .basler_camera import PYPYLON_AVAILABLE, BaslerCamera
     BASLER_AVAILABLE = PYPYLON_AVAILABLE
 except ImportError:
     BaslerCamera = None

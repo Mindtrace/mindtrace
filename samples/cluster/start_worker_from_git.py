@@ -4,6 +4,7 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
+
 def main():
     cluster_manager = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
     node = Node.launch(

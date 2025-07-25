@@ -351,6 +351,7 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
 
     # Try to acquire a shared lock while an exclusive lock exists
     import pytest
+
     from mindtrace.registry.core.exceptions import LockAcquisitionError
     with pytest.raises(LockAcquisitionError):
         backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
@@ -413,6 +414,7 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
 
     # Try to acquire an exclusive lock while shared locks exist
     import pytest
+
     from mindtrace.registry.core.exceptions import LockAcquisitionError
     with pytest.raises(LockAcquisitionError):
         backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)

@@ -7,12 +7,12 @@ using CIPDriver, LogixDriver, and SLCDriver from pycomm3 library.
 
 import asyncio
 import time
-from typing import List, Dict, Any, Tuple, Union, Optional
-from mindtrace.hardware.plcs.backends.base import BasePLC
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from mindtrace.hardware.core.exceptions import (
+    PLCCommunicationError,
     PLCConnectionError,
     PLCInitializationError,
-    PLCCommunicationError,
     PLCTagError,
     PLCTagNotFoundError,
     PLCTagReadError,
@@ -20,10 +20,10 @@ from mindtrace.hardware.core.exceptions import (
     PLCTimeoutError,
     SDKNotAvailableError,
 )
+from mindtrace.hardware.plcs.backends.base import BasePLC
 
 try:
-    from pycomm3 import LogixDriver, SLCDriver, CIPDriver
-    from pycomm3 import Tag
+    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag
     PYCOMM3_AVAILABLE = True
 except ImportError:
     PYCOMM3_AVAILABLE = False

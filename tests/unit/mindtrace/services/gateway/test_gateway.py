@@ -1,16 +1,16 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import json
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import httpx
+import pytest
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from urllib3.util.url import parse_url
 
-from mindtrace.services.gateway.gateway import Gateway
-from mindtrace.services.gateway.types import AppConfig
-from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 from mindtrace.services.core.types import ServerStatus
+from mindtrace.services.gateway.gateway import Gateway
+from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
+from mindtrace.services.gateway.types import AppConfig
 
 
 class TestGateway:

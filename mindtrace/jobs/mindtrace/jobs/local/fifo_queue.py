@@ -1,4 +1,6 @@
 import queue
+
+
 class LocalQueue:
     def __init__(self):
         self.queue = queue.Queue()

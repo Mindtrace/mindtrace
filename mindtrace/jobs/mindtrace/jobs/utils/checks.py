@@ -1,6 +1,7 @@
-from typing import TypeVar
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import TypeVar
+
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
 T = TypeVar("T")

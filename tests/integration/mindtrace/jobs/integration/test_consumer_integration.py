@@ -1,13 +1,14 @@
-import pytest
 import time
 
-from mindtrace.jobs.types.job_specs import JobSchema
-from mindtrace.jobs.orchestrator import Orchestrator
-from mindtrace.jobs.redis.client import RedisClient
-from mindtrace.jobs.rabbitmq.client import RabbitMQClient
-from mindtrace.jobs.local.client import LocalClient
+import pytest
 
-from ..conftest import create_test_job, SampleJobInput, SampleJobOutput, SampleConsumer
+from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.orchestrator import Orchestrator
+from mindtrace.jobs.rabbitmq.client import RabbitMQClient
+from mindtrace.jobs.redis.client import RedisClient
+from mindtrace.jobs.types.job_specs import JobSchema
+
+from ..conftest import SampleConsumer, SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestConsumerIntegration:

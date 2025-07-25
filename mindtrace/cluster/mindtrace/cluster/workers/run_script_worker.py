@@ -1,11 +1,13 @@
 import os
 import uuid
 
-from mindtrace.cluster import Worker
-from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.cluster.workers.environments.docker_env import DockerEnvironment
-from mindtrace.jobs import JobSchema
 from pydantic import BaseModel
+
+from mindtrace.cluster import Worker
+from mindtrace.cluster.workers.environments.docker_env import DockerEnvironment
+from mindtrace.cluster.workers.environments.git_env import GitEnvironment
+from mindtrace.jobs import JobSchema
+
 
 class RunScriptWorker(Worker):
     """Worker that creates a fresh environment for each job.

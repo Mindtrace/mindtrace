@@ -6,18 +6,19 @@ MongoDB and Redis databases using a common interface.
 """
 
 import asyncio
-from pydantic import BaseModel, Field
 from typing import Annotated
+
 from beanie import Indexed
+from pydantic import BaseModel, Field
 
 from mindtrace.database import (
-    UnifiedMindtraceODMBackend,
     BackendType,
+    DocumentNotFoundError,
+    DuplicateInsertError,
     MindtraceDocument,
     MindtraceRedisDocument,
     UnifiedMindtraceDocument,
-    DocumentNotFoundError,
-    DuplicateInsertError
+    UnifiedMindtraceODMBackend,
 )
 
 # Configuration

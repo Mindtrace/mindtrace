@@ -1,23 +1,24 @@
+import json
 import multiprocessing
+import uuid
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-import json
-import uuid
 from typing import Any
 
 import requests
-from pydantic import BaseModel
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.core import TaskSchema, ifnone, get_class, Timeout
+from mindtrace.cluster.workers.environments.git_env import GitEnvironment
+from mindtrace.core import TaskSchema, Timeout, get_class, ifnone
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
-from mindtrace.registry import Registry, Archiver
+from mindtrace.registry import Archiver, Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
-from mindtrace.services import Gateway, Service, ServerStatus, ConnectionManager
-from mindtrace.cluster.workers.environments.git_env import GitEnvironment
+from mindtrace.services import ConnectionManager, Gateway, ServerStatus, Service
+
 
 def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
     entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)

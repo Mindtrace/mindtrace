@@ -1,7 +1,10 @@
-import pytest
-from unittest.mock import patch, MagicMock
-from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from queue import Empty
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from mindtrace.jobs.redis.fifo_queue import RedisQueue
+
 
 @pytest.fixture
 def mock_redis():

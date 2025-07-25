@@ -64,18 +64,19 @@ Error Handling:
 
 import asyncio
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Tuple, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from mindtrace.core.base.mindtrace_base import MindtraceABC
 from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
-    PLCError,
-    PLCNotFoundError,
-    PLCConnectionError,
-    PLCInitializationError,
     PLCCommunicationError,
+    PLCConfigurationError,
+    PLCConnectionError,
+    PLCError,
+    PLCInitializationError,
+    PLCNotFoundError,
     PLCTagError,
     PLCTimeoutError,
-    PLCConfigurationError,
 )
 
 

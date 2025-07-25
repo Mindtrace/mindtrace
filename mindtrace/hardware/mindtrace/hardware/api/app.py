@@ -7,33 +7,32 @@ necessary middleware, exception handlers, and route configurations.
 
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from mindtrace.hardware.core.exceptions import (
-    CameraError,
-    CameraNotFoundError,
-    CameraInitializationError,
-    CameraCaptureError,
-    CameraConfigurationError,
-    CameraConnectionError,
-    SDKNotAvailableError,
-    CameraTimeoutError,
-)
-from mindtrace.hardware.models.responses import ErrorResponse
 from mindtrace.hardware.api.routes import (
     backends,
     cameras,
-    config_async,
-    config_sync,
     capture,
+    config_async,
     config_persistence,
+    config_sync,
     network,
 )
-
+from mindtrace.hardware.core.exceptions import (
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    SDKNotAvailableError,
+)
+from mindtrace.hardware.models.responses import ErrorResponse
 
 # Configure logging
 logging.basicConfig(

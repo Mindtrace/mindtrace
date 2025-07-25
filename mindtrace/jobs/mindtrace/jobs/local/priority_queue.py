@@ -1,4 +1,6 @@
 import queue
+
+
 class LocalPriorityQueue:
     def __init__(self):
         self.priority_queue = queue.PriorityQueue()

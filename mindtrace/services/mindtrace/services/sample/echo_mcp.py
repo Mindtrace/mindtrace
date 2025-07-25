@@ -1,8 +1,9 @@
 import time
 
+from pydantic import BaseModel
+
 from mindtrace.core import TaskSchema
 from mindtrace.services import Service
-from pydantic import BaseModel
 
 
 class EchoInput(BaseModel):

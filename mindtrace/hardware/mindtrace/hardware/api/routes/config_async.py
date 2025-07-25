@@ -12,27 +12,23 @@ from typing import Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from mindtrace.hardware.api.dependencies import get_camera_manager, validate_camera_exists
 from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.api.dependencies import (
-    get_camera_manager,
-    validate_camera_exists
-)
+from mindtrace.hardware.core.exceptions import CameraError
 from mindtrace.hardware.models.requests import (
+    BatchCameraConfigRequest,
     ExposureRequest,
     TriggerModeRequest,
     WhiteBalanceRequest,
-    BatchCameraConfigRequest,
 )
 from mindtrace.hardware.models.responses import (
+    BatchOperationResponse,
     BoolResponse,
     FloatResponse,
-    StringResponse,
     RangeResponse,
+    StringResponse,
     WhiteBalanceListResponse,
-    BatchOperationResponse,
 )
-from mindtrace.hardware.core.exceptions import CameraError
-
 
 logger = logging.getLogger(__name__)
 

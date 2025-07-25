@@ -5,19 +5,14 @@ This module provides endpoints for managing and querying camera backends.
 """
 
 import logging
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from mindtrace.hardware.cameras.camera_manager import CameraManager
 from mindtrace.hardware.api.dependencies import get_camera_manager
-from mindtrace.hardware.models.responses import (
-    ListResponse,
-    BackendInfoResponse,
-    DictResponse
-)
+from mindtrace.hardware.cameras.camera_manager import CameraManager
 from mindtrace.hardware.core.exceptions import CameraError
-
+from mindtrace.hardware.models.responses import BackendInfoResponse, DictResponse, ListResponse
 
 logger = logging.getLogger(__name__)
 

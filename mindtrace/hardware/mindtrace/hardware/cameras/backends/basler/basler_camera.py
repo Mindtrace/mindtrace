@@ -68,16 +68,16 @@ Error Handling:
     - HardwareOperationError: General hardware operation failures
 """
 
+import asyncio
 import os
 import time
-import asyncio
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
-from typing import Optional, List, Tuple, Dict, Any, Union
+import numpy as np
 
 try:
-    from pypylon import pylon
-    from pypylon import genicam
+    from pypylon import genicam, pylon
     PYPYLON_AVAILABLE = True
 except ImportError:
     PYPYLON_AVAILABLE = False
@@ -86,9 +86,15 @@ except ImportError:
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
-    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
-    CameraTimeoutError, HardwareOperationError, HardwareTimeoutError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
+    HardwareTimeoutError,
+    SDKNotAvailableError,
 )
 
 

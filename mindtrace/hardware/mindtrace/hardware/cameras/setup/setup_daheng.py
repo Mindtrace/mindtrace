@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
-from mindtrace.core.utils import download_and_extract_zip, download_and_extract_tarball
+from mindtrace.core.utils import download_and_extract_tarball, download_and_extract_zip
 from mindtrace.hardware.core.config import get_hardware_config
 
 

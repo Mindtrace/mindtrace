@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from abc import abstractmethod
+
 from mindtrace.core import MindtraceABC
+
 
 class BrokerConnectionBase(MindtraceABC):
     """Abstract base class for broker connections."""

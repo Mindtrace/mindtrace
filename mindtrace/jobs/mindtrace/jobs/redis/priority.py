@@ -1,6 +1,9 @@
 import pickle
 from queue import Empty
+
 import redis
+
+
 class RedisPriorityQueue:
     """A priority message queue backed by Redis.
     This class uses a Redis sorted set to store messages with priorities.
