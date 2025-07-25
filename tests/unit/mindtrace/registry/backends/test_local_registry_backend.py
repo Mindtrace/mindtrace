@@ -955,10 +955,10 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
 def test_acquire_lock_windows_atomic_creation(backend):
     """Test Windows-specific atomic file creation in acquire_lock (lines 356-358)."""
     import os
-    
+
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Mock platform.system to return "Windows"
     with patch("platform.system", return_value="Windows"):
         # Mock os.open to track calls and simulate success
@@ -967,32 +967,31 @@ def test_acquire_lock_windows_atomic_creation(backend):
             mock_file = MagicMock()
             mock_file.write = MagicMock()
             mock_file.flush = MagicMock()
-            
+
             with patch("os.fdopen", return_value=mock_file):
                 with patch("os.fsync"):
                     # Attempt to acquire lock
                     result = backend.acquire_lock(lock_key, lock_id, timeout=30)
-                    
+
                     # Verify the lock was acquired successfully
                     assert result is True
-                    
+
                     # Verify os.open was called with Windows-specific flags
                     mock_os_open.assert_called_once()
                     call_args = mock_os_open.call_args
                     assert call_args[0][0] == backend._lock_path(lock_key)  # First arg is path
                     assert call_args[0][1] == (os.O_CREAT | os.O_EXCL | os.O_RDWR)  # Second arg is flags
-                    
+
                     # Verify no mode parameter was passed (Windows doesn't use it)
                     assert len(call_args[0]) == 2  # Only path and flags, no mode
 
 
 def test_acquire_lock_windows_atomic_creation_failure(backend):
     """Test Windows-specific atomic file creation failure in acquire_lock (lines 356-358)."""
-    import os
-    
+
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Mock platform.system to return "Windows"
     with patch("platform.system", return_value="Windows"):
         # Mock os.open to raise FileExistsError (simulating existing file)
@@ -1006,11 +1005,10 @@ def test_acquire_lock_windows_atomic_creation_failure(backend):
 
 def test_acquire_lock_windows_os_error(backend):
     """Test Windows-specific atomic file creation with OS error in acquire_lock (lines 356-358)."""
-    import os
-    
+
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Mock platform.system to return "Windows"
     with patch("platform.system", return_value="Windows"):
         # Mock os.open to raise OSError (simulating system error)
@@ -1024,15 +1022,15 @@ def test_acquire_existing_lock_file_not_exists(backend):
     """Test _acquire_existing_lock when the lock file doesn't exist (lines 402-403)."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Ensure the lock file doesn't exist
     lock_path = backend._lock_path(lock_key)
     if lock_path.exists():
         lock_path.unlink()
-    
+
     # Call _acquire_existing_lock directly
     result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
-    
+
     # Verify that the method returns False when the lock file doesn't exist
     assert result is False
 
@@ -1041,19 +1039,19 @@ def test_acquire_existing_lock_file_not_found_error(backend):
     """Test _acquire_existing_lock FileNotFoundError handling when removing corrupted lock file (lines 424-425)."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Create a lock file
     lock_path = backend._lock_path(lock_key)
     lock_path.touch()
-    
+
     # Mock the open operation to raise FileNotFoundError when trying to read the file
     with patch("builtins.open", side_effect=FileNotFoundError("File not found")):
         # Call _acquire_existing_lock directly
         result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
-        
+
         # Verify that the method returns False when FileNotFoundError occurs
         assert result is False
-        
+
         # Verify that the lock file was attempted to be removed (the unlink operation)
         # The actual unlink might not happen due to the mock, but we can verify the method handled the error gracefully
 
@@ -1062,63 +1060,63 @@ def test_acquire_existing_lock_file_not_found_error_during_unlink(backend):
     """Test _acquire_existing_lock FileNotFoundError during unlink operation (lines 424-425)."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Create a lock file with corrupted content
     lock_path = backend._lock_path(lock_key)
     lock_path.touch()
-    
+
     # Write invalid JSON content to trigger the corrupted file path
     with open(lock_path, "w") as f:
         f.write("invalid json content")
-    
+
     # Mock unlink to raise FileNotFoundError
     with patch("pathlib.Path.unlink", side_effect=FileNotFoundError("File not found")):
         # Call _acquire_existing_lock directly
         result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
-        
+
         # Verify that the method returns False when FileNotFoundError occurs during unlink
         assert result is False
 
 
-def test_acquire_existing_lock_file_not_found_error(backend):
+def test_acquire_existing_lock_file_not_found_error_2(backend):
     """Test _acquire_existing_lock FileNotFoundError handling."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Create a lock file with corrupted content
     lock_path = backend._lock_path(lock_key)
     lock_path.touch()
-    
+
     # Write invalid JSON content to trigger the corrupted file path
     with open(lock_path, "w") as f:
         f.write("invalid json content")
-    
+
     # Mock unlink to raise FileNotFoundError specifically for the corrupted file cleanup
     original_unlink = Path.unlink
-    
+
     def mock_unlink(self):
         # Only raise FileNotFoundError for the specific lock file we're testing
         if self == lock_path:
             raise FileNotFoundError("File was already deleted by another thread")
         return original_unlink(self)
-    
+
     with patch("pathlib.Path.unlink", side_effect=mock_unlink):
         # Call _acquire_existing_lock directly
         result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
-        
+
         # Verify that the method returns False when FileNotFoundError occurs during corrupted file cleanup
         assert result is False
 
 
-def test_release_lock_file_not_found_error (backend):
+def test_release_lock_file_not_found_error(backend):
     """Test release_lock FileNotFoundError handling."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Create a lock file with valid metadata
     lock_path = backend._lock_path(lock_key)
     lock_path.touch()
-    
+
     # Write valid metadata to the lock file
     metadata = {
         "lock_id": lock_id,
@@ -1127,16 +1125,18 @@ def test_release_lock_file_not_found_error (backend):
     }
     with open(lock_path, "w") as f:
         f.write(json.dumps(metadata))
-    
+
     # Mock the file lock acquisition to succeed
     with patch.object(backend, "_acquire_file_lock", return_value=True):
         # Mock the file lock release to succeed
         with patch.object(backend, "_release_file_lock"):
             # Mock unlink to raise FileNotFoundError when trying to remove the lock file
-            with patch("pathlib.Path.unlink", side_effect=FileNotFoundError("File was already deleted by another thread")):
+            with patch(
+                "pathlib.Path.unlink", side_effect=FileNotFoundError("File was already deleted by another thread")
+            ):
                 # Try to release the lock
                 result = backend.release_lock(lock_key, lock_id)
-                
+
                 # Verify that the method returns True (successful release)
                 assert result is True
 
@@ -1145,11 +1145,11 @@ def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
     """Test _acquire_existing_lock when trying to acquire exclusive lock but existing lock is held (line 485)."""
     lock_key = "test_lock"
     lock_id = str(uuid.uuid4())
-    
+
     # Create a lock file with valid metadata for an existing exclusive lock
     lock_path = backend._lock_path(lock_key)
     lock_path.touch()
-    
+
     # Write metadata for an existing exclusive lock
     metadata = {
         "lock_id": "existing_id",
@@ -1158,10 +1158,10 @@ def test_acquire_existing_lock_exclusive_with_existing_lock(backend):
     }
     with open(lock_path, "w") as f:
         f.write(json.dumps(metadata))
-    
+
     # Try to acquire an exclusive lock (shared=False) when an existing exclusive lock is held
     result = backend._acquire_existing_lock(lock_path, lock_id, timeout=30, shared=False)
-    
+
     # Verify that the method returns False (line 485)
     assert result is False
 
