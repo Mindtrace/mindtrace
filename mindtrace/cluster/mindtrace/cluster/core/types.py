@@ -8,6 +8,14 @@ from pydantic import BaseModel, Field
 from mindtrace.database import UnifiedMindtraceDocument
 
 
+class ProxyWorker(BaseModel):
+    worker_type: str
+    git_repo_url: str | None = None
+    git_branch: str | None = None
+    git_commit: str | None = None
+    git_working_dir: str | None = None
+    worker_params: dict
+
 class JobStatus(UnifiedMindtraceDocument):
     job_id: str = Field(description="Job's id")
     worker_id: str = Field(description="Worker's id")
@@ -131,6 +139,10 @@ class RegisterWorkerTypeInput(BaseModel):
     worker_params: dict
     materializer_name: str | None = None
     job_type: str | None = None
+    git_repo_url: str | None = None
+    git_branch: str | None = None
+    git_commit: str | None = None
+    git_working_dir: str | None = None
 
 class ClusterLaunchWorkerInput(BaseModel):
     node_url: str
