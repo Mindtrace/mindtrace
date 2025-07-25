@@ -9,8 +9,5 @@ Test Structure:
   - test_plcs.py: PLC backend and manager unit tests
 """
 
-import asyncio
-
-import pytest
 
 __all__ = [] 
