@@ -1,18 +1,23 @@
 import multiprocessing
 from abc import abstractmethod
 from datetime import datetime
+from pathlib import Path
+import json
+import uuid
+from typing import Any
 
 import requests
 from pydantic import BaseModel
+from fastapi import HTTPException
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.cluster.workers.standard_worker_launcher import ProxyWorker
-from mindtrace.core import TaskSchema, ifnone
+from mindtrace.core import TaskSchema, ifnone, get_class, Timeout
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
-from mindtrace.registry import Registry
+from mindtrace.registry import Registry, Archiver
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
-from mindtrace.services import Gateway, Service, ServerStatus
+from mindtrace.services import Gateway, Service, ServerStatus, ConnectionManager
+from mindtrace.cluster.workers.environments.git_env import GitEnvironment
 
 def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
     entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)
@@ -64,6 +69,7 @@ class ClusterManager(Gateway):
             secure=False,
         )
         self.worker_registry = Registry(backend=minio_backend)
+        self.worker_registry.register_materializer(cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher")
         self.add_endpoint(
             "/submit_job",
             func=self.submit_job,
@@ -213,8 +219,8 @@ class ClusterManager(Gateway):
         except Exception:
             result = {"status": "completed", "output": {}}
 
-        job_status.status = result.get("status", "completed")
-        job_status.output = result.get("output", {})
+        job_status.status = result.get("status") or "completed"
+        job_status.output = result.get("output") or {}
         self.job_status_database.insert(job_status)
         self.logger.info(f"Completed job {job.id} with status {job_status.status}")
         return job_status
@@ -302,12 +308,12 @@ class ClusterManager(Gateway):
         worker_name = payload["worker_name"]
         worker_class = payload["worker_class"]
         worker_params = payload["worker_params"]
+        git_repo_url = payload.get("git_repo_url", None)
+        git_branch = payload.get("git_branch", None)
+        git_commit = payload.get("git_commit", None)
+        git_working_dir = payload.get("git_working_dir", None)
         job_schema_name = payload["job_type"]
-        materializer_name = ifnone(
-            payload["materializer_name"], "mindtrace.cluster.workers.standard_worker_launcher.StandardWorkerLauncher"
-        )
-        proxy_worker = ProxyWorker(worker_type=worker_class, worker_params=worker_params)
-        self.worker_registry.register_materializer(ProxyWorker, materializer_name)
+        proxy_worker = cluster_types.ProxyWorker(worker_type=worker_class, worker_params=worker_params, git_repo_url=git_repo_url, git_branch=git_branch, git_commit=git_commit, git_working_dir=git_working_dir)
         self.worker_registry.save(f"worker:{worker_name}", proxy_worker)
         if job_schema_name:
             self.register_job_schema_to_worker_type({"job_schema_name": job_schema_name, "worker_type": worker_name})
@@ -397,7 +403,7 @@ class ClusterManager(Gateway):
         worker_url = payload["worker_url"]
         worker_id = self._url_to_id(worker_url)
         if worker_id is None:
-            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url, status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
+            return cluster_types.WorkerStatus(worker_id="", worker_type="", worker_url=worker_url or "", status=cluster_types.WorkerStatusEnum.NONEXISTENT, job_id=None, last_heartbeat=None)
         return self.query_worker_status(payload={"worker_id": worker_id})
 
     def _url_to_id(self, worker_url: str):
@@ -596,7 +602,11 @@ class Worker(Service, Consumer):
             self.logger.warning(f"No cluster connection manager found for worker {self.id}")
 
         update_database(self.worker_status_local_database, "worker_id", str(self.id), {"status": cluster_types.WorkerStatusEnum.RUNNING, "job_id": job_dict["id"]})
-        output = self._run(job_dict["payload"])
+        try:
+            output = self._run(job_dict["payload"])
+        except Exception as e:
+            output = {"status": "failed", "output": {}}
+            self.logger.error(f"Error running job {job_dict['id']}: {e}")
         if cm:
             cm.worker_alert_completed_job(
                 job_id=job_dict["id"], worker_id=str(self.id), status=output["status"], output=output["output"]
@@ -666,3 +676,75 @@ class Worker(Service, Consumer):
             self.consume_process.kill()
             self.logger.info(f"Worker {self.id} killed consume process {self.consume_process.pid} as part of shutdown")
         return super().shutdown()
+
+
+class StandardWorkerLauncher(Archiver):
+    """This class saves a ProxyWorker to a file, which contains the class name and parameters of the worker.
+    When loaded, it will launch the worker and return a ConnectionManager object.
+    """
+
+    def __init__(self, uri: str, *args, **kwargs):
+        super().__init__(uri=uri, *args, **kwargs)
+
+    def save(self, data: cluster_types.ProxyWorker):
+        with open(Path(self.uri) / "worker.json", "w") as f:
+            json.dump(data.model_dump(), f)
+
+    def load(self, data_type: Any, url: str) -> ConnectionManager:
+        with open(Path(self.uri) / "worker.json", "r") as f:
+            worker_dict = json.load(f)
+        if worker_dict["git_repo_url"]:
+            environment = GitEnvironment(
+                repo_url=worker_dict["git_repo_url"],
+                branch=worker_dict["git_branch"],
+                commit=worker_dict["git_commit"],
+                working_dir=worker_dict["git_working_dir"]
+            )
+            wd = environment.setup()
+            
+            # All kwargs (including URL params) go directly to init_params
+            init_params = {"url": str(url), **worker_dict["worker_params"]}
+
+            # Strip the URL of the http:// or https:// prefix
+            if url.startswith("http://"):
+                url_stripped = url[len("http://"):]
+            elif url.startswith("https://"):
+                url_stripped = url[len("https://"):]
+            else:
+                url_stripped = url
+
+            # Create launch command
+            server_id = uuid.uuid1()
+            launch_command = [
+                "python",
+                "-m",
+                "mindtrace.services.core.launcher",
+                "-s",
+                worker_dict["worker_type"],
+                "-w",
+                "1",
+                "-b",
+                url_stripped,
+                "-p",
+                str(server_id),
+                "-k",
+                "uvicorn.workers.UvicornWorker",
+                "--init-params",
+                json.dumps(init_params),
+            ]
+            pid = environment.execute(launch_command, detach=True)
+            self.logger.info(f"Worker {worker_dict['worker_type']} launched on url {url} with pid {pid}")
+            timeout_handler = Timeout(
+                timeout=60,
+                exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                desc=f"Launching {worker_dict['worker_type']} at {url}",
+            )
+            try:
+                connection_manager = timeout_handler.run(Worker.connect, url=url)
+            except Exception as e:
+                self.logger.error(f"Failed to connect to worker {worker_dict['worker_type']} at {url}: {e}")
+                raise e
+            return connection_manager
+        else:
+            worker_class = get_class(worker_dict["worker_type"])
+            return worker_class.launch(url=url, **worker_dict["worker_params"], wait_for_launch=True, timeout=60)

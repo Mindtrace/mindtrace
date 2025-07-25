@@ -21,6 +21,7 @@ services:
     ports:
       - "6379:6379"
       - "8001:8001"
+    command: redis-server --save "" --appendonly no --stop-writes-on-bgsave-error no
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

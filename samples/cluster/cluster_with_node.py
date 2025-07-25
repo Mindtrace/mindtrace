@@ -6,15 +6,15 @@ from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 def main():
-    cluster_manager = ClusterManager.launch(host="localhost", port=8000, wait_for_launch=True)
+    cluster_manager = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
     node = Node.launch(
-        host="localhost", port=8001, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
+        host="localhost", port=8003, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
     )
     try:
         cluster_manager.register_worker_type(
             worker_name="echoworker", worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker", worker_params={}
         )
-        worker_url = "http://localhost:8002"
+        worker_url = "http://localhost:8004"
         node.launch_worker(worker_type="echoworker", worker_url=worker_url)
         echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
         cluster_manager.register_job_to_worker(job_type="echo", worker_url=worker_url)
