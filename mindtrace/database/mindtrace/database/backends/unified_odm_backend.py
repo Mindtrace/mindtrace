@@ -8,6 +8,7 @@ from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBacken
 from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument, MongoMindtraceODMBackend
 from mindtrace.database.backends.redis_odm_backend import MindtraceRedisDocument, RedisMindtraceODMBackend
 
+
 class BackendType(Enum):
     MONGO = "mongo"
     REDIS = "redis"
@@ -78,7 +79,7 @@ class UnifiedMindtraceDocument(BaseModel):
         # Use a simpler approach without exec to avoid annotation issues
         
         # Build field dictionary properly
-        fields = {}
+        # fields = {}
         annotations = {}
         
         for field_name, field_type in cls_annotations.items():
@@ -122,8 +123,8 @@ class UnifiedMindtraceDocument(BaseModel):
     @classmethod
     def _auto_generate_redis_model(cls) -> Type[MindtraceRedisDocument]:
         """Automatically generate a Redis-compatible model from the unified model."""
-        from typing import get_origin, get_args, Union
-        
+        from typing import Union, get_args, get_origin
+
         from redis_om import Field as RedisField
         
         # Get field annotations from the original class, excluding inherited ones
@@ -571,7 +572,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         if self.mongo_backend:
             try:
                 # Check if we're already in an async context
-                loop = asyncio.get_running_loop()
+                _ = asyncio.get_running_loop()
                 # We're in an async context, so we can't use asyncio.run()
                 # The caller should use initialize_async() directly
                 # For now, just log a warning and skip async initialization

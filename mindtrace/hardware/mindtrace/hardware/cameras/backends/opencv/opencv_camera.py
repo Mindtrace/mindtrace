@@ -97,11 +97,10 @@ Performance Notes:
     - Consider camera-specific optimizations for production use
 """
 
-import asyncio
-import glob
 import os
 import time
-from typing import Optional, List, Tuple, Union, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 
 try:
@@ -113,9 +112,14 @@ except ImportError:
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
-    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
-    CameraTimeoutError, HardwareOperationError, HardwareTimeoutError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
+    SDKNotAvailableError,
 )
 
 
@@ -348,7 +352,15 @@ class OpenCVCamera(BaseCamera):
                 self.logger.warning(f"Width mismatch for camera '{self.camera_name}': requested {self._width}, got {actual_width}")
             if abs(actual_height - self._height) > 10:
                 self.logger.warning(f"Height mismatch for camera '{self.camera_name}': requested {self._height}, got {actual_height}")
-                       
+            if not width_set:
+                self.logger.warning(f"Width setting failed for camera '{self.camera_name}'")
+            if not height_set:
+                self.logger.warning(f"Height setting failed for camera '{self.camera_name}'")
+            if not fps_set:
+                self.logger.warning(f"FPS setting failed for camera '{self.camera_name}'")
+            if not exposure_set:
+                self.logger.warning(f"Exposure setting failed for camera '{self.camera_name}'")
+
         except Exception as e:
             self.logger.error(f"Camera configuration failed for '{self.camera_name}': {e}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
@@ -411,7 +423,7 @@ class OpenCVCamera(BaseCamera):
                         else:
                             # Camera opened but can't capture - might be in use
                             pass
-                except Exception as e:
+                except Exception:
                     # Camera index might not exist or be accessible
                     pass
                 finally:
@@ -515,11 +527,11 @@ class OpenCVCamera(BaseCamera):
         try:
             # Convert RGB to LAB color space for better enhancement
             lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
-            l, a, b = cv2.split(lab)
+            length, a, b = cv2.split(lab)
             
             # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            cl = clahe.apply(l)
+            cl = clahe.apply(length)
             
             # Merge channels and convert back to RGB
             enhanced_lab = cv2.merge((cl, a, b))

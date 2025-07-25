@@ -1,9 +1,11 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import pika
+from unittest.mock import MagicMock, patch
+
 import pydantic
+import pytest
+from pika.exceptions import ChannelClosedByBroker, ConnectionClosedByBroker, UnroutableError
+
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
-from pika.exceptions import ChannelClosedByBroker, UnroutableError, ConnectionClosedByBroker
+
 
 class DummyModel(pydantic.BaseModel):
     foo: str = "bar"

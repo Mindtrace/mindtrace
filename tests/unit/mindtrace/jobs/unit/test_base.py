@@ -1,10 +1,13 @@
-import pytest
 from unittest.mock import Mock
+
 import pydantic
+import pytest
+
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
+
 
 class MockConnection(BrokerConnectionBase):
     """Mock implementation of BrokerConnectionBase for testing."""
@@ -38,7 +41,7 @@ class MockConsumer(ConsumerBackendBase):
         try:
             self.consumer_frontend.run(message)
             return True
-        except Exception as e:
+        except Exception:
             return False
 
 class MockConsumerFrontend(Consumer):

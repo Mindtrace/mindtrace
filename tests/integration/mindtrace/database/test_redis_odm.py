@@ -4,7 +4,12 @@ import pytest
 from pydantic import BaseModel
 from redis_om import Field
 
-from mindtrace.database import DocumentNotFoundError, DuplicateInsertError, MindtraceRedisDocument, RedisMindtraceODMBackend
+from mindtrace.database import (
+    DocumentNotFoundError,
+    DuplicateInsertError,
+    MindtraceRedisDocument,
+    RedisMindtraceODMBackend,
+)
 
 REDIS_URL = "redis://localhost:6379"
 

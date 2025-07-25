@@ -7,23 +7,22 @@ using CIPDriver, LogixDriver, and SLCDriver from pycomm3 library.
 
 import asyncio
 import time
-from typing import List, Dict, Any, Tuple, Union, Optional
-from mindtrace.hardware.plcs.backends.base import BasePLC
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from mindtrace.hardware.core.exceptions import (
+    PLCCommunicationError,
     PLCConnectionError,
     PLCInitializationError,
-    PLCCommunicationError,
     PLCTagError,
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
-    PLCTimeoutError,
     SDKNotAvailableError,
 )
+from mindtrace.hardware.plcs.backends.base import BasePLC
 
 try:
-    from pycomm3 import LogixDriver, SLCDriver, CIPDriver
-    from pycomm3 import Tag
+    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag
     PYCOMM3_AVAILABLE = True
 except ImportError:
     PYCOMM3_AVAILABLE = False
@@ -959,7 +958,7 @@ class AllenBradleyPLC(BasePLC):
                         
                         discovered_devices.append(f"AllenBradley:{ip}:{device_type}")
                         
-            except Exception as e:
+            except Exception:
                 # CIP discovery failed, continue with fallback methods
                 pass
             
@@ -1003,7 +1002,7 @@ class AllenBradleyPLC(BasePLC):
             
             return unique_devices
             
-        except Exception as e:
+        except Exception:
             return []
     
     @staticmethod

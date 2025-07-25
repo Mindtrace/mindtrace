@@ -32,17 +32,21 @@ Usage:
         image = await camera.capture("output.jpg")
 """
 
-import os
 import asyncio
-from typing import Dict, List, Optional, Any, Tuple, Union
+import os
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
 
-from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    CameraError, CameraNotFoundError, CameraInitializationError,
-    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
-    SDKNotAvailableError, CameraTimeoutError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
 )
 
 # Backend discovery and lazy loading
@@ -65,17 +69,17 @@ def _discover_backend(backend_name: str, logger=None) -> Tuple[bool, Optional[An
     
     try:
         if cache_key == "daheng":
-            from mindtrace.hardware.cameras.backends.daheng import DahengCamera, DAHENG_AVAILABLE
+            from mindtrace.hardware.cameras.backends.daheng import DAHENG_AVAILABLE, DahengCamera
             cache["available"] = DAHENG_AVAILABLE
             cache["class"] = DahengCamera if DAHENG_AVAILABLE else None
         
         elif cache_key == "basler":
-            from mindtrace.hardware.cameras.backends.basler import BaslerCamera, BASLER_AVAILABLE
+            from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCamera
             cache["available"] = BASLER_AVAILABLE
             cache["class"] = BaslerCamera if BASLER_AVAILABLE else None
         
         elif cache_key == "opencv":
-            from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera, OPENCV_AVAILABLE
+            from mindtrace.hardware.cameras.backends.opencv import OPENCV_AVAILABLE, OpenCVCamera
             cache["available"] = OPENCV_AVAILABLE
             cache["class"] = OpenCVCamera if OPENCV_AVAILABLE else None
         

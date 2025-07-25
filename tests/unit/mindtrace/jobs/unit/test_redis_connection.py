@@ -1,8 +1,10 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from mindtrace.jobs.redis.connection import RedisConnection
 import redis
-import threading
+
+from mindtrace.jobs.redis.connection import RedisConnection
+
 
 @pytest.fixture
 def mock_redis():
@@ -68,7 +70,7 @@ def test_connect_retries_exhausted(monkeypatch):
         instance = MagicMock()
         instance.ping.side_effect = redis.ConnectionError
         mock_redis_cls.return_value = instance
-        with patch('time.sleep') as mock_sleep:
+        with patch('time.sleep'):
             conn = RedisConnection(host='localhost', port=6379, db=0)
             conn.connect = MagicMock(side_effect=redis.ConnectionError)
             with pytest.raises(redis.ConnectionError):
@@ -85,7 +87,7 @@ def test_connect_raises(monkeypatch):
                 conn.connect(max_tries=2)
 
 def test_subscribe_to_events_declare_and_delete(monkeypatch):
-    with patch('mindtrace.jobs.redis.connection.redis.Redis') as mock_redis_cls:
+    with patch('mindtrace.jobs.redis.connection.redis.Redis'):
         conn = RedisConnection(host='localhost', port=6379, db=0)
         pubsub = MagicMock()
         pubsub.listen.return_value = iter([
@@ -93,24 +95,24 @@ def test_subscribe_to_events_declare_and_delete(monkeypatch):
             {"type": "message", "data": b'{"event": "delete", "queue": "q"}'},
         ])
         conn.connection.pubsub.return_value = pubsub
-        with patch('threading.Thread') as mock_thread:
+        with patch('threading.Thread'):
             conn._subscribe_to_events()
         # Should add and then remove 'q' in queues
 
 def test_subscribe_to_events_exception(monkeypatch):
-    with patch('mindtrace.jobs.redis.connection.redis.Redis') as mock_redis_cls:
+    with patch('mindtrace.jobs.redis.connection.redis.Redis'):
         conn = RedisConnection(host='localhost', port=6379, db=0)
         pubsub = MagicMock()
         pubsub.listen.return_value = iter([
             {"type": "message", "data": b'invalid json'},
         ])
         conn.connection.pubsub.return_value = pubsub
-        with patch('threading.Thread') as mock_thread:
+        with patch('threading.Thread'):
             # Should not raise
             conn._subscribe_to_events()
 
 def test_load_queue_metadata_unknown_type(monkeypatch):
-    with patch('mindtrace.jobs.redis.connection.redis.Redis') as mock_redis_cls:
+    with patch('mindtrace.jobs.redis.connection.redis.Redis'):
         conn = RedisConnection(host='localhost', port=6379, db=0)
         mock_conn = MagicMock()
         mock_conn.hgetall.return_value = {b'q': b'unknown'}
@@ -119,14 +121,14 @@ def test_load_queue_metadata_unknown_type(monkeypatch):
         assert 'q' not in conn.queues
 
 def test_load_queue_metadata_creates_queues(monkeypatch):
-    with patch('mindtrace.jobs.redis.connection.redis.Redis') as mock_redis_cls:
+    with patch('mindtrace.jobs.redis.connection.redis.Redis'):
         conn = RedisConnection(host='localhost', port=6379, db=0)
         mock_conn = MagicMock()
         mock_conn.hgetall.return_value = {b'q': b'fifo', b'p': b'priority', b's': b'stack'}
         conn.connection = mock_conn
-        with patch('mindtrace.jobs.redis.connection.RedisQueue') as mock_fifo, \
-             patch('mindtrace.jobs.redis.connection.RedisPriorityQueue') as mock_priority, \
-             patch('mindtrace.jobs.redis.connection.RedisStack') as mock_stack:
+        with patch('mindtrace.jobs.redis.connection.RedisQueue'), \
+             patch('mindtrace.jobs.redis.connection.RedisPriorityQueue'), \
+             patch('mindtrace.jobs.redis.connection.RedisStack'):
             conn._load_queue_metadata()
             assert 'q' in conn.queues
             assert 'p' in conn.queues
@@ -134,7 +136,7 @@ def test_load_queue_metadata_creates_queues(monkeypatch):
 
 def test_start_event_listener_starts_thread(monkeypatch):
     with patch('mindtrace.jobs.redis.connection.threading.Thread') as mock_thread, \
-         patch('mindtrace.jobs.redis.connection.redis.Redis') as mock_redis_cls:
+         patch('mindtrace.jobs.redis.connection.redis.Redis'):
         conn = RedisConnection(host='localhost', port=6379, db=0)
         conn.connection = MagicMock()  # Prevent actual Redis usage
         conn.connection.pubsub.return_value = MagicMock()

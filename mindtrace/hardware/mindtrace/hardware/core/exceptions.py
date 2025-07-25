@@ -31,7 +31,7 @@ Exception Hierarchy:
     └── SensorError (sensor-specific base, reserved for future use)
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 # Base hardware exception

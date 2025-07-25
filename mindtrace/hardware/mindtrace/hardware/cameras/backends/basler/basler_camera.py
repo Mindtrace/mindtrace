@@ -68,16 +68,16 @@ Error Handling:
     - HardwareOperationError: General hardware operation failures
 """
 
+import asyncio
 import os
 import time
-import asyncio
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
-from typing import Optional, List, Tuple, Dict, Any, Union
+import numpy as np
 
 try:
-    from pypylon import pylon
-    from pypylon import genicam
+    from pypylon import genicam, pylon
     PYPYLON_AVAILABLE = True
 except ImportError:
     PYPYLON_AVAILABLE = False
@@ -86,9 +86,14 @@ except ImportError:
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
-    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
-    CameraTimeoutError, HardwareOperationError, HardwareTimeoutError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
+    HardwareOperationError,
+    SDKNotAvailableError,
 )
 
 
@@ -602,9 +607,9 @@ class BaslerCamera(BaseCamera):
             # Run image processing in thread to avoid blocking
             def enhance():
                 lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-                l, a, b = cv2.split(lab)
+                length, a, b = cv2.split(lab)
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                cl = clahe.apply(l)
+                cl = clahe.apply(length)
                 enhanced_lab = cv2.merge((cl, a, b))
                 enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
                 return enhanced_img

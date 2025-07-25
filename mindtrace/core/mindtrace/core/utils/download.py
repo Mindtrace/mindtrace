@@ -1,12 +1,10 @@
-import os
-import zipfile
+import logging
 import tarfile
 import tempfile
-import shutil
+import zipfile
 from pathlib import Path
 from typing import Optional, Union
 from urllib.request import urlretrieve
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +62,7 @@ def download_and_extract_zip(
             if zip_path.exists():
                 try:
                     zip_path.unlink()
-                except:
+                except Exception:
                     pass
             raise
 
@@ -131,6 +129,6 @@ def download_and_extract_tarball(
             if tarball_path.exists():
                 try:
                     tarball_path.unlink()
-                except:
+                except Exception:
                     pass
             raise

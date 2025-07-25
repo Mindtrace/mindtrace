@@ -55,7 +55,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     message = self.receive_message(channel, queue, block=block)
                     if message:
                         self.logger.debug(f"Received message from queue '{queue}': processing {messages_consumed + 1}/{num_messages}")
-                        success = self.process_message(message)
+                        _ = self.process_message(message)
                         messages_consumed += 1
                     else:
                         # No more messages available in this queue
@@ -78,7 +78,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
                     if message:
                         processed += 1
                         self.logger.debug(f"Received message from queue '{queue}': processing message {processed}")
-                        success = self.process_message(message)
+                        _ = self.process_message(message)
                     # Continue to next queue even if no message
                         
                 except Exception as e:
@@ -90,7 +90,7 @@ class RabbitMQConsumerBackend(ConsumerBackendBase):
         """Process a single message and return success status."""
         if isinstance(message, dict):
             try:
-                result = self.consumer_frontend.run(message)
+                _ = self.consumer_frontend.run(message)
                 job_id = message.get('id', 'unknown')
                 self.logger.debug(f"Successfully processed dict job {job_id}")
                 return True

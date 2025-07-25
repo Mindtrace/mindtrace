@@ -3,9 +3,10 @@ import pathlib
 import shutil
 import subprocess
 import tempfile
-from typing import Optional, List, Dict, Union, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import git
+
 from mindtrace.core import Mindtrace
 
 

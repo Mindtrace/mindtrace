@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from mindtrace.database import MindtraceRedisDocument
 
+
 class UserCreate(BaseModel):
     name: str
     age: int

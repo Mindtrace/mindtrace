@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from redis import Redis
 
 from mindtrace.database import MindtraceDocument, MongoMindtraceODMBackend
+
 from .test_redis_odm import UserDoc as RedisUserDoc
 
 # Set up logging
@@ -88,7 +89,7 @@ def redis_backend(redis_client):
     backend = RedisUserDoc
     try:
         backend.initialize()
-    except Exception as e:
+    except Exception:
         raise
     
     # Clean up any existing data before test
@@ -110,7 +111,7 @@ def pytest_sessionfinish(session, exitstatus):
     for client in _test_clients[:]:  # Copy list to avoid modification during iteration
         try:
             client.close()
-        except:
+        except Exception:
             pass
     _test_clients.clear()
     

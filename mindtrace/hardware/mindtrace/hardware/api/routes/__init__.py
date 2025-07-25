@@ -9,8 +9,8 @@ from .backends import router as backends_router
 from .cameras import router as cameras_router
 from .capture import router as capture_router
 from .config_async import router as config_async_router
-from .config_sync import router as config_sync_router
 from .config_persistence import router as config_persistence_router
+from .config_sync import router as config_sync_router
 from .network import router as network_router
 
 # Create module-level router objects for easy import

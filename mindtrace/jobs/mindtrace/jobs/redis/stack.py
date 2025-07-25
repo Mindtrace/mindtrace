@@ -1,6 +1,9 @@
 import pickle
 from queue import Empty
+
 import redis
+
+
 class RedisStack:
     """A LIFO (last-in, first-out) message stack backed by Redis.
     This class uses a Redis list to store serialized messages. The `push` method pushes items to the head of the list,

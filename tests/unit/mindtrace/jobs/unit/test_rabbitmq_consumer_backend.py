@@ -1,6 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
+
 
 @pytest.fixture
 def consumer_frontend():
@@ -24,7 +27,7 @@ def backend(consumer_frontend):
 def test_init_calls_connect(consumer_frontend):
     with patch('mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.connect') as mock_connect:
         with patch('mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.get_channel'):
-            backend = RabbitMQConsumerBackend('q', consumer_frontend)
+            _ = RabbitMQConsumerBackend('q', consumer_frontend)
             mock_connect.assert_called_once()
 
 def test_consume_finite_messages(backend):

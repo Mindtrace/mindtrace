@@ -1,16 +1,15 @@
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-import json
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
+import pytest
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from urllib3.util.url import parse_url
 
-from mindtrace.services.gateway.gateway import Gateway
-from mindtrace.services.gateway.types import AppConfig
-from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
 from mindtrace.services.core.types import ServerStatus
+from mindtrace.services.gateway.gateway import Gateway
+from mindtrace.services.gateway.proxy_connection_manager import ProxyConnectionManager
+from mindtrace.services.gateway.types import AppConfig
 
 
 class TestGateway:
@@ -161,7 +160,7 @@ class TestGateway:
         mock_request.headers = {}
         mock_request.body = AsyncMock(return_value=b'')
         
-        with patch.object(gateway.client, 'request', side_effect=httpx.RequestError("Network error")) as mock_client_request:
+        with patch.object(gateway.client, 'request', side_effect=httpx.RequestError("Network error")):
             with pytest.raises(HTTPException) as exc_info:
                 await gateway.forward_request(mock_request, 'test-service', 'endpoint')
             
@@ -402,7 +401,7 @@ class TestProxyConnectionManagerIntegration:
             status_method = instance_dict["status"]
             
             # Test calling a no-arg method
-            result = status_method()
+            _ = status_method()
             
             # Verify POST was used (all proxy methods use POST)
             mock_post.assert_called_once_with(

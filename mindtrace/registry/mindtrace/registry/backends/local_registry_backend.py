@@ -1,6 +1,6 @@
 import json
-import platform
 import os
+import platform
 import shutil
 import time
 from pathlib import Path
