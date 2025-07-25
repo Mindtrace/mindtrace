@@ -19,9 +19,11 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 # Import platform-specific modules safely
 if platform.system() != "Windows":
     import fcntl
+
     msvcrt = None
 else:
     import msvcrt
+
     fcntl = None
 
 
@@ -949,6 +951,7 @@ def test_release_lock_handles_invalid_json_and_io_errors(backend):
     # Clean up
     if platform.system() == "Windows":
         import stat
+
         lock_path.chmod(stat.S_IWRITE | stat.S_IREAD)  # Restore read/write
     else:
         lock_path.chmod(0o666)  # Restore permissions

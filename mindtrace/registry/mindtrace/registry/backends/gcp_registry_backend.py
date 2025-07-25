@@ -15,4 +15,3 @@ class GCPRegistryBackend(RegistryBackend):  # pragma: no cover
 
     def delete(self, name: str, version: str | None = None):
         raise NotImplementedError("Registry delete method not implemented")
-

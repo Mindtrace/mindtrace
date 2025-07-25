@@ -393,7 +393,6 @@ class MockBaslerCamera(BaseCamera):
         width = self.roi["width"]
         height = self.roi["height"]
         try:
-            
             # Use vectorized operations for much better performance
             x_coords = np.arange(width)
             y_coords = np.arange(height)

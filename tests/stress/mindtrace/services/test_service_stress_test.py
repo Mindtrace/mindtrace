@@ -868,7 +868,7 @@ class TestEchoServiceThroughput:
                 "theoretical_max": theoretical_max,
                 "overall_efficiency": overall_efficiency,
                 "efficiency_rating": efficiency_rating,
-                "expected_min_rt_ms": expected_min_rt,  
+                "expected_min_rt_ms": expected_min_rt,
                 "actual_min_rt_ms": actual_min_rt,
                 "overhead_ms": overhead_ms,
             },

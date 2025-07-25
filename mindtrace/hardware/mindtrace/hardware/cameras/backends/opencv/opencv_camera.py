@@ -186,7 +186,7 @@ class OpenCVCamera(BaseCamera):
             )
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
-        
+
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
 
         # Get backend-specific configuration with fallbacks
@@ -278,8 +278,7 @@ class OpenCVCamera(BaseCamera):
         """
         if not OPENCV_AVAILABLE:
             raise SDKNotAvailableError(
-                "opencv-python",
-                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+                "opencv-python", "OpenCV is required for USB camera support. Install with: pip install opencv-python"
             )
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
@@ -335,8 +334,7 @@ class OpenCVCamera(BaseCamera):
         """
         if not OPENCV_AVAILABLE:
             raise SDKNotAvailableError(
-                "opencv-python",
-                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+                "opencv-python", "OpenCV is required for USB camera support. Install with: pip install opencv-python"
             )
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
@@ -404,7 +402,7 @@ class OpenCVCamera(BaseCamera):
             return [] if not include_details else {}
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
-        
+
         try:
             available_cameras = []
             camera_details = {}
@@ -483,8 +481,10 @@ class OpenCVCamera(BaseCamera):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
 
-        self.logger.debug(f"Starting capture with {self.retrieve_retry_count} max attempts for camera '{self.camera_name}'")
-        
+        self.logger.debug(
+            f"Starting capture with {self.retrieve_retry_count} max attempts for camera '{self.camera_name}'"
+        )
+
         start_time = time.time()
 
         for attempt in range(self.retrieve_retry_count):
@@ -551,8 +551,7 @@ class OpenCVCamera(BaseCamera):
         """
         if not OPENCV_AVAILABLE:
             raise SDKNotAvailableError(
-                "opencv-python",
-                "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+                "opencv-python", "OpenCV is required for USB camera support. Install with: pip install opencv-python"
             )
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
@@ -597,7 +596,7 @@ class OpenCVCamera(BaseCamera):
             return False
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
-        
+
         try:
             is_open = self.cap.isOpened()
 
