@@ -351,7 +351,9 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
 
     # Try to acquire a shared lock while an exclusive lock exists
     import pytest
+
     from mindtrace.registry.core.exceptions import LockAcquisitionError
+
     with pytest.raises(LockAcquisitionError):
         backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
 
@@ -413,7 +415,9 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
 
     # Try to acquire an exclusive lock while shared locks exist
     import pytest
+
     from mindtrace.registry.core.exceptions import LockAcquisitionError
+
     with pytest.raises(LockAcquisitionError):
         backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)
 
@@ -1308,7 +1312,7 @@ def test_acquire_lock_unexpected_s3error(backend, monkeypatch, caplog):
 
 def test_acquire_lock_generic_exception(backend, monkeypatch):
     """Test that acquire_lock proceeds when get_object raises a generic Exception (lines 483-485)."""
-    
+
     # Mock get_object to raise a generic Exception (not S3Error or LockAcquisitionError)
     def mock_get_object(*args, **kwargs):
         raise Exception("Generic error during lock check")
