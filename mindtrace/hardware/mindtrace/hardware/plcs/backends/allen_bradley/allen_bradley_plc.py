@@ -22,7 +22,7 @@ from mindtrace.hardware.core.exceptions import (
 from mindtrace.hardware.plcs.backends.base import BasePLC
 
 try:
-    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag # type; ignore
+    from pycomm3 import CIPDriver, LogixDriver, SLCDriver, Tag  # type; ignore
 
     PYCOMM3_AVAILABLE = True
 except ImportError:
