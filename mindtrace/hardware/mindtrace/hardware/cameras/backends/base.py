@@ -25,37 +25,35 @@ Example:
         async def initialize(self) -> Tuple[bool, Any, Any]:
             # Implementation here
             pass
-        
+
         async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
             # Implementation here
             pass
-        
+
         # ... implement other abstract methods
 """
 
 from __future__ import annotations
 
-import asyncio
-from abc import ABC, abstractmethod
 import uuid
+from abc import abstractmethod
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
-from typing import Tuple, Optional, List, Dict, Any, Union
-from pathlib import Path
 
 from mindtrace.core.base.mindtrace_base import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
-from mindtrace.hardware.core.exceptions import (
-    CameraInitializationError, CameraNotFoundError, CameraConnectionError
-)
+from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
+
 
 class BaseCamera(MindtraceABC):
     """
     Abstract base class for all camera implementations.
-    
+
     This class defines the async interface that all camera backends must implement
     to ensure consistent behavior across different camera types and manufacturers.
     Uses async-first design consistent with PLC backends.
-    
+
     Attributes:
         camera_name: Unique identifier for the camera
         camera_config_file: Path to camera configuration file
@@ -65,9 +63,9 @@ class BaseCamera(MindtraceABC):
         device_manager: Device manager object (implementation-specific)
         initialized: Camera initialization status
     """
-    
+
     def __init__(
-        self, 
+        self,
         camera_name: Optional[str] = None,
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
@@ -75,7 +73,7 @@ class BaseCamera(MindtraceABC):
     ):
         """
         Initialize base camera with configuration integration.
-        
+
         Args:
             camera_name: Unique identifier for the camera (auto-generated if None)
             camera_config: Path to camera configuration file
@@ -83,28 +81,28 @@ class BaseCamera(MindtraceABC):
             retrieve_retry_count: Number of retries for image retrieval (uses config default if None)
         """
         super().__init__()
-        
+
         self.camera_config = get_camera_config().get_config()
-        
+
         self._setup_camera_logger_formatting()
-        
+
         self.camera_name = camera_name or str(uuid.uuid4())
         self.camera_config_file = camera_config
-        
+
         if img_quality_enhancement is None:
             self.img_quality_enhancement = self.camera_config.cameras.image_quality_enhancement
         else:
             self.img_quality_enhancement = img_quality_enhancement
-        
+
         if retrieve_retry_count is None:
             self.retrieve_retry_count = self.camera_config.cameras.retrieve_retry_count
         else:
             self.retrieve_retry_count = retrieve_retry_count
-        
+
         self.camera: Optional[Any] = None
         self.device_manager: Optional[Any] = None
         self.initialized: bool = False
-        
+
         self.logger.info(
             f"Camera base initialized: camera_name={self.camera_name}, "
             f"img_quality_enhancement={self.img_quality_enhancement}, "
@@ -114,38 +112,37 @@ class BaseCamera(MindtraceABC):
     def _setup_camera_logger_formatting(self):
         """
         Setup camera-specific logger formatting.
-        
+
         Provides consistent formatting for all camera-related log messages.
         This method ensures uniform logging across all camera implementations.
         """
         import logging
-        
+
         if not self.logger.handlers:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(logging.INFO)
-            
+
             formatter = logging.Formatter(
-                '%(asctime)s | %(name)s | %(levelname)s | %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                "%(asctime)s | %(name)s | %(levelname)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
             )
             console_handler.setFormatter(formatter)
-            
+
             self.logger.addHandler(console_handler)
             self.logger.setLevel(logging.INFO)
-        
+
         self.logger.propagate = False
 
     async def setup_camera(self) -> None:
         """
         Common setup method for camera initialization.
-        
+
         This method provides a standardized setup pattern that can be used
         by all camera backends. It calls the abstract initialize() method
         and handles common initialization patterns.
-        
+
         Raises:
             CameraNotFoundError: If camera cannot be found
-            CameraInitializationError: If camera initialization fails  
+            CameraInitializationError: If camera initialization fails
             CameraConnectionError: If camera connection fails
         """
         try:
@@ -163,11 +160,11 @@ class BaseCamera(MindtraceABC):
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """
         Initialize the camera and establish connection.
-        
+
         This method should handle all necessary setup to prepare the camera
         for image capture, including device discovery, connection establishment,
         and initial configuration.
-        
+
         Returns:
             Tuple of (success, camera_object, remote_control_object)
             - success: True if initialization successful, False otherwise
@@ -180,10 +177,10 @@ class BaseCamera(MindtraceABC):
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
         Set camera exposure time.
-        
+
         Args:
             exposure: Exposure time value (units depend on implementation)
-            
+
         Returns:
             True if exposure was set successfully, False otherwise
         """
@@ -193,7 +190,7 @@ class BaseCamera(MindtraceABC):
     async def get_exposure(self) -> float:
         """
         Get current camera exposure time.
-        
+
         Returns:
             Current exposure time value (units depend on implementation)
         """
@@ -203,7 +200,7 @@ class BaseCamera(MindtraceABC):
     async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get camera exposure time range.
-        
+
         Returns:
             List containing [min_exposure, max_exposure] in implementation-specific units
         """
@@ -213,10 +210,10 @@ class BaseCamera(MindtraceABC):
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
         """
         Capture an image from the camera.
-        
+
         This method should handle the complete image capture process,
         including any necessary retries based on retrieve_retry_count.
-        
+
         Returns:
             Tuple of (success, image_array)
             - success: True if capture successful, False otherwise
@@ -228,7 +225,7 @@ class BaseCamera(MindtraceABC):
     async def check_connection(self) -> bool:
         """
         Check if camera is connected and responding.
-        
+
         Returns:
             True if camera is connected and responding, False otherwise
         """
@@ -238,7 +235,7 @@ class BaseCamera(MindtraceABC):
     async def close(self) -> None:
         """
         Close camera connection and release resources.
-        
+
         This method should ensure all camera resources are properly
         released and the camera is disconnected safely.
         """
@@ -249,10 +246,10 @@ class BaseCamera(MindtraceABC):
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """
         Get list of available cameras.
-        
+
         Args:
             include_details: If True, return detailed camera information
-            
+
         Returns:
             List of camera names or dictionary with detailed camera information
         """
@@ -262,12 +259,12 @@ class BaseCamera(MindtraceABC):
     async def set_config(self, config: str) -> bool:
         """
         Set camera configuration.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             config: Configuration string or path
-            
+
         Returns:
             True if configuration was set successfully, False otherwise
         """
@@ -277,12 +274,12 @@ class BaseCamera(MindtraceABC):
     async def import_config(self, config_path: str) -> bool:
         """
         Import camera configuration from file.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             config_path: Path to configuration file
-            
+
         Returns:
             True if configuration was imported successfully, False otherwise
         """
@@ -292,12 +289,12 @@ class BaseCamera(MindtraceABC):
     async def export_config(self, config_path: str) -> bool:
         """
         Export camera configuration to file.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             config_path: Path to save configuration file
-            
+
         Returns:
             True if configuration was exported successfully, False otherwise
         """
@@ -307,9 +304,9 @@ class BaseCamera(MindtraceABC):
     async def get_wb(self) -> str:
         """
         Get camera white balance setting.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             Current white balance setting
         """
@@ -319,12 +316,12 @@ class BaseCamera(MindtraceABC):
     async def set_auto_wb_once(self, value: str) -> bool:
         """
         Set camera white balance.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             value: White balance setting
-            
+
         Returns:
             True if white balance was set successfully, False otherwise
         """
@@ -334,9 +331,9 @@ class BaseCamera(MindtraceABC):
     def get_wb_range(self) -> List[str]:
         """
         Get available white balance modes.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             List of available white balance modes
         """
@@ -346,9 +343,9 @@ class BaseCamera(MindtraceABC):
     async def get_triggermode(self) -> str:
         """
         Get camera trigger mode.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             Current trigger mode
         """
@@ -358,12 +355,12 @@ class BaseCamera(MindtraceABC):
     async def set_triggermode(self, triggermode: str = "continuous") -> bool:
         """
         Set camera trigger mode.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             triggermode: Trigger mode to set
-            
+
         Returns:
             True if trigger mode was set successfully, False otherwise
         """
@@ -373,7 +370,7 @@ class BaseCamera(MindtraceABC):
     def get_image_quality_enhancement(self) -> bool:
         """
         Get current image quality enhancement setting.
-        
+
         Returns:
             True if image quality enhancement is enabled, False otherwise
         """
@@ -382,10 +379,10 @@ class BaseCamera(MindtraceABC):
     def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
         """
         Set image quality enhancement setting.
-        
+
         Args:
             img_quality_enhancement: Whether to enable image quality enhancement
-            
+
         Returns:
             True if setting was applied successfully, False otherwise
         """
@@ -396,9 +393,9 @@ class BaseCamera(MindtraceABC):
     async def get_width_range(self) -> List[int]:
         """
         Get camera width range.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             List containing [min_width, max_width]
         """
@@ -408,9 +405,9 @@ class BaseCamera(MindtraceABC):
     async def get_height_range(self) -> List[int]:
         """
         Get camera height range.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             List containing [min_height, max_height]
         """
@@ -421,12 +418,12 @@ class BaseCamera(MindtraceABC):
     def set_gain(self, gain: Union[int, float]) -> bool:
         """
         Set camera gain.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             gain: Gain value
-            
+
         Returns:
             True if gain was set successfully, False otherwise
         """
@@ -436,9 +433,9 @@ class BaseCamera(MindtraceABC):
     def get_gain(self) -> float:
         """
         Get current camera gain.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             Current gain value
         """
@@ -448,9 +445,9 @@ class BaseCamera(MindtraceABC):
     def get_gain_range(self) -> List[Union[int, float]]:
         """
         Get camera gain range.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             List containing [min_gain, max_gain]
         """
@@ -460,15 +457,15 @@ class BaseCamera(MindtraceABC):
     def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set Region of Interest (ROI).
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             x: ROI x offset
-            y: ROI y offset  
+            y: ROI y offset
             width: ROI width
             height: ROI height
-            
+
         Returns:
             True if ROI was set successfully, False otherwise
         """
@@ -478,9 +475,9 @@ class BaseCamera(MindtraceABC):
     def get_ROI(self) -> Dict[str, int]:
         """
         Get current Region of Interest (ROI).
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             Dictionary with ROI parameters
         """
@@ -490,9 +487,9 @@ class BaseCamera(MindtraceABC):
     def reset_ROI(self) -> bool:
         """
         Reset ROI to full sensor size.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             True if ROI was reset successfully, False otherwise
         """
@@ -502,9 +499,9 @@ class BaseCamera(MindtraceABC):
     def get_pixel_format_range(self) -> List[str]:
         """
         Get available pixel formats.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             List of available pixel formats
         """
@@ -514,9 +511,9 @@ class BaseCamera(MindtraceABC):
     def get_current_pixel_format(self) -> str:
         """
         Get current pixel format.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Returns:
             Current pixel format
         """
@@ -526,12 +523,12 @@ class BaseCamera(MindtraceABC):
     def set_pixel_format(self, pixel_format: str) -> bool:
         """
         Set pixel format.
-        
+
         Default implementation that can be overridden by specific backends.
-        
+
         Args:
             pixel_format: Pixel format to set
-            
+
         Returns:
             True if pixel format was set successfully, False otherwise
         """
@@ -552,12 +549,12 @@ class BaseCamera(MindtraceABC):
         Destructor to ensure resources are cleaned up.
         """
         try:
-            if hasattr(self, 'camera') and self.camera is not None:
-                if hasattr(self, 'logger'):
+            if hasattr(self, "camera") and self.camera is not None:
+                if hasattr(self, "logger"):
                     self.logger.warning(
                         f"Camera '{self.camera_name}' destroyed without proper cleanup. "
                         f"Use 'async with camera' or call 'await camera.close()' for proper cleanup."
                     )
         except Exception:
             # Ignore all errors during destruction
-            pass 
+            pass

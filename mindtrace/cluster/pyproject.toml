@@ -16,6 +16,7 @@ dependencies = [
     "mindtrace-registry",
     "mindtrace-database",
     "mindtrace-services",
+    "docker>=7.1.0",
 ]
 
 [build-system]

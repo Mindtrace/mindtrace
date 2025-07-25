@@ -226,13 +226,12 @@ class TestServiceIntegration:
         assert "Async version" in aecho_method.__doc__
 
 
-
 class TestMCPServiceIntegration:
     """Integration tests for MCP functionality"""
 
     @pytest.mark.asyncio
     async def test_mcp_server_accessible(self, echo_mcp_manager):
-        endpoints_result = echo_mcp_manager.endpoints()
+        _ = echo_mcp_manager.endpoints()
         # The MCP app is mounted at /mcp-server
         base_url = "http://localhost:8093"
         mcp_url = f"{base_url}/mcp-server/mcp/"
