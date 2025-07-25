@@ -1,9 +1,11 @@
 from typing import Dict, List, Optional
+
 import docker
 import docker.types
 from docker.errors import DockerException
 
 from mindtrace.core import Mindtrace
+
 
 class DockerEnvironment(Mindtrace):
     """Manages Docker-based environments for workers."""

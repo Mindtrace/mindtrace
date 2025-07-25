@@ -1,7 +1,10 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from pika.exceptions import AMQPConnectionError, ChannelClosedByBroker
+
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
+
 
 @pytest.fixture
 def rabbitmq_conn():

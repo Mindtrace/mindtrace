@@ -6,25 +6,10 @@ hardware dependencies. Tests cover Allen Bradley PLCs with all three driver type
 (Logix, SLC, CIP), PLC manager, error handling, and edge cases.
 """
 
+import asyncio
+
 import pytest
 import pytest_asyncio
-import asyncio
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any, List
-
-from mindtrace.hardware.core.exceptions import (
-    PLCError,
-    PLCNotFoundError,
-    PLCInitializationError,
-    PLCCommunicationError,
-    PLCTagError,
-    PLCTagNotFoundError,
-    PLCTagReadError,
-    PLCTagWriteError,
-    PLCTimeoutError,
-    PLCConnectionError,
-    SDKNotAvailableError,
-)
 
 
 # Fixtures
@@ -383,7 +368,6 @@ class TestPLCManager:
     @pytest.mark.asyncio
     async def test_plc_registration(self, mock_plc_manager):
         """Test PLC registration with manager."""
-        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         manager = mock_plc_manager
         
@@ -412,7 +396,6 @@ class TestPLCManager:
     @pytest.mark.asyncio
     async def test_batch_operations(self, mock_plc_manager):
         """Test batch PLC operations."""
-        from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
         
         manager = mock_plc_manager
         

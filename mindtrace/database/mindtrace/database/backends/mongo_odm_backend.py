@@ -8,6 +8,7 @@ from pymongo.errors import DuplicateKeyError
 from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
+
 class MindtraceDocument(Document):
     """
     Base document class for MongoDB collections in Mindtrace.

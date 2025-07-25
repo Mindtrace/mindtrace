@@ -7,30 +7,22 @@ This module provides endpoints for image capture operations:
 - HDR image capture
 """
 
-import logging
 import base64
-from typing import Optional, Dict, Any
+import logging
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from mindtrace.hardware.api.dependencies import get_camera_manager
 from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.api.dependencies import (
-    get_camera_manager,
-    validate_camera_exists
-)
-from mindtrace.hardware.models.requests import (
-    CaptureRequest,
-    BatchCaptureRequest,
-    HDRCaptureRequest,
-    BatchHDRCaptureRequest
-)
-from mindtrace.hardware.models.responses import (
-    CaptureResponse,
-    HDRCaptureResponse,
-    BatchOperationResponse
-)
 from mindtrace.hardware.core.exceptions import CameraError
-
+from mindtrace.hardware.models.requests import (
+    BatchCaptureRequest,
+    BatchHDRCaptureRequest,
+    CaptureRequest,
+    HDRCaptureRequest,
+)
+from mindtrace.hardware.models.responses import BatchOperationResponse, CaptureResponse, HDRCaptureResponse
 
 logger = logging.getLogger(__name__)
 

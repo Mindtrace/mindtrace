@@ -43,19 +43,23 @@ Error Simulation:
     - MOCK_BASLER_TIMEOUT: Simulate timeout errors
 """
 
+import asyncio
+import json
 import os
 import time
-import json
-import asyncio
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
-from typing import Optional, List, Tuple, Dict, Any, Union
+import numpy as np
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError, CameraCaptureError,
-    CameraConfigurationError, CameraConnectionError, CameraTimeoutError,
-    HardwareOperationError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
 )
 
 
@@ -473,11 +477,11 @@ class MockBaslerCamera(BaseCamera):
         try:
             # Convert to LAB color space
             lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
+            length, a, b = cv2.split(lab)
             
             # Apply CLAHE to L channel
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            cl = clahe.apply(l)
+            cl = clahe.apply(length)
             
             # Merge channels and convert back to BGR
             enhanced_lab = cv2.merge((cl, a, b))

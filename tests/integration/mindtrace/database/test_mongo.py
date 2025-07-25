@@ -7,6 +7,7 @@ from pymongo.errors import OperationFailure
 
 from mindtrace.database import DocumentNotFoundError, DuplicateInsertError, MindtraceDocument
 
+
 class UserDoc(MindtraceDocument):
     name: str
     age: int

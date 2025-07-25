@@ -39,7 +39,6 @@ class RedisClient(OrchestratorBackend):
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a Redis-backed queue of type 'fifo', 'stack', or 'priority'."""
-        force = kwargs.get("force", False)
         with self.connection._local_lock:
             if queue_name in self.connection.queues:
                 return {

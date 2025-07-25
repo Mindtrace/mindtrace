@@ -35,18 +35,16 @@ Example:
 
 from __future__ import annotations
 
-import asyncio
-from abc import ABC, abstractmethod
 import uuid
+from abc import abstractmethod
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
-from typing import Tuple, Optional, List, Dict, Any, Union
-from pathlib import Path
 
 from mindtrace.core.base.mindtrace_base import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
-from mindtrace.hardware.core.exceptions import (
-    CameraInitializationError, CameraNotFoundError, CameraConnectionError
-)
+from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
+
 
 class BaseCamera(MindtraceABC):
     """

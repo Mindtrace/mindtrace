@@ -1,20 +1,11 @@
 import asyncio
-import inspect
-import logging
 import time
-import unittest.mock
-from unittest.mock import patch, Mock
 
 import pytest
-import pytest_asyncio
 import requests
-import httpx
-from urllib3.util.url import Url, parse_url
-from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema
-from mindtrace.services import AppConfig, Gateway, generate_connection_manager, Service
-from mindtrace.services.sample.echo_service import EchoService, EchoInput, EchoOutput
+from mindtrace.services import Gateway
+from mindtrace.services.sample.echo_service import EchoService
 
 
 class TestGatewayCoreFunctionality:
@@ -39,7 +30,7 @@ class TestGatewayCoreFunctionality:
     async def test_gateway_app_registration_sync(self, gateway_manager, echo_service_for_gateway):
         """Test synchronous app registration with Gateway."""
         # Register echo service with gateway
-        result = gateway_manager.register_app(
+        _ = gateway_manager.register_app(
             name="echoer", 
             url=str(echo_service_for_gateway.url)
         )
@@ -60,7 +51,7 @@ class TestGatewayCoreFunctionality:
     async def test_gateway_app_registration_async(self, gateway_manager, echo_service_for_gateway):
         """Test asynchronous app registration with Gateway."""
         # Register echo service with gateway asynchronously
-        result = await gateway_manager.aregister_app(
+        _ = await gateway_manager.aregister_app(
             name="async_echoer", 
             url=str(echo_service_for_gateway.url)
         )

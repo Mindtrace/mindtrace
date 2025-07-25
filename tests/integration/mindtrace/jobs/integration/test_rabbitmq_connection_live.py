@@ -1,4 +1,5 @@
 import pytest
+
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
 

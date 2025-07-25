@@ -59,7 +59,7 @@ import logging
 import platform
 import subprocess
 import sys
-from typing import List, Optional, Tuple
+from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
@@ -292,7 +292,7 @@ class CameraSystemSetup(Mindtrace):
             self.logger.info(f"Creating new Linux UFW rule for {ip_range}")
             cmd = ["sudo", "ufw", "allow", "from", ip_range]
             
-            result = subprocess.run(cmd, check=True, timeout=timeout)
+            _ = subprocess.run(cmd, check=True, timeout=timeout)
             self.logger.info(f"Successfully added Linux UFW rule for {ip_range}")
             return True
             

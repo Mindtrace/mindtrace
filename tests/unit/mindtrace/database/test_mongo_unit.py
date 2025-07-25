@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from mindtrace.database import MindtraceDocument
 
+
 class UserDoc(MindtraceDocument):
     name: str
     age: int

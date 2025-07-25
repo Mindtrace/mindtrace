@@ -43,21 +43,24 @@ Error Simulation:
     - MOCK_DAHENG_TIMEOUT: Simulate timeout errors
 """
 
+import asyncio
+import json
 import os
 import time
-import json
-import asyncio
-import numpy as np
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import cv2
-from typing import Optional, List, Tuple, Dict, Any, Union
+import numpy as np
 
 from mindtrace.hardware.cameras.backends.base import BaseCamera
 from mindtrace.hardware.core.exceptions import (
-    SDKNotAvailableError, CameraInitializationError, CameraNotFoundError,
-    CameraCaptureError, CameraConfigurationError, CameraConnectionError,
-    CameraTimeoutError, HardwareOperationError
+    CameraCaptureError,
+    CameraConfigurationError,
+    CameraConnectionError,
+    CameraInitializationError,
+    CameraNotFoundError,
+    CameraTimeoutError,
 )
-
 
 
 class MockDahengCamera(BaseCamera):

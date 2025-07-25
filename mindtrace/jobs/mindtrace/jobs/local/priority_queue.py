@@ -1,10 +1,12 @@
 import queue
+
+
 class LocalPriorityQueue:
     def __init__(self):
         self.priority_queue = queue.PriorityQueue()
     def push(self, item, priority: int = 0):
         inverted_priority = -priority
-        self.priority_queue.put((-priority, item))
+        self.priority_queue.put((inverted_priority, item))
     def pop(self, block=True, timeout=None):
         neg_priority, item = self.priority_queue.get(block=block, timeout=timeout)
         return item

@@ -1,12 +1,14 @@
-import pytest
-import threading
 import time
 from queue import Empty
+
+import pytest
 from pydantic import BaseModel
+
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.redis.stack import RedisStack
 from mindtrace.jobs.types.job_specs import Job, JobSchema
-from ..conftest import create_test_job, job_from_schema
+
+from ..conftest import job_from_schema
 
 
 class SampleJobInput(BaseModel):
@@ -115,5 +117,5 @@ class TestStackEquivalence:
         finally:
             try:
                 redis_stack.__db.delete(redis_stack.key)
-            except:
+            except Exception:
                 pass 

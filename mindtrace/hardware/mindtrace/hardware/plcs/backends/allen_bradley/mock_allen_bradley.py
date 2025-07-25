@@ -28,22 +28,22 @@ Usage:
 """
 
 import asyncio
-import time
-import random
 import os
-from typing import List, Dict, Any, Tuple, Union, Optional
-from mindtrace.hardware.plcs.backends.base import BasePLC
+import random
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from mindtrace.hardware.core.exceptions import (
+    PLCCommunicationError,
     PLCConnectionError,
     PLCInitializationError,
-    PLCCommunicationError,
     PLCTagError,
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
     PLCTimeoutError,
-    PLCConfigurationError,
 )
+from mindtrace.hardware.plcs.backends.base import BasePLC
 
 
 class MockAllenBradleyPLC(BasePLC):

@@ -1,23 +1,24 @@
+import json
 import multiprocessing
+import uuid
 from abc import abstractmethod
 from datetime import datetime
 from pathlib import Path
-import json
-import uuid
 from typing import Any
 
 import requests
-from pydantic import BaseModel
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.core import TaskSchema, ifnone, get_class, Timeout
+from mindtrace.cluster.workers.environments.git_env import GitEnvironment
+from mindtrace.core import TaskSchema, Timeout, get_class
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
-from mindtrace.registry import Registry, Archiver
+from mindtrace.registry import Archiver, Registry
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
-from mindtrace.services import Gateway, Service, ServerStatus, ConnectionManager
-from mindtrace.cluster.workers.environments.git_env import GitEnvironment
+from mindtrace.services import ConnectionManager, Gateway, ServerStatus, Service
+
 
 def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_key: str, update_dict: dict):
     entries = database.find(getattr(database.redis_backend.model_cls, sort_key) == find_key)
@@ -387,7 +388,7 @@ class ClusterManager(Gateway):
         worker_url = worker_status_list[0].worker_url
         try:
             worker_cm = Worker.connect(worker_url)
-        except:
+        except Exception:
             worker_cm = None
         if worker_cm is None or worker_cm.heartbeat().heartbeat.status == ServerStatus.DOWN:
             our_status = update_database(self.worker_status_database, "worker_id", worker_id, {"status": cluster_types.WorkerStatusEnum.NONEXISTENT, "job_id": None, "last_heartbeat": datetime.now()})
@@ -700,7 +701,7 @@ class StandardWorkerLauncher(Archiver):
                 commit=worker_dict["git_commit"],
                 working_dir=worker_dict["git_working_dir"]
             )
-            wd = environment.setup()
+            _ = environment.setup()
             
             # All kwargs (including URL params) go directly to init_params
             init_params = {"url": str(url), **worker_dict["worker_params"]}

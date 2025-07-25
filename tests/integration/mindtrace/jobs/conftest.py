@@ -1,10 +1,12 @@
-import pytest
 import time
 from datetime import datetime
+
+import pytest
 from pydantic import BaseModel
+
+from mindtrace.jobs import Consumer
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 from mindtrace.jobs.utils.checks import job_from_schema
-from mindtrace.jobs import Consumer
 
 
 class SampleJobInput(BaseModel):

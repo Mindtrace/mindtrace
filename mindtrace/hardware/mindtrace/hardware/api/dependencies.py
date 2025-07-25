@@ -6,14 +6,12 @@ and other shared resources.
 """
 
 import logging
-from typing import Optional
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import Depends, HTTPException
 
 from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.core.exceptions import CameraError
-
 
 logger = logging.getLogger(__name__)
 

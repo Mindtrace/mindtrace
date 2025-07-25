@@ -8,12 +8,12 @@ Gateway Service example showing how to:
 """
 
 import asyncio
+
 import httpx
 import requests
 
-from mindtrace.core import ifnone_url
-from mindtrace.services import Gateway, AppConfig
-from mindtrace.services.sample.echo_service import EchoService, EchoInput
+from mindtrace.services import Gateway
+from mindtrace.services.sample.echo_service import EchoService
 
 
 def sync_gateway_example():
@@ -185,7 +185,7 @@ def multiple_services_example():
         # Register both services with different names - with ProxyConnectionManager
         result1 = gateway_cm.register_app(name="echo1", url="http://localhost:8095/", connection_manager=echo_cm1)
         result2 = gateway_cm.register_app(name="echo2", url="http://localhost:8096/", connection_manager=echo_cm2)
-        print(f"Both services registered with Gateway!")
+        print("Both services registered with Gateway!")
         print(f"Registration results: {result1}, {result2}")
 
         # Make requests to different registered services through the same Gateway

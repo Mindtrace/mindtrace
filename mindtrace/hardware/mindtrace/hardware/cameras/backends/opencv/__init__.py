@@ -28,7 +28,7 @@ Usage:
 
 # Try to import OpenCV camera implementation
 try:
-    from .opencv_camera import OpenCVCamera, OPENCV_AVAILABLE
+    from .opencv_camera import OPENCV_AVAILABLE, OpenCVCamera
 except ImportError:
     OpenCVCamera = None
     OPENCV_AVAILABLE = False

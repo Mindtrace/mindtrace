@@ -57,11 +57,12 @@ Usage:
     backend_settings = config.get_config().backends
 """
 
-import os
 import json
-from dataclasses import dataclass, asdict, field
-from typing import Dict, Any, Optional
+import os
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Optional
+
 import structlog
 
 logger = structlog.get_logger(__name__)
