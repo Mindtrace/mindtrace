@@ -13,7 +13,7 @@ Requirements:
 
 Installation:
     1. Install Galaxy SDK from Daheng Imaging
-    2. pip install gxipy
+    2. pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
