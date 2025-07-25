@@ -7,6 +7,7 @@ from poseidon.backend.database.repositories.model_repository import ModelReposit
 from poseidon.backend.database.repositories.model_deployment_repository import ModelDeploymentRepository
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
 from poseidon.state.auth import AuthState
+from poseidon.state.camera import CameraState
 
 @dataclass
 class CameraDict:
@@ -49,7 +50,7 @@ class DeploymentDict:
 class ModelDeploymentState(rx.State):
     """State management for model deployment functionality"""
     
-    # Lists using dataclass types
+    # Lists using dataclass types for Reflex compatibility
     available_cameras: List[CameraDict] = []
     available_models: List[ModelDict] = []
     active_deployments: List[DeploymentDict] = []
@@ -180,25 +181,25 @@ class ModelDeploymentState(rx.State):
         return set(self.selected_camera_ids)
     
     async def load_cameras(self):
-        """Load cameras from database"""
+        """Load cameras using CameraState and convert to CameraDict for UI"""
         self.is_loading = True
         self.clear_messages()
-        print("Loading cameras...")
+        
         try:
-            # Get current user organization
-            auth_state = await self.get_state(AuthState)
-            if not auth_state.is_authenticated:
-                self.error = "User not authenticated"
-                print("Error: ", self.error)
-                return
+            # Get camera state and initialize context
+            camera_state = await self.get_state(CameraState)
             
-            organization_id = auth_state.user_organization_id
-            cameras = await CameraRepository.get_by_organization(organization_id)
-            print("Cameras: ", cameras)
-            # Convert camera objects to CameraDict instances
+            # Initialize camera context if not already done
+            if not camera_state.organization_id:
+                await camera_state.initialize_context()
+            
+            # Fetch cameras using CameraState
+            await camera_state.fetch_cameras()
+            
+            # Convert camera objects to CameraDict instances for Reflex compatibility
             self.available_cameras = [
                 CameraDict(
-                    id=camera.id,
+                    id=str(camera.id),
                     name=camera.name,
                     backend=camera.backend,
                     device_name=camera.device_name,
@@ -207,7 +208,7 @@ class ModelDeploymentState(rx.State):
                     description=camera.description or "",
                     location=camera.location or ""
                 )
-                for camera in cameras
+                for camera in camera_state.camera_objs
             ]
             print("Available cameras: ", self.available_cameras)
             # Add sample cameras for testing if none exist
@@ -296,14 +297,17 @@ class ModelDeploymentState(rx.State):
                     ),
                 ]
             
-            self.success = f"Loaded {len(self.available_cameras)} cameras"
+            # Check if we have cameras
+            if len(self.available_cameras) == 0:
+                self.error = "No cameras available. Please assign cameras to your project first."
+            else:
+                self.success = f"Loaded {len(self.available_cameras)} cameras from project: {camera_state.selected_project_name}"
             
         except Exception as e:
             self.error = f"Error loading cameras: {str(e)}"
-            print("Error: ", self.error)
         finally:
             self.is_loading = False
-    
+
     async def load_models(self):
         """Load models from database"""
         self.is_loading = True
@@ -387,8 +391,8 @@ class ModelDeploymentState(rx.State):
             # Convert deployment objects to DeploymentDict instances
             self.active_deployments = [
                 DeploymentDict(
-                    id=deployment.id,
-                    model_id=deployment.model_id,
+                    id=str(deployment.id),
+                    model_id=str(deployment.model.id) if deployment.model else "",
                     camera_ids=deployment.camera_ids,
                     deployment_status=deployment.deployment_status,
                     health_status=deployment.health_status or "unknown",
@@ -507,6 +511,27 @@ class ModelDeploymentState(rx.State):
         """Select all available cameras"""
         self.selected_camera_ids = [camera.id for camera in self.available_cameras]
     
+    async def ensure_cameras_initialized(self):
+        """Ensure selected cameras are initialized before deployment"""
+        camera_state = await self.get_state(CameraState)
+        
+        # Get selected camera names for initialization
+        selected_camera_names = []
+        for camera in self.available_cameras:
+            if camera.id in self.selected_camera_ids:
+                selected_camera_names.append(camera.name)
+        
+        # Initialize each selected camera if not already active
+        for camera_name in selected_camera_names:
+            camera_status = camera_state.camera_statuses.get(camera_name, "not_initialized")
+            if camera_status != "available":
+                self.deployment_status = f"Initializing camera {camera_name}..."
+                await camera_state.initialize_camera(camera_name)
+                
+                # Check if initialization was successful
+                if camera_state.camera_statuses.get(camera_name) != "available":
+                    raise Exception(f"Failed to initialize camera {camera_name}")
+    
     async def deploy_model(self):
         """Deploy selected model to selected cameras"""
         if not self.can_deploy:
@@ -543,8 +568,27 @@ class ModelDeploymentState(rx.State):
                 self.error = "Selected model not found"
                 raise Exception("Selected model not found")
             
+# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
+            # Get selected cameras
+            selected_cameras = []
+            for camera in self.available_cameras:
+                if camera.id in self.selected_camera_ids:
+                    selected_cameras.append(camera)
+            
+            if not selected_cameras:
+                self.error = "No valid cameras selected"
+                return
+            
+            # Step 2: Ensure cameras are initialized
+            self.deployment_status = "Initializing cameras..."
+            await self.ensure_cameras_initialized()
+            
+            # Step 3: Call model server API to load model
+            self.deployment_status = "Loading model on server..."
+# =======
             # Step 2: Prepare camera endpoints for deployment
             self.deployment_status = "Preparing camera configurations..."
+# >>>>>>> poseidon/feature/temp_demo_test
             
             # Map selected cameras to API format with endpoints
             camera_api_data = []
@@ -634,6 +678,36 @@ class ModelDeploymentState(rx.State):
                     }
                 except Exception as e:
                     self.error = f"Model server communication error: {str(e)} - using mock deployment"
+# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
+#                     # Continue with mock deployment for development
+            
+#             # Step 4: Register cameras with model server
+#             self.deployment_status = "Registering cameras with model server..."
+            
+#             camera_names = [camera.name for camera in selected_cameras]
+            
+#             async with httpx.AsyncClient() as client:
+#                 try:
+#                     response = await client.post(
+#                         f"{self.model_server_url}/model/register_cameras",
+#                         json={
+#                             "camera_names": camera_names,
+#                             "camera_ids": self.selected_camera_ids
+#                         },
+#                         timeout=30.0
+#                     )
+                    
+#                     if response.status_code != 200:
+#                         self.error = f"Camera registration error: {response.status_code}"
+#                         return
+                        
+#                 except Exception as e:
+#                     # Continue with mock deployment for development
+#                     pass
+            
+#             # Step 5: Save deployment to database
+#             self.deployment_status = "Saving deployment..."
+# =======
                     # Create mock response for development
                     deployment_response = {
                         "deployment_id": "adient_model_server_mock_123",
@@ -650,6 +724,7 @@ class ModelDeploymentState(rx.State):
             
             # Step 4: Save deployment to database with new schema
             self.deployment_status = "Saving deployment to database..."
+# >>>>>>> poseidon/feature/temp_demo_test
             
             # Use the selected project ID from UI
             project_id = self.selected_project_id
@@ -668,6 +743,10 @@ class ModelDeploymentState(rx.State):
                     "status": deployment_response.get("status"),
                     "model_name": selected_model.name,
                     "model_version": selected_model.version,
+# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
+#                     "camera_names": camera_names,
+#                     "deployed_at": "2024-01-01T00:00:00Z"  # This will be set by the model
+# =======
                     "docker_image": "adient-model-server:latest",
                     "cameras": camera_api_data,
                     "gpu": True,
@@ -676,6 +755,7 @@ class ModelDeploymentState(rx.State):
                         "MODEL_NAME": "adient_weld_detector",
                         "CONFIDENCE_THRESHOLD": "0.5"
                     }
+# >>>>>>> poseidon/feature/temp_demo_test
                 },
                 "inference_config": {
                     "endpoint": deployment_response.get("endpoint", "http://localhost:9000"),
@@ -690,6 +770,11 @@ class ModelDeploymentState(rx.State):
             }
             
             
+# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
+#             # Step 6: Update deployment status
+#             self.deployment_status = "Deployment completed successfully!"
+#             self.success = f"Successfully deployed {selected_model.name} to {len(selected_cameras)} cameras: {', '.join(camera_names)}"
+# =======
             try:
                 deployment = await ModelDeploymentRepository.create(deployment_data)
                 if deployment:
@@ -709,6 +794,7 @@ class ModelDeploymentState(rx.State):
             self.deployment_status = f"Deployment completed successfully! Deployment ID: {deployment_id}"
             self.success = f"Successfully deployed {selected_model.name} to {len(self.selected_camera_ids)} cameras. " \
                           f"Model endpoint: {deployment_response.get('endpoint', 'http://localhost:9000')}"
+# >>>>>>> poseidon/feature/temp_demo_test
             
             # Clear selections
             self.selected_camera_ids = []

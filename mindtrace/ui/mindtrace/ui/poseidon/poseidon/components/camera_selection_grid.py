@@ -220,7 +220,7 @@ def camera_selection_grid() -> rx.Component:
                             color=COLORS["secondary"],
                         ),
                         rx.text(
-                            "Make sure cameras are registered in the Camera Configurator",
+                            "Make sure cameras are assigned to your project and initialized in the Camera Configurator",
                             font_size="0.875rem",
                             color=COLORS["text_muted"],
                             text_align="center",

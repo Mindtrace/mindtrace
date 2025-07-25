@@ -127,6 +127,38 @@ def camera_card(camera: str) -> rx.Component:
                 rx.box(height="40px"),  # Placeholder to maintain consistent card height
             ),
             
+            # Capture button (only if available and in scope)
+            rx.cond(
+                CameraState.cameras.contains(camera) & (CameraState.camera_statuses.get(camera, "not_initialized") == "available"),
+                rx.cond(
+                    CameraState.capture_loading,
+                    rx.button(
+                        rx.hstack(
+                            rx.spinner(size="1"),
+                            rx.text("Capturing...", font_size="0.875rem"),
+                            spacing="2",
+                            align="center",
+                        ),
+                        variant="solid",
+                        color_scheme="purple",
+                        size="2",
+                        width="100%",
+                        disabled=True,
+                    ),
+                    rx.button(
+                        "📸 Capture",
+                        variant="solid",
+                        color_scheme="purple",
+                        size="2",
+                        width="100%",
+                        on_click=lambda name=camera: CameraState.capture_image_from_card(name),
+                        _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
+                        transition="all 0.2s ease",
+                    ),
+                ),
+                rx.box(height="40px"),  # Placeholder to maintain consistent card height
+            ),
+            
             # Admin actions (only for admins and super admins)
             rx.cond(
                 CameraState.is_admin | CameraState.is_super_admin,

@@ -123,6 +123,7 @@ class ModelDeploymentRepository:
                 for key, value in update_data.items():
                     if hasattr(deployment, key):
                         setattr(deployment, key, value)
+                deployment.update_timestamp() 
                 await deployment.save()
                 return deployment
         except:
