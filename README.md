@@ -1,3 +1,6 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace)](https://pypi.org/project/mindtrace/)
+[![License](https://img.shields.io/pypi/l/mindtrace)](https://github.com/mindtrace/mindtrace/blob/main/LICENSE)
+
 # Mindtrace Module Dependency Structure
 
 Mindtrace is organized into a layered workspace to support ML components as Python modules with clearly defined boundaries and dependencies.
@@ -48,6 +51,7 @@ Each layer only depends on modules in lower levels.
 | `cluster`  | `jobs`, `registry`, `database`, `services`           |
 | `datalake` | `registry`, `database`, `services`                   |
 | `models`   | `registry`, `services`                               |
+| `hardware` | `core`                                               | 
 | `automation` | `jobs`, `registry`, `database`, `services`, `datalake`, `models`, `cluster` |
 | `apps`     | Everything                                           |
 

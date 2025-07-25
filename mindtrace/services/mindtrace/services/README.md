@@ -1,5 +1,15 @@
 # Mindtrace Services
 
+[Purpose](#purpose)<br>
+[Installation](#installation)<br>
+[Architecture](#architecture)<br>
+[Auto-generation for Connection Managers](#auto-generation-for-connection-managers)<br>
+[Usage Example](#usage-example)<br>
+[Testing & Coverage](#testing--coverage)<br>
+[API Reference](#api-reference)<br>
+[MCP Integration: Exposing Service Endpoints as Tools](#mcp-integration-exposing-service-endpoints-as-tools)<br>
+[Remote MCP Server Usage with Cursor](#remote-mcp-server-usage-with-cursor)
+
 The `mindtrace-services` module provides the core microservice framework for the Mindtrace ecosystem. It enables rapid development, deployment, and management of distributed services with robust and auto generated connection management, and comprehensive testing support.
 
 ## Purpose
@@ -138,7 +148,144 @@ stress:      7 passed in 208.89s (0:03:28)
 - Dynamically creates a ConnectionManager for a given Service, exposing all endpoints as methods.
 
 ### add_endpoint
-- Register a new endpoint with a schema for input/output validation.
+- Register a new endpoint with a schema for input/output validation. Set `as_tool = true` for MCP tool registration.
+
+### add_tool
+- Register a new tool to the MCP HTTP app mounted on FastAPI app.
 
 ### TaskSchema
 - Used to define input/output types for endpoints.
+
+## MCP Integration: Exposing Service Endpoints as Tools
+
+### What is MCP?
+The Model Context Protocol (MCP) is a protocol for exposing service functionality as callable tools, enabling both programmatic and interactive access to service endpoints. MCP allows you to interact with your microservices not only via HTTP endpoints but also as tools that can be listed and invoked through a unified client interface.
+
+### How MCP is Integrated
+- **FastMCP SDK is used to create a MCP compliant server:**
+  [FastMCP](https://gofastmcp.com/getting-started/welcome) automatically handles a standard Python function to be used as a tool:
+    - Tool Name: It uses the function name (add) as the tool’s name.
+    - Description: It uses the function’s docstring as the tool’s description for the LLM.
+    - Schema: It inspects the type hints (a: int, b: int) to generate a JSON schema for the inputs.
+- **Mounting MCP on FastAPI:**
+  Each `Service` instance mounts an MCP server on the FastAPI app at `/mcp-server/mcp/`. This allows the same service to be accessed both via REST endpoints and as MCP tools.
+- **Exposing Endpoints as Tools:**
+  When adding an endpoint using `add_endpoint`, you can set `as_tool=True` to expose that endpoint as an MCP tool:
+  ```python
+  self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+  ```
+  This makes the `echo` function available both as a REST endpoint and as an MCP tool.
+
+### Example: EchoService with MCP
+See [`sample/echo_mcp.py`](./sample/echo_mcp.py):
+```python
+from mindtrace.services.sample.echo_mcp import EchoService
+
+# Launch the service
+connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
+mcp_url = str(connection_manager.url) + 'mcp-server/mcp/'
+
+# Synchronous call via connection manager
+result = connection_manager.echo(message="Hello, World!")
+print(result.echoed)
+```
+
+### Adding Tools Directly with `add_tool`
+In addition to exposing same class methods as endpoints and tools, you can register standalone functions as MCP tools using `self.add_tool`. These tools will be available via the MCP interface but not as HTTP endpoints.
+
+Example:
+```python
+# Define a tool function
+def reverse_message(payload: EchoInput) -> EchoOutput:
+    """A demo tool that reverses the input message."""
+    reversed_msg = payload.message[::-1]
+    return EchoOutput(echoed=reversed_msg)
+
+class EchoService(Service):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.add_endpoint("echo", self.echo, schema=echo_task, as_tool=True)
+        # Register the reverse_message tool directly
+        self.add_tool("reverse_message", reverse_message)
+```
+
+Now, both `echo` and `reverse_message` are available as MCP tools.
+
+#### Using the MCP Client (with custom tool)
+You can call both the standard and custom tools from the client:
+
+```python
+from mcp.client.session import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+import asyncio
+
+async def mcp_example():
+    async with streamablehttp_client(mcp_url) as (read, write, session_id):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            print("Available tools:", [tool.name for tool in tools.tools])
+            # Call the 'echo' tool
+            result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
+            print("Echo tool response:", result)
+            # Call the 'reverse_message' tool
+            result = await session.call_tool("reverse_message", {"payload": {"message": "Alice"}})
+            print("Reverse tool response:", result)
+
+asyncio.run(mcp_example())
+```
+
+### Key Points
+- Endpoints added with `as_tool=True` are available as both HTTP endpoints and MCP tools.
+- The sample EchoService demonstrates both REST and MCP tool usage.
+- The MCP client allows you to list and call tools programmatically.
+
+For trial purposes, see the sample files:
+- [`sample/echo_mcp.py`](./sample/echo_mcp.py)
+- [`samples/services/echo_mcp_service.py`](../../../../samples/services/echo_mcp_service.py)
+
+
+## Remote MCP Server Usage with Cursor
+
+You can use Cursor's UI to interact directly with any Mindtrace service that exposes its endpoints as MCP tools. This allows you to call your service's functions from within Cursor chat, making development and testing seamless.
+
+### How to Connect Cursor to a Remote MCP Server
+
+Follow these steps to set up and use a remote MCP server with Cursor:
+
+1. **Launch the MCP Server**
+   
+   Start your Mindtrace service with MCP enabled. For example, to launch the EchoService:
+
+   ```python
+   from mindtrace.services.sample.echo_mcp import EchoService
+   connection_manager = EchoService.launch(port=8080, host="localhost")
+   ```
+   This will start the service and host the MCP server at `http://localhost:8080/mcp-server/mcp/`.
+
+2. **Configure Cursor to Use the MCP Server**
+   
+   - Open Cursor settings: Press `Ctrl+Shift+J` (or open the Command Palette and search for "Settings").
+   - Navigate to **Tools & Integrations**.
+   - Find and select **Add Custom MCP**.
+   - In the configuration, add your MCP server details. For example, in your `mcp.json`:
+
+     ```json
+     {
+       "mcpServers": {
+         "mindtrace_echo": {
+           "url": "http://localhost:8080/mcp-server/mcp/"
+         }
+       }
+     }
+     ```
+
+   - Save the configuration. Cursor will now recognize your MCP server and list its available tools.
+
+3. **Interact with Your Service via Cursor Chat**
+   
+   - Start a new chat session in Cursor.
+   - You can now use natural language prompts to call your service's MCP tools. For example:
+     - `Could you reverse the message 'POP' using mindtrace_echo tool?`
+     - `Can you check the status of echo service using mindtrace_echo tool?`
+   - Cursor will route these requests to your MCP server and display the results in the chat.

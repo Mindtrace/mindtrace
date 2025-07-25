@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hardware integration for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -13,7 +13,40 @@ classifiers = [
 dependencies = [
     "mindtrace-core",
     "mindtrace-services",
+    "opencv-python>=4.8.0",
+    "structlog>=23.0.0",
+    "python-dotenv>=1.0.0",
+    "numpy>=1.24.0",
+    "pycomm3>=1.2.14",
+    "python-snap7[cli]>=2.0.2",
 ]
+
+[project.scripts]
+mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
+mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
+mindtrace-setup-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:install_daheng_sdk"
+mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
+mindtrace-uninstall-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:uninstall_daheng_sdk"
+
+[project.optional-dependencies]
+cameras-basler = ["pypylon>=3.0.0"]
+cameras-all = ["mindtrace-hardware[cameras-basler]"]
+hardware-all = ["mindtrace-hardware[cameras-all]"]
+setup-tools = [
+    "requests>=2.28.0",
+    "tqdm>=4.64.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware"
 
 [build-system]
 requires = ["setuptools"]

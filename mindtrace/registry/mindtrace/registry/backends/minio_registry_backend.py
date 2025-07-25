@@ -10,6 +10,7 @@ from minio.api import CopySource
 from minio.error import S3Error
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 T = TypeVar("T")
 
@@ -101,11 +102,11 @@ class MinioRegistryBackend(RegistryBackend):
             secure: Whether to use HTTPS.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
-        super().__init__(uri=uri, **kwargs)
         if uri is not None:
             self._uri = Path(uri).expanduser().resolve()
         else:
             self._uri = Path(self.config["MINDTRACE_MINIO_REGISTRY_URI"]).expanduser().resolve()
+        super().__init__(uri=self._uri, **kwargs)
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
@@ -146,7 +147,7 @@ class MinioRegistryBackend(RegistryBackend):
         """The resolved metadata file path for the backend."""
         return Path(self._metadata_path)
 
-    def push(self, name: str, version: str, local_path: str):
+    def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local directory to MinIO.
 
         Args:
@@ -176,7 +177,7 @@ class MinioRegistryBackend(RegistryBackend):
         except Exception as e:
             self.logger.error(f"Error verifying upload: {e}")
 
-    def pull(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str | Path):
         """Download a directory from MinIO.
 
         Args:
@@ -198,7 +199,7 @@ class MinioRegistryBackend(RegistryBackend):
         downloaded_files = []
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
             # Skip directory markers
-            if obj.object_name.endswith("/"):
+            if not obj.object_name or obj.object_name.endswith("/"):
                 continue
 
             # Get the relative path by removing the remote_key prefix
@@ -232,7 +233,8 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Deleting directory: {remote_key}")
 
         for obj in self.client.list_objects(self.bucket, prefix=remote_key, recursive=True):
-            self.client.remove_object(self.bucket, obj.object_name)
+            if obj.object_name:
+                self.client.remove_object(self.bucket, obj.object_name)
 
     def save_metadata(self, name: str, version: str, metadata: dict):
         """Save object metadata to MinIO.
@@ -275,14 +277,14 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, name: str, version: str):
+    def delete_metadata(self, model_name: str, version: str):
         """Delete object metadata from MinIO.
 
         Args:
-            name: Name of the object.
+            model_name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = f"_meta_{model_name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
             self.client.remove_object(self.bucket, meta_path)
@@ -380,7 +382,7 @@ class MinioRegistryBackend(RegistryBackend):
         objects = set()
         prefix = "_meta_"
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".json"):
+            if obj.object_name and obj.object_name.endswith(".json"):
                 # Extract object name from metadata filename
                 name_part = Path(obj.object_name).stem.split("@")[0].replace("_meta_", "")
                 name = name_part.replace("_", ":")
@@ -400,7 +402,7 @@ class MinioRegistryBackend(RegistryBackend):
         versions = []
 
         for obj in self.client.list_objects(self.bucket, prefix=prefix):
-            if obj.object_name.endswith(".json"):
+            if obj.object_name and obj.object_name.endswith(".json"):
                 version = obj.object_name[len(prefix) : -5]
                 versions.append(version)
         return sorted(versions)
@@ -465,10 +467,20 @@ class MinioRegistryBackend(RegistryBackend):
                 if time.time() < metadata.get("expires_at", 0):
                     # If there's an active exclusive lock, we can't acquire a shared lock
                     if shared and not metadata.get("shared", False):
-                        return False
+                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
                     # If there are active shared locks, we can't acquire an exclusive lock
                     if not shared and metadata.get("shared", False):
-                        return False
+                        raise LockAcquisitionError(f"Lock {key} is currently held as shared")
+            except S3Error as e:
+                if e.code == "NoSuchKey":
+                    # Lock doesn't exist, we can proceed
+                    pass
+                else:
+                    # Unexpected S3 error
+                    raise
+            except LockAcquisitionError:
+                # Re-raise LockAcquisitionError
+                raise
             except Exception:
                 # Lock doesn't exist or is invalid, we can proceed
                 pass
@@ -485,6 +497,9 @@ class MinioRegistryBackend(RegistryBackend):
 
             return True
 
+        except LockAcquisitionError:
+            # Re-raise LockAcquisitionError
+            raise
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
             return False
@@ -586,7 +601,8 @@ class MinioRegistryBackend(RegistryBackend):
                 target_objects = list(self.client.list_objects(self.bucket, prefix=target_key, recursive=True))
                 if target_objects:
                     for obj in target_objects:
-                        self.client.remove_object(self.bucket, obj.object_name)
+                        if obj.object_name:
+                            self.client.remove_object(self.bucket, obj.object_name)
                 self.client.remove_object(self.bucket, target_meta_key)
             except S3Error as e:
                 if e.code != "NoSuchKey":
@@ -600,7 +616,7 @@ class MinioRegistryBackend(RegistryBackend):
 
             for obj in source_objects:
                 # Skip directory markers (objects ending with /)
-                if obj.object_name.endswith("/"):
+                if not obj.object_name or obj.object_name.endswith("/"):
                     continue
 
                 # Create target object name by replacing source prefix with target prefix
@@ -633,7 +649,7 @@ class MinioRegistryBackend(RegistryBackend):
             # Delete source objects
             for obj in source_objects:
                 # Skip directory markers
-                if obj.object_name.endswith("/"):
+                if not obj.object_name or obj.object_name.endswith("/"):
                     continue
                 self.client.remove_object(self.bucket, obj.object_name)
 
