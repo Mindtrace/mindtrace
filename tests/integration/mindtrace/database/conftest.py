@@ -89,7 +89,7 @@ def redis_backend(redis_client):
     backend = RedisUserDoc
     try:
         backend.initialize()
-    except Exception as e:
+    except Exception:
         raise
     
     # Clean up any existing data before test

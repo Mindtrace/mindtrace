@@ -536,8 +536,7 @@ class TestCameraManager:
             assert len(failed_list) == 0  # No cameras should fail
             
             # Get camera proxies
-            camera_proxies_dict = manager.get_cameras(mock_cameras)
-            camera_proxies = list(camera_proxies_dict.values())
+            _ = manager.get_cameras(mock_cameras)
             
             # Test batch configuration
             configurations = {}
@@ -1583,7 +1582,6 @@ class TestRetryLogic:
         camera = camera_manager.get_camera("MockDaheng:test_camera")
         
         # Mock the camera to fail twice then succeed
-        original_capture = camera._camera.capture
         call_count = 0
         
         async def mock_capture():

@@ -41,7 +41,7 @@ class MockConsumer(ConsumerBackendBase):
         try:
             self.consumer_frontend.run(message)
             return True
-        except Exception as e:
+        except Exception:
             return False
 
 class MockConsumerFrontend(Consumer):

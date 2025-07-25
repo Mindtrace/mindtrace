@@ -958,7 +958,7 @@ class AllenBradleyPLC(BasePLC):
                         
                         discovered_devices.append(f"AllenBradley:{ip}:{device_type}")
                         
-            except Exception as e:
+            except Exception:
                 # CIP discovery failed, continue with fallback methods
                 pass
             
@@ -1002,7 +1002,7 @@ class AllenBradleyPLC(BasePLC):
             
             return unique_devices
             
-        except Exception as e:
+        except Exception:
             return []
     
     @staticmethod

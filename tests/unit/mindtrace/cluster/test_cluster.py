@@ -461,7 +461,7 @@ def test_register_worker_type_with_job_schema_name(cluster_manager):
     }
     
     with patch("mindtrace.cluster.core.types.ProxyWorker") as MockProxyWorker, \
-         patch.object(cluster_manager.worker_registry, 'register_materializer') as mock_register_materializer, \
+         patch.object(cluster_manager.worker_registry, 'register_materializer'), \
          patch.object(cluster_manager.worker_registry, 'save') as mock_save, \
          patch.object(cluster_manager, 'register_job_schema_to_worker_type') as mock_register_job_schema:
         
@@ -691,7 +691,7 @@ def test_launch_worker_logging(cluster_manager):
     
     with patch("mindtrace.cluster.core.cluster.Node") as MockNode, \
          patch.object(cluster_manager, 'register_job_to_worker') as mock_register_job, \
-         patch.object(cluster_manager, 'logger') as mock_logger, \
+         patch.object(cluster_manager, 'logger'), \
          patch.object(Worker, 'connect') as mock_connect:
         
         mock_node_instance = MockNode.connect.return_value
@@ -888,7 +888,7 @@ def test_clear_databases_logging_verification(cluster_manager):
 def mock_node():
     """Create a mock node for testing."""
     with patch("mindtrace.cluster.core.cluster.UnifiedMindtraceODMBackend") as MockDatabase, \
-         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend") as MockMinioBackend, \
+         patch("mindtrace.cluster.core.cluster.MinioRegistryBackend"), \
          patch("mindtrace.cluster.core.cluster.Registry") as MockRegistry, \
          patch("mindtrace.cluster.core.cluster.ClusterManager.connect") as MockClusterManagerConnect:
         
@@ -899,7 +899,6 @@ def mock_node():
         mock_database.redis_backend = MagicMock()
         mock_database.redis_backend.model_cls = MagicMock()
         
-        mock_minio_backend = MockMinioBackend.return_value
         mock_registry = MockRegistry.return_value
         mock_cluster_manager_connect = MockClusterManagerConnect.return_value
         mock_cluster_manager_connect.worker_registry = mock_registry
@@ -968,7 +967,7 @@ def test_node_shutdown(mock_node):
     mock_node.workers = [mock_worker1, mock_worker2]
     
     with patch.object(Service, 'shutdown') as mock_shutdown:
-        result = mock_node.shutdown()
+        _ = mock_node.shutdown()
         
         # Verify all workers were shutdown
         mock_worker1.shutdown.assert_called_once()
@@ -1106,7 +1105,7 @@ def test_worker_shutdown_with_process(mock_worker):
     with patch.object(mock_worker, 'logger') as mock_logger, \
          patch.object(Service, 'shutdown') as mock_shutdown:
         
-        result = mock_worker.shutdown()
+        _ = mock_worker.shutdown()
         
         # Verify process was killed
         mock_process.kill.assert_called_once()
@@ -1123,7 +1122,7 @@ def test_worker_shutdown_without_process(mock_worker):
     with patch.object(mock_worker, 'logger') as mock_logger, \
          patch.object(Service, 'shutdown') as mock_shutdown:
         
-        result = mock_worker.shutdown()
+        _ = mock_worker.shutdown()
         
         # Verify no process was killed
         mock_logger.info.assert_not_called()

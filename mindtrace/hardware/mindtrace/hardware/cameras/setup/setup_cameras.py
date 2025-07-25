@@ -292,7 +292,7 @@ class CameraSystemSetup(Mindtrace):
             self.logger.info(f"Creating new Linux UFW rule for {ip_range}")
             cmd = ["sudo", "ufw", "allow", "from", ip_range]
             
-            result = subprocess.run(cmd, check=True, timeout=timeout)
+            _ = subprocess.run(cmd, check=True, timeout=timeout)
             self.logger.info(f"Successfully added Linux UFW rule for {ip_range}")
             return True
             
