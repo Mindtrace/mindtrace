@@ -9,33 +9,29 @@ This module provides endpoints for camera settings that are synchronous operatio
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from mindtrace.hardware.api.dependencies import get_camera_manager, validate_camera_exists
 from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.api.dependencies import (
-    get_camera_manager,
-    validate_camera_exists
-)
+from mindtrace.hardware.core.exceptions import CameraError
 from mindtrace.hardware.models.requests import (
-    GainRequest,
-    ROIRequest,
-    PixelFormatRequest,
-    ImageEnhancementRequest,
     BatchCameraConfigRequest,
+    GainRequest,
+    ImageEnhancementRequest,
+    PixelFormatRequest,
+    ROIRequest,
 )
 from mindtrace.hardware.models.responses import (
-    BoolResponse,
-    FloatResponse,
-    DictResponse,
-    StringResponse,
-    RangeResponse,
-    PixelFormatListResponse,
     BatchOperationResponse,
+    BoolResponse,
+    DictResponse,
+    FloatResponse,
+    PixelFormatListResponse,
+    RangeResponse,
+    StringResponse,
 )
-from mindtrace.hardware.core.exceptions import CameraError
-
 
 logger = logging.getLogger(__name__)
 

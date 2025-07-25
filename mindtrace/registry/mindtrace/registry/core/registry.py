@@ -1,18 +1,18 @@
 import shutil
+import threading
 import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path, PosixPath
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
-import threading
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target, Timeout
-from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.core import Mindtrace, Timeout, check_libs, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
-from mindtrace.registry.core.exceptions import LockTimeoutError, LockAcquisitionError
+from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError, LockTimeoutError
 
 
 class Registry(Mindtrace):

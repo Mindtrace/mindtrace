@@ -1,14 +1,17 @@
 import json
-import pytest
-import pydantic
 import threading
 import time
 from queue import Empty
 from unittest.mock import Mock, patch
+
+import pydantic
+import pytest
+
+from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
-from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.orchestrator import Orchestrator
+
 
 class SampleMessage(pydantic.BaseModel):
     x: int | None = None

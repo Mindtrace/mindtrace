@@ -8,6 +8,7 @@ from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBacken
 from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument, MongoMindtraceODMBackend
 from mindtrace.database.backends.redis_odm_backend import MindtraceRedisDocument, RedisMindtraceODMBackend
 
+
 class BackendType(Enum):
     MONGO = "mongo"
     REDIS = "redis"
@@ -122,8 +123,8 @@ class UnifiedMindtraceDocument(BaseModel):
     @classmethod
     def _auto_generate_redis_model(cls) -> Type[MindtraceRedisDocument]:
         """Automatically generate a Redis-compatible model from the unified model."""
-        from typing import get_origin, get_args, Union
-        
+        from typing import Union, get_args, get_origin
+
         from redis_om import Field as RedisField
         
         # Get field annotations from the original class, excluding inherited ones

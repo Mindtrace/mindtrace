@@ -8,12 +8,13 @@ Gateway Service example showing how to:
 """
 
 import asyncio
+
 import httpx
 import requests
 
 from mindtrace.core import ifnone_url
-from mindtrace.services import Gateway, AppConfig
-from mindtrace.services.sample.echo_service import EchoService, EchoInput
+from mindtrace.services import AppConfig, Gateway
+from mindtrace.services.sample.echo_service import EchoInput, EchoService
 
 
 def sync_gateway_example():

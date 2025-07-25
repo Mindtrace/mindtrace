@@ -15,6 +15,7 @@ from mindtrace.database import (
     UnifiedMindtraceODMBackend,
 )
 
+
 # Test models
 class UserCreate(BaseModel):
     name: str

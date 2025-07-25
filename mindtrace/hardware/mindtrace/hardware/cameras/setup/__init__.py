@@ -14,8 +14,9 @@ defined in the project's pyproject.toml file.
 """
 
 from .setup_basler import install_pylon_sdk, uninstall_pylon_sdk
+from .setup_cameras import configure_firewall
+from .setup_cameras import main as setup_all_cameras
 from .setup_daheng import install_daheng_sdk, uninstall_daheng_sdk
-from .setup_cameras import main as setup_all_cameras, configure_firewall
 
 __all__ = [
     # Basler SDK setup

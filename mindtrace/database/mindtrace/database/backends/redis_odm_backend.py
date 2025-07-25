@@ -7,6 +7,7 @@ from redis_om.model.model import NotFoundError
 from mindtrace.database.backends.mindtrace_odm_backend import MindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError, DuplicateInsertError
 
+
 class MindtraceRedisDocument(JsonModel):
     """
     Base document class for Redis collections in Mindtrace.

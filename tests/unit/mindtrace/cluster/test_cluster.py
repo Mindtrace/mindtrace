@@ -1,19 +1,21 @@
 import copy
-from datetime import datetime
-from unittest.mock import MagicMock, patch, ANY
-from uuid import uuid4
+import json
 import uuid
+from datetime import datetime
+from unittest.mock import ANY, MagicMock, patch
+from uuid import uuid4
+
 import pytest
 import requests
-import json
 from urllib3.exceptions import ConnectionError
 
 from mindtrace.cluster.core import types as cluster_types
-from mindtrace.cluster.core.cluster import ClusterManager, Worker, Node, update_database
+from mindtrace.cluster.core.cluster import ClusterManager, Node, Worker, update_database
 from mindtrace.cluster.core.types import ProxyWorker
 from mindtrace.jobs import Job
 from mindtrace.jobs.types.job_specs import ExecutionStatus
-from mindtrace.services import Service, ServerStatus
+from mindtrace.services import ServerStatus, Service
+
 
 def create_mock_database():
     mock_database = MagicMock()

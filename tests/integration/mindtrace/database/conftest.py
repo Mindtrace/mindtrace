@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from redis import Redis
 
 from mindtrace.database import MindtraceDocument, MongoMindtraceODMBackend
+
 from .test_redis_odm import UserDoc as RedisUserDoc
 
 # Set up logging

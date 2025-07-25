@@ -1,12 +1,12 @@
+import logging
 import os
-import zipfile
+import shutil
 import tarfile
 import tempfile
-import shutil
+import zipfile
 from pathlib import Path
 from typing import Optional, Union
 from urllib.request import urlretrieve
-import logging
 
 logger = logging.getLogger(__name__)
 

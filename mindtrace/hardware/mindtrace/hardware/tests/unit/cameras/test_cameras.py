@@ -6,23 +6,24 @@ hardware dependencies. Tests cover individual camera backends, camera manager,
 error handling, and edge cases.
 """
 
+import asyncio
+import json
+import os
+import tempfile
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
+
+import numpy as np
 import pytest
 import pytest_asyncio
-import asyncio
-import numpy as np
-import json
-import tempfile
-import os
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any, List
 
 from mindtrace.hardware.core.exceptions import (
-    CameraError,
-    CameraNotFoundError,
-    CameraInitializationError,
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
+    CameraError,
+    CameraInitializationError,
+    CameraNotFoundError,
     CameraTimeoutError,
     SDKNotAvailableError,
 )
@@ -734,8 +735,8 @@ class TestHDRCapture:
     @pytest.mark.asyncio
     async def test_hdr_capture_with_save_path(self, camera_manager):
         """Test HDR capture with file saving."""
-        import tempfile
         import os
+        import tempfile
         
         manager = camera_manager
         cameras = manager.discover_cameras()
@@ -830,8 +831,8 @@ class TestHDRCapture:
     @pytest.mark.asyncio
     async def test_batch_hdr_capture_with_save_pattern(self, camera_manager):
         """Test batch HDR capture with save path pattern."""
-        import tempfile
         import os
+        import tempfile
         
         manager = camera_manager
         cameras = manager.discover_cameras()
@@ -1303,6 +1304,7 @@ class TestNetworkBandwidthManagement:
     async def test_concurrent_capture_limiting(self):
         """Test that concurrent captures are properly limited."""
         import time
+
         from mindtrace.hardware.cameras.camera_manager import CameraManager
         
         # Test with very restrictive limit
@@ -1498,8 +1500,8 @@ class TestConfigurationFormat:
     @pytest.mark.asyncio
     async def test_cross_backend_compatibility(self, temp_config_file):
         """Test configuration compatibility across different backends."""
-        from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
         from mindtrace.hardware.cameras.backends.basler import MockBaslerCamera
+        from mindtrace.hardware.cameras.backends.daheng import MockDahengCamera
         
         # Create cameras from different backends
         daheng_camera = MockDahengCamera("cross_test_daheng")

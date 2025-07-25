@@ -6,23 +6,24 @@ hardware dependencies. Tests cover Allen Bradley PLCs with all three driver type
 (Logix, SLC, CIP), PLC manager, error handling, and edge cases.
 """
 
+import asyncio
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
+
 import pytest
 import pytest_asyncio
-import asyncio
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any, List
 
 from mindtrace.hardware.core.exceptions import (
-    PLCError,
-    PLCNotFoundError,
-    PLCInitializationError,
     PLCCommunicationError,
+    PLCConnectionError,
+    PLCError,
+    PLCInitializationError,
+    PLCNotFoundError,
     PLCTagError,
     PLCTagNotFoundError,
     PLCTagReadError,
     PLCTagWriteError,
     PLCTimeoutError,
-    PLCConnectionError,
     SDKNotAvailableError,
 )
 

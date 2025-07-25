@@ -12,10 +12,11 @@ This script shows how to:
 import asyncio
 import time
 
-from mindtrace.services import ServerStatus, generate_connection_manager
-from mindtrace.services.sample.echo_mcp import EchoService
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+
+from mindtrace.services import ServerStatus, generate_connection_manager
+from mindtrace.services.sample.echo_mcp import EchoService
 
 
 async def mcp_example():

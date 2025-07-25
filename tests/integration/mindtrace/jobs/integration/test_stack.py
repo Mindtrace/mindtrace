@@ -1,11 +1,14 @@
-import pytest
 import threading
 import time
 from queue import Empty
+
+import pytest
 from pydantic import BaseModel
+
 from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.redis.stack import RedisStack
 from mindtrace.jobs.types.job_specs import Job, JobSchema
+
 from ..conftest import create_test_job, job_from_schema
 
 

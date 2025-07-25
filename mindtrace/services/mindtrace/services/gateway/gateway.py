@@ -1,20 +1,20 @@
 from typing import Type
 
 import httpx
-from fastapi import HTTPException, Request, Path
+from fastapi import HTTPException, Path, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from urllib3.util.url import Url
 
-from mindtrace.core import ifnone_url, TaskSchema
+from mindtrace.core import TaskSchema, ifnone_url
 from mindtrace.services import (
-    AppConfig, 
-    ConnectionManager, 
-    generate_connection_manager, 
-    ProxyConnectionManager, 
-    RegisterAppTaskSchema, 
-    ServerStatus, 
-    Service
+    AppConfig,
+    ConnectionManager,
+    ProxyConnectionManager,
+    RegisterAppTaskSchema,
+    ServerStatus,
+    Service,
+    generate_connection_manager,
 )
 
 

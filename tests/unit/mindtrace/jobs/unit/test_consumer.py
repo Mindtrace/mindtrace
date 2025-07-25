@@ -1,13 +1,15 @@
-import pytest
 import time
 from unittest.mock import Mock
-from pydantic import BaseModel
-from mindtrace.jobs.types.job_specs import JobSchema
-from mindtrace.jobs.consumers.consumer import Consumer
-from mindtrace.jobs.orchestrator import Orchestrator
-from mindtrace.jobs.local.client import LocalClient
 
-from ..conftest import create_test_job, SampleJobInput, SampleJobOutput
+import pytest
+from pydantic import BaseModel
+
+from mindtrace.jobs.consumers.consumer import Consumer
+from mindtrace.jobs.local.client import LocalClient
+from mindtrace.jobs.orchestrator import Orchestrator
+from mindtrace.jobs.types.job_specs import JobSchema
+
+from ..conftest import SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestConsumer:

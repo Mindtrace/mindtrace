@@ -37,7 +37,7 @@ Usage:
 
 # Try to import real Daheng camera implementation
 try:
-    from .daheng_camera import DahengCamera, GXIPY_AVAILABLE
+    from .daheng_camera import GXIPY_AVAILABLE, DahengCamera
     DAHENG_AVAILABLE = GXIPY_AVAILABLE
 except ImportError:
     DahengCamera = None

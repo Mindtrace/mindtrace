@@ -1,11 +1,14 @@
-import pytest
-import time
 import threading
+import time
 import uuid
 from queue import Empty
+
+import pytest
+
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.redis.priority import RedisPriorityQueue
 from mindtrace.jobs.redis.stack import RedisStack
+
 
 @pytest.mark.redis
 class TestRedisQueue:

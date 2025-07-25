@@ -1,6 +1,9 @@
-from queue import Empty
-import redis
 import pickle
+from queue import Empty
+
+import redis
+
+
 class RedisQueue:
     """A FIFO (first-in, first-out) message queue backed by Redis.
     This class uses a Redis list to store serialized messages. The `put` method pushes items to the tail of the list,

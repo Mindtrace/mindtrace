@@ -1,6 +1,9 @@
-import pytest
 import time
+
+import pytest
+
 from mindtrace.jobs.local.client import LocalClient
+
 from ..conftest import create_test_job
 
 

@@ -1,7 +1,10 @@
-import pytest
-from unittest.mock import patch, MagicMock
-from mindtrace.jobs.redis.client import RedisClient
+from unittest.mock import MagicMock, patch
+
 import pydantic
+import pytest
+
+from mindtrace.jobs.redis.client import RedisClient
+
 
 @pytest.fixture
 def client():

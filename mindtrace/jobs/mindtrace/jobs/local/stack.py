@@ -1,4 +1,6 @@
 import queue
+
+
 class LocalStack:
     def __init__(self):
         self.stack = queue.LifoQueue()

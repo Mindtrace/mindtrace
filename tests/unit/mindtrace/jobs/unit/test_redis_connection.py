@@ -1,8 +1,11 @@
-import pytest
-from unittest.mock import patch, MagicMock
-from mindtrace.jobs.redis.connection import RedisConnection
-import redis
 import threading
+from unittest.mock import MagicMock, patch
+
+import pytest
+import redis
+
+from mindtrace.jobs.redis.connection import RedisConnection
+
 
 @pytest.fixture
 def mock_redis():

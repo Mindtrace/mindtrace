@@ -1,5 +1,7 @@
-import pytest
 import queue
+
+import pytest
+
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack

@@ -1,9 +1,10 @@
 import io
-import pytest
 from pathlib import Path
 from unittest import mock
 
-from mindtrace.core.utils.download import download_and_extract_zip, download_and_extract_tarball
+import pytest
+
+from mindtrace.core.utils.download import download_and_extract_tarball, download_and_extract_zip
 
 
 @pytest.fixture
