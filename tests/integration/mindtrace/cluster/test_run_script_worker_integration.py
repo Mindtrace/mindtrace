@@ -307,7 +307,7 @@ def test_run_script_worker_both_environments():
         
         assert docker_status.status == "completed", f"Docker job failed with status: {docker_status}"
         
-        print(f"Both jobs completed successfully:")
+        print("Both jobs completed successfully:")
         print(f"Git job: {git_status}")
         print(f"Docker job: {docker_status}")
         

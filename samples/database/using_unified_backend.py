@@ -363,7 +363,7 @@ async def demonstrate_unified_document_model():
     )
     
     # Test with MongoDB backend
-    print(f"\n--- Testing with MongoDB ---")
+    print("\n--- Testing with MongoDB ---")
     backend.switch_backend(BackendType.MONGO)
     print(f"Current backend: {backend.get_current_backend_type()}")
     
@@ -377,7 +377,7 @@ async def demonstrate_unified_document_model():
     print(f"MongoDB has {len(mongo_all)} users")
     
     # Test with Redis backend
-    print(f"\n--- Testing with Redis ---")
+    print("\n--- Testing with Redis ---")
     backend.switch_backend(BackendType.REDIS)
     print(f"Current backend: {backend.get_current_backend_type()}")
     
@@ -391,7 +391,7 @@ async def demonstrate_unified_document_model():
     print(f"Redis has {len(redis_all)} users")
     
     # Demonstrate data isolation
-    print(f"\n--- Data Isolation ---")
+    print("\n--- Data Isolation ---")
     backend.switch_backend(BackendType.MONGO)
     mongo_final = await backend.all_async()
     backend.switch_backend(BackendType.REDIS)
@@ -402,7 +402,7 @@ async def demonstrate_unified_document_model():
     print("✓ Data is properly isolated between backends")
     
     # Clean up
-    print(f"\n--- Cleanup ---")
+    print("\n--- Cleanup ---")
     backend.switch_backend(BackendType.MONGO)
     await backend.delete_async(str(mongo_inserted1.id))
     await backend.delete_async(str(mongo_inserted2.id))
