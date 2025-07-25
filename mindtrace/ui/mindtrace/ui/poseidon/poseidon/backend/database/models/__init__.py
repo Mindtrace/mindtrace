@@ -13,8 +13,13 @@ from .enums import (
     ModelValidationStatus,
     DeploymentStatus,
     HealthStatus,
-    CameraStatus
+    CameraStatus,
+    ScanStatus,
+    ScanImageStatus
 )
+from .scan import Scan
+from .scan_image import ScanImage
+from .scan_classification import ScanClassification
 
 __all__ = [
     "User",
@@ -24,6 +29,9 @@ __all__ = [
     "Camera",
     "Model",
     "ModelDeployment",
+    "Scan",
+    "ScanImage",
+    "ScanClassification",
     "SubscriptionPlan",
     "OrgRole",
     "ProjectStatus", 
@@ -32,4 +40,5 @@ __all__ = [
     "DeploymentStatus",
     "HealthStatus",
     "CameraStatus",
+    "ScanImageStatus",
 ]

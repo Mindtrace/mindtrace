@@ -10,6 +10,9 @@ from poseidon.backend.database.models.image import Image
 from poseidon.backend.database.models.camera import Camera
 from poseidon.backend.database.models.model import Model
 from poseidon.backend.database.models.model_deployment import ModelDeployment
+from poseidon.backend.database.models.scan import Scan
+from poseidon.backend.database.models.scan_image import ScanImage
+from poseidon.backend.database.models.scan_classification import ScanClassification
 from poseidon.backend.core.config import settings
 
 # Global client and initialization state
@@ -27,6 +30,9 @@ def rebuild_all_models():
         camera_module = sys.modules['poseidon.backend.database.models.camera']
         model_module = sys.modules['poseidon.backend.database.models.model']
         model_deployment_module = sys.modules['poseidon.backend.database.models.model_deployment']
+        scan_module = sys.modules['poseidon.backend.database.models.scan']
+        scan_image_module = sys.modules['poseidon.backend.database.models.scan_image']
+        scan_classification_module = sys.modules['poseidon.backend.database.models.scan_classification']
         
         # Add all models to each module's global namespace for cross-references
         models_dict = {
@@ -37,9 +43,12 @@ def rebuild_all_models():
             'Camera': Camera,
             'Model': Model,
             'ModelDeployment': ModelDeployment,
+            'Scan': Scan,
+            'ScanImage': ScanImage,
+            'ScanClassification': ScanClassification,
         }
         
-        for module in [organization_module, project_module, user_module, image_module, camera_module, model_module, model_deployment_module]:
+        for module in [organization_module, project_module, user_module, camera_module, model_module, model_deployment_module, scan_module, scan_image_module, scan_classification_module, image_module]:
             for name, model_class in models_dict.items():
                 setattr(module, name, model_class)
         
@@ -61,6 +70,19 @@ def rebuild_all_models():
         Model.model_rebuild()
         
         ModelDeployment.model_rebuild()
+        print("✓ ModelDeployment model rebuilt")
+        
+        # 4. Scan models - rebuild in dependency order
+        Scan.model_rebuild()
+        print("✓ Scan model rebuilt")
+        
+        ScanImage.model_rebuild()
+        print("✓ ScanImage model rebuilt")
+        
+        ScanClassification.model_rebuild()
+        print("✓ ScanClassification model rebuilt")
+        
+        print("✓ All models rebuilt successfully")
         
     except Exception as e:
         raise
@@ -85,6 +107,9 @@ async def initialize_database():
         Camera,
         Model,
         ModelDeployment,
+        Scan,         # Put Scan before models that reference it
+        ScanImage,    # Put ScanImage before ScanClassification
+        ScanClassification,
     ]
     
     # Let Beanie handle the model initialization and forward reference resolution

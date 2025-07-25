@@ -9,6 +9,7 @@ from .models import (
     UserData, ProjectData, OrganizationData, 
     UserRoles, SubscriptionPlans, StatusTypes
 )
+from .inference import InferenceState
 
 __all__ = [
     # State Classes
@@ -29,4 +30,6 @@ __all__ = [
     "UserRoles",
     "SubscriptionPlans",
     "StatusTypes",
+    "ModelDeploymentState",
+    "InferenceState"
 ]

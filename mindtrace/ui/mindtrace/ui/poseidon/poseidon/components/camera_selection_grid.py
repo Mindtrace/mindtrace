@@ -95,10 +95,71 @@ def camera_selection_card(camera: rx.Var[CameraDict]) -> rx.Component:
         on_click=ModelDeploymentState.toggle_camera_selection(camera.id),
     )
 
+def project_selector() -> rx.Component:
+    """Project selector dropdown for scoped deployment access."""
+    return rx.vstack(
+        rx.text(
+            rx.cond(
+                ModelDeploymentState.is_super_admin,
+                "Select Project (Optional for Super Admin)",
+                "Select Project"
+            ),
+            font_size="1rem",
+            font_weight="600",
+            color="#374151",
+            margin_bottom="0.5rem",
+        ),
+        rx.cond(
+            ModelDeploymentState.available_projects.length() > 0,
+            rx.select(
+                ModelDeploymentState.project_names,
+                placeholder="Choose a project...",
+                value=ModelDeploymentState.selected_project_name,
+                on_change=lambda project_name: ModelDeploymentState.select_project_by_name(project_name),
+                size="3",
+                width="100%",
+            ),
+            rx.box(
+                rx.text(
+                    "No projects available",
+                    color="#6B7280",
+                    font_size="0.875rem",
+                ),
+                padding="0.75rem",
+                background="#F9FAFB",
+                border_radius="8px",
+                border="1px solid #E5E7EB",
+                width="100%",
+            ),
+        ),
+        rx.cond(
+            ModelDeploymentState.selected_project_name != "",
+            rx.text(
+                f"Selected: {ModelDeploymentState.selected_project_name}",
+                font_size="0.875rem",
+                color="#059669",
+                font_weight="500",
+                margin_top="0.5rem",
+            ),
+        ),
+        width="100%",
+        spacing="2",
+    )
+
 def camera_selection_grid() -> rx.Component:
     """List of camera selection cards"""
     return rx.box(
         rx.vstack(
+            # Project selector
+            project_selector(),
+            
+            # Divider
+            rx.divider(
+                size="4",
+                color_scheme="gray",
+                margin="1.5rem 0",
+            ),
+            
             # Header with selection info
             rx.hstack(
                 rx.text(
