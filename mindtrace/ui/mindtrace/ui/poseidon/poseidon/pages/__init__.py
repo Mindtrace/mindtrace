@@ -9,6 +9,7 @@ from .management import user_management_page, organization_management_page, proj
 from .user import profile_page
 from .camera import camera_configurator_page
 from .gallery import images_page
+from .inference import inference_page
 
 __all__ = [
     "index", 
@@ -30,4 +31,6 @@ __all__ = [
     "camera_configurator_page",
     # Gallery pages
     "images_page",
+    # Inference pages
+    "inference_page",
 ] 

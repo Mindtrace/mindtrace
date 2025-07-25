@@ -4,6 +4,7 @@ from .images import ImageState
 from .user_management import UserManagementState
 from .organization_management import OrganizationManagementState
 from .model_deployment import ModelDeploymentState
+from .inference import InferenceState
 
 __all__ = [
     "AuthState",
@@ -11,5 +12,6 @@ __all__ = [
     "ImageState",
     "UserManagementState",
     "OrganizationManagementState",
-    "ModelDeploymentState"
+    "ModelDeploymentState",
+    "InferenceState"
 ]
