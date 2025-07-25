@@ -4,6 +4,7 @@ import pytest
 import requests
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from urllib3.util.url import parse_url
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput
@@ -22,7 +23,7 @@ class TestServiceIntegration:
         assert hasattr(ConnectionManager, "aecho")
 
         # Create an instance (won't work for actual calls but tests the creation)
-        manager = ConnectionManager(url="http://localhost:8080")
+        manager = ConnectionManager(url=parse_url("http://localhost:8080"))
         assert str(manager.url) == "http://localhost:8080"
 
     @pytest.mark.asyncio
@@ -33,7 +34,7 @@ class TestServiceIntegration:
             print("Service didn't start, testing connection manager behavior")
 
             ConnectionManager = generate_connection_manager(EchoService)
-            manager = ConnectionManager(url="http://localhost:8090")
+            manager = ConnectionManager(url=parse_url("http://localhost:8090"))
 
             # These should fail with connection errors, not other errors
             with pytest.raises((requests.exceptions.ConnectionError, Exception)) as exc_info:
@@ -168,7 +169,7 @@ class TestServiceIntegration:
         ]
 
         for url in test_urls:
-            manager = ConnectionManager(url=url)
+            manager = ConnectionManager(url=parse_url(url))
             assert manager.url is not None
 
             # The URL should be stored properly
@@ -184,8 +185,14 @@ class TestServiceIntegration:
             # Verify service has the expected endpoints
             assert "echo" in service.endpoints
             assert service.endpoints["echo"].name == "echo"
-            assert service.endpoints["echo"].input_schema.__name__ == "EchoInput"
-            assert service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
+            assert (
+                service.endpoints["echo"].input_schema is not None
+                and service.endpoints["echo"].input_schema.__name__ == "EchoInput"
+            )
+            assert (
+                service.endpoints["echo"].output_schema is not None
+                and service.endpoints["echo"].output_schema.__name__ == "EchoOutput"
+            )
 
             # Verify connection manager generation works
             ConnectionManager = generate_connection_manager(EchoService)
@@ -206,8 +213,8 @@ class TestServiceIntegration:
         echo_task = service.endpoints["echo"]
 
         assert echo_task.name == "echo"
-        assert echo_task.input_schema.__name__ == "EchoInput"
-        assert echo_task.output_schema.__name__ == "EchoOutput"
+        assert echo_task.input_schema is not None and echo_task.input_schema.__name__ == "EchoInput"
+        assert echo_task.output_schema is not None and echo_task.output_schema.__name__ == "EchoOutput"
 
         # Verify the generated connection manager has the right methods
         ConnectionManager = generate_connection_manager(EchoService)

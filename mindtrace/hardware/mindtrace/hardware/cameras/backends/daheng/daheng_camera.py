@@ -77,7 +77,7 @@ import cv2
 import numpy as np
 
 try:
-    import gxipy as gx
+    import gxipy as gx  # type: ignore
 
     GXIPY_AVAILABLE = True
 except ImportError:
@@ -153,6 +153,8 @@ class DahengCamera(BaseCamera):
                 "2. pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy\n"
                 "3. Ensure camera drivers are properly installed",
             )
+        else:
+            assert gx is not None, "gxipy SDK is available but gx is not initialized"
 
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
 
@@ -205,6 +207,8 @@ class DahengCamera(BaseCamera):
         """
         if not GXIPY_AVAILABLE:
             raise SDKNotAvailableError("gxipy", "gxipy SDK not available for camera discovery")
+        else:
+            assert gx is not None, "gxipy SDK is available but gx is not initialized"
 
         try:
             device_manager = gx.DeviceManager()
@@ -245,6 +249,7 @@ class DahengCamera(BaseCamera):
                     or str(index) == self.camera_name
                 ):
                     camera_found = True
+                    camera = None
                     try:
                         camera = await asyncio.to_thread(self.device_manager.open_device_by_index, index + 1)
                         remote_control = await asyncio.to_thread(camera.get_remote_device_feature_control)
@@ -269,8 +274,8 @@ class DahengCamera(BaseCamera):
                         if camera:
                             try:
                                 await asyncio.to_thread(camera.close_device)
-                            except Exception as e:
-                                self.logger.warning(f"Could not close failed camera device: {e}")
+                            except Exception as e2:
+                                self.logger.warning(f"Could not close failed camera device: {e2}")
                         raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
 
             if not camera_found:
@@ -513,6 +518,8 @@ class DahengCamera(BaseCamera):
         if not self.initialized or self.camera is None:
             self.triggermode = triggermode
             return True
+        else:
+            assert gx is not None, "camera is initialized but gx is not initialized"
 
         try:
             if triggermode == "continuous":
@@ -640,6 +647,10 @@ class DahengCamera(BaseCamera):
         """
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+        else:
+            assert gx is not None, "camera is initialized but gx is not initialized"
 
         try:
             import json
@@ -791,6 +802,8 @@ class DahengCamera(BaseCamera):
         """
         if not self.initialized or not self.camera:
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
+        else:
+            assert gx is not None, "gxipy SDK is available but gx is not initialized"
 
         try:
             import json
@@ -1087,6 +1100,8 @@ class DahengCamera(BaseCamera):
         """
         if not self.initialized or self.camera is None:
             return "off"
+        else:
+            assert gx is not None, "camera is initialized but gxipy is not initialized"
 
         try:
             if hasattr(self.camera, "BalanceWhiteAuto"):
@@ -1115,6 +1130,8 @@ class DahengCamera(BaseCamera):
         if not self.initialized or self.camera is None:
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
             return False
+        else:
+            assert gx is not None, "camera is initialized but gxipy is not initialized"
 
         try:
             if not hasattr(self.camera, "BalanceWhiteAuto"):
@@ -1339,6 +1356,8 @@ class DahengCamera(BaseCamera):
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for pixel format setting")
+        else:
+            assert gx is not None, "camera is initialized but gxipy is not initialized"
 
         try:
             available_formats = self.get_pixel_format_range()

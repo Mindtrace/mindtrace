@@ -314,7 +314,7 @@ def test_info_error_handling(registry, test_config):
             if self._error_type == "FileNotFoundError":
                 raise FileNotFoundError("Simulated file not found")
             elif self._error_type == "S3Error":
-                raise S3Error("Simulated S3 error")
+                raise S3Error()  # type: ignore
             elif self._error_type == "RuntimeError":
                 raise RuntimeError("Simulated runtime error")
             return super().fetch_metadata(name, version)

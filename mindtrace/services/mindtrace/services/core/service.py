@@ -11,7 +11,7 @@ import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Dict, Literal, Type, TypeVar, overload
 from uuid import UUID
 
 import fastapi
@@ -126,24 +126,24 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/endpoints",
             func=self.endpoints_func,
-            schema=EndpointsSchema(),
+            schema=EndpointsSchema,
             as_tool=True,
         )
-        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema(), as_tool=True)
+        self.add_endpoint(path="/status", func=self.status_func, schema=StatusSchema, as_tool=True)
         self.add_endpoint(
             path="/heartbeat",
             func=self.heartbeat_func,
-            schema=HeartbeatSchema(),
+            schema=HeartbeatSchema,
             as_tool=True,
         )
         self.add_endpoint(
-            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema()
+            path="/server_id", func=named_lambda("server_id", lambda: {"server_id": self.id}), schema=ServerIDSchema
         )
         self.add_endpoint(
-            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema()
+            path="/pid_file", func=named_lambda("pid_file", lambda: {"pid_file": self.pid_file}), schema=PIDFileSchema
         )
         self.add_endpoint(
-            path="/shutdown", func=self.shutdown, schema=ShutdownSchema(), autolog_kwargs={"log_level": logging.DEBUG}
+            path="/shutdown", func=self.shutdown, schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
         )
 
     def endpoints_func(self):
@@ -212,7 +212,7 @@ class Service(Mindtrace):
         return status
 
     @classmethod
-    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> C:
+    def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
         """Connect to an existing service.
 
         The returned connection manager is determined by the registered connection manager for the service. If one has
@@ -235,6 +235,38 @@ class Service(Mindtrace):
             else:
                 return cls._client_interface(url=url)
         raise HTTPException(status_code=503, detail=f"Server failed to connect: {host_status}")
+
+    @overload
+    @classmethod
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[False],
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> None: ...
+
+    @overload
+    @classmethod
+    def launch(
+        cls: Type[T],
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: Literal[True] | bool = True,
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ) -> Any: ...
 
     @classmethod
     def launch(
