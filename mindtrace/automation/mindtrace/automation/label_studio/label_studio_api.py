@@ -1072,7 +1072,7 @@ class LabelStudio(Mindtrace):
                 print(f"Processing SAM masks for {split_name} split...")
                 
                 # Create sam_masks directory for this split
-                sam_masks_dir = split_dir / 'sam_masks'
+                sam_masks_dir = split_dir / 'spatter_masks'
                 sam_masks_dir.mkdir(exist_ok=True)
 
 
@@ -1123,13 +1123,13 @@ class LabelStudio(Mindtrace):
                                 'label': bbox['label']
                             })
 
-                    mask_filename = f"{Path(img_name).stem}_sam_masks.png"
+                    mask_filename = f"{Path(img_name).stem}_mask.png"
                     cv2.imwrite(
                         str(sam_masks_dir / mask_filename),
                         combined_mask
                     )
 
-                    img_data['sam_masks'] = {
+                    img_data['spatter_masks'] = {
                         'file_name': mask_filename,
                         'bbox_references': bbox_references
                     }
@@ -1138,6 +1138,8 @@ class LabelStudio(Mindtrace):
             with open(annotations_file, 'w') as f:
                 json.dump(split_annotations, f, indent=2)
         
+        # cropping 
+
         create_manifest(
             base_dir=dataset_dir,
             name=dataset_name,
