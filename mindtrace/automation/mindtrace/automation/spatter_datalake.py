@@ -73,6 +73,11 @@ def download_image(task, save_path):
 def labelstudio_to_yolo(labels, image_width, image_height):
     yolo_labels = []
     for label in labels:
+        # Handle nested format
+        original_label = label  # Keep original for rectanglelabels
+        if 'value' in label:
+            label = label['value']
+        
         x = label['x']
         y = label['y']
         w = label['width']
@@ -167,8 +172,12 @@ def download_data_yolo(
 
     print("All downloads complete. Processing annotations...")
 
-    for d in data:
+    # Process zone masks with progress bar
+    for d in tqdm(data, desc="Processing zone masks"):
         image_local_path = os.path.join(images_save_path, d['data']['image'].split('/')[-1])
+        if not os.path.exists(image_local_path):
+            continue
+            
         image = Image.open(image_local_path)
         w, h = image.size
         mask = np.zeros((h, w), dtype=np.uint8)
@@ -208,7 +217,8 @@ def download_data_yolo(
         )
         cv2.imwrite(mask_save_path, mask)
 
-    for task in data:
+    # Process spatter annotations with progress bar
+    for task in tqdm(data, desc="Processing spatter annotations"):
         image_url = task['data']['image']
         if image_url.startswith('gs://'):
             base_fname = image_url.split('/')[-1]
@@ -253,10 +263,16 @@ def download_data_yolo(
         conv = labelstudio_to_yolo(labels, img_width, img_height)
         l = ''
         for label, c in zip(labels, conv):
-            class_name = label['rectanglelabels'][0].lower()
+            # Handle nested format for rectanglelabels
+            if 'value' in label:
+                rectanglelabels = label['value']['rectanglelabels']
+            else:
+                rectanglelabels = label['rectanglelabels']
+            
+            class_name = rectanglelabels[0].lower()
             if class_name in spatter_class_mapping:
                 class_id = int(spatter_class_mapping[class_name])
-    
+
             l = l + str(class_id) + ' ' + str(c[0]) + ' ' + str(c[1]) + ' ' + str(c[2]) + ' ' + str(c[3]) + '\n'
         with open(label_path, 'w') as f:
             f.write(l)
@@ -267,59 +283,69 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
         sys.exit(1)
         
     device = torch.device(device_id)
+    print(f"Loading SAM model to {device}...")
     model = SegmentAnything(model='vit_h', device=device)
 
     os.makedirs(masks_save_path, exist_ok=True)
     
     spatter_class_mapping = {name: str(i) for i, name in enumerate(spatter_class_names)}
 
-    for name in os.listdir(images_dir):
-        if not name.lower().endswith(('.png', '.jpg', '.jpeg')):
-            continue
+    # Get total count for progress bar
+    total_images = len([f for f in os.listdir(images_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+    print(f"Found {total_images} images to process")
 
-        image_path = os.path.join(images_dir, name)
-        image = Image.open(image_path).convert("RGB")
-        
-        label_path = os.path.join(labels_dir, name.rsplit('.', 1)[0] + '.txt')
-        if not os.path.exists(label_path):
-            # Create empty mask if no label file
-            mask_image = Image.new('L', image.size, 0)
-            mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
-            continue
+    with tqdm(total=total_images, desc="Generating masks from boxes") as pbar:
+        for name in os.listdir(images_dir):
+            if not name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                continue
 
-        with open(label_path, 'r') as f:
-            label_string = f.readlines()
-
-        img_width, img_height = image.size
-
-        boxes_xyxy = []
-        for line in label_string:
-            line = line.strip().split()
-            x_center, y_center, width, height = map(float, line[1:])
+            image_path = os.path.join(images_dir, name)
+            image = Image.open(image_path).convert("RGB")
             
-            x1 = (x_center - width / 2) * img_width
-            y1 = (y_center - height / 2) * img_height
-            x2 = (x_center + width / 2) * img_width
-            y2 = (y_center + height / 2) * img_height
+            label_path = os.path.join(labels_dir, name.rsplit('.', 1)[0] + '.txt')
+            if not os.path.exists(label_path):
+                # Create empty mask if no label file
+                mask_image = Image.new('L', image.size, 0)
+                mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
+                pbar.update(1)
+                continue
 
-            boxes_xyxy.append([x1, y1, x2, y2])
-        
-        if not boxes_xyxy:
-            mask_image = Image.new('L', image.size, 0)
-            mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
-            continue
+            with open(label_path, 'r') as f:
+                label_string = f.readlines()
 
-        model.set_image(np.array(image))
-        
-        combined_mask = np.zeros((img_height, img_width), dtype=np.uint8)
-        for i, b in enumerate(boxes_xyxy):
-            masks, _, _ = model.model.predict(box=np.array(b), multimask_output=False)
-            mask = masks[0]
-            class_id = int(label_string[i].strip().split()[0])
-            combined_mask[mask] = class_id
+            img_width, img_height = image.size
+
+            boxes_xyxy = []
+            for line in label_string:
+                line = line.strip().split()
+                x_center, y_center, width, height = map(float, line[1:])
+                
+                x1 = (x_center - width / 2) * img_width
+                y1 = (y_center - height / 2) * img_height
+                x2 = (x_center + width / 2) * img_width
+                y2 = (y_center + height / 2) * img_height
+
+                boxes_xyxy.append([x1, y1, x2, y2])
             
-        mask_image = Image.fromarray(combined_mask, mode='L')
-        mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
+            if not boxes_xyxy:
+                mask_image = Image.new('L', image.size, 0)
+                mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
+                pbar.update(1)
+                continue
+
+            model.set_image(np.array(image))
+            
+            combined_mask = np.zeros((img_height, img_width), dtype=np.uint8)
+            for i, b in enumerate(boxes_xyxy):
+                masks, _, _ = model.model.predict(box=np.array(b), multimask_output=False)
+                mask = masks[0]
+                class_id = int(label_string[i].strip().split()[0])
+                combined_mask[mask] = class_id
+                
+            mask_image = Image.fromarray(combined_mask, mode='L')
+            mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
+            pbar.update(1)
+            
     print("Mask generation complete.")
 
 def train_test_split(base_dir, desired_ratio=0.2):
@@ -333,8 +359,11 @@ def train_test_split(base_dir, desired_ratio=0.2):
     test_set = set(all_images[:test_size])
     train_set = set(all_images[test_size:])
 
+    print(f"Splitting {len(all_images)} images into {len(train_set)} train and {len(test_set)} test...")
+
     for split_name, image_set in [('train', train_set), ('test', test_set)]:
-        for f in image_set:
+        print(f"\nProcessing {split_name} split...")
+        for f in tqdm(image_set, desc=f"Moving {split_name} files"):
             base_filename, _ = os.path.splitext(f)
 
             # Move image
@@ -701,6 +730,7 @@ if __name__ == "__main__":
             separate_class=config.get('separate_class', True))
     
     if convert_box_to_mask:
+        print("\nStarting box to mask conversion...")
         masks_save_path = os.path.join(download_dir, 'spatter_masks')
         # Create spatter class names based on configuration
         spatter_class_names = ['background']
@@ -719,9 +749,11 @@ if __name__ == "__main__":
             spatter_class_names=spatter_class_names
         )
 
+    print("\nStarting train-test split...")
     train_test_split(download_dir, desired_ratio=config['train_test_split_ratio'])
 
     if 'cropping' in config and config['cropping']['enabled']:
+        print("\nStarting cropping process...")
         zone_class_names = config.get('zone_class_names', [])
         zone_class_mapping = {name: str(i) for i, name in enumerate(zone_class_names)}
         
@@ -732,6 +764,7 @@ if __name__ == "__main__":
             save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False)
         )
     
+    print("\nStarting upload to HuggingFace...")
     upload_to_huggingface_yolo(
         download_dir, 
         config.get('huggingface', {}), 
