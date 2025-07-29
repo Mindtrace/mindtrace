@@ -272,7 +272,7 @@ class GCSSettings:
     """
     default_bucket: str = "paz-test-bucket"
     project_id: str = "paz-portal"
-    credentials_path: str = "/home/yasser/mindtrace/paz-portal-bcc97ebc8ea8-usair.json"
+    credentials_path: str = "/home/yasser/mindtrace/mindtrace/paz-portal-d20d839355a2.json"
     create_if_missing: bool = False
     location: str = "US"
     storage_class: str = "STANDARD"

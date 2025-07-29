@@ -21,6 +21,16 @@ class CameraState(BaseManagementState):
     Handles: camera discovery, assignment, configuration, capture, and streaming,
     all scoped by organization, project, and user role.
     """
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Ensure models are rebuilt when state is created to prevent forward reference errors
+        try:
+            from poseidon.backend.database.init import rebuild_all_models
+            rebuild_all_models()
+        except Exception as e:
+            print(f"Warning: Could not rebuild models in CameraState init: {e}")
+    
     # Context
     organization_id: Optional[str] = None
     project_id: Optional[str] = None
@@ -70,6 +80,13 @@ class CameraState(BaseManagementState):
     # --- Context and Permissions ---
     async def initialize_context(self):
         """Initialize the context from auth state and load available projects."""
+        # Ensure models are rebuilt to prevent forward reference errors
+        try:
+            from poseidon.backend.database.init import rebuild_all_models
+            rebuild_all_models()
+        except Exception as e:
+            print(f"Warning: Could not rebuild models: {e}")
+        
         auth_state = await self.get_auth_state()
         
         if not auth_state.is_authenticated:
@@ -623,9 +640,9 @@ class CameraState(BaseManagementState):
     async def refresh_captured_images(self):
         """Refresh the captured images list."""
         try:
-            # Import ImageState to refresh images
-            from poseidon.state.images import ImageState
-            await ImageState.load_images(1)  # Reload first page
+            # Get ImageState instance and refresh images
+            image_state = await self.get_state("ImageState")
+            await image_state.load_images(1)  # Reload first page
         except Exception as e:
             print(f"Error refreshing images: {e}")
 
