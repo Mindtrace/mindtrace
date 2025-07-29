@@ -220,7 +220,7 @@ class InferenceState(rx.State):
             }
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    settings.MODEL_SERVER_URL,
+                    f"{settings.MODEL_SERVER_URL}/inference/run",
                     json=payload,
                     timeout=35.0
                 )
