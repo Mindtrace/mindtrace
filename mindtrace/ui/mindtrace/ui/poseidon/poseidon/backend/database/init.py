@@ -92,8 +92,6 @@ async def initialize_database():
     global _client, _is_initialized
     
     if _is_initialized:
-        # Always rebuild all models to ensure forward references are resolved
-        rebuild_all_models()
         return _client
     
     _client = AsyncIOMotorClient(settings.MONGO_URI)

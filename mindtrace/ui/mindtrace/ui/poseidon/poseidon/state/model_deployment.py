@@ -210,7 +210,6 @@ class ModelDeploymentState(rx.State):
                 )
                 for camera in camera_state.camera_objs
             ]
-            print("Available cameras: ", self.available_cameras)
             # Add sample cameras for testing if none exist
             if len(self.available_cameras) == 0:
                 from bson import ObjectId
