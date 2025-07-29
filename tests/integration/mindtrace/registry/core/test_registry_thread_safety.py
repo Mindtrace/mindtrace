@@ -3,6 +3,7 @@
 import tempfile
 import uuid
 from pathlib import Path
+from typing import Generator
 
 import pytest
 from minio import Minio
@@ -26,7 +27,7 @@ def minio_client():
 
 
 @pytest.fixture
-def test_bucket(minio_client) -> str:
+def test_bucket(minio_client) -> Generator[str, None, None]:
     """Create a temporary bucket for testing."""
     bucket_name = f"test-bucket-{uuid.uuid4()}"
     minio_client.make_bucket(bucket_name)
@@ -41,7 +42,7 @@ def test_bucket(minio_client) -> str:
 
 
 @pytest.fixture
-def temp_dir() -> Path:
+def temp_dir() -> Generator[Path, None, None]:
     """Create a temporary directory for testing."""
     with tempfile.TemporaryDirectory() as temp_dir:
         yield Path(temp_dir)

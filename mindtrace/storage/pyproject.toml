@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-storage"
-version = "0.1.0"
+version = "0.2.0"
 description = "Storage functionality for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -13,6 +13,10 @@ classifiers = [
 dependencies = [
     "google-cloud-storage",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/storage"
 
 [build-system]
 requires = ["setuptools"]
