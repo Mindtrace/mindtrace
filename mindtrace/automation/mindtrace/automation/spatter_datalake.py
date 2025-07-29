@@ -94,11 +94,17 @@ def download_data_yolo(
     workers, 
     zone_class_names,
     ignore_holes=True,
-    delete_empty_masks=True
+    delete_empty_masks=True,
+    keep_small_spatter=True,
+    separate_class=True
 ):
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(labels_save_path, exist_ok=True)
     os.makedirs(zone_masks_save_path, exist_ok=True)
+
+    # Create spatter class mapping from config
+    spatter_class_mapping = {name: str(i) for i, name in enumerate(config['spatter_class_names'])}
+
     with open(json_path, 'r') as f:
         data = json.load(f)
 
@@ -223,8 +229,21 @@ def download_data_yolo(
         for a in task.get('annotations', []):
             for r in a.get('result', []):
                 if 'value' in r and 'rectanglelabels' in r['value']:
-                    if 'Spatter' in r['value']['rectanglelabels'] or 'spatter' in r['value']['rectanglelabels']:
-                        labels.append(r['value'])
+                    rectangle_labels = [label.lower() for label in r['value']['rectanglelabels']]
+                    
+                    # Check for spatter labels based on configuration
+                    has_spatter = 'spatter' in rectangle_labels
+                    has_small_spatter = 'small_spatter' in rectangle_labels
+                    
+                    if has_spatter or (has_small_spatter and keep_small_spatter):
+                        # If separate_class is False, treat small_spatter as spatter
+                        if has_small_spatter and not separate_class:
+                            modified_result = r.copy()
+                            modified_result['value'] = r['value'].copy()
+                            modified_result['value']['rectanglelabels'] = ['spatter']
+                            labels.append(modified_result)
+                        else:
+                            labels.append(r['value'])
 
         if not labels:
             with open(label_path, 'w') as f:
@@ -233,12 +252,16 @@ def download_data_yolo(
 
         conv = labelstudio_to_yolo(labels, img_width, img_height)
         l = ''
-        for c in conv:
-            l = l + '0 ' + str(c[0]) + ' ' + str(c[1]) + ' ' + str(c[2]) + ' ' + str(c[3]) + '\n'
+        for label, c in zip(labels, conv):
+            class_name = label['rectanglelabels'][0].lower()
+            if class_name in spatter_class_mapping:
+                class_id = int(spatter_class_mapping[class_name])
+    
+            l = l + str(class_id) + ' ' + str(c[0]) + ' ' + str(c[1]) + ' ' + str(c[2]) + ' ' + str(c[3]) + '\n'
         with open(label_path, 'w') as f:
             f.write(l)
 
-def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id='cuda:0'):
+def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id='cuda:0', spatter_class_names=None):
     if not SAM_AVAILABLE:
         print("torch or mtrix.models.SegmentAnything not found. Cannot generate masks.")
         sys.exit(1)
@@ -247,6 +270,8 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
     model = SegmentAnything(model='vit_h', device=device)
 
     os.makedirs(masks_save_path, exist_ok=True)
+    
+    spatter_class_mapping = {name: str(i) for i, name in enumerate(spatter_class_names)}
 
     for name in os.listdir(images_dir):
         if not name.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -286,13 +311,14 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
 
         model.set_image(np.array(image))
         
-        all_masks = []
-        for b in boxes_xyxy:
+        combined_mask = np.zeros((img_height, img_width), dtype=np.uint8)
+        for i, b in enumerate(boxes_xyxy):
             masks, _, _ = model.model.predict(box=np.array(b), multimask_output=False)
-            all_masks.append(masks[0])
-
-        combined_mask = np.any(np.stack(all_masks, axis=0), axis=0).astype(np.uint8)
-        mask_image = Image.fromarray(combined_mask * 255, mode='L')
+            mask = masks[0]
+            class_id = int(label_string[i].strip().split()[0])
+            combined_mask[mask] = class_id
+            
+        mask_image = Image.fromarray(combined_mask, mode='L')
         mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
     print("Mask generation complete.")
 
@@ -670,11 +696,28 @@ if __name__ == "__main__":
             config['workers'], 
             config['zone_class_names'],
             ignore_holes=config['ignore_holes'],
-            delete_empty_masks=config['delete_empty_masks'])
+            delete_empty_masks=config['delete_empty_masks'],
+            keep_small_spatter=config.get('keep_small_spatter', True),
+            separate_class=config.get('separate_class', True))
     
     if convert_box_to_mask:
         masks_save_path = os.path.join(download_dir, 'spatter_masks')
-        generate_masks_from_boxes(images_save_path, labels_save_path, masks_save_path)
+        # Create spatter class names based on configuration
+        spatter_class_names = ['background']
+        if config.get('keep_small_spatter', True):
+            if config.get('separate_class', True):
+                spatter_class_names.extend(['spatter', 'small_spatter'])
+            else:
+                spatter_class_names.append('spatter')
+        else:
+            spatter_class_names.append('spatter')
+        
+        generate_masks_from_boxes(
+            images_save_path, 
+            labels_save_path, 
+            masks_save_path,
+            spatter_class_names=spatter_class_names
+        )
 
     train_test_split(download_dir, desired_ratio=config['train_test_split_ratio'])
 
@@ -694,7 +737,7 @@ if __name__ == "__main__":
         config.get('huggingface', {}), 
         use_mask=convert_box_to_mask,
         clean_up=True,
-        class_names=config['class_names'],
+        class_names=config['spatter_class_names'],
         download=True
     )
 
