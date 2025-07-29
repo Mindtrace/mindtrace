@@ -14,9 +14,11 @@ import shutil
 from collections import defaultdict
 import random
 from tqdm import tqdm
+import re
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 from mtrix.datalake import Datalake
-
+from mindtrace.automation.cropping import crop_zones, get_updated_key
+import torch
 try:
     import torch
     from mtrix.models import SegmentAnything
@@ -221,7 +223,7 @@ def download_data_yolo(
         for a in task.get('annotations', []):
             for r in a.get('result', []):
                 if 'value' in r and 'rectanglelabels' in r['value']:
-                    if 'Spatter' in r['value']['rectanglelabels']:
+                    if 'Spatter' in r['value']['rectanglelabels'] or 'spatter' in r['value']['rectanglelabels']:
                         labels.append(r['value'])
 
         if not labels:
@@ -286,7 +288,7 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
         
         all_masks = []
         for b in boxes_xyxy:
-            masks, _, _ = model.predict(box=np.array(b), multimask_output=False)
+            masks, _, _ = model.model.predict(box=np.array(b), multimask_output=False)
             all_masks.append(masks[0])
 
         combined_mask = np.any(np.stack(all_masks, axis=0), axis=0).astype(np.uint8)
@@ -307,6 +309,8 @@ def train_test_split(base_dir, desired_ratio=0.2):
 
     for split_name, image_set in [('train', train_set), ('test', test_set)]:
         for f in image_set:
+            base_filename, _ = os.path.splitext(f)
+
             # Move image
             source_image_path = os.path.join(images_dir, f)
             target_image_dir = os.path.join(images_dir, split_name)
@@ -315,23 +319,302 @@ def train_test_split(base_dir, desired_ratio=0.2):
 
             # Move label
             labels_dir = os.path.join(base_dir, 'labels')
-            label_filename = f.rsplit('.', 1)[0] + '.txt'
-            source_label_path = os.path.join(labels_dir, label_filename)
-            if os.path.exists(source_label_path):
-                target_label_dir = os.path.join(labels_dir, split_name)
-                os.makedirs(target_label_dir, exist_ok=True)
-                shutil.move(source_label_path, os.path.join(target_label_dir, label_filename))
+            if os.path.isdir(labels_dir):
+                label_filename = base_filename + '.txt'
+                source_label_path = os.path.join(labels_dir, label_filename)
+                if os.path.exists(source_label_path):
+                    target_label_dir = os.path.join(labels_dir, split_name)
+                    os.makedirs(target_label_dir, exist_ok=True)
+                    shutil.move(source_label_path, os.path.join(target_label_dir, label_filename))
             
-            # Move mask
-            masks_dir = os.path.join(base_dir, 'masks')
-            mask_filename = f.rsplit('.', 1)[0] + '_mask.png'
-            source_mask_path = os.path.join(masks_dir, mask_filename)
-            if os.path.exists(source_mask_path):
-                target_mask_dir = os.path.join(masks_dir, split_name)
-                os.makedirs(target_mask_dir, exist_ok=True)
-                shutil.move(source_mask_path, os.path.join(target_mask_dir, mask_filename))
+            # Move masks
+            for mask_type in ['spatter_masks', 'zone_masks']:
+                masks_dir = os.path.join(base_dir, mask_type)
+                if os.path.isdir(masks_dir):
+                    mask_filename = base_filename + '_mask.png'
+                    source_mask_path = os.path.join(masks_dir, mask_filename)
+                    if os.path.exists(source_mask_path):
+                        target_mask_dir = os.path.join(masks_dir, split_name)
+                        os.makedirs(target_mask_dir, exist_ok=True)
+                        shutil.move(source_mask_path, os.path.join(target_mask_dir, mask_filename))
 
     print("Train-test split complete.")
+
+
+def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_updated_zone_masks=False):
+    print("Starting cropping process...")
+    with open(cropping_config_path, 'r') as f:
+        cropping_config = json.load(f)
+
+    for split in ['train', 'test']:
+        images_dir = os.path.join(base_dir, 'images', split)
+        zone_masks_dir = os.path.join(base_dir, 'zone_masks', split)
+        spatter_masks_dir = os.path.join(base_dir, 'spatter_masks', split)
+
+        if not os.path.isdir(images_dir):
+            continue
+
+        for image_name in tqdm(os.listdir(images_dir), desc=f"Cropping {split} set"):
+            if not image_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                continue
+
+            image_path = os.path.join(images_dir, image_name)
+            base_filename, ext = os.path.splitext(image_name)
+            
+            # Use regex to extract camera key from filename
+            key = base_filename.split("-")[0]
+            print(key)
+            camera_key = get_updated_key(key)
+
+            zone_mask_path = os.path.join(zone_masks_dir, base_filename + '_mask.png')
+            spatter_mask_path = os.path.join(spatter_masks_dir, base_filename + '_mask.png')
+
+            if not os.path.exists(zone_mask_path):
+                print(f"Zone mask not found for {image_name}, skipping cropping.")
+                continue
+
+            img = cv2.imread(image_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            zone_mask = cv2.imread(zone_mask_path, cv2.IMREAD_GRAYSCALE)
+            
+            spatter_mask = None
+            if os.path.exists(spatter_mask_path):
+                spatter_mask = cv2.imread(spatter_mask_path, cv2.IMREAD_GRAYSCALE)
+
+            crop_results = crop_zones(
+                zone_masks=[torch.from_numpy(zone_mask)],
+                imgs=[img],
+                keys=[camera_key],
+                cropping_config=cropping_config,
+                reference_masks={},  # No reference masks in this context
+                zone_segmentation_class_mapping=zone_class_mapping,
+                square_crop=True,
+                image_names=[base_filename],
+                spatter_masks=[spatter_mask] if spatter_mask is not None else None
+            )
+
+            if not crop_results['all_image_crops']:
+                continue
+
+            # Original image and mask are kept, crops are saved with suffixes
+            for i, (img_crop, zone_crop, spatter_crop) in enumerate(zip(
+                crop_results['all_image_crops'], 
+                crop_results['all_mask_crops'],
+                crop_results['all_spatter_mask_crops']
+            )):
+                # Save cropped image
+                crop_img_name = f"{base_filename}_{i}{ext}"
+                crop_img_path = os.path.join(images_dir, crop_img_name)
+                # Convert back to BGR for saving with cv2
+                cv2.imwrite(crop_img_path, cv2.cvtColor(img_crop, cv2.COLOR_RGB2BGR))
+
+                # If spatter mask exists, crop and save it
+                if spatter_crop is not None:
+                    crop_spatter_mask_name = f"{base_filename}_{i}_mask.png"
+                    crop_spatter_mask_path = os.path.join(spatter_masks_dir, crop_spatter_mask_name)
+                    cv2.imwrite(crop_spatter_mask_path, (spatter_crop > 0).astype(np.uint8) * 255)
+
+                if save_updated_zone_masks:
+                    crop_zone_mask_name = f"{base_filename}_{i}_mask.png"
+                    crop_zone_mask_path = os.path.join(zone_masks_dir, crop_zone_mask_name)
+                    cv2.imwrite(crop_zone_mask_path, zone_crop.numpy())
+
+    print("Cropping complete.")
+
+def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False, clean_up=False, class_names=None, download=False):
+
+    dataset_name = huggingface_config.get('dataset_name')
+    version = huggingface_config.get('version')
+    existing_dataset = huggingface_config.get('existing_dataset')
+    existing_version = huggingface_config.get('existing_version')
+    token = huggingface_config.get('token')
+    gcp_creds_path = huggingface_config.get('gcp_creds_path')
+    
+    os.environ['HF_TOKEN'] = token
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcp_creds_path
+    
+    if existing_dataset is not None:
+        missing_count = 0
+        if download:
+            datalake = Datalake(
+                hf_token = token,    
+                gcp_creds_path = gcp_creds_path,
+                datalake_dir = download_dir
+            )
+            # ds = datalake.get_dataset(
+            #     dataset_name = existing_dataset,
+            #     version = existing_version
+            # )
+
+            print('Downloading dataset from datalake')
+            datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
+            datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
+            
+            for file in os.listdir(os.path.join(datalake_train_path, 'images')):
+                image_path = os.path.join(datalake_train_path, 'images', file)
+                mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
+
+                if os.path.exists(mask_path) and os.path.exists(image_path):
+                    
+                    new_image_path = os.path.join(download_dir, 'images', 'train', os.path.basename(image_path))
+                    new_mask_path = os.path.join(download_dir, 'spatter_masks', 'train', os.path.basename(mask_path))
+                    print(f"Moving {image_path} and {mask_path} to {new_image_path} and {new_mask_path}")
+                    shutil.move(image_path, new_image_path)
+                    shutil.move(mask_path, new_mask_path)
+                else:
+                    missing_count += 1
+
+            for file in os.listdir(os.path.join(datalake_test_path, 'images')):
+                image_path = os.path.join(datalake_test_path, 'images', file)
+                mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
+
+                if os.path.exists(mask_path) and os.path.exists(image_path):
+                    print(f"Moving {image_path} and {mask_path}")
+                    shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
+                    shutil.move(mask_path, os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png')))
+                else:
+                    missing_count += 1
+
+            print(f"Missing count: {missing_count}")        
+            shutil.rmtree(datalake_train_path)
+            shutil.rmtree(datalake_test_path)
+            shutil.rmtree(os.path.join(download_dir, existing_dataset))
+
+    target_path = os.path.join(download_dir, dataset_name)
+    source_images_train = os.path.join(download_dir, 'images', 'train')
+    source_masks_train  = os.path.join(download_dir, 'spatter_masks', 'train')
+
+    source_images_test = os.path.join(download_dir, 'images', 'test')
+    source_masks_test  = os.path.join(download_dir, 'spatter_masks', 'test')
+
+    os.makedirs(os.path.join(target_path, 'splits' ,'train', 'masks'), exist_ok=True)
+    os.makedirs(os.path.join(target_path, 'splits', 'test', 'masks'), exist_ok=True)
+    os.makedirs(os.path.join(target_path, 'splits', 'train', 'images'), exist_ok=True)
+    os.makedirs(os.path.join(target_path, 'splits', 'test', 'images'), exist_ok=True)
+
+    train_annotations = {}
+    train_metadata = {}
+    train_data_files = {}
+
+
+    val_annotations = {}
+    val_metadata = {}
+    val_data_files = {}
+
+
+    for i in os.listdir(source_images_train):
+        train_annotations[i] = {
+            'file_name' : i, 
+            'masks' : i.replace('.jpg', '_mask.png'),
+            'CameraIDX' : -1
+        }
+        train_data_files[i] = os.path.join(source_images_train, i)
+        shutil.copy(os.path.join(source_images_train, i), os.path.join(target_path, 'splits', 'train', 'images', i))
+        train_data_files[i.replace('.jpg', '_mask.png')] = os.path.join(target_path, 'splits', 'train', 'masks', i.replace('.jpg', '_mask.png'))
+        shutil.copy(os.path.join(source_masks_train, i.replace('.jpg', '_mask.png')), os.path.join(target_path, 'splits', 'train', 'masks', i.replace('.jpg', '_mask.png')))
+        
+        train_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}              
+
+    for i in os.listdir(source_images_test):
+        val_annotations[i] = {
+            'file_name' : i, 
+            'masks' : i.replace('.jpg', '_mask.png'),
+            'CameraIDX' : -1
+        }
+        val_data_files[i] = os.path.join(source_images_test, i)
+        shutil.copy(os.path.join(source_images_test, i), os.path.join(target_path,'splits',  'test', 'images', i))
+        val_data_files[i.replace('.jpg', '_mask.png')] = os.path.join(target_path, 'splits', 'test', 'masks', i.replace('.jpg', '_mask.png'))
+        shutil.copy(os.path.join(source_masks_test, i.replace('.jpg', '_mask.png')), os.path.join(target_path, 'splits', 'test', 'masks', i.replace('.jpg', '_mask.png')))
+
+        val_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}
+
+
+    train_metadata = {'images': train_metadata}
+    val_metadata = {'images': val_metadata}
+
+    train_annotations = {'images': train_annotations}
+    val_annotations = {'images': val_annotations}
+
+    save_path = target_path
+
+    with open(os.path.join(save_path,'splits',  'train', f'annotations_v{version}.json'), 'w') as f:
+        json.dump(train_annotations, f)
+
+    with open(os.path.join(save_path, 'splits', 'test', f'annotations_v{version}.json'), 'w') as f:
+        json.dump(val_annotations, f)
+        
+    with open(os.path.join(save_path, 'splits', 'train', f'item_metadata_v{version}.json'), 'w') as f:
+        json.dump(train_metadata, f)
+
+    with open(os.path.join(save_path, 'splits', 'test', f'item_metadata_v{version}.json'), 'w') as f:
+        json.dump(val_metadata, f)
+
+    manifest_sample = {
+        "name": dataset_name,
+        "version": version,
+        "data_type": "image",
+        "incremental": True,  # What does incremental even mean ? 
+        "description": 'V0',
+        "outputs": [
+            {
+                "name": "masks",
+                "type": "image_segmentation",
+                "classes": class_names,
+                "required": False
+            },
+            {
+                "name" : "CameraIDX",
+                "type" : "regression",
+                "required" : False
+            }
+
+
+        ],
+        "splits": {
+            "train": {
+                "data_files" : train_data_files,
+
+            "annotations": f"annotations_v{version}.json",
+            "item_metadata": f"item_metadata_v{version}.json",
+            "removed": []
+            },
+            "test": {
+                "data_files": val_data_files,
+
+            "annotations": f"annotations_v{version}.json",
+            "item_metadata": f"item_metadata_v{version}.json",
+            "removed": []
+            }
+        }
+    }
+
+    with open(os.path.join(save_path, f'manifest_v{version}.json'), 'w') as f:
+        json.dump(manifest_sample, f)
+    
+    print('Creating dataset', dataset_name, version)
+    datalake = Datalake(
+        hf_token = token,    
+        gcp_creds_path = gcp_creds_path,
+    )
+    if dataset_name in datalake.list_datasets():
+        datalake.update_dataset(
+            src = os.path.join(download_dir, dataset_name),
+            dataset_name = dataset_name,
+            version = version,
+        )
+    else:
+        datalake.create_dataset(
+            source = os.path.join(download_dir, dataset_name),
+            dataset_name = dataset_name,
+            version = version,
+        )
+    datalake.publish_dataset(
+        dataset_name = dataset_name,
+        version = version,
+    )
+
+    if clean_up:
+        shutil.rmtree(download_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spatter Segmentation Datalake Pipeline")
@@ -390,6 +673,29 @@ if __name__ == "__main__":
             delete_empty_masks=config['delete_empty_masks'])
     
     if convert_box_to_mask:
-        masks_save_path = os.path.join(download_dir, 'masks')
+        masks_save_path = os.path.join(download_dir, 'spatter_masks')
         generate_masks_from_boxes(images_save_path, labels_save_path, masks_save_path)
+
+    train_test_split(download_dir, desired_ratio=config['train_test_split_ratio'])
+
+    if 'cropping' in config and config['cropping']['enabled']:
+        zone_class_names = config.get('zone_class_names', [])
+        zone_class_mapping = {name: str(i) for i, name in enumerate(zone_class_names)}
+        
+        perform_cropping(
+            base_dir=download_dir,
+            cropping_config_path=config['cropping']['cropping_config_path'],
+            zone_class_mapping=zone_class_mapping,
+            save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False)
+        )
+    
+    upload_to_huggingface_yolo(
+        download_dir, 
+        config.get('huggingface', {}), 
+        use_mask=convert_box_to_mask,
+        clean_up=True,
+        class_names=config['class_names'],
+        download=True
+    )
+
 
