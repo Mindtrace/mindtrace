@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:
@@ -274,7 +274,7 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
 
 
@@ -290,17 +290,19 @@ class TestServiceMCP:
         # mcp_app should be a FastAPI app (or compatible)
         from fastapi import FastAPI
         from starlette.applications import Starlette
+
         assert isinstance(service.mcp_app, (FastAPI, Starlette)), "mcp_app should be a FastAPI or Starlette app."
 
     def test_service_mounts_mcp_app(self):
         service = Service()
         # The /mcp-server route should be mounted
-        routes = [route for route in service.app.routes if hasattr(route, 'path')]
-        mcp_mounts = [route for route in routes if getattr(route, 'path', None) == "/mcp-server"]
+        routes = [route for route in service.app.routes if hasattr(route, "path")]
+        mcp_mounts = [route for route in routes if getattr(route, "path", None) == "/mcp-server"]
         assert mcp_mounts, "Service.app should have /mcp-server mounted."
         # The mounted app should be the mcp_app
         # In FastAPI, mounts are in app.routes as Mount objects
         from fastapi.routing import Mount
+
         found = False
         for route in service.app.routes:
             if isinstance(route, Mount) and route.path == "/mcp-server":
@@ -312,34 +314,43 @@ class TestServiceMCP:
         service = Service()
         # Patch the mcp.tool decorator to track registration
         called = {}
+
         def fake_tool(name, **kwargs):
             def decorator(func):
-                called['name'] = name
-                called['func'] = func
-                called['kwargs'] = kwargs
+                called["name"] = name
+                called["func"] = func
+                called["kwargs"] = kwargs
                 return func
+
             return decorator
+
         service.mcp.tool = fake_tool
+
         def dummy_func():
             return "ok"
+
         service.add_tool("dummy_tool", dummy_func)
-        assert called['name'] == "dummy_tool"
-        assert called['func'] is dummy_func
+        assert called["name"] == "dummy_tool"
+        assert called["func"] is dummy_func
 
     def test_add_endpoint_with_as_tool_calls_add_tool(self):
         service = Service()
         # Patch add_tool to track calls
         called = {}
+
         def fake_add_tool(tool_name, func):
-            called['tool_name'] = tool_name
-            called['func'] = func
+            called["tool_name"] = tool_name
+            called["func"] = func
+
         service.add_tool = fake_add_tool
+
         def dummy_func():
             return "ok"
+
         test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
         service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
-        assert called['tool_name'] == "dummy"
-        assert called['func'] is dummy_func
+        assert called["tool_name"] == "dummy"
+        assert called["func"] is dummy_func
 
 
 class TestServiceUrlBuilding:

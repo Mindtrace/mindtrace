@@ -42,6 +42,8 @@ class Timer:
 
     def stop(self):
         """Stop the timer."""
+        if self._start_time is None:
+            raise ValueError("Timer has not been started.")
         if self._stop_time is None:
             self._stop_time = time.perf_counter()
             self._duration += self._stop_time - self._start_time
