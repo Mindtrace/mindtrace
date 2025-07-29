@@ -14,6 +14,7 @@ import sys
 import shutil 
 from collections import defaultdict
 import random
+from tqdm import tqdm
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 from mtrix.datalake import Datalake
 
@@ -61,7 +62,79 @@ def download_image(task, save_path):
     else:
         return download_image_http(task, save_path)
 
-def download_data(json_path, images_save_path, masks_save_path, class_names, workers, ignore_holes=True, delete_empty_masks=True):
+def download_and_process_image(args):
+    d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes = args
+    
+    fname = download_image(d, images_save_path)
+    if fname.startswith("["):  # Error or skipped
+        print(f"Skipping processing for {d['data']['image']} due to download issue: {fname}")
+        return None
+
+    image_local_path = os.path.join(images_save_path, fname)
+    try:
+        image = Image.open(image_local_path)
+    except Exception as e:
+        print(f"Failed to open image {image_local_path}: {e}")
+        return None
+
+    w, h = image.size
+    mask = np.zeros((h, w), dtype=np.uint8)
+
+    all_hole_polygons = []
+    all_normal_polygons = []
+    for an in d['annotations']:
+        hole_polygons = []
+        normal_polygons = []
+        
+        for result in an['result']:
+            if result['type'] != 'polygonlabels':
+                continue
+
+            class_name = result['value']['polygonlabels'][0]
+            if class_name not in class2idx:
+                continue
+
+            points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
+            points = points.reshape((-1, 1, 2))
+
+            if class_name == 'Hole':
+                hole_polygons.append(points)
+            else:
+                normal_polygons.append((points, class2idx[class_name]))
+        
+        all_hole_polygons.extend(hole_polygons)
+        all_normal_polygons.extend(normal_polygons)
+
+    all_normal_polygons.sort(key=lambda p: p[1])
+
+    for contour, class_id in all_normal_polygons:
+        cv2.fillPoly(mask, [contour], color=class_id)
+
+    if not ignore_holes and 'Hole' in class2idx:
+        for contour in all_hole_polygons:
+            cv2.fillPoly(mask, [contour], color=class2idx['Hole'])
+    if remove_holes and 'background' in class2idx:
+        for contour in all_hole_polygons:
+            cv2.fillPoly(mask, [contour], color=class2idx['background'])
+
+    mask_fname = os.path.splitext(fname)[0] + '_mask.png'
+    mask_save_path = os.path.join(masks_save_path, mask_fname)
+    cv2.imwrite(mask_save_path, mask)
+    
+    has_holes = len(all_hole_polygons) > 0
+    return d, fname, has_holes
+
+
+def download_data(
+    json_path, 
+    images_save_path, 
+    masks_save_path, 
+    class_names, 
+    workers, 
+    ignore_holes=True, 
+    remove_holes=True, 
+    delete_empty_masks=True,
+    hole_id=1):
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(masks_save_path, exist_ok=True)
     idx2class = {i: n for i, n in enumerate(class_names)}
@@ -69,54 +142,27 @@ def download_data(json_path, images_save_path, masks_save_path, class_names, wor
     with open(json_path, 'r') as f:
         data = json.load(f)
 
+    tasks = [(d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes) for d in data]
+    
+    processed_items = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        results = list(executor.map(lambda t: download_image(t, images_save_path), data))
+        with tqdm(total=len(tasks), desc="Downloading and Processing Images") as pbar:
+            results = executor.map(download_and_process_image, tasks)
+            for item in results:
+                if item is not None:
+                    processed_items.append(item)
+                pbar.update(1)
 
-    for d in data:
-        image_local_path = os.path.join(images_save_path, d['data']['image'].split('/')[-1])
-        image = Image.open(image_local_path)
-        w, h = image.size
-        mask = np.zeros((h, w), dtype=np.uint8)
-        
-        for an in d['annotations']:
-            hole_polygons = []
-            normal_polygons = []
-            
-            for result in an['result']:
-                if result['type'] != 'polygonlabels':
-                    continue
-
-                class_name = result['value']['polygonlabels'][0]
-                points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
-                points = points.reshape((-1, 1, 2)) 
-
-                if class_name == 'Hole':
-                    hole_polygons.append(points)
-                else:
-                    normal_polygons.append((points, class2idx[class_name]))
-            
-            # Sort by class_id to ensure consistent drawing order
-            normal_polygons.sort(key=lambda p: p[1])
-            
-            for contour, class_id in normal_polygons:
-                cv2.fillPoly(mask, [contour], color=class_id)
-
-            if not ignore_holes:
-                for contour in hole_polygons:
-                    cv2.fillPoly(mask, [contour], color=class2idx['Hole'])
-        
-        mask_save_path = os.path.join(
-            masks_save_path,
-            d['data']['image'].split('/')[-1].replace('.jpg', '_mask.png')
-        )
-        cv2.imwrite(mask_save_path, mask)
+    no_hole_items = []
+    for item, fname, has_holes in processed_items:
+        if not has_holes:
+            no_hole_items.append(item)
 
     if delete_empty_masks:
         print("\nPost-processing: Deleting empty masks and corresponding images...")
         deleted_count = 0
-        for item in data:
-            image_filename = item['data']['image'].split('/')[-1]
-            mask_filename = image_filename.replace('.jpg', '_mask.png')
+        for item, fname, has_holes in processed_items:
+            mask_filename = os.path.splitext(fname)[0] + '_mask.png'
             mask_filepath = os.path.join(masks_save_path, mask_filename)
 
             if os.path.exists(mask_filepath):
@@ -125,7 +171,7 @@ def download_data(json_path, images_save_path, masks_save_path, class_names, wor
                     print(f"Found empty mask: {mask_filepath}")
                     os.remove(mask_filepath)
 
-                    image_filepath = os.path.join(images_save_path, image_filename)
+                    image_filepath = os.path.join(images_save_path, fname)
                     if os.path.exists(image_filepath):
                         print(f"Deleting corresponding image: {image_filepath}")
                         os.remove(image_filepath)
@@ -134,9 +180,12 @@ def download_data(json_path, images_save_path, masks_save_path, class_names, wor
         
         print(f"\nPost-processing complete. Deleted {deleted_count} empty masks and their images.")
 
+    return no_hole_items
+
 def train_test_split(masks_save_path, images_save_path, desired_ratio=0.2):
     name2c = {}
-    for i in os.listdir(masks_save_path):
+    all_masks = [f for f in os.listdir(masks_save_path) if os.path.isfile(os.path.join(masks_save_path, f))]
+    for i in all_masks:
         image = cv2.imread(os.path.join(masks_save_path, i))
         name2c[i] = np.unique(image)
     data = name2c
@@ -375,7 +424,7 @@ def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_u
         "name": dataset_name,
         "version": version,
         "data_type": "image",
-        "incremental": True,  # What does incremental even mean ? 
+        "incremental": False,  # What does incremental even mean ? 
         "description": 'V0',
         "outputs": [
             {
@@ -424,11 +473,18 @@ def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_u
         hf_token = token,    
         gcp_creds_path = gcp_creds_path,
     )
-    datalake.update_dataset(
-        src = os.path.join(download_dir, dataset_name),
-        dataset_name = dataset_name,
-        version = version,
-    )
+    if dataset_name in datalake.list_datasets():
+        datalake.update_dataset(
+            src = os.path.join(download_dir, dataset_name),
+            dataset_name = dataset_name,
+            version = version,
+        )
+    else:
+        datalake.create_dataset(
+            source = os.path.join(download_dir, dataset_name),
+            dataset_name = dataset_name,
+            version = version,
+        )
     datalake.publish_dataset(
         dataset_name = dataset_name,
         version = version,
@@ -491,16 +547,23 @@ if __name__ == "__main__":
         images_save_path = os.path.join(download_dir, 'images')
         masks_save_path = os.path.join(download_dir, 'masks')
         
-        download_data(
+        no_hole_items = download_data(
             export_path, 
             images_save_path, 
             masks_save_path, 
             class_names, 
             workers, 
             ignore_holes=config['ignore_holes'], 
+            remove_holes=config['remove_holes'],
             delete_empty_masks=config['delete_empty_masks']
         )
         
+        if no_hole_items:
+            print("\n--- Images without Holes ---")
+            for item in no_hole_items:
+                print(f"  - Project: {project.title}, Image: {item['data']['image']}")
+            print("--------------------------\n")
+            
     train_test_split(masks_save_path, images_save_path, desired_ratio=config['train_test_split_ratio'])
         
     upload_to_huggingface(download_dir, config.get('huggingface', {}), class_names, clean_up=True, remove_holes=remove_holes, hole_id=hole_id)
