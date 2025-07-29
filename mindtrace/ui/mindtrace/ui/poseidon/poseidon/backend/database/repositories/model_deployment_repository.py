@@ -26,9 +26,7 @@ class ModelDeploymentRepository:
         # Convert organization_id to Link[Organization] if provided
         if "organization_id" in deployment_data:
             org_id = deployment_data.pop("organization_id")
-            print(f"DEBUG REPO: Looking up organization with ID: {org_id}")
             organization = await Organization.get(org_id)
-            print(f"DEBUG REPO: Organization lookup result: {organization}")
             if not organization:
                 raise Exception(f"Organization with ID {org_id} not found in database")
             deployment_data["organization"] = organization
