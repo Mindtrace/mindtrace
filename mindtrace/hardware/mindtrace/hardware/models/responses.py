@@ -71,13 +71,15 @@ class CaptureResponse(BaseResponse):
     """Response model for image capture operations."""
     image_data: Optional[str] = None  # Base64 encoded image
     save_path: Optional[str] = None
-    media_type: str = "image/jpeg"
+    gcs_uri: Optional[str] = None  # GCS URI of uploaded image
+    media_type: Optional[str] = "image/jpeg"
 
 
 class HDRCaptureResponse(BaseResponse):
     """Response model for HDR capture operations."""
     images: Optional[List[str]] = None  # Base64 encoded images
     exposure_levels: Optional[List[float]] = None
+    gcs_uris: Optional[List[str]] = None  # GCS URIs of uploaded images
     successful_captures: int
 
 
@@ -153,4 +155,14 @@ class StatusResponse(BaseResponse):
 
 class StreamResponse(BaseResponse):
     """Response model for video stream endpoint."""
-    media_type: str = "multipart/x-mixed-replace; boundary=frame" 
+    media_type: str = "multipart/x-mixed-replace; boundary=frame"
+
+
+class BatchHDRCaptureResponse(BaseResponse):
+    """Response model for batch HDR capture operations."""
+    data: Dict[str, HDRCaptureResponse]
+
+
+class BatchCaptureResponse(BaseResponse):
+    """Response model for batch capture operations."""
+    data: Dict[str, CaptureResponse] 
