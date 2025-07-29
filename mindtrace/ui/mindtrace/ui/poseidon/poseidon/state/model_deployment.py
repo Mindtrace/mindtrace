@@ -6,8 +6,10 @@ from poseidon.backend.database.repositories.camera_repository import CameraRepos
 from poseidon.backend.database.repositories.model_repository import ModelRepository
 from poseidon.backend.database.repositories.model_deployment_repository import ModelDeploymentRepository
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
+from poseidon.backend.database.models.enums import ModelValidationStatus, DeploymentStatus
 from poseidon.state.auth import AuthState
 from poseidon.state.camera import CameraState
+from poseidon.backend.core.config import settings
 
 @dataclass
 class CameraDict:
@@ -79,9 +81,6 @@ class ModelDeploymentState(rx.State):
     # Stepper state
     current_step: int = 1
     total_steps: int = 3
-    
-    # Model server configuration
-    model_server_url: str = "http://localhost:8004"
     
     @rx.var
     def selected_cameras_count(self) -> int:
@@ -210,92 +209,6 @@ class ModelDeploymentState(rx.State):
                 )
                 for camera in camera_state.camera_objs
             ]
-            print("Available cameras: ", self.available_cameras)
-            # Add sample cameras for testing if none exist
-            if len(self.available_cameras) == 0:
-                from bson import ObjectId
-                self.available_cameras = [
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="weld_cam_1",
-                        backend="opencv",
-                        device_name="cam_001",
-                        status="active",
-                        configuration={"resolution": "1920x1080", "fps": 30},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="weld_cam_2",
-                        backend="rtsp",
-                        device_name="cam_002",
-                        status="active",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="weld_cam_3",
-                        backend="usb",
-                        device_name="cam_003",
-                        status="inactive",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="cam4",
-                        backend="rtsp",
-                        device_name="cam_004",
-                        status="active",
-                        configuration={"resolution": "1920x1080", "fps": 30},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="cam5",
-                        backend="opencv",
-                        device_name="cam_005",
-                        status="active",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="cam6",
-                        backend="usb",
-                        device_name="cam_006",
-                        status="active",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="cam7",
-                        backend="usb",
-                        device_name="cam_007",
-                        status="active",
-                        configuration={"resolution": "640x480", "fps": 15},
-                        description="-",
-                        location="top"
-                    ),
-                    CameraDict(
-                        id=str(ObjectId()),
-                        name="cam8",
-                        backend="rtsp",
-                        device_name="cam_008",
-                        status="inactive",
-                        configuration={"resolution": "1280x720", "fps": 24},
-                        description="-",
-                        location="top"
-                    ),
-                ]
             
             # Check if we have cameras
             if len(self.available_cameras) == 0:
@@ -326,49 +239,20 @@ class ModelDeploymentState(rx.State):
             # Convert model objects to ModelDict instances
             self.available_models = [
                 ModelDict(
-                    id=model.id,
+                    id=str(model.id),  # Explicitly convert ObjectId to string
                     name=model.name,
                     description=model.description,
                     version=model.version,
                     type=model.type or "unknown",
                     framework=model.framework or "unknown",
-                    validation_status=model.validation_status or "unknown"
+                    validation_status=model.validation_status.value if hasattr(model.validation_status, 'value') else str(model.validation_status or "unknown")
                 )
                 for model in models
             ]
             
-            # Add sample models for testing if none exist
+            # Create default models in database if none exist
             if len(self.available_models) == 0:
-                from bson import ObjectId
-                self.available_models = [
-                    ModelDict(
-                        id=str(ObjectId()),
-                        name="Mig66",
-                        description="Weld detection model",
-                        version="2.1.0",
-                        type="detection",
-                        framework="ONNX",
-                        validation_status="validated"
-                    ),
-                    ModelDict(
-                        id=str(ObjectId()),
-                        name="Mig66 SFZ",
-                        description="Spatter FZ model",
-                        version="2.1.0",
-                        type="detection",
-                        framework="ONNX",
-                        validation_status="validated"
-                    ),
-                    ModelDict(
-                        id=str(ObjectId()),
-                        name="Part Detection",
-                        description="Part detection model",
-                        version="1.0.0",
-                        type="detection",
-                        framework="ONNX",
-                        validation_status="pending"
-                    ),
-                ]
+                await self.create_default_models(organization_id, auth_state.user_id)
             
             self.success = f"Loaded {len(self.available_models)} models"
             
@@ -376,6 +260,114 @@ class ModelDeploymentState(rx.State):
             self.error = f"Error loading models: {str(e)}"
         finally:
             self.is_loading = False
+    
+    async def create_default_models(self, organization_id: str, user_id: str):
+        """Create default models in the database if none exist"""
+        try:
+            # Get the project to associate with models (use selected project or first available)
+            project_id = self.selected_project_id
+            if not project_id and self.available_projects:
+                project_id = self.available_projects[0]["id"]
+            
+            if not project_id:
+                self.error = "Cannot create default models: No project available"
+                return
+            
+            # Define default models to create
+            default_models = [
+                {
+                    "name": "Mig66",
+                    "description": "Weld detection model for MIG welding processes",
+                    "version": "2.1.0",
+                    "type": "detection",
+                    "framework": "ONNX",
+                    "validation_status": ModelValidationStatus.VALIDATED,
+                    "deployment_ready": True,
+                    "organization_id": organization_id,
+                    "created_by_id": user_id,
+                    "project_id": project_id,
+                    "metadata": {
+                        "auto_created": True,
+                        "model_type": "weld_detection",
+                        "compatible_cameras": ["basler", "opencv", "rtsp"]
+                    },
+                    "tags": ["welding", "detection", "production"]
+                },
+                {
+                    "name": "Mig66 SFZ",
+                    "description": "Spatter and fusion zone detection model for advanced weld analysis",
+                    "version": "2.1.0", 
+                    "type": "detection",
+                    "framework": "ONNX",
+                    "validation_status": ModelValidationStatus.VALIDATED,
+                    "deployment_ready": True,
+                    "organization_id": organization_id,
+                    "created_by_id": user_id,
+                    "project_id": project_id,
+                    "metadata": {
+                        "auto_created": True,
+                        "model_type": "spatter_detection",
+                        "features": ["spatter_detection", "fusion_zone_analysis"]
+                    },
+                    "tags": ["welding", "spatter", "fusion-zone", "advanced"]
+                },
+                {
+                    "name": "Part Detection",
+                    "description": "General part detection and classification model",
+                    "version": "1.0.0",
+                    "type": "detection", 
+                    "framework": "ONNX",
+                    "validation_status": ModelValidationStatus.PENDING,
+                    "deployment_ready": False,
+                    "organization_id": organization_id,
+                    "created_by_id": user_id,
+                    "project_id": project_id,
+                    "metadata": {
+                        "auto_created": True,
+                        "model_type": "part_detection",
+                        "status": "in_development"
+                    },
+                    "tags": ["detection", "classification", "general"]
+                }
+            ]
+            
+            # Create each model in the database
+            created_models = []
+            for model_data in default_models:
+                try:
+                    model = await ModelRepository.create(model_data)
+                    created_models.append(model)
+                except Exception as e:
+                    print(f"Failed to create model {model_data['name']}: {str(e)}")
+                    continue
+            
+            # Convert created models to ModelDict format for UI
+            self.available_models = [
+                ModelDict(
+                    id=str(model.id),
+                    name=model.name,
+                    description=model.description,
+                    version=model.version,
+                    type=model.type or "unknown",
+                    framework=model.framework or "unknown",
+                    validation_status=model.validation_status.value if hasattr(model.validation_status, 'value') else str(model.validation_status)
+                )
+                for model in created_models
+            ]
+            
+            # Debug logging for created models
+            print(f"DEBUG: Created {len(self.available_models)} default models")
+            for model in self.available_models:
+                print(f"DEBUG: Created Model ID: {model.id} (type: {type(model.id)}), Name: {model.name}")
+            print(f"DEBUG: Currently selected model ID after creation: {self.selected_model_id} (type: {type(self.selected_model_id)})")
+            
+            if created_models:
+                self.success = f"Created {len(created_models)} default models in database"
+            else:
+                self.error = "Failed to create any default models"
+                
+        except Exception as e:
+            self.error = f"Error creating default models: {str(e)}"
     
     async def load_deployments(self):
         """Load active deployments"""
@@ -504,8 +496,14 @@ class ModelDeploymentState(rx.State):
             self.selected_camera_ids.append(camera_id)
     
     async def select_model(self, model_id: str):
-        """Select a model for deployment"""
-        self.selected_model_id = model_id
+        """Select or deselect a model for deployment"""
+        if self.selected_model_id == model_id:
+            # Deselect if already selected
+            self.selected_model_id = None
+        else:
+            # Select the new model
+            self.selected_model_id = model_id
+        self.clear_messages()
     
     async def select_all_cameras(self):
         """Select all available cameras"""
@@ -535,7 +533,7 @@ class ModelDeploymentState(rx.State):
     async def deploy_model(self):
         """Deploy selected model to selected cameras"""
         if not self.can_deploy:
-            self.error = "Cannot deploy: Please select cameras and a model"
+            self.error = "Cannot deploy: Please select a project, cameras, and a model"
             return
         
         self.is_deploying = True
@@ -568,27 +566,8 @@ class ModelDeploymentState(rx.State):
                 self.error = "Selected model not found"
                 raise Exception("Selected model not found")
             
-# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
-            # Get selected cameras
-            selected_cameras = []
-            for camera in self.available_cameras:
-                if camera.id in self.selected_camera_ids:
-                    selected_cameras.append(camera)
-            
-            if not selected_cameras:
-                self.error = "No valid cameras selected"
-                return
-            
-            # Step 2: Ensure cameras are initialized
-            self.deployment_status = "Initializing cameras..."
-            await self.ensure_cameras_initialized()
-            
-            # Step 3: Call model server API to load model
-            self.deployment_status = "Loading model on server..."
-# =======
             # Step 2: Prepare camera endpoints for deployment
             self.deployment_status = "Preparing camera configurations..."
-# >>>>>>> poseidon/feature/temp_demo_test
             
             # Map selected cameras to API format with endpoints
             camera_api_data = []
@@ -602,7 +581,7 @@ class ModelDeploymentState(rx.State):
                 
                 if camera_obj:
                     # Generate camera endpoint (using default port 8082 as shown in API doc)
-                    camera_endpoint = f"http://localhost:8082"
+                    camera_endpoint = f"http://192.168.50.32:8001"
                     
                     camera_api_data.append({
                         "camera_id": camera_obj.name,  # Use camera name as camera_id for API
@@ -618,104 +597,38 @@ class ModelDeploymentState(rx.State):
                 try:
                     launch_payload = {
                         "model_id": "adient_model_server",
-                        "docker_image": "adient-model-server:latest",
                         "cameras": camera_api_data,
                         "gpu": True,
                         "memory_limit": "6g",
-                        "environment": {
-                            "MODEL_NAME": "adient_weld_detector",
-                            "CONFIDENCE_THRESHOLD": "0.5"
-                        }
                     }
                     
-                    print(f"Sending launch request to {self.model_server_url}/models/launch")
-                    print(f"Payload: {launch_payload}")
-                    
                     response = await client.post(
-                        f"{self.model_server_url}/models/launch",
+                        f"{settings.MODEL_SERVER_URL}/models/launch",
                         json=launch_payload,
                         timeout=60.0
                     )
                     
                     if response.status_code != 200:
                         self.error = f"Model server error: {response.status_code} - {response.text}"
-                        # Still try to use mock response for development
-                        deployment_response = {
-                            "deployment_id": "adient_model_server_mock_123",
-                            "status": "running",
-                            "endpoint": "http://localhost:9000",
-                            "container_id": "mock_container_123",
-                            "camera_ids": [cam["camera_id"] for cam in camera_api_data]
-                        }
+                        raise Exception(f"Model server error: {response.status_code} - {response.text}")
                     else:
                         deployment_response = response.json()
-                        print(f"Parsed response: {deployment_response}")
                         
                         # Check if deployment failed on the server side
                         if deployment_response.get("status") == "failed":
-                            print("API returned failed status, using mock response for development")
-                            self.error = f"Model server deployment failed - using mock deployment for development"
-                            deployment_response = {
-                                "deployment_id": "adient_model_server_mock_123",
-                                "status": "running",
-                                "endpoint": "http://localhost:9000",
-                                "container_id": "mock_container_123",
-                                "camera_ids": [cam["camera_id"] for cam in camera_api_data]
-                            }
+                            self.error = f"Model server deployment failed"
+                            raise Exception("Model server deployment failed")
                         elif not deployment_response.get("deployment_id"):
                             self.error = f"Model launch failed: Missing deployment_id in response"
                             raise Exception("Model launch failed: Missing deployment_id in response")
                         
                 except httpx.TimeoutException:
-                    self.error = "Model server timeout - using mock deployment"
-                    # Create mock response for development
-                    deployment_response = {
-                        "deployment_id": "adient_model_server_mock_123",
-                        "status": "running",
-                        "endpoint": "http://localhost:9000",
-                        "container_id": "mock_container_123",
-                        "camera_ids": [cam["camera_id"] for cam in camera_api_data]
-                    }
+                    self.error = "Model server timeout"
+                    raise Exception("Model server timeout")
                 except Exception as e:
-                    self.error = f"Model server communication error: {str(e)} - using mock deployment"
-# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
-#                     # Continue with mock deployment for development
-            
-#             # Step 4: Register cameras with model server
-#             self.deployment_status = "Registering cameras with model server..."
-            
-#             camera_names = [camera.name for camera in selected_cameras]
-            
-#             async with httpx.AsyncClient() as client:
-#                 try:
-#                     response = await client.post(
-#                         f"{self.model_server_url}/model/register_cameras",
-#                         json={
-#                             "camera_names": camera_names,
-#                             "camera_ids": self.selected_camera_ids
-#                         },
-#                         timeout=30.0
-#                     )
-                    
-#                     if response.status_code != 200:
-#                         self.error = f"Camera registration error: {response.status_code}"
-#                         return
-                        
-#                 except Exception as e:
-#                     # Continue with mock deployment for development
-#                     pass
-            
-#             # Step 5: Save deployment to database
-#             self.deployment_status = "Saving deployment..."
-# =======
-                    # Create mock response for development
-                    deployment_response = {
-                        "deployment_id": "adient_model_server_mock_123",
-                        "status": "running", 
-                        "endpoint": "http://localhost:9000",
-                        "container_id": "mock_container_123",
-                        "camera_ids": [cam["camera_id"] for cam in camera_api_data]
-                    }
+                    self.error = f"Model server communication error: {str(e)}"
+                    raise e
+
             
             # Ensure we have a valid deployment response
             if not deployment_response:
@@ -724,29 +637,35 @@ class ModelDeploymentState(rx.State):
             
             # Step 4: Save deployment to database with new schema
             self.deployment_status = "Saving deployment to database..."
-# >>>>>>> poseidon/feature/temp_demo_test
             
             # Use the selected project ID from UI
             project_id = self.selected_project_id
 
+            # Validate that the selected model exists in the database before deployment
+            selected_model_in_db = await ModelRepository.get_by_id(self.selected_model_id)
+            if not selected_model_in_db:
+                self.error = f"Selected model {self.selected_model_id} not found in database"
+                raise Exception(f"Selected model {self.selected_model_id} not found in database")
+            
+            # Ensure ID consistency
+            if str(selected_model_in_db.id) != str(self.selected_model_id):
+                # Use the database model's actual ID for consistency
+                self.selected_model_id = str(selected_model_in_db.id)
+            
             deployment_data = {
                 "model_id": self.selected_model_id,
                 "organization_id": organization_id,
                 "project_id": project_id,
                 "created_by_id": user_id,
                 "camera_ids": self.selected_camera_ids.copy(),
-                "deployment_status": "deployed",
-                "model_server_url": deployment_response.get("endpoint", self.model_server_url),
+                "deployment_status": DeploymentStatus.DEPLOYED,
+                "model_server_url": deployment_response.get("endpoint", settings.MODEL_SERVER_URL),
                 "deployment_config": {
                     "deployment_id": deployment_response.get("deployment_id"),
                     "container_id": deployment_response.get("container_id"),
                     "status": deployment_response.get("status"),
                     "model_name": selected_model.name,
                     "model_version": selected_model.version,
-# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
-#                     "camera_names": camera_names,
-#                     "deployed_at": "2024-01-01T00:00:00Z"  # This will be set by the model
-# =======
                     "docker_image": "adient-model-server:latest",
                     "cameras": camera_api_data,
                     "gpu": True,
@@ -755,7 +674,6 @@ class ModelDeploymentState(rx.State):
                         "MODEL_NAME": "adient_weld_detector",
                         "CONFIDENCE_THRESHOLD": "0.5"
                     }
-# >>>>>>> poseidon/feature/temp_demo_test
                 },
                 "inference_config": {
                     "endpoint": deployment_response.get("endpoint", "http://localhost:9000"),
@@ -770,23 +688,26 @@ class ModelDeploymentState(rx.State):
             }
             
             
-# <<<<<<< poseidon/feature/state-optimization-and-critical-fixes
-#             # Step 6: Update deployment status
-#             self.deployment_status = "Deployment completed successfully!"
-#             self.success = f"Successfully deployed {selected_model.name} to {len(selected_cameras)} cameras: {', '.join(camera_names)}"
-# =======
             try:
                 deployment = await ModelDeploymentRepository.create(deployment_data)
-                if deployment:
-                    print(f"DEBUG: Deployment created with ID: {deployment.id}")
-                else:
-                    print("DEBUG: Warning - deployment is None but no exception was raised")
                 
+                if not deployment:
+                    print("ERROR - create() returned None or falsy value")
+                    raise Exception("Failed to create deployment record - repository returned None")
+                
+                # Fetch and verify the model relationship
+                await deployment.fetch_all_links()
+                
+                if not deployment.model:
+                    self.error = "Deployment created but model reference is missing"
+                
+                # Verify the deployment exists in database by trying to fetch it
+                verification = await ModelDeploymentRepository.get_by_id(str(deployment.id))
+                if not verification:
+                    raise Exception("Deployment appears to have been created but cannot be retrieved from database")
+                    
             except Exception as db_error:
-                print(f"DEBUG: ModelDeploymentRepository.create() failed: {str(db_error)}")
-                print(f"DEBUG: Error type: {type(db_error)}")
-                import traceback
-                print(f"DEBUG: Traceback: {traceback.format_exc()}")
+                
                 raise db_error
             
             # Step 5: Update deployment status and complete
@@ -794,7 +715,6 @@ class ModelDeploymentState(rx.State):
             self.deployment_status = f"Deployment completed successfully! Deployment ID: {deployment_id}"
             self.success = f"Successfully deployed {selected_model.name} to {len(self.selected_camera_ids)} cameras. " \
                           f"Model endpoint: {deployment_response.get('endpoint', 'http://localhost:9000')}"
-# >>>>>>> poseidon/feature/temp_demo_test
             
             # Clear selections
             self.selected_camera_ids = []

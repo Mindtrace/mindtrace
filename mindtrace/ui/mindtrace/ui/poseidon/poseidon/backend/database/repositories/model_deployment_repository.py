@@ -19,12 +19,18 @@ class ModelDeploymentRepository:
         if "model_id" in deployment_data:
             model_id = deployment_data.pop("model_id")
             model = await Model.get(model_id)
+            if not model:
+                raise Exception(f"Model with ID {model_id} not found in database")
             deployment_data["model"] = model
         
         # Convert organization_id to Link[Organization] if provided
         if "organization_id" in deployment_data:
             org_id = deployment_data.pop("organization_id")
+            print(f"DEBUG REPO: Looking up organization with ID: {org_id}")
             organization = await Organization.get(org_id)
+            print(f"DEBUG REPO: Organization lookup result: {organization}")
+            if not organization:
+                raise Exception(f"Organization with ID {org_id} not found in database")
             deployment_data["organization"] = organization
         
         # Convert project_id to Link[Project] if provided  
@@ -32,6 +38,8 @@ class ModelDeploymentRepository:
             from poseidon.backend.database.models.project import Project
             project_id = deployment_data.pop("project_id")
             project = await Project.get(project_id)
+            if not project:
+                raise Exception(f"Project with ID {project_id} not found in database")
             deployment_data["project"] = project
         
         # Convert created_by_id to Link[User] if provided
@@ -39,10 +47,22 @@ class ModelDeploymentRepository:
             from poseidon.backend.database.models.user import User
             user_id = deployment_data.pop("created_by_id")
             user = await User.get(user_id)
+            if not user:
+                raise Exception(f"User with ID {user_id} not found in database")
             deployment_data["created_by"] = user
         
         deployment = ModelDeployment(**deployment_data)
-        return await deployment.insert()
+
+        result = await deployment.insert()
+        
+        # Verify the record exists by querying the collection directly
+        collection = deployment.get_motor_collection()
+        direct_query = await collection.find_one({"_id": result.id})
+        
+        # Show total count in collection
+        total_count = await collection.count_documents({})
+        
+        return result
 
     @staticmethod
     async def get_by_id(deployment_id: str) -> Optional[ModelDeployment]:

@@ -9,6 +9,7 @@ from poseidon.backend.database.models.organization import Organization
 from poseidon.backend.database.models.user import User
 from poseidon.state.auth import AuthState
 from poseidon.state.base import BaseManagementState
+from poseidon.backend.core.config import settings
 
 camera_repo = CameraRepository()
 project_repo = ProjectRepository()
@@ -574,7 +575,7 @@ class CameraState(BaseManagementState):
             
             # Prepare capture request with GCS upload
             capture_payload = {
-                "gcs_bucket": "mtrix-datasets",
+                "gcs_bucket": settings.GCP_BUCKET_NAME,
                 "gcs_path": f"test_capture/{filename}",
                 "gcs_metadata": {
                     "camera_name": camera,

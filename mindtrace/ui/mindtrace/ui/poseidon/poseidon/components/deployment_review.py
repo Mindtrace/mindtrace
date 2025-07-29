@@ -7,6 +7,7 @@ from poseidon.components.image_components import (
 )
 from poseidon.components.status_banner import status_banner
 from poseidon.state.model_deployment import ModelDeploymentState
+from poseidon.backend.core.config import settings
 
 def selected_cameras_summary() -> rx.Component:
     """Summary of selected cameras"""
@@ -265,7 +266,7 @@ def deployment_configuration() -> rx.Component:
                         color=COLORS["secondary"],
                     ),
                     rx.text(
-                        ModelDeploymentState.model_server_url,
+                        settings.MODEL_SERVER_URL,
                         font_size="0.875rem",
                         color=COLORS["primary"],
                         font_family="monospace",
@@ -419,29 +420,33 @@ def deployment_review() -> rx.Component:
                     },
                    
                 ),
-                rx.card(
-                    rx.hstack(
-                        rx.text("⚠️", font_size="1.25rem"),
-                        rx.text(
-                            "Missing selections",
-                            font_size="1.125rem",
-                            font_weight="600",
-                            color="orange",
+                rx.cond(
+                    ModelDeploymentState.is_deploying,
+                    rx.fragment(),
+                    rx.card(
+                        rx.hstack(
+                            rx.text("⚠️", font_size="1.25rem"),
+                            rx.text(
+                                "Missing selections",
+                                font_size="1.125rem",
+                                font_weight="600",
+                                color="orange",
+                            ),
+                            rx.text(
+                                "Please select a project, cameras, and a model before deploying.",
+                                font_size="0.875rem",
+                                color=COLORS["text_muted"],
+                            ),
+                            spacing="3",
+                            align="center",
                         ),
-                        rx.text(
-                            "Please select cameras and a model before deploying.",
-                            font_size="0.875rem",
-                            color=COLORS["text_muted"],
-                        ),
-                        spacing="3",
-                        align="center",
+                        **{**card_variants["base"],
+                        "width": "100%",
+                        "padding": SPACING["md"],
+                        "background": "rgba(255, 165, 0, 0.05)",
+                        "border": f"2px solid orange",
+                        },
                     ),
-                    **{**card_variants["base"],
-                    "width": "100%",
-                    "padding": SPACING["md"],
-                    "background": "rgba(255, 165, 0, 0.05)",
-                    "border": f"2px solid orange",
-                    },
                 ),
             ),
         ),

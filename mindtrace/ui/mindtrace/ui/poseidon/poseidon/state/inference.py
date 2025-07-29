@@ -2,7 +2,6 @@ import reflex as rx
 import httpx
 from typing import List, Dict, Optional, Any
 from datetime import datetime
-import uuid
 
 from poseidon.backend.database.repositories.scan_repository import ScanRepository
 from poseidon.backend.database.repositories.scan_image_repository import ScanImageRepository
@@ -12,6 +11,7 @@ from poseidon.backend.database.models.enums import ScanStatus, ScanImageStatus, 
 from poseidon.backend.core.config import settings
 from poseidon.state.auth import AuthState
 
+from poseidon.backend.core.config import settings
 
 class ScanHistoryItem(rx.Base):
     """Data model for scan history items"""
@@ -56,8 +56,6 @@ class InferenceState(rx.State):
         """Get the current auth state"""
         return await self.get_state(AuthState)
     
-    # Constants
-    INFERENCE_API_URL: str = "http://localhost:8004/inference/run"
     
     @rx.var
     def deployment_options(self) -> List[Dict[str, str]]:
@@ -184,54 +182,7 @@ class InferenceState(rx.State):
         finally:
             self.loading = False
     
-    def get_mock_response(self) -> Dict[str, Any]:
-        """Generate mock response for development"""
-        return {
-            "inference_id": str(uuid.uuid4()),
-            "deployment_id": self.selected_deployment_id,
-            "status": "success",
-            "cls_result": "Defective",
-            "results": {
-                "weld_cam_1": {
-                    "camera_id": "weld_cam_1",
-                    "status": "success",
-                    "gcs_path": "images/weld_cam_1/scan_001.jpg",
-                    "detections": [
-                        {
-                            "class": "Healthy",
-                            "confidence": 0.95,
-                            "bbox": [100, 200, 300, 400]
-                        }
-                    ],
-                    "error": None,
-                    "processing_time": 1.23
-                },
-                "weld_cam_2": {
-                    "camera_id": "weld_cam_2",
-                    "status": "success", 
-                    "gcs_path": "images/weld_cam_2/scan_002.jpg",
-                    "detections": [
-                        {
-                            "class": "Porosity",
-                            "confidence": 0.87,
-                            "bbox": [150, 250, 350, 450]
-                        }
-                    ],
-                    "error": None,
-                    "processing_time": 1.45
-                },
-                "weld_cam_3": {
-                    "camera_id": "weld_cam_3",
-                    "status": "success",
-                    "gcs_path": "images/weld_cam_3/scan_003.jpg", 
-                    "detections": [],
-                    "error": None,
-                    "processing_time": 1.12
-                }
-            },
-            "total_time": 3.8
-        }
-    
+
     async def run_inference(self):
         """Run inference on the selected deployment"""
         if not self.can_scan:
@@ -247,27 +198,37 @@ class InferenceState(rx.State):
                 self.error = "User not authenticated"
                 return
             
-            # Prepare request payload
+            # Get the deployment record to extract the correct deployment_id
+            deployment = await ModelDeploymentRepository.get_by_id(self.selected_deployment_id)
+            if not deployment:
+                self.error = "Deployment not found"
+                return
+            
+            # Extract the actual deployment_id from deployment_config
+            deployment_id = None
+            if hasattr(deployment, 'deployment_config') and deployment.deployment_config:
+                deployment_id = deployment.deployment_config.get('deployment_id')
+            
+            if not deployment_id:
+                self.error = "Deployment ID not found in deployment configuration"
+                return
+            
+            # Prepare request payload with the correct deployment_id
             payload = {
-                "deployment_id": self.selected_deployment_id,
+                "deployment_id": deployment_id,
                 "timeout": 30.0
             }
-            
-            # TODO: Uncomment this when inference API is ready
-            # async with httpx.AsyncClient() as client:
-            #     response = await client.post(
-            #         self.INFERENCE_API_URL,
-            #         json=payload,
-            #         timeout=35.0
-            #     )
-            #     
-            #     if response.status_code == 200:
-            #         response_data = response.json() 
-            #     else:
-            #         raise Exception(f"API returned {response.status_code}: {response.text}")
-            
-            # MOCK: Use mock response for development
-            response_data = self.get_mock_response()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    settings.MODEL_SERVER_URL,
+                    json=payload,
+                    timeout=35.0
+                )
+                
+                if response.status_code == 200:
+                    response_data = response.json() 
+                else:
+                    raise Exception(f"API returned {response.status_code}: {response.text}")
             
             # Store current scan results for display
             self.current_scan_results = response_data
@@ -330,83 +291,76 @@ class InferenceState(rx.State):
             
             # Create scan_image records for each camera
             results = response_data.get("results", {})
+            api_camera_ids = list(results.keys())
+            
+            # Proactive camera configuration diagnosis for debugging
+            if hasattr(deployment, 'camera_ids') and deployment.camera_ids:
+                diagnosis = await self._diagnose_camera_configuration(deployment, api_camera_ids)
+                print(f"Camera configuration diagnosis: {diagnosis}")
+            
             for camera_id, camera_result in results.items():
                 if camera_result.get("status") == "success":
                     try:
                         # Try to find camera by camera_id in the deployment's camera_ids
                         camera = None
+                        camera_search_methods = []
+                        
                         if hasattr(deployment, 'camera_ids') and deployment.camera_ids:
-                            # Look for a camera with this camera_id in the deployment
                             from poseidon.backend.database.repositories.camera_repository import CameraRepository
-                            # Try to get camera by ID first
+                            
+                            # Method 1: Try to find camera by name matching the API camera_id
                             for cam_id in deployment.camera_ids:
                                 try:
-                                    potential_camera = await CameraRepository.get_by_id(cam_id)
+                                    # Convert cam_id to string if it's an ObjectId
+                                    cam_id_str = str(cam_id)
+                                    potential_camera = await CameraRepository.get_by_id(cam_id_str)
                                     if potential_camera and hasattr(potential_camera, 'name') and potential_camera.name == camera_id:
                                         camera = potential_camera
+                                        camera_search_methods.append(f"Found by name match ({camera_id})")
                                         break
-                                except:
+                                except Exception as e:
+                                    camera_search_methods.append(f"Failed to get camera {cam_id}: {str(e)}")
                                     continue
                             
-                            # If not found by name match, just use the first available camera for now
-                            if not camera and deployment.camera_ids:
-                                try:
-                                    camera = await CameraRepository.get_by_id(deployment.camera_ids[0])
-                                except:
-                                    pass
-                        
-                        # If we still don't have a camera, create one
-                        if not camera:
-                            print(f"Camera {camera_id} not found, creating new camera...")
-                            from poseidon.backend.database.repositories.camera_repository import CameraRepository
-                            try:
-                                # Create new camera with basic info
-                                camera_data = {
-                                    "name": camera_id,
-                                    "organization": deployment.organization,
-                                    "project": deployment.project,
-                                    "backend": "auto_created",
-                                    "device_name": camera_id,
-                                    "status": CameraStatus.ACTIVE,
-                                    "description": f"Auto-created camera for inference scan {self.serial_number}",
-                                    "location": "Unknown",
-                                    "configuration": {
-                                        "auto_created": True,
-                                        "created_for_scan": self.serial_number
-                                    }
-                                }
-                                
-                                # Add user if available
-                                if auth_state.user_id:
+                            # Method 2: Try to find camera by device_name matching the API camera_id  
+                            if not camera:
+                                for cam_id in deployment.camera_ids:
                                     try:
-                                        from poseidon.backend.database.models.user import User
-                                        user = await User.get(auth_state.user_id)
-                                        if user:
-                                            camera_data["created_by"] = user
-                                        else:
-                                            print(f"User {auth_state.user_id} not found, cannot create camera")
-                                            continue
-                                    except Exception as user_error:
-                                        print(f"Failed to get user {auth_state.user_id}: {str(user_error)}, cannot create camera")
+                                        cam_id_str = str(cam_id)
+                                        potential_camera = await CameraRepository.get_by_id(cam_id_str)
+                                        if potential_camera and hasattr(potential_camera, 'device_name') and potential_camera.device_name == camera_id:
+                                            camera = potential_camera
+                                            camera_search_methods.append(f"Found by device_name match ({camera_id})")
+                                            break
+                                    except Exception as e:
                                         continue
-                                else:
-                                    print("No authenticated user available, cannot create camera")
-                                    continue
-                                
-                                camera = await CameraRepository.create_or_update(camera_data)
-                                print(f"Successfully created camera {camera_id} with ID: {camera.id}")
-                                
-                                # Add the new camera to the deployment's camera_ids for future use
-                                if hasattr(deployment, 'camera_ids') and isinstance(deployment.camera_ids, list):
-                                    if str(camera.id) not in deployment.camera_ids:
-                                        deployment.camera_ids.append(str(camera.id))
-                                        await deployment.save()
-                                        print(f"Added camera {camera.id} to deployment {deployment.id}")
-                                
-                            except Exception as create_error:
-                                print(f"Failed to create camera {camera_id}: {str(create_error)}")
-                                # Continue without camera - this will still fail but at least we tried
-                                continue
+                            
+                            # Method 3: If still not found, check if camera_id itself is a valid ObjectId in the deployment
+                            if not camera:
+                                try:
+                                    if camera_id in [str(cam_id) for cam_id in deployment.camera_ids]:
+                                        potential_camera = await CameraRepository.get_by_id(camera_id)
+                                        if potential_camera:
+                                            camera = potential_camera
+                                            camera_search_methods.append(f"Found by direct ID match ({camera_id})")
+                                except Exception as e:
+                                    camera_search_methods.append(f"Failed direct ID lookup: {str(e)}")
+                        
+                        # If camera not found, fail with detailed error
+                        if not camera:
+                            # Get detailed diagnosis of camera configuration
+                            diagnosis = await self._diagnose_camera_configuration(deployment, [camera_id])
+                            
+                            error_details = f"Camera '{camera_id}' not found in deployment '{deployment.id}'. {diagnosis}"
+                            
+                            if camera_search_methods:
+                                error_details += f" Search attempts: {'; '.join(camera_search_methods)}"
+                            
+                            # Log detailed error for debugging
+                            print(f"CAMERA CONFIGURATION ERROR: {error_details}")
+                            
+                            raise Exception(f"Camera '{camera_id}' not found in deployment. Please ensure the camera is properly configured in the deployment.")
+                        
                         
                         # Create scan_image record
                         gcs_path = camera_result.get("gcs_path", "")
@@ -436,59 +390,127 @@ class InferenceState(rx.State):
                                 pass
                         
                         scan_image = await ScanImageRepository.create(scan_image_data)
-                        print(f"Created scan_image with ID: {scan_image.id}")
                         
-                        # Create scan_classification records for each detection
-                        detections = camera_result.get("detections", [])
-                        for detection in detections:
+                        # Create scan_classification records for each prediction
+                        predictions = camera_result.get("predictions", [])
+                        for prediction in predictions:
                             classification_data = {
                                 "image": scan_image,
                                 "scan": scan,
-                                "name": detection.get("class", "Unknown"),
-                                "cls_confidence": detection.get("confidence"),
+                                "name": prediction.get("class", "Unknown"),
+                                "cls_confidence": prediction.get("severity"),  # Using severity instead of confidence
                                 "cls_pred_time": camera_result.get("processing_time"),
-                                "det_cls": detection.get("class"),
+                                "det_cls": prediction.get("class"),
                             }
                             
-                            # Add bounding box if available
-                            bbox = detection.get("bbox")
+                            # Add bounding box if available - format is [x, y, width, height]
+                            bbox = prediction.get("bbox")
                             if bbox and len(bbox) == 4:
                                 classification_data.update({
-                                    "det_x": float(bbox[0]),
-                                    "det_y": float(bbox[1]), 
-                                    "det_w": float(bbox[2] - bbox[0]),
-                                    "det_h": float(bbox[3] - bbox[1])
+                                    "det_x": float(bbox[0]),      # x coordinate
+                                    "det_y": float(bbox[1]),      # y coordinate  
+                                    "det_w": float(bbox[2]),      # width
+                                    "det_h": float(bbox[3])       # height
                                 })
                             
                             classification = await ScanClassificationRepository.create(classification_data)
-                            print(f"Created scan_classification with ID: {classification.id}")
-                        
-                        print(f"Successfully processed camera {camera_id}: created 1 scan_image and {len(detections)} classifications")
                         
                     except Exception as e:
-                        print(f"Error creating scan_image/classifications for camera {camera_id}: {str(e)}")
-                        continue
+                        error_message = str(e)
+                        
+                        # Check if this is a camera configuration error
+                        if "Camera" in error_message and "not found" in error_message:
+                            # This is a camera configuration issue - bubble it up to the user
+                            print(f"CAMERA ERROR for {camera_id}: {error_message}")
+                            raise Exception(f"Camera configuration error: {error_message}")
+                        else:
+                            # Other errors - log and continue
+                            print(f"Error creating scan_image/classifications for camera {camera_id}: {error_message}")
+                            continue
             
         except Exception as e:
-            # Log error but don't fail the entire scan
-            print(f"Error creating database records: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # You might want to set a warning message instead of error
+            error_message = str(e)
+            
+            # Check if this is a camera configuration error that should bubble up
+            if "Camera configuration error" in error_message:
+                # Re-raise camera configuration errors so they reach the user
+                print(f"CRITICAL ERROR: {error_message}")
+                raise e
+            else:
+                # Log other errors but don't fail the entire scan
+                print(f"Error creating database records: {error_message}")
+                import traceback
+                traceback.print_exc()
+                # Continue - scan results are still available even if DB records failed
     
     def _calculate_overall_confidence(self, response_data: Dict[str, Any]) -> Optional[float]:
-        """Calculate overall confidence from all detections"""
+        """Calculate overall confidence from all predictions"""
         all_confidences = []
         results = response_data.get("results", {})
         
         for camera_result in results.values():
-            detections = camera_result.get("detections", [])
-            for detection in detections:
-                confidence = detection.get("confidence")
-                if confidence is not None:
-                    all_confidences.append(confidence)
+            predictions = camera_result.get("predictions", [])
+            for prediction in predictions:
+                severity = prediction.get("severity")
+                if severity is not None:
+                    all_confidences.append(severity)
         
         return sum(all_confidences) / len(all_confidences) if all_confidences else None
+    
+    async def _diagnose_camera_configuration(self, deployment, api_camera_ids: list) -> str:
+        """Diagnose camera configuration issues and provide detailed information"""
+        diagnosis = []
+        
+        # Check if deployment has camera_ids
+        if not hasattr(deployment, 'camera_ids') or not deployment.camera_ids:
+            diagnosis.append("Deployment has no cameras configured")
+            return "; ".join(diagnosis)
+        
+        diagnosis.append(f"Deployment has {len(deployment.camera_ids)} cameras configured: {deployment.camera_ids}")
+        diagnosis.append(f"API returned {len(api_camera_ids)} cameras: {api_camera_ids}")
+        
+        # Check each camera in deployment
+        from poseidon.backend.database.repositories.camera_repository import CameraRepository
+        
+        valid_cameras = []
+        invalid_cameras = []
+        
+        for cam_id in deployment.camera_ids:
+            try:
+                cam_id_str = str(cam_id)
+                camera = await CameraRepository.get_by_id(cam_id_str)
+                if camera:
+                    valid_cameras.append({
+                        'id': cam_id_str,
+                        'name': getattr(camera, 'name', 'N/A'),
+                        'device_name': getattr(camera, 'device_name', 'N/A'),
+                        'status': getattr(camera, 'status', 'N/A')
+                    })
+                else:
+                    invalid_cameras.append(f"{cam_id_str} (not found in database)")
+            except Exception as e:
+                invalid_cameras.append(f"{cam_id} (error: {str(e)})")
+        
+        if valid_cameras:
+            diagnosis.append(f"Valid cameras: {valid_cameras}")
+        if invalid_cameras:
+            diagnosis.append(f"Invalid cameras: {invalid_cameras}")
+        
+        # Check for potential matches
+        matches = []
+        for api_cam in api_camera_ids:
+            for valid_cam in valid_cameras:
+                if (valid_cam['name'] == api_cam or 
+                    valid_cam['device_name'] == api_cam or 
+                    valid_cam['id'] == api_cam):
+                    matches.append(f"'{api_cam}' matches camera {valid_cam['id']} ({valid_cam['name']})")
+        
+        if matches:
+            diagnosis.append(f"Potential matches found: {matches}")
+        else:
+            diagnosis.append("No matches found between API cameras and deployment cameras")
+        
+        return "; ".join(diagnosis)
     
     def clear_form(self):
         """Clear the form inputs"""
