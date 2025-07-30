@@ -35,7 +35,7 @@ class TestRedisStack:
 
     def setup_method(self):
         self.stack_name = f"test_stack_{int(time.time())}"
-        self.stack = RedisStack(self.stack_name, host="localhost", port=6379, db=0)
+        self.stack = RedisStack(self.stack_name, host="localhost", port=6380, db=0)
 
     def test_lifo_behavior(self):
         jobs = [create_test_job_local(f"job_{i}") for i in range(3)]
@@ -54,7 +54,7 @@ class TestRedisStack:
 
     def test_empty_stack_operations(self):
         empty_stack_name = f"empty_stack_{int(time.time())}"
-        empty_stack = RedisStack(empty_stack_name, host="localhost", port=6379, db=0)
+        empty_stack = RedisStack(empty_stack_name, host="localhost", port=6380, db=0)
 
         assert empty_stack.empty() is True
         assert empty_stack.qsize() == 0

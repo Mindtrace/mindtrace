@@ -22,7 +22,7 @@ until nc -z localhost 27017; do
 done
 
 echo "Waiting for Redis to be ready..."
-until nc -z localhost 6379; do
+until nc -z localhost 6380; do
     sleep 1
 done
 
@@ -33,3 +33,5 @@ export MINDTRACE_CLUSTER_MINIO_ENDPOINT=localhost:9100
 export MINDTRACE_CLUSTER_MINIO_ACCESS_KEY=minioadmin
 export MINDTRACE_CLUSTER_MINIO_SECRET_KEY=minioadmin
 
+export MINDTRACE_WORKER_REDIS_DEFAULT_URL=redis://localhost:6380
+export MINDTRACE_CLUSTER_DEFAULT_REDIS_URL=redis://localhost:6380

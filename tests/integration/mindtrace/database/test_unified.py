@@ -18,7 +18,7 @@ from mindtrace.database import (
 # Configuration
 MONGO_URI = "mongodb://localhost:27017"
 MONGO_DB_NAME = "test_unified_db"
-REDIS_URL = "redis://localhost:6379"
+REDIS_URL = "redis://localhost:6380"
 
 
 # Test models
@@ -97,18 +97,14 @@ def redis_unified_backend():
     redis_backend = backend.get_redis_backend()
 
     # Clean up any existing data before test
-    redis = redis_backend.redis
-    pattern = f"{RedisUserDoc.Meta.global_key_prefix}:*"
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    for user in redis_backend.all():
+        redis_backend.delete(user.pk)
 
     yield backend
 
     # Clean up after test
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    for user in redis_backend.all():
+        redis_backend.delete(user.pk)
 
 
 @pytest.fixture(scope="function")
