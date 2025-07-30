@@ -19,7 +19,6 @@ RUN_ALL=true
 
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
-    echo "ARG: $1"
     case $1 in
         --unit)
             RUN_UNIT=true
