@@ -40,6 +40,5 @@ class Config(dict):
         for k, v in default_config.items():
             if k.startswith("MINDTRACE_"):
                 default_config[k] = os.getenv(k, v)
-        print(default_config)
 
         super().__init__(default_config)
