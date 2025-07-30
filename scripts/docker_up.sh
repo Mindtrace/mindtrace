@@ -17,7 +17,7 @@ until curl -s http://localhost:9100/minio/health/live > /dev/null; do
 done
 
 echo "Waiting for MongoDB to be ready..."
-until nc -z localhost 27017; do
+until nc -z localhost 27018; do
     sleep 1
 done
 
