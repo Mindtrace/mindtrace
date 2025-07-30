@@ -86,10 +86,14 @@ if [ "$RUN_UNIT" = true ]; then
     echo "Running unit tests..."
     for module in "${MODULES[@]}"; do
         echo "Running unit tests for $module..."
-        pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
-        if [ $? -ne 0 ]; then
-            echo "Unit tests for $module failed. Stopping test execution."
-            OVERALL_EXIT_CODE=1
+        if [ -d "tests/unit/mindtrace/$module" ]; then
+            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
+            if [ $? -ne 0 ]; then
+                echo "Unit tests for $module failed. Stopping test execution."
+                OVERALL_EXIT_CODE=1
+            fi
+        else
+            echo "No unit tests found for $module"
         fi
     done
     if [ $OVERALL_EXIT_CODE -ne 0 ]; then
@@ -109,10 +113,14 @@ if [ "$RUN_INTEGRATION" = true ]; then
     echo "Running integration tests..."
     for module in "${MODULES[@]}"; do
         echo "Running integration tests for $module..."
-        pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
-        if [ $? -ne 0 ]; then
-            echo "Integration tests for $module failed. Stopping test execution."
-            OVERALL_EXIT_CODE=1
+        if [ -d "tests/integration/mindtrace/$module" ]; then
+            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
+            if [ $? -ne 0 ]; then
+                echo "Integration tests for $module failed. Stopping test execution."
+                OVERALL_EXIT_CODE=1
+            fi
+        else
+            echo "No integration tests found for $module"
         fi
     done
     if [ $OVERALL_EXIT_CODE -ne 0 ]; then
