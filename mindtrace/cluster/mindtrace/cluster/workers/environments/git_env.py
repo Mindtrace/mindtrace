@@ -54,18 +54,14 @@ class GitEnvironment(Mindtrace):
             base_dir = pathlib.Path(self.config["MINDTRACE_TEMP_DIR"])
             base_dir.mkdir(parents=True, exist_ok=True)
             self.temp_dir = tempfile.mkdtemp(dir=base_dir)
-            print("temp_dir", self.temp_dir)
 
             # Clone repository
             self._clone_repository()
-            print("cloned")
 
             # Setup working directory
             working_dir = self._get_working_dir()
-            print("working_dir", working_dir)
             # Sync dependencies
             self._sync_dependencies(working_dir)
-            print("synced")
             return working_dir
 
         except Exception as e:
@@ -205,7 +201,7 @@ class GitEnvironment(Mindtrace):
 
         working_dir = cwd or self._get_working_dir()
         environment_vars = {**os.environ, **(env or {})}
-        print(command)
+
         try:
             if not detach:
                 result = subprocess.run(
