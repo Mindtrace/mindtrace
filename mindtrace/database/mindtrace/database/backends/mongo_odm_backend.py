@@ -86,6 +86,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
             db_uri (str): MongoDB connection URI string.
             db_name (str): Name of the MongoDB database to use.
         """
+        super().__init__()
         self.model_cls = model_cls
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
