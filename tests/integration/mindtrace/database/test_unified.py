@@ -16,7 +16,7 @@ from mindtrace.database import (
 )
 
 # Configuration
-MONGO_URI = "mongodb://localhost:27017"
+MONGO_URI = "mongodb://localhost:27018"
 MONGO_DB_NAME = "test_unified_db"
 REDIS_URL = "redis://localhost:6380"
 
