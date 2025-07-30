@@ -56,7 +56,7 @@ def backend(mock_minio_client):
     """Create a MinioRegistryBackend instance with a mock client."""
     return MinioRegistryBackend(
         uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / "test_dir"),
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket="test-bucket",
@@ -1109,7 +1109,7 @@ def test_metadata_path_property(backend):
     # Create a new backend with a custom metadata path
     custom_backend = MinioRegistryBackend(
         uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / "test_dir"),
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket="test-bucket",
