@@ -19,7 +19,7 @@ MONGO_URL = "mongodb://localhost:27017"
 MONGO_DB = "test_db"
 
 # Redis connection settings
-REDIS_URL = "redis://localhost:6379"
+REDIS_URL = "redis://localhost:6380"
 
 # Store all clients to ensure proper cleanup
 _test_clients = []

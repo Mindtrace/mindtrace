@@ -384,7 +384,7 @@ class TestLauncherIntegration:
         """Test complex JSON init parameters parsing."""
         complex_params = {
             "database_url": "postgresql://user:pass@localhost/db",
-            "redis_config": {"host": "localhost", "port": 6379, "db": 0},
+            "redis_config": {"host": "localhost", "port": 6381, "db": 0},
             "feature_flags": ["flag1", "flag2"],
             "timeout": 30.5,
             "debug": True,
@@ -411,7 +411,7 @@ class TestLauncherIntegration:
         mock_instantiate.assert_called_once_with(
             "test.Server",
             database_url="postgresql://user:pass@localhost/db",
-            redis_config={"host": "localhost", "port": 6379, "db": 0},
+            redis_config={"host": "localhost", "port": 6381, "db": 0},
             feature_flags=["flag1", "flag2"],
             timeout=30.5,
             debug=True,
