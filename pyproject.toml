@@ -102,6 +102,18 @@ test = """
 
     bash scripts/run_tests.sh ${@:-}
 """
+test-module = """
+    # Run all tests for a single module
+    # ds test-module: services
+
+    # Run only unit tests 
+    # ds test-module: --unit services
+
+    # Run only integration tests
+    # ds test-module: --integration services
+
+    bash scripts/run_tests_module.sh ${@:-}
+"""
 
 publish_to_pypi = """
     # Push all packages to PyPI
