@@ -22,7 +22,7 @@ def backend(consumer_frontend):
             queue_name="q",
             consumer_frontend=consumer_frontend,
             host="localhost",
-            port=5672,
+            port=5671,
             username="user",
             password="password",
         )

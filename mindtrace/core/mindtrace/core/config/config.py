@@ -25,6 +25,10 @@ class Config(dict):
             "MINDTRACE_CLUSTER_MINIO_SECRET_KEY": "minioadmin",
             "MINDTRACE_CLUSTER_MINIO_BUCKET": "minio-registry",
             "MINDTRACE_WORKER_REDIS_DEFAULT_URL": "redis://localhost:6379",
+            "MINDTRACE_CLUSTER_RABBITMQ_HOST": "localhost",
+            "MINDTRACE_CLUSTER_RABBITMQ_PORT": 5672,
+            "MINDTRACE_CLUSTER_RABBITMQ_USERNAME": "user",
+            "MINDTRACE_CLUSTER_RABBITMQ_PASSWORD": "password",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
