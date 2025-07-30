@@ -100,6 +100,12 @@ test = """
     # Run multiple test paths (note the colon after 'test')
     # ds test: tests/unit tests/integration/mindtrace/services
 
+    # Run module tests only
+    # ds test: services jobs
+
+    # Run module unit tests only
+    # ds test: database --unit
+
     bash scripts/run_tests.sh ${@:-}
 """
 
