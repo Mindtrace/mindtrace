@@ -342,8 +342,7 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
                 class_id = int(label_string[i].strip().split()[0])
                 combined_mask[mask] = class_id
                 
-            mask_image = Image.fromarray(combined_mask, mode='L')
-            mask_image.save(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), mode='L')
+            cv2.imwrite(os.path.join(masks_save_path, name.rsplit('.', 1)[0] + '_mask.png'), combined_mask)
             pbar.update(1)
             
     print("Mask generation complete.")
@@ -467,7 +466,8 @@ def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_up
                 if spatter_crop is not None:
                     crop_spatter_mask_name = f"{base_filename}_{i}_mask.png"
                     crop_spatter_mask_path = os.path.join(spatter_masks_dir, crop_spatter_mask_name)
-                    cv2.imwrite(crop_spatter_mask_path, (spatter_crop > 0).astype(np.uint8) * 255)
+                   
+                    cv2.imwrite(crop_spatter_mask_path, spatter_crop)
 
                 if save_updated_zone_masks:
                     crop_zone_mask_name = f"{base_filename}_{i}_mask.png"
@@ -496,10 +496,10 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
                 gcp_creds_path = gcp_creds_path,
                 datalake_dir = download_dir
             )
-            # ds = datalake.get_dataset(
-            #     dataset_name = existing_dataset,
-            #     version = existing_version
-            # )
+            ds = datalake.get_dataset(
+                dataset_name = existing_dataset,
+                version = existing_version
+            )
 
             print('Downloading dataset from datalake')
             datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
@@ -764,14 +764,14 @@ if __name__ == "__main__":
             save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False)
         )
     
-    print("\nStarting upload to HuggingFace...")
-    upload_to_huggingface_yolo(
-        download_dir, 
-        config.get('huggingface', {}), 
-        use_mask=convert_box_to_mask,
-        clean_up=True,
-        class_names=config['spatter_class_names'],
-        download=True
-    )
+    #print("\nStarting upload to HuggingFace...")
+    # upload_to_huggingface_yolo(
+    #     download_dir, 
+    #     config.get('huggingface', {}), 
+    #     use_mask=convert_box_to_mask,
+    #     clean_up=True,
+    #     class_names=config['spatter_class_names'],
+    #     download=True
+    # )
 
 
