@@ -29,7 +29,6 @@ class UserDoc(MindtraceRedisDocument):
 
     class Meta:
         global_key_prefix = "mindtrace"
-        database = get_redis_connection(url=REDIS_URL)
 
 
 @pytest.fixture(scope="function")
