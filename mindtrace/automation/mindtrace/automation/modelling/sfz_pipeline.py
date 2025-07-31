@@ -355,26 +355,6 @@ class SFZPipeline:
         os.makedirs(boxes_folder, exist_ok=True)
         os.makedirs(visualizations_folder, exist_ok=True)
 
-        # Save id2label maps for each task before processing
-        for task_name, model_info in self.models.items():
-            current_export_type = export_types.get(task_name) if export_types else None
-            if model_info and model_info.id2label:
-                id2label_map = {int(k): v for k, v in model_info.id2label.items()}
-                
-                output_dir = None
-                if current_export_type == ExportType.MASK:
-                    output_dir = os.path.join(raw_masks_folder, task_name)
-                elif current_export_type == ExportType.BOUNDING_BOX:
-                    output_dir = os.path.join(boxes_folder, task_name)
-                
-                if output_dir:
-                    os.makedirs(output_dir, exist_ok=True)
-                    yaml_path = os.path.join(output_dir, 'id2label.yaml')
-                    if not os.path.exists(yaml_path):
-                        with open(yaml_path, 'w') as f:
-                            yaml.dump(id2label_map, f, default_flow_style=False)
-                        print(f"Saved id2label map to {yaml_path}")
-
         # Get list of image files from all subfolders
         image_files = []
         for root, _, files in os.walk(input_folder):
