@@ -183,7 +183,7 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2
                         'width': width_percent,
                         'height': height_percent,
                         'confidence': confidence,
-                        'class_name': id2label[class_id]
+                        'class_name': id2label.get(class_id, f"class_{class_id}")
                     }
                     bboxes.append(bbox)
     
@@ -266,10 +266,7 @@ def extract_masks_from_pixel_values(mask_path: str, class_mapping: Optional[Dict
             temp_mask_img = Image.fromarray(binary_mask, mode='L')
             temp_mask_img.save(temp_mask_path)
             
-            if class_mapping and class_id in class_mapping:
-                class_name = class_mapping[class_id]
-            else:
-                class_name = f"class_{class_id}"
+            class_name = class_mapping.get(class_id, f"class_{class_id}")
             
             masks.append((temp_mask_path, class_name))
     
@@ -312,7 +309,7 @@ def create_label_studio_mapping(gcs_path_mapping, output_folder, combined_mappin
 
 def gather_detections_from_folders(
     output_folder: str,
-    class_mapping: Optional[Dict[int, str]] = None,
+    class_mapping: Optional[Dict[str, Dict[int, str]]] = None,
     mask_task_names: Optional[List[str]] = None,
     box_task_names: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
@@ -321,7 +318,7 @@ def gather_detections_from_folders(
     
     Args:
         output_folder: Root folder containing images/, boxes/, raw_masks/ subfolders
-        class_mapping: Optional mapping from class_id to class_name
+        class_mapping: A dictionary mapping task names to their id2label dictionaries.
         box_task_names: List of box task names to process (e.g., ['zone_segmentation'])
         mask_task_names: List of mask task names to process (e.g., ['zone_segmentation'])
     
@@ -359,18 +356,22 @@ def gather_detections_from_folders(
         
         if box_task_names:
             for task_name in box_task_names:
-                id2label_path = os.path.join(boxes_folder, task_name, "id2label.yaml")
-                with open(id2label_path, 'r') as f:
-                    id2label = yaml.safe_load(f)
+                id2label_str_keys = class_mapping.get(task_name) if class_mapping else None
+                if not id2label_str_keys:
+                    print(f"Warning: No class mapping found for box task '{task_name}'. Skipping.")
+                    continue
+                id2label = {int(k): v for k, v in id2label_str_keys.items()}
                 task_box_folder = os.path.join(boxes_folder, task_name)
                 box_file_path = os.path.join(task_box_folder, f"{image_name}.txt")
                 bboxes.extend(parse_yolo_box_file(box_file_path, img_width, img_height, id2label))
         
         if mask_task_names:
             for task_name in mask_task_names:
-                id2label_path = os.path.join(raw_masks_folder, task_name, "id2label.yaml")
-                with open(id2label_path, 'r') as f:
-                    id2label = yaml.safe_load(f)
+                id2label_str_keys = class_mapping.get(task_name) if class_mapping else None
+                if not id2label_str_keys:
+                    print(f"Warning: No class mapping found for mask task '{task_name}'. Skipping.")
+                    continue
+                id2label = {int(k): v for k, v in id2label_str_keys.items()}
                 task_mask_folder = os.path.join(raw_masks_folder, task_name)
                 mask_file_path = os.path.join(task_mask_folder, f"{image_name}.png")
                 
@@ -437,10 +438,6 @@ def create_label_studio_tasks(
     
     return tasks
 
-
-
-
-
 def load_gcs_mapping(output_folder):
     """Load GCS path mapping if available."""
     gcs_mapping_file = os.path.join(output_folder, 'gcs_paths.json')
@@ -477,27 +474,24 @@ def create_individual_label_studio_files_with_gcs(
         box_task_names=box_task_names
     )
     
-    if "gcs_paths" in gcs_mapping:
-        gcs_files = gcs_mapping.get("gcs_paths", {}).get("files", {})
-        gcs_bucket = gcs_mapping.get("gcs_paths", {}).get("bucket", "")
-    else:
-        gcs_files = gcs_mapping.get("files", {})
-        gcs_bucket = gcs_mapping.get("bucket", "")
-    
     filename_to_gcs = {}
-    for local_filename, gcs_path in gcs_files.items():
-        filename_to_gcs[local_filename] = f"gs://{gcs_bucket}/{gcs_path}"
-    
-    print(f"GCS mapping contains {len(filename_to_gcs)} files:")
-    for filename, gcs_url in filename_to_gcs.items():
-        print(f"  {filename} -> {gcs_url}")
-    
+    gcs_path_data = gcs_mapping.get("gcs_paths", gcs_mapping)
+
+    if 'files' in gcs_path_data and 'bucket' in gcs_path_data:
+        gcs_files = gcs_path_data.get("files", {})
+        gcs_bucket = gcs_path_data.get("bucket", "")
+        for local_filename, gcs_path in gcs_files.items():
+             filename_to_gcs[local_filename] = f"gs://{gcs_bucket}/{gcs_path}"
+    else:
+        for local_path, gcs_url in gcs_mapping.items():
+            filename_to_gcs[os.path.basename(local_path)] = gcs_url
+
     created_files = []
     
     for detection in tqdm(detections, desc="Creating Label Studio JSON files"):
         local_filename = os.path.basename(detection['image_path'])
         gcs_url = filename_to_gcs.get(local_filename)
-        
+
         if not gcs_url:
             print(f"Skipping {local_filename} - no GCS URL available")
             continue
@@ -553,7 +547,6 @@ def upload_label_studio_jsons_to_gcs(
         try:
             gcs_url = gcs_handler.upload(local_json_path, remote_path)
             uploaded_urls.append(gcs_url)
-            print(f"Uploaded {filename} to: {gcs_url}")
         except Exception as e:
             print(f"Error uploading {filename}: {e}")
     
@@ -577,28 +570,11 @@ def split_dataset(
         seed: Random seed for reproducible splits (default: 42)
     
     Returns:
-        Dict with 'splits' and 'stats':
-        {
-            'splits': {
-                'train': [...],  # List of Label Studio task JSONs
-                'val': [...],
-                'test': [...]
-            },
-            'stats': {
-                'total': int,
-                'train': int,
-                'val': int,
-                'test': int
-            }
-        }
-    
-    Raises:
-        ValueError: If splits don't sum to 1.0
+        Dict with 'splits' and 'stats'
     """
     if abs(train_split + val_split + test_split - 1.0) > 1e-6:
         raise ValueError("Train/val/test splits must sum to 1.0")
     
-    # Set random seed for reproducibility
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -635,15 +611,9 @@ def split_dataset(
 
 
 def create_dataset_structure(base_dir: Path, splits: List[str] = ['train', 'test']) -> None:
-    """Create directory structure for dataset.
-    
-    Args:
-        base_dir: Base directory for dataset
-        splits: List of split names (default: ['train', 'test'])
-    """
+    """Create directory structure for dataset."""
     base_dir = Path(base_dir)
     
-    # Create splits structure
     splits_dir = base_dir / "splits"
     for split in splits:
         (splits_dir / split / "images").mkdir(parents=True, exist_ok=True)
@@ -655,23 +625,11 @@ def create_manifest(
     name: str,
     version: str,
     splits: Dict[str, List[str]],
-    class_mapping: Optional[Dict[str, Any]] = None,
     description: str = "",
     detection_classes: Optional[List[str]] = None,
     segmentation_classes: Optional[List[str]] = None
 ) -> None:
-    """Create a manifest file for the dataset.
-    
-    Args:
-        base_dir: Base directory of the dataset
-        name: Dataset name
-        version: Dataset version
-        splits: Dictionary mapping split names to lists of file paths
-        class_mapping: Optional class mapping dictionary
-        description: Optional dataset description
-        detection_classes: List of detection classes from RectangleLabels
-        segmentation_classes: List of segmentation classes from PolygonLabels
-    """
+    """Create a manifest file for the dataset."""
     base_dir = Path(base_dir)
     
     manifest = {
@@ -697,7 +655,6 @@ def create_manifest(
     }
     
     for split_name, files in splits.items():
-        # Skip empty splits and 'val' split
         if not files or split_name == 'val':
             continue
             
@@ -795,4 +752,3 @@ def organize_files_into_splits(
                     moved_files[split_name].append(str(dst_mask.absolute()))
     
     return moved_files
-    
