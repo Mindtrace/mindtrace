@@ -101,8 +101,15 @@ class ImageDownload:
             credentials_path=gcp_credentials_path
         )
         
-        self.local_download_path = Path(local_download_path)
+        # Create timestamped subdirectory within the parent download path
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self.local_download_path = Path(local_download_path) / timestamp
         self.local_download_path.mkdir(parents=True, exist_ok=True)
+        
+        print(f"Created download directory: {self.local_download_path}")
+        
+        # Store the parent path for reference
+        self.parent_download_path = Path(local_download_path)
         
         # Initialize Label Studio client if configured
         self.label_studio = None
