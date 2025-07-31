@@ -2,6 +2,7 @@
 name = "mindtrace-jobs"
 version = "0.2.0"
 description = "Job management for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}

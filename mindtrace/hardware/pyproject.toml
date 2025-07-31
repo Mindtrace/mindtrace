@@ -2,6 +2,7 @@
 name = "mindtrace-hardware"
 version = "0.2.0"
 description = "Hardware integration for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
