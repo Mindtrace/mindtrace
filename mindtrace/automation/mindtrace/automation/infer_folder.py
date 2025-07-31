@@ -4,11 +4,13 @@ import yaml
 import json
 import uuid
 import glob
+import random
 from pathlib import Path
 # from mindtrace.automation.modelling.inference import Pipeline, ExportType
 from mindtrace.automation.modelling.sfz_pipeline import SFZPipeline, ExportType
 from mindtrace.automation.download_images import ImageDownload
 from mindtrace.automation.label_studio.utils import create_label_studio_mapping
+from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 
 
 def run_inference(config_path: str, custom_job_id: str = None):
@@ -54,17 +56,93 @@ def run_inference(config_path: str, custom_job_id: str = None):
 
     elif data_source == 'local':
         input_path = config['local_image_path']
-        image_extensions = ["*.jpg", "*.jpeg", "*.png"]
         image_paths = []
-        for ext in image_extensions:
-            image_paths.extend(glob.glob(os.path.join(input_path, ext)))
+        
+        # --- START of new logic ---
+
+        # 1. Handle sampling
+        sampling_config = config.get('sampling', {})
+        if sampling_config.get('enabled', False):
+            print("Local sampling enabled.")
+            images_per_folder = sampling_config.get('images_per_folder', 1)
+            
+            try:
+                subfolders = [f.path for f in os.scandir(input_path) if f.is_dir()]
+            except FileNotFoundError:
+                print(f"Error: The specified local_image_path does not exist: {input_path}")
+                return None
+
+            if not subfolders: # if no subfolders, sample from root
+                print(f"No subdirectories found in {input_path}. Sampling from the root directory.")
+                subfolders = [input_path]
+            
+            sampled_images = []
+            image_extensions = ["*.jpg", "*.jpeg", "*.png"]
+
+            for folder in subfolders:
+                all_images_in_folder = []
+                for ext in image_extensions:
+                    all_images_in_folder.extend(glob.glob(os.path.join(folder, ext)))
+                
+                if not all_images_in_folder:
+                    print(f"No images found in folder: {folder}")
+                    continue
+
+                # take all if requested number is higher
+                num_to_sample = min(images_per_folder, len(all_images_in_folder))
+                print(f"Sampling {num_to_sample} image(s) from {folder}")
+                
+                # random sampling
+                sampled_images.extend(random.sample(all_images_in_folder, num_to_sample))
+            image_paths = sampled_images
+        else:
+            # fallback to old logic if sampling is not enabled
+            image_extensions = ["*.jpg", "*.jpeg", "*.png"]
+            for ext in image_extensions:
+                # Search recursively to find all images under the path
+                image_paths.extend(glob.glob(os.path.join(input_path, '**', ext), recursive=True))
+        
+        print(f"Found {len(image_paths)} images after sampling.")
+
+        # 2. Handle Label Studio deduplication
+        label_studio_config = config.get('label_studio')
+        if image_paths and label_studio_config and label_studio_config.get('upload_enabled'):
+            print("Checking for existing images in Label Studio...")
+            
+            api_config = label_studio_config['api']
+            try:
+                label_studio = LabelStudio(
+                    LabelStudioConfig(
+                        url=api_config['url'],
+                        api_key=api_config['api_key'],
+                        gcp_creds=api_config.get('gcp_credentials_path')
+                    )
+                )
+                project_prefix = label_studio_config.get('project', {}).get('title')
+
+                existing_gcs_paths = label_studio.get_all_existing_gcs_paths(project_prefix)
+                existing_filenames = {os.path.basename(path) for path in existing_gcs_paths}
+                print(f"Found {len(existing_filenames)} unique filenames in Label Studio projects.")
+
+                original_count = len(image_paths)
+                image_paths = [p for p in image_paths if os.path.basename(p) not in existing_filenames]
+                filtered_count = original_count - len(image_paths)
+                
+                print(f"\nDEDUPLICATION SUMMARY:")
+                print(f"  Images after sampling: {original_count}")
+                print(f"  Images already in Label Studio: {filtered_count}")
+                print(f"  Images remaining for inference: {len(image_paths)}\n")
+
+            except Exception as e:
+                print(f"Warning: Could not check for existing images in Label Studio: {e}")
+                print("Continuing without deduplication...")
         
         if not image_paths:
-            print(f"No images found in {input_path}")
+            print(f"No images to process after sampling and deduplication.")
             return None
         
-        # For local files, we create a mapping from the file path to a URI
         gcs_path_mapping = {f"file://{os.path.abspath(p)}": os.path.basename(p) for p in image_paths}
+
 
     else:
         raise ValueError(f"Unsupported data_source: {data_source}")
@@ -110,7 +188,8 @@ def run_inference(config_path: str, custom_job_id: str = None):
             output_folder=config['output_folder'],
             export_types=export_types,
             threshold=config['threshold'],
-            save_visualizations=config['save_visualizations']
+            save_visualizations=config['save_visualizations'],
+            image_list=list(gcs_path_mapping.keys()) if data_source == 'local' else None
         )
 
         if summary and summary.get('processed_images', 0) > 0:

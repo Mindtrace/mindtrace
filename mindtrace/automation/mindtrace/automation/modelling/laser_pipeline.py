@@ -15,7 +15,7 @@ from mindtrace.automation.modelling import ModelInference, ExportType
 from mindtrace.storage.gcs import GCSStorageHandler
 from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logits_to_mask, get_updated_key
 
-class SFZPipeline:
+class LaserPipeline:
     """Pipeline class to manage multiple models for inference."""
     
     def __init__(
@@ -88,19 +88,6 @@ class SFZPipeline:
             if pipeline_metadata is None:
                 return False
             
-            self.get_reference_masks(task_name, version)
-            cropping_path = os.path.join(
-                self.local_models_dir, 
-                task_name,
-                version,
-                'cropping.json'
-            )
-            if os.path.exists(cropping_path):
-                self.cropping_config = json.load(open(cropping_path))
-            else:
-                print(f"DEBUG: File not found at {cropping_path}")
-                self.cropping_config = None
-            
             # Load each model in the inference list
             for inference_task, export_type in inference_list.items():
                 if not self._load_model(task_name, version, inference_task, export_type):
@@ -150,28 +137,6 @@ class SFZPipeline:
         except Exception as e:
             print(f"Error loading pipeline metadata: {e}")
             return None
-    
-    def get_reference_masks(self, task_name: str, version: str):
-        self.reference_masks = {}
-        reference_mask_folder = os.path.join(
-            self.local_models_dir, 
-            task_name,
-            version,
-            'zone_segmentation/reference_masks'
-        )
-        if os.path.exists(reference_mask_folder):
-            for file in os.listdir(reference_mask_folder):
-                if file.endswith('.png'):
-                    mask = cv2.imread(os.path.join(reference_mask_folder, file))[:,:,0]
-                    # mask = cv2.resize(mask, (128, 128), interpolation=cv2.INTER_NEAREST)
-                    mask = torch.from_numpy(mask)
-                    if self.device != 'cpu':
-                        mask = mask.to(self.device)
-                    self.reference_masks[file.split('.')[0].replace('_mask', '')] = mask
-                else:
-                    raise FileNotFoundError(f"Reference Mask format is not supported: {file}")
-        else:
-            raise FileNotFoundError(f"Reference Masks not found at {reference_mask_folder}")
         
     def _load_model(self, task_name: str, version: str, inference_task: str, 
                    export_type: str) -> bool:
@@ -558,12 +523,7 @@ class SFZPipeline:
         image: Union[str, Image.Image, np.ndarray],
         export_types: Optional[Dict[str, ExportType]] = None,
         threshold: float = 0.4,
-        follow_pipeline: bool = False,
         background_class: int = 0,
-        zone_crop_padding_percent: float = 0.1,
-        zone_crop_confidence_threshold: float = 0.7,
-        zone_crop_min_coverage_ratio: float = 0.3,
-        zone_crop_square_crop: bool = False
     ) -> Dict[str, Any]:
         """Run inference on all loaded models.
         
@@ -577,105 +537,30 @@ class SFZPipeline:
             Dictionary with results for each model
         """
         results = {}
-        if not follow_pipeline:
-            for task_name, model in self.models.items():
-                try:
-                    # Determine export type
-                    export_type = ExportType.BOUNDING_BOX  # Default
-                    if export_types and task_name in export_types:
-                        export_type = export_types[task_name]
-                    
-                    # Run inference
-                    result = model.run_inference(
-                        image=image,
-                        export_type=export_type,
-                        threshold=threshold,
-                        background_class=background_class
-                    )
-                    
-                    results[task_name] = result
-                    print(f"Inference completed for {task_name}")
-                    
-                except Exception as e:
-                    print(f"Error running inference for {task_name}: {e}")
-                    results[task_name] = {'error': str(e)}
-            
-            return results
-        else:
-            assert 'spatter_segmentation' in self.models or 'spatter_detection' in self.models, "Spatter segmentation or detection model not loaded"
-            assert 'zone_segmentation' in self.models, "Zone segmentation model not loaded"
-            assert 'spatter_segmentation' in export_types or 'spatter_detection' in export_types, "Spatter segmentation or detection export type not provided"
-            assert 'zone_segmentation' in export_types, "Zone segmentation export type not provided"
-            
-            img_name = os.path.basename(image).split('.')[0]
-            key = img_name.split('-')[0]
-            print(key, '-----')
-            # key = img_name.split(':')[-1].split('-')[0]
-            image = Image.open(image).convert('RGB')
-            
-            # Zone segmentation
-            zone_segmentation_result = self.models['zone_segmentation'].run_inference(
-                image=image,
-                export_type=export_types['zone_segmentation'],
-                threshold=threshold,
-                background_class=background_class
-            )
-            results['zone_segmentation'] = zone_segmentation_result['mask']
-            zone_predictions = zone_segmentation_result["logits"]
-            print(zone_predictions.shape, 'zone_predictions')
-            # Crop based on zone segmentation
-            crop_results = crop_zones(
-                zone_predictions, 
-                [image], 
-                [key], 
-                self.cropping_config, 
-                self.reference_masks, 
-                self.models['zone_segmentation'].label2id,
-                padding_percent=zone_crop_padding_percent,
-                confidence_threshold=zone_crop_confidence_threshold,
-                min_coverage_ratio=zone_crop_min_coverage_ratio,
-                square_crop=zone_crop_square_crop,
-                background_class=background_class
-            )
-            print('all_image_crops')
-            os.makedirs('all_image_crops', exist_ok=True)
-            for i, img in enumerate(crop_results['all_image_crops']):
-                if isinstance(img, Image.Image):
-                    img.save(f'all_image_crops/img_{i}.png')
-                else:
-                    img = Image.fromarray(img)
-                    img.save(f'all_image_crops/img_{i}.png')
-            
-            # Spatter segmentation
-            spatter_results = []
-            for i, img in enumerate(crop_results['all_image_crops']):
-                spatter_segmentation_result = self.models['spatter_segmentation'].run_inference(
-                    image=img,
-                    export_type=export_types['spatter_segmentation'],
-                    threshold=threshold
-                )['logits'][0]
-                spatter_results.append(spatter_segmentation_result)
-            spatter_results = torch.stack(spatter_results)
-            print(spatter_results.shape, 'spatter_results')
-            
-            # Create a mapping of camera keys to their original image shapes
-            camera_shapes = {}
-            image_key = get_updated_key(key)
-            camera_shapes[image_key] = np.array(image).shape[:2]  # (H, W)
-            print(camera_shapes, 'camera_shapes')
-            reconstructed_predictions = combine_crops(
-                zone_crops=crop_results['all_mask_crops'],
-                spatter_crops=spatter_results,
-                crop_metadata=crop_results['crop_metadata'], 
-                original_img_shapes=camera_shapes,
-                zone_classes=len(self.models['zone_segmentation'].id2label),
-                spatter_classes=len(self.models['spatter_segmentation'].id2label),
-                overlap_strategy='max',
-                conf_threshold=threshold,
-                background_class=background_class
-            )
-            print(reconstructed_predictions, 'reconstructed_predictions')
+        for task_name, model in self.models.items():
+            try:
+                # Determine export type
+                export_type = ExportType.BOUNDING_BOX  # Default
+                if export_types and task_name in export_types:
+                    export_type = export_types[task_name]
+                
+                # Run inference
+                result = model.run_inference(
+                    image=image,
+                    export_type=export_type,
+                    threshold=threshold,
+                    background_class=background_class
+                )
+                
+                results[task_name] = result
+                print(f"Inference completed for {task_name}")
+                
+            except Exception as e:
+                print(f"Error running inference for {task_name}: {e}")
+                results[task_name] = {'error': str(e)}
         
+        return results
+    
 
     def _make_json_serializable(self, obj):
         """Convert numpy arrays and other non-serializable objects to JSON-serializable formats."""
