@@ -84,6 +84,17 @@ async def update_organization_user_count(organization: Organization):
     await organization.save()
     print(f"✓ Updated organization user count to {user_count}")
 
+async def replace_username_with_first_last_name(user: User):
+    """Delete Username field and replace it with First and Last name fields in db"""
+    if user.username:
+        user.first_name = user.username.split()[0] if user.username else ""
+        user.last_name = " ".join(user.username.split()[1:]) if len(user.username.split()) > 1 else ""
+        user.username = None
+        await user.save()
+        print(f"✓ Updated user {user.id} with first name '{user.first_name}' and last name '{user.last_name}'")
+    else:
+        print(f"User {user.id} has no username to replace.")
+
 
 async def verify_setup():
     """Verify the setup was successful"""
