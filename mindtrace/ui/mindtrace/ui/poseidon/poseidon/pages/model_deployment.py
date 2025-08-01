@@ -14,8 +14,8 @@ def new_deployment_stepper() -> rx.Component:
     """Stepper component for new deployment workflow"""
     steps = [
         StepConfig(
-            title="Select Cameras",
-            description="Choose cameras to deploy the model to",
+            title="Select Project & Cameras",
+            description="Choose project and cameras to deploy the model to",
             completed=ModelDeploymentState.step_1_completed,
             active=ModelDeploymentState.current_step == 1,
             content=camera_selection_grid(),

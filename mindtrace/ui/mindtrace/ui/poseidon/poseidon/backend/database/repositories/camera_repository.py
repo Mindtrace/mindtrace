@@ -207,3 +207,18 @@ class CameraRepository:
         except:
             pass
         return None
+
+    @staticmethod
+    async def update_configuration(camera_id: str, configuration: dict) -> Optional[Camera]:
+        """Update camera configuration"""
+        await CameraRepository._ensure_init()
+        try:
+            camera = await Camera.get(camera_id)
+            if camera:
+                camera.update_configuration(configuration)
+                camera.update_timestamp()
+                await camera.save()
+                return camera
+        except:
+            pass
+        return None

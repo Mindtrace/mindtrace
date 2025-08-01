@@ -1,6 +1,13 @@
 from mindtrace.database import MindtraceDocument
-from typing import Dict, Optional, List
-from datetime import datetime
+from typing import Dict, Optional, List, TYPE_CHECKING
+from datetime import datetime, UTC
+from pydantic import Field
+from beanie import Link, before_event, Insert, Replace, SaveChanges
+
+if TYPE_CHECKING:
+    from .user import User
+    from .project import Project
+    from .organization import Organization
 
 class Image(MindtraceDocument):
     filename: str
@@ -9,21 +16,24 @@ class Image(MindtraceDocument):
     content_type: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    tags: List[str] = []
-    metadata: Dict[str, str] = {}
-    uploaded_by: Optional[str] = None
-    project: Optional[str] = None
-    organization: Optional[str] = None
-    created_at: str = ""
-    updated_at: str = ""
+    tags: List[str] = Field(default_factory=list)
+    metadata: Dict[str, str] = Field(default_factory=dict)
     
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        super().__init__(**data)
+    # Link relationships
+    uploaded_by: Optional[Link["User"]] = None
+    project: Link["Project"]
+    organization: Link["Organization"]
     
+    # Proper datetime fields
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    
+    @before_event(Insert)
+    def set_created_timestamps(self):
+        now = datetime.now(UTC)
+        self.created_at = now
+        self.updated_at = now
+
+    @before_event([Replace, SaveChanges])
     def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat() 
+        self.updated_at = datetime.now(UTC) 

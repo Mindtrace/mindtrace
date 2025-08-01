@@ -173,13 +173,21 @@ class UserRepository:
             if not user or not project:
                 return None
             
-            # Add project to user's projects list if not already present
-            if project not in user.projects:
+            # Check if user is already assigned to this project
+            project_already_assigned = any(str(p.id) == project_id for p in user.projects)
+            
+            if not project_already_assigned:
                 user.projects.append(project)
                 await user.save()
+            else:
+                # User already assigned to project
+                pass
             
             return user
-        except:
+        except Exception as e:
+            print(f"ERROR in assign_to_project: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @staticmethod
@@ -198,7 +206,10 @@ class UserRepository:
             await user.save()
             
             return user
-        except:
+        except Exception as e:
+            print(f"ERROR in remove_from_project: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @staticmethod

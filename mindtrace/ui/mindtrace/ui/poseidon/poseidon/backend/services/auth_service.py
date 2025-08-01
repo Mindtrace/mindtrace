@@ -105,6 +105,16 @@ class AuthService:
         # Fetch linked organization using fetch_all_links instead of fetch_link
         await user.fetch_all_links()
         
+        # Fetch user's project assignments
+        await user.fetch_all_links()
+        project_assignments = []
+        for project in user.projects:
+            project_assignments.append({
+                "project_id": str(project.id),
+                "project_name": project.name,
+                "roles": ["user"]  # Default role for now
+            })
+        
         # Create JWT payload with user information
         payload = {
             "user_id": str(user.id), 
@@ -112,7 +122,7 @@ class AuthService:
             "last_name": user.last_name,
             "organization_id": str(user.organization.id),
             "org_role": user.org_role,
-            "project_assignments": []  # Will be populated based on user.projects
+            "project_assignments": project_assignments
         }
         
         # Generate JWT token

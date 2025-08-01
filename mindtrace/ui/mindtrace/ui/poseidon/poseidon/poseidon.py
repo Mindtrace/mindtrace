@@ -19,6 +19,7 @@ from poseidon.pages.user import profile_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.model_deployment import model_deployment_page
+from poseidon.pages.inference import inference_page
 
 from poseidon.styles.theme import theme_config
 from poseidon.styles.styles import styles
@@ -47,6 +48,9 @@ app.add_page(camera_configurator_page, route="/camera-configurator", title="Mind
 
 # Model Deployment route
 app.add_page(model_deployment_page, route="/model-deployment", title="MindTrace - Model Deployment")
+
+# Inference route
+app.add_page(inference_page, route="/inference", title="MindTrace - Inference Scanner")
 
 # Management routes
 app.add_page(user_management_page, route="/user-management", title="MindTrace - User Management")

@@ -1,13 +1,13 @@
 import reflex as rx
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime
 
 
 class BaseDataModel(rx.Base):
     """Base data model with common fields."""
     id: str
-    created_at: str = ""
-    updated_at: str = ""
+    created_at: Union[str, datetime] = ""
+    updated_at: Union[str, datetime] = ""
     is_active: bool = True
 
 
@@ -72,7 +72,7 @@ class ProjectAssignmentData(rx.Base):
     project_id: str
     project_name: str = ""
     roles: List[str] = []
-    assigned_at: str = ""
+    assigned_at: Union[str, datetime] = ""
     
     @property
     def roles_display(self) -> str:

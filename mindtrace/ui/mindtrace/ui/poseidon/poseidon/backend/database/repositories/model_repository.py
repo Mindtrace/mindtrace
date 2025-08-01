@@ -101,6 +101,7 @@ class ModelRepository:
                 for key, value in update_data.items():
                     if hasattr(model, key):
                         setattr(model, key, value)
+                model.update_timestamp()  
                 await model.save()
                 return model
         except:

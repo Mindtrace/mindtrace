@@ -47,6 +47,22 @@ class ImageState(rx.State):
                 data = img_data.__dict__
             else:
                 data = img_data
+            
+            # Helper function to safely convert linked objects to strings
+            def safe_convert_link(link_obj):
+                """Safely convert a Link object or string to a string representation"""
+                if link_obj is None:
+                    return None
+                elif isinstance(link_obj, str):
+                    return link_obj
+                elif hasattr(link_obj, 'get_full_name'):
+                    return link_obj.get_full_name()
+                elif hasattr(link_obj, 'name'):
+                    return link_obj.name
+                elif hasattr(link_obj, 'id'):
+                    return str(link_obj.id)
+                else:
+                    return str(link_obj)
                 
             # Safe type conversions with defaults
             return ImageDict(
@@ -58,9 +74,9 @@ class ImageState(rx.State):
                 width=int(data.get("width")) if data.get("width") is not None else None,
                 height=int(data.get("height")) if data.get("height") is not None else None,
                 tags=list(data.get("tags", [])) if data.get("tags") else [],
-                uploaded_by=str(data.get("uploaded_by")) if data.get("uploaded_by") else None,
-                project=str(data.get("project")) if data.get("project") else None,
-                organization=str(data.get("organization")) if data.get("organization") else None,
+                uploaded_by=safe_convert_link(data.get("uploaded_by")),
+                project=safe_convert_link(data.get("project")),
+                organization=safe_convert_link(data.get("organization")),
                 created_at=str(data.get("created_at", "")),
                 updated_at=str(data.get("updated_at", ""))
             )
@@ -88,8 +104,6 @@ class ImageState(rx.State):
                     page, self.page_size
                 )
             
-            print(f"Database result: {result}")  # Debug output
-            
             # Convert to ImageDict objects with safe conversion
             image_list = []
             for img in result["images"]:
@@ -105,8 +119,6 @@ class ImageState(rx.State):
             self.total_count = result["total_count"]
             self.total_pages = result["total_pages"]
             self.current_page = result["page"]
-            
-            print(f"Successfully loaded {len(self.images)} images")  # Debug output
             
         except Exception as e:
             print(f"Error loading images: {e}")
