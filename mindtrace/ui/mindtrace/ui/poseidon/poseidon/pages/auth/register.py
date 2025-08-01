@@ -3,7 +3,7 @@ Modern registration page component.
 
 Provides user account creation interface with:
 - Clean, modern form design using unified Poseidon UI components
-- Username, email, and password input fields
+- First name, last name, email, and password input fields
 - Organization selection (required for multi-tenancy)
 - Form validation and error handling
 - Responsive design using modern design system
@@ -160,7 +160,8 @@ def register_super_admin_content() -> rx.Component:
             ),
             rx.form(
                 rx.vstack(
-                    form_input_with_label_and_hint("Username", "Username", "", "text", "username", True, "medium"),
+                    form_input_with_label_and_hint("First Name", "First Name", "", "text", "first_name", True, "medium"),
+                    form_input_with_label_and_hint("Last Name", "Last Name", "", "text", "last_name", True, "medium"),
                     form_input_with_label_and_hint("Email", "Email address", "", "email", "email", True, "medium"),
                     form_input_with_label_and_hint("Password", "Password", "", "password", "password", True, "medium"),
                     form_input_with_label_and_hint("Super Admin Master Key", "Super Admin Master Key", "", "password", "super_admin_key", True, "medium"),

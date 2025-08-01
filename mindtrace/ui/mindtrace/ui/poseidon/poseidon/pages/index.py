@@ -114,7 +114,7 @@ def authenticated_content() -> rx.Component:
         # Animated welcome message
         rx.box(
             rx.text(
-                f"Hello, {AuthState.current_username}! 👋",
+                f"Hello, {AuthState.first_name} {AuthState.last_name}! 👋",
                 size="6",
                 weight="medium",
                 color=rx.color("slate", 12),

@@ -15,14 +15,16 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
     role_filter: str = ""
     
     # Add user form
-    new_user_username: str = ""
+    new_user_first_name: str = ""
+    new_user_last_name: str = ""
     new_user_email: str = ""
     new_user_role: str = ""
     add_user_dialog_open: bool = False
     
     # Edit user form
     edit_user_id: str = ""
-    edit_user_username: str = ""
+    edit_user_first_name: str = ""
+    edit_user_last_name: str = ""
     edit_user_email: str = ""
     edit_user_role: str = ""
     edit_user_dialog_open: bool = False
@@ -111,7 +113,8 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                 self.organization_users = [
                     {
                         "id": str(user.id),
-                        "username": user.username,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
                         "email": user.email,
                         "organization_id": str(user.organization.id) if user.organization else "",
                         "org_role": user.org_role,
@@ -133,7 +136,8 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             self.organization_users = [
                 {
                     "id": str(user.id),
-                    "username": user.username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
                     "email": user.email,
                     "organization_id": str(user.organization.id) if user.organization else "",
                     "org_role": user.org_role,
@@ -195,8 +199,9 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         if self.search_query:
             filtered = [
                 user for user in filtered
-                if (self.search_query.lower() in user.get("username", "").lower() or
-                    self.search_query.lower() in user.get("email", "").lower())
+                if (self.user_search_query.lower() in user.get("first_name", "").lower() or
+                    self.user_search_query.lower() in user.get("last_name", "").lower() or
+                    self.user_search_query.lower() in user.get("email", "").lower())
             ]
         
         # Role filter
@@ -346,14 +351,73 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
     # --- Form Management Methods ---
     def clear_add_user_form(self):
         """Clear add user form"""
-        self.new_user_username = ""
+        self.new_user_first_name = ""
+        self.new_user_last_name = ""
         self.new_user_email = ""
         self.new_user_role = ""
+
+    def set_new_user_role(self, role: str):
+        """Set the new user role"""
+        self.new_user_role = role
+
+    def set_new_user_email(self, email: str):
+        """Set the new user email"""
+        self.new_user_email = email
+    
+    def set_new_user_first_name(self, first_name: str):
+        """Set the new user first name"""
+        self.new_user_first_name = first_name
+    
+    def set_new_user_last_name(self, last_name: str):
+        """Set the new user last name"""
+        self.new_user_last_name = last_name
+
+    def set_edit_user_first_name(self, first_name: str):
+        """Set the edit user first name"""
+        self.edit_user_first_name = first_name
+
+    def set_edit_user_last_name(self, last_name: str):
+        """Set the edit user last name"""
+        self.edit_user_last_name = last_name
+
+    def set_edit_user_email(self, email: str):
+        """Set the edit user email"""
+        self.edit_user_email = email
+
+    def set_edit_user_role(self, role: str):
+        """Set the edit user role"""
+        self.edit_user_role = role
+
+    def set_edit_user_data(self, user_data: Dict):
+        """Set edit user data from user dictionary"""
+        self.edit_user_id = user_data.get("id", "")
+        self.edit_user_first_name = user_data.get("first_name", "")
+        self.edit_user_last_name = user_data.get("last_name", "")
+        self.edit_user_email = user_data.get("email", "")
+        self.edit_user_role = user_data.get("org_role", "")
+        self.show_edit_user_dialog = True
+
+    def show_edit_user_form(self, user_id: str):
+        """Show edit user dialog"""
+        user = next((u for u in self.organization_users if u["id"] == user_id), None)
+        if user:
+            self.edit_user_id = user_id
+            self.edit_user_first_name = user["first_name"]
+            self.edit_user_last_name = user["last_name"]
+            self.edit_user_email = user["email"]
+            self.edit_user_role = user["org_role"]
+            self.show_edit_user_dialog = True
+
+    def hide_edit_user_form(self):
+        """Hide edit user dialog"""
+        self.show_edit_user_dialog = False
+        self.clear_edit_user_form()
 
     def clear_edit_user_form(self):
         """Clear edit user form"""
         self.edit_user_id = ""
-        self.edit_user_username = ""
+        self.edit_user_first_name = ""
+        self.edit_user_last_name = ""
         self.edit_user_email = ""
         self.edit_user_role = ""
 
@@ -386,9 +450,12 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                 return False
             
             # Validate form data
-            if not self.validate_required_field(self.new_user_username, "Username"):
+            if not self.validate_required_field(self.new_user_first_name, "First Name"):
                 return False
-                
+
+            if not self.validate_required_field(self.new_user_last_name, "Last Name"):
+                return False
+
             if not self.validate_email(self.new_user_email):
                 return False
                 
@@ -410,7 +477,8 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             
             # Call user management service to add user
             result = await UserManagementService.create_user_in_organization(
-                username=self.new_user_username.strip(),
+                first_name=self.new_user_first_name.strip(),
+                last_name=self.new_user_last_name.strip(),
                 email=self.new_user_email.strip(),
                 password="TempPassword123!",  # TODO: Generate secure temp password
                 admin_organization_id=org_id,
@@ -428,7 +496,7 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         
         await self.handle_async_operation(
             create_user,
-            f"User '{self.new_user_username}' added successfully"
+            f"User '{self.new_user_first_name} {self.new_user_last_name}' added successfully"
         )
 
     async def update_user(self):
@@ -440,9 +508,12 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
                 return False
             
             # Validate form data
-            if not self.validate_required_field(self.edit_user_username, "Username"):
+            if not self.validate_required_field(self.edit_user_first_name, "First Name"):
                 return False
-                
+
+            if not self.validate_required_field(self.edit_user_last_name, "Last Name"):
+                return False
+
             if not self.validate_email(self.edit_user_email):
                 return False
                 
@@ -473,7 +544,29 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
         
         await self.handle_async_operation(
             update_user_data,
-            "User updated successfully"
+            f"User '{self.edit_user_first_name} {self.edit_user_last_name}' updated successfully"
+        )
+
+    async def deactivate_user(self, user_id: str):
+        """Deactivate a user"""
+        async def deactivate_user_data():
+            org_id = await self.get_admin_organization_id()
+            if not org_id:
+                self.error_message = "Access denied: Admin privileges required"
+                return False
+            
+            result = await UserManagementService.deactivate_user(user_id, org_id)
+            
+            if result.get("success"):
+                await self.load_organization_users()  # Refresh user list
+                return True
+            else:
+                self.error_message = result.get("error", "Failed to deactivate user")
+                return False
+        
+        await self.handle_async_operation(
+            deactivate_user_data,
+            "User deactivated successfully"
         )
 
     async def activate_user(self, user_id: str):
@@ -541,6 +634,78 @@ class UserManagementState(BasePaginationState, RoleBasedAccessMixin):
             delete_user_data,
             "User deleted successfully"
         )
+
+    # Assignment dialog state
+    assignment_dialog_open: bool = False
+    assignment_user_id: str = ""
+    assignment_user_first_name: str = ""
+    assignment_user_last_name: str = ""
+    assignment_project_name: str = ""
+    assignment_roles: List[str] = []
+    
+    # Project management dialog state
+    project_management_dialog_open: bool = False
+    project_management_user_id: str = ""
+    project_management_user_first_name: str = ""
+    project_management_user_last_name: str = ""
+    project_management_user_assignments: List[Dict] = []
+
+    def open_assignment_dialog(self, user_id: str):
+        """Open assignment dialog for a user"""
+        user = next((u for u in self.organization_users if u["id"] == user_id), None)
+        if user:
+            self.assignment_user_id = user_id
+            self.assignment_user_first_name = user.get("first_name", "")
+            self.assignment_user_last_name = user.get("last_name", "")
+            self.assignment_project_name = ""
+            self.assignment_roles = []
+            self.assignment_dialog_open = True
+
+    def close_assignment_dialog(self):
+        """Close assignment dialog"""
+        self.assignment_dialog_open = False
+        self.assignment_user_id = ""
+        self.assignment_user_first_name = ""
+        self.assignment_user_last_name = ""
+        self.assignment_project_name = ""
+        self.assignment_roles = []
+
+    def set_assignment_dialog_open(self, open: bool):
+        """Set assignment dialog open state"""
+        self.assignment_dialog_open = open
+
+    def set_assignment_project_by_name(self, project_name: str):
+        """Set assignment project by name"""
+        self.assignment_project_name = project_name
+
+    def toggle_assignment_role(self, role: str):
+        """Toggle assignment role"""
+        if role in self.assignment_roles:
+            self.assignment_roles.remove(role)
+        else:
+            self.assignment_roles.append(role)
+
+    def open_project_management_dialog(self, user_id: str):
+        """Open project management dialog for a user"""
+        user = next((u for u in self.organization_users if u["id"] == user_id), None)
+        if user:
+            self.project_management_user_id = user_id
+            self.project_management_user_first_name = user.get("first_name", "")
+            self.project_management_user_last_name = user.get("last_name", "")
+            self.project_management_user_assignments = []  # TODO: Load user's project assignments
+            self.project_management_dialog_open = True
+
+    def close_project_management_dialog(self):
+        """Close project management dialog"""
+        self.project_management_dialog_open = False
+        self.project_management_user_id = ""
+        self.project_management_user_first_name = ""
+        self.project_management_user_last_name = ""
+        self.project_management_user_assignments = []
+
+    def set_project_management_dialog_open(self, open: bool):
+        """Set project management dialog open state"""
+        self.project_management_dialog_open = open
 
     async def assign_user_to_project_from_dialog(self):
         """Assign user to project from dialog"""

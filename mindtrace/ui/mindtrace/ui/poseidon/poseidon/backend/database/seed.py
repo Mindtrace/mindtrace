@@ -46,19 +46,14 @@ async def create_superadmin_user(organization: Organization) -> User:
     """Create the initial superadmin user"""
     print("Creating superadmin user...")
     
-    # Check if user already exists
-    existing_user = await User.find_one(User.username == "mindtracesuperadmin")
-    if existing_user:
-        print(f"✓ User 'mindtracesuperadmin' already exists (ID: {existing_user.id})")
-        return existing_user
-    
     # Generate a secure default password
     default_password = secrets.token_urlsafe(16)
     password_hash = hash_password(default_password)
     
     # Create the superadmin user
     user_data = {
-        "username": "mindtracesuperadmin",
+        "first_name": "MindTrace",
+        "last_name": "SuperAdmin",
         "email": "superadmin@mindtrace.com",
         "password_hash": password_hash,
         "organization": organization,
@@ -85,6 +80,17 @@ async def update_organization_user_count(organization: Organization):
     await organization.save()
     print(f"✓ Updated organization user count to {user_count}")
 
+async def replace_username_with_first_last_name(user: User):
+    """Delete Username field and replace it with First and Last name fields in db"""
+    if user.username:
+        user.first_name = user.username.split()[0] if user.username else ""
+        user.last_name = " ".join(user.username.split()[1:]) if len(user.username.split()) > 1 else ""
+        user.username = None
+        await user.save()
+        print(f"✓ Updated user {user.id} with first name '{user.first_name}' and last name '{user.last_name}'")
+    else:
+        print(f"User {user.id} has no username to replace.")
+
 
 async def verify_setup():
     """Verify the setup was successful"""
@@ -94,12 +100,6 @@ async def verify_setup():
     org = await Organization.find_one(Organization.name == "mindtrace")
     if not org:
         print("❌ Organization 'mindtrace' not found!")
-        return False
-    
-    # Check user
-    user = await User.find_one(User.username == "mindtracesuperadmin")
-    if not user:
-        print("❌ User 'mindtracesuperadmin' not found!")
         return False
     
     # Fetch user's organization link
@@ -117,7 +117,7 @@ async def verify_setup():
     
     print("✓ Setup verification successful!")
     print(f"  - Organization: {org.name} (ID: {org.id})")
-    print(f"  - User: {user.username} (ID: {user.id})")
+    print(f"  - User: {user.first_name} {user.last_name} (ID: {user.id})")
     print(f"  - Role: {user.org_role}")
     print(f"  - Active: {user.is_active}")
     

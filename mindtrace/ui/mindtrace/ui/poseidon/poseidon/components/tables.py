@@ -19,7 +19,8 @@ def user_management_table():
     
     def create_user_row(user):
         return rx.table.row(
-            rx.table.cell(user["username"], cursor="pointer"),
+            rx.table.cell(user["first_name"], cursor="pointer"),
+            rx.table.cell(user["last_name"], cursor="pointer"),
             rx.table.cell(user["email"], cursor="pointer"),
             rx.cond(
                 AuthState.is_super_admin,
@@ -111,8 +112,8 @@ def user_management_table():
     # Dynamic columns based on user role
     user_columns = rx.cond(
         AuthState.is_super_admin,
-        ["Username", "Email", "Organization", "Project Assignments", "Status", "Actions"],
-        ["Username", "Email", "Project Assignments", "Status", "Actions"]
+        ["First Name", "Last Name", "Email", "Organization", "Project Assignments", "Status", "Actions"],
+        ["First Name", "Last Name", "Email", "Project Assignments", "Status", "Actions"]
     )
     
     return rx.vstack(
