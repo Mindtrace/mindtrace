@@ -1,60 +1,77 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from mindtrace.database import MindtraceDocument
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
+from datetime import datetime, UTC
+from beanie import Link, before_event, Insert, Replace, SaveChanges
+from pydantic import Field
+from .enums import ModelValidationStatus
+
+if TYPE_CHECKING:
+    from .organization import Organization
+    from .user import User
+    from .project import Project
 
 class Model(MindtraceDocument):
-    name: str  # Model identifier
+    name: str
     description: str
     version: str
-    organization_id: str
-    created_by: str
-    
-    # Model metadata
-    type: Optional[str] = ""  # "classification", "detection", "segmentation", etc.
-    framework: Optional[str] = ""  # 
-    input_format: Optional[str] = ""  # "image", "video", "text", etc.
-    output_format: Optional[str] = ""  # "probabilities", "bounding_boxes", etc.
-    
-    # Model files and paths
-    model_path: Optional[str] = ""
-    config_path: Optional[str] = ""
-    weights_path: Optional[str] = ""
-    
-    
-    # Model validation and deployment
-    validation_status: Optional[str] = "pending"  # "pending", "validated", "failed"
+
+    # Required links
+    organization: Link["Organization"]
+    created_by: Link["User"]
+    project: Link["Project"]
+
+    # Metadata
+    type: Optional[str] = None
+    framework: Optional[str] = None
+    input_format: Optional[str] = None
+    output_format: Optional[str] = None
+
+    # File paths
+    model_path: Optional[str] = None
+    config_path: Optional[str] = None
+    weights_path: Optional[str] = None
+
+    # Validation and deployment
+    validation_status: ModelValidationStatus = ModelValidationStatus.PENDING
     deployment_ready: bool = False
-    
-    # Model metadata and tags
-    metadata: Dict[str, Any] = {}
-    tags: List[str] = []
-    
+
+    # Optional performance metrics
+    accuracy: Optional[float] = None
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    f1_score: Optional[float] = None
+
+    # Metadata and tags
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+
     is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-    
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        super().__init__(**data)
-    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    def set_creation_timestamps(self):
+        now = datetime.now(UTC)
+        self.created_at = now
+        self.updated_at = now
+
+    @before_event([Replace, SaveChanges])
     def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat()
-    
-    def update_validation_status(self, status: str):
-        """Update model validation status"""
-        valid_statuses = ["pending", "validated", "failed"]
-        if status in valid_statuses:
-            self.validation_status = status
-            self.deployment_ready = (status == "validated")
-            self.update_timestamp()
-    
-    def update_metrics(self, accuracy: float = None, precision: float = None, 
-                      recall: float = None, f1_score: float = None):
-        """Update model performance metrics"""
+        self.updated_at = datetime.now(UTC)
+
+    def update_validation_status(self, status: ModelValidationStatus):
+        if status not in ModelValidationStatus:
+            raise ValueError(f"Invalid status. Must be one of: {[s.value for s in ModelValidationStatus]}")
+        self.validation_status = status
+        self.deployment_ready = status == ModelValidationStatus.VALIDATED
+
+    def update_metrics(
+        self,
+        accuracy: Optional[float] = None,
+        precision: Optional[float] = None,
+        recall: Optional[float] = None,
+        f1_score: Optional[float] = None
+    ):
         if accuracy is not None:
             self.accuracy = accuracy
         if precision is not None:
@@ -63,29 +80,20 @@ class Model(MindtraceDocument):
             self.recall = recall
         if f1_score is not None:
             self.f1_score = f1_score
-        self.update_timestamp()
-    
+
     def add_tag(self, tag: str):
-        """Add a tag to the model"""
         if tag not in self.tags:
             self.tags.append(tag)
-            self.update_timestamp()
-    
+
     def remove_tag(self, tag: str):
-        """Remove a tag from the model"""
         if tag in self.tags:
             self.tags.remove(tag)
-            self.update_timestamp()
-    
+
     def update_metadata(self, metadata: Dict[str, Any]):
-        """Update model metadata"""
         self.metadata.update(metadata)
-        self.update_timestamp()
-    
+
     def is_deployment_ready(self) -> bool:
-        """Check if model is ready for deployment"""
-        return self.deployment_ready and self.validation_status == "validated"
-    
+        return self.deployment_ready and self.validation_status == ModelValidationStatus.VALIDATED
+
     def get_full_name(self) -> str:
-        """Get descriptive name for the model"""
         return f"{self.name} v{self.version}"

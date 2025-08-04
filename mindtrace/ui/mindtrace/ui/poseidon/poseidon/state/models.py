@@ -1,13 +1,13 @@
 import reflex as rx
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime
 
 
 class BaseDataModel(rx.Base):
     """Base data model with common fields."""
     id: str
-    created_at: str = ""
-    updated_at: str = ""
+    created_at: Union[str, datetime] = ""
+    updated_at: Union[str, datetime] = ""
     is_active: bool = True
 
 
@@ -71,7 +71,7 @@ class ProjectAssignmentData(rx.Base):
     project_id: str
     project_name: str = ""
     roles: List[str] = []
-    assigned_at: str = ""
+    assigned_at: Union[str, datetime] = ""
     
     @property
     def roles_display(self) -> str:
@@ -123,22 +123,8 @@ class ProjectRoles:
         }
 
 
-class SubscriptionPlans:
-    BASIC = "basic"
-    PREMIUM = "premium"
-    ENTERPRISE = "enterprise"
-    
-    @classmethod
-    def get_all(cls) -> List[str]:
-        return [cls.BASIC, cls.PREMIUM, cls.ENTERPRISE]
-    
-    @classmethod
-    def get_display_names(cls) -> Dict[str, str]:
-        return {
-            cls.BASIC: "Basic",
-            cls.PREMIUM: "Premium",
-            cls.ENTERPRISE: "Enterprise"
-        }
+# Import centralized enum - alias for backward compatibility
+from poseidon.backend.database.models.enums import SubscriptionPlan as SubscriptionPlans
 
 
 class StatusTypes:

@@ -1,57 +1,53 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
+from mindtrace.database import MindtraceDocument
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import secrets
+from pydantic import Field
+from beanie import before_event, Insert, Replace, SaveChanges
+from .enums import SubscriptionPlan
 
 class Organization(MindtraceDocument):
     name: str
     description: Optional[str] = ""
-    settings: Dict = {}
-    
+    settings: Dict = Field(default_factory=dict)
+
     # Admin registration key for this organization
-    admin_registration_key: str = ""
-    
+    admin_registration_key: str = Field(default_factory=lambda: f"ORG_{secrets.token_urlsafe(32)}")
+
     # Subscription/plan info
-    subscription_plan: str = "basic"  # basic, pro, enterprise
+    subscription_plan: SubscriptionPlan = SubscriptionPlan.BASIC
     max_users: Optional[int] = None
     max_projects: Optional[int] = None
-    
+    user_count: int = 0
+
     # Status
     is_active: bool = True
-    
+
     # Timestamps
-    created_at: str = ""
-    updated_at: str = ""
-    
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        if 'admin_registration_key' not in data or not data['admin_registration_key']:
-            data['admin_registration_key'] = self.generate_admin_key()
-        super().__init__(**data)
-    
-    def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat()
-    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event([Insert])
+    def set_defaults_on_insert(self):
+        self.created_at = datetime.now(UTC)
+        self.updated_at = datetime.now(UTC)
+        if not self.admin_registration_key:
+            self.admin_registration_key = f"ORG_{secrets.token_urlsafe(32)}"
+
+    @before_event([Replace, SaveChanges])
+    def update_timestamp_on_update(self):
+        self.updated_at = datetime.now(UTC)
+
     def get_setting(self, key: str, default=None):
         """Get a specific setting value"""
         return self.settings.get(key, default)
-    
+
     def update_setting(self, key: str, value):
         """Update a specific setting"""
         self.settings[key] = value
-        self.update_timestamp()
-    
-    def is_within_limits(self, user_count: int = 0, project_count: int = 0) -> bool:
-        """Check if organization is within subscription limits"""
-        if self.max_users and user_count >= self.max_users:
-            return False
-        if self.max_projects and project_count >= self.max_projects:
-            return False
-        return True
+
+    def is_within_user_limit(self) -> bool:
+        return self.max_users is None or self.user_count < self.max_users
     
     def generate_admin_key(self) -> str:
         """Generate a secure admin registration key"""
@@ -59,5 +55,4 @@ class Organization(MindtraceDocument):
     
     def regenerate_admin_key(self):
         """Regenerate the admin registration key"""
-        self.admin_registration_key = self.generate_admin_key()
-        self.update_timestamp() 
+        self.admin_registration_key = f"ORG_{secrets.token_urlsafe(32)}"

@@ -204,7 +204,7 @@ def add_user_popup():
                 rx.vstack(
                     rx.text("Role", color=rx.color("slate", 11)),
                     rx.select(
-                        UserManagementState.available_display_roles,
+                        UserManagementState.available_org_roles,
                         placeholder="Select role",
                         value=UserManagementState.new_user_role,
                         on_change=UserManagementState.set_new_user_role,
@@ -913,6 +913,7 @@ def assign_project_popup():
         ),
         open=UserManagementState.assignment_dialog_open,
         on_open_change=UserManagementState.set_assignment_dialog_open,
+        on_mount=UserManagementState.load_projects_for_assignment,
     )
 
 

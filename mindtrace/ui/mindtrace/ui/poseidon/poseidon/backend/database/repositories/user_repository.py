@@ -1,53 +1,86 @@
 from poseidon.backend.database.models.user import User
-from poseidon.backend.core.config import settings
-from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
+from poseidon.backend.database.models.organization import Organization
+from poseidon.backend.database.models.project import Project
+from poseidon.backend.database.init import initialize_database
 from typing import Optional, List
-
-backend = MongoMindtraceODMBackend(User, db_uri=settings.MONGO_URI, db_name=settings.DB_NAME)
 
 class UserRepository:
     @staticmethod
+    async def _ensure_init():
+        """Ensure database is initialized before operations"""
+        await initialize_database()
+
+    @staticmethod
     async def get_by_email(email: str) -> Optional[User]:
         """Get user by email"""
-        await backend.initialize()
-        users = await backend.find({"email": email})
-        return users[0] if users else None
+        await UserRepository._ensure_init()
+        user = await User.find_one(User.email == email)
+        if user:
+            await user.fetch_all_links()
+        return user
 
     @staticmethod
     async def get_by_username(username: str) -> Optional[User]:
         """Get user by username"""
-        await backend.initialize()
-        users = await backend.find({"username": username})
-        return users[0] if users else None
+        await UserRepository._ensure_init()
+        user = await User.find_one(User.username == username)
+        if user:
+            await user.fetch_all_links()
+        return user
 
     @staticmethod
     async def get_by_id(user_id: str) -> Optional[User]:
         """Get user by ID"""
-        await backend.initialize()
+        await UserRepository._ensure_init()
         try:
-            return await backend.get(user_id)
+            user = await User.get(user_id)
+            if user:
+                await user.fetch_all_links()
+            return user
         except:
             return None
 
     @staticmethod
     async def create(user_data: dict) -> User:
         """Create a new user"""
-        await backend.initialize()
+        await UserRepository._ensure_init()
+        
+        # Convert organization_id to Link[Organization] if provided
+        if "organization_id" in user_data:
+            org_id = user_data.pop("organization_id")
+            organization = await Organization.get(org_id)
+            if organization:
+                # For Beanie Links, we need to set the Link reference properly
+                user_data["organization"] = organization
+            else:
+                raise ValueError(f"Organization with id {org_id} not found")
+        
+        # Convert org_roles to org_role (single) if provided
+        if "org_roles" in user_data:
+            org_roles = user_data.pop("org_roles")
+            if org_roles:
+                user_data["org_role"] = org_roles[0]  # Take first role
+        
+        # Remove project_assignments as it's now handled via projects Link
+        if "project_assignments" in user_data:
+            user_data.pop("project_assignments")
+        
         user = User(**user_data)
-        return await backend.insert(user)
+        return await user.insert()
     
     @staticmethod
     async def update(user_id: str, update_data: dict) -> Optional[User]:
         """Update user with arbitrary data"""
-        await backend.initialize()
+        await UserRepository._ensure_init()
         try:
-            user = await backend.get(user_id)
+            user = await User.get(user_id)
             if user:
                 for key, value in update_data.items():
                     if hasattr(user, key):
                         setattr(user, key, value)
                 user.update_timestamp()
-                return await backend.update(user_id, user)
+                await user.save()
+                return user
         except:
             pass
         return None
@@ -55,91 +88,190 @@ class UserRepository:
     @staticmethod
     async def get_by_organization(organization_id: str) -> List[User]:
         """Get all users in an organization (both active and inactive)"""
-        await backend.initialize()
-        return await backend.find({"organization_id": organization_id})
+        await UserRepository._ensure_init()
+        try:
+            # Use the organization Link to filter
+            organization = await Organization.get(organization_id)
+            if not organization:
+                return []
+            # Query by organization link
+            users = await User.find(User.organization.id == organization.id).to_list()
+            # Fetch all links for each user
+            for user in users:
+                await user.fetch_all_links()
+            return users
+        except:
+            return []
     
     @staticmethod
     async def get_all_users() -> List[User]:
         """Get all users across all organizations (super admin only)"""
-        await backend.initialize()
-        return await backend.find({})
+        await UserRepository._ensure_init()
+        users = await User.find_all().to_list()
+        # Fetch all links for each user
+        for user in users:
+            await user.fetch_all_links()
+        return users
+    
+    @staticmethod
+    async def get_all() -> List[User]:
+        """Alias for get_all_users for consistency"""
+        return await UserRepository.get_all_users()
     
     @staticmethod
     async def get_active_by_organization(organization_id: str) -> List[User]:
         """Get only active users in an organization"""
-        await backend.initialize()
-        return await backend.find({"organization_id": organization_id, "is_active": True})
+        await UserRepository._ensure_init()
+        try:
+            organization = await Organization.get(organization_id)
+            if not organization:
+                return []
+            users = await User.find(
+                User.organization.id == organization.id,
+                User.is_active == True
+            ).to_list()
+            for user in users:
+                await user.fetch_all_links()
+            return users
+        except:
+            return []
     
     @staticmethod
     async def get_org_admins(organization_id: str) -> List[User]:
         """Get all organization admins"""
-        await backend.initialize()
-        return await backend.find({
-            "organization_id": organization_id,
-            "org_roles": {"$in": ["admin"]},
-            "is_active": True
-        })
+        await UserRepository._ensure_init()
+        try:
+            organization = await Organization.get(organization_id)
+            if not organization:
+                return []
+            users = await User.find(
+                User.organization.id == organization.id,
+                User.org_role == "admin",
+                User.is_active == True
+            ).to_list()
+            for user in users:
+                await user.fetch_all_links()
+            return users
+        except:
+            return []
     
     @staticmethod
     async def get_by_project(project_id: str) -> List[User]:
         """Get all users assigned to a project"""
-        await backend.initialize()
-        return await backend.find({
-            "project_assignments.project_id": project_id,
-            "is_active": True
-        })
+        await UserRepository._ensure_init()
+        try:
+            project = await Project.get(project_id)
+            if not project:
+                return []
+            # Find users who have this project in their projects list
+            users = await User.find(User.projects.id == project.id).to_list()
+            for user in users:
+                await user.fetch_all_links()
+            return users
+        except:
+            return []
     
     @staticmethod
-    async def assign_to_project(user_id: str, project_id: str, roles: List[str]) -> Optional[User]:
-        """Assign user to project with roles"""
-        await backend.initialize()
-        user = await backend.get(user_id)
-        if user:
-            user.add_project_assignment(project_id, roles)
-            user.update_timestamp()
-            return await backend.update(user_id, user)
-        return None
+    async def assign_to_project(user_id: str, project_id: str, roles: List[str] = None) -> Optional[User]:
+        """Assign user to project"""
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            project = await Project.get(project_id)
+            
+            if not user or not project:
+                return None
+            
+            # Check if user is already assigned to this project
+            project_already_assigned = any(str(p.id) == project_id for p in user.projects)
+            
+            if not project_already_assigned:
+                user.projects.append(project)
+                await user.save()
+            else:
+                # User already assigned to project
+                pass
+            
+            return user
+        except Exception as e:
+            print(f"ERROR in assign_to_project: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     @staticmethod
     async def remove_from_project(user_id: str, project_id: str) -> Optional[User]:
         """Remove user from project"""
-        await backend.initialize()
-        user = await backend.get(user_id)
-        if user:
-            user.remove_project_assignment(project_id)
-            user.update_timestamp()
-            return await backend.update(user_id, user)
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            project = await Project.get(project_id)
+            
+            if not user or not project:
+                return None
+            
+            # Remove project from user's projects list
+            user.projects = [p for p in user.projects if str(p.id) != project_id]
+            await user.save()
+            
+            return user
+        except Exception as e:
+            print(f"ERROR in remove_from_project: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    @staticmethod
+    async def update_org_role(user_id: str, role: str) -> Optional[User]:
+        """Update user's organization role"""
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            if user:
+                user.org_role = role
+                await user.save()
+                return user
+        except:
+            pass
         return None
     
     @staticmethod
-    async def update_org_roles(user_id: str, roles: List[str]) -> Optional[User]:
-        """Update user's organization roles"""
-        await backend.initialize()
-        user = await backend.get(user_id)
-        if user:
-            user.org_roles = roles
-            user.update_timestamp()
-            return await backend.update(user_id, user)
+    async def deactivate(user_id: str) -> Optional[User]:
+        """Deactivate user"""
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            if user:
+                user.is_active = False
+                await user.save()
+                return user
+        except:
+            pass
         return None
     
     @staticmethod
-    async def find_by_role(role: str) -> List[User]:
-        """Find all users with a specific role"""
-        await backend.initialize()
-        return await backend.find({"org_roles": {"$in": [role]}})
-
-    # Backward compatibility aliases
-    @staticmethod
-    async def create_user(user_data: dict) -> User:
-        """Create a new user (backward compatibility alias)"""
-        return await UserRepository.create(user_data)
+    async def activate(user_id: str) -> Optional[User]:
+        """Activate user"""
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            if user:
+                user.is_active = True
+                await user.save()
+                return user
+        except:
+            pass
+        return None
     
     @staticmethod
-    async def deactivate_user(user_id: str) -> Optional[User]:
-        """Deactivate user instead of deleting"""
-        return await UserRepository.update(user_id, {"is_active": False})
-    
-    @staticmethod
-    async def activate_user(user_id: str) -> Optional[User]:
-        """Activate user account"""
-        return await UserRepository.update(user_id, {"is_active": True}) 
+    async def delete(user_id: str) -> bool:
+        """Delete user"""
+        await UserRepository._ensure_init()
+        try:
+            user = await User.get(user_id)
+            if user:
+                await user.delete()
+                return True
+        except:
+            pass
+        return False 

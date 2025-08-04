@@ -16,17 +16,37 @@ from poseidon.backend.database.repositories.user_repository import UserRepositor
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
 from poseidon.backend.core.exceptions import UserNotFoundError
+from poseidon.backend.database.models.enums import OrgRole
 
 
 class UserManagementService:
     """Service class for handling user administration operations."""
     
     @staticmethod
+    async def _is_super_admin(admin_user_id: str) -> bool:
+        """Check if the given user ID belongs to a super admin.
+        
+        Args:
+            admin_user_id: ID of the user to check
+            
+        Returns:
+            bool: True if user is a super admin, False otherwise
+        """
+        try:
+            admin_user = await UserRepository.get_by_id(admin_user_id)
+            if not admin_user:
+                return False
+            return admin_user.org_role == OrgRole.SUPER_ADMIN
+        except Exception:
+            return False
+    
+    @staticmethod
     async def assign_user_to_project(
         user_id: str, 
         project_id: str, 
         roles: List[str],
-        admin_organization_id: str
+        admin_organization_id: str,
+        admin_user_id: str
     ) -> dict:
         """Assign user to project with specific roles.
         
@@ -35,13 +55,14 @@ class UserManagementService:
             project_id: ID of project to assign to
             roles: List of roles for the project
             admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
             
         Returns:
             dict: Success response with updated user data
             
         Raises:
             UserNotFoundError: If user or project not found
-            ValueError: If user/project not in same organization as admin
+            ValueError: If user/project not in same organization as admin (unless super admin)
         """
         # Get user and validate
         user = await UserRepository.get_by_id(user_id)
@@ -53,9 +74,19 @@ class UserManagementService:
         if not project:
             raise ValueError("Project not found.")
         
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        await project.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
         # Validate organization access
-        if user.organization_id != admin_organization_id or project.organization_id != admin_organization_id:
-            raise ValueError("Access denied: User and project must be in your organization.")
+        # For regular admins, user and project must be in their organization
+        # For super admins, they can assign users to projects in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id or str(project.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User and project must be in your organization.")
         
         # Assign user to project
         updated_user = await UserRepository.assign_to_project(user_id, project_id, roles)
@@ -65,7 +96,8 @@ class UserManagementService:
     async def remove_user_from_project(
         user_id: str, 
         project_id: str,
-        admin_organization_id: str
+        admin_organization_id: str,
+        admin_user_id: str
     ) -> dict:
         """Remove user from project.
         
@@ -73,43 +105,183 @@ class UserManagementService:
             user_id: ID of user to remove
             project_id: ID of project to remove from
             admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
             
         Returns:
-            dict: Success response with updated user data
+            dict: Success response
         """
-        # Get user and validate organization
+        # Get user and validate
         user = await UserRepository.get_by_id(user_id)
-        if not user or user.organization_id != admin_organization_id:
-            raise ValueError("Access denied: User not found in your organization.")
+        if not user:
+            raise UserNotFoundError("User not found.")
+        
+        # Get project and validate
+        project = await ProjectRepository.get_by_id(project_id)
+        if not project:
+            raise ValueError("Project not found.")
+        
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        await project.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
+        # Validate organization access
+        # For regular admins, user and project must be in their organization
+        # For super admins, they can remove users from projects in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id or str(project.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User and project must be in your organization.")
         
         # Remove user from project
-        updated_user = await UserRepository.remove_from_project(user_id, project_id)
-        return {"success": True, "user": updated_user}
+        await user.fetch_all_links()
+        user.remove_project(project)
+        await user.save()
+        
+        return {"success": True, "message": "User removed from project"}
     
     @staticmethod
-    async def update_user_org_roles(
+    async def update_user_org_role(
         user_id: str, 
-        roles: List[str],
-        admin_organization_id: str
+        role: str,
+        admin_organization_id: str,
+        admin_user_id: str
     ) -> dict:
-        """Update user's organization-level roles.
+        """Update user's organization role.
         
         Args:
             user_id: ID of user to update
-            roles: New list of organization roles
+            role: New organization role
             admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
             
         Returns:
             dict: Success response with updated user data
         """
-        # Get user and validate organization
+        # Get user and validate
         user = await UserRepository.get_by_id(user_id)
-        if not user or user.organization_id != admin_organization_id:
-            raise ValueError("Access denied: User not found in your organization.")
+        if not user:
+            raise UserNotFoundError("User not found.")
         
-        # Update organization roles
-        updated_user = await UserRepository.update_org_roles(user_id, roles)
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
+        # Validate organization access
+        # For regular admins, user must be in their organization
+        # For super admins, they can update users in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User must be in your organization.")
+        
+        # Update user's organization role
+        updated_user = await UserRepository.update_org_role(user_id, role)
         return {"success": True, "user": updated_user}
+    
+    @staticmethod
+    async def activate_user(user_id: str, admin_organization_id: str, admin_user_id: str) -> dict:
+        """Activate a user account.
+        
+        Args:
+            user_id: ID of user to activate
+            admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
+            
+        Returns:
+            dict: Success response
+        """
+        # Get user and validate
+        user = await UserRepository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundError("User not found.")
+        
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
+        # Validate organization access
+        # For regular admins, user must be in their organization
+        # For super admins, they can activate users in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User must be in your organization.")
+        
+        # Activate user
+        updated_user = await UserRepository.update(user_id, {"is_active": True})
+        return {"success": True, "user": updated_user}
+    
+    @staticmethod
+    async def deactivate_user(user_id: str, admin_organization_id: str, admin_user_id: str) -> dict:
+        """Deactivate a user account.
+        
+        Args:
+            user_id: ID of user to deactivate
+            admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
+            
+        Returns:
+            dict: Success response
+        """
+        # Get user and validate
+        user = await UserRepository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundError("User not found.")
+        
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
+        # Validate organization access
+        # For regular admins, user must be in their organization
+        # For super admins, they can deactivate users in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User must be in your organization.")
+        
+        # Deactivate user
+        updated_user = await UserRepository.update(user_id, {"is_active": False})
+        return {"success": True, "user": updated_user}
+    
+    @staticmethod
+    async def delete_user(user_id: str, admin_organization_id: str, admin_user_id: str) -> dict:
+        """Delete a user account.
+        
+        Args:
+            user_id: ID of user to delete
+            admin_organization_id: Organization ID of admin making the request
+            admin_user_id: ID of the admin user making the request
+            
+        Returns:
+            dict: Success response
+        """
+        # Get user and validate
+        user = await UserRepository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundError("User not found.")
+        
+        # Fetch linked organization data
+        await user.fetch_link("organization")
+        
+        # Check if admin is a super admin
+        is_super_admin = await UserManagementService._is_super_admin(admin_user_id)
+        
+        # Validate organization access
+        # For regular admins, user must be in their organization
+        # For super admins, they can delete users in any organization
+        if not is_super_admin:
+            if str(user.organization.id) != admin_organization_id:
+                raise ValueError("Access denied: User must be in your organization.")
+        
+        # Delete user
+        await UserRepository.delete(user_id)
+        return {"success": True, "message": "User deleted successfully"}
     
     @staticmethod
     async def get_organization_users(organization_id: str) -> List:
@@ -119,7 +291,7 @@ class UserManagementService:
             organization_id: Organization ID
             
         Returns:
-            List of users in the organization
+            List: List of users in the organization
         """
         return await UserRepository.get_by_organization(organization_id)
     
@@ -128,71 +300,9 @@ class UserManagementService:
         """Get all users across all organizations (super admin only).
         
         Returns:
-            List of all users in the system
+            List: List of all users
         """
         return await UserRepository.get_all_users()
-    
-    @staticmethod
-    async def get_project_users(project_id: str, admin_organization_id: str) -> List:
-        """Get all users assigned to a project.
-        
-        Args:
-            project_id: Project ID
-            admin_organization_id: Organization ID for access control
-            
-        Returns:
-            List of users assigned to the project
-        """
-        # Validate project belongs to admin's organization
-        project = await ProjectRepository.get_by_id(project_id)
-        if not project or project.organization_id != admin_organization_id:
-            raise ValueError("Access denied: Project not found in your organization.")
-        
-        return await UserRepository.get_by_project(project_id)
-    
-    @staticmethod
-    async def deactivate_user(user_id: str, admin_organization_id: str) -> dict:
-        """Deactivate a user account.
-        
-        Args:
-            user_id: ID of user to deactivate
-            admin_organization_id: Organization ID of admin making the request (None for super admin)
-            
-        Returns:
-            dict: Success response
-        """
-        # Get user
-        user = await UserRepository.get_by_id(user_id)
-        if not user:
-            raise ValueError("Access denied: User not found.")
-        # If org_id is provided, check org match (for regular admins)
-        if admin_organization_id is not None and user.organization_id != admin_organization_id:
-            raise ValueError("Access denied: User not found in your organization.")
-        # Deactivate user
-        updated_user = await UserRepository.deactivate_user(user_id)
-        return {"success": True, "user": updated_user}
-    
-    @staticmethod
-    async def activate_user(user_id: str, admin_organization_id: str) -> dict:
-        """Activate a user account.
-        
-        Args:
-            user_id: ID of user to activate
-            admin_organization_id: Organization ID of admin making the request (None for super admin)
-            
-        Returns:
-            dict: Success response
-        """
-        # Get user
-        user = await UserRepository.get_by_id(user_id)
-        if not user:
-            raise ValueError("Access denied: User not found.")
-        # If org_id is provided, check org match (for regular admins)
-        if admin_organization_id is not None and user.organization_id != admin_organization_id:
-            raise ValueError("Access denied: User not found in your organization.")
-        # Activate user
-        updated_user = await UserRepository.activate_user(user_id)
-        return {"success": True, "user": updated_user}
     
     @staticmethod
     async def create_user_in_organization(
@@ -200,7 +310,7 @@ class UserManagementService:
         email: str,
         password: str,
         admin_organization_id: str,
-        org_roles: List[str] = None
+        org_role: str = None
     ) -> dict:
         """Create a new user in the organization.
         
@@ -209,24 +319,14 @@ class UserManagementService:
             email: Email for the new user
             password: Password for the new user
             admin_organization_id: Organization ID where user will be created
-            org_roles: Optional organization roles (defaults to ["member"])
+            org_role: Organization role (defaults to "user")
             
         Returns:
             dict: Success response with created user data
         """
-        # Default to user role if no roles specified
-        if not org_roles:
-            org_roles = ["user"]
-        
-        # Create user data
-        user_data = {
-            "username": username,
-            "email": email,
-            "password": password,
-            "organization_id": admin_organization_id,
-            "org_roles": org_roles,
-            "is_active": True
-        }
+        # Default to user role if no role specified
+        if not org_role:
+            org_role = OrgRole.USER
         
         # Create the user
         from poseidon.backend.services.auth_service import AuthService
@@ -235,7 +335,7 @@ class UserManagementService:
             email=email,
             password=password,
             organization_id=admin_organization_id,
-            org_roles=org_roles
+            org_role=org_role
         )
         
         return {"success": True, "message": "User created successfully", "user": result}
@@ -269,9 +369,11 @@ class UserManagementService:
         if required_org_role and not user.has_org_role(required_org_role):
             return {"has_permission": False, "reason": f"Missing organization role: {required_org_role}"}
         
-        # Check project role
+        # Check project role (if user has projects assigned)
         if required_project_role and project_id:
-            if not user.has_project_role(project_id, required_project_role):
-                return {"has_permission": False, "reason": f"Missing project role: {required_project_role}"}
+            await user.fetch_all_links()
+            project_found = any(str(p.id) == project_id for p in user.projects)
+            if not project_found:
+                return {"has_permission": False, "reason": f"User not assigned to project: {project_id}"}
         
         return {"has_permission": True, "user": user} 

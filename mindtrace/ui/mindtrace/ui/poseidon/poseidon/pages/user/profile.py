@@ -70,10 +70,10 @@ def profile_content() -> rx.Component:
                             {"label": "Username", "value": AuthState.current_username},
                             {"label": "User ID", "value": AuthState.user_id},
                             {"label": "Organization ID", "value": AuthState.user_organization_id},
-                            {"label": "Organization Roles", "value": rx.cond(
-                                AuthState.user_org_roles.length() > 0,
-                                AuthState.org_role_display,
-                                "No roles assigned"
+                            {"label": "Organization Role", "value": rx.cond(
+                                AuthState.user_org_role != "",
+                                AuthState.role_display,
+                                "No role assigned"
                             )},
                             {"label": "Admin Status", "value": rx.cond(
                                 AuthState.is_super_admin,

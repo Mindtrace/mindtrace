@@ -1,60 +1,60 @@
-from mindtrace.database.backends.mongo_odm_backend import MindtraceDocument
-from typing import List, Optional, Dict, Any
-from datetime import datetime
+from mindtrace.database import MindtraceDocument
+from typing import Optional, Dict, Any, TYPE_CHECKING
+from datetime import datetime, UTC
+from pydantic import Field
+from beanie import Link, before_event, Insert, Replace, SaveChanges
+from .enums import CameraStatus
+
+if TYPE_CHECKING:
+    from .organization import Organization
+    from .project import Project
+    from .user import User
 
 class Camera(MindtraceDocument):
-    name: str  # Backend:device_name format
+    name: str  # Must be unique per project
     backend: str
     device_name: str
-    status: str  # "active", "inactive", "error"
-    configuration: Dict[str, Any] = {}  # exposure, gain, etc.
-    organization_id: str
-    project_id: str
-    created_by: str
-    
-    # Additional fields for better camera management
-    description: Optional[str] = ""
-    location: Optional[str] = ""
-    model_info: Optional[str] = ""
-    serial_number: Optional[str] = ""
-    last_ping: Optional[str] = ""
-    
+
+    status: CameraStatus = CameraStatus.INACTIVE
+    configuration: Dict[str, Any] = Field(default_factory=dict)
+
+    organization: Link["Organization"]
+    project: Link["Project"]
+    created_by: Link["User"]
+
+    description: Optional[str] = None
+    location: Optional[str] = None
+    model_info: Optional[str] = None
+
+    serial_number: Optional[str] = None  # Must be unique per project
+    last_ping: Optional[datetime] = None
+
     is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-    
-    def __init__(self, **data):
-        if 'created_at' not in data or not data['created_at']:
-            data['created_at'] = datetime.now().isoformat()
-        if 'updated_at' not in data or not data['updated_at']:
-            data['updated_at'] = datetime.now().isoformat()
-        super().__init__(**data)
-    
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @before_event(Insert)
+    def set_created_timestamps(self):
+        now = datetime.now(UTC)
+        self.created_at = now
+        self.updated_at = now
+
+    @before_event([Replace, SaveChanges])
     def update_timestamp(self):
-        """Update the updated_at timestamp"""
-        self.updated_at = datetime.now().isoformat()
-    
-    def update_status(self, status: str):
-        """Update camera status and timestamp"""
-        valid_statuses = ["active", "inactive", "error"]
-        if status in valid_statuses:
+        self.updated_at = datetime.now(UTC)
+
+    def update_status(self, status: CameraStatus):
+        if status in CameraStatus:
             self.status = status
-            self.update_timestamp()
-    
+
     def update_configuration(self, config: Dict[str, Any]):
-        """Update camera configuration"""
         self.configuration.update(config)
-        self.update_timestamp()
-    
+
     def is_online(self) -> bool:
-        """Check if camera is online (active status)"""
-        return self.status == "active"
-    
+        return self.status == CameraStatus.ACTIVE
+
     def get_full_name(self) -> str:
-        """Get descriptive name for the camera"""
         return f"{self.device_name} ({self.backend})"
-    
+
     def update_ping(self):
-        """Update last ping timestamp"""
-        self.last_ping = datetime.now().isoformat()
-        self.update_timestamp()
+        self.last_ping = datetime.now(UTC)
