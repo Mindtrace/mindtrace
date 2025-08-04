@@ -1,7 +1,8 @@
 """Mindtrace Card Components - Modern Glass Morphism Cards."""
 
 import reflex as rx
-from poseidon.styles.global_styles import COMPONENT_VARIANTS, COLORS
+from poseidon.styles.global_styles import COLORS
+from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
 def card_mindtrace(children, **kwargs) -> rx.Component:

@@ -7,14 +7,15 @@ for the Poseidon application.
 
 from .global_styles import (
     COLORS,
-    TYPOGRAPHY,
+    TYPOGRAPHY, 
     SPACING,
     SIZING,
     EFFECTS,
-    COMPONENT_VARIANTS,
     ANIMATIONS,
     SIZE_VARIANTS,
 )
+
+from .variants import COMPONENT_VARIANTS
 
 __all__ = [
     "COLORS",

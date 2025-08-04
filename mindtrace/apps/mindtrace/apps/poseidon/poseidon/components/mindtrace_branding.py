@@ -1,7 +1,7 @@
 """Mindtrace Branding Components - Logo and Brand Elements."""
 
 import reflex as rx
-from poseidon.styles.global_styles import COMPONENT_VARIANTS
+from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
 def logo_mindtrace() -> rx.Component:

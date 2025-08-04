@@ -3,8 +3,9 @@
 import reflex as rx
 from typing import List, Dict, Any
 from poseidon.styles.global_styles import (
-    COLORS, TYPOGRAPHY, COMPONENT_VARIANTS, SIZE_VARIANTS
+    COLORS, TYPOGRAPHY, SIZE_VARIANTS
 )
+from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
 def input_mindtrace(

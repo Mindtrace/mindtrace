@@ -1,7 +1,7 @@
 """Mindtrace Header Components - Animated Page Headers."""
 
 import reflex as rx
-from poseidon.styles.global_styles import COMPONENT_VARIANTS
+from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
 def header_mindtrace(title: str, subtitle: str) -> rx.Component:
