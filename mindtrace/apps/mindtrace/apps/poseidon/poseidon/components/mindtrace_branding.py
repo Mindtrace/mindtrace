@@ -1,6 +1,7 @@
 """Mindtrace Branding Components - Logo and Brand Elements."""
 
 import reflex as rx
+from poseidon.styles.global_styles import COMPONENT_VARIANTS
 
 
 def logo_mindtrace() -> rx.Component:
@@ -13,27 +14,11 @@ def logo_mindtrace() -> rx.Component:
             rx.vstack(
                 rx.text(
                     "Poseidon",
-                    style={
-                        "font_size": "2.5rem",
-                        "font_weight": "700",
-                        "line_height": "1.0",
-                        "font_family": '"Inter", system-ui, sans-serif',
-                        "letter_spacing": "-0.02em",
-                        "color": "#0057FF",
-                        "margin": "0",
-                    }
+                    style=COMPONENT_VARIANTS["logo"]["title"]
                 ),
                 rx.text(
                     "AI PLATFORM",
-                    style={
-                        "font_size": "0.75rem",
-                        "font_weight": "500",
-                        "letter_spacing": "0.15em",
-                        "color": "rgba(100, 116, 139, 0.7)",
-                        "text_transform": "uppercase",
-                        "margin": "0",
-                        "font_family": '"Inter", system-ui, sans-serif',
-                    }
+                    style=COMPONENT_VARIANTS["logo"]["subtitle"]
                 ),
                 spacing="1",
                 align="start",

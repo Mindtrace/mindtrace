@@ -1,6 +1,7 @@
 """Mindtrace Card Components - Modern Glass Morphism Cards."""
 
 import reflex as rx
+from poseidon.styles.global_styles import COMPONENT_VARIANTS, COLORS
 
 
 def card_mindtrace(children, **kwargs) -> rx.Component:
@@ -14,19 +15,7 @@ def card_mindtrace(children, **kwargs) -> rx.Component:
             width="100%",
         ),
         style={
-            "background": "rgba(255, 255, 255, 0.95)",
-            "backdrop_filter": "blur(20px)",
-            "border_radius": "24px",
-            "border": "1px solid rgba(255, 255, 255, 0.2)",
-            "box_shadow": """
-                0 8px 32px rgba(0, 0, 0, 0.08),
-                0 2px 8px rgba(0, 0, 0, 0.04),
-                inset 0 1px 0 rgba(255, 255, 255, 0.5)
-            """,
-            "padding": "2rem",
-            "width": "100%",
-            "position": "relative",
-            "overflow": "hidden",
+            **COMPONENT_VARIANTS["card"]["base"],
             "animation": "slideInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
             "_before": {
                 "content": "''",
@@ -35,7 +24,7 @@ def card_mindtrace(children, **kwargs) -> rx.Component:
                 "left": "0",
                 "right": "0",
                 "height": "4px",
-                "background": "linear-gradient(90deg, #0057FF, #0041CC, #0066FF, #0057FF)",
+                "background": f"linear-gradient(90deg, {COLORS['primary']}, {COLORS['primary_dark']}, {COLORS['primary_light']}, {COLORS['primary']})",
                 "background_size": "200% 100%",
                 "animation": "shimmer 3s ease-in-out infinite",
             }

@@ -16,6 +16,7 @@ from poseidon.components import (
     logo_mindtrace, card_mindtrace, header_mindtrace,
     link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
 )
+from poseidon.styles.global_styles import COLORS
 
 
 def login_content() -> rx.Component:
@@ -57,7 +58,7 @@ def login_content() -> rx.Component:
                     spacing="2",
                     width="100%",
                 ),
-                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                border_top=f"1px solid {COLORS['border_divider']}",
                 padding_top="1rem",
                 margin_top="1rem",
             ),

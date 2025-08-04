@@ -19,6 +19,7 @@ from poseidon.components import (
     button_mindtrace, link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
 )
 from poseidon.components.forms import form_input_with_label_and_hint
+from poseidon.styles.global_styles import COLORS
 
 
 def register_content() -> rx.Component:
@@ -62,7 +63,7 @@ def register_content() -> rx.Component:
                     spacing="2",
                     width="100%",
                 ),
-                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                border_top=f"1px solid {COLORS['border_divider']}",
                 padding_top="1rem",
                 margin_top="1rem",
             ),
@@ -111,7 +112,7 @@ def register_admin_content() -> rx.Component:
                     "User Registration",
                     "/register"
                 ),
-                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                border_top=f"1px solid {COLORS['border_divider']}",
                 padding_top="1rem",
                 margin_top="1rem",
             ),
@@ -136,7 +137,7 @@ def register_super_admin_content() -> rx.Component:
                     style={
                         "font_size": "1.875rem",
                         "font_weight": "700",
-                        "color": "#DC2626",
+                        "color": COLORS["secondary"],
                         "line_height": "1.1",
                         "font_family": '"Inter", system-ui, sans-serif',
                         "letter_spacing": "-0.025em",
@@ -149,7 +150,7 @@ def register_super_admin_content() -> rx.Component:
                     style={
                         "font_size": "1rem",
                         "font_weight": "500",
-                        "color": "#B91C1C",
+                        "color": COLORS["secondary_dark"],
                         "line_height": "1.4",
                         "font_family": '"Inter", system-ui, sans-serif',
                         "text_align": "center",
@@ -199,7 +200,7 @@ def register_super_admin_content() -> rx.Component:
                     spacing="2",
                     width="100%",
                 ),
-                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                border_top=f"1px solid {COLORS['border_divider']}",
                 # padding_top="1rem",
                 margin_top="1rem",
             ),
