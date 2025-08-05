@@ -1,4 +1,4 @@
-"""Unit test methods for mtrix.utils.conversions utility module."""
+"""Unit test methods for mindtrace.core.utils.conversions utility module."""
 
 import asyncio
 import io
