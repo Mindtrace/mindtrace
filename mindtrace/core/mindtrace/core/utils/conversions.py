@@ -48,12 +48,12 @@ def pil_to_ascii(image: Image) -> str:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_ascii, ascii_to_pil
+        import PIL
+        from mindtrace.core import pil_to_ascii, ascii_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          ascii_image = pil_to_ascii(image)
-          decoded_image = ascii_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        ascii_image = pil_to_ascii(image)
+        decoded_image = ascii_to_pil(ascii_image)
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -67,12 +67,12 @@ def ascii_to_pil(ascii_image: str) -> Image:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_ascii, ascii_to_pil
+        import PIL
+        from mindtrace.core import pil_to_ascii, ascii_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          ascii_image = pil_to_ascii(image)
-          decoded_image = ascii_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        ascii_image = pil_to_ascii(image)
+        decoded_image = ascii_to_pil(ascii_image)
     """
     return PIL.Image.open(io.BytesIO(base64.b64decode(ascii_image)))
 
@@ -82,12 +82,12 @@ def pil_to_bytes(image: Image) -> bytes:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_bytes, bytes_to_pil
+        import PIL
+        from mindtrace.core import pil_to_bytes, bytes_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          bytes_image = pil_to_bytes(image)
-          decoded_image = bytes_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        bytes_image = pil_to_bytes(image)
+        decoded_image = bytes_to_pil(ascii_image)
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -100,12 +100,12 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_bytes, bytes_to_pil
+        import PIL
+        from mindtrace.core import pil_to_bytes, bytes_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          bytes_image = pil_to_bytes(image)
-          decoded_image = bytes_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        bytes_image = pil_to_bytes(image)
+        decoded_image = bytes_to_pil(ascii_image)
     """
     return PIL.Image.open(io.BytesIO(bytes_image))
 
@@ -258,11 +258,11 @@ def pil_to_cv2(image: Image) -> np.ndarray:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_cv2
+        import PIL
+        from mindtrace.core import pil_to_cv2
 
-          pil_image = PIL.Image.open('tests/resources/hopper.png')
-          cv2_image = pil_to_cv2(pil_image)
+        pil_image = PIL.Image.open('tests/resources/hopper.png')
+        cv2_image = pil_to_cv2(pil_image)
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for pil_to_cv2 but is not installed.")
@@ -285,11 +285,11 @@ def cv2_to_pil(image: np.ndarray) -> Image:
 
     Example::
 
-          import cv2
-          from mindtrace.core import cv2_to_pil
+        import cv2
+        from mindtrace.core import cv2_to_pil
 
-          cv2_image = cv2.imread('tests/resources/hopper.png')
-          pil_image = cv2_to_pil(cv2_image)
+        cv2_image = cv2.imread('tests/resources/hopper.png')
+        pil_image = cv2_to_pil(cv2_image)
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for cv2_to_pil but is not installed.")
