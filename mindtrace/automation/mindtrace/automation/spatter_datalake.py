@@ -98,10 +98,11 @@ def download_data_yolo(
     zone_masks_save_path,
     workers, 
     zone_class_names,
+    keep_small_spatter,
+    separate_class,
     ignore_holes=True,
     delete_empty_masks=True,
-    keep_small_spatter=True,
-    separate_class=True
+    
 ):
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(labels_save_path, exist_ok=True)
@@ -244,7 +245,7 @@ def download_data_yolo(
                     # Check for spatter labels based on configuration
                     has_spatter = 'spatter' in rectangle_labels
                     has_small_spatter = 'small_spatter' in rectangle_labels
-                    
+
                     if has_spatter or (has_small_spatter and keep_small_spatter):
                         # If separate_class is False, treat small_spatter as spatter
                         if has_small_spatter and not separate_class:
@@ -268,7 +269,6 @@ def download_data_yolo(
                 rectanglelabels = label['value']['rectanglelabels']
             else:
                 rectanglelabels = label['rectanglelabels']
-            
             class_name = rectanglelabels[0].lower()
             if class_name in spatter_class_mapping:
                 class_id = int(spatter_class_mapping[class_name])
@@ -277,11 +277,20 @@ def download_data_yolo(
         with open(label_path, 'w') as f:
             f.write(l)
 
-def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id='cuda:0', spatter_class_names=None):
+def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id=None, spatter_class_names=None):
     if not SAM_AVAILABLE:
         print("torch or mtrix.models.SegmentAnything not found. Cannot generate masks.")
         sys.exit(1)
         
+    # Auto-select best GPU if device_id is None
+    if device_id is None:
+        try:
+            from mindtrace.automation.modelling.utils.gpu_selector import set_environment_for_best_gpu
+            device_id = set_environment_for_best_gpu(min_memory_gb=8.0, max_utilization=70.0)
+        except ImportError:
+            print("GPU selector not available, using default cuda:0")
+            device_id = 'cuda:0'
+    
     device = torch.device(device_id)
     print(f"Loading SAM model to {device}...")
     model = SegmentAnything(model='vit_h', device=device)
@@ -726,26 +735,20 @@ if __name__ == "__main__":
             config['zone_class_names'],
             ignore_holes=config['ignore_holes'],
             delete_empty_masks=config['delete_empty_masks'],
-            keep_small_spatter=config.get('keep_small_spatter', True),
-            separate_class=config.get('separate_class', True))
+            keep_small_spatter=config.get('keep_small_spatter'),
+            separate_class=config.get('separate_class'))
     
     if convert_box_to_mask:
         print("\nStarting box to mask conversion...")
         masks_save_path = os.path.join(download_dir, 'spatter_masks')
         # Create spatter class names based on configuration
-        spatter_class_names = ['background']
-        if config.get('keep_small_spatter', True):
-            if config.get('separate_class', True):
-                spatter_class_names.extend(['spatter', 'small_spatter'])
-            else:
-                spatter_class_names.append('spatter')
-        else:
-            spatter_class_names.append('spatter')
+        spatter_class_names = config.get('spatter_class_names')
         
         generate_masks_from_boxes(
             images_save_path, 
             labels_save_path, 
             masks_save_path,
+            device_id=None,  # Auto-select best GPU
             spatter_class_names=spatter_class_names
         )
 
@@ -764,14 +767,14 @@ if __name__ == "__main__":
             save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False)
         )
     
-    #print("\nStarting upload to HuggingFace...")
-    # upload_to_huggingface_yolo(
-    #     download_dir, 
-    #     config.get('huggingface', {}), 
-    #     use_mask=convert_box_to_mask,
-    #     clean_up=True,
-    #     class_names=config['spatter_class_names'],
-    #     download=True
-    # )
+    print("\nStarting upload to HuggingFace...")
+    upload_to_huggingface_yolo(
+        download_dir, 
+        config.get('huggingface', {}), 
+        use_mask=convert_box_to_mask,
+        clean_up=True,
+        class_names=config['spatter_class_names'],
+        download=True
+    )
 
 
