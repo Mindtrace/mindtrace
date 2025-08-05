@@ -6,17 +6,13 @@ while keeping the exact styling patterns.
 
 import reflex as rx
 from poseidon.state.auth import AuthState
-from .mindtrace_forms import (
-    input_with_label_mindtrace,
-    input_with_hint_mindtrace,
-    select_mindtrace,
-    button_mindtrace,
-)
+from poseidon.components_v2.core.button import button
+from poseidon.components_v2.forms import text_input_with_form, select_input_with_form
 
 
 def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
     """Form input with label - using mindtrace styling. Supports size variants: small, medium, large (default)."""
-    return input_with_label_mindtrace(
+    return text_input_with_form(
         label=label,
         placeholder=placeholder,
         name=name,
@@ -28,7 +24,7 @@ def form_input_with_label(label: str, placeholder: str, input_type: str = "text"
 
 def form_input_with_label_and_hint(label: str, placeholder: str, hint: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
     """Form input with label and hint - using mindtrace styling. Supports size variants: small, medium, large (default)."""
-    return input_with_hint_mindtrace(
+    return text_input_with_form(
         label=label,
         placeholder=placeholder,
         hint=hint,
@@ -120,41 +116,6 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
                         True,
                         "medium"
                     ),
-                    rx.vstack(
-                        rx.el.label(
-                            "Organization",
-                            style={
-                                "font_size": "0.875rem",
-                                "font_weight": "500",
-                                "color": "rgb(71, 85, 105)",
-                                "margin_bottom": "0.5rem",
-                                "display": "block",
-                                "font_family": '"Inter", system-ui, sans-serif',
-                            }
-                        ),
-                        rx.el.input(
-                            placeholder="Loading organizations...",
-                            disabled=True,
-                            style={
-                                "width": "100%",
-                                "padding": "1rem 1.25rem",
-                                "font_size": "0.95rem",
-                                "font_family": '"Inter", system-ui, sans-serif',
-                                "border_radius": "12px",
-                                "background": "rgba(243, 244, 246, 0.8)",
-                                "border": "2px solid rgba(226, 232, 240, 0.6)",
-                                "outline": "none",
-                                "color": "rgb(107, 114, 128)",
-                                "cursor": "not-allowed",
-                                "backdrop_filter": "blur(10px)",
-                            }
-                        ),
-                        width="100%",
-                        spacing="1",
-                        style={
-                            "margin_bottom": "1rem",
-                        }
-                    ),
                 ),
                 # Inject extra fields here (e.g., admin key input)
                 *extra_fields,
@@ -236,11 +197,11 @@ def contact_form(title: str = "Contact us", subtitle: str = "We'd love to hear f
 
 
 def modern_select_field(label: str, placeholder: str, options, name: str = "", required: bool = False, size: str = "large"):
-    """Modern select field - using mindtrace styling. Supports size variants: small, medium, large (default)."""
-    return select_mindtrace(
+    """Modern select field - using new select component. Supports size variants: small, medium, large (default)."""
+    return select_input_with_form(
         label=label,
         placeholder=placeholder,
-        options=options,
+        items=options,
         name=name,
         required=required,
         size=size,
@@ -249,7 +210,7 @@ def modern_select_field(label: str, placeholder: str, options, name: str = "", r
 
 def modern_button(text: str, button_type: str = "submit", size: str = "large", **kwargs):
     """Modern button - using mindtrace styling. Supports size variants: small, medium, large (default)."""
-    return button_mindtrace(
+    return button(
         text=text,
         button_type=button_type,
         size=size,

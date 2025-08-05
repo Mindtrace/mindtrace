@@ -5,7 +5,7 @@ the exact Buridan UI styling patterns.
 """
 
 import reflex as rx
-from .mindtrace_forms import button_mindtrace
+from poseidon.components_v2.core.button import button
 
 
 # Removed: primary_action_button - use mindtrace_forms.button_mindtrace instead
@@ -21,7 +21,7 @@ def refresh_button(
     icon: str = "🔄"
 ):
     """Refresh/reload data button - using mindtrace styling."""
-    return button_mindtrace(
+    return button(
         text=f"{icon} {text}",
         on_click=on_click,
         loading=loading,
@@ -50,7 +50,7 @@ def icon_button(
     mindtrace_variant = "secondary" if variant == "ghost" else "primary"
     mindtrace_size = "small" if size == "1" else "medium" if size == "2" else "large"
     
-    return button_mindtrace(
+    return button(
         text=icon,
         on_click=on_click,
         loading=loading,

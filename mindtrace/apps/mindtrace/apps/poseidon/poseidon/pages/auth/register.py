@@ -16,8 +16,9 @@ from poseidon.components import (
     registration_form, 
     error_message, redirect_component,
     logo_mindtrace, card_mindtrace, header_mindtrace,
-    button_mindtrace, link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
+    link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
 )
+from poseidon.components_v2.core.button import button
 from poseidon.components.forms import form_input_with_label_and_hint
 from poseidon.styles.global_styles import COLORS
 
@@ -165,7 +166,7 @@ def register_super_admin_content() -> rx.Component:
                     form_input_with_label_and_hint("Email", "Email address", "", "email", "email", True, "medium"),
                     form_input_with_label_and_hint("Password", "Password", "", "password", "password", True, "medium"),
                     form_input_with_label_and_hint("Super Admin Master Key", "Super Admin Master Key", "", "password", "super_admin_key", True, "medium"),
-                    button_mindtrace(
+                    button(
                         "🔐 Create Super Admin Account",
                         button_type="submit",
                         variant="danger",
@@ -201,7 +202,6 @@ def register_super_admin_content() -> rx.Component:
                     width="100%",
                 ),
                 border_top=f"1px solid {COLORS['border_divider']}",
-                # padding_top="1rem",
                 margin_top="1rem",
             ),
         ]),

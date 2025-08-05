@@ -18,9 +18,9 @@ from .mindtrace_forms import (
     input_with_label_mindtrace,
     input_with_hint_mindtrace,
     select_mindtrace,
-    button_mindtrace,
     link_mindtrace,
 )
+from poseidon.components_v2.core.button import button
 
 # Mindtrace layout components
 from .mindtrace_layouts import (
@@ -174,7 +174,7 @@ __all__ = [
     "input_with_label_mindtrace", 
     "input_with_hint_mindtrace",
     "select_mindtrace",
-    "button_mindtrace",
+    "button",
     "link_mindtrace",
     
     # Layout components

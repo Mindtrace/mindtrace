@@ -11,10 +11,11 @@ Provides inference interface with:
 import reflex as rx
 from poseidon.components import (
     sidebar, app_header, page_container, 
-    input_with_label_mindtrace, select_mindtrace, button_mindtrace,
+    input_with_label_mindtrace, select_mindtrace,
     success_message, error_message, page_header_with_actions,
     card_mindtrace, header_mindtrace
 )
+from poseidon.components_v2.core.button import button
 from poseidon.state.inference import InferenceState
 
 

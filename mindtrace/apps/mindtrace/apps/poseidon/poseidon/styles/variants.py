@@ -43,8 +43,64 @@ COMPONENT_VARIANTS = {
             "border_color": "rgba(0, 87, 255, 0.3)",
             "background": COLORS["background_input_focus"],
         },
+        "error": {
+            "border_color": COLORS["error"],
+            "background": "rgba(239, 68, 68, 0.05)",
+            "box_shadow": f"0 0 0 4px rgba(239, 68, 68, 0.1)",
+        },
+        "success": {
+            "border_color": COLORS["success"],
+            "background": "rgba(16, 185, 129, 0.05)",
+            "box_shadow": f"0 0 0 4px rgba(16, 185, 129, 0.1)",
+        },
+        "disabled": {
+            "background": "rgba(243, 244, 246, 0.8)",
+            "border_color": "rgba(226, 232, 240, 0.8)",
+            "color": COLORS["text_muted"],
+            "cursor": "not-allowed",
+        },
         "placeholder": {
             "color": COLORS["text_muted"],
+        },
+    },
+    "select": {
+        "base": {
+            "width": "100%",
+            "font_family": TYPOGRAPHY["font_family"],
+            "border_radius": SIZING["border_radius"]["md"],
+            "background": COLORS["background_input"],
+            "border": f"2px solid {COLORS['border_primary']}",
+            "outline": "none",
+            "transition": EFFECTS["transitions"]["normal"],
+            "backdrop_filter": EFFECTS["backdrop_filter_light"],
+            "color": COLORS["text_primary"],
+            "cursor": "pointer",
+        },
+        "focus": {
+            "border_color": COLORS["border_focus"],
+            "background": COLORS["background_input_focus"],
+            "box_shadow": f"0 0 0 4px rgba(0, 87, 255, 0.1), 0 4px 12px rgba(0, 87, 255, 0.15)",
+            "transform": "translateY(-1px)",
+        },
+        "hover": {
+            "border_color": "rgba(0, 87, 255, 0.3)",
+            "background": COLORS["background_input_focus"],
+        },
+        "error": {
+            "border_color": COLORS["error"],
+            "background": "rgba(239, 68, 68, 0.05)",
+            "box_shadow": f"0 0 0 4px rgba(239, 68, 68, 0.1)",
+        },
+        "success": {
+            "border_color": COLORS["success"],
+            "background": "rgba(16, 185, 129, 0.05)",
+            "box_shadow": f"0 0 0 4px rgba(16, 185, 129, 0.1)",
+        },
+        "disabled": {
+            "background": "rgba(243, 244, 246, 0.8)",
+            "border_color": "rgba(226, 232, 240, 0.8)",
+            "color": COLORS["text_muted"],
+            "cursor": "not-allowed",
         },
     },
     "button": {
