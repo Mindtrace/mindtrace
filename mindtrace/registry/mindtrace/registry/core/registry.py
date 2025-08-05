@@ -16,17 +16,162 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):
-    """A thread-safe registry for storing and versioning objects.
+    '''A distributed concurrency-safe registry for storing and versioning objects.
 
-    This class provides a thread-safe interface for storing, loading, and managing objects
-    with versioning support. All operations are protected by a reentrant lock to ensure
-    thread safety while allowing recursive lock acquisition.
+    This class provides a distributed concurrency-safe interface for storing, loading, and managing objects
+    with versioning support. All operations are protected by distributed locks to ensure
+    safety across multiple processes and machines while allowing recursive lock acquisition.
 
     The registry uses a backend for actual storage operations and maintains an artifact
     store for temporary storage during save/load operations. It also manages materializers
     for different object types and provides both a high-level API and a dictionary-like
     interface.
-    """
+
+    Example::
+
+        from mindtrace.registry import Registry
+
+        registry = Registry("~/.cache/mindtrace/my_registry")  # Uses the default registry directory in ~/.cache/mindtrace/registry
+
+        # Save some objects to the registry
+        registry.save("test:int", 42)
+        registry.save("test:float", 3.14)
+        registry.save("test:list", [1, 2, 3])
+        registry.save("test:dict", {"a": 1, "b": 2})
+        registry.save("test:str", "Hello, World!", metadata={"description": "A helpful comment"})
+
+        # Print the contents of the registry
+        print(registry)
+
+        # Load an object from the registry
+        object = registry.load("test:int")
+
+        # Using dictionary-style syntax, the following is equivalent to the above:
+        registry["test:int"] = object
+        object = registry["test:int"]
+
+        # Display the registry contents
+        print(registry)
+
+                          Registry at ~/.cache/mindtrace/my_registry          
+        ┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        ┃ Object     ┃ Class          ┃ Value         ┃ Metadata                      ┃
+        ┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+        │ test:dict  │ builtins.dict  │ <dict>        │ (none)                        │
+        │ test:float │ builtins.float │ 3.14          │ (none)                        │
+        │ test:int   │ builtins.int   │ 42            │ (none)                        │
+        │ test:list  │ builtins.list  │ <list>        │ (none)                        │
+        │ test:str   │ builtins.str   │ Hello, World! │ description=A helpful comment │
+        └────────────┴────────────────┴───────────────┴───────────────────────────────┘
+
+        # Get information about an object
+        registry.info("test:int")
+
+        # Delete an object
+        del registry["test:int"]  # equivalent to registry.delete("test:int")
+
+    Example: Using a local directory as the registry store::
+
+        from mindtrace.registry import Registry
+
+        registry = Registry(registry_dir="~/.cache/mindtrace/my_registry")
+
+    Example: Using Minio as the registry store::
+
+        from mindtrace.registry import Registry, MinioRegistryBackend
+
+        # Connect to a remote MinIO registry (expected to be non-local in practice)
+        minio_backend = MinioRegistryBackend(
+            uri="~/.cache/mindtrace/minio_registry",
+            endpoint="localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="minio-registry",
+            secure=False
+        )
+        registry = Registry(backend=minio_backend)
+
+    Example: Using versioning::
+
+        from mindtrace.registry import Registry
+
+        # Versioning follows semantic versioning conventions
+        registry = Registry(version_objects=True, registry_dir="~/.cache/mindtrace/my_registry")
+        registry.save("test:int", 42)  # version = "1"
+        registry.save("test:int", 43)  # version = "2"  # auto-increments version number
+        registry.save("test:int", 44, version="2.1")  # version = "2.1"
+        registry.save("test:int", 45)  # version = "2.2"  # auto-increments version number
+        registry.save("test:int", 46, version="2.2")  # Error: version "2.2" already exists
+
+        # Use the "@" symbol in the name to specify a version when using dictionary-style syntax
+        object = registry["test:int@2.1"]
+        registry["test:int@2.3"] = 47
+        registry["test:int"] = 48  # auto-increments version number
+
+        print(registry.__str__(latest_only=False))  # prints all versions
+
+                    ~/.cache/mindtrace/my_registry     
+        ┏━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━┓
+        ┃ Object   ┃ Version ┃ Class        ┃ Value ┃ Metadata ┃
+        ┡━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━┩
+        │ test:int │ v1      │ builtins.int │ 42    │ (none)   │
+        │ test:int │ v2      │ builtins.int │ 43    │ (none)   │
+        │ test:int │ v2.1    │ builtins.int │ 44    │ (none)   │
+        │ test:int │ v2.2    │ builtins.int │ 45    │ (none)   │
+        │ test:int │ v2.3    │ builtins.int │ 47    │ (none)   │
+        │ test:int │ v2.4    │ builtins.int │ 48    │ (none)   │
+        └──────────┴─────────┴──────────────┴───────┴──────────┘
+
+    Example: Registering your own materializers::
+
+        # In order to use the Registry with a custom class, define an Archiver for your custom class:
+
+        import json
+        from pathlib import Path
+        from typing import Any, ClassVar, Tuple, Type
+
+        from zenml.enums import ArtifactType
+
+        from mindtrace.registry import Archiver
+        from zenml.materializers.base_materializer import BaseMaterializer
+        
+        class MyObject:
+            def __init__(self, name: str, age: int):
+                self.name = name
+                self.age = age
+
+            def __str__(self):
+                return f"MyObject(name={self.name}, age={self.age})"
+
+        class MyObjectArchiver(Archiver):  # May also derive from zenml.BaseMaterializer
+            ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (MyObject,)
+            ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
+
+            def __init__(self, uri: str, **kwargs):
+                super().__init__(uri=uri, **kwargs)
+
+            def save(self, my_object: MyObject):
+                with open(Path(self.uri) / "my_object.json", "w") as f:
+                    json.dump(my_object, f)
+
+            def load(self, data_type: Type[Any]) -> MyObject:
+                with open(Path(self.uri) / "my_object.json", "r") as f:
+                    return MyObject(**json.load(f))
+
+        # Then register the archiver with the Registry:
+        Registry.register_materializer(MyObject, MyObjectArchiver)
+
+
+        # Put the above into a single file, then when your class is imported it will be compatible with the Registry
+        
+        from mindtrace.registry import Registry
+        from my_lib import MyObject  # Registers your custom Archiver to the Registry class here
+        
+        registry = Registry()
+        my_obj = MyObject(name="Edward", age=42)
+        
+        registry["my_obj"] = my_obj
+    '''
 
     def __init__(
         self,
@@ -638,7 +783,8 @@ class Registry(Mindtrace):
             table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
 
             table.add_column("Object", style="bold cyan")
-            table.add_column("Version", style="green")
+            if self.version_objects:
+                table.add_column("Version", style="green")
             table.add_column("Class", style="magenta")
             table.add_column("Value", style="yellow")
             table.add_column("Metadata", style="dim")
@@ -669,13 +815,21 @@ class Registry(Mindtrace):
                         # For non-basic types, just show the class name wrapped in angle brackets
                         value_str = f"<{class_name.split('.')[-1]}>"
 
-                    table.add_row(
-                        object_name,
-                        f"v{version}",
-                        class_name,
-                        value_str,
-                        metadata_str,
-                    )
+                    if self.version_objects:
+                        table.add_row(
+                            object_name,
+                            f"v{version}",
+                            class_name,
+                            value_str,
+                            metadata_str,
+                        )
+                    else:
+                        table.add_row(
+                            object_name,
+                            class_name,
+                            value_str,
+                            metadata_str,
+                        )
 
             with console.capture() as capture:
                 console.print(table)
