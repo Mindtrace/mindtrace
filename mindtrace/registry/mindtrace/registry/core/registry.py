@@ -32,7 +32,7 @@ class Registry(Mindtrace):
         self,
         registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
-        version_objects: bool = True,
+        version_objects: bool = False,
         **kwargs,
     ):
         """Initialize the registry.
