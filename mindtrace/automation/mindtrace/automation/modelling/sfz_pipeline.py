@@ -17,7 +17,7 @@ from mindtrace.automation.modelling.utils import crop_zones, combine_crops, logi
 
 class SFZPipeline:
     """Pipeline class to manage multiple models for inference."""
-    
+
     def __init__(
         self,
         credentials_path: Optional[str] = None,
@@ -27,7 +27,7 @@ class SFZPipeline:
         overwrite_masks: bool = False
     ):
         """Initialize the pipeline.
-        
+
         Args:
             credentials_path: Path to GCP credentials file
             bucket_name: GCS bucket name (must be provided)
@@ -39,14 +39,14 @@ class SFZPipeline:
             raise ValueError("bucket_name must be provided")
         if not base_folder:
             raise ValueError("base_folder must be provided")
-            
+
         self.credentials_path = credentials_path
         self.bucket_name = bucket_name
         self.base_folder = base_folder
         self.local_models_dir = local_models_dir
         self.overwrite_masks = overwrite_masks
         self.device = self._get_device()
-        
+
         # Initialize GCS storage handler
         if GCSStorageHandler is None:
             raise ImportError("GCSStorageHandler is not available. Please check your imports.")
@@ -54,27 +54,27 @@ class SFZPipeline:
             bucket_name=bucket_name,
             credentials_path=credentials_path
         )
-        
+
         # Store loaded models
         self.models: Dict[str, ModelInference] = {}
-    
+
     def _get_device(self) -> str:
         """Get the best available device for inference."""
         if torch.cuda.is_available():
             return "cuda:0"
         else:
             return "cpu"
-    
-    def load_pipeline(self, task_name: str, version: str, 
+
+    def load_pipeline(self, task_name: str, version: str,
                      inference_list: Dict[str, str]) -> bool:
         """Load a pipeline with multiple models.
-        
+
         Args:
             task_name: Name of the pipeline task (e.g., 'sfz_pipeline')
             version: Version to load (e.g., 'v2.1')
             inference_list: Dictionary mapping task names to export types
                           e.g., {"zone_segmentation": "bounding_box", "spatter_segmentation": "mask"}
-        
+
         Returns:
             True if successful, False otherwise
         """
@@ -82,15 +82,15 @@ class SFZPipeline:
             # Download the pipeline if needed
             if not self._download_pipeline_if_needed(task_name, version):
                 return False
-            
+
             # Load pipeline metadata
             pipeline_metadata = self._load_pipeline_metadata(task_name, version)
             if pipeline_metadata is None:
                 return False
-            
+
             self.get_reference_masks(task_name, version)
             cropping_path = os.path.join(
-                self.local_models_dir, 
+                self.local_models_dir,
                 task_name,
                 version,
                 'cropping.json'
@@ -100,29 +100,29 @@ class SFZPipeline:
             else:
                 print(f"DEBUG: File not found at {cropping_path}")
                 self.cropping_config = None
-            
+
             # Load each model in the inference list
             for inference_task, export_type in inference_list.items():
                 if not self._load_model(task_name, version, inference_task, export_type):
                     print(f"Failed to load model for task: {inference_task}")
                     return False
-            
+
             print(f"Successfully loaded pipeline {task_name} v{version} with {len(self.models)} models")
             return True
-            
+
         except Exception as e:
             print(f"Error loading pipeline: {e}")
             return False
-    
+
     def _download_pipeline_if_needed(self, task_name: str, version: str) -> bool:
         """Download pipeline if it doesn't exist locally."""
         pipeline_path = os.path.join(self.local_models_dir, task_name, version)
         metadata_path = os.path.join(pipeline_path, "metadata.json")
-        
+
         if os.path.exists(metadata_path):
             print(f"Pipeline {task_name} v{version} already exists locally")
             return True
-        
+
         try:
             print(f"Downloading pipeline {task_name} v{version}...")
             downloaded_files, actual_version = self.storage_handler.download_model_from_registry(
@@ -138,7 +138,7 @@ class SFZPipeline:
         except Exception as e:
             print(f"Failed to download pipeline: {e}")
             return False
-    
+
     def _load_pipeline_metadata(self, task_name: str, version: str) -> Optional[Dict[str, Any]]:
         """Load pipeline metadata."""
         metadata_path = os.path.join(self.local_models_dir, task_name, version, "metadata.json")
@@ -150,11 +150,11 @@ class SFZPipeline:
         except Exception as e:
             print(f"Error loading pipeline metadata: {e}")
             return None
-    
+
     def get_reference_masks(self, task_name: str, version: str):
         self.reference_masks = {}
         reference_mask_folder = os.path.join(
-            self.local_models_dir, 
+            self.local_models_dir,
             task_name,
             version,
             'zone_segmentation/reference_masks'
@@ -172,25 +172,25 @@ class SFZPipeline:
                     raise FileNotFoundError(f"Reference Mask format is not supported: {file}")
         else:
             raise FileNotFoundError(f"Reference Masks not found at {reference_mask_folder}")
-        
-    def _load_model(self, task_name: str, version: str, inference_task: str, 
+
+    def _load_model(self, task_name: str, version: str, inference_task: str,
                    export_type: str) -> bool:
         """Load a specific model from the pipeline."""
         try:
             model_path = os.path.join(self.local_models_dir, task_name, version, inference_task)
-            
+
             # Load model metadata
             model_metadata_path = os.path.join(model_path, "metadata.json")
             if not os.path.exists(model_metadata_path):
                 print(f"Model metadata not found: {model_metadata_path}")
                 return False
-            
+
             with open(model_metadata_path, 'r') as f:
                 model_metadata = json.load(f)
-            
+
             model_name = model_metadata.get('model_name', 'unknown')
             task_type = model_metadata.get('task', 'unknown')
-            
+
             # Create ModelInference instance
             model_inference = ModelInference(
                 model_path=model_path,
@@ -198,17 +198,17 @@ class SFZPipeline:
                 model_name=model_name,
                 device=self.device
             )
-            
+
             # Store with export type
             self.models[inference_task] = model_inference
             print(f"Loaded model {inference_task}: {model_name} ({task_type})")
             return True
-            
+
         except Exception as e:
             print(f"Error loading model {inference_task}: {e}")
             return False
-    
-    def run_inference_on_path(self, 
+
+    def run_inference_on_path(self,
                      input_path: str,
                      output_folder: str,
                      export_types: Optional[Dict[str, ExportType]] = None,
@@ -216,7 +216,7 @@ class SFZPipeline:
                      save_visualizations: bool = True,
                      supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')) -> Dict[str, Any]:
         """Run inference on a single image or all images in a folder (including subfolders).
-        
+
         Args:
             input_path: Path to single image or folder containing images
             output_folder: Path to save results and visualizations
@@ -224,13 +224,13 @@ class SFZPipeline:
             threshold: Confidence threshold for detections
             save_visualizations: Whether to save visualization images
             supported_formats: Image formats to process
-            
+
         Returns:
             Dictionary with results summary
         """
         if not os.path.exists(input_path):
             raise ValueError(f"Input path does not exist: {input_path}")
-        
+
         if os.path.isfile(input_path):
             # Single image
             return self._run_inference_on_single_image(
@@ -243,70 +243,70 @@ class SFZPipeline:
             )
         else:
             raise ValueError(f"Input path is neither a file nor directory: {input_path}")
-    
-    def _run_inference_on_single_image(self, 
+
+    def _run_inference_on_single_image(self,
                                       image_path: str,
                                       output_folder: str,
                                       export_types: Optional[Dict[str, ExportType]] = None,
                                       threshold: float = 0.4,
                                       save_visualizations: bool = True) -> Dict[str, Any]:
         """Run inference on a single image.
-        
+
         Args:
             image_path: Path to the image file
             output_folder: Path to save results and visualizations
             export_types: Dictionary mapping task names to export types
             threshold: Confidence threshold for detections
             save_visualizations: Whether to save visualization images
-            
+
         Returns:
             Dictionary with results summary
         """
         # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
         images_folder = os.path.join(output_folder, "images")
-        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        raw_masks_folder = os.path.join(output_folder, "raw_masks")
         boxes_folder = os.path.join(output_folder, "boxes")
         visualizations_folder = os.path.join(output_folder, "visualizations")
-        
+
         os.makedirs(images_folder, exist_ok=True)
         os.makedirs(raw_masks_folder, exist_ok=True)
         os.makedirs(boxes_folder, exist_ok=True)
         os.makedirs(visualizations_folder, exist_ok=True)
-        
+
         try:
             print(f"Processing single image: {os.path.basename(image_path)}")
-            
+
             # Copy original image to images folder
             image_filename = os.path.basename(image_path)
             image_dest = os.path.join(images_folder, image_filename)
             shutil.copy2(image_path, image_dest)
-            
+
             # Run inference on all models
             results = self.run_inference_on_models(
                 image=image_path,
                 export_types=export_types,
                 threshold=threshold
             )
-            
+
             # Save structured outputs
             image_name = os.path.splitext(os.path.basename(image_path))[0]
             self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
-            
+
             # Save visualizations if requested
             if save_visualizations:
                 self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-            
+
             results_summary = {
                 'total_images': 1,
                 'processed_images': 1,
                 'failed_images': 0,
                 'results': {}
             }
-            
+
             print(f"Single image inference completed successfully")
             return results_summary
-            
+
         except Exception as e:
             print(f"Error processing {image_path}: {e}")
             return {
@@ -318,7 +318,7 @@ class SFZPipeline:
             }
 
     def run_inference_on_folder(
-        self, 
+        self,
         input_folder: str,
         output_folder: str,
         export_types: Optional[Dict[str, ExportType]] = None,
@@ -327,7 +327,7 @@ class SFZPipeline:
         supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'),
         num_workers: int = 4) -> Dict[str, Any]:
         """Run inference concurrently on all images in a folder and its subfolders.
-        
+
         Args:
             input_folder: Path to folder containing images
             output_folder: Path to save results and visualizations
@@ -336,7 +336,7 @@ class SFZPipeline:
             save_visualizations: Whether to save visualization images
             supported_formats: Image formats to process
             num_workers: Number of worker threads for concurrent processing
-            
+
         Returns:
             Dictionary with results summary
         """
@@ -346,10 +346,10 @@ class SFZPipeline:
         # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
         images_folder = os.path.join(output_folder, "images")
-        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        raw_masks_folder = os.path.join(output_folder, "raw_masks")
         boxes_folder = os.path.join(output_folder, "boxes")
         visualizations_folder = os.path.join(output_folder, "visualizations")
-        
+
         os.makedirs(images_folder, exist_ok=True)
         os.makedirs(raw_masks_folder, exist_ok=True)
         os.makedirs(boxes_folder, exist_ok=True)
@@ -378,27 +378,27 @@ class SFZPipeline:
         def _process_image(image_path):
             try:
                 print(f"Processing image: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
-                
+
                 # Copy original image to images folder
                 image_filename = os.path.basename(image_path)
                 image_dest = os.path.join(images_folder, image_filename)
                 shutil.copy2(image_path, image_dest)
-                
+
                 # Run inference
                 results = self.run_inference_on_models(
                     image=image_path,
                     export_types=export_types,
                     threshold=threshold
                 )
-                
+
                 # Save structured outputs
                 image_name = os.path.splitext(os.path.basename(image_path))[0]
                 self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
-                
+
                 # Save visualizations if requested
                 if save_visualizations:
                     self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-                
+
                 return image_name, None
             except Exception as e:
                 print(f"Error processing {image_path}: {e}")
@@ -407,7 +407,7 @@ class SFZPipeline:
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
             # Use executor.map to preserve order
             results_iterator = executor.map(_process_image, image_files)
-            
+
             # Iterate over results which are now in order
             for image_name, error in tqdm(results_iterator, total=len(image_files), desc="Processing images"):
                 if error is None:
@@ -418,8 +418,8 @@ class SFZPipeline:
 
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
-        
-    def run_inference_on_folder1(self, 
+
+    def run_inference_on_folder1(self,
                                input_folder: str,
                                output_folder: str,
                                export_types: Optional[Dict[str, ExportType]] = None,
@@ -427,7 +427,7 @@ class SFZPipeline:
                                save_visualizations: bool = True,
                                supported_formats: Tuple[str, ...] = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp')) -> Dict[str, Any]:
         """Run inference on all images in a folder and its subfolders.
-        
+
         Args:
             input_folder: Path to folder containing images
             output_folder: Path to save results and visualizations
@@ -435,38 +435,38 @@ class SFZPipeline:
             threshold: Confidence threshold for detections
             save_visualizations: Whether to save visualization images
             supported_formats: Image formats to process
-            
+
         Returns:
             Dictionary with results summary
         """
         if not os.path.exists(input_folder):
             raise ValueError(f"Input folder does not exist: {input_folder}")
-        
+
         # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
         images_folder = os.path.join(output_folder, "images")
-        raw_masks_folder = os.path.join(output_folder, "raw_masks") 
+        raw_masks_folder = os.path.join(output_folder, "raw_masks")
         boxes_folder = os.path.join(output_folder, "boxes")
         visualizations_folder = os.path.join(output_folder, "visualizations")
-        
+
         os.makedirs(images_folder, exist_ok=True)
         os.makedirs(raw_masks_folder, exist_ok=True)
         os.makedirs(boxes_folder, exist_ok=True)
         os.makedirs(visualizations_folder, exist_ok=True)
-        
+
         # Get list of image files from all subfolders
         image_files = []
         for root, dirs, files in os.walk(input_folder):
             for file in files:
                 if file.lower().endswith(supported_formats):
                     image_files.append(os.path.join(root, file))
-        
+
         if not image_files:
             print(f"No supported image files found in {input_folder} or its subfolders")
             return {'error': 'No supported images found'}
-        
+
         print(f"Found {len(image_files)} images to process in {input_folder} and its subfolders")
-        
+
         # Process each image
         results_summary = {
             'total_images': len(image_files),
@@ -474,45 +474,45 @@ class SFZPipeline:
             'failed_images': 0,
             'results': {}
         }
-        
+
         for i, image_path in enumerate(image_files):
             # try:
             print(f"Processing image {i+1}/{len(image_files)}: {os.path.basename(image_path)} (from {os.path.dirname(image_path)})")
-            
+
             # Copy original image to images folder
             image_filename = os.path.basename(image_path)
             image_dest = os.path.join(images_folder, image_filename)
             shutil.copy2(image_path, image_dest)
-            
+
             # Run inference
             results = self.run_inference_on_models(
                 image=image_path,
                 export_types=export_types,
                 threshold=threshold
             )
-            
+
             # Save structured outputs
             image_name = os.path.splitext(os.path.basename(image_path))[0]
             self._save_structured_outputs(image_path, results, raw_masks_folder, boxes_folder, export_types, self.overwrite_masks)
-            
+
             # Save visualizations if requested
             if save_visualizations:
                 self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
-            
+
             results_summary['results'][image_name] = results
             results_summary['processed_images'] += 1
-                
+
             # except Exception as e:
             #     print(f"Error processing {image_path}: {e}")
             #     results_summary['failed_images'] += 1
-        
+
         print(f"Inference completed: {results_summary['processed_images']} processed, {results_summary['failed_images']} failed")
         return results_summary
-    
+
     def get_loaded_models(self) -> List[str]:
         """Get list of loaded model names."""
         return list(self.models.keys())
-    
+
     def get_model_info(self, task_name: str) -> Optional[Dict[str, Any]]:
         """Get information about a specific model."""
         if task_name not in self.models:
@@ -527,9 +527,9 @@ class SFZPipeline:
             'num_classes': len(model.id2label),
             'id2label': model.id2label
         }
-    
+
     def run_inference_on_models(
-        self, 
+        self,
         image: Union[str, Image.Image, np.ndarray],
         export_types: Optional[Dict[str, ExportType]] = None,
         threshold: float = 0.4,
@@ -541,7 +541,7 @@ class SFZPipeline:
         zone_crop_square_crop: bool = False
     ) -> Dict[str, Any]:
         """Run inference on all loaded models.
-        
+
         Args:
             image: Input image
             export_types: Dictionary mapping task names to export types
@@ -559,7 +559,7 @@ class SFZPipeline:
                     export_type = ExportType.BOUNDING_BOX  # Default
                     if export_types and task_name in export_types:
                         export_type = export_types[task_name]
-                    
+
                     # Run inference
                     result = model.run_inference(
                         image=image,
@@ -567,27 +567,27 @@ class SFZPipeline:
                         threshold=threshold,
                         background_class=background_class
                     )
-                    
+
                     results[task_name] = result
                     print(f"Inference completed for {task_name}")
-                    
+
                 except Exception as e:
                     print(f"Error running inference for {task_name}: {e}")
                     results[task_name] = {'error': str(e)}
-            
+
             return results
         else:
             assert 'spatter_segmentation' in self.models or 'spatter_detection' in self.models, "Spatter segmentation or detection model not loaded"
             assert 'zone_segmentation' in self.models, "Zone segmentation model not loaded"
             assert 'spatter_segmentation' in export_types or 'spatter_detection' in export_types, "Spatter segmentation or detection export type not provided"
             assert 'zone_segmentation' in export_types, "Zone segmentation export type not provided"
-            
+
             img_name = os.path.basename(image).split('.')[0]
             key = img_name.split('-')[0]
             print(key, '-----')
             # key = img_name.split(':')[-1].split('-')[0]
             image = Image.open(image).convert('RGB')
-            
+
             # Zone segmentation
             zone_segmentation_result = self.models['zone_segmentation'].run_inference(
                 image=image,
@@ -600,11 +600,11 @@ class SFZPipeline:
             print(zone_predictions.shape, 'zone_predictions')
             # Crop based on zone segmentation
             crop_results = crop_zones(
-                zone_predictions, 
-                [image], 
-                [key], 
-                self.cropping_config, 
-                self.reference_masks, 
+                zone_predictions,
+                [image],
+                [key],
+                self.cropping_config,
+                self.reference_masks,
                 self.models['zone_segmentation'].label2id,
                 padding_percent=zone_crop_padding_percent,
                 confidence_threshold=zone_crop_confidence_threshold,
@@ -620,7 +620,7 @@ class SFZPipeline:
                 else:
                     img = Image.fromarray(img)
                     img.save(f'all_image_crops/img_{i}.png')
-            
+
             # Spatter segmentation
             spatter_results = []
             for i, img in enumerate(crop_results['all_image_crops']):
@@ -632,7 +632,7 @@ class SFZPipeline:
                 spatter_results.append(spatter_segmentation_result)
             spatter_results = torch.stack(spatter_results)
             print(spatter_results.shape, 'spatter_results')
-            
+
             # Create a mapping of camera keys to their original image shapes
             camera_shapes = {}
             image_key = get_updated_key(key)
@@ -641,7 +641,7 @@ class SFZPipeline:
             reconstructed_predictions = combine_crops(
                 zone_crops=crop_results['all_mask_crops'],
                 spatter_crops=spatter_results,
-                crop_metadata=crop_results['crop_metadata'], 
+                crop_metadata=crop_results['crop_metadata'],
                 original_img_shapes=camera_shapes,
                 zone_classes=len(self.models['zone_segmentation'].id2label),
                 spatter_classes=len(self.models['spatter_segmentation'].id2label),
@@ -650,7 +650,7 @@ class SFZPipeline:
                 background_class=background_class
             )
             print(reconstructed_predictions, 'reconstructed_predictions')
-        
+
 
     def _make_json_serializable(self, obj):
         """Convert numpy arrays and other non-serializable objects to JSON-serializable formats."""
@@ -669,7 +669,7 @@ class SFZPipeline:
         else:
             return obj
 
-    def _save_structured_outputs(self, image_path: str, results: Dict[str, Any], 
+    def _save_structured_outputs(self, image_path: str, results: Dict[str, Any],
                                raw_masks_folder: str, boxes_folder: str,
                                export_types: Optional[Dict[str, ExportType]] = None,
                                overwrite_masks: bool = False):
@@ -677,17 +677,17 @@ class SFZPipeline:
         try:
             image_name = os.path.splitext(os.path.basename(image_path))[0]
             image_extension = os.path.splitext(os.path.basename(image_path))[1]
-            
+
             # Load original image to get dimensions for YOLO format
             original_image = Image.open(image_path).convert('RGB')
             img_width, img_height = original_image.size
-            
+
             results = self._make_json_serializable(results)
-            
+
             for task_name, result in results.items():
                 if not result or 'error' in result:
                     continue
-                
+
                 current_export_type = export_types.get(task_name) if export_types else None
 
                 # Save raw masks
@@ -704,79 +704,79 @@ class SFZPipeline:
                             os.makedirs(task_mask_folder, exist_ok=True)
                             mask_filename = f"{image_name}.png"
                             raw_mask_path = os.path.join(task_mask_folder, mask_filename)
-                        
+
                         mask = mask.astype(np.uint8)
-                        
+
                         # Save the raw mask as PNG (preserves class values)
                         mask_pil = Image.fromarray(mask, mode='L' if mask.dtype == np.uint8 else 'I;16')
                         mask_pil.save(raw_mask_path)
                         print(f"Saved raw mask: {raw_mask_path}")
-                
-                # Save YOLO format boxes with original filename  
+
+                # Save YOLO format boxes with original filename
                 if 'boxes' in result:
                     task_boxes_folder = os.path.join(boxes_folder, task_name)
                     os.makedirs(task_boxes_folder, exist_ok=True)
                     boxes = result['boxes']
                     scores = result.get('scores', [])
                     labels = result.get('labels', [])
-                    
+
                     # Use original image filename for boxes
                     boxes_filename = f"{image_name}.txt"
                     boxes_path = os.path.join(task_boxes_folder, boxes_filename)
-                    
+
                     # Always save the file, even if no boxes detected
                     self._save_yolo_boxes(boxes, scores, labels, boxes_path, img_width, img_height)
                     if len(boxes) > 0:
                         print(f"Saved YOLO boxes: {boxes_path}")
                     else:
                         print(f"Saved empty YOLO boxes file: {boxes_path}")
-        
+
         except Exception as e:
             print(f"Error saving structured outputs: {e}")
-    
-    def _save_yolo_boxes(self, boxes: np.ndarray, scores: np.ndarray, labels: np.ndarray, 
+
+    def _save_yolo_boxes(self, boxes: np.ndarray, scores: np.ndarray, labels: np.ndarray,
                         output_path: str, img_width: int, img_height: int):
         """Save bounding boxes in YOLO format with original coordinates (not normalized)."""
         try:
             with open(output_path, 'w') as f:
                 for i, box in enumerate(boxes):
                     x1, y1, x2, y2 = box
-                    
+
                     # Convert to YOLO format but keep original coordinates (not normalized)
                     # YOLO format: class_id center_x center_y width height
                     center_x = (x1 + x2) / 2
                     center_y = (y1 + y2) / 2
                     width = x2 - x1
                     height = y2 - y1
-                    
+
                     # Get class id and confidence
                     class_id = int(labels[i]) if i < len(labels) else 0
                     confidence = scores[i] if i < len(scores) else 1.0
-                    
+
                     # Write in YOLO format: class_id center_x center_y width height confidence
                     # Note: Using original coordinates, not normalized to [0,1]
                     f.write(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f} {confidence:.6f}\n")
-        
+
         except Exception as e:
             print(f"Error saving YOLO boxes: {e}")
 
-    def _save_visualizations(self, image_path: str, results: Dict[str, Any], 
-                           visualizations_folder: str, image_name: str, 
+    def _save_visualizations(self, image_path: str, results: Dict[str, Any],
+                           visualizations_folder: str, image_name: str,
                            export_types: Optional[Dict[str, ExportType]] = None):
         """Save visualization images for each model result based on export types."""
         try:
             # Load original image
             original_image = Image.open(image_path).convert('RGB')
-            
+
             for task_name, result in results.items():
                 if 'error' in result:
                     continue
-                
+
                 # Determine export type for this task
                 export_type = ExportType.BOUNDING_BOX  # Default
                 if export_types and task_name in export_types:
                     export_type = export_types[task_name]
-                
+
                 # Create visualization based on the specified export type
                 if export_type == ExportType.BOUNDING_BOX:
                     # Create bounding box visualization
@@ -787,7 +787,7 @@ class SFZPipeline:
                         print(f"Saved bounding box visualization: {vis_path}")
                     else:
                         print(f"No bounding boxes found for {task_name}")
-                
+
                 elif export_type == ExportType.MASK:
                     # Create mask visualizations
                     if 'mask' in result:
@@ -798,7 +798,7 @@ class SFZPipeline:
                             vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
                             vis_image.save(vis_path)
                             print(f"Saved mask overlay visualization: {vis_path}")
-                            
+
                             # Also save colored mask only (for visualization)
                             colored_mask = self.models[task_name].generate_colored_mask(mask)
                             mask_image = Image.fromarray(colored_mask)
@@ -809,6 +809,6 @@ class SFZPipeline:
                             print(f"No valid mask found for {task_name}")
                     else:
                         print(f"No mask data found for {task_name}")
-        
+
         except Exception as e:
             print(f"Error saving visualizations for {image_name}: {e}")
