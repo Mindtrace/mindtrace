@@ -2,6 +2,7 @@
 
 import base64
 import io
+
 import PIL
 from PIL.Image import Image
 
@@ -38,9 +39,9 @@ except ImportError:  # pragma: no cover
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from discord import File, Attachment
     import numpy as np
     import torch
+    from discord import Attachment, File
 
 
 def pil_to_ascii(image: Image) -> str:
