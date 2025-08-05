@@ -1,32 +1,30 @@
 """Unit test methods for mindtrace.core.utils.conversions utility module."""
 
-import asyncio
 import io
-import pytest
+from unittest.mock import MagicMock, patch
+
 import PIL
+import pytest
 from PIL.Image import Image
-import sys
-from unittest.mock import MagicMock
-from unittest.mock import patch
 
 from mindtrace.core import (
     ascii_to_pil,
+    base64_to_pil,
     bytes_to_pil,
+    check_libs,
     cv2_to_pil,
+    discord_file_to_pil,
     ndarray_to_pil,
+    ndarray_to_tensor,
     pil_to_ascii,
+    pil_to_base64,
     pil_to_bytes,
     pil_to_cv2,
+    pil_to_discord_file,
     pil_to_ndarray,
     pil_to_tensor,
     tensor_to_ndarray,
     tensor_to_pil,
-    check_libs,
-    pil_to_base64,
-    base64_to_pil,
-    pil_to_discord_file,
-    discord_file_to_pil,
-    ndarray_to_tensor,
 )
 from tests.utils import images_are_identical
 
@@ -60,6 +58,8 @@ def test_ndarray_conversion(mock_assets):
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
+
+    import numpy as np
 
     image = mock_assets.image
     image_rgba = mock_assets.image_rgba
@@ -586,8 +586,10 @@ def test_tensor_to_ndarray_moves_to_cpu():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    import torch
+
     import numpy as np
+    import torch
+
     device = None
     if torch.cuda.is_available():
         device = "cuda"
@@ -609,8 +611,8 @@ def test_ndarray_to_tensor(mock_assets):
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
-    import torch
     import numpy as np
+    import torch
 
     # Test with uint8 ndarray
     np_image = mock_assets.image_uint8_ndarray
