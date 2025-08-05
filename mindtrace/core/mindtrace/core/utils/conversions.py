@@ -88,7 +88,7 @@ def pil_to_bytes(image: Image) -> bytes:
 
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
-        decoded_image = bytes_to_pil(ascii_image)
+        decoded_image = bytes_to_pil(bytes_image)
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -106,7 +106,7 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
 
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
-        decoded_image = bytes_to_pil(ascii_image)
+        decoded_image = bytes_to_pil(bytes_image)
     """
     return PIL.Image.open(io.BytesIO(bytes_image))
 
