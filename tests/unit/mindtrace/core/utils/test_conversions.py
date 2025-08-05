@@ -185,7 +185,7 @@ def test_pil_to_tensor_missing_torch(mock_assets):
     missing_libs = check_libs(["torch"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCH", False):
         with pytest.raises(ImportError, match="torch is required for pil_to_tensor but is not installed."):
             pil_to_tensor(mock_assets.image)
 
@@ -194,7 +194,7 @@ def test_pil_to_tensor_missing_torchvision(mock_assets):
     missing_libs = check_libs(["torch", "torchvision"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_TORCHVISION', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCHVISION", False):
         with pytest.raises(ImportError, match="torchvision is required for pil_to_tensor but is not installed."):
             pil_to_tensor(mock_assets.image)
 
@@ -203,7 +203,7 @@ def test_tensor_to_pil_missing_torch():
     missing_libs = check_libs(["torch"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCH", False):
         with pytest.raises(ImportError, match="torch is required for tensor_to_pil but is not installed."):
             tensor_to_pil(None)
 
@@ -212,7 +212,7 @@ def test_tensor_to_pil_missing_torchvision():
     missing_libs = check_libs(["torch", "torchvision"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_TORCHVISION', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCHVISION", False):
         with pytest.raises(ImportError, match="torchvision is required for tensor_to_pil but is not installed."):
             tensor_to_pil(None)
 
@@ -222,7 +222,7 @@ def test_pil_to_ndarray_missing_numpy(mock_assets):
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for pil_to_ndarray but is not installed."):
             pil_to_ndarray(mock_assets.image)
 
@@ -232,7 +232,7 @@ def test_pil_to_ndarray_bgr_missing_cv2(mock_assets):
     missing_libs = check_libs(["cv2"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
+    with patch("mindtrace.core.utils.conversions._HAS_CV2", False):
         with pytest.raises(ImportError, match="cv2 is required for BGR conversion but is not installed."):
             pil_to_ndarray(mock_assets.image, image_format="BGR")
 
@@ -242,7 +242,7 @@ def test_ndarray_to_pil_missing_numpy():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for ndarray_to_pil but is not installed."):
             ndarray_to_pil(None)
 
@@ -252,9 +252,10 @@ def test_ndarray_to_pil_bgr_missing_cv2():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
-    with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
+
+    with patch("mindtrace.core.utils.conversions._HAS_CV2", False):
         with pytest.raises(ImportError, match="cv2 is required for BGR conversion but is not installed."):
             ndarray_to_pil(np.zeros((10, 10, 3), dtype=np.uint8), image_format="BGR")
 
@@ -264,7 +265,7 @@ def test_pil_to_cv2_missing_numpy(mock_assets):
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for pil_to_cv2 but is not installed."):
             pil_to_cv2(mock_assets.image)
 
@@ -274,7 +275,7 @@ def test_pil_to_cv2_missing_cv2(mock_assets):
     missing_libs = check_libs(["cv2"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
+    with patch("mindtrace.core.utils.conversions._HAS_CV2", False):
         with pytest.raises(ImportError, match="cv2 is required for pil_to_cv2 but is not installed."):
             pil_to_cv2(mock_assets.image)
 
@@ -284,7 +285,7 @@ def test_pil_to_discord_file_missing_discord(mock_assets):
     missing_libs = check_libs(["discord"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_DISCORD', False):
+    with patch("mindtrace.core.utils.conversions._HAS_DISCORD", False):
         with pytest.raises(ImportError, match="discord.py is required for pil_to_discord_file but is not installed."):
             pil_to_discord_file(mock_assets.image)
 
@@ -294,15 +295,15 @@ def test_pil_to_discord_file_success(mock_assets):
     missing_libs = check_libs(["discord"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     from discord import File
-    
+
     # Test with default filename
     image = mock_assets.image
     discord_file = pil_to_discord_file(image)
     assert isinstance(discord_file, File)
     assert discord_file.filename == "image.png"
-    
+
     # Test with custom filename
     custom_filename = "custom_image.jpg"
     discord_file_custom = pil_to_discord_file(image, filename=custom_filename)
@@ -316,7 +317,7 @@ async def test_discord_file_to_pil_missing_discord():
     missing_libs = check_libs(["discord"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_DISCORD', False):
+    with patch("mindtrace.core.utils.conversions._HAS_DISCORD", False):
         with pytest.raises(ImportError, match="discord.py is required for discord_file_to_pil but is not installed."):
             # Create a mock attachment to pass to the function
             mock_attachment = MagicMock()
@@ -329,25 +330,26 @@ async def test_discord_file_to_pil_success(mock_assets):
     missing_libs = check_libs(["discord"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     # Create a mock attachment with image data
     mock_attachment = MagicMock()
-    
+
     # Convert the test image to bytes to simulate attachment data
     image = mock_assets.image
     image_bytes = io.BytesIO()
     image.save(image_bytes, format="PNG")
     image_bytes.seek(0)
     attachment_data = image_bytes.getvalue()
-    
+
     # Mock the attachment.read() method to return an awaitable that resolves to the image bytes
     async def mock_read():
         return attachment_data
+
     mock_attachment.read = mock_read
-    
+
     # Test the conversion
     result_image = await discord_file_to_pil(mock_attachment)
-    
+
     # Verify the result
     assert isinstance(result_image, PIL.Image.Image)
     assert result_image.mode == image.mode
@@ -359,7 +361,7 @@ def test_tensor_to_ndarray_missing_torch():
     missing_libs = check_libs(["torch"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCH", False):
         with pytest.raises(ImportError, match="torch is required for tensor_to_ndarray but is not installed."):
             tensor_to_ndarray(None)
 
@@ -369,7 +371,7 @@ def test_tensor_to_ndarray_missing_numpy():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for tensor_to_ndarray but is not installed."):
             tensor_to_ndarray(None)
 
@@ -379,9 +381,9 @@ def test_tensor_to_ndarray_invalid_dimensions():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import torch
-    
+
     # Test with 1D tensor (invalid)
     one_d_tensor = torch.rand(10)
     with pytest.raises(ValueError, match="Expected 3D or 4D tensor, got 1D tensor"):
@@ -393,12 +395,12 @@ def test_tensor_to_ndarray_gpu_tensor():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import torch
-    
+
     # Create a tensor on CPU first
     cpu_tensor = torch.rand(3, 10, 10)
-    
+
     # Test with GPU tensor if CUDA is available
     if torch.cuda.is_available():
         gpu_tensor = cpu_tensor.cuda()
@@ -414,9 +416,9 @@ def test_tensor_to_ndarray_requires_grad():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import torch
-    
+
     # Create a tensor that requires gradients through an operation
     base_tensor = torch.rand(3, 10, 10, requires_grad=True)
     grad_tensor = base_tensor * 2  # This creates a tensor with grad_fn
@@ -432,7 +434,7 @@ def test_cv2_to_pil_missing_numpy():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for cv2_to_pil but is not installed."):
             cv2_to_pil(None)
 
@@ -442,7 +444,7 @@ def test_cv2_to_pil_missing_cv2():
     missing_libs = check_libs(["cv2"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    with patch('mindtrace.core.utils.conversions._HAS_CV2', False):
+    with patch("mindtrace.core.utils.conversions._HAS_CV2", False):
         with pytest.raises(ImportError, match="cv2 is required for cv2_to_pil but is not installed."):
             cv2_to_pil(None)
 
@@ -452,13 +454,13 @@ def test_tensor_to_ndarray_normalized_scaling():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import torch
-    
+
     # Create a normalized tensor (0-1 range)
     normalized_tensor = torch.rand(3, 10, 10)  # Values between 0 and 1
     result = tensor_to_ndarray(normalized_tensor)
-    
+
     # Check that values are scaled to 0-255 range
     assert result.max() > 1.0  # Should be scaled up
     assert result.max() <= 255.0  # Should not exceed 255
@@ -469,13 +471,13 @@ def test_tensor_to_ndarray_unnormalized():
     missing_libs = check_libs(["torch", "numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import torch
-    
+
     # Create an unnormalized tensor (0-255 range)
     unnormalized_tensor = torch.randint(0, 256, (3, 10, 10), dtype=torch.float32)
     result = tensor_to_ndarray(unnormalized_tensor)
-    
+
     # Check that values are not scaled (should stay in 0-255 range)
     assert 0 <= result.min() <= 255
     assert 0 <= result.max() <= 255
@@ -486,16 +488,16 @@ def test_pil_to_ndarray_alpha_to_grayscale(mock_assets):
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
 
     # Use an image with alpha channel (RGBA mode)
     rgba_image = mock_assets.image_rgba
     assert rgba_image.mode == "RGBA"
-    
+
     # Convert to grayscale format
     grayscale_array = pil_to_ndarray(rgba_image, image_format="L")
-    
+
     # Check that the result is a 2D grayscale array
     assert grayscale_array.ndim == 2  # Height x Width, no channel dimension
     assert grayscale_array.shape == rgba_image.size[::-1]  # (height, width)
@@ -507,16 +509,16 @@ def test_pil_to_ndarray_rgb_to_grayscale(mock_assets):
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
-    
+
     # Use an image without alpha channel (RGB mode)
     rgb_image = mock_assets.image
     assert rgb_image.mode == "RGB"
-    
+
     # Convert to grayscale format
     grayscale_array = pil_to_ndarray(rgb_image, image_format="L")
-    
+
     # Check that the result is a 2D grayscale array
     assert grayscale_array.ndim == 2  # Height x Width, no channel dimension
     assert grayscale_array.shape == rgb_image.size[::-1]  # (height, width)
@@ -528,14 +530,14 @@ def test_ndarray_to_pil_unsupported_dtype():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
-    
+
     # Create an array with object dtype (unsupported)
     object_array = np.array([["a", "b"], ["c", "d"]], dtype=object)
     with pytest.raises(AssertionError, match="Unknown image dtype object"):
         ndarray_to_pil(object_array)
-    
+
     # Create an array with bytes dtype (unsupported)
     bytes_array = np.array([b"a", b"b", b"c", b"d"], dtype=np.bytes_).reshape(2, 2)
     with pytest.raises(AssertionError, match="Unknown image dtype"):
@@ -547,14 +549,14 @@ def test_ndarray_to_pil_unsupported_channels():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
-    
+
     # Create an array with 2 channels (unsupported - not 1, 3, or 4)
     two_channel_array = np.zeros((10, 10, 2), dtype=np.uint8)
     with pytest.raises(AssertionError, match="Unknown image format with 2 number of channels"):
         ndarray_to_pil(two_channel_array)
-    
+
     # Create an array with 5 channels (unsupported - not 1, 3, or 4)
     five_channel_array = np.zeros((10, 10, 5), dtype=np.uint8)
     with pytest.raises(AssertionError, match="Unknown image format with 5 number of channels"):
@@ -566,16 +568,16 @@ def test_ndarray_to_pil_unknown_format():
     missing_libs = check_libs(["numpy"])
     if missing_libs:
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
-    
+
     import numpy as np
-    
+
     # Create a valid RGB array
     rgb_array = np.zeros((10, 10, 3), dtype=np.uint8)
-    
+
     # Test with unknown format
     with pytest.raises(AssertionError, match='Unknown image format "HSV"'):
         ndarray_to_pil(rgb_array, image_format="HSV")
-    
+
     # Test with another unknown format
     with pytest.raises(AssertionError, match='Unknown image format "LAB"'):
         ndarray_to_pil(rgb_array, image_format="LAB")
@@ -593,7 +595,7 @@ def test_tensor_to_ndarray_moves_to_cpu():
     device = None
     if torch.cuda.is_available():
         device = "cuda"
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():  
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         device = "mps"
     if device is None:
         pytest.skip("No supported GPU device (CUDA or MPS) available. Skipping GPU test.")
@@ -631,11 +633,11 @@ def test_ndarray_to_tensor(mock_assets):
     assert tensor_fp32.dtype == torch.float32
 
     # Test ImportError when torch is missing
-    with patch('mindtrace.core.utils.conversions._HAS_TORCH', False):
+    with patch("mindtrace.core.utils.conversions._HAS_TORCH", False):
         with pytest.raises(ImportError, match="torch is required for ndarray_to_tensor but is not installed."):
             ndarray_to_tensor(np_image)
 
     # Test ImportError when numpy is missing
-    with patch('mindtrace.core.utils.conversions._HAS_NUMPY', False):
+    with patch("mindtrace.core.utils.conversions._HAS_NUMPY", False):
         with pytest.raises(ImportError, match="numpy is required for ndarray_to_tensor but is not installed."):
             ndarray_to_tensor(np_image)

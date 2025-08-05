@@ -8,30 +8,35 @@ from PIL.Image import Image
 
 try:
     import numpy as np
+
     _HAS_NUMPY = True
 except ImportError:  # pragma: no cover
     _HAS_NUMPY = False
 
 try:
     import torch
+
     _HAS_TORCH = True
 except ImportError:  # pragma: no cover
     _HAS_TORCH = False
 
 try:
     from torchvision.transforms.v2 import functional as F
+
     _HAS_TORCHVISION = True
 except ImportError:  # pragma: no cover
     _HAS_TORCHVISION = False
 
 try:
     import cv2
+
     _HAS_CV2 = True
 except ImportError:  # pragma: no cover
     _HAS_CV2 = False
 
 try:
     from discord import Attachment, File
+
     _HAS_DISCORD = True
 except ImportError:  # pragma: no cover
     _HAS_DISCORD = False
