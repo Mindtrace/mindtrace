@@ -255,40 +255,14 @@ class ImageDownload:
         
         return availability
 
-    def get_images_by_date(
+    def apply_camera_sampling(
         self,
-        start_date: str,
-        end_date: str,
-        cameras: Optional[Dict[str, dict]] = None,
-        number_samples_per_day: Optional[int] = None,
+        df: pd.DataFrame,
+        cameras: Dict[str, dict],
         seed: Optional[int] = None
     ) -> pd.DataFrame:
-        """Get image paths from database within date range.
-
-        Args:
-            start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format
-            cameras: Dictionary mapping camera names to config dict with 'proportion' and/or 'number'
-            number_samples_per_day: Optional number of samples to take per day
-            seed: Random seed for reproducible sampling
-        """
-        df = self.db_conn.get_images_by_date(
-            start_timestamp=start_date,
-            end_timestamp=end_date,
-            number_samples_per_day=number_samples_per_day
-        )
-
-        # Set random seed for reproducible sampling
-        if seed is not None:
-            import random
-            random.seed(seed)
-            print(f"Using random seed: {seed}")
-
         if df.empty:
-            print("No images found in the specified date range")
             return df
-
-        print(f"Found {len(df)} total images in date range {start_date} to {end_date}")
 
         available_cameras = df['Camera'].unique()
         print(f"Available cameras: {list(available_cameras)}")
@@ -353,6 +327,33 @@ class ImageDownload:
         
         return df
 
+    def get_images_by_date(
+        self,
+        start_date: str,
+        end_date: str,
+        cameras: Optional[Dict[str, dict]] = None,
+        number_samples_per_day: Optional[int] = None,
+        seed: Optional[int] = None
+    ) -> pd.DataFrame:
+        df = self.db_conn.get_images_by_date(
+            start_timestamp=start_date,
+            end_timestamp=end_date,
+            number_samples_per_day=number_samples_per_day
+        )
+
+        if seed is not None:
+            import random
+            random.seed(seed)
+            print(f"Using random seed: {seed}")
+
+        if df.empty:
+            print("No images found in the specified date range")
+            return df
+
+        print(f"Found {len(df)} total images in date range {start_date} to {end_date}")
+
+        return df
+
     def download_images(self, df: pd.DataFrame, max_workers: int = 8) -> Dict[str, str]:
         """Download images from GCS using paths from database.
         
@@ -401,20 +402,21 @@ class ImageDownload:
         return gcs_path_mapping
     
     def get_data_with_gcs_paths(self) -> Dict[str, str]:
-        """Get data and download images, returning GCS path mapping."""
         try:
             cameras = self.get_camera_proportions(self.config)
             
             df = self.get_images_by_date(
                 start_date=self.config['start_date'],
                 end_date=self.config['end_date'],
-                cameras=cameras,
+                cameras=None,
                 number_samples_per_day=self.config.get('samples_per_day'),
                 seed=self.config.get('seed')
             )
             
             project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
             df = self.filter_existing_label_studio_images(df, project_prefix)
+            
+            df = self.apply_camera_sampling(df, cameras, seed=self.config.get('seed'))
             
             os.makedirs('database_data', exist_ok=True)
             timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -434,13 +436,15 @@ class ImageDownload:
             df = self.get_images_by_date(
                 start_date=self.config['start_date'],
                 end_date=self.config['end_date'],
-                cameras=cameras,
+                cameras=None,
                 number_samples_per_day=self.config.get('samples_per_day'),
                 seed=self.config.get('seed')
             )
             
             project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
             df = self.filter_existing_label_studio_images(df, project_prefix)
+            
+            df = self.apply_camera_sampling(df, cameras, seed=self.config.get('seed'))
             
             os.makedirs('database_data', exist_ok=True)
             timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
