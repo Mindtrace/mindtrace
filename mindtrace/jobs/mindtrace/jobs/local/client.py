@@ -26,7 +26,7 @@ class LocalClient(OrchestratorBackend):
 
     def __init__(self, broker_id: str | None = None, backend: Registry | None = None):
         super().__init__()
-        self.broker_id = ifnone(broker_id, default="mtrix.default_broker")
+        self.broker_id = ifnone(broker_id, default="mindtrace.default_broker")
         if backend is None:
             backend = Registry(registry_dir=self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"])
         self.queues: Registry[str, "Queue"] = backend
@@ -42,7 +42,7 @@ class LocalClient(OrchestratorBackend):
 
     def declare_queue(self, queue_name: str, queue_type: str = "fifo", **kwargs) -> dict[str, str]:
         """Declare a queue of type 'fifo', 'stack', or 'priority'."""
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=False):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=False):
             if queue_name in self.queues:
                 return {
                     "status": "success",
@@ -63,7 +63,7 @@ class LocalClient(OrchestratorBackend):
             }
 
     def delete_queue(self, queue_name: str, **kwargs):
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=False):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=False):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
             del self.queues[queue_name]
@@ -77,7 +77,7 @@ class LocalClient(OrchestratorBackend):
         If the target queue is a priority queue, accepts an extra 'priority' parameter.
         """
         priority = kwargs.get("priority", 0)
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=False):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=False):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues[queue_name]
@@ -94,28 +94,35 @@ class LocalClient(OrchestratorBackend):
 
     def receive_message(self, queue_name: str, **kwargs) -> Optional[dict]:
         """Retrieve a message from the specified queue.
-        Returns the message as a dict.
-        Returns None if queue is empty.
+
+        Args:
+            queue_name: The name of the queue to receive a message from.
+            **kwargs: Additional parameters passed to the queue instance.
+
+        Returns:
+            The message as a dict or None if queue is empty.
         """
         block = kwargs.get("block", True)
         timeout = kwargs.get("timeout", None)
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=False):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=False):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues.load(queue_name, acquire_lock=False)
             try:
                 raw_message = queue_instance.pop(block=block, timeout=timeout)
                 if raw_message is None:
+                    self.debug(f"Queue '{queue_name}' is empty.")
                     return None
                 message_dict = json.loads(raw_message)
-                self.queues.save(queue_name, queue_instance, acquire_lock=False)
+                self.queues.save(queue_name, queue_instance)
                 return message_dict
-            except Exception:
+            except Exception as e:
+                self.warning(f"Error popping message from queue '{queue_name}': {e}")
                 return None
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
         """Remove all messages from the specified queue."""
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=False):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=False):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues.load(queue_name, acquire_lock=False)
@@ -125,7 +132,7 @@ class LocalClient(OrchestratorBackend):
 
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         """Return the number of messages in the specified queue."""
-        with self.queues._get_object_lock(queue_name, "orchestrator_client", shared=True):
+        with self.queues.get_lock(queue_name, "orchestrator_client", shared=True):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues[queue_name]
@@ -133,12 +140,12 @@ class LocalClient(OrchestratorBackend):
 
     def store_job_result(self, job_id: str, result: Any):
         """Save the job result (JSON-serializable) keyed by job_id."""
-        with self.queues._get_object_lock(job_id, "orchestrator_client", shared=True):
+        with self.queues.get_lock(job_id, "orchestrator_client", shared=True):
             self._job_results[job_id] = result
 
     def get_job_result(self, job_id: str) -> Any:
         """Retrieve the stored result for the given job_id."""
-        with self.queues._get_object_lock(job_id, "orchestrator_client", shared=True):
+        with self.queues.get_lock(job_id, "orchestrator_client", shared=True):
             return self._job_results.get(job_id, None)
 
     def move_to_dlq(
