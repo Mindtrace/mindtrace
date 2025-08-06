@@ -39,7 +39,7 @@ class RedisClient(OrchestratorBackend):
                     "status": "success",
                     "message": f"Queue '{queue_name}' already exists.",
                 }
-        lock = self.connection.connection.lock("mtrix:queue_lock", timeout=5)
+        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
         if not lock.acquire(blocking=True):
             raise BlockingIOError("Could not acquire distributed lock.")
         try:
@@ -88,7 +88,7 @@ class RedisClient(OrchestratorBackend):
         with self.connection._local_lock:
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
-        lock = self.connection.connection.lock("mtrix:queue_lock", timeout=5)
+        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
         if not lock.acquire(blocking=True):
             raise BlockingIOError("Could not acquire distributed lock.")
         try:
@@ -140,7 +140,7 @@ class RedisClient(OrchestratorBackend):
             if queue_name not in self.connection.queues:
                 raise KeyError(f"Queue '{queue_name}' is not declared.")
             instance = self.connection.queues[queue_name]
-        lock = self.connection.connection.lock("mtrix:queue_lock", timeout=5)
+        lock = self.connection.connection.lock("mindtrace:queue_lock", timeout=5)
         if not lock.acquire(blocking=True):
             raise BlockingIOError("Could not acquire distributed lock.")
         try:
