@@ -23,10 +23,10 @@ def job_from_schema(schema: JobSchema, input_data) -> Job:
         Job: A complete Job instance ready for submission
     """
 
-    if isinstance(input_data, schema.input):
+    if isinstance(input_data, schema.input_schema):
         payload = input_data
     else:
-        payload = schema.input(**input_data)
+        payload = schema.input_schema(**input_data)
 
     job = Job(
         id=str(uuid.uuid4()),

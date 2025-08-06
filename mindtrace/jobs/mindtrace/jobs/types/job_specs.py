@@ -3,6 +3,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from mindtrace.core import TaskSchema
+
 
 class BackendType(str, Enum):
     LOCAL = "local"
@@ -17,14 +19,16 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-
+'''
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
 
     name: str
     input: type[BaseModel]
     output: Optional[type[BaseModel]] = None
+'''
 
+JobSchema = TaskSchema  # TODO: Remove all references to JobSchema
 
 class Job(BaseModel):
     """A job instance ready for execution - system routes based on schema_name"""
