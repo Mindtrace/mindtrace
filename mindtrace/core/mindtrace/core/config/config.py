@@ -9,6 +9,7 @@ class Config(dict):
             "MINDTRACE_TEMP_DIR": "~/.cache/mindtrace/temp",
             "MINDTRACE_DEFAULT_REGISTRY_DIR": "~/.cache/mindtrace/registry",
             "MINDTRACE_CLUSTER_DEFAULT_REGISTRY_DIR": "~/.cache/mindtrace/cluster/registry",
+            "MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR": "~/.cache/mindtrace/orchestrator/local_client",
             "MINDTRACE_DEFAULT_HOST_URLS": {
                 "Service": "http://localhost:8000",
                 "ClusterManager": "http://localhost:8090",
