@@ -2,20 +2,8 @@ import time
 
 from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema
+from mindtrace.core import EchoInput, EchoOutput, echo_task, TaskSchema
 from mindtrace.services import Service
-
-
-class EchoInput(BaseModel):
-    message: str
-    delay: float = 0.0
-
-
-class EchoOutput(BaseModel):
-    echoed: str
-
-
-echo_task = TaskSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
 
 
 class EchoService(Service):
