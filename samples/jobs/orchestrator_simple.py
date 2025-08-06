@@ -1,10 +1,9 @@
 from mindtrace.core import EchoInput, echo_task
-from mindtrace.jobs import LocalClient, Orchestrator, job_from_schema
+from mindtrace.jobs import Orchestrator
 
-backend = LocalClient()
-orchestrator = Orchestrator(backend)
+orchestrator = Orchestrator()
 orchestrator.register(echo_task)
 
-job_id = orchestrator.publish("echo", job_from_schema(echo_task, EchoInput(message="Hello, world!")))
+job_id = orchestrator.publish("echo", EchoInput(message="Hello, world!"))
 
-print(orchestrator.backend.queues["echo"].pop())
+print(orchestrator.backend.receive_message("echo"))
