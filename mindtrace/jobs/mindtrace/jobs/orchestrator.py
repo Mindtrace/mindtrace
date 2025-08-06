@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 from pydantic import BaseModel
 
-from mindtrace.core import Mindtrace
+from mindtrace.core import Mindtrace, TaskSchema
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.types.job_specs import Job, JobSchema
