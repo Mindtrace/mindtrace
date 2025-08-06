@@ -2,19 +2,20 @@ from typing import Any, Dict
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
+from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
 
 class Orchestrator(Mindtrace):
     """Orchestrator - Message Queue and Routing System
 
-    Manages job queues using pluggable backends, routes messages between components,
-    handles job persistence to queues, and abstracts backend implementation details.
+    Manages job queues using pluggable backends, routes messages between components, handles job persistence to queues,
+    and abstracts backend implementation details.
     """
 
-    def __init__(self, backend: OrchestratorBackend) -> None:
+    def __init__(self, backend: OrchestratorBackend | None = None) -> None:
         super().__init__()
-        self.backend = backend
+        self.backend = backend or LocalClient()
         self._schema_mapping: Dict[str, Dict[str, Any]] = {}
 
     def publish(self, queue_name: str, job: Job, **kwargs) -> str:
