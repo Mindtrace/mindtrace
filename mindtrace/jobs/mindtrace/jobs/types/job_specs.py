@@ -31,7 +31,7 @@ class JobSchema(BaseModel):
 JobSchema = TaskSchema  # TODO: Remove all references to JobSchema
 
 class Job(BaseModel):
-    """A job instance ready for execution - system routes based on schema_name"""
+    """A job instance ready for execution - system routes based on schema_name."""
 
     id: str
     name: str

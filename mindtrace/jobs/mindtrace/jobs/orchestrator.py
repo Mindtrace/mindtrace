@@ -1,9 +1,12 @@
 from typing import Any, Dict
 
+from pydantic import BaseModel
+
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.types.job_specs import Job, JobSchema
+from mindtrace.jobs.utils.checks import job_from_schema
 
 
 class Orchestrator(Mindtrace):
@@ -18,7 +21,7 @@ class Orchestrator(Mindtrace):
         self.backend = backend or LocalClient()
         self._schema_mapping: Dict[str, Dict[str, Any]] = {}
 
-    def publish(self, queue_name: str, job: Job, **kwargs) -> str:
+    def publish(self, queue_name: str, job: Job | TaskSchema, **kwargs) -> str:
         """Send job to specified queue.
 
         Args:
@@ -28,6 +31,16 @@ class Orchestrator(Mindtrace):
         Returns:
             Job ID of the published job
         """
+        if isinstance(job, Job):
+            pass
+        elif isinstance(job, TaskSchema):
+            schema = self._schema_mapping.get(job.schema_name, None)
+            if schema is None:
+                raise ValueError(f"Schema '{job.schema_name}' not found.")
+            job = job_from_schema(schema.name, job)
+        else:
+            raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
+
         return self.backend.publish(queue_name, job, **kwargs)
 
     def clean_queue(self, queue_name: str, **kwargs) -> None:
