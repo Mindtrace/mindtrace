@@ -404,12 +404,12 @@ def train_test_split(base_dir, desired_ratio=0.2):
     print("Train-test split complete.")
 
 
-def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_updated_zone_masks=False):
+def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_updated_zone_masks=False, splits=['train', 'test']):
     print("Starting cropping process...")
     with open(cropping_config_path, 'r') as f:
         cropping_config = json.load(f)
 
-    for split in ['train', 'test']:
+    for split in splits:
         images_dir = os.path.join(base_dir, 'images', split)
         zone_masks_dir = os.path.join(base_dir, 'zone_masks', split)
         spatter_masks_dir = os.path.join(base_dir, 'spatter_masks', split)
@@ -853,7 +853,8 @@ def process_label_studio_projects(project_ids, config, download_dir):
             base_dir=temp_crop_dir,
             cropping_config_path=config['cropping']['cropping_config_path'],
             zone_class_mapping=zone_class_mapping,
-            save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False)
+            save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False),
+            splits=['all']
         )
         
         # Move cropped files back
