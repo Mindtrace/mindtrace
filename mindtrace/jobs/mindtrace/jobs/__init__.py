@@ -10,7 +10,7 @@ from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.redis.consumer_backend import RedisConsumerBackend
 from mindtrace.jobs.types.job_specs import BackendType, ExecutionStatus, Job, JobSchema
-from mindtrace.jobs.utils.checks import job_from_schema
+from mindtrace.jobs.utils.schemas import job_from_schema
 
 __all__ = [
     "BackendType",
