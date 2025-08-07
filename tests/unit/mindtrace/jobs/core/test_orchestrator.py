@@ -122,18 +122,18 @@ class TestOrchestratorPublish:
             mock_job = MagicMock()
             mock_job_from_schema.return_value = mock_job
             
-            result = orchestrator.publish("test-queue", sample_task_schema)
+            result = orchestrator.publish("test-schema", sample_task_schema)
             
             assert result == "test-job-id"
             # Get the actual schema from orchestrator's mapping
             actual_schema = orchestrator._schema_mapping[sample_task_schema.schema_name]["schema"]
             mock_job_from_schema.assert_called_once_with(actual_schema, sample_task_schema)
-            mock_backend.publish.assert_called_once_with("test-queue", mock_job)
+            mock_backend.publish.assert_called_once_with("test-schema", mock_job)
 
     def test_publish_task_schema_not_registered(self, orchestrator, sample_task_schema):
         """Test publishing a TaskSchema that is not registered."""
         with pytest.raises(ValueError, match="Schema 'test-schema' not found."):
-            orchestrator.publish("test-queue", sample_task_schema)
+            orchestrator.publish("test-schema", sample_task_schema)
 
     def test_publish_invalid_job_type(self, orchestrator):
         """Test publishing an invalid job type."""
@@ -268,7 +268,7 @@ class TestOrchestratorIntegration:
             mock_job = MagicMock()
             mock_job_from_schema.return_value = mock_job
             
-            result = orchestrator.publish("test-queue", sample_task_schema)
+            result = orchestrator.publish("test-schema", sample_task_schema)
             
             assert result == "test-job-id"
             # Get the actual schema from orchestrator's mapping
@@ -339,7 +339,7 @@ class TestOrchestratorEdgeCases:
         task_schema = MockTaskSchema(name="schema2", schema_name="schema2")
         
         with pytest.raises(ValueError, match="Schema 'schema2' not found."):
-            orchestrator.publish("test-queue", task_schema)
+            orchestrator.publish("schema2", task_schema)
 
     def test_backend_methods_return_values(self, orchestrator, mock_backend):
         """Test that backend method return values are properly handled."""
