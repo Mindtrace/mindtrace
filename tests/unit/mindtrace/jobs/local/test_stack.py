@@ -1,4 +1,5 @@
 import json
+import queue
 import tempfile
 import shutil
 from pathlib import Path
@@ -12,80 +13,121 @@ from mindtrace.registry import Registry
 class TestLocalStack:
     """Tests for LocalStack class."""
 
-    def setup_method(self):
-        """Set up test method."""
-        self.stack = LocalStack()
+    def test_push_pop(self):
+        """Test basic push and pop operations."""
+        stack = LocalStack()
+        stack.push("test1")
+        stack.push("test2")
+
+        assert stack.qsize() == 2
+        assert stack.pop() == "test2"  # LIFO order
+        assert stack.pop() == "test1"
+        assert stack.empty()
+
+    def test_empty_stack(self):
+        """Test operations on empty stack."""
+        stack = LocalStack()
+        assert stack.empty()
+        assert stack.qsize() == 0
+
+        with pytest.raises(queue.Empty):
+            stack.pop(block=False)
+
+    def test_blocking_stack_pop(self):
+        """Test blocking pop with timeout."""
+        stack = LocalStack()
+
+        with pytest.raises(queue.Empty):
+            stack.pop(timeout=0.1)
+
+    def test_stack_clean(self):
+        """Test stack cleaning."""
+        stack = LocalStack()
+        items = ["test1", "test2", "test3"]
+        for item in items:
+            stack.push(item)
+
+        assert stack.qsize() == 3
+        assert stack.clean() == 3
+        assert stack.empty()
+        assert stack.clean() == 0  # Clean empty stack
 
     def test_stack_initialization(self):
         """Test that LocalStack initializes correctly."""
-        assert self.stack.empty()
-        assert self.stack.qsize() == 0
+        stack = LocalStack()
+        assert stack.empty()
+        assert stack.qsize() == 0
 
     def test_push_and_pop(self):
         """Test basic push and pop operations."""
+        stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
         
         for item in test_items:
-            self.stack.push(item)
+            stack.push(item)
         
-        assert self.stack.qsize() == len(test_items)
-        assert not self.stack.empty()
+        assert stack.qsize() == len(test_items)
+        assert not stack.empty()
         
         # Pop items and verify LIFO order (last in, first out)
         expected_order = ["item3", "item2", "item1"]  # LIFO order
         for expected_item in expected_order:
-            item = self.stack.pop()
+            item = stack.pop()
             assert item == expected_item
         
-        assert self.stack.empty()
-        assert self.stack.qsize() == 0
+        assert stack.empty()
+        assert stack.qsize() == 0
 
     def test_lifo_order(self):
         """Test that items are popped in LIFO order."""
+        stack = LocalStack()
         # Add items to stack
-        self.stack.push("first")
-        self.stack.push("second")
-        self.stack.push("third")
-        self.stack.push("fourth")
+        stack.push("first")
+        stack.push("second")
+        stack.push("third")
+        stack.push("fourth")
         
         # Should pop in LIFO order (last in, first out)
-        assert self.stack.pop() == "fourth"
-        assert self.stack.pop() == "third"
-        assert self.stack.pop() == "second"
-        assert self.stack.pop() == "first"
+        assert stack.pop() == "fourth"
+        assert stack.pop() == "third"
+        assert stack.pop() == "second"
+        assert stack.pop() == "first"
 
     def test_pop_with_timeout(self):
         """Test pop with timeout."""
+        stack = LocalStack()
         # Pop from empty stack with timeout
         with pytest.raises(Exception):  # queue.Empty
-            self.stack.pop(block=True, timeout=0.1)
+            stack.pop(block=True, timeout=0.1)
         
         # Pop from empty stack without blocking
         with pytest.raises(Exception):  # queue.Empty
-            self.stack.pop(block=False)
+            stack.pop(block=False)
 
     def test_clean(self):
         """Test stack cleaning."""
+        stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
         for item in test_items:
-            self.stack.push(item)
+            stack.push(item)
         
-        assert self.stack.qsize() == len(test_items)
+        assert stack.qsize() == len(test_items)
         
-        cleaned_count = self.stack.clean()
+        cleaned_count = stack.clean()
         assert cleaned_count == len(test_items)
-        assert self.stack.empty()
-        assert self.stack.qsize() == 0
+        assert stack.empty()
+        assert stack.qsize() == 0
 
     def test_to_dict_and_from_dict(self):
         """Test serialization to and from dictionary."""
+        stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
         
         for item in test_items:
-            self.stack.push(item)
+            stack.push(item)
         
         # Test to_dict
-        stack_dict = self.stack.to_dict()
+        stack_dict = stack.to_dict()
         assert isinstance(stack_dict, dict)
         assert "items" in stack_dict
         # Items should be in LIFO order (as they would be popped from the stack)
@@ -121,6 +163,7 @@ class TestLocalStack:
 
     def test_complex_objects(self):
         """Test stack with complex objects."""
+        stack = LocalStack()
         complex_items = [
             {"nested": {"list": [1, 2, 3], "string": "test"}},
             [{"key": "value"}, {"another": "item"}],
@@ -128,12 +171,12 @@ class TestLocalStack:
         ]
         
         for item in complex_items:
-            self.stack.push(item)
+            stack.push(item)
         
         # Should pop in LIFO order
-        assert self.stack.pop() == {"numbers": [1, 2, 3, 4, 5]}
-        assert self.stack.pop() == [{"key": "value"}, {"another": "item"}]
-        assert self.stack.pop() == {"nested": {"list": [1, 2, 3], "string": "test"}}
+        assert stack.pop() == {"numbers": [1, 2, 3, 4, 5]}
+        assert stack.pop() == [{"key": "value"}, {"another": "item"}]
+        assert stack.pop() == {"nested": {"list": [1, 2, 3], "string": "test"}}
 
 
 class TestStackArchiver:

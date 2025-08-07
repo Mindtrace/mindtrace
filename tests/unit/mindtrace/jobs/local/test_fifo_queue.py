@@ -1,3 +1,4 @@
+import queue
 import tempfile
 import shutil
 from pathlib import Path
@@ -9,67 +10,82 @@ from mindtrace.registry import Registry
 
 
 class TestLocalQueue:
-    """Tests for LocalQueue class."""
+    """Tests for LocalQueue (FIFO queue)."""
 
-    def setup_method(self):
-        """Set up test method."""
-        self.queue = LocalQueue()
-
-    def test_queue_initialization(self):
-        """Test that LocalQueue initializes correctly."""
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
-
-    def test_push_and_pop(self):
+    def test_push_pop(self):
         """Test basic push and pop operations."""
-        test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
-        
-        for item in test_items:
-            self.queue.push(item)
-        
-        assert self.queue.qsize() == len(test_items)
-        assert not self.queue.empty()
-        
-        # Pop items and verify order (FIFO)
-        for expected_item in test_items:
-            item = self.queue.pop()
-            assert item == expected_item
-        
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
+        q = LocalQueue()
+        q.push("test1")
+        q.push("test2")
 
-    def test_pop_with_timeout(self):
-        """Test pop with timeout."""
-        # Pop from empty queue with timeout
-        with pytest.raises(Exception):  # queue.Empty
-            self.queue.pop(block=True, timeout=0.1)
-        
-        # Pop from empty queue without blocking
-        with pytest.raises(Exception):  # queue.Empty
-            self.queue.pop(block=False)
+        assert q.qsize() == 2
+        assert q.pop() == "test1"  # FIFO order
+        assert q.pop() == "test2"
+        assert q.empty()
+
+    def test_empty_queue(self):
+        """Test operations on empty queue."""
+        q = LocalQueue()
+        assert q.empty()
+        assert q.qsize() == 0
+
+        with pytest.raises(queue.Empty):
+            q.pop(block=False)
+
+    def test_blocking_pop(self):
+        """Test blocking pop with timeout."""
+        q = LocalQueue()
+
+        with pytest.raises(queue.Empty):
+            q.pop(timeout=0.1)
 
     def test_clean(self):
         """Test queue cleaning."""
-        test_items = ["item1", "item2", "item3"]
-        for item in test_items:
-            self.queue.push(item)
-        
-        assert self.queue.qsize() == len(test_items)
-        
-        cleaned_count = self.queue.clean()
-        assert cleaned_count == len(test_items)
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
+        q = LocalQueue()
+        items = ["test1", "test2", "test3"]
+        for item in items:
+            q.push(item)
 
-    def test_to_dict_and_from_dict(self):
-        """Test serialization to and from dictionary."""
+        assert q.qsize() == 3
+        assert q.clean() == 3
+        assert q.empty()
+        assert q.clean() == 0  # Clean empty queue
+
+    def test_queue_initialization(self):
+        """Test that LocalQueue initializes correctly."""
+        q = LocalQueue()
+        assert q.empty()
+        assert q.qsize() == 0
+
+    def test_push_and_pop_comprehensive(self):
+        """Test comprehensive push and pop operations."""
+        q = LocalQueue()
         test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
         
         for item in test_items:
-            self.queue.push(item)
+            q.push(item)
+        
+        assert q.qsize() == len(test_items)
+        assert not q.empty()
+        
+        # Pop items and verify order (FIFO)
+        for expected_item in test_items:
+            item = q.pop()
+            assert item == expected_item
+        
+        assert q.empty()
+        assert q.qsize() == 0
+
+    def test_to_dict_and_from_dict(self):
+        """Test serialization to and from dictionary."""
+        q = LocalQueue()
+        test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
+        
+        for item in test_items:
+            q.push(item)
         
         # Test to_dict
-        queue_dict = self.queue.to_dict()
+        queue_dict = q.to_dict()
         assert isinstance(queue_dict, dict)
         assert "items" in queue_dict
         assert queue_dict["items"] == test_items
@@ -273,4 +289,4 @@ class TestLocalQueueArchiver:
         
         assert isinstance(data, dict)
         assert "items" in data
-        assert data["items"] == ["test_item"]
+        assert data["items"] == ["test_item"] 

@@ -189,4 +189,4 @@ def test_connect_and_close_logger_calls(monkeypatch):
             conn.connection.close.side_effect = Exception("fail")
             conn.close()
             assert conn.logger.error.called
-            assert conn.logger.debug.called
+            assert conn.logger.debug.called 

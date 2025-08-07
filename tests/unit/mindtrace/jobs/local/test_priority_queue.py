@@ -1,3 +1,4 @@
+import queue
 import json
 import tempfile
 import shutil
@@ -10,105 +11,164 @@ from mindtrace.registry import Registry
 
 
 class TestLocalPriorityQueue:
-    """Tests for LocalPriorityQueue class."""
+    """Tests for LocalPriorityQueue."""
 
-    def setup_method(self):
-        """Set up test method."""
-        self.queue = LocalPriorityQueue()
+    def test_push_pop_priority(self):
+        """Test priority ordering."""
+        pq = LocalPriorityQueue()
+
+        items = [("low", 1), ("medium", 5), ("high", 10), ("highest", 20)]
+
+        for item, priority in items:
+            pq.push(item, priority)
+
+        assert pq.pop() == "highest"
+        assert pq.pop() == "high"
+        assert pq.pop() == "medium"
+        assert pq.pop() == "low"
+        assert pq.empty()
+
+    def test_same_priority(self):
+        """Test items with same priority."""
+        pq = LocalPriorityQueue()
+
+        pq.push("first", 1)
+        pq.push("second", 1)
+
+        assert pq.qsize() == 2
+        assert pq.pop() == "first"
+        assert pq.pop() == "second"
+
+    def test_empty_priority_queue(self):
+        """Test operations on empty priority queue."""
+        pq = LocalPriorityQueue()
+        assert pq.empty()
+        assert pq.qsize() == 0
+
+        with pytest.raises(queue.Empty):
+            pq.pop(block=False)
+
+    def test_blocking_priority_pop(self):
+        """Test blocking pop with timeout."""
+        pq = LocalPriorityQueue()
+
+        with pytest.raises(queue.Empty):
+            pq.pop(timeout=0.1)
+
+    def test_priority_clean(self):
+        """Test priority queue cleaning."""
+        pq = LocalPriorityQueue()
+        items = [("test1", 1), ("test2", 2), ("test3", 3)]
+        for item, priority in items:
+            pq.push(item, priority)
+
+        assert pq.qsize() == 3
+        assert pq.clean() == 3
+        assert pq.empty()
+        assert pq.clean() == 0  # Clean empty queue
+
+    def test_priority_queue_size_tracking(self):
+        """Test qsize reflects current number of items for LocalPriorityQueue."""
+        pq = LocalPriorityQueue()
+        assert pq.qsize() == 0
+
+        pq.push("item1", 1)
+        pq.push("item2", 2)
+        assert pq.qsize() == 2
+
+        pq.pop()
+        assert pq.qsize() == 1
+
+        pq.pop()
+        assert pq.qsize() == 0
+
+    def test_negative_priority_ordering(self):
+        """Items with negative priority should dequeue after positive/zero priorities (highest first)."""
+        pq = LocalPriorityQueue()
+        pq.push("negative", -10)
+        pq.push("zero", 0)
+        pq.push("positive", 10)
+
+        assert pq.pop() == "positive"  # highest priority
+        assert pq.pop() == "zero"
+        assert pq.pop() == "negative"  # negative priority last
 
     def test_queue_initialization(self):
         """Test that LocalPriorityQueue initializes correctly."""
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
+        pq = LocalPriorityQueue()
+        assert pq.empty()
+        assert pq.qsize() == 0
 
-    def test_push_and_pop(self):
-        """Test basic push and pop operations."""
+    def test_push_and_pop_comprehensive(self):
+        """Test comprehensive push and pop operations."""
+        pq = LocalPriorityQueue()
         test_items = [("item1", 1), ("item2", 2), ("item3", 3)]
         
         for item, priority in test_items:
-            self.queue.push(item, priority)
+            pq.push(item, priority)
         
-        assert self.queue.qsize() == len(test_items)
-        assert not self.queue.empty()
+        assert pq.qsize() == len(test_items)
+        assert not pq.empty()
         
         # Pop items and verify priority order (highest priority first)
         expected_order = ["item3", "item2", "item1"]  # Priority 3, 2, 1
         for expected_item in expected_order:
-            item = self.queue.pop()
+            item = pq.pop()
             assert item == expected_item
         
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
+        assert pq.empty()
+        assert pq.qsize() == 0
 
     def test_priority_order(self):
         """Test that items are popped in priority order."""
+        pq = LocalPriorityQueue()
         # Add items with different priorities
-        self.queue.push("low", 1)
-        self.queue.push("high", 10)
-        self.queue.push("medium", 5)
-        self.queue.push("very_high", 15)
+        pq.push("low", 1)
+        pq.push("high", 10)
+        pq.push("medium", 5)
+        pq.push("very_high", 15)
         
         # Should pop in priority order (highest first)
-        assert self.queue.pop() == "very_high"
-        assert self.queue.pop() == "high"
-        assert self.queue.pop() == "medium"
-        assert self.queue.pop() == "low"
+        assert pq.pop() == "very_high"
+        assert pq.pop() == "high"
+        assert pq.pop() == "medium"
+        assert pq.pop() == "low"
 
     def test_same_priority_order(self):
         """Test that items with same priority maintain FIFO order."""
-        self.queue.push("first", 5)
-        self.queue.push("second", 5)
-        self.queue.push("third", 5)
+        pq = LocalPriorityQueue()
+        pq.push("first", 5)
+        pq.push("second", 5)
+        pq.push("third", 5)
         
         # Should maintain FIFO order for same priority
-        assert self.queue.pop() == "first"
-        assert self.queue.pop() == "second"
-        assert self.queue.pop() == "third"
+        assert pq.pop() == "first"
+        assert pq.pop() == "second"
+        assert pq.pop() == "third"
 
     def test_default_priority(self):
         """Test that items with no priority default to 0."""
-        self.queue.push("item1")
-        self.queue.push("item2", 0)
-        self.queue.push("item3", 1)
+        pq = LocalPriorityQueue()
+        pq.push("item1")
+        pq.push("item2", 0)
+        pq.push("item3", 1)
         
         # Higher priority should come first
-        assert self.queue.pop() == "item3"
+        assert pq.pop() == "item3"
         # Same priority should maintain FIFO
-        assert self.queue.pop() == "item1"
-        assert self.queue.pop() == "item2"
-
-    def test_pop_with_timeout(self):
-        """Test pop with timeout."""
-        # Pop from empty queue with timeout
-        with pytest.raises(Exception):  # queue.Empty
-            self.queue.pop(block=True, timeout=0.1)
-        
-        # Pop from empty queue without blocking
-        with pytest.raises(Exception):  # queue.Empty
-            self.queue.pop(block=False)
-
-    def test_clean(self):
-        """Test queue cleaning."""
-        test_items = [("item1", 1), ("item2", 2), ("item3", 3)]
-        for item, priority in test_items:
-            self.queue.push(item, priority)
-        
-        assert self.queue.qsize() == len(test_items)
-        
-        cleaned_count = self.queue.clean()
-        assert cleaned_count == len(test_items)
-        assert self.queue.empty()
-        assert self.queue.qsize() == 0
+        assert pq.pop() == "item1"
+        assert pq.pop() == "item2"
 
     def test_to_dict_and_from_dict(self):
         """Test serialization to and from dictionary."""
+        pq = LocalPriorityQueue()
         test_items = [("item1", 1), ("item2", 5), ("item3", 3)]
         
         for item, priority in test_items:
-            self.queue.push(item, priority)
+            pq.push(item, priority)
         
         # Test to_dict
-        queue_dict = self.queue.to_dict()
+        queue_dict = pq.to_dict()
         assert isinstance(queue_dict, dict)
         assert "items" in queue_dict
         assert len(queue_dict["items"]) == len(test_items)
@@ -148,6 +208,7 @@ class TestLocalPriorityQueue:
 
     def test_complex_objects_with_priority(self):
         """Test priority queue with complex objects."""
+        pq = LocalPriorityQueue()
         complex_items = [
             ({"nested": {"list": [1, 2, 3], "string": "test"}}, 10),
             ([{"key": "value"}, {"another": "item"}], 5),
@@ -155,12 +216,12 @@ class TestLocalPriorityQueue:
         ]
         
         for item, priority in complex_items:
-            self.queue.push(item, priority)
+            pq.push(item, priority)
         
         # Should pop in priority order
-        assert self.queue.pop() == {"numbers": [1, 2, 3, 4, 5]}  # priority 15
-        assert self.queue.pop() == {"nested": {"list": [1, 2, 3], "string": "test"}}  # priority 10
-        assert self.queue.pop() == [{"key": "value"}, {"another": "item"}]  # priority 5
+        assert pq.pop() == {"numbers": [1, 2, 3, 4, 5]}  # priority 15
+        assert pq.pop() == {"nested": {"list": [1, 2, 3], "string": "test"}}  # priority 10
+        assert pq.pop() == [{"key": "value"}, {"another": "item"}]  # priority 5
 
 
 class TestPriorityQueueArchiver:
