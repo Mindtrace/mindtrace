@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver
+from mindtrace.registry import Archiver, Registry
 
 
 class LocalPriorityQueue:
@@ -85,4 +85,5 @@ class PriorityQueueArchiver(Archiver):
             queue_data = json.load(f)
         return LocalPriorityQueue.from_dict(queue_data)
 
-# Registry.register_default_materializer(LocalPriorityQueue, PriorityQueueArchiver)
+
+Registry.register_default_materializer(LocalPriorityQueue, PriorityQueueArchiver)

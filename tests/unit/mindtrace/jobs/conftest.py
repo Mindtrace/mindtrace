@@ -1,11 +1,14 @@
-import time
 from datetime import datetime
+from pathlib import Path
+import tempfile
+import time
 
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.jobs.types.job_specs import Job, JobSchema
-from mindtrace.jobs.utils.checks import job_from_schema
+from mindtrace.jobs import Consumer, Job, JobSchema, job_from_schema
+from mindtrace.jobs import LocalClient
+from mindtrace.registry import Registry
 
 
 class SampleJobInput(BaseModel):
@@ -18,6 +21,16 @@ class SampleJobOutput(BaseModel):
     timestamp: str = "2024-01-01T00:00:00"
 
 
+class SampleConsumer(Consumer):
+    def __init__(self, name):
+        super().__init__()
+        self.processed_jobs = []
+
+    def run(self, job_dict):
+        self.processed_jobs.append(job_dict)
+        return {"result": "processed"}
+
+
 def create_test_job(
     name: str = "test_job", schema_name: str = "default_schema", input_data_str: str | None = None
 ) -> Job:
@@ -27,8 +40,8 @@ def create_test_job(
         test_input = SampleJobInput(data=input_data_str)
     schema = JobSchema(
         name=schema_name,
-        input=SampleJobInput,
-        output=SampleJobOutput,
+        input_schema=SampleJobInput,
+        output_schema=SampleJobOutput,
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
@@ -48,6 +61,40 @@ def unique_queue_name():
 @pytest.fixture
 def test_timestamp():
     return datetime.now().isoformat()
+
+
+@pytest.fixture(scope="session")
+def sample_job_input():
+    """Provide SampleJobInput class for the entire test session."""
+    return SampleJobInput
+
+
+@pytest.fixture(scope="session")
+def sample_job_output():
+    """Provide SampleJobOutput class for the entire test session."""
+    return SampleJobOutput
+
+
+@pytest.fixture(scope="function")
+def sample_consumer():
+    """Provide a fresh SampleConsumer instance for each test function."""
+    return SampleConsumer
+
+
+@pytest.fixture(scope="function")
+def create_test_job_fixture():
+    """Provide the create_test_job function for each test function."""
+    return create_test_job
+
+
+@pytest.fixture(scope="function")
+def temp_local_client():
+    """Provide a LocalClient with a temporary directory backend for each test function."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        backend = Registry(registry_dir=temp_path)
+        client = LocalClient(broker_id=f"test_broker_{int(time.time())}", backend=backend)
+        yield client
 
 
 def pytest_configure(config):

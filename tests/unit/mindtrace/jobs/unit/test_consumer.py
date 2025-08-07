@@ -2,26 +2,22 @@ import time
 
 import pytest
 
-from mindtrace.jobs.consumers.consumer import Consumer
-from mindtrace.jobs.local.client import LocalClient
-from mindtrace.jobs.orchestrator import Orchestrator
-from mindtrace.jobs.types.job_specs import JobSchema
+from mindtrace.jobs import Consumer, JobSchema, LocalClient, Orchestrator
 
-from ..conftest import SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestConsumer:
     """Test Consumer functionality with dict-based messages."""
 
     def setup_method(self):
-        self.broker = LocalClient(broker_id=f"consumer_test_{int(time.time())}")
-        self.orchestrator = Orchestrator(self.broker)
+        pass
 
-        self.test_schema = JobSchema(name="test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
-        self.test_queue = self.orchestrator.register(self.test_schema)
-
-    def test_consumer_basic_functionality(self):
+    def test_consumer_basic_functionality(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test basic consumer message processing."""
+
+        orchestrator = Orchestrator(temp_local_client)
+        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_queue = orchestrator.register(test_schema)
 
         class TestWorker(Consumer):
             def __init__(self, name):
@@ -35,10 +31,10 @@ class TestConsumer:
                 return {"result": f"processed_{task_data}"}
 
         consumer = TestWorker("test_consumer_jobs")
-        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        consumer.connect_to_orchestrator(orchestrator, test_queue)
 
-        test_job = create_test_job("consumer_test_job")
-        _ = self.orchestrator.publish(self.test_queue, test_job)
+        test_job = create_test_job_fixture("consumer_test_job")
+        _ = orchestrator.publish(test_queue, test_job)
 
         consumer.consume(num_messages=1)
 
@@ -48,8 +44,12 @@ class TestConsumer:
         assert processed_job["id"] == test_job.id
         assert processed_job["payload"]["data"] == "test_input"
 
-    def test_consumer_error_handling(self):
+    def test_consumer_error_handling(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test consumer error handling with failing jobs."""
+
+        orchestrator = Orchestrator(temp_local_client)
+        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_queue = orchestrator.register(test_schema)
 
         class ErrorProneWorker(Consumer):
             def __init__(self, name):
@@ -66,26 +66,29 @@ class TestConsumer:
                 return {"result": "success"}
 
         consumer = ErrorProneWorker("test_consumer_jobs")
-        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        consumer.connect_to_orchestrator(orchestrator, test_queue)
 
-        success_job = create_test_job("success_job")
-        fail_job = create_test_job("fail_job", input_data_str="fail_me")
+        success_job = create_test_job_fixture("success_job")
+        fail_job = create_test_job_fixture("fail_job", input_data_str="fail_me")
 
-        self.orchestrator.publish(self.test_queue, success_job)
-        self.orchestrator.publish(self.test_queue, fail_job)
+        orchestrator.publish(test_queue, success_job)
+        orchestrator.publish(test_queue, fail_job)
 
         consumer.consume(num_messages=2)
 
         assert len(consumer.processed_jobs) == 1
         assert consumer.processed_jobs[0]["id"] == success_job.id
 
-        remaining = self.orchestrator.count_queue_messages(self.test_queue)
+        remaining = orchestrator.count_queue_messages(test_queue)
         assert remaining == 0
 
-    def test_consumer_multi_queue(self):
+    def test_consumer_multi_queue(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test consumer consuming from multiple queues."""
-        schema2 = JobSchema(name="test_consumer_jobs_2", input=SampleJobInput, output=SampleJobOutput)
-        queue2 = self.orchestrator.register(schema2)
+        orchestrator = Orchestrator(temp_local_client)
+        schema1 = JobSchema(name="test-consumer-jobs:1", input=sample_job_input, output=sample_job_output)
+        schema2 = JobSchema(name="test-consumer-jobs:2", input=sample_job_input, output=sample_job_output)
+        queue1 = orchestrator.register(schema1)
+        queue2 = orchestrator.register(schema2)
 
         class MultiQueueWorker(Consumer):
             def __init__(self, name):
@@ -97,23 +100,27 @@ class TestConsumer:
                 return {"result": "multi_queue_processed"}
 
         consumer = MultiQueueWorker("test_consumer_jobs")
-        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        consumer.connect_to_orchestrator(orchestrator, queue1)
 
-        job1 = create_test_job("queue1_job")
-        job2 = create_test_job("queue2_job")
+        job1 = create_test_job_fixture("queue1_job")
+        job2 = create_test_job_fixture("queue2_job")
 
-        self.orchestrator.publish(self.test_queue, job1)
-        self.orchestrator.publish(queue2, job2)
+        orchestrator.publish(queue1, job1)
+        orchestrator.publish(queue2, job2)
 
-        consumer.consume(num_messages=2, queues=[self.test_queue, queue2])
+        consumer.consume(num_messages=2, queues=[queue1, queue2])
 
         assert len(consumer.processed_jobs) == 2
         processed_names = [job["name"] for job in consumer.processed_jobs]
         assert "queue1_job" in processed_names
         assert "queue2_job" in processed_names
 
-    def test_consumer_consume_until_empty(self):
+    def test_consumer_consume_until_empty(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test consume_until_empty functionality."""
+
+        orchestrator = Orchestrator(temp_local_client)
+        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_queue = orchestrator.register(test_schema)
 
         class EmptyTestWorker(Consumer):
             def __init__(self, name):
@@ -125,22 +132,26 @@ class TestConsumer:
                 return {"result": f"processed_{self.processed_count}"}
 
         consumer = EmptyTestWorker("test_consumer_jobs")
-        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        consumer.connect_to_orchestrator(orchestrator, test_queue)
 
         job_count = 5
         for i in range(job_count):
-            job = create_test_job(f"empty_test_job_{i}")
-            self.orchestrator.publish(self.test_queue, job)
+            job = create_test_job_fixture(f"empty_test_job_{i}")
+            orchestrator.publish(test_queue, job)
 
         consumer.consume_until_empty()
 
         assert consumer.processed_count == job_count
 
-        remaining = self.orchestrator.count_queue_messages(self.test_queue)
+        remaining = orchestrator.count_queue_messages(test_queue)
         assert remaining == 0
 
-    def test_consumer_dict_message_structure(self):
+    def test_consumer_dict_message_structure(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test that consumers receive properly structured dict messages."""
+
+        orchestrator = Orchestrator(temp_local_client)
+        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_queue = orchestrator.register(test_schema)
 
         class StructureTestWorker(Consumer):
             def __init__(self, name):
@@ -163,10 +174,10 @@ class TestConsumer:
                 return {"result": "structure_verified"}
 
         consumer = StructureTestWorker("test_consumer_jobs")
-        consumer.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        consumer.connect_to_orchestrator(orchestrator, test_queue)
 
-        test_job = create_test_job("structure_test_job")
-        self.orchestrator.publish(self.test_queue, test_job)
+        test_job = create_test_job_fixture("structure_test_job")
+        orchestrator.publish(test_queue, test_job)
 
         consumer.consume(num_messages=1)
 
@@ -215,14 +226,18 @@ class TestConsumer:
         result = concrete_consumer.run({"test": "data"})
         assert result["result"] == "concrete_implementation"
 
-    def test_double_connect_raises(self):
+    def test_double_connect_raises(self, temp_local_client, sample_job_input, sample_job_output):
         """Ensure connect raises RuntimeError if called twice on same Consumer."""
+
+        orchestrator = Orchestrator(temp_local_client)
+        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_queue = orchestrator.register(test_schema)
 
         class DummyWorker(Consumer):
             def run(self, job_dict):
                 return {}
 
         dummy = DummyWorker()
-        dummy.connect_to_orchestrator(self.orchestrator, self.test_queue)
+        dummy.connect_to_orchestrator(orchestrator, test_queue)
         with pytest.raises(RuntimeError):
-            dummy.connect_to_orchestrator(self.orchestrator, self.test_queue)
+            dummy.connect_to_orchestrator(orchestrator, test_queue)

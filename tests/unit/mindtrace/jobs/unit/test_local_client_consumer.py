@@ -42,8 +42,8 @@ class TestLocalClient:
     """Tests for LocalClient."""
 
     @pytest.fixture
-    def client(self):
-        return LocalClient(broker_id="test_broker")
+    def client(self, temp_local_client):
+        return temp_local_client
 
     def test_declare_queue_types(self, client):
         """Test declaring different queue types."""
@@ -120,7 +120,7 @@ class TestLocalClient:
         result = client.receive_message("test-queue", block=False)
         assert result is None
 
-        result = client.receive_message("test-queue", block=True, timeout=0.1)
+        result = client.receive_message("test-queue", block=True, timeout=0.01)
         assert result is None
 
     def test_clean_queue(self, client):
@@ -141,16 +141,14 @@ class TestLocalClient:
 
     def test_job_results(self, client):
         """Test storing and retrieving job results."""
-        job_id = "test_job"
+        job_id = "test-job"
         result_data = {"status": "completed", "value": 42}
 
-        store_result = client.store_job_result(job_id, result_data)
-        assert store_result["status"] == "success"
-
+        client.store_job_result(job_id, result_data)
         retrieved = client.get_job_result(job_id)
         assert retrieved == result_data
 
-        assert client.get_job_result("nonexistent_job") is None
+        assert client.get_job_result("nonexistent-job") is None
 
     def test_publish_to_nonexistent_queue(self, client):
         """Test publishing to a queue that doesn't exist."""
@@ -182,7 +180,7 @@ class TestLocalClient:
         queue_instance = client.queues["test-queue"]
         queue_instance.push("invalid json content")
 
-        result = client.receive_message("test-queue")
+        result = client.receive_message("test-queue", block=True, timeout=0.01)
         assert result is None
 
     def test_clean_nonexistent_queue(self, client):
@@ -225,8 +223,8 @@ class TestLocalConsumerBackend:
     """Tests for LocalConsumerBackend."""
 
     @pytest.fixture
-    def orchestrator(self):
-        return Orchestrator(LocalClient(broker_id="test_broker"))
+    def orchestrator(self, temp_local_client):
+        return Orchestrator(temp_local_client)
 
     def test_publish_and_consume(self, orchestrator: Orchestrator):
         """Test basic publishing and consuming functionality."""
@@ -250,7 +248,7 @@ class TestLocalConsumerBackend:
 
     def test_consume_with_exceptions(self, orchestrator: Orchestrator):
         """Test consuming messages that raise exceptions."""
-        queue_name = "test_queue"
+        queue_name = "test-queue"
         secondary_queue = "secondary-queue"
 
         orchestrator.backend.declare_queue(queue_name)
