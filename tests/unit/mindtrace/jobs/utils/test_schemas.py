@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from mindtrace.jobs.utils.checks import job_from_schema
+from mindtrace.jobs.utils.schemas import job_from_schema
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
 
@@ -35,9 +35,9 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data", count=5)
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -54,9 +54,9 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = {"data": "test-data", "count": 10}
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -75,9 +75,9 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = {"data": "test-data"}  # count will use default value
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -92,9 +92,9 @@ class TestJobFromSchema:
         schema.name = "different-job-name"
         input_data = MockInputSchema(data="test-data")
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -131,9 +131,9 @@ class TestJobFromSchema:
             "metadata": {"key": "value"}
         }
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -176,7 +176,7 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data")
         
-        with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+        with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
             mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
             
             job1 = job_from_schema(schema, input_data)
@@ -191,9 +191,9 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data")
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 30, 45, 123456)
                 
                 result = job_from_schema(schema, input_data)
@@ -205,9 +205,9 @@ class TestJobFromSchema:
         schema = MockJobSchema()
         input_data = MockInputSchema(data="test-data", count=5)
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
@@ -230,9 +230,9 @@ class TestJobFromSchema:
         schema = RequiredOnlyJobSchema()
         input_data = {"required_field": "test-value"}
         
-        with patch('mindtrace.jobs.utils.checks.uuid.uuid4') as mock_uuid:
+        with patch('mindtrace.jobs.utils.schemas.uuid.uuid4') as mock_uuid:
             mock_uuid.return_value = uuid4()
-            with patch('mindtrace.jobs.utils.checks.datetime') as mock_datetime:
+            with patch('mindtrace.jobs.utils.schemas.datetime') as mock_datetime:
                 mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)
                 
                 result = job_from_schema(schema, input_data)
