@@ -24,11 +24,28 @@ class LocalClient(OrchestratorBackend):
     parameter. It maintains a shared (in-memory) dictionary of declared queues and a store for job results.
     """
 
-    def __init__(self, broker_id: str | None = None, backend: Registry | None = None):
+    def __init__(
+        self, 
+        client_dir: str | Path | None = None,
+        broker_id: str | None = None, 
+        backend: Registry | None = None,
+    ):
+        """
+        Initialize the LocalClient.
+
+        Args:
+            client_dir: The directory to store the client. If None, uses the default from config.
+            broker_id: The ID of the broker.
+            backend: The backend to use for storage. If None, uses the default from config.
+        """
         super().__init__()
         self.broker_id = ifnone(broker_id, default="mindtrace.default_broker")
         if backend is None:
-            backend = Registry(registry_dir=self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"])
+            if client_dir is None:
+                client_dir = self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]
+            client_dir = Path(client_dir).expanduser().resolve()
+            backend = Registry(registry_dir=client_dir)
+
         self.queues: Registry[str, "Queue"] = backend
         self._lock = threading.Lock()
         self._job_results: Registry[str, Any] = Registry(registry_dir=Path(self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]) / "results")
