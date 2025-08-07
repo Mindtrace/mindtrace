@@ -34,17 +34,11 @@ class LocalStack:
     def to_dict(self):
         """Convert stack contents to a JSON-serializable dictionary."""
         items = []
-        # Extract all items from the original stack (in LIFO order)
         while not self.stack.empty():
             item = self.stack.get()
             items.append(item)
         
-        # Store items in LIFO order (as they would be popped from the stack)
-        # This preserves the stack's natural order for serialization
         lifo_items = items  # items are already in LIFO order from popping
-        
-        # Restore the original stack by pushing items back in reverse order
-        # This maintains the original stack structure
         for item in reversed(items):
             self.stack.put(item)
         
