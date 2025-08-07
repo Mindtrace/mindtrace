@@ -21,9 +21,8 @@ class Orchestrator(Mindtrace):
         super().__init__()
 
         if backend is None:
-            if orchestrator_dir is None:
-                orchestrator_dir = self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_DIR"]
-            orchestrator_dir = Path(orchestrator_dir).expanduser().resolve()
+            if orchestrator_dir is not None:
+                orchestrator_dir = Path(orchestrator_dir).expanduser().resolve()
             backend = LocalClient(client_dir=orchestrator_dir)
 
         self.backend = backend
