@@ -43,7 +43,7 @@ class TestLocalConsumerBackend:
 
     def test_publish_and_consume(self, temp_local_client):
         """Test basic publishing and consuming functionality."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -64,7 +64,7 @@ class TestLocalConsumerBackend:
 
     def test_consume_with_exceptions(self, temp_local_client):
         """Test consuming messages that raise exceptions."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         secondary_queue = "secondary-queue"
 
@@ -89,7 +89,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_keyboard_interrupt(self, temp_local_client):
         """Test handling of KeyboardInterrupt during consumption."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -105,7 +105,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_with_error(self, temp_local_client):
         """Test handling of KeyboardInterrupt during consumption."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -123,7 +123,7 @@ class TestLocalConsumerBackend:
 
     def test_consume_multiple_queues(self, temp_local_client):
         """Test consuming from multiple queues."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queues = ["queue1", "queue2"]
         for queue in queues:
             orchestrator.backend.declare_queue(queue)
@@ -150,7 +150,7 @@ class TestLocalConsumerBackend:
 
     def test_non_blocking_consume_empty(self, temp_local_client):
         """Test non-blocking consume behavior with empty queues."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -162,7 +162,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_no_run_method(self, temp_local_client):
         """Test consumer with no run method set."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         consumer = EffectivelyAbstractConsumer()
 
         with pytest.raises(RuntimeError, match="Consumer not connected"):
@@ -170,7 +170,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_with_orchestrator_exception(self, temp_local_client):
         """Test consumer handling orchestrator exceptions during message retrieval."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -191,7 +191,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_blocking_with_timeout(self, temp_local_client):
         """Test consumer with blocking=True and timeout behavior."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -212,7 +212,7 @@ class TestLocalConsumerBackend:
 
     def test_consume_until_empty_method(self, temp_local_client):
         """Test consume_until_empty method specifically."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -229,7 +229,7 @@ class TestLocalConsumerBackend:
 
     def test_process_message_non_dict(self, temp_local_client):
         """Test process_message with non-dict input."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, "test-queue")
 
@@ -241,7 +241,7 @@ class TestLocalConsumerBackend:
 
     def test_process_message_dict_with_exception(self, temp_local_client):
         """Test process_message with dict input that causes exception."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         consumer = DivisionConsumer()
         consumer.connect_to_orchestrator(orchestrator, "test-queue")
 
@@ -250,7 +250,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_exception_handling_with_nonblock_return(self, temp_local_client):
         """Test exception handling in consumer when not blocking - covers line 46-47."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -290,7 +290,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_blocking_sleep_when_no_messages(self, temp_local_client):
         """Test that blocking consumer sleeps when no messages found - covers line 54."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -322,7 +322,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_exception_handling_with_blocking_sleep(self, temp_local_client):
         """Test exception handling with blocking=True triggers sleep(1) - covers line 46."""
-        orchestrator = Orchestrator(temp_local_client)
+        orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
