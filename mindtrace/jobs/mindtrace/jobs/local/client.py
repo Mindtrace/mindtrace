@@ -111,13 +111,13 @@ class LocalClient(OrchestratorBackend):
             try:
                 raw_message = queue_instance.pop(block=block, timeout=timeout)
                 if raw_message is None:
-                    self.debug(f"Queue '{queue_name}' is empty.")
+                    self.logger.debug(f"Queue '{queue_name}' is empty.")
                     return None
                 message_dict = json.loads(raw_message)
                 self.queues.save(queue_name, queue_instance)
                 return message_dict
             except Exception as e:
-                self.warning(f"Error popping message from queue '{queue_name}': {e}")
+                self.logger.warning(f"Error popping message from queue '{queue_name}': {e}")
                 return None
 
     def clean_queue(self, queue_name: str, **kwargs) -> dict[str, str]:
@@ -127,7 +127,7 @@ class LocalClient(OrchestratorBackend):
                 raise KeyError(f"Queue '{queue_name}' not found.")
             queue_instance = self.queues.load(queue_name, acquire_lock=False)
             queue_instance.clean()
-            self.queues.save(queue_name, queue_instance, acquire_lock=False)
+            self.queues.save(queue_name, queue_instance)
         return {"status": "success", "message": f"Cleaned queue '{queue_name}'."}
 
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:

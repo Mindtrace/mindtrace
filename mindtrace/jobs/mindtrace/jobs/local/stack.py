@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
 
-from mindtrace.registry import Archiver
+from mindtrace.registry import Archiver, Registry
 
 
 class LocalStack:
@@ -73,3 +73,6 @@ class StackArchiver(Archiver):
         with open(Path(self.uri) / "stack.json", "r") as f:
             stack_data = json.load(f)
         return LocalStack.from_dict(stack_data)
+
+
+Registry.register_default_materializer(LocalStack, StackArchiver)

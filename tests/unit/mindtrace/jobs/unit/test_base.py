@@ -165,15 +165,15 @@ class TestConsumerBackendBase:
     def test_initialization(self):
         """Test consumer initialization."""
         frontend = Mock()
-        consumer = MockConsumer("test_queue", frontend)
+        consumer = MockConsumer("test-queue", frontend)
 
-        assert consumer.queue_name == "test_queue"
+        assert consumer.queue_name == "test-queue"
         assert consumer.consumer_frontend == frontend
 
     def test_process_message_with_exception(self):
         """Test processing message that raises exception."""
         frontend = MockBadConsumerFrontend()
-        consumer = MockConsumer("test_queue", frontend)
+        consumer = MockConsumer("test-queue", frontend)
 
         success = consumer.process_message({"test": "data"})
         assert not success
@@ -191,7 +191,7 @@ class TestConsumerBackendBase:
             def process_message(self, message) -> bool:
                 super().process_message(message)
 
-        consumer = PartialConsumer("test_queue", Mock())
+        consumer = PartialConsumer("test-queue", Mock())
         with pytest.raises(NotImplementedError):
             consumer.consume()
         with pytest.raises(NotImplementedError):
@@ -206,7 +206,7 @@ class TestOrchestratorBackend:
     def test_queue_operations(self):
         """Test basic queue operations."""
         orchestrator = MockOrchestrator()
-        queue_name = "test_queue"
+        queue_name = "test-queue"
 
         result = orchestrator.declare_queue(queue_name)
         assert result["status"] == "created"
@@ -236,8 +236,8 @@ class TestOrchestratorBackend:
     def test_dlq_operations(self):
         """Test dead letter queue operations."""
         orchestrator = MockOrchestrator()
-        queue_name = "test_queue"
-        dlq_name = "test_dlq"
+        queue_name = "test-queue"
+        dlq_name = "test-dlq"
 
         class TestMessage(pydantic.BaseModel):
             data: str

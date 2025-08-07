@@ -80,4 +80,4 @@ class LocalQueueArchiver(Archiver):
         return LocalQueue.from_dict(queue_data)
 
 
-# Registry.register_default_materializer(LocalQueue, LocalQueueArchiver)
+Registry.register_default_materializer(LocalQueue, LocalQueueArchiver)
