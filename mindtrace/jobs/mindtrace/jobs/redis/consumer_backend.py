@@ -3,9 +3,9 @@ import time
 from queue import Empty
 from typing import Optional
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConsumerBackend(ConsumerBackendBase):
