@@ -137,7 +137,7 @@ def test_delete_metadata_no_such_key(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )
@@ -159,7 +159,7 @@ def test_delete_metadata_other_error(backend, monkeypatch):
             resource="/test-bucket/metadata.yaml",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="metadata.yaml",
         )
@@ -217,7 +217,7 @@ def test_register_materializer_no_such_key(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -253,7 +253,7 @@ def test_register_materializer_other_error(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -279,7 +279,7 @@ def test_registered_materializers_no_such_key(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -308,7 +308,7 @@ def test_registered_materializer_other_error(backend, monkeypatch):
             resource="/test-bucket/registry_metadata.json",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="registry_metadata.json",
         )
@@ -331,7 +331,7 @@ def test_registered_materializer_other_error(backend, monkeypatch):
 
 
 def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
-    """Test that acquire_lock returns False when trying to acquire a shared lock while an exclusive lock exists."""
+    """Test that acquire_lock raises LockAcquisitionError when trying to acquire a shared lock while an exclusive lock exists."""
 
     # Mock get_object to return an active exclusive lock
     def mock_get_object(*args, **kwargs):
@@ -350,7 +350,12 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire a shared lock while an exclusive lock exists
-    assert not backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
+    import pytest
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)
 
 
 def test_acquire_lock_put_failure(backend, monkeypatch):
@@ -364,7 +369,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -377,7 +382,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -390,7 +395,7 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
 
 
 def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
-    """Test that acquire_lock returns False when trying to acquire an exclusive lock while shared locks exist."""
+    """Test that acquire_lock raises LockAcquisitionError when trying to acquire an exclusive lock while shared locks exist."""
 
     # Mock get_object to return an active shared lock
     def mock_get_object(*args, **kwargs):
@@ -409,7 +414,12 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire an exclusive lock while shared locks exist
-    assert not backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)
+    import pytest
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)
 
 
 def test_release_lock_unexpected_error(backend, monkeypatch):
@@ -423,7 +433,7 @@ def test_release_lock_unexpected_error(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -496,7 +506,7 @@ def test_check_lock_no_such_key(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -520,7 +530,7 @@ def test_check_lock_other_error(backend, monkeypatch):
             resource="/test-bucket/lock",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="lock",
         )
@@ -800,7 +810,7 @@ def test_overwrite_handles_nosuchkey_error(backend, monkeypatch):
                 resource="/test-bucket/objects/test:target/2.0.0/test.txt",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None,  # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -854,7 +864,7 @@ def test_overwrite_handles_other_s3error(backend, monkeypatch):
             resource="/test-bucket/objects/test:target/2.0.0/test.txt",
             request_id="test-request-id",
             host_id="test-host-id",
-            response=None,
+            response=None,  # type: ignore
             bucket_name="test-bucket",
             object_name="objects/test:target/2.0.0/test.txt",
         )
@@ -1005,7 +1015,7 @@ def test_overwrite_handles_nosuchkey_metadata_error(backend, monkeypatch):
                 resource="/test-bucket/_meta_test_source@1.0.0.json",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None,  # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -1058,7 +1068,7 @@ def test_overwrite_handles_other_metadata_error(backend, monkeypatch):
                 resource="/test-bucket/_meta_test_source@1.0.0.json",
                 request_id="test-request-id",
                 host_id="test-host-id",
-                response=None,
+                response=None,  # type: ignore
                 bucket_name="test-bucket",
                 object_name=object_name,
             )
@@ -1273,3 +1283,47 @@ def test_pull_skips_root_directory_marker(backend, monkeypatch, tmp_path):
     assert f"{remote_key}/file1.txt" in downloaded
     assert remote_key not in downloaded
     assert len(downloaded) == 1
+
+
+def test_acquire_lock_unexpected_s3error(backend, monkeypatch, caplog):
+    """Test that acquire_lock returns False on unexpected S3Error (not 'NoSuchKey')."""
+    from minio.error import S3Error
+
+    # Mock get_object to raise an S3Error with a code other than 'NoSuchKey'
+    def mock_get_object(*args, **kwargs):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/_lock_test-key",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name="test-bucket",
+            object_name="_lock_test-key",
+        )
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    with caplog.at_level("ERROR"):
+        result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+        assert result is False
+        assert any("Error acquiring shared lock for test-key" in record.message for record in caplog.records)
+
+
+def test_acquire_lock_generic_exception(backend, monkeypatch):
+    """Test that acquire_lock proceeds when get_object raises a generic Exception (lines 483-485)."""
+
+    # Mock get_object to raise a generic Exception (not S3Error or LockAcquisitionError)
+    def mock_get_object(*args, **kwargs):
+        raise Exception("Generic error during lock check")
+
+    # Mock put_object to succeed
+    def mock_put_object(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    # Attempt to acquire lock - should proceed despite the exception and return True
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is True

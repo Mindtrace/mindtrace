@@ -80,7 +80,7 @@ def setup_logger(
     return logger
 
 
-def get_logger(name: str = "mindtrace", **kwargs) -> logging.Logger:
+def get_logger(name: str | None = "mindtrace", **kwargs) -> logging.Logger:
     """
     Create or retrieve a named logger instance.
 

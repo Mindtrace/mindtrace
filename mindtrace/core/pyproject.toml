@@ -1,12 +1,26 @@
 [project]
 name = "mindtrace-core"
-version = "0.1.0"
+version = "0.2.0"
+description = "Core functionality for Mindtrace"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "pillow>=11.2.1",
     "pydantic>=2.11.1",
     "tqdm>=4.67.1",
     "urllib3>=2.2.0",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/core"
 
 [build-system]
 requires = ["setuptools"]

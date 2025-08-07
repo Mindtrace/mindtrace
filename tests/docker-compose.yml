@@ -16,6 +16,33 @@ services:
       timeout: 20s
       retries: 3
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+    command: redis-server --save "" --appendonly no --stop-writes-on-bgsave-error no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis_test_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   mongodb:
     image: mongo:latest
     ports:
@@ -24,14 +51,6 @@ services:
       - MONGO_INITDB_DATABASE=test_db
     volumes:
       - mongodb_test_data:/data/db
-
-  redis:
-    image: redis/redis-stack:latest
-    ports:
-      - "6379:6379"
-      - "8001:8001"
-    volumes:
-      - redis_test_data:/data
 
 volumes:
   minio_data:

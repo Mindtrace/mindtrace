@@ -1,12 +1,25 @@
 [project]
 name = "mindtrace-registry"
-version = "0.1.0"
+version = "0.2.0"
+description = "Registry functionality for Mindtrace"
+license = "Apache-2.0"
+authors = [
+    {name = "Mindtrace Team"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "mindtrace-core",
     "minio>=7.2.15",
     "pydantic>=2.11.1",
     "zenml>=0.82.1",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/registry"
 
 [build-system]
 requires = ["setuptools"]

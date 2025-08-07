@@ -4,7 +4,8 @@ from mindtrace.registry.backends.local_registry_backend import LocalRegistryBack
 from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.archiver import Archiver
-from mindtrace.registry.core.registry import LockTimeoutError, Registry
+from mindtrace.registry.core.exceptions import LockTimeoutError
+from mindtrace.registry.core.registry import Registry
 
 __all__ = [
     "Archiver",

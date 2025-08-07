@@ -102,7 +102,7 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
 
 def generate_connection_manager(
     service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
-):
+) -> type:
     """Generates a dedicated ConnectionManager class with one method per endpoint.
 
     Args:
@@ -121,6 +121,10 @@ def generate_connection_manager(
     # Create a temporary service instance to get the endpoints
     temp_service = service_cls()
 
+    # Store service class and endpoints
+    ServiceConnectionManager._service_class = service_cls
+    ServiceConnectionManager._service_endpoints = temp_service._endpoints
+
     # Dynamically define one method per endpoint
     for endpoint_name, endpoint in temp_service._endpoints.items():
         # Skip if this would override an existing method in ConnectionManager
@@ -130,9 +134,24 @@ def generate_connection_manager(
         endpoint_path = f"/{endpoint_name}"
 
         def make_method(endpoint_path, input_schema, output_schema):
-            def method(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
+            def method(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
                 if validate_input:
-                    payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+                    if args:
+                        if len(args) != 1:
+                            raise ValueError(
+                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        if not isinstance(args[0], input_schema):
+                            raise ValueError(
+                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        if kwargs:
+                            raise ValueError(
+                                f"Service method {endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        payload = args[0].model_dump()
+                    else:
+                        payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
                 res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
@@ -149,9 +168,24 @@ def generate_connection_manager(
                     return result  # raw result dict
                 return output_schema(**result) if output_schema is not None else result
 
-            async def amethod(self, validate_input: bool = True, validate_output: bool = True, **kwargs):
+            async def amethod(self, *args, validate_input: bool = True, validate_output: bool = True, **kwargs):
                 if validate_input:
-                    payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
+                    if args:
+                        if len(args) != 1:
+                            raise ValueError(
+                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        if not isinstance(args[0], input_schema):
+                            raise ValueError(
+                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        if kwargs:
+                            raise ValueError(
+                                f"Service method a{endpoint_name} must be called with either kwargs or a single argument of type {input_schema}"
+                            )
+                        payload = args[0].model_dump()
+                    else:
+                        payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
                 async with httpx.AsyncClient(timeout=30) as client:

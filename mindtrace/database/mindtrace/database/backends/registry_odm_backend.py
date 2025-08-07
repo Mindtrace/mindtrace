@@ -58,10 +58,10 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
             
         Raises:
             NotImplementedError: Always raised as this backend doesn't support insert operations.
-            
+
         Example:
             .. code-block:: python
-            
+
                 backend = LocalMindtraceODMBackend()
                 try:
                     backend.insert(document)
@@ -107,19 +107,19 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
             id (str): The unique identifier of the document to retrieve.
             
         Returns:
-            BaseModel: This method never returns as it always raises NotImplementedError.
+            BaseModel: The retrieved document.
             
         Raises:
-            NotImplementedError: Always raised as this backend doesn't support get operations.
+            KeyError: If the document with the given ID doesn't exist.
             
         Example:
             .. code-block:: python
             
-                backend = LocalMindtraceODMBackend()
+                backend = RegistryMindtraceODMBackend()
                 try:
                     document = backend.get("some_id")
-                except NotImplementedError:
-                    print("Get not supported in local backend")
+                except KeyError:
+                    print("Document not found")
         """
         return self.registry[id]
 
@@ -130,16 +130,16 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
             id (str): The unique identifier of the document to delete.
             
         Raises:
-            NotImplementedError: Always raised as this backend doesn't support delete operations.
+            KeyError: If the document with the given ID doesn't exist.
             
         Example:
             .. code-block:: python
             
-                backend = LocalMindtraceODMBackend()
+                backend = RegistryMindtraceODMBackend()
                 try:
                     backend.delete("some_id")
-                except NotImplementedError:
-                    print("Delete not supported in local backend")
+                except KeyError:
+                    print("Document not found")
         """
         del self.registry[id]
 
@@ -147,18 +147,13 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         """Retrieve all documents from the collection.
         
         Returns:
-            list[BaseModel]: This method never returns as it always raises NotImplementedError.
-            
-        Raises:
-            NotImplementedError: Always raised as this backend doesn't support all operations.
+            list[BaseModel]: List of all documents in the registry.
             
         Example:
             .. code-block:: python
             
-                backend = LocalMindtraceODMBackend()
-                try:
-                    documents = backend.all()
-                except NotImplementedError:
-                    print("All not supported in local backend")
+                backend = RegistryMindtraceODMBackend()
+                documents = backend.all()
+                print(f"Found {len(documents)} documents")
         """
         return self.registry.values()
