@@ -45,8 +45,8 @@ def create_test_job(name: str = "test_job", schema_name: str = "default_schema")
 
 @pytest.fixture
 def unique_queue_name():
-    def _unique_name(prefix="test_queue"):
-        return f"{prefix}_{int(time.time())}"
+    def _unique_name(prefix="test-queue"):
+        return f"{prefix}-{int(time.time())}"
 
     return _unique_name
 

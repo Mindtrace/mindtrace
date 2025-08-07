@@ -8,7 +8,7 @@ from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.redis.stack import RedisStack
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
-from ..conftest import job_from_schema
+from .conftest import job_from_schema
 
 
 class SampleJobInput(BaseModel):
@@ -21,7 +21,11 @@ class SampleJobOutput(BaseModel):
 
 def create_test_job_local(name: str = "test_job") -> Job:
     test_input = SampleJobInput()
-    schema = JobSchema(name=f"{name}_schema", input=SampleJobInput, output=SampleJobOutput)
+    schema = JobSchema(
+        name=f"{name}-schema", 
+        input_schema=SampleJobInput, 
+        output_schema=SampleJobOutput
+    )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
     job.name = name
@@ -34,7 +38,7 @@ class TestRedisStack:
     """Essential tests for RedisStack with real Redis."""
 
     def setup_method(self):
-        self.stack_name = f"test_stack_{int(time.time())}"
+        self.stack_name = f"test-stack-{int(time.time())}"
         self.stack = RedisStack(self.stack_name, host="localhost", port=6379, db=0)
 
     def test_lifo_behavior(self):
@@ -53,7 +57,7 @@ class TestRedisStack:
             assert job.name == expected_order[i].name
 
     def test_empty_stack_operations(self):
-        empty_stack_name = f"empty_stack_{int(time.time())}"
+        empty_stack_name = f"empty-stack-{int(time.time())}"
         empty_stack = RedisStack(empty_stack_name, host="localhost", port=6379, db=0)
 
         assert empty_stack.empty() is True

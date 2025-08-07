@@ -2,13 +2,14 @@ import time
 
 import pytest
 
+
+from mindtrace.jobs import Orchestrator
 from mindtrace.jobs.local.client import LocalClient
-from mindtrace.jobs.orchestrator import Orchestrator
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.types.job_specs import JobSchema
 
-from ..conftest import SampleConsumer, SampleJobInput, SampleJobOutput, create_test_job
+from .conftest import SampleConsumer, SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestConsumerIntegration:
@@ -67,10 +68,10 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(local_client)
 
-        local_test_schema = JobSchema(name="local_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
+        local_test_schema = JobSchema(name="local-test-consumer-jobs", input=SampleJobInput, output=SampleJobOutput)
         local_queue = orchestrator.register(local_test_schema)
 
-        consumer = SampleConsumer("local_test_consumer_jobs")
+        consumer = SampleConsumer("local-test-consumer-jobs")
         consumer.connect_to_orchestrator(orchestrator, local_queue)
 
         test_job = create_test_job("local_consumer_job")
@@ -143,10 +144,10 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(local_client)
 
-        local_test_schema = JobSchema(name="local_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
+        local_test_schema = JobSchema(name="local-test-consumer-jobs", input=SampleJobInput, output=SampleJobOutput)
         local_queue = orchestrator.register(local_test_schema)
 
-        consumer = SampleConsumer("local_test_consumer_jobs")
+        consumer = SampleConsumer("local-test-consumer-jobs")
         with pytest.raises(NotImplementedError):
             consumer.connect_to_orchestator_via_backend_args(orchestrator.backend.consumer_backend_args, local_queue)
 
@@ -202,7 +203,7 @@ class TestConsumerIntegration:
         """Test that Local backend maintains FIFO order."""
         local_client = LocalClient()
         orchestrator = Orchestrator(local_client)
-        queue_name = f"fifo_local_test_{int(time.time())}"
+        queue_name = f"fifo-local-test-{int(time.time())}"
         schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
         orchestrator.register(schema)
 
@@ -284,8 +285,8 @@ class TestConsumerIntegration:
     def test_local_queue_isolation(self, unique_queue_name):
         local_client = LocalClient()
         orchestrator = Orchestrator(local_client)
-        queue1 = unique_queue_name("local_queue1")
-        queue2 = unique_queue_name("local_queue2")
+        queue1 = unique_queue_name("local-queue1")
+        queue2 = unique_queue_name("local-queue2")
         schema1 = JobSchema(name=queue1, input=SampleJobInput, output=SampleJobOutput)
         schema2 = JobSchema(name=queue2, input=SampleJobInput, output=SampleJobOutput)
         orchestrator.register(schema1)
@@ -343,7 +344,7 @@ class TestConsumerIntegration:
     def test_local_consume_until_empty_and_zero(self, unique_queue_name):
         local_client = LocalClient()
         orchestrator = Orchestrator(local_client)
-        queue = unique_queue_name("local_consume_test")
+        queue = unique_queue_name("local-consume-test")
         schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
         orchestrator.register(schema)
         jobs = [create_test_job(f"job_{i}", queue) for i in range(3)]
