@@ -7,9 +7,13 @@ dependencies = [
     "redis>=4.0.0",
     "redis-om>=0.3.5",
     "motor>=3.3.0",
+    "mindtrace-registry",
 ]
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+mindtrace-registry = { workspace = true }
 
