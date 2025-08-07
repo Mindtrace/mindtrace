@@ -1,4 +1,5 @@
 import shutil
+import threading
 import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path, PosixPath
@@ -8,14 +9,10 @@ from typing import Any, Dict, List, Type
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target
-from mindtrace.registry import LocalRegistryBackend, RegistryBackend
-
-
-class LockTimeoutError(Exception):
-    """Exception raised when a lock cannot be acquired within the timeout period."""
-
-    pass
+from mindtrace.core import Mindtrace, Timeout, first_not_none, ifnone, instantiate_target
+from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):
@@ -33,7 +30,7 @@ class Registry(Mindtrace):
 
     def __init__(
         self,
-        registry_dir: str | None = None,
+        registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = True,
         **kwargs,
@@ -69,11 +66,17 @@ class Registry(Mindtrace):
             updated=None,  # Will be auto-generated
         )
 
+        # Materializer cache to reduce lock contention
+        self._materializer_cache = {}
+        self._materializer_cache_lock = threading.Lock()
+
         # Register the default materializers if there are none
         if len(self.registered_materializers()) == 0:
-            with self._get_object_lock("_registry", "init"):
-                self._register_default_materializers()
-                return
+            self.logger.info("No materializers found, registering defaults...")
+            self._register_default_materializers()
+
+        # Warm the materializer cache to reduce lock contention
+        self._warm_materializer_cache()
 
     def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
         """Get a distributed lock for a specific object version.
@@ -90,13 +93,30 @@ class Registry(Mindtrace):
             version = self._latest(name)
         lock_key = f"{name}@{version}"
         lock_id = str(uuid.uuid4())
-        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 30)
+        timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
 
         @contextmanager
         def lock_context():
             try:
-                if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                    raise LockTimeoutError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                # Use Timeout class to implement retry logic for lock acquisition
+                timeout_handler = Timeout(
+                    timeout=timeout,
+                    retry_delay=0.1,  # Short retry delay for lock acquisition
+                    exceptions=(LockAcquisitionError,),  # Only retry on LockAcquisitionError
+                    progress_bar=False,  # Don't show progress bar for lock acquisition
+                    desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
+                )
+
+                def acquire_lock_with_retry():
+                    """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
+                    if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
+                        raise LockAcquisitionError(
+                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
+                        )
+                    return True
+
+                # Use the timeout handler to retry lock acquisition
+                timeout_handler.run(acquire_lock_with_retry)
                 yield
             finally:
                 self.backend.release_lock(lock_key, lock_id)
@@ -201,38 +221,40 @@ class Registry(Mindtrace):
         # Generate temp version for atomic save
         temp_version = f"__temp__{uuid.uuid4()}__"
 
-        if not self.version_objects or version is None:
-            version = self._next_version(name)
-        else:
-            # Validate and normalize version string
-            version = self._validate_version(version)
-            if self.has_object(name=name, version=version):
-                self.logger.error(f"Object {name} version {version} already exists.")
-                raise ValueError(f"Object {name} version {version} already exists.")
+        # Acquire a lock for the entire save operation to prevent race conditions
+        # Use a special lock name that covers all operations for this object
+        with self._get_object_lock(name, "save_operation"):
+            if not self.version_objects or version is None:
+                version = self._next_version(name)
+            else:
+                # Validate and normalize version string
+                version = self._validate_version(version)
+                if self.has_object(name=name, version=version):
+                    self.logger.error(f"Object {name} version {version} already exists.")
+                    raise ValueError(f"Object {name} version {version} already exists.")
 
-        try:
-            # Save to temp location first
-            with self._get_object_lock(name, temp_version):
-                try:
-                    metadata = {
-                        "class": object_class,
-                        "materializer": materializer_class,
-                        "init_params": ifnone(init_params, default={}),
-                        "metadata": ifnone(metadata, default={}),
-                    }
-                    with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
-                        materializer = instantiate_target(
-                            materializer, uri=temp_dir, artifact_store=self._artifact_store
-                        )
-                        materializer.save(obj)
-                        self.backend.push(name=name, version=temp_version, local_path=temp_dir)
-                        self.backend.save_metadata(name=name, version=temp_version, metadata=metadata)
-                except Exception as e:
-                    self.logger.error(f"Error saving object to temp location {name}@{temp_version}: {e}")
-                    raise e
+            try:
+                # Save to temp location first
+                with self._get_object_lock(name, temp_version):
+                    try:
+                        metadata = {
+                            "class": object_class,
+                            "materializer": materializer_class,
+                            "init_params": ifnone(init_params, default={}),
+                            "metadata": ifnone(metadata, default={}),
+                        }
+                        with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
+                            materializer = instantiate_target(
+                                materializer, uri=temp_dir, artifact_store=self._artifact_store
+                            )
+                            materializer.save(obj)
+                            self.backend.push(name=name, version=temp_version, local_path=temp_dir)
+                            self.backend.save_metadata(name=name, version=temp_version, metadata=metadata)
+                    except Exception as e:
+                        self.logger.error(f"Error saving object to temp location {name}@{temp_version}: {e}")
+                        raise e
 
-            # Get a lock for the version to be updated and move the temp version to the final version
-            with self._get_object_lock(name, version):
+                # Move the temp version to the final version
                 try:
                     self.backend.overwrite(
                         source_name=name, source_version=temp_version, target_name=name, target_version=version
@@ -242,13 +264,13 @@ class Registry(Mindtrace):
                     self.logger.error(f"Error moving temp version to final version for {name}@{version}: {e}")
                     raise e
 
-        finally:
-            # Cleanup temp version
-            try:
-                self.backend.delete(name=name, version=temp_version)
-                self.backend.delete_metadata(name=name, version=temp_version)
-            except Exception as e:
-                self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
+            finally:
+                # Cleanup temp version
+                try:
+                    self.backend.delete(name=name, version=temp_version)
+                    self.backend.delete_metadata(name=name, version=temp_version)
+                except Exception as e:
+                    self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
 
         self.logger.debug(f"Saved {name}@{version} to registry.")
 
@@ -455,11 +477,16 @@ class Registry(Mindtrace):
         """
         if isinstance(object_class, type):
             object_class = f"{object_class.__module__}.{object_class.__name__}"
+
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
 
+            # Update cache
+            with self._materializer_cache_lock:
+                self._materializer_cache[object_class] = materializer_class
+
     def registered_materializer(self, object_class: str) -> str | None:
-        """Get the registered materializer for an object class.
+        """Get the registered materializer for an object class (cached).
 
         Args:
             object_class: Object class to get the registered materializer for.
@@ -467,8 +494,20 @@ class Registry(Mindtrace):
         Returns:
             Materializer class string, or None if no materializer is registered for the object class.
         """
+        # Check cache first (fast path)
+        with self._materializer_cache_lock:
+            if object_class in self._materializer_cache:
+                return self._materializer_cache[object_class]
+
+        # Cache miss - need to check backend (slow path)
         with self._get_object_lock("_registry", "materializers", shared=True):
-            return self.backend.registered_materializer(object_class)
+            materializer = self.backend.registered_materializer(object_class)
+
+            # Cache the result (even if None)
+            with self._materializer_cache_lock:
+                self._materializer_cache[object_class] = materializer
+
+            return materializer
 
     def registered_materializers(self) -> Dict[str, str]:
         """Get all registered materializers.
@@ -595,8 +634,8 @@ class Registry(Mindtrace):
             return "Registry is empty."
 
         if use_rich:
-            console = Console()
-            table = Table(title=f"Registry at {self.backend.uri}")
+            console = Console()  # type: ignore
+            table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
 
             table.add_column("Object", style="bold cyan")
             table.add_column("Version", style="green")
@@ -729,6 +768,7 @@ class Registry(Mindtrace):
 
     def _register_default_materializers(self):
         """Register default materializers."""
+        self.logger.info("Registering default materializers...")
 
         # Core zenml materializers
         self.register_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
@@ -750,65 +790,76 @@ class Registry(Mindtrace):
         )
 
         # (Optional) Huggingface materializers
-        if not check_libs(["datasets"]):
-            self.register_materializer(
-                "datasets.Dataset",
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
-            self.register_materializer(
-                "datasets.dataset_dict.DatasetDict",
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
-            self.register_materializer(
-                "datasets.arrow_dataset.Dataset",
-                "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
-            )
+        self.register_materializer(
+            "datasets.Dataset",
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
+        self.register_materializer(
+            "datasets.DatasetDict",
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
+        self.register_materializer(
+            "datasets.IterableDataset",
+            "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
+        )
 
-        if not check_libs(["transformers"]):
-            self.register_materializer(
-                "transformers.PreTrainedModel",
-                "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-            )
-            self.register_materializer(
-                "transformers.modeling_utils.PreTrainedModel",
-                "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
-            )
+        self.register_materializer(
+            "transformers.PreTrainedModel",
+            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
+        )
+        self.register_materializer(
+            "transformers.TFPreTrainedModel",
+            "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
+        )
 
         # (Optional) NumPy materializers
-        if not check_libs(["numpy"]):
-            self.register_materializer(
-                "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
-            )
+        self.register_materializer(
+            "numpy.ndarray", "zenml.integrations.numpy.materializers.numpy_materializer.NumpyMaterializer"
+        )
 
         # (Optional) Pillow materializers
-        if not check_libs(["PIL"]):
-            self.register_materializer(
-                "PIL.Image.Image",
-                "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
-            )
+        self.register_materializer(
+            "PIL.Image.Image",
+            "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
+        )
 
         # (Optional) PyTorch materializers
-        if not check_libs(["torch"]):
-            self.register_materializer(
-                "torch.utils.data.dataset.Dataset",
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.utils.data.dataset.TensorDataset",
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.utils.data.dataloader.DataLoader",
-                "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
-            )
-            self.register_materializer(
-                "torch.nn.Module",
-                "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-            )
-            self.register_materializer(
-                "torch.nn.modules.module.Module",
-                "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
-            )
+        self.register_materializer(
+            "torch.utils.data.DataLoader",
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.utils.data.Dataset",
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.utils.data.IterableDataset",
+            "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
+        )
+        self.register_materializer(
+            "torch.nn.Module",
+            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
+        )
+        self.register_materializer(
+            "torch.jit.ScriptModule",
+            "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
+        )
+
+        self.logger.info("Default materializers registered successfully.")
+
+    def _warm_materializer_cache(self):
+        """Warm the materializer cache to reduce lock contention during operations."""
+        try:
+            # Get all registered materializers and cache them
+            with self._get_object_lock("_registry", "materializers", shared=True):
+                all_materializers = self.backend.registered_materializers()
+
+                with self._materializer_cache_lock:
+                    self._materializer_cache.update(all_materializers)
+
+            self.logger.debug(f"Warmed materializer cache with {len(all_materializers)} entries")
+        except Exception as e:
+            self.logger.warning(f"Failed to warm materializer cache: {e}")
 
     ### Dictionary-like interface methods ###
 

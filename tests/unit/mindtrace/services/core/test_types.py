@@ -5,19 +5,13 @@ import pytest
 
 from mindtrace.services.core.types import (
     EndpointsOutput,
-    EndpointsSchema,
     Heartbeat,
     HeartbeatOutput,
-    HeartbeatSchema,
     PIDFileOutput,
-    PIDFileSchema,
     ServerIDOutput,
-    ServerIDSchema,
     ServerStatus,
     ShutdownOutput,
-    ShutdownSchema,
     StatusOutput,
-    StatusSchema,
 )
 
 
@@ -235,70 +229,6 @@ class TestOutputModels:
         assert output_false.shutdown is False
 
 
-class TestSchemaClasses:
-    """Test suite for schema classes."""
-
-    def test_endpoints_schema(self):
-        """Test EndpointsSchema class."""
-        schema = EndpointsSchema()
-
-        assert schema.name == "endpoints"
-        assert schema.output_schema == EndpointsOutput
-
-    def test_status_schema(self):
-        """Test StatusSchema class."""
-        schema = StatusSchema()
-
-        assert schema.name == "status"
-        assert schema.output_schema == StatusOutput
-
-    def test_heartbeat_schema(self):
-        """Test HeartbeatSchema class."""
-        schema = HeartbeatSchema()
-
-        assert schema.name == "heartbeat"
-        assert schema.output_schema == HeartbeatOutput
-
-    def test_server_id_schema(self):
-        """Test ServerIDSchema class."""
-        schema = ServerIDSchema()
-
-        assert schema.name == "server_id"
-        assert schema.output_schema == ServerIDOutput
-
-    def test_pid_file_schema(self):
-        """Test PIDFileSchema class."""
-        schema = PIDFileSchema()
-
-        assert schema.name == "pid_file"
-        assert schema.output_schema == PIDFileOutput
-
-    def test_shutdown_schema(self):
-        """Test ShutdownSchema class."""
-        schema = ShutdownSchema()
-
-        assert schema.name == "shutdown"
-        assert schema.output_schema == ShutdownOutput
-
-    def test_all_schemas_have_task_schema_base(self):
-        """Test that all schema classes inherit from TaskSchema."""
-        from mindtrace.core import TaskSchema
-
-        schemas = [
-            EndpointsSchema(),
-            StatusSchema(),
-            HeartbeatSchema(),
-            ServerIDSchema(),
-            PIDFileSchema(),
-            ShutdownSchema(),
-        ]
-
-        for schema in schemas:
-            assert isinstance(schema, TaskSchema)
-            assert hasattr(schema, "name")
-            assert hasattr(schema, "output_schema")
-
-
 class TestIntegration:
     """Integration tests for types working together."""
 
@@ -328,10 +258,10 @@ class TestIntegration:
         """Test that Pydantic validation works correctly for output models."""
         # Test that invalid types raise validation errors
         with pytest.raises(Exception):  # Pydantic validation error
-            EndpointsOutput(endpoints="not a list")
+            EndpointsOutput(endpoints="not a list")  # type: ignore
 
         with pytest.raises(Exception):  # Pydantic validation error
-            ServerIDOutput(server_id="not a uuid")
+            ServerIDOutput(server_id="not a uuid")  # type: ignore
 
         with pytest.raises(Exception):  # Pydantic validation error
-            ShutdownOutput(shutdown="not a boolean")
+            ShutdownOutput(shutdown="not a boolean")  # type: ignore
