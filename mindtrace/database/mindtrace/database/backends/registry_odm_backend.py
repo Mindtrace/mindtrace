@@ -72,6 +72,34 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         self.registry[unique_id] = obj
         return unique_id
 
+    def update(self, id: str, obj: BaseModel) -> bool:
+        """Update an existing document in the database.
+        
+        Args:
+            id (str): The unique identifier of the document to update.
+            obj (BaseModel): The updated document object.
+            
+        Returns:
+            bool: True if the document was successfully updated, False if the document doesn't exist.
+            
+        Example:
+            .. code-block:: python
+            
+                backend = RegistryMindtraceODMBackend()
+                try:
+                    success = backend.update("some_id", updated_document)
+                    if success:
+                        print("Document updated successfully")
+                    else:
+                        print("Document not found")
+                except Exception as e:
+                    print(f"Update failed: {e}")
+        """
+        if id in self.registry:
+            self.registry[id] = obj
+            return True
+        return False
+
     def get(self, id: str) -> BaseModel:
         """Retrieve a document by its unique identifier.
         
