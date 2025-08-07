@@ -4,7 +4,7 @@ import reflex as rx
 from typing import Optional, Callable, Any, List, Dict
 from poseidon.styles.global_styles import COLORS, TYPOGRAPHY, SIZE_VARIANTS
 from poseidon.styles.variants import COMPONENT_VARIANTS
-
+from poseidon.components_v2.alerts import Alert
 
 def select_input(
     label: Optional[str] = None,
@@ -131,15 +131,11 @@ def select_input(
     # Error message
     if error and error_message:
         message_components.append(
-            rx.el.div(
-                error_message,
-                style={
-                    "font_size": TYPOGRAPHY["font_sizes"]["xs"],
-                    "color": COLORS["error"],
-                    "margin_top": "0.25rem",
-                    "font_family": TYPOGRAPHY["font_family"],
-                }
-            )
+            Alert.create(
+                severity="error",
+                title="Error",
+                message=error_message,
+            ),
         )
     
     # Success message
@@ -283,9 +279,10 @@ def select_input_with_form(
             # Error message
             rx.cond(
                 error and error_message,
-                rx.form.message(
-                    error_message,
-                    color=COLORS["error"],
+                Alert.create(
+                    severity="error",
+                    title="Error",
+                    message=error_message,
                 ),
             ),
             

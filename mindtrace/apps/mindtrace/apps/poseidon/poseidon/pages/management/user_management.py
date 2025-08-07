@@ -12,11 +12,12 @@ import reflex as rx
 from poseidon.components import (
     sidebar, app_header, user_management_table, 
     add_user_popup, page_header_with_actions,
-    refresh_button, filter_bar, success_message, error_message,
-    page_container, authenticated_page_wrapper,
+    refresh_button, filter_bar, success_message,
+    page_container,
     access_denied_component, authentication_required_component,
     assign_project_popup, project_management_popup
 )
+from poseidon.components_v2.alerts import Alert
 from poseidon.state.auth import AuthState
 from poseidon.state.user_management import UserManagementState
 
@@ -93,7 +94,11 @@ def user_management_content() -> rx.Component:
             ),
             rx.cond(
                 UserManagementState.error,
-                error_message(UserManagementState.error),
+                Alert.create(
+                    severity="error",
+                    title="Error",
+                    message=UserManagementState.error,
+                ),
             ),
             
             # User management table using unified component

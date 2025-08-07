@@ -169,4 +169,77 @@ COMPONENT_VARIANTS = {
             "font_family": TYPOGRAPHY["font_family"],
         },
     },
+    "loader": {
+        "primary": {
+            "color": COLORS["primary"],
+            "background": f"{COLORS['primary']}20",
+        },
+        "secondary": {
+            "color": COLORS["secondary"],
+            "background": f"{COLORS['secondary']}20",
+        },
+        "danger": {
+            "color": COLORS["danger"],
+            "background": f"{COLORS['danger']}20",
+        },
+        "success": {
+            "color": COLORS["success"],
+            "background": f"{COLORS['success']}20",
+        },
+        "warning": {
+            "color": COLORS["warning"],
+            "background": f"{COLORS['warning']}20",
+        },
+        "info": {
+            "color": COLORS["info"],
+            "background": f"{COLORS['info']}20",
+        },
+    },
+    "alert": {
+        "base": {
+            "display": "flex",
+            "align_items": "center",
+            "padding": SPACING["md"],
+            "border_radius": SIZING["border_radius"]["md"],
+            "font_family": TYPOGRAPHY["font_family"],
+            "font_size": TYPOGRAPHY["font_sizes"]["sm"],
+            "font_weight": TYPOGRAPHY["font_weights"]["medium"],
+            "line_height": TYPOGRAPHY["line_heights"]["relaxed"],
+            "border": "1px solid",
+            "backdrop_filter": EFFECTS["backdrop_filter_light"],
+            "transition": EFFECTS["transitions"]["normal"],
+            "position": "relative",
+            "overflow": "hidden",
+        },
+        "success": {
+            "background": "rgba(16, 185, 129, 0.1)",
+            "border_color": "rgba(16, 185, 129, 0.3)",
+            "color": "#065f46",
+        },
+        "error": {
+            "background": "rgba(239, 68, 68, 0.1)",
+            "border_color": "rgba(239, 68, 68, 0.3)",
+            "color": "#991b1b",
+        },
+        "warning": {
+            "background": "rgba(245, 158, 11, 0.1)",
+            "border_color": "rgba(245, 158, 11, 0.3)",
+            "color": "#92400e",
+        },
+        "info": {
+            "background": "rgba(59, 130, 246, 0.1)",
+            "border_color": "rgba(59, 130, 246, 0.3)",
+            "color": "#1e40af",
+        },
+        "filled": {
+            "border": "none",
+        },
+        "outlined": {
+            "background": "transparent",
+        },
+        "soft": {
+            "border": "none",
+            "box_shadow": EFFECTS["shadows"]["sm"],
+        },
+    },
 } 
