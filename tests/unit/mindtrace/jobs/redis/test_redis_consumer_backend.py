@@ -94,4 +94,4 @@ def test_receive_message_queue_not_declared(backend):
     mock_conn.queues = {}
     mock_conn._local_lock = MagicMock().__enter__.return_value
     with pytest.raises(KeyError):
-        backend.receive_message("not_declared")
+        backend.receive_message("not_declared") 

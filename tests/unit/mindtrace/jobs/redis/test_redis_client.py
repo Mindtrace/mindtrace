@@ -185,4 +185,4 @@ def test_count_queue_messages_delegates(client):
     client, mock_conn = client
     mock_conn.count_queue_messages.return_value = 42
     assert client.count_queue_messages("q") == 42
-    mock_conn.count_queue_messages.assert_called_with("q")
+    mock_conn.count_queue_messages.assert_called_with("q") 

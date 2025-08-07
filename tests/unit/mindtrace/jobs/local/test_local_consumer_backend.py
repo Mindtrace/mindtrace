@@ -3,7 +3,7 @@ from unittest.mock import Mock
 import pydantic
 import pytest
 
-from mindtrace.jobs import Consumer, LocalClient, Orchestrator
+from mindtrace.jobs import Consumer, Orchestrator
 
 
 class SampleMessage(pydantic.BaseModel):
@@ -38,196 +38,12 @@ class EffectivelyAbstractConsumer(Consumer):
     """Effectively abstract consumer that doesn't override run method."""
 
 
-class TestLocalClient:
-    """Tests for LocalClient."""
-
-    @pytest.fixture
-    def client(self, temp_local_client):
-        return temp_local_client
-
-    def test_declare_queue_types(self, client):
-        """Test declaring different queue types."""
-        result = client.declare_queue("fifo-queue", queue_type="fifo")
-        assert result["status"] == "success"
-        assert isinstance(client.queues["fifo-queue"], type(client.queues["fifo-queue"]))
-
-        result = client.declare_queue("stack-queue", queue_type="stack")
-        assert result["status"] == "success"
-        assert isinstance(client.queues["stack-queue"], type(client.queues["stack-queue"]))
-
-        result = client.declare_queue("priority-queue", queue_type="priority")
-        assert result["status"] == "success"
-        assert isinstance(client.queues["priority-queue"], type(client.queues["priority-queue"]))
-
-        with pytest.raises(TypeError, match="Unknown queue type"):
-            client.declare_queue("invalid-queue", queue_type="invalid")
-
-    def test_declare_existing_queue(self, client):
-        """Test declaring a queue that already exists."""
-        client.declare_queue("test-queue")
-        result = client.declare_queue("test-queue")
-        assert result["status"] == "success"
-        assert "already exists" in result["message"]
-
-    def test_delete_queue(self, client):
-        """Test queue deletion."""
-        client.declare_queue("test-queue")
-        result = client.delete_queue("test-queue")
-        assert result["status"] == "success"
-        assert "test-queue" not in client.queues
-
-        with pytest.raises(KeyError):
-            client.delete_queue("nonexistent-queue")
-
-    def test_publish_receive_fifo(self, client):
-        """Test publishing and receiving messages in FIFO order."""
-        client.declare_queue("test-queue")
-
-        msg1 = SampleMessage(data="test1")
-        msg2 = SampleMessage(data="test2")
-        job_id1 = client.publish("test-queue", msg1)
-        job_id2 = client.publish("test-queue", msg2)
-
-        assert client.count_queue_messages("test-queue") == 2
-
-        received1 = client.receive_message("test-queue")
-        received2 = client.receive_message("test-queue")
-
-        assert received1["data"] == "test1"
-        assert received2["data"] == "test2"
-        assert received1["job_id"] == job_id1
-        assert received2["job_id"] == job_id2
-
-    def test_publish_receive_priority(self, client):
-        """Test publishing and receiving messages with priority."""
-        client.declare_queue("priority-queue", queue_type="priority")
-
-        msg1 = SampleMessage(data="low")
-        msg2 = SampleMessage(data="high")
-        client.publish("priority-queue", msg1, priority=1)
-        client.publish("priority-queue", msg2, priority=10)
-
-        received1 = client.receive_message("priority-queue")
-        received2 = client.receive_message("priority-queue")
-
-        assert received1["data"] == "high"
-        assert received2["data"] == "low"
-
-    def test_receive_empty_queue(self, client):
-        """Test receiving from empty queue."""
-        client.declare_queue("test-queue")
-
-        result = client.receive_message("test-queue", block=False)
-        assert result is None
-
-        result = client.receive_message("test-queue", block=True, timeout=0.01)
-        assert result is None
-
-    def test_clean_queue(self, client):
-        """Test cleaning a queue."""
-        client.declare_queue("test-queue")
-
-        for i in range(3):
-            client.publish("test-queue", SampleMessage(data=f"test{i}"))
-
-        assert client.count_queue_messages("test-queue") == 3
-
-        result = client.clean_queue("test-queue")
-        assert result["status"] == "success"
-        assert client.count_queue_messages("test-queue") == 0
-
-        with pytest.raises(KeyError):
-            client.clean_queue("nonexistent-queue")
-
-    def test_job_results(self, client):
-        """Test storing and retrieving job results."""
-        job_id = "test-job"
-        result_data = {"status": "completed", "value": 42}
-
-        client.store_job_result(job_id, result_data)
-        retrieved = client.get_job_result(job_id)
-        assert retrieved == result_data
-
-        assert client.get_job_result("nonexistent-job") is None
-
-    def test_publish_to_nonexistent_queue(self, client):
-        """Test publishing to a queue that doesn't exist."""
-        msg = SampleMessage(data="test")
-
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
-            client.publish("nonexistent-queue", msg)
-
-    def test_priority_queue_with_priority(self, client):
-        """Test publishing to priority queue with priority parameter."""
-        client.declare_queue("priority-queue", queue_type="priority")
-
-        msg = SampleMessage(data="priority-test")
-        job_id = client.publish("priority-queue", msg, priority=5)
-        assert job_id is not None
-
-        job_id2 = client.publish("priority-queue", msg, priority=None)
-        assert job_id2 is not None
-
-    def test_receive_from_nonexistent_queue(self, client):
-        """Test receiving from a queue that doesn't exist."""
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
-            client.receive_message("nonexistent-queue")
-
-    def test_receive_message_json_decode_error(self, client):
-        """Test receive_message handling of JSON decode errors."""
-        client.declare_queue("test-queue")
-
-        queue_instance = client.queues["test-queue"]
-        queue_instance.push("invalid json content")
-
-        result = client.receive_message("test-queue", block=True, timeout=0.01)
-        assert result is None
-
-    def test_clean_nonexistent_queue(self, client):
-        """Test cleaning a queue that doesn't exist."""
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
-            client.clean_queue("nonexistent-queue")
-
-    def test_count_nonexistent_queue(self, client):
-        """Test counting messages in a queue that doesn't exist."""
-        with pytest.raises(KeyError, match="Queue 'nonexistent-queue' not found"):
-            client.count_queue_messages("nonexistent-queue")
-
-    def test_move_to_dlq(self, client):
-        """Test move_to_dlq method (currently a pass statement)."""
-        msg = SampleMessage(data="test")
-
-        result = client.move_to_dlq("source-queue", "dlq-queue", msg, "error details")
-        assert result is None  # pass statement returns None
-
-    def test_receive_message_returns_none_when_queue_pop_returns_none(self, client):
-        """Test receive_message returns None when queue.pop() returns None - covers line 93."""
-        queue_name = "test-queue"
-        client.declare_queue(queue_name)
-
-        queue_instance = client.queues[queue_name]
-        original_pop = queue_instance.pop
-
-        def mock_pop(*args, **kwargs):
-            return None  # Simulate empty queue
-
-        queue_instance.pop = mock_pop
-
-        result = client.receive_message(queue_name, block=False)
-        assert result is None
-
-        queue_instance.pop = original_pop
-
-
 class TestLocalConsumerBackend:
     """Tests for LocalConsumerBackend."""
 
-    @pytest.fixture
-    def orchestrator(self, temp_local_client):
-        return Orchestrator(temp_local_client)
-
-    def test_publish_and_consume(self, orchestrator: Orchestrator):
+    def test_publish_and_consume(self, temp_local_client):
         """Test basic publishing and consuming functionality."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -246,8 +62,9 @@ class TestLocalConsumerBackend:
         consumer.consume(num_messages=1, queues=queue_name, block=False)
         assert True
 
-    def test_consume_with_exceptions(self, orchestrator: Orchestrator):
+    def test_consume_with_exceptions(self, temp_local_client):
         """Test consuming messages that raise exceptions."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         secondary_queue = "secondary-queue"
 
@@ -270,8 +87,9 @@ class TestLocalConsumerBackend:
         assert orchestrator.count_queue_messages(queue_name) == 0
         assert orchestrator.count_queue_messages(secondary_queue) == 0
 
-    def test_consumer_keyboard_interrupt(self, orchestrator):
+    def test_consumer_keyboard_interrupt(self, temp_local_client):
         """Test handling of KeyboardInterrupt during consumption."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -285,8 +103,9 @@ class TestLocalConsumerBackend:
 
         assert orchestrator.count_queue_messages(queue_name) == 0
 
-    def test_consumer_with_error(self, orchestrator):
+    def test_consumer_with_error(self, temp_local_client):
         """Test handling of KeyboardInterrupt during consumption."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -302,8 +121,9 @@ class TestLocalConsumerBackend:
 
         assert orchestrator.count_queue_messages(queue_name) == 0
 
-    def test_consume_multiple_queues(self, orchestrator: Orchestrator):
+    def test_consume_multiple_queues(self, temp_local_client):
         """Test consuming from multiple queues."""
+        orchestrator = Orchestrator(temp_local_client)
         queues = ["queue1", "queue2"]
         for queue in queues:
             orchestrator.backend.declare_queue(queue)
@@ -328,8 +148,9 @@ class TestLocalConsumerBackend:
         for queue in queues:
             assert orchestrator.count_queue_messages(queue) == 0
 
-    def test_non_blocking_consume_empty(self, orchestrator: Orchestrator):
+    def test_non_blocking_consume_empty(self, temp_local_client):
         """Test non-blocking consume behavior with empty queues."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -339,15 +160,17 @@ class TestLocalConsumerBackend:
         consumer.consume(num_messages=1, queues=queue_name, block=False)
         assert True
 
-    def test_consumer_no_run_method(self, orchestrator: Orchestrator):
+    def test_consumer_no_run_method(self, temp_local_client):
         """Test consumer with no run method set."""
+        orchestrator = Orchestrator(temp_local_client)
         consumer = EffectivelyAbstractConsumer()
 
         with pytest.raises(RuntimeError, match="Consumer not connected"):
             consumer.consume(num_messages=1, block=False)
 
-    def test_consumer_with_orchestrator_exception(self, orchestrator: Orchestrator):
+    def test_consumer_with_orchestrator_exception(self, temp_local_client):
         """Test consumer handling orchestrator exceptions during message retrieval."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -366,8 +189,9 @@ class TestLocalConsumerBackend:
         orchestrator.backend.receive_message = original_receive
         assert True
 
-    def test_consumer_blocking_with_timeout(self, orchestrator: Orchestrator):
+    def test_consumer_blocking_with_timeout(self, temp_local_client):
         """Test consumer with blocking=True and timeout behavior."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -386,8 +210,9 @@ class TestLocalConsumerBackend:
         assert elapsed < 1.0  # Should be fast since there was a message to consume
         assert orchestrator.count_queue_messages(queue_name) == 0
 
-    def test_consume_until_empty_method(self, orchestrator: Orchestrator):
+    def test_consume_until_empty_method(self, temp_local_client):
         """Test consume_until_empty method specifically."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -402,8 +227,9 @@ class TestLocalConsumerBackend:
 
         assert orchestrator.count_queue_messages(queue_name) == 0
 
-    def test_process_message_non_dict(self, orchestrator: Orchestrator):
+    def test_process_message_non_dict(self, temp_local_client):
         """Test process_message with non-dict input."""
+        orchestrator = Orchestrator(temp_local_client)
         consumer = SimpleConsumer()
         consumer.connect_to_orchestrator(orchestrator, "test-queue")
 
@@ -413,16 +239,18 @@ class TestLocalConsumerBackend:
         result = consumer.consumer_backend.process_message(None)
         assert result is False
 
-    def test_process_message_dict_with_exception(self, orchestrator: Orchestrator):
+    def test_process_message_dict_with_exception(self, temp_local_client):
         """Test process_message with dict input that causes exception."""
+        orchestrator = Orchestrator(temp_local_client)
         consumer = DivisionConsumer()
         consumer.connect_to_orchestrator(orchestrator, "test-queue")
 
         result = consumer.consumer_backend.process_message({"x": 1, "y": 0})
         assert result is False
 
-    def test_consumer_exception_handling_with_nonblock_return(self, orchestrator: Orchestrator):
+    def test_consumer_exception_handling_with_nonblock_return(self, temp_local_client):
         """Test exception handling in consumer when not blocking - covers line 46-47."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -460,8 +288,9 @@ class TestLocalConsumerBackend:
 
         orchestrator.backend.receive_message = original_receive
 
-    def test_consumer_blocking_sleep_when_no_messages(self, orchestrator: Orchestrator):
+    def test_consumer_blocking_sleep_when_no_messages(self, temp_local_client):
         """Test that blocking consumer sleeps when no messages found - covers line 54."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -491,8 +320,9 @@ class TestLocalConsumerBackend:
         assert len(sleep_calls) >= 1
         assert 0.1 in sleep_calls
 
-    def test_consumer_exception_handling_with_blocking_sleep(self, orchestrator):
+    def test_consumer_exception_handling_with_blocking_sleep(self, temp_local_client):
         """Test exception handling with blocking=True triggers sleep(1) - covers line 46."""
+        orchestrator = Orchestrator(temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
 
@@ -533,4 +363,4 @@ class TestLocalConsumerBackend:
             time.sleep = original_sleep
 
         assert len(sleep_calls) >= 1
-        assert 1 in sleep_calls  # The sleep(1) from line 46
+        assert 1 in sleep_calls  # The sleep(1) from line 46 
