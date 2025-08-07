@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any, Dict
 
 from pydantic import BaseModel
@@ -16,9 +17,16 @@ class Orchestrator(Mindtrace):
     and abstracts backend implementation details.
     """
 
-    def __init__(self, backend: OrchestratorBackend | None = None) -> None:
+    def __init__(self, orchestrator_dir: str | Path | None = None, backend: OrchestratorBackend | None = None, client_dir: str | Path | None = None) -> None:
         super().__init__()
-        self.backend = backend or LocalClient()
+
+        if backend is None:
+            if orchestrator_dir is None:
+                orchestrator_dir = self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_DIR"]
+            orchestrator_dir = Path(orchestrator_dir).expanduser().resolve()
+            backend = LocalClient(client_dir=orchestrator_dir)
+
+        self.backend = backend
         self._schema_mapping: Dict[str, Dict[str, Any]] = {}
 
     def publish(self, queue_name: str, job: Job | TaskSchema, **kwargs) -> str:
@@ -33,10 +41,10 @@ class Orchestrator(Mindtrace):
         """
         if isinstance(job, Job):
             pass
-        elif isinstance(job, TaskSchema):
-            schema = self._schema_mapping.get(job.schema_name, None)
+        elif isinstance(job, BaseModel):
+            schema = self._schema_mapping.get(queue_name, None)
             if schema is None:
-                raise ValueError(f"Schema '{job.schema_name}' not found.")
+                raise ValueError(f"Schema '{queue_name}' not found.")
             job = job_from_schema(schema["schema"], job)
         else:
             raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
