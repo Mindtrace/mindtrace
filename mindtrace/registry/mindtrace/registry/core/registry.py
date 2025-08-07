@@ -709,7 +709,7 @@ class Registry(Mindtrace):
 
         self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
-    def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
+    def get_lock(self, name: str, version: str | None = None, shared: bool = False) -> contextmanager:
         """Get a distributed lock for a specific object version.
 
         Args:
@@ -720,9 +720,12 @@ class Registry(Mindtrace):
         Returns:
             A context manager that handles lock acquisition and release.
         """
-        if version == "latest":
-            version = self._latest(name)
-        lock_key = f"{name}@{version}"
+        if version is None:
+            lock_key = f"{name}"
+        else:
+            if version == "latest":
+                version = self._latest(name)
+            lock_key = f"{name}@{version}"
         lock_id = str(uuid.uuid4())
         timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
 
