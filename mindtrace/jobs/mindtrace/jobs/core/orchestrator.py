@@ -37,7 +37,7 @@ class Orchestrator(Mindtrace):
             schema = self._schema_mapping.get(job.schema_name, None)
             if schema is None:
                 raise ValueError(f"Schema '{job.schema_name}' not found.")
-            job = job_from_schema(schema.name, job)
+            job = job_from_schema(schema["schema"], job)
         else:
             raise ValueError(f"Invalid job type: {type(job)}, expected Job or TaskSchema.")
 
