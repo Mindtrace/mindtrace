@@ -6,12 +6,12 @@ import uuid
 
 import pydantic
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
-from mindtrace.jobs.utils.checks import ifnone
 from mindtrace.registry import LocalRegistryBackend, Registry, RegistryBackend
 
 if TYPE_CHECKING:  # pragma: no cover

@@ -6,11 +6,11 @@ import pika.exceptions
 import pydantic
 from pika import BasicProperties, DeliveryMode
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RabbitMQClient(OrchestratorBackend):

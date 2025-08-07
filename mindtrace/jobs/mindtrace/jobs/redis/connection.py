@@ -4,11 +4,11 @@ import time
 
 import redis
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.redis.priority import RedisPriorityQueue
 from mindtrace.jobs.redis.stack import RedisStack
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConnection(BrokerConnectionBase):
