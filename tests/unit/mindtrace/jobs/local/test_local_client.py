@@ -309,3 +309,45 @@ class TestLocalClient:
         result = client.receive_message(q, block=True)
         assert result is None
         client.logger.debug.assert_called()
+
+    def test_store_and_get_job_result_lock_isolated_from_queue_locks(self, monkeypatch):
+        """
+        Expected behavior: storing/fetching job results should use a lock from the job-results registry,
+        not the queues registry. Using the queues registry lock can cause unintended lock coupling.
+        """
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            client = LocalClient(client_dir=tmp)
+
+            # Fail the test if queue lock is used for job result operations
+            original_get_lock = client.queues.get_lock
+
+            def failing_queue_get_lock(name, *args, **kwargs):
+                if name == "job-123":
+                    raise AssertionError("Queues registry lock used for job results; should use _job_results lock instead")
+                return original_get_lock(name, *args, **kwargs)
+
+            monkeypatch.setattr(client.queues, "get_lock", failing_queue_get_lock, raising=True)
+
+            # These should NOT trigger the queues registry lock
+            client.store_job_result("job-123", {"result": True})
+            assert client.get_job_result("job-123") == {"result": True}
+
+    def test_job_results_saved_under_client_dir_results(self):
+        """
+        Expected behavior: when a client_dir is provided, job results are persisted under
+        client_dir / "results". This keeps test runs isolated and avoids polluting global paths.
+        """
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            client = LocalClient(client_dir=tmp_path)
+            client.store_job_result("job-abc", {"ok": True})
+
+            results_dir = tmp_path / "results"
+            # Look for any registry metadata files after saving a result
+            meta_files = list(results_dir.glob("_meta_*")) if results_dir.exists() else []
+
+            assert results_dir.exists(), "results directory was not created under provided client_dir"
+            assert len(meta_files) > 0, "no registry metadata found under client_dir/results after storing a job result"
