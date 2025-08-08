@@ -23,9 +23,11 @@ def run_inference(config_path: str, custom_job_id: str = None, pipeline_type: st
         config = yaml.safe_load(f)
         
     if 'inference_list' in config:
-        config['mask_tasks'] = [
-            task for task, task_type in config['inference_list'].items() if task_type == 'mask'
-        ]
+        # Only auto-generate mask_tasks if not explicitly provided in config
+        if 'mask_tasks' not in config:
+            config['mask_tasks'] = [
+                task for task, task_type in config['inference_list'].items() if task_type == 'mask'
+            ]
         config['bounding_box_tasks'] = [
             task for task, task_type in config['inference_list'].items() if task_type == 'bounding_box'
         ]

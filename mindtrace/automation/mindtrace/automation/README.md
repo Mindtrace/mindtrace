@@ -23,71 +23,38 @@ uv sync
 
 2. Create your `.env` file with database credentials
 
-3. Update `images_config.yaml` with your settings
+3. Update your configuration files (`images_config.yaml`, etc.) with your settings.
 
-## Usage
+---
 
-### Image Download
+## Image Download & Inference Pipeline
+
+This pipeline is used for downloading images from the database and running inference on them with various models.
+
+### Usage
+
+#### Image Download
 ```bash
 cd mindtrace/automation/mindtrace/automation
 uv run python -m download_images --config configs/images_config.yaml
 ```
 
-### Inference Pipeline
+#### Inference Pipeline
 ```bash
 cd mindtrace/automation/mindtrace/automation
 uv run python -m infer_folder --config configs/images_config.yaml
 ```
 
-## Inference Pipeline Features
+### Configuration Examples
 
-### Supported Input Types
-The inference pipeline can process:
-- **Single Images**: Direct path to an image file
-- **Folders**: All images in a directory
-- **Subfolders**: Recursively processes all images in subdirectories
-
-### Export Types
-Each model can export results in different formats:
-- **Mask**: Semantic segmentation masks (PNG format)
-- **Bounding Box**: Object detection boxes (YOLO format)
-
-### Output Structure
-The pipeline creates a structured output directory:
-```
-output_folder/
-├── images/           # Original images
-├── raw_masks/        # Segmentation masks (PNG)
-├── boxes/           # Bounding boxes (YOLO format)
-└── visualizations/   # Overlay visualizations (JPG)
-```
-
-### Model Loading
-The pipeline automatically:
-1. Downloads models from GCS if not available locally
-2. Loads multiple models for different tasks
-3. Handles different model types (object detection, segmentation)
-4. Manages model versions and metadata
-
-## Configuration Examples
-
-### 1. Download All Images from a Single Camera (100%)
+#### 1. Download All Images from a Single Camera (100%)
 ```yaml
 sampling:
   cameras:
     - cam14  # Downloads 100% of available images from cam14
 ```
 
-### 2. Download All Images from Multiple Cameras (100% each)
-```yaml
-sampling:
-  cameras:
-    - cam14
-    - cam15
-    - cam16  # Each camera gets 100% of its available images
-```
-
-### 3. Download Specific Proportions from Multiple Cameras
+#### 2. Download Specific Proportions from Multiple Cameras
 ```yaml
 sampling:
   cameras:
@@ -97,172 +64,117 @@ sampling:
       proportion: 0.4  # 40% of available images from cam15
 ```
 
-### 4. Download Exact Number of Images per Camera
+---
+
+## Spatter Datalake Pipeline (`spatter_datalake.py`)
+
+This script is a comprehensive pipeline for processing spatter annotations from Label Studio, generating segmentation masks, and publishing versioned datasets to a Hugging Face-based datalake.
+
+### Key Concepts
+
+The pipeline operates in two main modes, controlled by the `processing_mode` key in your configuration file.
+
+1.  **`from_scratch`**: This mode is used to create the very first version of a dataset. It processes a full list of Label Studio projects, performs all transformations, and publishes the result as `v1.0.0` (or as specified). It can optionally merge this new data with a pre-existing dataset from the datalake.
+
+2.  **`incremental`**: This mode is used to update an existing dataset. It starts from a local, previously generated dataset (`base_dataset_path`), processes *only* the new Label Studio projects you specify, merges them, and publishes the final result. You need to make a dataset with a new name v1.0.0
+
+### Configuration Guide
+
+#### 1. Spatter Data Configuration
+
+You can generate different types of spatter datasets by modifying two boolean flags.
+
+##### A. Large Spatter Only
+This configuration ignores any annotations labeled as `small_spatter`.
+
 ```yaml
-sampling:
-  cameras:
-    cam14:
-      number: 100  # Exactly 100 images from cam14
-    cam15:
-      number: 50   # Exactly 50 images from cam15
+# spatter_config.yaml
+keep_small_spatter: false
+separate_class: false
 ```
 
-### 5. Mixed Proportions and Numbers
+##### B. Merged Spatter (Large + Small as one class)
+This configuration includes `small_spatter` annotations but treats them as the standard `spatter` class.
+
 ```yaml
-sampling:
-  cameras:
-    cam14:
-      proportion: 0.1  # 10% of available images
-      number: 100      # OR specify exact number (number takes precedence)
-    cam15:
-      proportion: 0.1  # 10% of available images
-      # number: 50    # Uncomment to use exact number instead
+# spatter_config.yaml
+keep_small_spatter: true
+separate_class: false
 ```
 
-### 6. Download All Available Cameras (No Camera Filtering)
+##### C. Dual Class Spatter (Large and Small as separate classes)
+This configuration keeps both `spatter` and `small_spatter` and assigns them different class IDs for segmentation.
+
 ```yaml
-# Remove or comment out the sampling section entirely
-# sampling:
-#   cameras:
-#     - cam14
+# spatter_config.yaml
+keep_small_spatter: true
+separate_class: true
 ```
 
-### 7. Reproducible Sampling with Random Seed
+---
+
+### 2. Workflow Examples
+
+Here is how you would configure the pipeline for a typical end-to-end workflow.
+
+#### Step 1: Running `from_scratch`
+
+Use this configuration to create your initial dataset (`v1.0.0`). This example processes two projects and also merges them with a remote "free zone" dataset.
+
+**`configs/my_dataset_scratch.yaml`**
 ```yaml
-# Add seed for reproducible results
-seed: 42  # Same seed = same images every time
+processing_mode: from_scratch
+
+# The directory where temporary files will be stored. A unique sub-folder is created for each run.
+download_dir: "/path/to/local/work_directory/"
+
+huggingface:
+  # The name for your NEW dataset on the datalake
+  dataset_name: "my-new-spatter-dataset"
+  version: "1.0.0"
+
+  # (Optional) Merge with a remote dataset during the scratch run
+  existing_dataset: "spatter-free-zone-detection-segmentation-data"
+  existing_version: "1.0.0"
+
+label_studio:
+  project_list:
+    - "LabelStudio-Project-A"
+    - "LabelStudio-Project-B"
+  # ... other ls configs
+  
+# ... other configs (gcp, workers, spatter, etc.)
 ```
-
-### 8. Inference Pipeline Configuration
-```yaml
-# Model registry settings
-task_name: "sfz_pipeline"  # Registered task name
-version: "v2.1"            # Model version
-
-# Inference configuration
-inference_list:
-  zone_segmentation: "mask"           # Export segmentation masks
-  spatter_segmentation: "bounding_box" # Export bounding boxes
-
-# Output settings
-output_folder: "/path/to/output"
-threshold: 0.4              # Confidence threshold
-save_visualizations: True   # Generate overlay images
+**To run:**
+```bash
+python spatter_datalake.py --config configs/my_dataset_scratch.yaml
 ```
+After this run completes, look for the output line telling you the unique run directory, which you will need for the next step.
+`Created temporary run directory: /path/to/local/work_directory/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 
-## Configuration File Structure
 
+#### Step 2: Running `incremental`
+
+After creating the base dataset, use this configuration to add a new project to it.
+
+**`configs/my_dataset_incremental.yaml`**
 ```yaml
-# Database queries
-database_queries:
-  query_type: "get_images_by_date"  # Available: get_images_by_date, get_images_by_camera, get_images_by_timestamp
+processing_mode: incremental
 
-# Google Cloud Storage settings
-gcp:
-  data_bucket: "your-data-bucket"
-  weights_bucket: "your-weights-bucket"
-  base_folder: "models"
-  credentials_file: "/path/to/credentials.json"
-
-# Image sampling configuration
-sampling:
-  cameras:
-    # Option 1: Simple list format (100% each)
-    - cam14
-    - cam15
+incremental_update:
+  # IMPORTANT: This is the full path to the output from the 'from_scratch' run.
+  base_dataset_path: "/path/to/local/work_directory/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  
+  # List ONLY the new projects to be processed and added.
+  new_projects:
+    - "LabelStudio-Project-C"
     
-    # Option 2: Dictionary format with proportions
-    cam14:
-      proportion: 0.6
-    cam15:
-      proportion: 0.4
-    
-    # Option 3: Dictionary format with exact numbers
-    cam14:
-      number: 100
-    cam15:
-      number: 50
-    
-    # Option 4: Mixed format (number takes precedence)
-    cam14:
-      proportion: 0.1
-      number: 100  # This will be used, proportion ignored
+  # The version for the final, updated dataset.
+  new_version: "1.0.0"
 
-# Date range for sampling
-start_date: "2025-06-30"
-end_date: "2025-07-01"
-
-# Random seed for reproducible sampling (optional)
-seed: 42
-
-# Download settings
-download_path: "/path/to/download/directory"
-max_workers: 8  # Number of parallel download threads
-
-# Inference pipeline settings
-task_name: "your_pipeline_name"
-version: "v1.0"
-inference_list:
-  task1: "mask"
-  task2: "bounding_box"
-
-# Output settings
-output_folder: "/path/to/output"
-threshold: 0.4
-save_visualizations: True
 ```
-
-## Sampling Options
-
-### Camera Configuration
-Each camera can be configured with different sampling methods:
-
-1. **Proportion-based**: Use `proportion` to sample a percentage of available images
-2. **Number-based**: Use `number` to sample an exact number of images
-3. **Mixed**: Specify both - `number` takes precedence over `proportion`
-4. **Default**: If neither is specified, takes all available images (100%)
-
-### Random Seed
-- Add `seed: 42` to your config for reproducible sampling
-- Same seed = same images every time
-- Useful for debugging and consistent testing
-- Optional - omit for random sampling
-
-## Inference Pipeline Options
-
-### Export Types
-Each model task can export results in different formats:
-
-1. **Mask Export**: 
-   - Generates semantic segmentation masks
-   - Saves as PNG files preserving class values
-   - Creates colored overlay visualizations
-   - Useful for segmentation tasks
-
-2. **Bounding Box Export**:
-   - Generates object detection bounding boxes
-   - Saves in YOLO format with confidence scores
-   - Creates box overlay visualizations
-   - Useful for detection tasks
-
-### Input Processing
-The pipeline automatically handles:
-- **Single Images**: Direct file path processing
-- **Folder Processing**: All images in a directory
-- **Subfolder Recursion**: Processes all subdirectories
-- **Format Support**: JPG, PNG, BMP, TIFF, WebP
-
-### Output Organization
-Results are organized by:
-- **Original Images**: Copied to `images/` folder
-- **Raw Masks**: Saved to `raw_masks/` folder
-- **Bounding Boxes**: Saved to `boxes/` folder
-- **Visualizations**: Saved to `visualizations/` folder
-
-### Model Management
-The pipeline handles:
-- **Automatic Downloads**: Models from GCS if not local
-- **Version Control**: Specific model versions
-- **Multi-Model Loading**: Multiple tasks simultaneously
-- **Device Optimization**: CPU/GPU selection
-- **Error Handling**: Graceful failure recovery 
+**To run:**
+```bash
+python spatter_datalake.py --config configs/my_dataset_incremental.yaml
+```
+This will create a new dataset named **"my-new-spatter-dataset"** with version **"1.0.0"** on the datalake, containing data from projects A, B, and C. 

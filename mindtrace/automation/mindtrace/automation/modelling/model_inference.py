@@ -57,11 +57,10 @@ class ModelInference:
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
             
-            self.img_size = metadata.get('img_size', [1024, 1024])
+            self.img_size = metadata.get('img_size')
             print(f"Loaded metadata for {self.model_name}: task={self.task_type}, img_size={self.img_size}")
         except Exception as e:
             print(f"Error loading metadata: {e}")
-            self.img_size = [1024, 1024]
     
     def _load_id2label(self):
         """Load class mapping from id2label.json."""
@@ -129,11 +128,29 @@ class ModelInference:
         else:
             raise ValueError(f"Unsupported task type: {self.task_type}")
         
-        # Convert to requested export format
+        # Convert to requested export format while preserving original information
         if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
-            result = self._mask_to_bounding_box(result)
+            # Convert mask to boxes but keep the original mask
+            box_result = self._mask_to_bounding_box(result)
+            # Preserve both mask and boxes
+            result = {
+                'mask': result['mask'],  # Keep original mask
+                'boxes': box_result.get('boxes', np.array([])),
+                'scores': box_result.get('scores', np.array([])),
+                'labels': box_result.get('labels', np.array([])),
+                'task_type': result['task_type']
+            }
         elif export_type == ExportType.MASK and result.get('boxes') is not None:
-            result = self._bounding_box_to_mask(result)
+            # Convert boxes to mask but keep the original boxes
+            mask_result = self._bounding_box_to_mask(result)
+            # Preserve both mask and boxes
+            result = {
+                'mask': mask_result.get('mask'),
+                'boxes': result.get('boxes', np.array([])),  # Keep original boxes
+                'scores': result.get('scores', np.array([])),
+                'labels': result.get('labels', np.array([])),
+                'task_type': result['task_type']
+            }
         
         return result
     
@@ -199,8 +216,8 @@ class ModelInference:
             return {'error': str(e)}
     
     def _run_semantic_segmentation(
-        self, 
-        image: Image.Image, 
+        self,
+        image: Image.Image,
         conf_threshold: float = 0.5,
         background_class: int = 0,
     ) -> Dict[str, Any]:
@@ -220,13 +237,19 @@ class ModelInference:
         else:
             logits = self._get_segformer_logits(outputs)
 
-        mask_results = logits_to_mask(
-            logits, 
-            conf_threshold, 
-            background_class, 
-            target_size=(original_images.size[1], original_images.size[0])
+        
+        target_sizes = [original_images.size[::-1]]  # Use the original image size
+        pred_masks_tensors = self.model.preprocessor.post_process_semantic_segmentation(
+            outputs, target_sizes=target_sizes
         )
-        mask = mask_results[0].cpu().detach().numpy()
+        mask = pred_masks_tensors[0].cpu().numpy()
+        # mask_results = logits_to_mask(
+        #     logits, 
+        #     conf_threshold, 
+        #     background_class, 
+        #     target_size=(original_images.size[1], original_images.size[0])
+        # )
+        # mask = mask_results[0].cpu().detach().numpy()
         
         return {
             'logits': logits,

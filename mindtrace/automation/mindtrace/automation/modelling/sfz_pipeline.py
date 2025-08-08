@@ -715,16 +715,43 @@ class SFZPipeline:
                 
                 current_export_type = export_types.get(task_name) if export_types else None
 
-                # Save raw masks
-                if current_export_type == ExportType.MASK and 'mask' in result:
+                # Save id2label as yaml
+                model_info = self.get_model_info(task_name)
+                if model_info and model_info.get('id2label'):
+                    id2label_map = {int(k): v for k, v in model_info['id2label'].items()}
+                    
+                    output_dir = None
+                    if current_export_type == ExportType.MASK:
+                        output_dir = os.path.join(raw_masks_folder, task_name)
+                    elif current_export_type == ExportType.BOUNDING_BOX:
+                        output_dir = os.path.join(boxes_folder, task_name)
+                    
+                    if output_dir:
+                        os.makedirs(output_dir, exist_ok=True)
+                        yaml_path = os.path.join(output_dir, 'id2label.yaml')
+                        if not os.path.exists(yaml_path):
+                            with open(yaml_path, 'w') as f:
+                                yaml.dump(id2label_map, f, default_flow_style=False)
+                            print(f"Saved id2label map to {yaml_path}")
+
+                # Save raw masks - save masks whenever they exist, regardless of export type
+                if 'mask' in result:
                     mask = np.array(result['mask'])
                     if mask is not None and mask.size > 0:
-                        if overwrite_masks:
-                            # Overwrite mode: use original image filename
-                            mask_filename = f"{image_name}.png"
-                            raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                        # Determine where to save based on export type or default to mask folder
+                        if current_export_type == ExportType.MASK:
+                            if overwrite_masks:
+                                # Overwrite mode: use original image filename
+                                mask_filename = f"{image_name}.png"
+                                raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                            else:
+                                # Non-overwrite mode: create task subfolder
+                                task_mask_folder = os.path.join(raw_masks_folder, task_name)
+                                os.makedirs(task_mask_folder, exist_ok=True)
+                                mask_filename = f"{image_name}.png"
+                                raw_mask_path = os.path.join(task_mask_folder, mask_filename)
                         else:
-                            # Non-overwrite mode: create task subfolder
+                            # For bounding box export type, always save in task subfolder
                             task_mask_folder = os.path.join(raw_masks_folder, task_name)
                             os.makedirs(task_mask_folder, exist_ok=True)
                             mask_filename = f"{image_name}.png"
@@ -788,7 +815,7 @@ class SFZPipeline:
     def _save_visualizations(self, image_path: str, results: Dict[str, Any], 
                            visualizations_folder: str, image_name: str, 
                            export_types: Optional[Dict[str, ExportType]] = None):
-        """Save visualization images for each model result based on export types."""
+        """Save visualization images for each model result based on available data."""
         try:
             # Load original image
             original_image = Image.open(image_path).convert('RGB')
@@ -797,43 +824,28 @@ class SFZPipeline:
                 if 'error' in result:
                     continue
                 
-                # Determine export type for this task
-                export_type = ExportType.BOUNDING_BOX  # Default
-                if export_types and task_name in export_types:
-                    export_type = export_types[task_name]
-                
-                # Create visualization based on the specified export type
-                if export_type == ExportType.BOUNDING_BOX:
-                    # Create bounding box visualization
-                    if 'boxes' in result and len(result['boxes']) > 0:
-                        vis_image = self.models[task_name].draw_detection_boxes(original_image, result)
-                        vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_boxes.jpg")
-                        vis_image.save(vis_path)
-                        print(f"Saved bounding box visualization: {vis_path}")
-                    else:
-                        print(f"No bounding boxes found for {task_name}")
-                
-                elif export_type == ExportType.MASK:
-                    # Create mask visualizations
-                    if 'mask' in result:
-                        mask = result['mask']
-                        if mask is not None and mask.size > 0:
-                            # Create overlay
-                            vis_image = self.models[task_name].create_segmentation_overlay(original_image, mask)
-                            vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
-                            vis_image.save(vis_path)
-                            print(f"Saved mask overlay visualization: {vis_path}")
-                            
-                            # Also save colored mask only (for visualization)
-                            colored_mask = self.models[task_name].generate_colored_mask(mask)
-                            mask_image = Image.fromarray(colored_mask)
-                            mask_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_colored.jpg")
-                            mask_image.save(mask_path)
-                            print(f"Saved colored mask visualization: {mask_path}")
-                        else:
-                            print(f"No valid mask found for {task_name}")
-                    else:
-                        print(f"No mask data found for {task_name}")
+                # Save bounding box visualization if boxes are present
+                if 'boxes' in result and len(result.get('boxes', [])) > 0:
+                    vis_image = self.models[task_name].draw_detection_boxes(original_image.copy(), result)
+                    vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_boxes.jpg")
+                    vis_image.save(vis_path)
+                    print(f"Saved bounding box visualization: {vis_path}")
+
+                # Save mask visualizations if a mask is present
+                if 'mask' in result and result.get('mask') is not None and result['mask'].size > 0:
+                    mask = result['mask']
+                    # Create overlay
+                    vis_image = self.models[task_name].create_segmentation_overlay(original_image.copy(), mask)
+                    vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
+                    vis_image.save(vis_path)
+                    print(f"Saved mask overlay visualization: {vis_path}")
+                    
+                    # Also save colored mask only (for visualization)
+                    colored_mask = self.models[task_name].generate_colored_mask(mask)
+                    mask_image = Image.fromarray(colored_mask)
+                    mask_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_colored.jpg")
+                    mask_image.save(mask_path)
+                    print(f"Saved colored mask visualization: {mask_path}")
         
         except Exception as e:
             print(f"Error saving visualizations for {image_name}: {e}")

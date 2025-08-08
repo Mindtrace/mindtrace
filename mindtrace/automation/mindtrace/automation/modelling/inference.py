@@ -104,7 +104,7 @@ class ModelInference:
             threshold: Confidence threshold for detections
             
         Returns:
-            Dictionary with inference results
+            Dictionary with inference results, preserving both mask and box information when available
         """
         if self.model is None:
             raise ValueError("Model not initialized")
@@ -123,11 +123,25 @@ class ModelInference:
         else:
             raise ValueError(f"Unsupported task type: {self.task_type}")
         
-        # Convert to requested export format
+        # Convert to requested export format while preserving original information
         if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
-            result = self._mask_to_bounding_box(result)
+            box_result = self._mask_to_bounding_box(result)
+            result = {
+                'mask': result['mask'],  # Keep original mask
+                'boxes': box_result.get('boxes', np.array([])),
+                'scores': box_result.get('scores', np.array([])),
+                'labels': box_result.get('labels', np.array([])),
+                'task_type': result['task_type']
+            }
         elif export_type == ExportType.MASK and result.get('boxes') is not None:
-            result = self._bounding_box_to_mask(result)
+            mask_result = self._bounding_box_to_mask(result)
+            result = {
+                'mask': mask_result.get('mask'),
+                'boxes': result.get('boxes', np.array([])),  # Keep original boxes
+                'scores': result.get('scores', np.array([])),
+                'labels': result.get('labels', np.array([])),
+                'task_type': result['task_type']
+            }
         
         return result
     
@@ -250,18 +264,12 @@ class ModelInference:
         return segmentation_logits
 
     def logits_to_mask(self, logits, conf_threshold, background_class, target_size=None):
-        if target_size is not None:
-            if logits.ndim == 3:
-                logits = logits.unsqueeze(0)
-            logits = torch.nn.functional.interpolate(
-                logits, size=[target_size[0], target_size[1]], mode="bilinear", align_corners=False
-            )
         probs = torch.softmax(logits, dim=1)
         mask_pred = torch.argmax(probs, dim=1)
-        # Set low-confidence pixels to background
+
         if conf_threshold > 0:
-            max_probs = torch.max(probs, dim=1)[0]  # Shape: (batch, height, width)
-            low_confidence_mask = max_probs < conf_threshold  # Shape: (batch, height, width)
+            max_probs = torch.max(probs, dim=1)[0]
+            low_confidence_mask = max_probs < conf_threshold
             if mask_pred.shape != low_confidence_mask.shape:
                 try:
                     low_confidence_mask = low_confidence_mask.view(mask_pred.shape)
@@ -269,6 +277,14 @@ class ModelInference:
                     print(f"Error reshaping low_confidence_mask: {e}")
                     raise
             mask_pred[low_confidence_mask] = background_class
+
+        if target_size is not None:
+            mask_pred = mask_pred.unsqueeze(1).float()
+            mask_pred = torch.nn.functional.interpolate(
+                mask_pred, size=target_size, mode="nearest"
+            )
+            mask_pred = mask_pred.squeeze(1).long()
+            
         return mask_pred
         
         
@@ -313,13 +329,12 @@ class ModelInference:
                     scores.append(confidence)
                     labels.append(int(class_id))
             
-            return {
-                'boxes': np.array(boxes) if boxes else np.array([]),
-                'scores': np.array(scores) if scores else np.array([]),
-                'labels': np.array(labels) if labels else np.array([]),
-                'task_type': 'object_detection',
-                'original_mask': mask
-            }
+            # Add boxes to the result, but keep the original mask
+            result['boxes'] = np.array(boxes) if boxes else np.array([])
+            result['scores'] = np.array(scores) if scores else np.array([])
+            result['labels'] = np.array(labels) if labels else np.array([])
+            return result
+
         except Exception as e:
             print(f"Error converting mask to bounding box: {e}")
             return result
@@ -933,16 +948,24 @@ class Pipeline:
                                 yaml.dump(id2label_map, f, default_flow_style=False)
                             print(f"Saved id2label map to {yaml_path}")
 
-                # Save raw masks
-                if current_export_type == ExportType.MASK and 'mask' in result:
+                # Save raw masks - save masks whenever they exist, regardless of export type
+                if 'mask' in result:
                     mask = np.array(result['mask'])
                     if mask is not None and mask.size > 0:
-                        if overwrite_masks:
-                            # Overwrite mode: use original image filename
-                            mask_filename = f"{image_name}.png"
-                            raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                        # Determine where to save based on export type or default to mask folder
+                        if current_export_type == ExportType.MASK:
+                            if overwrite_masks:
+                                # Overwrite mode: use original image filename
+                                mask_filename = f"{image_name}.png"
+                                raw_mask_path = os.path.join(raw_masks_folder, mask_filename)
+                            else:
+                                # Non-overwrite mode: create task subfolder
+                                task_mask_folder = os.path.join(raw_masks_folder, task_name)
+                                os.makedirs(task_mask_folder, exist_ok=True)
+                                mask_filename = f"{image_name}.png"
+                                raw_mask_path = os.path.join(task_mask_folder, mask_filename)
                         else:
-                            # Non-overwrite mode: create task subfolder
+                            # For bounding box export type, always save in task subfolder
                             task_mask_folder = os.path.join(raw_masks_folder, task_name)
                             os.makedirs(task_mask_folder, exist_ok=True)
                             mask_filename = f"{image_name}.png"
@@ -1007,55 +1030,37 @@ class Pipeline:
                            visualizations_folder: str, image_name: str, 
                            export_types: Optional[Dict[str, ExportType]] = None):
         """Save visualization images for each model result based on export types."""
-        try:
-            # Load original image
-            original_image = Image.open(image_path).convert('RGB')
-            
-            for task_name, result in results.items():
-                if 'error' in result:
-                    continue
-                
-                # Determine export type for this task
-                export_type = ExportType.BOUNDING_BOX  # Default
-                if export_types and task_name in export_types:
-                    export_type = export_types[task_name]
-                
-                # Create visualization based on the specified export type
-                if export_type == ExportType.BOUNDING_BOX:
-                    # Create bounding box visualization
-                    if 'boxes' in result and len(result['boxes']) > 0:
-                        vis_image = self.models[task_name].draw_detection_boxes(original_image, result)
-                        vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_boxes.jpg")
-                        vis_image.save(vis_path)
-                        print(f"Saved bounding box visualization: {vis_path}")
-                    else:
-                        print(f"No bounding boxes found for {task_name}")
-                
-                elif export_type == ExportType.MASK:
-                    # Create mask visualizations
-                    if 'mask' in result:
-                        mask = result['mask']
-                        if mask is not None and mask.size > 0:
-                            # Create overlay
-                            vis_image = self.models[task_name].create_segmentation_overlay(original_image, mask)
-                            vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
-                            vis_image.save(vis_path)
-                            print(f"Saved mask overlay visualization: {vis_path}")
-                            
-                            # Also save colored mask only (for visualization)
-                            colored_mask = self.models[task_name].generate_colored_mask(mask)
-                            mask_image = Image.fromarray(colored_mask)
-                            mask_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_colored.jpg")
-                            mask_image.save(mask_path)
-                            print(f"Saved colored mask visualization: {mask_path}")
-                        else:
-                            print(f"No valid mask found for {task_name}")
-                    else:
-                        print(f"No mask data found for {task_name}")
         
-        except Exception as e:
-            print(f"Error saving visualizations for {image_name}: {e}")
+            
+        # Load original image
+        original_image = Image.open(image_path).convert('RGB')
+        
+        for task_name, result in results.items():
 
+            if 'error' in result:
+                continue
+            
+            # Save bounding box visualization if boxes are present
+            if 'boxes' in result and len(result.get('boxes', [])) > 0:
+                box_vis_image = self.models[task_name].draw_detection_boxes(original_image.copy(), result)
+                box_vis_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_boxes.jpg")
+                box_vis_image.save(box_vis_path)
+
+            # Save mask visualizations if a mask is present
+            if 'mask' in result and result.get('mask') is not None and result['mask'].size > 0:
+                try:
+                    # Create overlay
+                    mask_overlay_image = self.models[task_name].create_segmentation_overlay(original_image.copy(), result['mask'])
+                    overlay_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_overlay.jpg")
+                    mask_overlay_image.save(overlay_path)
+                    
+                    # Also save colored mask only
+                    colored_mask = self.models[task_name].generate_colored_mask(result['mask'])
+                    mask_image = Image.fromarray(colored_mask)
+                    mask_path = os.path.join(visualizations_folder, f"{image_name}_{task_name}_mask_colored.jpg")
+                    mask_image.save(mask_path)
+                except Exception as e:
+                    print(f"Error saving mask visualizations: {str(e)}")
 
 def test_pipeline():
     """Test function to verify pipeline functionality."""

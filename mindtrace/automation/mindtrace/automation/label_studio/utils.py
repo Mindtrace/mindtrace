@@ -170,7 +170,6 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2
                     center_y = float(parts[2])
                     width = float(parts[3])
                     height = float(parts[4])
-                    confidence = float(parts[5])
                     
                     x = ((center_x - width / 2) / img_width) * 100
                     y = ((center_y - height / 2) / img_height) * 100
@@ -182,9 +181,12 @@ def parse_yolo_box_file(box_file_path: str, img_width: int, img_height: int, id2
                         'y': y,
                         'width': width_percent,
                         'height': height_percent,
-                        'confidence': confidence,
                         'class_name': id2label.get(class_id, f"class_{class_id}")
                     }
+
+                    if len(parts) > 5:
+                        bbox['confidence'] = float(parts[5])
+
                     bboxes.append(bbox)
     
     except Exception as e:
