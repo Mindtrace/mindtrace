@@ -185,4 +185,120 @@ def test_count_queue_messages_delegates(client):
     client, mock_conn = client
     mock_conn.count_queue_messages.return_value = 42
     assert client.count_queue_messages("q") == 42
-    mock_conn.count_queue_messages.assert_called_with("q") 
+    mock_conn.count_queue_messages.assert_called_with("q")
+
+
+def test_publish_non_priority_queue_path(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    # Simulate a non-priority queue by class name
+    fake_queue.__class__.__name__ = "RedisQueue"
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+
+    msg = DummyModel(foo="bar")
+    fake_queue.push.return_value = None
+    job_id = client.publish("q", msg, priority=999)
+    assert isinstance(job_id, str)
+    # Should call push without priority for non-priority queue
+    fake_queue.push.assert_called_once()
+
+
+def test_publish_adds_job_id_when_missing(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    fake_queue.__class__.__name__ = "RedisPriorityQueue"
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+
+    msg = DummyModel(foo="bar")
+    fake_queue.push.return_value = None
+    job_id = client.publish("q", msg, priority=1)
+    assert isinstance(job_id, str) and len(job_id) > 0
+
+
+def test_declare_queue_lock_acquire_failure(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = False
+    with pytest.raises(BlockingIOError):
+        client.declare_queue("q", queue_type="fifo") 
+
+
+def test_publish_no_priority_argument_on_priority_queue(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    fake_queue.__class__.__name__ = "RedisPriorityQueue"
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+
+    msg = DummyModel(foo="bar")
+    fake_queue.push.return_value = None
+    job_id = client.publish("q", msg)  # no priority provided
+    assert isinstance(job_id, str)
+
+
+def test_publish_raises_propagates(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    mock_conn.queues = {"q": fake_queue}
+
+    class DummyModel(pydantic.BaseModel):
+        foo: str
+
+    msg = DummyModel(foo="bar")
+    fake_queue.push.side_effect = RuntimeError("boom")
+    with pytest.raises(RuntimeError):
+        client.publish("q", msg) 
+
+
+def test_declare_queue_stack(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.pipeline.return_value.hset.return_value = None
+    mock_conn.connection.pipeline.return_value.execute.return_value = None
+    mock_conn.connection.publish.return_value = 1
+    with patch("mindtrace.jobs.redis.client.RedisStack") as mock_stack:
+        result = client.declare_queue("qs", queue_type="stack")
+        assert result["status"] == "success"
+        mock_stack.assert_called_once()
+        mock_conn.connection.publish.assert_called()
+
+
+def test_declare_queue_priority(client):
+    client, mock_conn = client
+    mock_conn.queues = {}
+    mock_conn.connection.lock.return_value.acquire.return_value = True
+    mock_conn.connection.pipeline.return_value.hset.return_value = None
+    mock_conn.connection.pipeline.return_value.execute.return_value = None
+    mock_conn.connection.publish.return_value = 1
+    with patch("mindtrace.jobs.redis.client.RedisPriorityQueue") as mock_pq:
+        result = client.declare_queue("qp", queue_type="priority")
+        assert result["status"] == "success"
+        mock_pq.assert_called_once()
+        mock_conn.connection.publish.assert_called()
+
+
+def test_delete_queue_lock_acquire_failure(client):
+    client, mock_conn = client
+    mock_conn.queues = {"q": MagicMock()}
+    mock_conn.connection.lock.return_value.acquire.return_value = False
+    with pytest.raises(BlockingIOError):
+        client.delete_queue("q")
+
+
+def test_clean_queue_lock_acquire_failure(client):
+    client, mock_conn = client
+    fake_queue = MagicMock()
+    fake_queue.key = "key"
+    mock_conn.queues = {"q": fake_queue}
+    mock_conn.connection.lock.return_value.acquire.return_value = False
+    with pytest.raises(BlockingIOError):
+        client.clean_queue("q") 

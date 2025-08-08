@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import BaseModel
+import tempfile
 
 from mindtrace.core import TaskSchema
 from mindtrace.jobs.core.orchestrator import Orchestrator
@@ -93,6 +94,13 @@ class TestOrchestratorInitialization:
         orchestrator = Orchestrator(backend=None)
         assert isinstance(orchestrator.backend, LocalClient)
         assert orchestrator._schema_mapping == {}
+
+    def test_init_with_orchestrator_dir(self):
+        """Test initialization with orchestrator_dir parameter."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            orchestrator = Orchestrator(orchestrator_dir=temp_dir)
+            assert isinstance(orchestrator.backend, LocalClient)
+            assert orchestrator._schema_mapping == {}
 
 
 class TestOrchestratorPublish:

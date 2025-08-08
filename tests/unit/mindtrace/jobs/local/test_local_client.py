@@ -1,4 +1,5 @@
 import time
+from unittest.mock import MagicMock
 
 import pydantic
 import pytest
@@ -261,7 +262,7 @@ class TestLocalClient:
         assert result is None  # pass statement returns None
 
     def test_receive_message_returns_none_when_queue_pop_returns_none(self, temp_local_client):
-        """Test receive_message returns None when queue.pop() returns None - covers line 93."""
+        """Test receive_message returns None when queue.pop() returns None."""
         client = temp_local_client
         queue_name = "test-queue"
         client.declare_queue(queue_name)
@@ -278,3 +279,33 @@ class TestLocalClient:
         assert result is None
 
         queue_instance.pop = original_pop
+
+    def test_delete_nonexistent_queue(self, temp_local_client):
+        client = temp_local_client
+        with pytest.raises(KeyError, match="Queue 'does-not-exist' not found"):
+            client.delete_queue("does-not-exist")
+
+    def test_receive_empty_logs_debug(self, temp_local_client):
+        client = temp_local_client
+        q = "empty-queue"
+        client.declare_queue(q)
+        # Attach a MagicMock logger with debug and warning
+        mock_logger = MagicMock()
+        client.logger = mock_logger
+        result = client.receive_message(q, block=False)
+        assert result is None
+        client.logger.warning.assert_called()
+
+    def test_receive_message_pop_returns_none_triggers_debug(self, temp_local_client):
+        client = temp_local_client
+        q = "debug-empty-queue"
+        client.declare_queue(q)
+        fake_queue = MagicMock()
+        fake_queue.pop.return_value = None
+        # Ensure membership check passes, but load returns our fake queue
+        client.queues.load = MagicMock(return_value=fake_queue)
+        mock_logger = MagicMock()
+        client.logger = mock_logger
+        result = client.receive_message(q, block=True)
+        assert result is None
+        client.logger.debug.assert_called()

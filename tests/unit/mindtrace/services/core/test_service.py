@@ -545,7 +545,7 @@ class TestServiceLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_context_manager(self):
-        """Test FastAPI lifespan context manager (covers lines 98-101)."""
+        """Test FastAPI lifespan context manager."""
         service = SampleService()
 
         # Get the lifespan function from the FastAPI app
@@ -573,7 +573,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_runtime_error_handling(self, mock_build_url, mock_status_at_host):
-        """Test launch method RuntimeError handling (covers lines 234-240)."""
+        """Test launch method RuntimeError handling."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host raise RuntimeError
         mock_status_at_host.side_effect = RuntimeError("Connection failed")
@@ -593,7 +593,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_service_already_running_http_exception(self, mock_build_url, mock_status_at_host):
-        """Test launch method HTTPException when service already running (covers line 234)."""
+        """Test launch method HTTPException when service already running."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host return AVAILABLE (service already running)
         mock_status_at_host.return_value = ServerStatus.AVAILABLE
@@ -617,7 +617,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_keyboard_interrupt(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking with KeyboardInterrupt (covers lines 290-299)."""
+        """Test launch method blocking with KeyboardInterrupt."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -670,7 +670,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_finally_cleanup(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking finally block (covers lines 290-299)."""
+        """Test launch method blocking finally block."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -704,7 +704,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with child NoSuchProcess exception (covers lines 328-331)."""
+        """Test _cleanup_server with child NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -737,7 +737,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent NoSuchProcess exception (covers lines 335-338)."""
+        """Test _cleanup_server with parent NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -766,7 +766,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent terminate NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent terminate NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -800,7 +800,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent wait NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent wait NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -832,7 +832,7 @@ class TestServiceCleanupMethods:
             Service._active_servers = original_servers
 
     def test_cleanup_all_servers(self):
-        """Test _cleanup_all_servers method (covers lines 345-346)."""
+        """Test _cleanup_all_servers method."""
         # Setup multiple mock servers
         test_uuid1 = UUID("12345678-1234-5678-1234-567812345678")
         test_uuid2 = UUID("87654321-4321-8765-4321-876543218765")
