@@ -8,7 +8,7 @@ from poseidon.styles.variants import COMPONENT_VARIANTS
 def button(
     text: str, 
     button_type: str = "submit", 
-    variant: str = "base",
+    variant: str = "primary",
     size: str = "large",
     **kwargs
 ) -> rx.Component:
@@ -16,7 +16,7 @@ def button(
     Exceptional animated button with hover effects.
     Supports size variants: small, medium, large (default)
     """
-    scheme = COMPONENT_VARIANTS["button"].get('base')
+    scheme = COMPONENT_VARIANTS["button"].get(variant, COMPONENT_VARIANTS["button"]["primary"])
     current_size = SIZE_VARIANTS["button"].get(size, SIZE_VARIANTS["button"]["large"])
     
     # Base styles for all buttons
@@ -27,6 +27,9 @@ def button(
         "background": scheme["background"],
         "box_shadow": scheme["shadow"],
         "color": scheme.get("color", COMPONENT_VARIANTS["button"]["base"]["color"]),
+        "white_space": "nowrap",
+        "overflow": "hidden",
+        "text_overflow": "ellipsis",
     }
     
     # Add animation effects only for non-base variants
@@ -68,5 +71,6 @@ def button(
         type=button_type,
         style=base_styles,
         custom_attrs={"data-size": size},
+        title=text,
         **kwargs
     )
