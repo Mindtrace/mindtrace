@@ -128,6 +128,10 @@ COMPONENT_VARIANTS = {
             "position": "relative",
             "overflow": "hidden",
             "outline": "none",
+            "background": f"linear-gradient(135deg, {COLORS['secondary']} 0%, {COLORS['secondary_dark']} 100%)",
+            "hover_background": f"linear-gradient(135deg, {COLORS['secondary_dark']} 0%, #4B5563 100%)",
+            "shadow": EFFECTS["shadows"]["md"],
+            "hover_shadow": "0 6px 20px rgba(107, 114, 128, 0.3)",
         },
     },
     "header": {
