@@ -68,113 +68,78 @@ sampling:
 
 ## Spatter Datalake Pipeline (`spatter_datalake.py`)
 
-This script is a comprehensive pipeline for processing spatter annotations from Label Studio, generating segmentation masks, and publishing versioned datasets to a Hugging Face-based datalake.
+This script processes Label Studio projects end-to-end: export annotations, download images/masks, split into train/test, optionally crop, and publish a dataset to the datalake.
 
-### Key Concepts
+### Unified Pipeline (no modes)
+There is a single unified flow (no more `from_scratch`/`incremental` modes).
 
-The pipeline operates in two main modes, controlled by the `processing_mode` key in your configuration file.
+High-level steps:
+- Export annotations from Label Studio projects listed in `label_studio.project_list`
+- Download images, labels, and zone masks
+- Perform train/test split with an optional ratio
+- Optional cropping per zone configuration
+- Build a dataset folder structure with manifests and publish via the datalake client
 
-1.  **`from_scratch`**: This mode is used to create the very first version of a dataset. It processes a full list of Label Studio projects, performs all transformations, and publishes the result as `v1.0.0` (or as specified). It can optionally merge this new data with a pre-existing dataset from the datalake.
+### Key Config Keys
+- `label_studio.project_list`: List of project names to process
+- `workers`: Parallelism for downloads/processing
+- `zone_class_names`: Class names for zone masks (drawing order)
+- `convert_box_to_mask`: If true, convert boxes to masks using SAM
+- `train_test_split_ratio`: e.g., `0.2` for 80/20 split
+- `cropping.enabled`: Whether to run cropping after splitting
+- `cropping.cropping_config_path`: Path to cropping JSON config
+- `huggingface`: Datalake publishing configuration (dataset name, version, token/creds)
 
-2.  **`incremental`**: This mode is used to update an existing dataset. It starts from a local, previously generated dataset (`base_dataset_path`), processes *only* the new Label Studio projects you specify, merges them, and publishes the final result. You need to make a dataset with a new name v1.0.0
+### Spatter class configuration
+Control which spatter annotations are included and how they’re labeled via two flags:
+- `keep_small_spatter` (bool)
+- `separate_class` (bool)
 
-### Configuration Guide
+Examples:
 
-#### 1. Spatter Data Configuration
-
-You can generate different types of spatter datasets by modifying two boolean flags.
-
-##### A. Large Spatter Only
-This configuration ignores any annotations labeled as `small_spatter`.
-
+A) Large Spatter Only (ignore `small_spatter`):
 ```yaml
-# spatter_config.yaml
 keep_small_spatter: false
 separate_class: false
 ```
 
-##### B. Merged Spatter (Large + Small as one class)
-This configuration includes `small_spatter` annotations but treats them as the standard `spatter` class.
-
+B) Merged Spatter (Large + Small as one class):
 ```yaml
-# spatter_config.yaml
 keep_small_spatter: true
 separate_class: false
 ```
 
-##### C. Dual Class Spatter (Large and Small as separate classes)
-This configuration keeps both `spatter` and `small_spatter` and assigns them different class IDs for segmentation.
-
+C) Dual Class Spatter (Large and Small as separate classes):
 ```yaml
-# spatter_config.yaml
 keep_small_spatter: true
 separate_class: true
 ```
 
----
+### Forcing specific projects into a split (overrides)
+You can force certain Label Studio projects into `train` or `test` regardless of the automatic ratio via `project_split_overrides`.
 
-### 2. Workflow Examples
+Important: Keys are project names (as they appear in `label_studio.project_list`). The pipeline validates names and maps them internally to project IDs.
 
-Here is how you would configure the pipeline for a typical end-to-end workflow.
-
-#### Step 1: Running `from_scratch`
-
-Use this configuration to create your initial dataset (`v1.0.0`). This example processes two projects and also merges them with a remote "free zone" dataset.
-
-**`configs/my_dataset_scratch.yaml`**
+Example:
 ```yaml
-processing_mode: from_scratch
-
-# The directory where temporary files will be stored. A unique sub-folder is created for each run.
-download_dir: "/path/to/local/work_directory/"
-
-huggingface:
-  # The name for your NEW dataset on the datalake
-  dataset_name: "my-new-spatter-dataset"
-  version: "1.0.0"
-
-  # (Optional) Merge with a remote dataset during the scratch run
-  existing_dataset: "spatter-free-zone-detection-segmentation-data"
-  existing_version: "1.0.0"
-
+# ... other configs ...
 label_studio:
   project_list:
-    - "LabelStudio-Project-A"
-    - "LabelStudio-Project-B"
-  # ... other ls configs
-  
-# ... other configs (gcp, workers, spatter, etc.)
+    - Project_A
+    - Project_B
+    - Project_C
+
+train_test_split_ratio: 0.2  # 80/20
+
+project_split_overrides:
+  Project_A: train  # Force all images from Project_A into train
+  Project_C: test   # Force all images from Project_C into test
 ```
-**To run:**
+
+### How to Run
 ```bash
-python spatter_datalake.py --config configs/my_dataset_scratch.yaml
+cd mindtrace/automation/mindtrace/automation
+python spatter_datalake.py --config configs/my_spatter_config.yaml
 ```
-After this run completes, look for the output line telling you the unique run directory, which you will need for the next step.
-`Created temporary run directory: /path/to/local/work_directory/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 
-
-#### Step 2: Running `incremental`
-
-After creating the base dataset, use this configuration to add a new project to it.
-
-**`configs/my_dataset_incremental.yaml`**
-```yaml
-processing_mode: incremental
-
-incremental_update:
-  # IMPORTANT: This is the full path to the output from the 'from_scratch' run.
-  base_dataset_path: "/path/to/local/work_directory/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  
-  # List ONLY the new projects to be processed and added.
-  new_projects:
-    - "LabelStudio-Project-C"
-    
-  # The version for the final, updated dataset.
-  new_version: "1.0.0"
-
-```
-**To run:**
-```bash
-python spatter_datalake.py --config configs/my_dataset_incremental.yaml
-```
-This will create a new dataset named **"my-new-spatter-dataset"** with version **"1.0.0"** on the datalake, containing data from projects A, B, and C. 
+On success, you’ll see a unique run directory created and the dataset published (or updated) per your `huggingface` config. 
