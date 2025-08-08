@@ -195,16 +195,16 @@ SIZE_VARIANTS = {
     },
     "button": {
         "small": {
-            "padding": "0.5rem 1rem",
-            "font_size": TYPOGRAPHY["font_sizes"]["sm"],
+            "padding": "0.375rem 0.75rem",
+            "font_size": "0.75rem",
         },
         "medium": {
-            "padding": "0.65rem 1.25rem",
-            "font_size": "0.9rem",
+            "padding": "0.5rem 1rem",
+            "font_size": "0.875rem",
         },
         "large": {
             "padding": "0.75rem 1.5rem",
-            "font_size": "0.925rem",
+            "font_size": "1rem",
         },
     },
 } 
