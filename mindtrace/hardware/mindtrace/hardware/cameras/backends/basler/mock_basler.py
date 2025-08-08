@@ -51,7 +51,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
-from mindtrace.hardware.cameras.backends.base import CameraBackend
+from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,

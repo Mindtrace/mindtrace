@@ -12,7 +12,6 @@ Key Features:
     - Integrated error handling
 
 Supported Backends:
-    - Daheng: Industrial cameras (gxipy SDK)
     - Basler: Industrial cameras (pypylon SDK)
     - OpenCV: USB cameras and webcams
     - Mock backends for testing
@@ -26,9 +25,10 @@ Usage:
 
     # With configuration
     async with CameraManager(include_mocks=True) as manager:
-        camera = await manager.get_camera("MockDaheng:test_camera")
-        await camera.configure(exposure=20000, gain=2.5)
-        image = await camera.capture("output.jpg")
+        cameras = manager.discover_cameras(["MockBasler"])  # example mock backend
+        cam = await manager.get_camera(cameras[0])
+        await cam.configure(exposure=20000, gain=2.5)
+        image = await cam.capture("output.jpg")
 """
 
 import asyncio
@@ -51,7 +51,6 @@ from mindtrace.hardware.core.exceptions import (
 
 # Backend discovery and lazy loading
 _backend_cache = {
-    "daheng": {"checked": False, "available": False, "class": None},
     "basler": {"checked": False, "available": False, "class": None},
     "opencv": {"checked": False, "available": False, "class": None},
 }
@@ -109,16 +108,14 @@ def _get_mock_camera(backend_name: str):
 
 
 class CameraManager(Mindtrace):
-    """
-    Modern camera manager with clean API and automatic backend discovery.
+    """Modern camera manager with clean API and automatic backend discovery.
 
     Provides unified access to multiple camera backends with proper resource
     management, async operations, and comprehensive error handling.
     """
 
     def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None):
-        """
-        Initialize camera manager.
+        """Initialize camera manager.
 
         Args:
             include_mocks: Include mock cameras in discovery
@@ -173,25 +170,23 @@ class CameraManager(Mindtrace):
         """Get detailed information about all backends."""
         info = {}
 
-        for backend in ["Daheng", "Basler", "OpenCV"]:
+        for backend in ["Basler", "OpenCV"]:
             available, _ = _discover_backend(backend.lower())
             info[backend] = {"available": available, "type": "hardware", "sdk_required": True}
 
         if self._include_mocks:
-            info["MockDaheng"] = {"available": True, "type": "mock", "sdk_required": False}
             info["MockBasler"] = {"available": True, "type": "mock", "sdk_required": False}
 
         return info
 
     def discover_cameras(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
-        """
-        Discover available cameras across specified backends or all backends.
+        """Discover available cameras across specified backends or all backends.
 
         Args:
             backends: Optional backend(s) to discover cameras from. Can be:
                      - None: Discover from all available backends (default behavior)
-                     - str: Single backend name (e.g., "Basler", "OpenCV", "Daheng")
-                     - List[str]: Multiple backend names (e.g., ["Basler", "Daheng"])
+                     - str: Single backend name (e.g., "Basler", "OpenCV")
+                     - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
 
         Returns:
             List of camera names in format "Backend:device_name"
@@ -234,7 +229,7 @@ class CameraManager(Mindtrace):
 
         for backend in backends_to_search:
             try:
-                if backend in ["Daheng", "Basler", "OpenCV"]:
+                if backend in ["Basler", "OpenCV"]:
                     available, camera_class = _discover_backend(backend.lower())
                     if available and camera_class:
                         cameras = camera_class.get_available_cameras()
@@ -267,7 +262,7 @@ class CameraManager(Mindtrace):
             raise CameraNotFoundError(f"Backend '{backend}' not available")
 
         try:
-            if backend in ["Daheng", "Basler", "OpenCV"]:
+            if backend in ["Basler", "OpenCV"]:
                 available, camera_class = _discover_backend(backend.lower())
                 if not available or not camera_class:
                     raise CameraNotFoundError(f"Backend '{backend}' not available")
@@ -285,8 +280,7 @@ class CameraManager(Mindtrace):
             raise CameraInitializationError(f"Failed to create camera '{backend}:{device_name}': {e}")
 
     async def initialize_camera(self, camera_name: str, test_connection: bool = True, **kwargs) -> None:
-        """
-        Initialize a single camera with optional connection testing.
+        """Initialize a single camera with optional connection testing.
 
         Args:
             camera_name: Full camera name "Backend:device_name"
@@ -343,8 +337,7 @@ class CameraManager(Mindtrace):
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
 
     async def initialize_cameras(self, camera_names: List[str], test_connections: bool = True, **kwargs) -> List[str]:
-        """
-        Initialize multiple cameras with optional connection testing.
+        """Initialize multiple cameras with optional connection testing.
 
         Args:
             camera_names: List of camera names to initialize
@@ -392,8 +385,7 @@ class CameraManager(Mindtrace):
         return failed_cameras
 
     def get_camera(self, camera_name: str) -> Camera:
-        """
-        Get an initialized camera by name.
+        """Get an initialized camera by name.
 
         Args:
             camera_name: Full camera name "Backend:device_name"
@@ -410,8 +402,7 @@ class CameraManager(Mindtrace):
         return self._cameras[camera_name]
 
     def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
-        """
-        Get multiple initialized cameras by name.
+        """Get multiple initialized cameras by name.
 
         Args:
             camera_names: List of camera names to retrieve
@@ -431,8 +422,7 @@ class CameraManager(Mindtrace):
         return cameras
 
     def get_active_cameras(self) -> List[str]:
-        """
-        Get names of currently active (initialized) cameras.
+        """Get names of currently active (initialized) cameras.
 
         Returns:
             List of camera names that are currently initialized and active
@@ -440,8 +430,7 @@ class CameraManager(Mindtrace):
         return list(self._cameras.keys())
 
     def get_max_concurrent_captures(self) -> int:
-        """
-        Get the current maximum number of concurrent captures.
+        """Get the current maximum number of concurrent captures.
 
         Returns:
             Current maximum concurrent captures limit
@@ -449,8 +438,7 @@ class CameraManager(Mindtrace):
         return self._capture_semaphore._value
 
     def set_max_concurrent_captures(self, max_captures: int) -> None:
-        """
-        Set the maximum number of concurrent captures allowed.
+        """Set the maximum number of concurrent captures allowed.
 
         This is important for network bandwidth management, especially for GigE cameras.
         Typical values:
@@ -472,8 +460,7 @@ class CameraManager(Mindtrace):
         self.logger.info(f"Max concurrent captures set to {max_captures}")
 
     def get_network_bandwidth_info(self) -> Dict[str, Any]:
-        """
-        Get information about network bandwidth management.
+        """Get information about network bandwidth management.
 
         Returns:
             Dictionary with bandwidth management information including:
@@ -486,7 +473,7 @@ class CameraManager(Mindtrace):
         return {
             "max_concurrent_captures": self.get_max_concurrent_captures(),
             "active_cameras": len(self._cameras),
-            "gige_cameras": len([cam for cam in self._cameras.keys() if "Basler" in cam or "Daheng" in cam]),
+            "gige_cameras": len([cam for cam in self._cameras.keys() if "Basler" in cam]),
             "bandwidth_management_enabled": True,
             "recommended_settings": {
                 "conservative": 1,  # For critical applications
@@ -496,8 +483,7 @@ class CameraManager(Mindtrace):
         }
 
     async def close_camera(self, camera_name: str) -> None:
-        """
-        Close and remove a specific camera.
+        """Close and remove a specific camera.
 
         This method safely closes the camera connection, releases resources,
         and removes the camera from the active cameras list.
@@ -518,8 +504,7 @@ class CameraManager(Mindtrace):
                 raise
 
     async def close_all_cameras(self) -> None:
-        """
-        Close all active cameras.
+        """Close all active cameras.
 
         This method attempts to close all cameras, continuing even if some
         fail to close properly. Errors are logged but do not stop the process.
@@ -531,8 +516,7 @@ class CameraManager(Mindtrace):
                 self.logger.error(f"Error closing camera '{camera_name}': {e}")
 
     async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
-        """
-        Configure multiple cameras simultaneously.
+        """Configure multiple cameras simultaneously.
 
         Args:
             configurations: Dict mapping camera names to their settings
@@ -566,8 +550,7 @@ class CameraManager(Mindtrace):
         return results
 
     async def batch_capture(self, camera_names: List[str]) -> Dict[str, Any]:
-        """
-        Capture from multiple cameras with network bandwidth management.
+        """Capture from multiple cameras with network bandwidth management.
 
         Uses a global semaphore to limit concurrent captures to prevent network saturation,
         especially important for GigE cameras where bandwidth is limited.
@@ -611,8 +594,7 @@ class CameraManager(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
     ) -> Dict[str, Union[List[Any], bool]]:
-        """
-        Capture HDR images from multiple cameras simultaneously.
+        """Capture HDR images from multiple cameras simultaneously.
 
         Args:
             camera_names: List of camera names to capture HDR from
@@ -628,7 +610,7 @@ class CameraManager(Mindtrace):
         Example:
             # Capture HDR from multiple cameras
             results = await manager.batch_capture_hdr(
-                ["Daheng:cam1", "Basler:cam2"],
+                ["Basler:cam2"],
                 save_path_pattern="hdr_{camera}_{exposure}.jpg",
                 exposure_levels=5
             )
@@ -692,8 +674,7 @@ class CameraManager(Mindtrace):
 
 # Convenience functions for quick access
 async def initialize_and_get_camera(camera_name: str, **kwargs) -> Camera:
-    """
-    Quick access function to initialize and get a single camera.
+    """Quick access function to initialize and get a single camera.
 
     Args:
         camera_name: Camera name "Backend:device_name"
@@ -710,16 +691,15 @@ async def initialize_and_get_camera(camera_name: str, **kwargs) -> Camera:
 def discover_all_cameras(
     include_mocks: bool = False, max_concurrent_captures: int = 2, backends: Optional[Union[str, List[str]]] = None
 ) -> List[str]:
-    """
-    Quick function to discover cameras from all or specific backends.
+    """Quick function to discover cameras from all or specific backends.
 
     Args:
         include_mocks: Include mock cameras in discovery
         max_concurrent_captures: Maximum concurrent captures for network bandwidth management
         backends: Optional backend(s) to discover cameras from. Can be:
                  - None: Discover from all available backends (default)
-                 - str: Single backend name (e.g., "Basler", "OpenCV", "Daheng")
-                 - List[str]: Multiple backend names (e.g., ["Basler", "Daheng"])
+                 - str: Single backend name (e.g., "Basler", "OpenCV")
+                 - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
 
     Returns:
         List of available camera names

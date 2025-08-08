@@ -111,7 +111,7 @@ except ImportError:
     OPENCV_AVAILABLE = False
     cv2 = None
 
-from mindtrace.hardware.cameras.backends.base import CameraBackend
+from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
