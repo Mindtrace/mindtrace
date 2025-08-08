@@ -4,11 +4,11 @@ Camera Setup and Configuration Script
 
 This script provides a unified interface for installing and configuring all
 camera SDKs and related network settings for the Mindtrace hardware system.
-It combines Basler and Daheng SDK installation with firewall configuration
+It combines Basler SDK installation with firewall configuration
 for camera network communication.
 
 Features:
-- Combined installation of all camera SDKs (Basler Pylon + Daheng Galaxy)
+- Combined installation of all camera SDKs (Basler Pylon)
 - Firewall configuration for camera network communication
 - Cross-platform support (Windows and Linux)
 - Individual SDK uninstallation support
@@ -63,7 +63,6 @@ from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
-from mindtrace.hardware.cameras.setup.setup_daheng import install_daheng_sdk, uninstall_daheng_sdk
 from mindtrace.hardware.core.config import get_hardware_config
 
 
@@ -113,14 +112,6 @@ class CameraSystemSetup(Mindtrace):
         else:
             self.logger.error("Basler Pylon SDK installation failed")
 
-        # Install Daheng Galaxy SDK
-        self.logger.info("Installing Daheng Galaxy SDK")
-        if install_daheng_sdk(release_version):
-            self.logger.info("Daheng Galaxy SDK installation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Daheng Galaxy SDK installation failed")
-
         # Log summary
         if success_count == total_sdks:
             self.logger.info(f"All {total_sdks} camera SDKs installed successfully")
@@ -151,14 +142,6 @@ class CameraSystemSetup(Mindtrace):
             success_count += 1
         else:
             self.logger.error("Basler Pylon SDK uninstallation failed")
-
-        # Uninstall Daheng Galaxy SDK
-        self.logger.info("Uninstalling Daheng Galaxy SDK")
-        if uninstall_daheng_sdk():
-            self.logger.info("Daheng Galaxy SDK uninstallation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Daheng Galaxy SDK uninstallation failed")
 
         # Log summary
         if success_count == total_sdks:

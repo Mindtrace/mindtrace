@@ -46,21 +46,6 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     # Patch mock camera image generation to be lightweight
     try:
         import numpy as np  # noqa: F401
-        from mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
-
-        def _fast_generate_daheng(self):  # type: ignore[no-redef]
-            return np.zeros((480, 640, 3), dtype=np.uint8)
-
-        def _no_enhance(self, img):  # type: ignore[no-redef]
-            return img
-
-        monkeypatch.setattr(MockDahengCamera, "_generate_synthetic_image", _fast_generate_daheng, raising=False)
-        monkeypatch.setattr(MockDahengCamera, "_enhance_image", _no_enhance, raising=False)
-    except Exception:
-        pass
-
-    try:
-        import numpy as np  # noqa: F401
         from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
 
         def _fast_generate_basler(self):  # type: ignore[no-redef]
@@ -84,16 +69,16 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
     """
     if request.node and request.node.name == "test_concurrent_capture_limiting":
         try:
-            from mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
+            from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
 
-            original_capture = MockDahengCamera.capture
+            original_capture = MockBaslerCamera.capture
 
             async def _slightly_slow_capture(self, *args, **kwargs):  # type: ignore[no-redef]
                 # Add ~0.08s so 3 sequential captures >= 0.24s
                 await asyncio.sleep(0.08)
                 return await original_capture(self, *args, **kwargs)
 
-            monkeypatch.setattr(MockDahengCamera, "capture", _slightly_slow_capture, raising=False)
+            monkeypatch.setattr(MockBaslerCamera, "capture", _slightly_slow_capture, raising=False)
         except Exception:
             pass
     yield 

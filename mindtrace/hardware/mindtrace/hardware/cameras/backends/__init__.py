@@ -18,6 +18,6 @@ Configuration:
     to provide consistent default values and settings across all camera types.
 """
 
-from .base import CameraBackend
+from .camera_backend import CameraBackend
 
 __all__ = ["CameraBackend"]
