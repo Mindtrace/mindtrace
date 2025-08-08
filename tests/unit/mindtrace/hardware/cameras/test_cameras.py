@@ -95,6 +95,30 @@ async def temp_config_file():
         pass
 
 
+# Prevent real OpenCV device probing during unit tests
+@pytest.fixture(autouse=True)
+def _disable_real_opencv_camera_discovery(monkeypatch):
+    try:
+        from mindtrace.hardware.cameras.backends.opencv.opencv_camera import OpenCVCamera
+
+        def _fake_get_available_cameras(include_details: bool = False):
+            return {} if include_details else []
+
+        monkeypatch.setattr(OpenCVCamera, "get_available_cameras", staticmethod(_fake_get_available_cameras))
+    except Exception:
+        # If OpenCV backend is not importable, nothing to do
+        pass
+
+
+# Helper: ensure mock cameras use a very short exposure to keep tests fast
+async def _set_low_exposure(manager, camera_names, value: int = 1000):
+    for name in camera_names:
+        try:
+            await manager.get_camera(name).set_exposure(value)
+        except Exception:
+            pass
+
+
 class TestMockBaslerCamera:
     """Test suite for Mock Basler camera implementation."""
 
@@ -283,6 +307,9 @@ class TestCameraManager:
             assert "MockBasler" in camera_proxy.backend
             assert camera_proxy.is_connected
 
+            # Use short exposure for fast tests
+            await camera_proxy.set_exposure(1000)
+
             # Test capture through proxy
             image = await camera_proxy.capture()
             assert image is not None
@@ -315,6 +342,9 @@ class TestCameraManager:
             # Initialize cameras in batch
             failed_list = await manager.initialize_cameras(mock_cameras)
             assert len(failed_list) == 0  # No cameras should fail
+
+            # Ensure short exposure for fast tests
+            await _set_low_exposure(manager, mock_cameras, 1000)
 
             # Get camera proxies
             _ = manager.get_cameras(mock_cameras)
@@ -356,6 +386,9 @@ class TestCameraManager:
                 # Then get the camera proxy
                 camera_proxy = manager.get_camera(camera_name)
                 assert camera_proxy is not None
+
+                # Short exposure for fast tests
+                await camera_proxy.set_exposure(1000)
 
                 image = await camera_proxy.capture()
                 assert image is not None
@@ -443,6 +476,9 @@ class TestCameraPerformance:
             failed_list = await manager.initialize_cameras(mock_cameras)
             assert len(failed_list) == 0  # No cameras should fail
 
+            # Ensure short exposure for fast tests
+            await _set_low_exposure(manager, mock_cameras, 1000)
+
             # Get camera proxies
             camera_proxies_dict = manager.get_cameras(mock_cameras)
             camera_proxies = list(camera_proxies_dict.values())
@@ -509,6 +545,9 @@ class TestCameraPerformance:
             if len(mock_cameras) >= 2:
                 await manager.initialize_cameras(mock_cameras)
 
+                # Use short exposure
+                await _set_low_exposure(manager, mock_cameras, 1000)
+
                 # Verify initial setting
                 assert manager.get_max_concurrent_captures() == 1
 
@@ -545,6 +584,9 @@ class TestCameraPerformance:
 
             if len(mock_cameras) >= 2:
                 await manager.initialize_cameras(mock_cameras)
+
+                # Short exposure for fast tests
+                await _set_low_exposure(manager, mock_cameras, 1000)
 
                 # Test batch HDR capture with bandwidth management
                 results = await manager.batch_capture_hdr(
@@ -665,6 +707,9 @@ class TestNetworkBandwidthManagement:
             if len(mock_cameras) >= 2:
                 await manager.initialize_cameras(mock_cameras)
 
+                # Short exposure for fast tests
+                await _set_low_exposure(manager, mock_cameras, 1000)
+
                 # Validate concurrency <= 1 without timing dependency
                 current = 0
                 max_seen = 0
@@ -716,6 +761,9 @@ class TestNetworkBandwidthManagement:
             if len(mock_cameras) >= 2:
                 await manager.initialize_cameras(mock_cameras)
 
+                # Short exposure for fast tests
+                await _set_low_exposure(manager, mock_cameras, 1000)
+
                 # Test regular batch capture
                 regular_results = await manager.batch_capture(mock_cameras)
                 assert len(regular_results) == len(mock_cameras)
@@ -753,6 +801,9 @@ class TestNetworkBandwidthManagement:
 
             if len(mock_cameras) >= 2:
                 await manager.initialize_cameras(mock_cameras)
+
+                # Short exposure for fast tests
+                await _set_low_exposure(manager, mock_cameras, 1000)
 
                 # Verify initial setting
                 assert manager.get_max_concurrent_captures() == 3
