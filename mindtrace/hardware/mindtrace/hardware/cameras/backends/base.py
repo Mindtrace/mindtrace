@@ -46,7 +46,7 @@ from mindtrace.hardware.core.config import get_camera_config
 from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
 
 
-class BaseCamera(MindtraceABC):
+class CameraBackend(MindtraceABC):
     """
     Abstract base class for all camera implementations.
 

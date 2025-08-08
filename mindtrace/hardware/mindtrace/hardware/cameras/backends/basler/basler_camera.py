@@ -1,5 +1,4 @@
-"""
-Basler Camera Backend Implementation
+"""Basler Camera Backend Implementation
 
 This module provides a comprehensive implementation for Basler cameras using the pypylon SDK.
 It supports advanced camera features including trigger modes, exposure control, ROI settings,
@@ -25,13 +24,13 @@ Installation:
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
-    from mindtrace.hardware.cameras.backends.basler import BaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend
 
     # Get available cameras
-    cameras = BaslerCamera.get_available_cameras()
+    cameras = BaslerCameraBackend.get_available_cameras()
 
     # Initialize camera
-    camera = BaslerCamera("camera_name", img_quality_enhancement=True)
+    camera = BaslerCameraBackend("camera_name", img_quality_enhancement=True)
     success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
 
     if success:
@@ -85,7 +84,7 @@ except ImportError:
     pylon = None
     genicam = None
 
-from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.cameras.backends.base import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -98,7 +97,7 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class BaslerCamera(BaseCamera):
+class BaslerCamera(CameraBackend):
     """Interface for Basler cameras using pypylon SDK.
 
     This class provides a comprehensive interface to Basler cameras, supporting both USB and GigE models.

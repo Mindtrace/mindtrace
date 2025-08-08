@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-"""
-OpenCV Camera Backend
+"""OpenCV Camera Backend
 
 Provides support for USB cameras and webcams via OpenCV with comprehensive error handling.
 
 Components:
-    - OpenCVCamera: OpenCV camera implementation (requires opencv-python)
+    - OpenCVCameraBackend: OpenCV camera implementation (requires opencv-python)
 
 Requirements:
     - opencv-python: For camera access and image processing
@@ -15,7 +13,7 @@ Installation:
     pip install opencv-python numpy
 
 Usage:
-    from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
+    from mindtrace.hardware.cameras.backends.opencv import OpenCVCameraBackend
 
     # USB camera (index 0)
     if OPENCV_AVAILABLE:
@@ -28,9 +26,9 @@ Usage:
 
 # Try to import OpenCV camera implementation
 try:
-    from .opencv_camera import OPENCV_AVAILABLE, OpenCVCamera
+    from .opencv_camera import OPENCV_AVAILABLE, OpenCVCamera as OpenCVCameraBackend
 except ImportError:
-    OpenCVCamera = None
-    OPENCV_AVAILABLE = False
+    OpenCVCameraBackend = None
+OPENCV_AVAILABLE = False
 
-__all__ = ["OpenCVCamera", "OPENCV_AVAILABLE"]
+__all__ = ["OpenCVCameraBackend", "OPENCV_AVAILABLE"]

@@ -23,13 +23,13 @@ Installation:
     pip install opencv-python
 
 Usage:
-    from mindtrace.hardware.cameras.backends.opencv import OpenCVCamera
+    from mindtrace.hardware.cameras.backends.opencv import OpenCVCameraBackend
 
     # Discover available cameras
-    cameras = OpenCVCamera.get_available_cameras()
+    cameras = OpenCVCameraBackend.get_available_cameras()
 
     # Initialize camera
-    camera = OpenCVCamera("0", width=1280, height=720, img_quality_enhancement=True)
+    camera = OpenCVCameraBackend("0", width=1280, height=720, img_quality_enhancement=True)
     success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
 
     if success:
@@ -111,7 +111,7 @@ except ImportError:
     OPENCV_AVAILABLE = False
     cv2 = None
 
-from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.cameras.backends.base import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -124,7 +124,7 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class OpenCVCamera(BaseCamera):
+class OpenCVCamera(CameraBackend):
     """
     OpenCV camera implementation for USB cameras and webcams.
 
@@ -387,77 +387,108 @@ class OpenCVCamera(BaseCamera):
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """
-        Get the available OpenCV cameras.
+        Cross-platform OpenCV camera discovery with backend-aware probing.
+
+        - Linux: prefer CAP_V4L2 probing across indices
+        - Windows: try CAP_DSHOW then CAP_MSMF
+        - macOS: try CAP_AVFOUNDATION
+        - Fallback: default backend probing
 
         Args:
-            include_details: If True, return detailed camera information
+            include_details: If True, return a dict of details per camera.
 
         Returns:
-            List of camera names or dictionary with detailed camera information
-
-        Raises:
-            HardwareOperationError: If camera discovery fails
+            List of camera names (e.g., ["opencv_camera_0"]) or a dict of details.
         """
         if not OPENCV_AVAILABLE:
-            return [] if not include_details else {}
-        else:
-            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
+            return {} if include_details else []
+        assert cv2 is not None
+
+        import sys, os, glob
+        from typing import Iterable, Optional
+
+        def _quick_can_open(index: int, backend: int) -> bool:
+            try:
+                cap = cv2.VideoCapture(index, backend)
+                if not cap.isOpened():
+                    cap.release()
+                    return False
+                # Light-touch configure to speed first read
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                cap.set(cv2.CAP_PROP_FPS, 15)
+                ok, _ = cap.read()
+                cap.release()
+                return bool(ok)
+            except Exception:
+                return False
+
+        def _backend_list_for_platform() -> Iterable[int]:
+            if sys.platform.startswith("linux"):
+                return [getattr(cv2, "CAP_V4L2", 0)]
+            if sys.platform.startswith("win"):
+                return [getattr(cv2, "CAP_DSHOW", 0), getattr(cv2, "CAP_MSMF", 0)]
+            if sys.platform.startswith("darwin"):
+                return [getattr(cv2, "CAP_AVFOUNDATION", 0)]
+            return [0]
+
+        def _backend_name(backend: int) -> str:
+            m = {
+                getattr(cv2, "CAP_DSHOW", -1): "CAP_DSHOW",
+                getattr(cv2, "CAP_MSMF", -1): "CAP_MSMF",
+                getattr(cv2, "CAP_V4L2", -1): "CAP_V4L2",
+                getattr(cv2, "CAP_AVFOUNDATION", -1): "CAP_AVFOUNDATION",
+            }
+            return m.get(backend, str(backend))
 
         try:
-            available_cameras = []
-            camera_details = {}
+            max_probe = 16
+            backends = list(_backend_list_for_platform())
 
-            # Get maximum camera index to test from config or use default
-            max_camera_index = 10
+            # Probe indices using platform-preferred backends
+            found: List[str] = []
+            details: Dict[str, Dict[str, str]] = {}
 
-            for i in range(max_camera_index):
-                cap = None
-                try:
-                    cap = cv2.VideoCapture(i)
-                    if cap.isOpened():
-                        # Try to read a frame to verify camera is actually working
-                        ret, frame = cap.read()
-                        if ret and frame is not None:
-                            camera_name = f"opencv_camera_{i}"
-                            available_cameras.append(camera_name)
+            for i in range(max_probe):
+                chosen: Optional[int] = None
+                for be in backends:
+                    if _quick_can_open(i, be):
+                        chosen = be
+                        break
+                # Fallback: try default if platform-specific backends failed
+                if chosen is None and _quick_can_open(i, 0):
+                    chosen = 0
 
-                            if include_details:
-                                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                                fps = cap.get(cv2.CAP_PROP_FPS)
+                if chosen is not None:
+                    name = f"opencv_camera_{i}"
+                    found.append(name)
+                    if include_details:
+                        cap = cv2.VideoCapture(i, chosen)
+                        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if cap.isOpened() else 0
+                        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if cap.isOpened() else 0
+                        fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 0.0
+                        backend_str = (
+                            cap.getBackendName() if hasattr(cap, "getBackendName") and cap.isOpened() else _backend_name(chosen)
+                        )
+                        if cap.isOpened():
+                            cap.release()
+                        details[name] = {
+                            "user_id": name,
+                            "device_id": str(i),
+                            "device_name": f"OpenCV Camera {i}",
+                            "device_type": "OpenCV",
+                            "width": str(w),
+                            "height": str(h),
+                            "fps": f"{fps:.1f}",
+                            "backend": backend_str,
+                            "interface": f"VideoIndex:{i}",
+                        }
 
-                                # Try to get additional camera properties
-                                backend_name = cap.getBackendName() if hasattr(cap, "getBackendName") else "Unknown"
-
-                                camera_details[camera_name] = {
-                                    "user_id": camera_name,
-                                    "device_id": str(i),
-                                    "device_name": f"OpenCV Camera {i}",
-                                    "device_type": "OpenCV",
-                                    "width": str(width),
-                                    "height": str(height),
-                                    "fps": f"{fps:.1f}",
-                                    "backend": backend_name,
-                                    "pixel_format": "BGR8",
-                                    "interface": f"USB/Video{i}",
-                                }
-                        else:
-                            # Camera opened but can't capture - might be in use
-                            pass
-                except Exception:
-                    # Camera index might not exist or be accessible
-                    pass
-                finally:
-                    if cap:
-                        cap.release()
-
-            if include_details:
-                return camera_details
-            else:
-                return available_cameras
+            return details if include_details else found
 
         except Exception as e:
-            raise HardwareOperationError(f"Failed to discover OpenCV cameras: {str(e)}")
+            # Defer raising to not crash discovery; return empty
+            return {} if include_details else []
 
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
         """
