@@ -91,6 +91,34 @@ def labelstudio_to_yolo(labels, image_width, image_height):
         yolo_labels.append((x_center, y_center, width_norm, height_norm))
     return yolo_labels
 
+def _update_image_project_map(map_path: str, mapping_updates: dict):
+    """Safely update an on-disk mapping of image filename -> project_id.
+    """
+    existing = {}
+    if os.path.exists(map_path):
+        try:
+            with open(map_path, 'r') as f:
+                existing = json.load(f)
+        except Exception:
+            existing = {}
+    existing.update(mapping_updates or {})
+    os.makedirs(os.path.dirname(map_path), exist_ok=True)
+    with open(map_path, 'w') as f:
+        json.dump(existing, f)
+
+
+def _derive_original_from_crop(filename: str) -> str | None:
+    """If filename follows the cropping convention '<base>_<i>.<ext>',
+    return '<base>.<ext>' else None.
+    """
+    name, ext = os.path.splitext(filename)
+    if '_' not in name:
+        return None
+    base, suffix = name.rsplit('_', 1)
+    if suffix.isdigit():
+        return base + ext
+    return None
+
 def download_data_yolo(
     json_path, 
     images_save_path, 
@@ -219,6 +247,7 @@ def download_data_yolo(
         cv2.imwrite(mask_save_path, mask)
 
     # Process spatter annotations with progress bar
+    processed_filenames = []  
     for task in tqdm(data, desc="Processing spatter annotations"):
         image_url = task['data']['image']
         if image_url.startswith('gs://'):
@@ -232,6 +261,8 @@ def download_data_yolo(
         if not os.path.exists(image_path):
             print(f"Image not found after download: {image_path}, skipping annotation processing.")
             continue
+        
+        processed_filenames.append(base_fname)
             
         img = Image.open(image_path)
         img_width, img_height = img.size
@@ -276,6 +307,8 @@ def download_data_yolo(
             l = l + str(class_id) + ' ' + str(c[0]) + ' ' + str(c[1]) + ' ' + str(c[2]) + ' ' + str(c[3]) + '\n'
         with open(label_path, 'w') as f:
             f.write(l)
+
+    return processed_filenames
 
 def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id=None, spatter_class_names=None):
     if not SAM_AVAILABLE:
@@ -356,16 +389,62 @@ def generate_masks_from_boxes(images_dir, labels_dir, masks_save_path, device_id
             
     print("Mask generation complete.")
 
-def train_test_split(base_dir, desired_ratio=0.2):
+def train_test_split(base_dir, desired_ratio=0.2, project_image_map_path: str | None = None, project_split_overrides: dict | None = None):
     images_dir = os.path.join(base_dir, 'images')
     
     all_images = [f for f in os.listdir(images_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     random.seed(42)
     random.shuffle(all_images)
     
-    test_size = int(len(all_images) * desired_ratio)
-    test_set = set(all_images[:test_size])
-    train_set = set(all_images[test_size:])
+    image_to_project = {}
+    if project_image_map_path and os.path.exists(project_image_map_path):
+        try:
+            with open(project_image_map_path, 'r') as f:
+                image_to_project = json.load(f)
+        except Exception:
+            image_to_project = {}
+
+    overrides = project_split_overrides or {}
+    overrides = {str(k): v for k, v in overrides.items()}  # normalize keys to str
+
+    # Compute forced splits based on overrides
+    forced_train = set()
+    forced_test = set()
+
+    for img in list(all_images):
+        proj_id = image_to_project.get(img)
+        if proj_id is None:
+            # Try to map cropped images back to original
+            orig = _derive_original_from_crop(img)
+            if orig and orig in image_to_project:
+                proj_id = image_to_project[orig]
+        if proj_id is None:
+            continue
+        target_split = overrides.get(str(proj_id))
+        if not target_split:
+            continue
+        if target_split == 'train':
+            forced_train.add(img)
+        elif target_split == 'test':
+            forced_test.add(img)
+
+    # Remaining pool after forced selections
+    remaining = [f for f in all_images if f not in forced_train and f not in forced_test]
+
+    total_images = len(all_images)
+    target_test_size = int(total_images * desired_ratio)
+
+    # Determine how many additional test images are needed
+    additional_test_needed = max(0, target_test_size - len(forced_test))
+
+    # Select for test from remaining
+    random.shuffle(remaining)
+    selected_test = set(remaining[:additional_test_needed])
+    selected_train = set(remaining[additional_test_needed:])
+
+    # Combine with forced sets
+    test_set = set(forced_test) | selected_test
+    train_set = set(forced_train) | selected_train
 
     print(f"Splitting {len(all_images)} images into {len(train_set)} train and {len(test_set)} test...")
 
@@ -374,13 +453,12 @@ def train_test_split(base_dir, desired_ratio=0.2):
         for f in tqdm(image_set, desc=f"Moving {split_name} files"):
             base_filename, _ = os.path.splitext(f)
 
-            # Move image
             source_image_path = os.path.join(images_dir, f)
             target_image_dir = os.path.join(images_dir, split_name)
             os.makedirs(target_image_dir, exist_ok=True)
-            shutil.move(source_image_path, os.path.join(target_image_dir, f))
-
-            # Move label
+            if os.path.exists(source_image_path):
+                shutil.move(source_image_path, os.path.join(target_image_dir, f))
+        
             labels_dir = os.path.join(base_dir, 'labels')
             if os.path.isdir(labels_dir):
                 label_filename = base_filename + '.txt'
@@ -390,7 +468,7 @@ def train_test_split(base_dir, desired_ratio=0.2):
                     os.makedirs(target_label_dir, exist_ok=True)
                     shutil.move(source_label_path, os.path.join(target_label_dir, label_filename))
             
-            # Move masks
+           
             for mask_type in ['spatter_masks', 'zone_masks']:
                 masks_dir = os.path.join(base_dir, mask_type)
                 if os.path.isdir(masks_dir):
@@ -449,7 +527,7 @@ def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_up
                 imgs=[img],
                 keys=[camera_key],
                 cropping_config=cropping_config,
-                reference_masks={},  # No reference masks in this context
+                reference_masks={},  
                 zone_segmentation_class_mapping=zone_class_mapping,
                 square_crop=True,
                 image_names=[base_filename],
@@ -459,13 +537,13 @@ def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_up
             if not crop_results['all_image_crops']:
                 continue
 
-            # Original image and mask are kept, crops are saved with suffixes
+            
             for i, (img_crop, zone_crop, spatter_crop) in enumerate(zip(
                 crop_results['all_image_crops'], 
                 crop_results['all_mask_crops'],
                 crop_results['all_spatter_mask_crops']
             )):
-                # Save cropped image
+                #Save cropped  image
                 crop_img_name = f"{base_filename}_{i}{ext}"
                 crop_img_path = os.path.join(images_dir, crop_img_name)
                 # Convert back to BGR for saving with cv2
@@ -497,53 +575,51 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
     os.environ['HF_TOKEN'] = token
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcp_creds_path
     
-    # This block is being removed as downloading is now a separate step
-    # if existing_dataset is not None:
-    #     missing_count = 0
-    #     if download:
-    #         datalake = Datalake(
-    #             hf_token = token,    
-    #             gcp_creds_path = gcp_creds_path,
-    #             datalake_dir = download_dir
-    #         )
-    #         ds = datalake.get_dataset(
-    #             dataset_name = existing_dataset,
-    #             version = existing_version
-    #         )
+    if existing_dataset is not None:
+        missing_count = 0
+        if download:
+            datalake = Datalake(
+                hf_token = token,    
+                gcp_creds_path = gcp_creds_path,
+                datalake_dir = download_dir
+            )
+            ds = datalake.get_dataset(
+                dataset_name = existing_dataset,
+                version = existing_version
+            )
 
-    #         print('Downloading dataset from datalake')
-    #         datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
-    #         datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
+            print('Downloading dataset from datalake')
+            datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
+            datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
             
-    #         for file in os.listdir(os.path.join(datalake_train_path, 'images')):
-    #             image_path = os.path.join(datalake_train_path, 'images', file)
-    #             mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
+            for file in os.listdir(os.path.join(datalake_train_path, 'images')):
+                image_path = os.path.join(datalake_train_path, 'images', file)
+                mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
 
-    #             if os.path.exists(mask_path) and os.path.exists(image_path):
-                    
-    #                 new_image_path = os.path.join(download_dir, 'images', 'train', os.path.basename(image_path))
-    #                 new_mask_path = os.path.join(download_dir, 'spatter_masks', 'train', os.path.basename(mask_path))
-    #                 print(f"Moving {image_path} and {mask_path} to {new_image_path} and {new_mask_path}")
-    #                 shutil.move(image_path, new_image_path)
-    #                 shutil.move(mask_path, new_mask_path)
-    #             else:
-    #                 missing_count += 1
+                if os.path.exists(mask_path) and os.path.exists(image_path):
+                    new_image_path = os.path.join(download_dir, 'images', 'train', os.path.basename(image_path))
+                    new_mask_path = os.path.join(download_dir, 'spatter_masks', 'train', os.path.basename(mask_path))
+                    print(f"Moving {image_path} and {mask_path} to {new_image_path} and {new_mask_path}")
+                    shutil.move(image_path, new_image_path)
+                    shutil.move(mask_path, new_mask_path)
+                else:
+                    missing_count += 1
 
-    #         for file in os.listdir(os.path.join(datalake_test_path, 'images')):
-    #             image_path = os.path.join(datalake_test_path, 'images', file)
-    #             mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
+            for file in os.listdir(os.path.join(datalake_test_path, 'images')):
+                image_path = os.path.join(datalake_test_path, 'images', file)
+                mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
 
-    #             if os.path.exists(mask_path) and os.path.exists(image_path):
-    #                 print(f"Moving {image_path} and {mask_path}")
-    #                 shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
-    #                 shutil.move(mask_path, os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png')))
-    #             else:
-    #                 missing_count += 1
+                if os.path.exists(mask_path) and os.path.exists(image_path):
+                    print(f"Moving {image_path} and {mask_path}")
+                    shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
+                    shutil.move(mask_path, os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png')))
+                else:
+                    missing_count += 1
 
-    #         print(f"Missing count: {missing_count}")        
-    #         shutil.rmtree(datalake_train_path)
-    #         shutil.rmtree(datalake_test_path)
-    #         shutil.rmtree(os.path.join(download_dir, existing_dataset))
+            print(f"Missing count: {missing_count}")        
+            shutil.rmtree(datalake_train_path)
+            shutil.rmtree(datalake_test_path)
+            shutil.rmtree(os.path.join(download_dir, existing_dataset))
 
     target_path = os.path.join(download_dir, dataset_name)
     source_images_train = os.path.join(download_dir, 'images', 'train')
@@ -569,27 +645,35 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
 
     for i in os.listdir(source_images_train):
         train_annotations[i] = {
-            'file_name' : i, 
-            'masks' : i.replace('.jpg', '_mask.png'),
+            'file_name' : i,
             'CameraIDX' : -1
         }
         train_data_files[i] = os.path.join(source_images_train, i)
         shutil.copy(os.path.join(source_images_train, i), os.path.join(target_path, 'splits', 'train', 'images', i))
-        train_data_files[i.replace('.jpg', '_mask.png')] = os.path.join(target_path, 'splits', 'train', 'masks', i.replace('.jpg', '_mask.png'))
-        shutil.copy(os.path.join(source_masks_train, i.replace('.jpg', '_mask.png')), os.path.join(target_path, 'splits', 'train', 'masks', i.replace('.jpg', '_mask.png')))
+        # Handle mask if present
+        mask_name = i.rsplit('.', 1)[0] + '_mask.png'
+        mask_src = os.path.join(source_masks_train, mask_name)
+        if os.path.exists(mask_src):
+            train_annotations[i]['masks'] = mask_name
+            train_data_files[mask_name] = os.path.join(target_path, 'splits', 'train', 'masks', mask_name)
+            shutil.copy(mask_src, os.path.join(target_path, 'splits', 'train', 'masks', mask_name))
         
         train_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}              
 
     for i in os.listdir(source_images_test):
         val_annotations[i] = {
-            'file_name' : i, 
-            'masks' : i.replace('.jpg', '_mask.png'),
+            'file_name' : i,
             'CameraIDX' : -1
         }
         val_data_files[i] = os.path.join(source_images_test, i)
         shutil.copy(os.path.join(source_images_test, i), os.path.join(target_path,'splits',  'test', 'images', i))
-        val_data_files[i.replace('.jpg', '_mask.png')] = os.path.join(target_path, 'splits', 'test', 'masks', i.replace('.jpg', '_mask.png'))
-        shutil.copy(os.path.join(source_masks_test, i.replace('.jpg', '_mask.png')), os.path.join(target_path, 'splits', 'test', 'masks', i.replace('.jpg', '_mask.png')))
+        # Handle mask if present
+        mask_name = i.rsplit('.', 1)[0] + '_mask.png'
+        mask_src = os.path.join(source_masks_test, mask_name)
+        if os.path.exists(mask_src):
+            val_annotations[i]['masks'] = mask_name
+            val_data_files[mask_name] = os.path.join(target_path, 'splits', 'test', 'masks', mask_name)
+            shutil.copy(mask_src, os.path.join(target_path, 'splits', 'test', 'masks', mask_name))
 
         val_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}
 
@@ -682,98 +766,6 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
         shutil.rmtree(download_dir)
 
 
-def download_dataset_from_datalake(datalake_config, target_dir):
-    """
-    Downloads and restructures an existing dataset from the datalake into target_dir.
-    """
-    dataset_name = datalake_config.get('name')
-    version = datalake_config.get('version')
-    token = datalake_config.get('token')
-    gcp_creds_path = datalake_config.get('gcp_creds_path')
-
-    print(f"Downloading base dataset '{dataset_name}' version '{version}'...")
-    
-    # Use a temporary parent directory for the download to avoid naming conflicts
-    temp_parent_dir = os.path.join(os.path.dirname(target_dir), "temp_dl_" + str(uuid.uuid4()))
-    os.makedirs(temp_parent_dir, exist_ok=True)
-    
-    datalake = Datalake(
-        hf_token=token,
-        gcp_creds_path=gcp_creds_path,
-        datalake_dir=temp_parent_dir
-    )
-    
-    if dataset_name not in datalake.list_datasets():
-        print(f"Error: Base dataset '{dataset_name}' not found in datalake.")
-        sys.exit(1)
-
-    # This call loads the dataset into memory and returns an object. We don't need the object itself.
-    datalake.get_dataset(dataset_name=dataset_name, version=version)
-    
-    # The actual path on disk is constructed from the temporary directory and dataset name.
-    ds_path = os.path.join(temp_parent_dir, dataset_name)
-    
-    # Restructure files directly into the specified target_dir
-    os.makedirs(target_dir, exist_ok=True)
-
-    for split in ['train', 'test']:
-        # Define source and target for images, spatter_masks, zone_masks etc.
-        data_types = ['images', 'masks', 'labels', 'zone_masks', 'spatter_masks']
-        for data_type in data_types:
-            source_path = os.path.join(ds_path, 'splits', split, data_type)
-            if os.path.isdir(source_path):
-                # Remap 'masks' from datalake to 'spatter_masks' for our pipeline
-                target_data_type = 'spatter_masks' if data_type == 'masks' else data_type
-                target_path = os.path.join(target_dir, target_data_type, split)
-                os.makedirs(target_path, exist_ok=True)
-                
-                # Copy instead of move to handle potential overlaps safely
-                for f in os.listdir(source_path):
-                    shutil.copy(os.path.join(source_path, f), target_path)
-            
-    # Clean up the temporary download directory
-    shutil.rmtree(temp_parent_dir)
-    print(f"Base dataset downloaded and structured at: {target_dir}")
-    return target_dir
-
-
-def merge_datasets(target_dir, source_dir):
-    """
-    Merges the source dataset (which may have train/test splits) into the
-    target dataset (which is flat). The result is a single flat dataset
-    in target_dir, ready for train_test_split.
-    """
-    print("Merging new data with base dataset...")
-    for data_type in ['images', 'labels', 'zone_masks', 'spatter_masks']:
-        source_data_type_dir = os.path.join(source_dir, data_type)
-        target_data_type_dir = os.path.join(target_dir, data_type)
-        
-        if not os.path.isdir(source_data_type_dir):
-            continue
-            
-        os.makedirs(target_data_type_dir, exist_ok=True)
-        
-        # Check for train/test subdirectories in the source and copy contents
-        has_splits = any(os.path.isdir(os.path.join(source_data_type_dir, d)) for d in ['train', 'test'])
-        
-        if has_splits:
-            for split in ['train', 'test']:
-                source_split_dir = os.path.join(source_data_type_dir, split)
-                if os.path.isdir(source_split_dir):
-                    for item in tqdm(os.listdir(source_split_dir), desc=f"Merging {data_type}/{split}"):
-                        s_path = os.path.join(source_split_dir, item)
-                        t_path = os.path.join(target_data_type_dir, item)
-                        shutil.copy(s_path, t_path)
-        else:
-            # If no splits, copy files directly (for merging newly processed data)
-            for item in tqdm(os.listdir(source_data_type_dir), desc=f"Merging {data_type}"):
-                s_path = os.path.join(source_data_type_dir, item)
-                t_path = os.path.join(target_data_type_dir, item)
-                shutil.copy(s_path, t_path)
-
-    print("Merge complete.")
-    return target_dir
-
 def process_label_studio_projects(project_ids, config, download_dir):
     """
     Runs the full data processing pipeline for a given list of Label Studio projects.
@@ -788,6 +780,9 @@ def process_label_studio_projects(project_ids, config, download_dir):
     zone_masks_save_path = os.path.join(download_dir, 'zone_masks')
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(labels_save_path, exist_ok=True)
+
+    # Mapping file: image filename -> project_id
+    project_image_map_path = os.path.join(download_dir, 'project_image_map.json')
     
     for proj_id in project_ids:
         export_path = os.path.join(download_dir, f"{proj_id}.json")
@@ -798,7 +793,7 @@ def process_label_studio_projects(project_ids, config, download_dir):
             export_location=export_path
         )
         
-        download_data_yolo(
+        processed_filenames = download_data_yolo(
             export_path, 
             images_save_path, 
             labels_save_path, 
@@ -810,6 +805,9 @@ def process_label_studio_projects(project_ids, config, download_dir):
             ignore_holes=config.get('ignore_holes', True),
             delete_empty_masks=config.get('delete_empty_masks', True)
         )
+
+        # Update mapping for originals
+        _update_image_project_map(project_image_map_path, {fname: str(proj_id) for fname in processed_filenames})
     
     if convert_box_to_mask:
         print("\nStarting box to mask conversion...")
@@ -824,96 +822,61 @@ def process_label_studio_projects(project_ids, config, download_dir):
             spatter_class_names=spatter_class_names
         )
 
-    if 'cropping' in config and config['cropping']['enabled']:
-        print("\nStarting cropping process...")
-        # Note: Cropping happens after train-test split in the original script.
-        # This is a bit unusual. For simplicity in the refactor, we will perform
-        # cropping on the whole dataset before splitting. This is generally better practice.
-        zone_class_names = config.get('zone_class_names', [])
-        zone_class_mapping = {name: str(i) for i, name in enumerate(zone_class_names)}
-        
-        # We need a temporary structure for cropping as it expects train/test splits
-        temp_crop_dir = os.path.join(download_dir, "temp_for_crop")
-        os.makedirs(os.path.join(temp_crop_dir, "images", "all"), exist_ok=True)
-        # Move all files to a temporary 'all' split
-        for f in os.listdir(images_save_path):
-             shutil.move(os.path.join(images_save_path, f), os.path.join(temp_crop_dir, "images", "all", f))
-        # Repeat for masks if they exist
-        if os.path.isdir(os.path.join(download_dir, 'spatter_masks')):
-             os.makedirs(os.path.join(temp_crop_dir, 'spatter_masks', 'all'), exist_ok=True)
-             for f in os.listdir(os.path.join(download_dir, 'spatter_masks')):
-                 shutil.move(os.path.join(download_dir, 'spatter_masks', f), os.path.join(temp_crop_dir, 'spatter_masks', "all", f))
-        if os.path.isdir(zone_masks_save_path):
-             os.makedirs(os.path.join(temp_crop_dir, 'zone_masks', 'all'), exist_ok=True)
-             for f in os.listdir(zone_masks_save_path):
-                 shutil.move(os.path.join(zone_masks_save_path, f), os.path.join(temp_crop_dir, 'zone_masks', "all", f))
-
-
-        perform_cropping(
-            base_dir=temp_crop_dir,
-            cropping_config_path=config['cropping']['cropping_config_path'],
-            zone_class_mapping=zone_class_mapping,
-            save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False),
-            splits=['all']
-        )
-        
-        # Move cropped files back
-        for f in os.listdir(os.path.join(temp_crop_dir, "images", "all")):
-            shutil.move(os.path.join(temp_crop_dir, "images", "all", f), images_save_path)
-        if os.path.isdir(os.path.join(temp_crop_dir, 'spatter_masks', 'all')):
-            for f in os.listdir(os.path.join(temp_crop_dir, "spatter_masks", "all")):
-                 shutil.move(os.path.join(temp_crop_dir, "spatter_masks", "all", f), os.path.join(download_dir, 'spatter_masks'))
-        if os.path.isdir(os.path.join(temp_crop_dir, 'zone_masks', 'all')):
-            for f in os.listdir(os.path.join(temp_crop_dir, "zone_masks", "all")):
-                 shutil.move(os.path.join(temp_crop_dir, "zone_masks", "all", f), zone_masks_save_path)
-
-        shutil.rmtree(temp_crop_dir)
-
     return download_dir
 
 
-def run_from_scratch_pipeline(config, base_dir):
-    """Pipeline for generating a dataset from scratch."""
-    print("--- Starting pipeline in 'from_scratch' mode ---")
+def run_pipeline(config, base_dir):
+    """Unified pipeline without mode selection (no merging or incremental)."""
+    print("--- Starting pipeline ---")
     
     label_studio_config = config['label_studio']
     label_studio = LabelStudio(LabelStudioConfig(url=label_studio_config['api']['url'], api_key=label_studio_config['api']['api_key']))
-    project_ids = [label_studio.get_project_by_name(p).id for p in label_studio_config['project_list']]
+
+    # Build project name -> id mapping for convenience
+    project_names = label_studio_config['project_list']
+    name_to_id = {}
+    for name in project_names:
+        p = label_studio.get_project_by_name(name)
+        name_to_id[name] = p.id
+    project_ids = [name_to_id[name] for name in project_names]
 
     if not project_ids:
         print("No projects found in 'project_list'. Exiting.")
         sys.exit(0)
 
-    # This is the directory where the newly processed LS projects go.
+    # Process Label Studio projects into base_dir
     processed_dir = process_label_studio_projects(project_ids, config, base_dir)
     final_dir_to_process = processed_dir
 
-    # Check if we need to merge with an existing datalake dataset.
-    hf_config = config.get('huggingface', {})
-    existing_dataset_name = hf_config.get('existing_dataset')
-    
-    if existing_dataset_name:
-        print(f"\nMerging with existing datalake dataset: {existing_dataset_name}")
-        datalake_download_dir = os.path.join(base_dir, "downloaded_from_datalake")
-        os.makedirs(datalake_download_dir, exist_ok=True)
-        
-        datalake_config = {
-            'name': existing_dataset_name,
-            'version': hf_config.get('existing_version'),
-            'token': hf_config.get('token'),
-            'gcp_creds_path': hf_config.get('gcp_creds_path')
-        }
-        
-        # Download into our clean directory
-        downloaded_data_path = download_dataset_from_datalake(datalake_config, datalake_download_dir)
-
-        # Merge the downloaded data into the directory with the newly processed data.
-        print(f"Merging downloaded data from '{downloaded_data_path}' into '{processed_dir}'")
-        final_dir_to_process = merge_datasets(processed_dir, downloaded_data_path)
-        shutil.rmtree(downloaded_data_path) # clean up the temporary download
+    # Prepare project split overrides (accept names only; validate against project_list)
+    overrides_cfg = config.get('project_split_overrides', {})
+    overrides_by_id = {}
+    for key, split in overrides_cfg.items():
+        key_str = str(key)
+        if key_str not in name_to_id:
+            print(f"Error: project_split_overrides key '{key_str}' is not a known project name in label_studio.project_list. Only names are allowed.")
+            sys.exit(1)
+        if str(split) not in {"train", "test"}:
+            print(f"Error: project_split_overrides for '{key_str}' must be either 'train' or 'test', got '{split}'.")
+            sys.exit(1)
+        overrides_by_id[str(name_to_id[key_str])] = str(split)
 
     print("\nStarting train-test split...")
-    train_test_split(final_dir_to_process, desired_ratio=config['train_test_split_ratio'])
+    project_image_map_path = os.path.join(final_dir_to_process, 'project_image_map.json')
+    train_test_split(final_dir_to_process, desired_ratio=config['train_test_split_ratio'], project_image_map_path=project_image_map_path, project_split_overrides=overrides_by_id)
+
+    # Cropping after the split (train/test) as per original behavior
+    if 'cropping' in config and config['cropping']['enabled']:
+        print("\nStarting cropping process after split...")
+        zone_class_names = config.get('zone_class_names', [])
+        zone_class_mapping = {name: str(i) for i, name in enumerate(zone_class_names)}
+        perform_cropping(
+            base_dir=final_dir_to_process,
+            cropping_config_path=config['cropping']['cropping_config_path'],
+            zone_class_mapping=zone_class_mapping,
+            save_updated_zone_masks=config['cropping'].get('save_updated_zone_masks', False),
+            splits=['train', 'test']
+        )
 
     print("\nStarting upload to HuggingFace...")
     upload_to_huggingface_yolo(
@@ -921,61 +884,11 @@ def run_from_scratch_pipeline(config, base_dir):
         config.get('huggingface', {}), 
         use_mask=config.get('convert_box_to_mask', False),
         clean_up=False, # Keep data for inspection
-        class_names=config['spatter_class_names']
+        class_names=config['spatter_class_names'],
+        download=True
     )
 
 
-def run_incremental_pipeline(config, base_dir):
-    """Pipeline for incrementally updating a dataset from a local base."""
-    print("--- Starting pipeline in 'incremental' mode ---")
-    inc_config = config['incremental_update']
-    
-    # 1. Get base dataset from a local path
-    local_base_path = inc_config.get('base_dataset_path')
-    if not local_base_path or not os.path.isdir(local_base_path):
-        print(f"Error: 'base_dataset_path' not specified or not a valid directory in config for incremental mode.")
-        sys.exit(1)
-
-    # Copy the local base dataset to a new directory within our run folder to avoid modifying the original.
-    base_dataset_dir = os.path.join(base_dir, "base_dataset")
-    print(f"Copying local base dataset from '{local_base_path}' to '{base_dataset_dir}'...")
-    shutil.copytree(local_base_path, base_dataset_dir)
-    print("Copy complete.")
-
-    # 2. Process only new projects
-    new_projects = inc_config.get('new_projects', [])
-    if not new_projects:
-        print("No new projects specified in 'incremental_update.new_projects'. The base dataset will be re-processed and uploaded as a new version.")
-        # If no new projects, we can just proceed with the base dataset as the 'merged' one
-        merged_dir = base_dataset_dir
-    else:
-        label_studio_config = config['label_studio']
-        label_studio = LabelStudio(LabelStudioConfig(url=label_studio_config['api']['url'], api_key=label_studio_config['api']['api_key']))
-        new_project_ids = [label_studio.get_project_by_name(p).id for p in new_projects]
-        
-        new_data_dir = os.path.join(base_dir, "newly_processed")
-        os.makedirs(new_data_dir, exist_ok=True)
-        processed_new_data_dir = process_label_studio_projects(new_project_ids, config, new_data_dir)
-
-        # 3. Merge new data into base data directory (before splitting)
-        merged_dir = merge_datasets(base_dataset_dir, processed_new_data_dir)
-
-    # 4. Re-run train-test split on the entire merged dataset
-    print("\nStarting train-test split on merged data...")
-    train_test_split(merged_dir, desired_ratio=config['train_test_split_ratio'])
-    
-    # 5. Upload as a new version
-    print("\nStarting upload of new version to HuggingFace...")
-    hf_config = config.get('huggingface', {})
-    final_hf_config = hf_config.copy()
-    final_hf_config['version'] = inc_config['new_version'] # Set the new version for upload
-    upload_to_huggingface_yolo(
-        merged_dir, 
-        final_hf_config, 
-        use_mask=config.get('convert_box_to_mask', False),
-        clean_up=False,
-        class_names=config['spatter_class_names']
-    )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Spatter Segmentation Datalake Pipeline")
@@ -993,18 +906,9 @@ if __name__ == "__main__":
     os.makedirs(base_run_dir, exist_ok=True)
     print(f"Created temporary run directory: {base_run_dir}")
         
-    mode = config.get('processing_mode', 'from_scratch')
-
-    if mode == 'from_scratch':
-        run_from_scratch_pipeline(config, base_run_dir)
-    elif mode == 'incremental':
-        run_incremental_pipeline(config, base_run_dir)
-    else:
-        print(f"Error: Unknown processing_mode '{mode}'. Please use 'from_scratch' or 'incremental'.")
-        sys.exit(1)
+    run_pipeline(config, base_run_dir)
 
     print("Pipeline finished successfully.")
     # The clean_up parameter in upload_to_huggingface_yolo can be used to remove the run directory
-    # For now, it's left for inspection.
 
 
