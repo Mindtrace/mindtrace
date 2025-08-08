@@ -1,5 +1,4 @@
-"""
-Mock Basler Camera Backend Implementation
+"""Mock Basler Camera Backend Implementation
 
 This module provides a mock implementation of the Basler camera backend for testing
 and development purposes. It simulates all Basler camera functionality without
@@ -52,7 +51,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 import numpy as np
 
-from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.cameras.backends.base import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -63,12 +62,11 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class MockBaslerCamera(BaseCamera):
+class MockBaslerCamera(CameraBackend):
     """Mock implementation of Basler camera for testing purposes.
 
-    This class simulates all functionality of a real Basler camera without requiring
-    actual hardware. It generates synthetic images and maintains realistic state
-    behavior for comprehensive testing.
+    This class simulates all functionality of a real Basler camera without requiring actual hardware. It generates 
+    synthetic images and maintains realistic state behavior for comprehensive testing.
 
     Attributes:
         initialized: Whether camera was successfully initialized

@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-"""
-Basler Camera Backend
+"""Basler Camera Backend
 
 Provides support for Basler cameras via pypylon SDK with mock implementation for testing.
 
 Components:
-    - BaslerCamera: Real Basler camera implementation (requires pypylon SDK)
+    - BaslerCameraBackend: Real Basler camera implementation (requires pypylon SDK)
     - MockBaslerCamera: Mock implementation for testing and development
 
 Requirements:
@@ -38,14 +36,14 @@ Usage:
 
 # Try to import real Basler camera implementation
 try:
-    from .basler_camera import PYPYLON_AVAILABLE, BaslerCamera
+    from .basler_camera import PYPYLON_AVAILABLE, BaslerCamera as BaslerCameraBackend
 
     BASLER_AVAILABLE = PYPYLON_AVAILABLE
 except ImportError:
-    BaslerCamera = None
+    BaslerCameraBackend = None
     BASLER_AVAILABLE = False
 
 # Import mock camera (always available)
 from .mock_basler import MockBaslerCamera
 
-__all__ = ["BaslerCamera", "MockBaslerCamera", "BASLER_AVAILABLE"]
+__all__ = ["BaslerCameraBackend", "MockBaslerCamera", "BASLER_AVAILABLE"]
