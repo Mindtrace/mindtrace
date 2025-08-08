@@ -143,7 +143,7 @@ class TestNamedLambda:
     def test_named_lambda_with_none_function_raises_error(self):
         """Test that named_lambda raises appropriate error when function is None."""
         with pytest.raises(AttributeError):
-            named_lambda("test_name", None)
+            named_lambda("test_name", None)  # type: ignore
 
     def test_named_lambda_name_overwrite(self):
         """Test that named_lambda can overwrite existing function names."""

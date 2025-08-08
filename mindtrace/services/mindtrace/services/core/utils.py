@@ -102,7 +102,7 @@ def register_connection_manager(connection_manager: Type["ConnectionManager"]):
 
 def generate_connection_manager(
     service_cls, protected_methods: list[str] = ["shutdown", "ashutdown", "status", "astatus"]
-):
+) -> type:
     """Generates a dedicated ConnectionManager class with one method per endpoint.
 
     Args:

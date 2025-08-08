@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService, EchoTaskSchema, echo_task
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService, echo_task
 
 
 class TestEchoInput:
@@ -21,7 +21,7 @@ class TestEchoInput:
 
         # Test that message field is required
         with pytest.raises(ValueError):
-            EchoInput()
+            EchoInput()  # type: ignore
 
     def test_echo_input_serialization(self):
         """Test EchoInput model serialization."""
@@ -67,38 +67,13 @@ class TestEchoOutput:
 
         # Test that echoed field is required
         with pytest.raises(ValueError):
-            EchoOutput()
+            EchoOutput()  # type: ignore
 
     def test_echo_output_serialization(self):
         """Test EchoOutput model serialization."""
         output_data = EchoOutput(echoed="echoed message")
         serialized = output_data.model_dump()
         assert serialized == {"echoed": "echoed message"}
-
-
-class TestEchoTaskSchema:
-    """Test suite for EchoTaskSchema."""
-
-    def test_echo_task_schema_creation(self):
-        """Test EchoTaskSchema creation."""
-        schema = EchoTaskSchema()
-        assert schema.name == "echo"
-        assert schema.input_schema == EchoInput
-        assert schema.output_schema == EchoOutput
-
-    def test_echo_task_schema_inheritance(self):
-        """Test that EchoTaskSchema inherits from TaskSchema."""
-        from mindtrace.core import TaskSchema
-
-        schema = EchoTaskSchema()
-        assert isinstance(schema, TaskSchema)
-
-    def test_echo_task_global_instance(self):
-        """Test the global echo_task instance."""
-        assert isinstance(echo_task, EchoTaskSchema)
-        assert echo_task.name == "echo"
-        assert echo_task.input_schema == EchoInput
-        assert echo_task.output_schema == EchoOutput
 
 
 class TestEchoService:
@@ -248,13 +223,13 @@ class TestEchoServiceIntegration:
         assert echo_task.output_schema == EchoOutput
 
         # Test that we can create instances of the schema types
-        test_input = echo_task.input_schema(message="test")
+        test_input = EchoInput(message="test")
         assert isinstance(test_input, EchoInput)
 
         # Test method with schema-created input
         service = EchoService.__new__(EchoService)
         result = service.echo(test_input)
-        assert isinstance(result, echo_task.output_schema)
+        assert isinstance(result, EchoOutput)
 
     @patch("mindtrace.services.sample.echo_service.Service.__init__")
     def test_service_with_mock_dependencies(self, mock_super_init):

@@ -9,6 +9,4 @@ class AppConfig(BaseModel):
     url: str | Url
 
 
-class RegisterAppTaskSchema(TaskSchema):
-    name: str = "register_app"
-    input_schema: type[AppConfig] = AppConfig
+RegisterAppTaskSchema = TaskSchema(name="register_app", input_schema=AppConfig)

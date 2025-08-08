@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:
@@ -274,7 +274,7 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
 
 
@@ -290,17 +290,19 @@ class TestServiceMCP:
         # mcp_app should be a FastAPI app (or compatible)
         from fastapi import FastAPI
         from starlette.applications import Starlette
+
         assert isinstance(service.mcp_app, (FastAPI, Starlette)), "mcp_app should be a FastAPI or Starlette app."
 
     def test_service_mounts_mcp_app(self):
         service = Service()
         # The /mcp-server route should be mounted
-        routes = [route for route in service.app.routes if hasattr(route, 'path')]
-        mcp_mounts = [route for route in routes if getattr(route, 'path', None) == "/mcp-server"]
+        routes = [route for route in service.app.routes if hasattr(route, "path")]
+        mcp_mounts = [route for route in routes if getattr(route, "path", None) == "/mcp-server"]
         assert mcp_mounts, "Service.app should have /mcp-server mounted."
         # The mounted app should be the mcp_app
         # In FastAPI, mounts are in app.routes as Mount objects
         from fastapi.routing import Mount
+
         found = False
         for route in service.app.routes:
             if isinstance(route, Mount) and route.path == "/mcp-server":
@@ -312,33 +314,43 @@ class TestServiceMCP:
         service = Service()
         # Patch the mcp.tool decorator to track registration
         called = {}
-        def fake_tool(name):
+
+        def fake_tool(name, **kwargs):
             def decorator(func):
-                called['name'] = name
-                called['func'] = func
+                called["name"] = name
+                called["func"] = func
+                called["kwargs"] = kwargs
                 return func
+
             return decorator
+
         service.mcp.tool = fake_tool
+
         def dummy_func():
             return "ok"
+
         service.add_tool("dummy_tool", dummy_func)
-        assert called['name'] == "dummy_tool"
-        assert called['func'] is dummy_func
+        assert called["name"] == "dummy_tool"
+        assert called["func"] is dummy_func
 
     def test_add_endpoint_with_as_tool_calls_add_tool(self):
         service = Service()
         # Patch add_tool to track calls
         called = {}
+
         def fake_add_tool(tool_name, func):
-            called['tool_name'] = tool_name
-            called['func'] = func
+            called["tool_name"] = tool_name
+            called["func"] = func
+
         service.add_tool = fake_add_tool
+
         def dummy_func():
             return "ok"
+
         test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
         service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
-        assert called['tool_name'] == "dummy"
-        assert called['func'] is dummy_func
+        assert called["tool_name"] == "dummy"
+        assert called["func"] is dummy_func
 
 
 class TestServiceUrlBuilding:
@@ -533,7 +545,7 @@ class TestServiceLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_context_manager(self):
-        """Test FastAPI lifespan context manager (covers lines 98-101)."""
+        """Test FastAPI lifespan context manager."""
         service = SampleService()
 
         # Get the lifespan function from the FastAPI app
@@ -561,7 +573,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_runtime_error_handling(self, mock_build_url, mock_status_at_host):
-        """Test launch method RuntimeError handling (covers lines 234-240)."""
+        """Test launch method RuntimeError handling."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host raise RuntimeError
         mock_status_at_host.side_effect = RuntimeError("Connection failed")
@@ -581,7 +593,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_service_already_running_http_exception(self, mock_build_url, mock_status_at_host):
-        """Test launch method HTTPException when service already running (covers line 234)."""
+        """Test launch method HTTPException when service already running."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host return AVAILABLE (service already running)
         mock_status_at_host.return_value = ServerStatus.AVAILABLE
@@ -605,7 +617,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_keyboard_interrupt(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking with KeyboardInterrupt (covers lines 290-299)."""
+        """Test launch method blocking with KeyboardInterrupt."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -658,7 +670,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_finally_cleanup(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking finally block (covers lines 290-299)."""
+        """Test launch method blocking finally block."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -692,7 +704,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with child NoSuchProcess exception (covers lines 328-331)."""
+        """Test _cleanup_server with child NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -725,7 +737,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent NoSuchProcess exception (covers lines 335-338)."""
+        """Test _cleanup_server with parent NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -754,7 +766,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent terminate NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent terminate NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -788,7 +800,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent wait NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent wait NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -820,7 +832,7 @@ class TestServiceCleanupMethods:
             Service._active_servers = original_servers
 
     def test_cleanup_all_servers(self):
-        """Test _cleanup_all_servers method (covers lines 345-346)."""
+        """Test _cleanup_all_servers method."""
         # Setup multiple mock servers
         test_uuid1 = UUID("12345678-1234-5678-1234-567812345678")
         test_uuid2 = UUID("87654321-4321-8765-4321-876543218765")

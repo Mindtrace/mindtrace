@@ -28,13 +28,13 @@ Design Philosophy:
 Usage:
     # Import managers only when needed
     from mindtrace.hardware import CameraManager, PLCManager
-    
+
     # Camera operations
     async with CameraManager() as camera_manager:
         cameras = camera_manager.discover_cameras()
         camera = await camera_manager.get_camera(cameras[0])
         image = await camera.capture()
-    
+
     # PLC operations
     async with PLCManager() as plc_manager:
         await plc_manager.register_plc("PLC1", "AllenBradley", "192.168.1.100")
@@ -53,15 +53,19 @@ Thread Safety:
     from multiple threads without interference.
 """
 
+
 def __getattr__(name):
     """Lazy import implementation to avoid loading all backends at once."""
     if name == "CameraManager":
         from .cameras.camera_manager import CameraManager
+
         return CameraManager
     elif name == "PLCManager":
         from .plcs.plc_manager import PLCManager
+
         return PLCManager
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
 
 __all__ = ["CameraManager", "PLCManager"]

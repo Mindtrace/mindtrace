@@ -7,7 +7,7 @@ Each backend implements the BaseCamera interface for consistent camera operation
 Available Backends:
     - BaseCamera: Abstract base class defining the camera interface
     - DahengCamera: Industrial cameras from Daheng Imaging (when available)
-    - BaslerCamera: Industrial cameras from Basler (when available)  
+    - BaslerCamera: Industrial cameras from Basler (when available)
     - OpenCVCamera: USB cameras and webcams via OpenCV (when available)
 
 Usage:
@@ -23,4 +23,4 @@ Configuration:
 
 from .base import BaseCamera
 
-__all__ = ["BaseCamera"] 
+__all__ = ["BaseCamera"]

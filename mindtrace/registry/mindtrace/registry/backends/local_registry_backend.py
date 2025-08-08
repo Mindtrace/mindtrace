@@ -1,6 +1,6 @@
 import json
-import platform
 import os
+import platform
 import shutil
 import time
 from pathlib import Path
@@ -11,8 +11,12 @@ import yaml
 # Import appropriate locking mechanism based on OS
 if platform.system() == "Windows":
     import msvcrt
+
+    fcntl = None
 else:
     import fcntl
+
+    msvcrt = None
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
@@ -71,7 +75,7 @@ class LocalRegistryBackend(RegistryBackend):
         """
         return f"{name}/{version}"
 
-    def push(self, name: str, version: str, local_path: str):
+    def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local directory to the remote backend.
 
         Args:
@@ -85,7 +89,7 @@ class LocalRegistryBackend(RegistryBackend):
         shutil.copytree(local_path, dst, dirs_exist_ok=True)
         self.logger.debug(f"Upload complete. Contents: {list(dst.rglob('*'))}")
 
-    def pull(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str | Path):
         """Copy a directory from the backend store to a local path.
 
         Args:
@@ -167,14 +171,14 @@ class LocalRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, name: str, version: str):
+    def delete_metadata(self, model_name: str, version: str):
         """Delete metadata for a object version.
 
         Args:
-            name: Name of the object.
+            model_name: Name of the object.
             version: Version of the object.
         """
-        meta_path = self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+        meta_path = self.uri / f"_meta_{model_name.replace(':', '_')}@{version}.yaml"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         if meta_path.exists():
             meta_path.unlink()
@@ -296,10 +300,12 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             else:
                 # Unix: Try to acquire an exclusive file lock
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return True
         except (IOError, OSError):
@@ -310,9 +316,11 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Unlock the file
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 # Unix: Release the file lock
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
         except (IOError, OSError) as e:
             self.logger.warning(f"Error releasing file lock: {e}")
@@ -322,11 +330,13 @@ class LocalRegistryBackend(RegistryBackend):
         try:
             if platform.system() == "Windows":
                 # Windows: Try to lock the file using msvcrt
+                assert msvcrt is not None, "Platform is Windows but msvcrt is not available"
                 msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
                 return True
             else:
                 # Unix: Try to acquire a shared file lock
                 # Use blocking mode for shared locks since multiple readers should be able to share
+                assert fcntl is not None, "Platform is not Windows but fcntl is not available"
                 fcntl.flock(file_obj.fileno(), fcntl.LOCK_SH)
                 return True
         except (IOError, OSError):
@@ -359,7 +369,7 @@ class LocalRegistryBackend(RegistryBackend):
                 else:
                     # Unix: Use O_EXCL for atomic creation
                     fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
-                
+
                 # File created successfully - we have the lock
                 with os.fdopen(fd, "r+") as f:
                     # Write our lock information
@@ -368,13 +378,13 @@ class LocalRegistryBackend(RegistryBackend):
                     f.flush()
                     os.fsync(fd)  # Ensure data is written to disk
                     return True
-                    
+
             except FileExistsError:
                 # File already exists - try to acquire existing lock
                 if not self._acquire_existing_lock(lock_path, lock_id, timeout, shared):
                     raise LockAcquisitionError(f"Lock {key} is currently in use")
                 return True
-                
+
         except LockAcquisitionError:
             # Re-raise LockAcquisitionError
             raise
@@ -384,16 +394,16 @@ class LocalRegistryBackend(RegistryBackend):
 
     def _acquire_existing_lock(self, lock_path: Path, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock on an existing lock file.
-        
+
         This method handles the case where the lock file already exists and we need to
         check if the existing lock is expired and potentially acquire it.
-        
+
         Args:
             lock_path: Path to the lock file.
             lock_id: The ID of the lock to acquire.
             timeout: The timeout in seconds for the lock.
             shared: Whether to acquire a shared (read) lock.
-            
+
         Returns:
             True if the lock was acquired, False otherwise.
         """
@@ -401,7 +411,7 @@ class LocalRegistryBackend(RegistryBackend):
             # Check if lock file exists and read current lock info
             if not lock_path.exists():
                 return False
-                
+
             try:
                 with open(lock_path, "r") as f:
                     content = f.read().strip()
@@ -415,7 +425,7 @@ class LocalRegistryBackend(RegistryBackend):
                 except FileNotFoundError:
                     pass
                 return False
-            
+
             # Check if existing lock is expired
             if time.time() > metadata.get("expires_at", 0):
                 # Lock is expired - remove it and retry acquisition
@@ -423,10 +433,10 @@ class LocalRegistryBackend(RegistryBackend):
 
                 # Retry acquisition with the original key
                 return self.acquire_lock(self._get_key_from_path(lock_path), lock_id, timeout, shared)
-            
+
             # Lock is still valid - check if we can acquire it
             existing_shared = metadata.get("shared", False)
-            
+
             if shared:
                 # For shared locks, we can acquire if existing lock is also shared
                 if existing_shared:
@@ -436,7 +446,7 @@ class LocalRegistryBackend(RegistryBackend):
             else:
                 # For exclusive locks, we can only acquire if no lock exists
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Error acquiring existing lock for {lock_path}: {e}")
             return False

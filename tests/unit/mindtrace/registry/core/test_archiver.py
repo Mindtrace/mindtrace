@@ -16,7 +16,7 @@ class TestArchiver:
             def load(self, data_type: Type[Any]) -> Any:
                 return None
 
-            def save(self, obj: Any) -> None:
+            def save(self, data: Any) -> None:
                 pass
 
         # Test initialization
@@ -45,7 +45,7 @@ class TestArchiver:
         class IncompleteArchiver(Archiver):
             ASSOCIATED_TYPES = {str}
 
-            def save(self, obj: Any) -> None:
+            def save(self, data: Any) -> None:
                 pass
 
         archiver = IncompleteArchiver(uri="test://path")
@@ -62,7 +62,7 @@ class TestArchiver:
             def load(self, data_type: Type[Any]) -> Any:
                 return None
 
-            def save(self, obj: Any) -> None:
+            def save(self, data: Any) -> None:
                 pass
 
         # Test initialization

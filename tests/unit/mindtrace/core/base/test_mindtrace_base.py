@@ -511,7 +511,7 @@ class TestMindtrace:
         decorated_method = Mindtrace.autolog(self=instance)(instance.test_method)
         with patch.object(instance.logger, "error") as mock_error:
             with pytest.raises(ValueError):
-                decorated_method(2, 3)
+                decorated_method(2, 3)  # type: ignore
             assert mock_error.call_count == 1
 
     def test_autolog_with_self_parameter_async(self):
@@ -613,7 +613,7 @@ class TestMindtrace:
             ):
                 # Test the exception branch
                 with pytest.raises(ValueError, match="Async function failed"):
-                    await decorated_func(should_fail=True)
+                    await decorated_func(should_fail=True)  # type: ignore
 
                 # Verify prefix log was called (before exception)
                 assert mock_log.call_count == 1
@@ -652,7 +652,7 @@ class TestMindtrace:
 
         # Verify metadata is preserved
         assert decorated_func.__name__ == "documented_async_function"
-        assert "This is a documented async function" in decorated_func.__doc__
+        assert decorated_func.__doc__ is not None and "This is a documented async function" in decorated_func.__doc__
         assert decorated_func.__annotations__ == documented_async_function.__annotations__
 
         # Verify the function still works correctly
@@ -795,7 +795,7 @@ class TestMindtraceABC:
                 pass
 
         with pytest.raises(TypeError):
-            TestAbstractClass()
+            TestAbstractClass()  # type: ignore
 
     def test_concrete_implementation(self):
         """Test concrete implementation of abstract class."""

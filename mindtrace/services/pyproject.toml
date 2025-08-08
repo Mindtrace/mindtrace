@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-services"
-version = "0.1.0"
+version = "0.2.0"
 description = "Service layer for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -20,6 +20,10 @@ dependencies = [
     "aiohttp>=3.12.13",
     "fastmcp==2.9.2",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/services"
 
 [build-system]
 requires = ["setuptools"]

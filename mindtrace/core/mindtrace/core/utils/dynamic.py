@@ -1,9 +1,10 @@
 """Utility methods relating to dynamically generating objects."""
 
 import importlib
+from typing import Any
 
 
-def dynamic_instantiation(module_name: str, class_name: str, **kwargs) -> object:
+def dynamic_instantiation(module_name: str, class_name: str, **kwargs) -> Any:
     """Dynamically instantiates a class from a module."""
     module = importlib.import_module(module_name)
     class_ = getattr(module, class_name)
@@ -11,7 +12,7 @@ def dynamic_instantiation(module_name: str, class_name: str, **kwargs) -> object
     return instance
 
 
-def instantiate_target(target: str, **kwargs):
+def instantiate_target(target: str, **kwargs) -> Any:
     """Instantiates a target object from a string.
 
     The target string should be in the same format as expected from Hydra targets. I.e. 'module_name.class_name'.

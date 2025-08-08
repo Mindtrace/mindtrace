@@ -57,7 +57,7 @@ def registry(backend_type, temp_dir):
 
     backend = backend_config["class"](**backend_params)
 
-    registry = Registry(backend=backend)
+    registry = Registry(backend=backend, version_objects=True)
     return registry
 
 
