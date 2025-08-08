@@ -19,9 +19,10 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class LocalClient(OrchestratorBackend):
-    """A pure-python in-memory message broker.
-    This client subclasses BrokerClientBase and supports multiple unique instances based on the provided 'broker_id'
-    parameter. It maintains a shared (in-memory) dictionary of declared queues and a store for job results.
+    """A registry-backed local job client.
+
+    The client maintains a registry of declared queues and a store for job results. Queues are stored in a registry.
+    Job results can be stored to a separate internal registry as well.
     """
 
     def __init__(

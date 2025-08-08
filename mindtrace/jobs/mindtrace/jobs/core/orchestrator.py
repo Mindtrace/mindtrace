@@ -18,6 +18,12 @@ class Orchestrator(Mindtrace):
     """
 
     def __init__(self, orchestrator_dir: str | Path | None = None, backend: OrchestratorBackend | None = None, client_dir: str | Path | None = None) -> None:
+        """Initialize the orchestrator.
+
+        Args:
+            orchestrator_dir: Optional directory to initialize a default local backend.
+            backend: Optional orchestrator backend. When provided, it takes precedence over `orchestrator_dir`.
+        """
         super().__init__()
 
         if backend is None:
@@ -28,15 +34,20 @@ class Orchestrator(Mindtrace):
         self.backend = backend
         self._schema_mapping: Dict[str, Dict[str, Any]] = {}
 
-    def publish(self, queue_name: str, job: Job | TaskSchema, **kwargs) -> str:
-        """Send job to specified queue.
+    def publish(self, queue_name: str, job: Job | BaseModel, **kwargs) -> str:
+        """Send a job or task input model to the specified queue.
 
         Args:
-            queue_name: Name of the queue to publish to
-            job: Job object to publish
-            **kwargs: Additional parameters passed to backend (e.g., priority)
+            queue_name: Name of the queue to publish to. For schema-backed publishes, this must match the registered 
+                `schema.name`.
+            job: Either a `Job` or a Pydantic `BaseModel` corresponding to the queue's registered `TaskSchema.input_schema`.
+            **kwargs: Additional parameters passed to the backend (e.g., priority for priority queues).
+
         Returns:
-            Job ID of the published job
+            The job_id of the published job.
+
+        Raises:
+            ValueError: If publishing a BaseModel to a queue that has not been registered.
         """
         if isinstance(job, Job):
             pass
@@ -80,10 +91,19 @@ class Orchestrator(Mindtrace):
         return self.backend.count_queue_messages(queue_name, **kwargs)
 
     def register(self, schema: JobSchema, queue_type: str = "fifo") -> str:
-        """Register a JobSchema and create a queue for it."""
+        """Register a `JobSchema` and create its queue.
+
+        The created queue will be named `schema.name`. Subsequent publishes of a `BaseModel` corresponding to this 
+        schema must target that queue name.
+
+        Args:
+            schema: The `JobSchema` to register.
+            queue_type: The type of queue to create.
+
+        Returns:
+            The name of the created queue.
+        """
         queue_name = schema.name
         self.backend.declare_queue(queue_name, queue_type=queue_type)
-        # TODO: This is in memory and not suitable for production, need a way to store
-        # the schema in a database
         self._schema_mapping[schema.name] = {"schema": schema, "queue_name": queue_name}
         return queue_name
