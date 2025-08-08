@@ -26,9 +26,12 @@ Usage:
 
 # Try to import OpenCV camera implementation
 try:
-    from .opencv_camera import OPENCV_AVAILABLE, OpenCVCamera as OpenCVCameraBackend
+    from mindtrace.hardware.cameras.backends.opencv.opencv_camera import (
+        OPENCV_AVAILABLE,
+        OpenCVCamera as OpenCVCameraBackend,
+    )
 except ImportError:
     OpenCVCameraBackend = None
-OPENCV_AVAILABLE = False
+    OPENCV_AVAILABLE = False
 
 __all__ = ["OpenCVCameraBackend", "OPENCV_AVAILABLE"]

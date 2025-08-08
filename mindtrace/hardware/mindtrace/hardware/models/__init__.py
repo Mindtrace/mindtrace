@@ -4,7 +4,7 @@ Models module for Camera API.
 This module contains all Pydantic models for request/response handling.
 """
 
-from .requests import (
+from mindtrace.hardware.models.requests import (
     BackendFilterRequest,
     BatchCameraConfigRequest,
     BatchCameraInitializeRequest,
@@ -26,7 +26,7 @@ from .requests import (
     TriggerModeRequest,
     WhiteBalanceRequest,
 )
-from .responses import (
+from mindtrace.hardware.models.responses import (
     BackendInfoResponse,
     BaseResponse,
     BatchOperationResponse,

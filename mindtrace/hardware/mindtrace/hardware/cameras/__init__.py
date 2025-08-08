@@ -17,21 +17,21 @@ def __getattr__(name):
     """Lazy import implementation for availability flags."""
     if name == "BASLER_AVAILABLE":
         try:
-            from .backends.basler import BASLER_AVAILABLE
+            from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE
 
             return BASLER_AVAILABLE
         except ImportError:
             return False
     elif name == "OPENCV_AVAILABLE":
         try:
-            from .backends.opencv import OPENCV_AVAILABLE
+            from mindtrace.hardware.cameras.backends.opencv import OPENCV_AVAILABLE
 
             return OPENCV_AVAILABLE
         except ImportError:
             return False
     elif name == "SETUP_AVAILABLE":
         try:
-            from .setup import (
+            from mindtrace.hardware.cameras.setup import (
                 configure_firewall,
                 install_pylon_sdk,
                 setup_all_cameras,
@@ -48,7 +48,7 @@ def __getattr__(name):
         "configure_firewall",
     ]:
         try:
-            from .setup import (
+            from mindtrace.hardware.cameras.setup import (
                 configure_firewall,
                 install_pylon_sdk,
                 setup_all_cameras,

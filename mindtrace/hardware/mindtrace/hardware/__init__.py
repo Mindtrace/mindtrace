@@ -57,15 +57,15 @@ Thread Safety:
 def __getattr__(name):
     """Lazy import implementation to avoid loading all backends at once."""
     if name == "CameraManager":
-        from .cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.camera_manager import CameraManager
 
         return CameraManager
     elif name == "PLCManager":
-        from .plcs.plc_manager import PLCManager
+        from mindtrace.hardware.plcs.plc_manager import PLCManager
 
         return PLCManager
     elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
-        from .homography import (
+        from mindtrace.hardware.homography import (
             HomographyCalibrator,
             CalibrationData,
             PlanarHomographyMeasurer,
