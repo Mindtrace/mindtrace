@@ -17,40 +17,7 @@ def main_css_animation() -> rx.Component:
             
 
             
-            /* Global button styling */
-            button {{
-                font-weight: 600 !important;
-                font-family: "Inter", system-ui, sans-serif !important;
-                border-radius: 12px !important;
-                background: linear-gradient(135deg, #0057FF 0%, #0041CC 100%) !important;
-                color: white !important;
-                border: none !important;
-                cursor: pointer !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-                box-shadow: 0 4px 16px rgba(0, 87, 255, 0.3) !important;
-            }}
-            
-            /* Button size variants */
-            button[data-size="small"] {{
-                padding: 0.5rem 1rem !important;
-                font-size: 0.875rem !important;
-            }}
-            
-            button[data-size="medium"] {{
-                padding: 0.75rem 1.5rem !important;
-                font-size: 0.925rem !important;
-            }}
-            
-            button[data-size="large"], button:not([data-size]) {{
-                padding: 1rem 2rem !important;
-                font-size: 1rem !important;
-            }}
-            
-            button:hover {{
-                transform: translateY(-2px) !important;
-                box-shadow: 0 8px 24px rgba(0, 87, 255, 0.4) !important;
-                background: linear-gradient(135deg, #0041CC 0%, #003399 100%) !important;
-            }}
+
             
             /* Global select styling */
             select {{
