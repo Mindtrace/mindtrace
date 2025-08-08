@@ -116,4 +116,43 @@ class DatabaseConnection:
         except Exception as e:
             print(f"Error querying database: {e}")
             return pd.DataFrame()
+
+    def get_basler_images_by_serial_numbers(self, serial_numbers: list) -> pd.DataFrame:
+        """Get Basler image metadata from database for specific serial numbers.
+        
+        Args:
+            serial_numbers: List of serial number substrings to match against analytics.partId
+        
+        Returns:
+            DataFrame with image metadata including paths and camera info
+        """
+        if not serial_numbers:
+            return pd.DataFrame()
+
+        # Build array of wildcard patterns for EXISTS + unnest
+        patterns = [f"%{sn}%" for sn in serial_numbers]
+
+        # Get query from config (symmetry with get_images_by_date)
+        query = self.query_config.get('get_images_by_serial_number')
+        if not query:
+            print("Error: get_images_by_serial_number query not configured")
+            return pd.DataFrame()
+
+        try:
+            # Pass patterns as a single array parameter
+            self.cursor.execute(query, (patterns,))
+            results = self.cursor.fetchall()
+
+            df = pd.DataFrame(results, columns=[
+                'BucketName', 'ImgPath', 'ImgName', 'EntryDate'
+            ])
+            
+            # Ensure ImgName column is string before split
+            df['ImgName'] = df['ImgName'].astype(str)
+            # Extract camera from image name (e.g., 'Basler:cam1-...' -> 'Basler:cam1')
+            df['Camera'] = df['ImgName'].apply(lambda x: x.split('-')[0] if '-' in x else x)
+            return df
+        except Exception as e:
+            print(f"Error querying database by serial numbers: {e}")
+            return pd.DataFrame()
     

@@ -36,7 +36,11 @@ class PipelineOrchestrator:
         
         data_source = config.get('data_source', 'gcp')
         if data_source == 'gcp':
-            required_sections = ['gcp', 'label_studio', 'start_date', 'end_date', 'output_folder']
+            query_type = (config.get('database_queries') or {}).get('query_type')
+            if query_type == 'get_images_by_serial_number':
+                required_sections = ['gcp', 'label_studio', 'output_folder', 'database_queries']
+            else:
+                required_sections = ['gcp', 'label_studio', 'start_date', 'end_date', 'output_folder', 'database_queries']
         elif data_source == 'local':
             required_sections = ['local_image_path', 'label_studio', 'output_folder', 'gcp']
         else:

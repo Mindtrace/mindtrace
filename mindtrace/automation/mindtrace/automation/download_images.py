@@ -21,6 +21,7 @@ class QueryType(Enum):
     GET_IMAGES_BY_DATE = "get_images_by_date"
     GET_IMAGES_BY_CAMERA = "get_images_by_camera"
     GET_IMAGES_BY_TIMESTAMP = "get_images_by_timestamp"
+    GET_IMAGES_BY_SERIAL_NUMBER = "get_images_by_serial_number"
 
 class QueryManager:
     """Manages predefined database queries."""
@@ -37,6 +38,22 @@ class QueryManager:
                 ON analytics."id" = img."analyticsId"
             WHERE analytics."createdAt" >= %s 
             AND analytics."createdAt" < %s
+        """,
+        QueryType.GET_IMAGES_BY_SERIAL_NUMBER: """
+            SELECT 
+                img."bucketName",
+                img."fullPath",
+                img."name" AS "image_name",
+                analytics."createdAt" AS "entry_date"
+            FROM public."AdientImage" AS img
+            JOIN public."AdientAnalytics" AS analytics 
+                ON analytics."id" = img."analyticsId"
+            WHERE left(img."name", 7) = 'Basler:'
+            AND EXISTS (
+                SELECT 1
+                FROM unnest(%s::text[]) AS pat(p)
+                WHERE analytics."partId" ILIKE pat.p
+            )
         """
     }
     
@@ -48,6 +65,9 @@ class QueryManager:
             return cls.QUERIES[query_enum]
         except ValueError:
             raise ValueError(f"Unknown query type: {query_type}. Available types: {[qt.value for qt in QueryType]}")
+        except KeyError:
+            # Query types that are handled procedurally (e.g., serial number) won't have a static SQL here
+            return None
     
     @classmethod
     def get_available_queries(cls) -> list:
@@ -69,6 +89,7 @@ class ImageDownload:
     ):
         """Initialize database and GCP connections."""
         self.config = config
+        self.query_type = self.config.get('database_queries', {}).get('query_type')
         
         # Get query type from config
         query_config = self.config.get('database_queries', {})
@@ -79,13 +100,16 @@ class ImageDownload:
         if not query_type:
             raise ValueError("No query_type specified in database_queries section")
         
-        # Get the actual SQL query
+        # Get the actual SQL query where applicable
         sql_query = QueryManager.get_query(query_type)
         
         # Create query config for database connection
-        db_query_config = {
-            'get_images_by_date': sql_query
-        }
+        db_query_config = {}
+        if sql_query:
+            if query_type == QueryType.GET_IMAGES_BY_DATE.value:
+                db_query_config['get_images_by_date'] = sql_query
+            elif query_type == QueryType.GET_IMAGES_BY_SERIAL_NUMBER.value:
+                db_query_config['get_images_by_serial_number'] = sql_query
         
         self.db_conn = DatabaseConnection(
             database=database,
@@ -125,6 +149,16 @@ class ImageDownload:
                     )
                 )
 
+    def _read_serial_numbers_from_file(self, file_path: str) -> list:
+        """Read serial numbers from a text file (one per line)."""
+        try:
+            with open(file_path, 'r') as f:
+                lines = [line.strip() for line in f.readlines()]
+                return [ln for ln in lines if ln and not ln.startswith('#')]
+        except Exception as e:
+            print(f"Warning: Failed to read serial numbers from {file_path}: {e}")
+            return []
+
     def get_camera_proportions(self, config: Dict[str, dict]) -> Dict[str, float]:
         if 'sampling' in config and 'cameras' in config['sampling']:
             cameras_config = config['sampling']['cameras']
@@ -149,7 +183,9 @@ class ImageDownload:
                         cameras[cam] = {'proportion': float(cfg)}
                     else:
                         cameras[cam] = {'proportion': 1.0}
-        return cameras
+            return cameras
+        # If not configured, return None to signal no sampling
+        return None
 
     def filter_existing_label_studio_images(self, df: pd.DataFrame, project_title_prefix: Optional[str] = None) -> pd.DataFrame:
         """Filter out images that already exist in Label Studio projects.
@@ -354,6 +390,15 @@ class ImageDownload:
 
         return df
 
+    def get_images_by_serial_numbers(self, serial_numbers: list) -> pd.DataFrame:
+        """Fetch images filtered by Basler serial numbers."""
+        df = self.db_conn.get_basler_images_by_serial_numbers(serial_numbers)
+        if df.empty:
+            print("No images found for provided serial numbers")
+            return df
+        print(f"Found {len(df)} total images for {len(serial_numbers)} serial numbers")
+        return df
+
     def download_images(self, df: pd.DataFrame, max_workers: int = 8) -> Dict[str, str]:
         """Download images from GCS using paths from database.
         
@@ -403,19 +448,30 @@ class ImageDownload:
     
     def get_data_with_gcs_paths(self) -> Dict[str, str]:
         try:
-            cameras = self.get_camera_proportions(self.config)
-            
-            df = self.get_images_by_date(
-                start_date=self.config['start_date'],
-                end_date=self.config['end_date'],
-                cameras=None,
-                number_samples_per_day=self.config.get('samples_per_day'),
-                seed=self.config.get('seed')
-            )
-            
-            project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
-            df = self.filter_existing_label_studio_images(df, project_prefix)
-            
+            is_serial_mode = self.query_type == QueryType.GET_IMAGES_BY_SERIAL_NUMBER.value
+
+            if is_serial_mode:
+                cameras = None  # Skip sampling in serial-number mode
+                print("Serial-number mode: skipping camera sampling")
+                serial_numbers = self.config.get('serial_numbers')
+                if not serial_numbers and self.config.get('serial_numbers_file'):
+                    serial_numbers = self._read_serial_numbers_from_file(self.config['serial_numbers_file'])
+                if not serial_numbers:
+                    print("No serial numbers provided. Nothing to fetch.")
+                    return {}
+                df = self.get_images_by_serial_numbers(serial_numbers)
+            else:
+                cameras = self.get_camera_proportions(self.config)
+                df = self.get_images_by_date(
+                    start_date=self.config['start_date'],
+                    end_date=self.config['end_date'],
+                    cameras=None,
+                    number_samples_per_day=self.config.get('samples_per_day'),
+                    seed=self.config.get('seed')
+                )
+                project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
+                df = self.filter_existing_label_studio_images(df, project_prefix)
+             
             df = self.apply_camera_sampling(df, cameras, seed=self.config.get('seed'))
             
             os.makedirs('database_data', exist_ok=True)
@@ -431,19 +487,30 @@ class ImageDownload:
     
     def get_data(self):       
         try:
-            cameras = self.get_camera_proportions(self.config)
-            
-            df = self.get_images_by_date(
-                start_date=self.config['start_date'],
-                end_date=self.config['end_date'],
-                cameras=None,
-                number_samples_per_day=self.config.get('samples_per_day'),
-                seed=self.config.get('seed')
-            )
-            
-            project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
-            df = self.filter_existing_label_studio_images(df, project_prefix)
-            
+            is_serial_mode = self.query_type == QueryType.GET_IMAGES_BY_SERIAL_NUMBER.value
+
+            if is_serial_mode:
+                cameras = None  # Skip sampling in serial-number mode
+                print("Serial-number mode: skipping camera sampling")
+                serial_numbers = self.config.get('serial_numbers')
+                if not serial_numbers and self.config.get('serial_numbers_file'):
+                    serial_numbers = self._read_serial_numbers_from_file(self.config['serial_numbers_file'])
+                if not serial_numbers:
+                    print("No serial numbers provided. Nothing to fetch.")
+                    return
+                df = self.get_images_by_serial_numbers(serial_numbers)
+            else:
+                cameras = self.get_camera_proportions(self.config)
+                df = self.get_images_by_date(
+                    start_date=self.config['start_date'],
+                    end_date=self.config['end_date'],
+                    cameras=None,
+                    number_samples_per_day=self.config.get('samples_per_day'),
+                    seed=self.config.get('seed')
+                )
+                project_prefix = self.config.get('label_studio', {}).get('project', {}).get('title')
+                df = self.filter_existing_label_studio_images(df, project_prefix)
+             
             df = self.apply_camera_sampling(df, cameras, seed=self.config.get('seed'))
             
             os.makedirs('database_data', exist_ok=True)
