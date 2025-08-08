@@ -132,11 +132,7 @@ def download_and_process_image(args):
         if enlarge_zones_map:
             class_name = idx2class[class_id]
             if camera_name in enlarge_zones_map:
-                print(camera_name)
-                print(enlarge_zones_map)
-                print(camera_name in enlarge_zones_map, class_name, class_name in enlarge_zones_map[camera_name])
                 if class_name in enlarge_zones_map[camera_name]:
-                    print(f"Enlarging {class_name} for {camera_name}")
                     mask = cv2.dilate(mask, dilation_kernel, iterations=int(num_iterations))
 
     if not ignore_holes and 'Hole' in class2idx:
