@@ -25,6 +25,11 @@ class RedisConsumerBackend(ConsumerBackendBase):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
 
+        # Guard against empty queue list to avoid infinite loop
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
+
         messages_consumed = 0
         try:
             while num_messages == 0 or messages_consumed < num_messages:
