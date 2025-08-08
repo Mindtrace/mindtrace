@@ -48,7 +48,13 @@ class LocalClient(OrchestratorBackend):
 
         self.queues: Registry[str, "Queue"] = backend
         self._lock = threading.Lock()
-        self._job_results: Registry[str, Any] = Registry(registry_dir=Path(self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]) / "results")
+        
+        # Co-locate job results with the selected client directory when available
+        if client_dir is not None:
+            results_dir = Path(client_dir).expanduser().resolve() / "results"
+        else:
+            results_dir = Path(self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]).expanduser().resolve() / "results"
+        self._job_results: Registry[str, Any] = Registry(registry_dir=results_dir)
 
     @property
     def consumer_backend_args(self):
@@ -102,7 +108,7 @@ class LocalClient(OrchestratorBackend):
             if "job_id" not in message_dict or message_dict["job_id"] is None:
                 message_dict["job_id"] = str(uuid.uuid1())
             body = json.dumps(message_dict)
-            if type(queue_instance).__name__ == "LocalPriorityQueue" and priority is not None:
+            if isinstance(queue_instance, LocalPriorityQueue) and priority is not None:
                 queue_instance.push(item=body, priority=priority)
             else:
                 queue_instance.push(item=body)
@@ -152,17 +158,16 @@ class LocalClient(OrchestratorBackend):
         with self.queues.get_lock(queue_name, "orchestrator_client", shared=True):
             if queue_name not in self.queues:
                 raise KeyError(f"Queue '{queue_name}' not found.")
-            queue_instance = self.queues[queue_name]
-        return queue_instance.qsize()
+            return self.queues[queue_name].qsize()
 
     def store_job_result(self, job_id: str, result: Any):
         """Save the job result (JSON-serializable) keyed by job_id."""
-        with self.queues.get_lock(job_id, "orchestrator_client", shared=True):
+        with self._job_results.get_lock(job_id, "orchestrator_client", shared=True):
             self._job_results[job_id] = result
 
     def get_job_result(self, job_id: str) -> Any:
         """Retrieve the stored result for the given job_id."""
-        with self.queues.get_lock(job_id, "orchestrator_client", shared=True):
+        with self._job_results.get_lock(job_id, "orchestrator_client", shared=True):
             return self._job_results.get(job_id, None)
 
     def move_to_dlq(
