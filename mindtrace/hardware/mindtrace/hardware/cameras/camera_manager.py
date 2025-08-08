@@ -1,5 +1,4 @@
-"""
-Modern Camera Manager for Mindtrace Hardware System
+"""Modern Camera Manager for Mindtrace Hardware System
 
 A clean, intuitive camera management system that provides unified access to
 multiple camera backends with async operations and proper resource management.
@@ -39,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import cv2
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
-from mindtrace.hardware.cameras.backends.base import BaseCamera
+from mindtrace.hardware.cameras.backends.base import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -75,16 +74,16 @@ def _discover_backend(backend_name: str, logger=None) -> Tuple[bool, Optional[An
             cache["class"] = DahengCamera if DAHENG_AVAILABLE else None
 
         elif cache_key == "basler":
-            from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCamera
+            from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCameraBackend
 
             cache["available"] = BASLER_AVAILABLE
-            cache["class"] = BaslerCamera if BASLER_AVAILABLE else None
+            cache["class"] = BaslerCameraBackend if BASLER_AVAILABLE else None
 
         elif cache_key == "opencv":
-            from mindtrace.hardware.cameras.backends.opencv import OPENCV_AVAILABLE, OpenCVCamera
+            from mindtrace.hardware.cameras.backends.opencv import OPENCV_AVAILABLE, OpenCVCameraBackend
 
             cache["available"] = OPENCV_AVAILABLE
-            cache["class"] = OpenCVCamera if OPENCV_AVAILABLE else None
+            cache["class"] = OpenCVCameraBackend if OPENCV_AVAILABLE else None
 
         if logger and cache["available"]:
             logger.debug(f"{backend_name} backend loaded successfully")
@@ -104,11 +103,7 @@ def _discover_backend(backend_name: str, logger=None) -> Tuple[bool, Optional[An
 def _get_mock_camera(backend_name: str):
     """Get mock camera class for backend."""
     try:
-        if backend_name.lower() == "daheng":
-            from mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
-
-            return MockDahengCamera
-        elif backend_name.lower() == "basler":
+        if backend_name.lower() == "basler":
             from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
 
             return MockBaslerCamera
@@ -118,15 +113,14 @@ def _get_mock_camera(backend_name: str):
         raise CameraInitializationError(f"Mock {backend_name} backend not available: {e}")
 
 
-class CameraProxy:
-    """
-    Unified camera interface that wraps backend-specific camera instances.
+class Camera:
+    """Unified camera interface that wraps backend-specific camera instances.
 
     Provides a clean, consistent API regardless of the underlying camera backend
     while maintaining thread-safe operations through internal locking.
     """
 
-    def __init__(self, camera: BaseCamera, full_name: str):
+    def __init__(self, camera: CameraBackend, full_name: str):
         self._camera = camera
         self._full_name = full_name
         self._lock = asyncio.Lock()
@@ -158,8 +152,7 @@ class CameraProxy:
 
     # Core Operations
     async def capture(self, save_path: Optional[str] = None) -> Any:
-        """
-        Capture image from camera with advanced retry logic.
+        """Capture image from camera with advanced retry logic.
 
         This method uses sophisticated retry logic with exponential backoff
         to handle different types of errors appropriately:
@@ -836,7 +829,7 @@ class CameraManager(Mindtrace):
         """
         super().__init__()
 
-        self._cameras: Dict[str, CameraProxy] = {}
+        self._cameras: Dict[str, Camera] = {}
         self._include_mocks = include_mocks
         self._discovered_backends = self._discover_all_backends()
 
@@ -969,7 +962,7 @@ class CameraManager(Mindtrace):
         backend, device_name = camera_name.split(":", 1)
         return backend, device_name
 
-    def _create_camera_instance(self, backend: str, device_name: str, **kwargs) -> BaseCamera:
+    def _create_camera_instance(self, backend: str, device_name: str, **kwargs) -> CameraBackend:
         """Create camera instance for specified backend."""
         if backend not in self._discovered_backends:
             raise CameraNotFoundError(f"Backend '{backend}' not available")
@@ -1045,7 +1038,7 @@ class CameraManager(Mindtrace):
                 raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
 
         # Create proxy and store
-        proxy = CameraProxy(camera, camera_name)
+        proxy = Camera(camera, camera_name)
         self._cameras[camera_name] = proxy
 
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
@@ -1099,7 +1092,7 @@ class CameraManager(Mindtrace):
 
         return failed_cameras
 
-    def get_camera(self, camera_name: str) -> CameraProxy:
+    def get_camera(self, camera_name: str) -> Camera:
         """
         Get an initialized camera by name.
 
@@ -1107,7 +1100,7 @@ class CameraManager(Mindtrace):
             camera_name: Full camera name "Backend:device_name"
 
         Returns:
-            CameraProxy instance
+            Camera instance
 
         Raises:
             KeyError: If camera is not initialized
@@ -1117,7 +1110,7 @@ class CameraManager(Mindtrace):
 
         return self._cameras[camera_name]
 
-    def get_cameras(self, camera_names: List[str]) -> Dict[str, CameraProxy]:
+    def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
         """
         Get multiple initialized cameras by name.
 
@@ -1125,7 +1118,7 @@ class CameraManager(Mindtrace):
             camera_names: List of camera names to retrieve
 
         Returns:
-            Dictionary mapping camera names to CameraProxy instances.
+            Dictionary mapping camera names to Camera instances.
             Only includes successfully retrieved cameras.
         """
         cameras = {}
@@ -1399,7 +1392,7 @@ class CameraManager(Mindtrace):
 
 
 # Convenience functions for quick access
-async def initialize_and_get_camera(camera_name: str, **kwargs) -> CameraProxy:
+async def initialize_and_get_camera(camera_name: str, **kwargs) -> Camera:
     """
     Quick access function to initialize and get a single camera.
 
@@ -1408,7 +1401,7 @@ async def initialize_and_get_camera(camera_name: str, **kwargs) -> CameraProxy:
         **kwargs: Camera configuration parameters
 
     Returns:
-        CameraProxy instance
+        Camera instance
     """
     manager = CameraManager()
     await manager.initialize_camera(camera_name, **kwargs)
