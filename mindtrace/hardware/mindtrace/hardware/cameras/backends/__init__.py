@@ -18,6 +18,6 @@ Configuration:
     to provide consistent default values and settings across all camera types.
 """
 
-from .camera_backend import CameraBackend
+from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 
 __all__ = ["CameraBackend"]

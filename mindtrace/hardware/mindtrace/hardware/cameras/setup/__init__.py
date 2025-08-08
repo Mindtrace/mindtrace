@@ -13,9 +13,9 @@ Each setup script can be run independently or through console commands
 defined in the project's pyproject.toml file.
 """
 
-from .setup_basler import install_pylon_sdk, uninstall_pylon_sdk
-from .setup_cameras import configure_firewall
-from .setup_cameras import main as setup_all_cameras
+from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
+from mindtrace.hardware.cameras.setup.setup_cameras import configure_firewall
+from mindtrace.hardware.cameras.setup.setup_cameras import main as setup_all_cameras
 
 
 __all__ = [
