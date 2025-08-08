@@ -17,6 +17,39 @@ from ultralytics.nn.tasks import YOLOv10DetectionModel
 add_safe_globals([YOLOv10DetectionModel])
 from ultralytics import YOLO, RTDETR, YOLOv10
 
+
+def crop_boxes(img, boxes, padding=0.1):
+        """Extracts cropped regions from an image based on bounding boxes."""
+        crops = []
+        img_h, img_w = img.shape[:2]
+        for box in boxes:
+            if len(box) >= 4: # Ensure box has at least xc, yc, w, h
+                xc, yc, w, h = box[:4]
+                x1 = xc - w / 2
+                y1 = yc - h / 2
+                x2 = xc + w / 2
+                y2 = yc + h / 2
+
+                padding_w, padding_h = int(w * padding), int(h * padding)
+                lower_x = max(0, int(x1) - padding_w)
+                upper_x = min(img_w, int(x2) + padding_w)
+                lower_y = max(0, int(y1) - padding_h)
+                upper_y = min(img_h, int(y2) + padding_h)
+
+                # Ensure crop dimensions are valid
+                if upper_y > lower_y and upper_x > lower_x:
+                    crops.append(img[lower_y:upper_y, lower_x:upper_x])
+                else:
+                    # Handle cases where padding pushes box out of bounds or box is invalid
+                    # Optionally append a placeholder or log a warning
+                    print(f"Warning: Invalid crop dimensions for box {box}. Skipping crop.")
+                    # crops.append(np.zeros((10, 10, 3), dtype=np.uint8)) # Example placeholder
+            else:
+                 print(f"Warning: Skipping invalid box format: {box}")
+
+        return crops
+
+
 def resize_img(img, key, img_size, letterbox=None):
 	"""
 	Resizes an image and converts it to RGB format.

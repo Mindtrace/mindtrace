@@ -12,8 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 
-# from mtrix.models.backbones import Dinov2Backbone
-# from mtrix.models.heads import LinearHead, ContrastiveHead, ClassSeverityLinearHead, LinearSeverityCrossEntropy, LinearSeverityHLGauss, ClassSeverityLoss
+from mtrix.models.backbones import Dinov2Backbone
+from mtrix.models.heads import LinearHead, ContrastiveHead, ClassSeverityLinearHead, LinearSeverityCrossEntropy, LinearSeverityHLGauss, ClassSeverityLoss
 from mindtrace.automation.modelling.utils.transformations import ResizeSquareWithPaddingNormalize, ResizeSquareWithNormalize
 import logging
 logger = logging.getLogger(__name__)
@@ -416,7 +416,7 @@ class MigClassifier(nn.Module):
 		}
 
 		for idx, conf in zip(cls_idx, confs):
-			outputs['multiclass_preds'].append(self.idx_to_cls_map[idx])
+			outputs['multiclass_preds'].append(idx)
 			outputs['multiclass_confs'].append(conf)
 
 		if self.binary_anomaly_head:

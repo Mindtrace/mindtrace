@@ -73,6 +73,8 @@ def run_inference(config_path: str, custom_job_id: str = None):
     if config["pipeline"] == "sfz":
 
         pipeline = SFZPipeline(
+            job_id = custom_job_id,
+            config = config,
             credentials_path=config['gcp']['credentials_file'],
             bucket_name=config['gcp']['weights_bucket'],
             base_folder=config['gcp']['base_folder'],
@@ -89,10 +91,13 @@ def run_inference(config_path: str, custom_job_id: str = None):
     elif config["pipeline"] == "mig":
 
         pipeline = MIGPipeline(
+            job_id = custom_job_id,
+            config = config,
             credentials_path=config['gcp']['credentials_file'],
             bucket_name=config['gcp']['weights_bucket'],
             base_folder=config['gcp']['base_folder'],
             local_models_dir="./tmp",
+
         )
 
         pipeline.load_pipeline(

@@ -12,7 +12,7 @@ import yaml
 from mtrix.models.wrappers import HFVisionModelWrapper
 from mindtrace.automation.modelling.utils import logits_to_mask
 from mindtrace.automation.modelling.utils.mig_classifier import MigClassifier
-from mindtrace.automation.modelling.utils.misc import list_files_with_extensions, load_weld_detector, weld_detection
+from mindtrace.automation.modelling.utils.misc import list_files_with_extensions, load_weld_detector, weld_detection, crop_boxes
 
 
 class ExportType(Enum):
@@ -26,11 +26,13 @@ class ModelInference:
 
     def __init__(
         self,
+        config,
+        job_id,
         model_path: str,
-        task_type: str,
+        task_type: str,  # this is common ml tasks
         model_name: str,
         device: str = "cpu",
-        inference_task: Optional[str] = None
+        inference_task: Optional[str] = None # this is something pipeline specific like weld detection etc
     ):
         """Initialize model inference.
 
@@ -48,6 +50,8 @@ class ModelInference:
         self.id2label = {}
         self.img_size = None
         self.inference_task = inference_task
+        self.job_id = job_id
+        self.config = config
         # Load model metadata
         self._load_metadata()
         self._load_id2label()
@@ -93,19 +97,22 @@ class ModelInference:
                 detector_files = [file for file in files if 'detector' in file]
 
                 weld_detector = load_weld_detector(detector_files[0], self.model_path)
-                print("******")
-                print("MODEL LOADED")
+
                 weld_detector.to(self.device)
                 self.model = weld_detector
 
             else:
 
-                model_pt = torch.load(self.model_path, map_location=self.device)
+                classifier_list = list_files_with_extensions(self.model_path, [".pt"])
+                model_pt = torch.load(classifier_list[0], map_location=self.device)
                 model = MigClassifier(**model_pt['config'])
                 model.load_state_dict(model_pt['state_dict'])
                 model = model.eval()
                 model = model.to(self.device)
                 self.model = model
+
+                print("******")
+                print("defect classification LOADED")
 
 
             print(f"Model instantiated successfully")
@@ -148,32 +155,119 @@ class ModelInference:
             raise ValueError(f"Unsupported task type: {self.task_type}")
 
         # Convert to requested export format
-        if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
-            result = self._mask_to_bounding_box(result)
-        elif export_type == ExportType.MASK and result.get('boxes') is not None:
-            result = self._bounding_box_to_mask(result)
+        # if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
+        #     result = self._mask_to_bounding_box(result)
+        # elif export_type == ExportType.MASK and result.get('boxes') is not None:
+        #     result = self._bounding_box_to_mask(result)
 
         return result
 
     def _run_object_detection(self, image: str, threshold: float) -> Dict[str, Any]:
         """Run object detection inference."""
         try:
-            print(f"Running object detection with threshold {threshold}")
 
-            if self.model is None:
-                raise ValueError("Model not initialized")
+            if self.inference_task == "weld_classification":
+                print(f"Running object detection with threshold {threshold} for {self.inference_task}")
 
-            img = Image.open(image)
-            image = np.array(img)
+                if self.model is None:
+                    raise ValueError("Model not initialized")
 
-            imgs, keys, weld_boxes_list = weld_detection(imgs=  [image], model = self.model)
+                img = Image.open(image)
+                image = np.array(img)
+
+                imgs, keys, weld_boxes_list = weld_detection(imgs=  [image], model = self.model)
+
+                return {
+                        "boxes": weld_boxes_list,
+                        'task_type': 'object_detection'
+                    }
+
+            if self.inference_task == "defect_classification":
+
+                boxes_folder = os.path.join(self.config["output_folder"], str(self.job_id), "boxes", "weld_classification")
+                box_path = os.path.join(  boxes_folder, os.path.splitext(os.path.basename(image))[0] + ".txt")
+
+                boxes = []
+
+
+                from pathlib import Path
+                with open(Path(box_path), 'r') as f:
+
+                    for line_num, line in enumerate(f, start=1):
+                        parts = line.strip().split()
+
+                        # Skip empty or malformed lines
+                        if len(parts) == 7:
+
+
+                            cls_id, cls_name, xc, yc, w, h, conf = map(str, parts)  # or map(str, parts) or map(int, parts)
+                            boxes.append((float(xc), float(yc), float(w), float(h), float(conf), cls_id, cls_name))
 
 
 
-            return {
-                    "boxes": weld_boxes_list,
-                    'task_type': 'object_detection'
-                }
+                img = Image.open(image)
+                image = np.array(img)
+
+                crops = crop_boxes(image, boxes)
+
+                classifications_list = []
+                severitys_list = []
+
+
+                if len(crops) > 0:
+
+
+                    try:
+                        # Convert crops to PIL Images if the model expects that format
+                        pil_crops = [Image.fromarray(crop) for crop in crops]
+                        # Assuming classifier predict_batch exists and takes PIL images
+                        # Adapt this call based on the actual classifier interface
+                        # The `cond` parameter seems specific, adjust as needed
+                        classifications_preds = self.model.predict_batch(
+                            pil_crops, cond=[22 for _ in range(len(pil_crops))] # Example cond
+                        )
+
+                        classifications = classifications_preds.get('multiclass_preds', [])
+                        classifications_list.extend(classifications)
+
+
+
+
+                        # Check for severity predictions
+                        if 'severity_preds' in classifications_preds:
+                            severitys = classifications_preds['severity_preds']
+                            severitys_list.extend(severitys)
+                        else:
+                            # Provide default 'N/A' if severity is not predicted
+                            severitys_list.extend(["N/A"] * len(classifications))
+
+                    except AttributeError:
+                        print("Error: Classifier model does not have 'predict_batch' method or requires different input format.")
+                        return ["Error"] * len(crops), ["N/A"] * len(crops)
+                    except Exception as e:
+                        print(f"Error during classification prediction: {e}")
+                        return ["Error"] * len(crops), ["N/A"] * len(crops)
+
+
+            # Ensure lists have the same length as the number of boxes
+            if len(classifications_list) != len(boxes):
+                print(f"Warning: Mismatch between number of boxes ({len(boxes)}) and classifications ({len(classifications_list)}). Adjusting.")
+                # Pad or truncate as necessary, or return error indication
+                classifications_list.extend(["N/A"] * (len(boxes) - len(classifications_list)))
+                severitys_list.extend(["N/A"] * (len(boxes) - len(severitys_list)))
+                classifications_list = classifications_list[:len(boxes)]
+                severitys_list = severitys_list[:len(boxes)]
+
+            print("DEFECT DETECTION")
+            print(classifications_list)
+            print(severitys_list)
+            print(self.model.idx_to_cls_map)
+
+            return {"classification" : classifications_list,
+                    "severity": severitys_list,
+                    "class_idx": self.model.idx_to_cls_map
+            }
+
         except Exception as e:
             print(f"Error in object detection: {e}")
             return {'error': str(e)}

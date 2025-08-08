@@ -20,6 +20,8 @@ class SFZPipeline:
 
     def __init__(
         self,
+        job_id:str,
+        config,
         credentials_path: Optional[str] = None,
         bucket_name: str = '',
         base_folder: str = '',
@@ -46,6 +48,8 @@ class SFZPipeline:
         self.local_models_dir = local_models_dir
         self.overwrite_masks = overwrite_masks
         self.device = self._get_device()
+        self.job_id = job_id
+        self.config = config
 
         # Initialize GCS storage handler
         if GCSStorageHandler is None:
@@ -345,10 +349,10 @@ class SFZPipeline:
 
         # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
-        images_folder = os.path.join(output_folder, "images")
-        raw_masks_folder = os.path.join(output_folder, "raw_masks")
-        boxes_folder = os.path.join(output_folder, "boxes")
-        visualizations_folder = os.path.join(output_folder, "visualizations")
+        images_folder = os.path.join(output_folder,self.job_id, "images")
+        raw_masks_folder = os.path.join(output_folder,self.job_id, "raw_masks")
+        boxes_folder = os.path.join(output_folder,self.job_id, "boxes")
+        visualizations_folder = os.path.join(output_folder,self.job_id, "visualizations")
 
         os.makedirs(images_folder, exist_ok=True)
         os.makedirs(raw_masks_folder, exist_ok=True)

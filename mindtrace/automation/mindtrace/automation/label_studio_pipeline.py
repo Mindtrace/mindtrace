@@ -119,6 +119,8 @@ class PipelineOrchestrator:
         label_studio_config = job_info['config']['label_studio']
 
         created_files = create_individual_label_studio_files_with_gcs(
+            pipeline = self.config["pipeline"],
+            job_id= self.job_id,
             output_folder=job_info['config']['output_folder'],
             gcs_mapping=job_info['gcs_path_mapping'],
             output_dir=os.path.join(job_info['config']['output_folder'], f"label_studio_jsons_{self.job_id}"),
@@ -215,21 +217,21 @@ class PipelineOrchestrator:
         job_info = self.run_inference(custom_job_id)
         print("=== INFERENCE STAGE COMPLETE ===\n")
 
-        # if self.config.get('data_source') == 'local':
-        #     job_info = self._upload_local_data_to_gcs(job_info)
+        if self.config.get('data_source') == 'local':
+            job_info = self._upload_local_data_to_gcs(job_info)
 
-        # print("=== STARTING LABEL STUDIO CONVERSION STAGE ===")
-        # job_info = self.run_conversion(job_info)
-        # print("=== LABEL STUDIO CONVERSION COMPLETE ===\n")
+        print("=== STARTING LABEL STUDIO CONVERSION STAGE ===")
+        job_info = self.run_conversion(job_info)
+        print("=== LABEL STUDIO CONVERSION COMPLETE ===\n")
 
-        # if job_info.get('conversion_results', {}).get('uploaded_urls'):
-        #     if delay_seconds > 0:
-        #         print(f"Waiting {delay_seconds} seconds for GCS uploads to complete...")
-        #         time.sleep(delay_seconds)
+        if job_info.get('conversion_results', {}).get('uploaded_urls'):
+            if delay_seconds > 0:
+                print(f"Waiting {delay_seconds} seconds for GCS uploads to complete...")
+                time.sleep(delay_seconds)
 
-        # print("=== STARTING LABEL STUDIO PROJECT CREATION STAGE ===")
-        # job_info = self.create_label_studio_project(job_info, delay_seconds=0)
-        # print("=== LABEL STUDIO PROJECT CREATION COMPLETE ===\n")
+        print("=== STARTING LABEL STUDIO PROJECT CREATION STAGE ===")
+        job_info = self.create_label_studio_project(job_info, delay_seconds=0)
+        print("=== LABEL STUDIO PROJECT CREATION COMPLETE ===\n")
 
         return job_info
 

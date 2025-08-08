@@ -23,10 +23,13 @@ class MIGPipeline:
 
     def __init__(
         self,
+        job_id,
+        config,
         credentials_path: Optional[str] = None,
         bucket_name: str = '',
         base_folder: str = '',
-        local_models_dir: str = "./tmp"
+        local_models_dir: str = "./tmp",
+
     ):
 
 
@@ -40,6 +43,8 @@ class MIGPipeline:
         self.base_folder = base_folder
         self.local_models_dir = local_models_dir
         self.device = self._get_device()
+        self.job_id = job_id
+        self.config = config
 
 
         if GCSStorageHandler is None:
@@ -138,6 +143,8 @@ class MIGPipeline:
 
             # Create ModelInference instance
             model_inference = ModelInference(
+                config = self.config,
+                job_id = self.job_id,
                 model_path=model_path,
                 task_type=task_type,
                 model_name=model_name,
@@ -219,9 +226,9 @@ class MIGPipeline:
 
         # Create output folder structure
         os.makedirs(output_folder, exist_ok=True)
-        images_folder = os.path.join(output_folder, "images")
-        boxes_folder = os.path.join(output_folder, "boxes")
-        visualizations_folder = os.path.join(output_folder, "visualizations")
+        images_folder = os.path.join(output_folder + "/" + str(self.job_id), "images")
+        boxes_folder = os.path.join(output_folder + "/" + str(self.job_id), "boxes")
+        visualizations_folder = os.path.join(output_folder + "/" + str(self.job_id), "visualizations")
 
         os.makedirs(images_folder, exist_ok=True)
         os.makedirs(boxes_folder, exist_ok=True)
@@ -258,23 +265,23 @@ class MIGPipeline:
 
                 # Run inference
                 results = self.run_inference_on_models(
+                    boxes_folder=boxes_folder,
                     image=image_path,
+                    visualization_folder=visualizations_folder,
                     export_types=export_types,
                     threshold=threshold
                 )
 
-                print("******")
-                print(results)
+
                 # Save structured outputs
                 image_name = os.path.splitext(os.path.basename(image_path))[0]
 
-                print("DEBUGGING")
-                print(type(boxes_folder))
-                self._save_structured_outputs(image_path, results, boxes_folder, export_types)
+                # self._save_structured_outputs(image_path, results, boxes_folder, export_types)
 
-                # Save visualizations if requested
-                if save_visualizations:
-                    self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
+                # # Save visualizations if requested
+                # if save_visualizations:
+                #     print("HERE")
+                #     self._save_visualizations(image_path, results, visualizations_folder, image_name, export_types)
 
                 return image_name, None
             except Exception as e:
@@ -299,7 +306,9 @@ class MIGPipeline:
 
     def run_inference_on_models(
         self,
+        boxes_folder,
         image: Union[str, Image.Image, np.ndarray],
+        visualization_folder = None,
         export_types: Optional[Dict[str, ExportType]] = None,
         threshold: float = 0.4,
         follow_pipeline: bool = False,
@@ -331,8 +340,20 @@ class MIGPipeline:
                         threshold=threshold,
                     )
 
+
+
                     results[task_name] = result
                     print(f"Inference completed for {task_name}")
+
+
+
+                    if "error" not in result:
+                        self._save_structured_outputs( model.inference_task, image, results, boxes_folder, export_types)
+
+                    # Save visualizations if requested
+                        if visualization_folder:
+                            self._save_visualizations(model.inference_task, image, results, boxes_folder, visualization_folder, export_types)
+
 
                 except Exception as e:
                     print(f"Error running inference for {task_name}: {e}")
@@ -342,60 +363,124 @@ class MIGPipeline:
 
 
 
-    def _save_structured_outputs(self, image_path: str, results: Dict[str, Any],
+    def _save_structured_outputs(self, inference_task, image_path: str, results: Dict[str, Any],
                                 boxes_folder: str,
                                export_types: Optional[Dict[str, ExportType]] = None,
                                ):
         """Save raw masks and YOLO format boxes with original image filename."""
+
+
+        def get_list_depth(lst):
+            if isinstance(lst, list):
+                return 1 + max((get_list_depth(item) for item in lst), default=0)
+            return 0
         try:
-            print("DEBUGGING")
-            print(type(boxes_folder))
-            image_name = os.path.splitext(os.path.basename(image_path))[0]
-            image_extension = os.path.splitext(os.path.basename(image_path))[1]
 
-            # Load original image to get dimensions for YOLO format
-            original_image = Image.open(image_path).convert('RGB')
-            img_width, img_height = original_image.size
+            if inference_task == "weld_classification":
 
-            results = self._make_json_serializable(results)
+                image_name = os.path.splitext(os.path.basename(image_path))[0]
+                image_extension = os.path.splitext(os.path.basename(image_path))[1]
 
-            for task_name, result in results.items():
-                if not result or 'error' in result:
-                    continue
+                # Load original image to get dimensions for YOLO format
+                original_image = Image.open(image_path).convert('RGB')
+                img_width, img_height = original_image.size
 
-                current_export_type = export_types.get(task_name) if export_types else None
+                results = self._make_json_serializable(results)
+                results = results[inference_task]
+                for result_type, result in results.items():
 
+                    if not result or 'error' in result:
 
 
-                # Save YOLO format boxes with original filename
-                if 'boxes' in result:
+                        continue
+
+                    current_export_type = export_types.get(inference_task) if export_types else None
+
+                    # print("*****DEBUGPOINT******")
+                    # print(result_type)
+                    # print(result)
 
 
-                    task_boxes_folder = os.path.join(boxes_folder, str(task_name))
+                    # Save YOLO format boxes with original filename
+                    if 'boxes' == result_type.strip():
+
+
+
+
+                        task_boxes_folder = os.path.join(boxes_folder, str(inference_task))
+
+                        os.makedirs(task_boxes_folder, exist_ok=True)
+                        boxes = result
+
+                        # Use original image filename for boxes
+                        boxes_filename = f"{image_name}.txt"
+                        boxes_path = os.path.join(task_boxes_folder, boxes_filename)
+
+                        print("&&&&&&&&&")
+                        print("****BOXES*****")
+                        print(image_path)
+                        print(boxes)
+
+                        with open(boxes_path, 'w') as f:
+
+                            if get_list_depth(boxes) == 3 and len(boxes[0][0]) == 7:
+                                # NEED ADDITIONAL LOGIC FOR MULTIPLE BOXES
+                                f.write(f"{boxes[0][0][5]} {boxes[0][0][6]} {boxes[0][0][0]:.6f} {boxes[0][0][1]:.6f} {boxes[0][0][2]:.6f} {boxes[0][0][3]:.6f} {boxes[0][0][4]:.6f}\n")
+
+                            else:
+                                f.write(f"Not enough data\n")
+
+
+                        if len(boxes) > 0:
+                            print(f"Saved YOLO boxes: {boxes_path}")
+                        else:
+                            print(f"Saved empty YOLO boxes file: {boxes_path}")
+            elif inference_task == "defect_classification":
+
+                    image_name = os.path.splitext(os.path.basename(image_path))[0]
+
+                    task_boxes_folder = os.path.join(boxes_folder, str("weld_classification"))
+                    task_boxes_folder2 = os.path.join(boxes_folder, inference_task)
 
                     os.makedirs(task_boxes_folder, exist_ok=True)
-                    boxes = result['boxes']
-
+                    os.makedirs(task_boxes_folder2, exist_ok=True)
 
                     # Use original image filename for boxes
                     boxes_filename = f"{image_name}.txt"
                     boxes_path = os.path.join(task_boxes_folder, boxes_filename)
+                    boxes_path2 = os.path.join(task_boxes_folder2, boxes_filename)
 
-                    print("BOXES")
-                    print(boxes)
-                    with open(boxes_path, 'w') as f:
+                    results = self._make_json_serializable(results)
 
-                        if len(boxes[0][0]) == 7:
-                            f.write(f"{boxes[0][0][5]} {boxes[0][0][6]} {boxes[0][0][0]:.6f} {boxes[0][0][1]:.6f} {boxes[0][0][2]:.6f} {boxes[0][0][3]:.6f} {boxes[0][0][4]:.6f}\n")
-
-                        else:
-                             f.write(f"Not enough data\n")
+                    results = results[inference_task]
+                    classification = results["classification"]
+                    severity = results["severity"]
+                    mapping = results["class_idx"]
 
 
-                    if len(boxes) > 0:
-                        print(f"Saved YOLO boxes: {boxes_path}")
-                    else:
-                        print(f"Saved empty YOLO boxes file: {boxes_path}")
+
+
+                    with open(boxes_path, 'r') as f:
+
+                            for line_num, line in enumerate(f, start=0):
+
+
+                                parts = line.strip().split()
+
+
+
+                                if len(parts) == 7:
+
+
+                                    cls_id, cls_name, xc, yc, w, h, conf = map(str, parts)
+
+                                    cls_id, cls_name, conf = classification[line_num], mapping[classification[line_num]], severity[line_num]
+
+                                    with open(boxes_path2, 'a') as f:
+
+                                        f.write(f"{str(cls_id)} {str(cls_name)}  {str(xc)} {str(yc)} {str(w)} {str(h)} {str(conf)}")
+
+                    print("defect classification saved successfully")
 
         except Exception as e:
             print(f"Error saving structured outputs: {e}")
@@ -471,3 +556,149 @@ class MIGPipeline:
         except Exception as e:
             print(f"Error loading pipeline metadata: {e}")
             return None
+
+    def _save_visualizations(self,inference_task, image_path: str, results: Dict[str, Any],boxes_folder,
+                           visualizations_folder: str,
+                           export_types: Optional[Dict[str, ExportType]] = None):
+
+
+
+        img = Image.open(image_path)
+        image = np.array(img)
+
+        img_to_draw_on = image.copy()
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = max(0.5, min(img_to_draw_on.shape[0], img_to_draw_on.shape[1]) // 1000) # Dynamic scale
+        thickness = max(1, int(font_scale * 2)) # Dynamic thickness
+
+
+
+        if not results:
+            return img_to_draw_on
+
+        if inference_task == "weld_classification":
+            visualizations_folder = os.path.join(visualizations_folder, "weld_classification")
+            os.makedirs(visualizations_folder, exist_ok=True)
+
+            boxes = results["weld_classification"]["boxes"]
+            for box in boxes[0]:
+                print(box)
+                if len(box) < 4: continue # Skip invalid boxes
+
+                print("COORDINATES")
+                print(len(box))
+                # Convert box format [xc, yc, w, h] to [x1, y1, x2, y2]
+                xc, yc, w, h = box[:4]
+                x1 = int(xc - w / 2)
+                y1 = int(yc - h / 2)
+                x2 = int(xc + w / 2)
+                y2 = int(yc + h / 2)
+
+                print("COORDINATES")
+                print(x1,x2,y1,y2)
+
+                box_color = (0, 255, 0)  # Default Green
+
+                text = "Weld"
+
+
+                # Draw the bounding box
+                cv2.rectangle(img_to_draw_on, (x1, y1), (x2, y2), box_color, thickness)
+
+                # Draw text if available
+                if text:
+                    # Calculate text position (slightly above the box)
+                    text_x = x1
+                    text_y = y1 - int(thickness*5) if y1 - int(thickness*10) > int(thickness*5) else y1 + int(thickness*10) # Adjust vertical offset
+
+                    # Put text background for readability
+                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                    cv2.rectangle(img_to_draw_on, (text_x, text_y - text_height - baseline), (text_x + text_width, text_y + baseline), (0,0,0), -1) # Black background
+                    # Draw the text
+                    cv2.putText(img_to_draw_on, text, (text_x, text_y), font, font_scale, (255,255,255), thickness, cv2.LINE_AA)
+
+
+                    print(visualizations_folder)
+                    image_name = os.path.splitext(os.path.basename(image_path))[0]
+                    cv2.imwrite(visualizations_folder +"/"+ image_name + ".png", img_to_draw_on)
+
+        if inference_task == "defect_classification":
+
+                    image_name = os.path.splitext(os.path.basename(image_path))[0]
+
+
+                    task_boxes_folder2 = os.path.join(boxes_folder, inference_task)
+
+                    os.makedirs(task_boxes_folder2, exist_ok=True)
+
+                    # Use original image filename for boxes
+                    boxes_filename = f"{image_name}.txt"
+                    boxes_path2 = os.path.join(task_boxes_folder2, boxes_filename)
+
+                    if not os.path.exists(boxes_path2):
+
+                        return
+
+                    results = self._make_json_serializable(results)
+
+                    results = results[inference_task]
+                    classification = results["classification"]
+                    severity = results["severity"]
+                    mapping = results["class_idx"]
+
+
+
+
+                    with open(boxes_path2, 'r') as f:
+
+                            for line_num, line in enumerate(f, start=0):
+
+
+                                parts = line.strip().split()
+
+
+
+                                if len(parts) == 7:
+
+
+                                    cls_id, cls_name, xc, yc, w, h, conf = map(str, parts)
+
+                                    cls_id, cls_name, conf = classification[line_num], mapping[classification[line_num]], severity[line_num]
+
+                                    xc = float(xc)
+                                    yc = float(yc)
+                                    w = float(w)
+                                    h = float(h)
+                                    x1 = int(xc - w / 2)
+                                    y1 = int(yc - h / 2)
+                                    x2 = int(xc + w / 2)
+                                    y2 = int(yc + h / 2)
+
+                                    print("COORDINATES")
+                                    print(x1,x2,y1,y2)
+
+                                    box_color = (0, 255, 0)  # Default Green
+
+                                    text = cls_name
+
+
+                                    # Draw the bounding box
+                                    cv2.rectangle(img_to_draw_on, (x1, y1), (x2, y2), box_color, thickness)
+
+                                    # Draw text if available
+                                    if text:
+                                        # Calculate text position (slightly above the box)
+                                        text_x = x1
+                                        text_y = y1 - int(thickness*5) if y1 - int(thickness*10) > int(thickness*5) else y1 + int(thickness*10) # Adjust vertical offset
+
+                                        # Put text background for readability
+                                        (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                                        cv2.rectangle(img_to_draw_on, (text_x, text_y - text_height - baseline), (text_x + text_width, text_y + baseline), (0,0,0), -1) # Black background
+                                        # Draw the text
+                                        cv2.putText(img_to_draw_on, text, (text_x, text_y), font, font_scale, (255,255,255), thickness, cv2.LINE_AA)
+                    print("*****DEBUGPOINT********")
+                    print(img_to_draw_on)
+                    visualizations_folder = os.path.join(visualizations_folder, "defect_classification")
+                    os.makedirs(visualizations_folder, exist_ok=True)
+                    print(visualizations_folder)
+                    cv2.imwrite(visualizations_folder +"/"+ image_name + ".png", img_to_draw_on)
