@@ -249,7 +249,7 @@ class TestLocalConsumerBackend:
         assert result is False
 
     def test_consumer_exception_handling_with_nonblock_return(self, temp_local_client):
-        """Test exception handling in consumer when not blocking - covers line 46-47."""
+        """Test exception handling in consumer when not blocking."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -289,7 +289,7 @@ class TestLocalConsumerBackend:
         orchestrator.backend.receive_message = original_receive
 
     def test_consumer_blocking_sleep_when_no_messages(self, temp_local_client):
-        """Test that blocking consumer sleeps when no messages found - covers line 54."""
+        """Test that blocking consumer sleeps when no messages found."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -321,7 +321,7 @@ class TestLocalConsumerBackend:
         assert 0.1 in sleep_calls
 
     def test_consumer_exception_handling_with_blocking_sleep(self, temp_local_client):
-        """Test exception handling with blocking=True triggers sleep(1) - covers line 46."""
+        """Test exception handling with blocking=True triggers sleep(1)."""
         orchestrator = Orchestrator(backend=temp_local_client)
         queue_name = "test-queue"
         orchestrator.backend.declare_queue(queue_name)
@@ -347,7 +347,7 @@ class TestLocalConsumerBackend:
 
         def mock_sleep(duration):
             sleep_calls.append(duration)
-            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls to cover line 46
+            if len(sleep_calls) >= 2:  # Stop after 2 sleep calls
                 raise KeyboardInterrupt("Break out of loop")
             return original_sleep(0.001)  # Very short sleep for test speed
 
@@ -363,4 +363,4 @@ class TestLocalConsumerBackend:
             time.sleep = original_sleep
 
         assert len(sleep_calls) >= 1
-        assert 1 in sleep_calls  # The sleep(1) from line 46 
+        assert 1 in sleep_calls

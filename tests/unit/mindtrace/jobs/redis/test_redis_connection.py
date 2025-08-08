@@ -190,3 +190,76 @@ def test_connect_and_close_logger_calls(monkeypatch):
             conn.close()
             assert conn.logger.error.called
             assert conn.logger.debug.called 
+
+
+def test_subscribe_to_events_priority_and_stack(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [
+                {"type": "message", "data": b'{"event": "declare", "queue": "qp", "queue_type": "priority"}'},
+                {"type": "message", "data": b'{"event": "declare", "queue": "qs", "queue_type": "stack"}'},
+            ]
+        )
+        conn.connection.pubsub.return_value = pubsub
+        with patch("threading.Thread"):
+            conn._subscribe_to_events()
+        assert "qp" in conn.queues
+        assert "qs" in conn.queues 
+
+
+def test_subscribe_to_events_unknown_type_and_delete_removal(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [
+                {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "unknown"}'},
+                {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "fifo"}'},
+                {"type": "message", "data": b'{"event": "delete", "queue": "q"}'},
+            ]
+        )
+        conn.connection.pubsub.return_value = pubsub
+        with patch("threading.Thread"):
+            conn._subscribe_to_events()
+        assert "q" not in conn.queues
+
+
+def test_load_queue_metadata_handles_str_and_bytes(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        mock_conn = MagicMock()
+        mock_conn.hgetall.return_value = {b"qb": b"fifo", "qs": "stack"}
+        conn.connection = mock_conn
+        with (
+            patch("mindtrace.jobs.redis.connection.RedisQueue"),
+            patch("mindtrace.jobs.redis.connection.RedisStack"),
+        ):
+            conn._load_queue_metadata()
+            assert "qb" in conn.queues
+            assert "qs" in conn.queues 
+
+
+def test_connect_exhausted_logs_then_raises(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis") as mock_redis_cls:
+        instance = MagicMock()
+        instance.ping.side_effect = redis.ConnectionError
+        mock_redis_cls.return_value = instance
+        with patch("time.sleep"):
+            conn = RedisConnection(host="localhost", port=6379, db=0)
+            conn.logger = MagicMock()
+            with pytest.raises(redis.ConnectionError):
+                conn.connect(max_tries=1)
+            # After exhausting retries, a debug log is emitted before raising
+            conn.logger.debug.assert_called() 
+
+
+def test_connect_ping_false_triggers_else_branch(monkeypatch):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis") as mock_redis_cls:
+        instance = MagicMock()
+        instance.ping.return_value = False
+        mock_redis_cls.return_value = instance
+        # __init__ calls connect(max_tries=1) and catches ConnectionError
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        assert conn.connection is instance 
