@@ -64,8 +64,30 @@ def __getattr__(name):
         from .plcs.plc_manager import PLCManager
 
         return PLCManager
+    elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
+        from .homography import (
+            HomographyCalibrator,
+            CalibrationData,
+            PlanarHomographyMeasurer,
+            MeasuredBox,
+        )
+
+        mapping = {
+            "HomographyCalibrator": HomographyCalibrator,
+            "CalibrationData": CalibrationData,
+            "PlanarHomographyMeasurer": PlanarHomographyMeasurer,
+            "MeasuredBox": MeasuredBox,
+        }
+        return mapping[name]
     else:
         raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-__all__ = ["CameraManager", "PLCManager"]
+__all__ = [
+    "CameraManager",
+    "PLCManager",
+    "HomographyCalibrator",
+    "CalibrationData",
+    "PlanarHomographyMeasurer",
+    "MeasuredBox",
+]
