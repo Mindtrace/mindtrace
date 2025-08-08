@@ -29,7 +29,7 @@ def download_image_gs(task, save_path):
             fname = blob_path.split('/')[-1]
             fp = os.path.join(save_path, fname)
             blob.download_to_filename(fp)
-            print(f"[SUCCESS] {url} → {fname}")
+            # print(f"[SUCCESS] {url} → {fname}")
             return fname
         else:
             print(f"[SKIPPED] Not a gs:// URL: {url}")
@@ -43,7 +43,7 @@ def download_image_http(task, save_path):
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
-            print(f"[SUCCESS] {url}")
+            # print(f"[SUCCESS] {url}")
             fname = '_'.join(url.split('?')[0].split('/')[-2:])
             fp = os.path.join(save_path, fname)
             with open(fp, 'wb') as f:
@@ -63,9 +63,26 @@ def download_image(task, save_path):
         return download_image_http(task, save_path)
 
 def download_and_process_image(args):
-    d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes = args
-    
+    d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map = args
+    idx2class = {i: n for i, n in enumerate(class2idx)}
     fname = download_image(d, images_save_path)
+    camera_name = fname.split('-')[0]
+    # Prepare a proper uint8 morphological kernel for dilation
+    kernel_size = int(kernel_size)
+    if isinstance(kernel_size, int):
+        k = int(kernel_size)
+        if k <= 0:
+            k = 1
+        if k % 2 == 0:
+            k += 1
+        dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
+    elif isinstance(kernel_size, (tuple, list)) and len(kernel_size) == 2:
+        kx, ky = int(kernel_size[0]), int(kernel_size[1])
+        kx = max(1, kx | 1)
+        ky = max(1, ky | 1)
+        dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
+    else:
+        dilation_kernel = np.ones((3, 3), dtype=np.uint8)
     if fname.startswith("["):  # Error or skipped
         print(f"Skipping processing for {d['data']['image']} due to download issue: {fname}")
         return None
@@ -108,7 +125,19 @@ def download_and_process_image(args):
     all_normal_polygons.sort(key=lambda p: p[1])
 
     for contour, class_id in all_normal_polygons:
-        cv2.fillPoly(mask, [contour], color=class_id)
+        if fill_holes:
+            cv2.drawContours(mask, [contour], -1, color=class_id, thickness=cv2.FILLED)
+        else:
+            cv2.fillPoly(mask, [contour], color=class_id)
+        if enlarge_zones_map:
+            class_name = idx2class[class_id]
+            if camera_name in enlarge_zones_map:
+                print(camera_name)
+                print(enlarge_zones_map)
+                print(camera_name in enlarge_zones_map, class_name, class_name in enlarge_zones_map[camera_name])
+                if class_name in enlarge_zones_map[camera_name]:
+                    print(f"Enlarging {class_name} for {camera_name}")
+                    mask = cv2.dilate(mask, dilation_kernel, iterations=int(num_iterations))
 
     if not ignore_holes and 'Hole' in class2idx:
         for contour in all_hole_polygons:
@@ -134,7 +163,11 @@ def download_data(
     ignore_holes=True, 
     remove_holes=True, 
     delete_empty_masks=True,
-    hole_id=1):
+    hole_id=1,
+    fill_holes=False,
+    kernel_size=21,
+    num_iterations=3,
+    enlarge_zones_map=None):
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(masks_save_path, exist_ok=True)
     idx2class = {i: n for i, n in enumerate(class_names)}
@@ -142,7 +175,7 @@ def download_data(
     with open(json_path, 'r') as f:
         data = json.load(f)
 
-    tasks = [(d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes) for d in data]
+    tasks = [(d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map) for d in data]
     
     processed_items = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -555,7 +588,11 @@ if __name__ == "__main__":
             workers, 
             ignore_holes=config['ignore_holes'], 
             remove_holes=config['remove_holes'],
-            delete_empty_masks=config['delete_empty_masks']
+            delete_empty_masks=config['delete_empty_masks'],
+            fill_holes=config['fill_holes'],
+            kernel_size=config['enlarge_kernel_size'],
+            num_iterations=config['enlarge_iterations'],
+            enlarge_zones_map=config['enlarge_zones_map']
         )
         
         if no_hole_items:

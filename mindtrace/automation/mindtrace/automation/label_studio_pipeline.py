@@ -50,7 +50,7 @@ class PipelineOrchestrator:
 
     def _run_gcp_inference(self, custom_job_id: Optional[str] = None) -> Dict[str, Any]:
         """Run the inference pipeline using GCP data source."""
-        job_info = run_inference(self.config_path, custom_job_id)
+        job_info = run_inference(self.config_path, custom_job_id, pipeline_type=self.config['pipeline_type'])
         
         if not job_info:
             raise RuntimeError("Inference failed - no images processed")
@@ -66,7 +66,7 @@ class PipelineOrchestrator:
         """Run the inference pipeline using local file system."""
         self.job_id = custom_job_id or str(uuid.uuid4())
         
-        job_info = run_inference(self.config_path, self.job_id)
+        job_info = run_inference(self.config_path, self.job_id, pipeline_type=self.config['pipeline_type'])
 
         if not job_info:
             raise RuntimeError("Inference failed for local images.")

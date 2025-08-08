@@ -8,12 +8,13 @@ import random
 from pathlib import Path
 # from mindtrace.automation.modelling.inference import Pipeline, ExportType
 from mindtrace.automation.modelling.sfz_pipeline import SFZPipeline, ExportType
+from mindtrace.automation.modelling.laser_pipeline import LaserPipeline
 from mindtrace.automation.download_images import ImageDownload
 from mindtrace.automation.label_studio.utils import create_label_studio_mapping
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio, LabelStudioConfig
 
 
-def run_inference(config_path: str, custom_job_id: str = None):
+def run_inference(config_path: str, custom_job_id: str = None, pipeline_type: str = 'sfz'):
     """Run inference pipeline and return job information for Label Studio integration."""
     job_id = custom_job_id or str(uuid.uuid4())
     print(f"Starting inference job with ID: {job_id}")
@@ -147,14 +148,25 @@ def run_inference(config_path: str, custom_job_id: str = None):
     else:
         raise ValueError(f"Unsupported data_source: {data_source}")
 
-    pipeline = SFZPipeline(
+    if pipeline_type == 'sfz':
+        pipeline = SFZPipeline(
         credentials_path=config['gcp']['credentials_file'],
         bucket_name=config['gcp']['weights_bucket'],
         base_folder=config['gcp']['base_folder'],
         local_models_dir="./tmp",
         overwrite_masks=config['overwrite_masks']
     )
-
+    elif pipeline_type == 'laser':
+        pipeline = LaserPipeline(
+            credentials_path=config['gcp']['credentials_file'],
+            bucket_name=config['gcp']['weights_bucket'],
+            base_folder=config['gcp']['base_folder'],
+            local_models_dir="./tmp",
+            overwrite_masks=config['overwrite_masks']
+        )
+    else:
+        raise ValueError(f"Unsupported pipeline type: {pipeline_type}")
+    
     pipeline.load_pipeline(
         task_name=config['task_name'],
         version=config['version'],
