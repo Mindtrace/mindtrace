@@ -36,9 +36,7 @@ class TestLocalClientStress:
     @pytest.fixture
     def client(self):
         with TemporaryDirectory() as tmp:
-            backend = Registry(registry_dir=tmp)
-            # Explicitly register archivers for queues (class strings are registered in modules)
-            client = LocalClient(client_dir=tmp, backend=backend)
+            client = LocalClient(client_dir=tmp)
             yield client
 
     @pytest.fixture
