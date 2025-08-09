@@ -1,264 +1,157 @@
 from __future__ import annotations
 
 import asyncio
-import os
+from concurrent.futures import Future
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import cv2
-
 from mindtrace.core import Mindtrace
-from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
-from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
-    CameraConfigurationError,
-    CameraConnectionError,
-    CameraInitializationError,
-    CameraNotFoundError,
-    CameraTimeoutError,
-)
+from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 
 
 class Camera(Mindtrace):
-    """Unified camera interface that wraps backend-specific camera instances.
+    """Synchronous facade over `AsyncCamera`.
 
-    Provides a clean, consistent API regardless of the underlying camera backend while maintaining thread-safe 
-    operations through internal locking.
+    All operations are executed on a background event loop (owned by the sync CameraManager).
     """
 
-    def __init__(self, camera: CameraBackend, full_name: str, **kwargs):
+    def __init__(self, async_camera: AsyncCamera, loop: asyncio.AbstractEventLoop, **kwargs):
         super().__init__(**kwargs)
-        self._camera = camera
-        self._full_name = full_name
-        self._lock = asyncio.Lock()
+        self._camera = async_camera
+        self._loop = loop
 
-        # Parse backend and device name
-        parts = full_name.split(":", 1)
-        self._backend = parts[0]
-        self._device_name = parts[1] if len(parts) > 1 else full_name
-        self.logger.debug(
-            f"Camera created: name={self._full_name}, backend={self._backend}, device={self._device_name}"
-        )
+    # Helpers
+    def _submit(self, coro):
+        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        return fut.result()
 
+    def _call_in_loop(self, func, *args, **kwargs):
+        result_future: Future = Future()
+
+        def _run():
+            try:
+                result_future.set_result(func(*args, **kwargs))
+            except Exception as e:
+                result_future.set_exception(e)
+
+        self._loop.call_soon_threadsafe(_run)
+        return result_future.result()
+
+    # Properties
     @property
     def name(self) -> str:
-        """Full camera name (Backend:device).
+        """Full camera name including backend prefix.
 
         Returns:
-            The full camera name including backend prefix (e.g., "Basler:cam1").
+            The full name in the form "Backend:device_name".
         """
-        return self._full_name
+        return self._camera.name
 
     @property
     def backend(self) -> str:
-        """Backend name.
+        """Backend identifier.
 
         Returns:
-            The backend identifier (e.g., "Basler", "OpenCV").
+            The backend name (e.g., "Basler", "OpenCV").
         """
-        return self._backend
+        return self._camera.backend
 
     @property
     def device_name(self) -> str:
-        """Device name without backend prefix.
+        """Device identifier without backend prefix.
 
         Returns:
-            The device identifier without the backend prefix.
+            The device name (e.g., camera serial or index).
         """
-        return self._device_name
+        return self._camera.device_name
 
     @property
     def is_connected(self) -> bool:
-        """Check if camera is initialized and connected.
+        """Connection status flag.
 
         Returns:
-            True if the underlying backend reports initialized/open, otherwise False.
+            True if the underlying backend is initialized/open, otherwise False.
         """
-        return self._camera.initialized
+        return self._camera.is_connected
 
-    async def capture(self, save_path: Optional[str] = None) -> Any:
-        """Capture an image from the camera with retry logic.
+    # Sync methods delegating to async
+    def capture(self, save_path: Optional[str] = None) -> Any:
+        """Capture an image from the camera.
 
         Args:
-            save_path: Optional path to save the captured image (written as-is, typically RGB uint8).
+            save_path: Optional path to save the captured image.
 
         Returns:
-            The captured image as a numpy array (RGB) if successful.
+            The captured image (typically a numpy array in RGB/BGR depending on backend).
 
         Raises:
-            CameraCaptureError: If image capture ultimately fails after retries.
-            CameraConnectionError: If the camera connection fails during capture.
-            CameraTimeoutError: If the capture exceeds the configured timeout.
-            RuntimeError: For unexpected errors after exhausting retries.
+            CameraCaptureError: If capture fails after retries.
+            CameraConnectionError: On connection issues during capture.
+            CameraTimeoutError: If capture times out.
         """
-        async with self._lock:
-            retry_count = self._camera.retrieve_retry_count
-            self.logger.debug(
-                f"Starting capture for '{self._full_name}' with up to {retry_count} attempts, save_path={save_path!r}"
-            )
-            for attempt in range(retry_count):
-                try:
-                    success, image = await self._camera.capture()
-                    if success and image is not None:
-                        if save_path:
-                            dirname = os.path.dirname(save_path)
-                            if dirname:
-                                os.makedirs(dirname, exist_ok=True)
-                            cv2.imwrite(save_path, image)
-                            self.logger.debug(f"Saved captured image to '{save_path}'")
-                        self.logger.debug(
-                            f"Capture successful for '{self._full_name}' on attempt {attempt + 1}/{retry_count}"
-                        )
-                        return image
-                    raise CameraCaptureError(f"Capture returned failure for camera '{self._full_name}'")
-                except CameraCaptureError as e:
-                    delay = 0.1 * (2**attempt)
-                    self.logger.warning(
-                        f"Capture retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
-                    )
-                    if attempt < retry_count - 1:
-                        await asyncio.sleep(delay)
-                    else:
-                        self.logger.error(
-                            f"Capture failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                        raise CameraCaptureError(
-                            f"Capture failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                except CameraConnectionError as e:
-                    delay = 0.5 * (2**attempt)
-                    self.logger.warning(
-                        f"Network retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
-                    )
-                    if attempt < retry_count - 1:
-                        await asyncio.sleep(delay)
-                    else:
-                        self.logger.error(
-                            f"Connection failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                        raise CameraConnectionError(
-                            f"Connection failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                except CameraTimeoutError as e:
-                    delay = 0.3 * (2**attempt)
-                    self.logger.warning(
-                        f"Timeout retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
-                    )
-                    if attempt < retry_count - 1:
-                        await asyncio.sleep(delay)
-                    else:
-                        self.logger.error(
-                            f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                        raise CameraTimeoutError(
-                            f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                except (CameraNotFoundError, CameraInitializationError, CameraConfigurationError) as e:
-                    self.logger.error(f"Non-retryable error for camera '{self._full_name}': {e}")
-                    raise
-                except Exception as e:
-                    delay = 0.2 * (2**attempt)
-                    self.logger.warning(
-                        f"Unexpected error retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
-                    )
-                    if attempt < retry_count - 1:
-                        await asyncio.sleep(delay)
-                    else:
-                        self.logger.error(
-                            f"Unexpected error failed after {retry_count} attempts for camera '{self._full_name}': {e}"
-                        )
-                        raise RuntimeError(
-                            f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts: {e}"
-                        )
-            raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts")
+        return self._submit(self._camera.capture(save_path))
 
-    async def configure(self, **settings) -> bool:
-        """Configure common camera properties via a single call.
+    def configure(self, **settings) -> bool:
+        """Configure multiple camera settings atomically.
 
         Args:
-            **settings: Supported keys include: "exposure", "gain", "roi" (x, y, w, h),
-                "trigger_mode", "pixel_format", "white_balance", "image_enhancement".
+            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
+                pixel_format, white_balance, image_enhancement.
 
         Returns:
-            True if all applied settings succeeded, False if any failed.
+            True if all settings were applied successfully, otherwise False.
 
         Raises:
-            CameraConfigurationError: If a provided setting is invalid for the backend.
-            CameraConnectionError: If the camera is not available to be configured.
+            CameraConfigurationError: If a provided value is invalid for the backend.
+            CameraConnectionError: If the camera cannot be configured.
         """
-        async with self._lock:
-            self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
-            success = True
-            if "exposure" in settings:
-                success &= await self._camera.set_exposure(settings["exposure"])
-            if "gain" in settings:
-                success &= self._camera.set_gain(settings["gain"])
-            if "roi" in settings:
-                x, y, w, h = settings["roi"]
-                success &= self._camera.set_ROI(x, y, w, h)
-            if "trigger_mode" in settings:
-                success &= await self._camera.set_triggermode(settings["trigger_mode"])
-            if "pixel_format" in settings:
-                success &= self._camera.set_pixel_format(settings["pixel_format"])
-            if "white_balance" in settings:
-                success &= await self._camera.set_auto_wb_once(settings["white_balance"])
-            if "image_enhancement" in settings:
-                success &= self._camera.set_image_quality_enhancement(settings["image_enhancement"])
-            self.logger.debug(
-                f"Configuration {'succeeded' if success else 'had failures'} for camera '{self._full_name}'"
-            )
-            return success
+        return self._submit(self._camera.configure(**settings))
 
-    async def set_exposure(self, exposure: Union[int, float]) -> bool:
-        """Set the exposure value on the camera.
+    def set_exposure(self, exposure: Union[int, float]) -> bool:
+        """Set the camera exposure.
 
         Args:
-            exposure: Exposure value appropriate for the backend (e.g., microseconds or log scale).
+            exposure: Exposure value appropriate for the backend.
 
         Returns:
-            True if the exposure was set successfully, otherwise False.
-
-        Raises:
-            CameraConnectionError: If the camera is not initialized.
-            CameraConfigurationError: If the value is outside the allowed range.
+            True on success, otherwise False.
         """
-        async with self._lock:
-            return await self._camera.set_exposure(exposure)
+        return self._submit(self._camera.set_exposure(exposure))
 
-    async def get_exposure(self) -> float:
-        """Get the current exposure value from the camera.
+    def get_exposure(self) -> float:
+        """Get the current exposure value.
 
         Returns:
-            The current exposure value as a float.
+            The current exposure as a float.
         """
-        return await self._camera.get_exposure()
+        return self._submit(self._camera.get_exposure())
 
-    async def get_exposure_range(self) -> Tuple[float, float]:
-        """Get the valid exposure range for the camera.
+    def get_exposure_range(self) -> Tuple[float, float]:
+        """Get the valid exposure range.
 
         Returns:
             A tuple of (min_exposure, max_exposure).
         """
-        range_list = await self._camera.get_exposure_range()
-        return range_list[0], range_list[1]
+        return self._submit(self._camera.get_exposure_range())
 
+    # Backend sync ops routed through loop for thread safety
     def set_gain(self, gain: Union[int, float]) -> bool:
         """Set the camera gain.
 
         Args:
-            gain: Gain value to set.
+            gain: Gain value to apply.
 
         Returns:
-            True if successfully applied, otherwise False.
+            True on success, otherwise False.
         """
-        return self._camera.set_gain(gain)
+        return self._call_in_loop(self._camera.set_gain, gain)
 
     def get_gain(self) -> float:
         """Get the current camera gain.
 
         Returns:
-            The current gain value as a float.
+            The current gain as a float.
         """
-        return self._camera.get_gain()
+        return self._call_in_loop(self._camera.get_gain)
 
     def get_gain_range(self) -> Tuple[float, float]:
         """Get the valid gain range.
@@ -266,22 +159,21 @@ class Camera(Mindtrace):
         Returns:
             A tuple of (min_gain, max_gain).
         """
-        range_list = self._camera.get_gain_range()
-        return range_list[0], range_list[1]
+        return self._call_in_loop(self._camera.get_gain_range)
 
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
-        """Set the Region of Interest (ROI) if supported by the backend.
+        """Set the Region of Interest (ROI).
 
         Args:
-            x: Top-left x pixel
-            y: Top-left y pixel
-            width: ROI width in pixels
-            height: ROI height in pixels
+            x: Top-left x pixel.
+            y: Top-left y pixel.
+            width: ROI width in pixels.
+            height: ROI height in pixels.
 
         Returns:
-            True if applied (or emulated), otherwise False.
+            True on success, otherwise False.
         """
-        return self._camera.set_ROI(x, y, width, height)
+        return self._call_in_loop(self._camera.set_roi, x, y, width, height)
 
     def get_roi(self) -> Dict[str, int]:
         """Get the current ROI.
@@ -289,46 +181,45 @@ class Camera(Mindtrace):
         Returns:
             A dict with keys x, y, width, height.
         """
-        return self._camera.get_ROI()
+        return self._call_in_loop(self._camera.get_roi)
 
     def reset_roi(self) -> bool:
-        """Reset ROI to full frame, if supported.
+        """Reset the ROI to full frame if supported.
 
         Returns:
-            True if reset was applied, otherwise False.
+            True on success, otherwise False.
         """
-        return self._camera.reset_ROI()
+        return self._call_in_loop(self._camera.reset_roi)
 
-    async def set_trigger_mode(self, mode: str) -> bool:
+    def set_trigger_mode(self, mode: str) -> bool:
         """Set the trigger mode.
 
         Args:
-            mode: Trigger mode string (backend-specific). E.g., "continuous".
+            mode: Trigger mode string (backend-specific).
 
         Returns:
-            True if supported and applied, otherwise False.
+            True on success, otherwise False.
         """
-        async with self._lock:
-            return await self._camera.set_triggermode(mode)
+        return self._submit(self._camera.set_trigger_mode(mode))
 
-    async def get_trigger_mode(self) -> str:
+    def get_trigger_mode(self) -> str:
         """Get the current trigger mode.
 
         Returns:
             Trigger mode string.
         """
-        return await self._camera.get_triggermode()
+        return self._submit(self._camera.get_trigger_mode())
 
     def set_pixel_format(self, format: str) -> bool:
-        """Set the pixel format if supported by the backend.
+        """Set the output pixel format if supported.
 
         Args:
             format: Pixel format string.
 
         Returns:
-            True if supported and applied, otherwise False.
+            True on success, otherwise False.
         """
-        return self._camera.set_pixel_format(format)
+        return self._call_in_loop(self._camera.set_pixel_format, format)
 
     def get_pixel_format(self) -> str:
         """Get the current output pixel format.
@@ -336,109 +227,101 @@ class Camera(Mindtrace):
         Returns:
             Pixel format string.
         """
-        return self._camera.get_current_pixel_format()
+        return self._call_in_loop(self._camera.get_pixel_format)
 
     def get_available_pixel_formats(self) -> List[str]:
-        """Get supported pixel formats.
+        """List supported pixel formats.
 
         Returns:
-            List of pixel format strings.
+            A list of pixel format strings.
         """
-        return self._camera.get_pixel_format_range()
+        return self._call_in_loop(self._camera.get_available_pixel_formats)
 
-    async def set_white_balance(self, mode: str) -> bool:
-        """Set the white balance mode (if supported).
+    def set_white_balance(self, mode: str) -> bool:
+        """Set white balance mode.
 
         Args:
-            mode: White balance mode, e.g., "auto", "manual".
+            mode: White balance mode (e.g., "auto", "manual").
 
         Returns:
-            True if supported and applied, otherwise False.
+            True on success, otherwise False.
         """
-        async with self._lock:
-            return await self._camera.set_auto_wb_once(mode)
+        return self._submit(self._camera.set_white_balance(mode))
 
-    async def get_white_balance(self) -> str:
+    def get_white_balance(self) -> str:
         """Get the current white balance mode.
 
         Returns:
             White balance mode string.
         """
-        return await self._camera.get_wb()
+        return self._submit(self._camera.get_white_balance())
 
     def get_available_white_balance_modes(self) -> List[str]:
-        """Get supported white balance modes.
+        """List supported white balance modes.
 
         Returns:
-            List of white balance mode strings.
+            A list of mode strings.
         """
-        return self._camera.get_wb_range()
+        return self._call_in_loop(self._camera.get_available_white_balance_modes)
 
     def set_image_enhancement(self, enabled: bool) -> bool:
-        """Enable or disable image enhancement pipeline (if supported).
+        """Enable or disable image enhancement pipeline.
 
         Args:
-            enabled: True to enable enhancement, False to disable.
+            enabled: True to enable, False to disable.
 
         Returns:
-            True if applied, otherwise False.
+            True on success, otherwise False.
         """
-        return self._camera.set_image_quality_enhancement(enabled)
+        return self._call_in_loop(self._camera.set_image_enhancement, enabled)
 
     def get_image_enhancement(self) -> bool:
-        """Return whether image enhancement is enabled.
+        """Check whether image enhancement is enabled.
 
         Returns:
-            True if enabled, False otherwise.
+            True if enabled, otherwise False.
         """
-        return self._camera.get_image_quality_enhancement()
+        return self._call_in_loop(self._camera.get_image_enhancement)
 
-    async def save_config(self, path: str) -> bool:
+    def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
-            path: Destination file path (JSON expected by backends).
+            path: Destination file path (backend-specific JSON).
 
         Returns:
-            True if the export succeeded, otherwise False.
+            True on success, otherwise False.
         """
-        async with self._lock:
-            return await self._camera.export_config(path)
+        return self._submit(self._camera.save_config(path))
 
-    async def load_config(self, path: str) -> bool:
+    def load_config(self, path: str) -> bool:
         """Import camera configuration from a file via backend.
 
         Args:
-            path: Configuration file path (JSON expected by backends).
+            path: Configuration file path (backend-specific JSON).
 
         Returns:
-            True if the import succeeded, otherwise False.
+            True on success, otherwise False.
         """
-        async with self._lock:
-            return await self._camera.import_config(path)
+        return self._submit(self._camera.load_config(path))
 
-    async def check_connection(self) -> bool:
+    def check_connection(self) -> bool:
         """Check whether the backend connection is healthy.
 
         Returns:
-            True if the backend reports a healthy connection, otherwise False.
+            True if healthy, otherwise False.
         """
-        return await self._camera.check_connection()
+        return self._submit(self._camera.check_connection())
 
-    async def get_sensor_info(self) -> Dict[str, Any]:
+    def get_sensor_info(self) -> Dict[str, Any]:
         """Get basic sensor information for diagnostics.
 
         Returns:
-            A dictionary with fields: name, backend, device_name, connected.
+            A dict with fields: name, backend, device_name, connected.
         """
-        return {
-            "name": self._full_name,
-            "backend": self._backend,
-            "device_name": self._device_name,
-            "connected": self.is_connected,
-        }
+        return self._submit(self._camera.get_sensor_info())
 
-    async def capture_hdr(
+    def capture_hdr(
         self,
         save_path_pattern: Optional[str] = None,
         exposure_levels: int = 3,
@@ -459,92 +342,15 @@ class Camera(Mindtrace):
         Raises:
             CameraCaptureError: If no images could be captured successfully.
         """
-        async with self._lock:
-            try:
-                original_exposure = await self._camera.get_exposure()
-                exposure_range = await self._camera.get_exposure_range()
-                min_exposure, max_exposure = exposure_range[0], exposure_range[1]
-                base_exposure = original_exposure
-                exposures = []
-                for i in range(exposure_levels):
-                    center_index = (exposure_levels - 1) / 2
-                    multiplier = exposure_multiplier ** (i - center_index)
-                    exposure = base_exposure * multiplier
-                    exposure = max(min_exposure, min(max_exposure, exposure))
-                    exposures.append(exposure)
-                exposures = sorted(list(set(exposures)))
-                self.logger.info(
-                    f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}"
-                )
-                captured_images = []
-                successful_captures = 0
-                for i, exposure in enumerate(exposures):
-                    try:
-                        success = await self._camera.set_exposure(exposure)
-                        if not success:
-                            self.logger.warning(
-                                f"Failed to set exposure {exposure} for HDR capture {i + 1}/{len(exposures)}"
-                            )
-                            continue
-                        await asyncio.sleep(0.1)
-                        save_path = None
-                        if save_path_pattern:
-                            save_path = save_path_pattern.format(exposure=int(exposure))
-                        success, image = await self._camera.capture()
-                        if success and image is not None:
-                            if save_path and save_path.strip():
-                                save_dir = os.path.dirname(save_path)
-                                if save_dir:
-                                    os.makedirs(save_dir, exist_ok=True)
-                                cv2.imwrite(save_path, image)
-                            if return_images:
-                                captured_images.append(image)
-                            successful_captures += 1
-                            self.logger.debug(
-                                f"HDR capture {i + 1}/{len(exposures)} successful at exposure {exposure}μs"
-                            )
-                        else:
-                            self.logger.warning(
-                                f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs"
-                            )
-                    except Exception as e:
-                        self.logger.warning(
-                            f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs: {e}"
-                        )
-                        continue
-                try:
-                    await self._camera.set_exposure(original_exposure)
-                    self.logger.debug(f"Restored original exposure {original_exposure}μs")
-                except Exception as e:
-                    self.logger.warning(f"Failed to restore original exposure: {e}")
-                if successful_captures == 0:
-                    raise CameraCaptureError(
-                        f"HDR capture failed - no successful captures from camera '{self._full_name}'"
-                    )
-                if successful_captures < len(exposures):
-                    self.logger.warning(
-                        f"HDR capture partially successful: {successful_captures}/{len(exposures)} captures succeeded"
-                    )
-                self.logger.info(
-                    f"HDR capture completed for camera '{self._full_name}': {successful_captures}/{len(exposures)} successful"
-                )
-                if return_images:
-                    return captured_images
-                else:
-                    return successful_captures == len(exposures)
-            except (CameraCaptureError, CameraConnectionError, CameraConfigurationError):
-                raise
-            except Exception as e:
-                self.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
-                raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
+        return self._submit(
+            self._camera.capture_hdr(
+                save_path_pattern=save_path_pattern,
+                exposure_levels=exposure_levels,
+                exposure_multiplier=exposure_multiplier,
+                return_images=return_images,
+            )
+        )
 
-    async def close(self):
-        """Close the wrapped backend camera.
-
-        Raises:
-            CameraConnectionError: If the backend fails to close properly.
-        """
-        async with self._lock:
-            self.logger.info(f"Closing camera '{self._full_name}'")
-            await self._camera.close()
-            self.logger.debug(f"Camera '{self._full_name}' closed") 
+    def close(self) -> None:
+        """Close the camera and release resources."""
+        return self._submit(self._camera.close()) 
