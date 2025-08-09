@@ -1,6 +1,7 @@
 """Basler Camera Backend Module"""
 
 import asyncio
+from contextlib import asynccontextmanager
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -237,40 +238,31 @@ class BaslerCamera(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover Basler cameras: {str(e)}")
 
-    # ===== Helper methods (SDK offloading and state checks) =====
-    async def _sdk(self, func, *args, timeout: Optional[float] = None):
-        """Run a blocking SDK function on the single-thread executor with optional timeout.
+    @asynccontextmanager
+    async def _grabbing_suspended(self):
+        """Temporarily stop grabbing for configuration, then restore prior state.
 
-        Args:
-            func: Callable to run
-            *args: Arguments to pass to callable
-            timeout: Optional timeout in seconds for the call
-
-        Returns:
-            Result of the callable
-
-        Raises:
-            CameraTimeoutError: If the operation exceeds the timeout
+        Ensures the camera is open, stops grabbing if it was active, yields to perform
+        configuration work, and then restarts grabbing only if it was running before.
         """
-        fut = self._loop.run_in_executor(self._sdk_executor, func, *args)
+        await self._ensure_open()
+        was_grabbing = False
         try:
-            if timeout is not None:
-                return await asyncio.wait_for(fut, timeout=timeout)
-            return await fut
-        except asyncio.TimeoutError as e:
-            raise CameraTimeoutError(f"SDK operation timed out calling {getattr(func, '__name__', str(func))}") from e
+            try:
+                was_grabbing = await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+                if was_grabbing:
+                    await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
+            except Exception as e:
+                self.logger.warning(f"Error stopping grab for camera '{self.camera_name}': {e}")
 
-    async def _ensure_open(self) -> None:
-        if not await self._sdk(self.camera.IsOpen, timeout=self._op_timeout_s):
-            await self._sdk(self.camera.Open, timeout=self._op_timeout_s)
-
-    async def _ensure_grabbing(self) -> None:
-        if not await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
-            await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
-
-    async def _ensure_stopped_grabbing(self) -> None:
-        if await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
-            await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
+            yield
+        finally:
+            if was_grabbing and self.camera is not None:
+                try:
+                    await self._ensure_open()
+                    await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
+                except Exception as e:
+                    self.logger.warning(f"Error restarting grab for camera '{self.camera_name}': {e}")
 
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
@@ -494,15 +486,12 @@ class BaslerCamera(CameraBackend):
         try:
             await self._ensure_open()
 
-            await self._ensure_stopped_grabbing()
+            async with self._grabbing_suspended():
+                trigger_enabled = (await self._sdk(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s)) == "On"
+                trigger_source = (await self._sdk(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)) == "Software"
 
-            trigger_enabled = (await self._sdk(self.camera.TriggerMode.GetValue, timeout=self._op_timeout_s)) == "On"
-            trigger_source = (await self._sdk(self.camera.TriggerSource.GetValue, timeout=self._op_timeout_s)) == "Software"
-
-            self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
-
-            await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
-            return self.triggermode
+                self.triggermode = "trigger" if (trigger_enabled and trigger_source) else "continuous"
+                return self.triggermode
 
         except Exception as e:
             self.logger.error(f"Error getting trigger mode for camera '{self.camera_name}': {str(e)}")
@@ -534,17 +523,15 @@ class BaslerCamera(CameraBackend):
         try:
             await self._ensure_open()
 
-            await self._ensure_stopped_grabbing()
+            async with self._grabbing_suspended():
+                if triggermode == "continuous":
+                    await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
+                else:
+                    await self._sdk(self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s)
+                    await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
+                    await self._sdk(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
 
-            if triggermode == "continuous":
-                await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
-            else:
-                await self._sdk(self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s)
-                await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
-                await self._sdk(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
-
-            self.triggermode = triggermode
-            await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
+                self.triggermode = triggermode
 
             self.logger.info(f"Trigger mode set to '{triggermode}' for camera '{self.camera_name}'")
             return True
@@ -703,156 +690,150 @@ class BaslerCamera(CameraBackend):
 
             await self._ensure_open()
 
-            was_grabbing = await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s)
-            if was_grabbing:
-                await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
-
             success_count = 0
             total_settings = 0
 
-            # Set exposure time
-            if "exposure_time" in config_data:
-                total_settings += 1
-                try:
-                    if hasattr(self.camera, "ExposureTime") and self.camera.ExposureTime.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        await self._sdk(self.camera.ExposureTime.SetValue, float(config_data["exposure_time"]), timeout=self._op_timeout_s)
-                        success_count += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
-
-            # Set gain
-            if "gain" in config_data:
-                total_settings += 1
-                try:
-                    if hasattr(self.camera, "Gain") and self.camera.Gain.GetAccessMode() in [genicam.RW, genicam.WO]:
-                        await self._sdk(self.camera.Gain.SetValue, float(config_data["gain"]), timeout=self._op_timeout_s)
-                        success_count += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
-
-            # Set trigger mode
-            if "trigger_mode" in config_data:
-                total_settings += 1
-                try:
-                    if hasattr(self.camera, "TriggerMode") and self.camera.TriggerMode.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        if config_data["trigger_mode"] == "continuous":
-                            await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
-                        else:
-                            if hasattr(self.camera, "TriggerSelector"):
-                                await self._sdk(self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s)
-                            await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
-                            if hasattr(self.camera, "TriggerSource"):
-                                await self._sdk(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
-                        self.triggermode = config_data["trigger_mode"]
-                        success_count += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
-
-            # Set white balance
-            if "white_balance" in config_data:
-                total_settings += 1
-                try:
-                    if hasattr(self.camera, "BalanceWhiteAuto") and self.camera.BalanceWhiteAuto.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        wb_mode = config_data["white_balance"]
-                        if wb_mode == "off":
-                            await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)
-                        elif wb_mode == "once":
-                            await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s)
-                        elif wb_mode == "continuous":
-                            await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s)
-                        success_count += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
-
-            # Set ROI
-            if "roi" in config_data:
-                roi = config_data["roi"]
-                roi_success = 0
-                total_settings += 1
-
-                try:
-                    if hasattr(self.camera, "Width") and self.camera.Width.GetAccessMode() in [genicam.RW, genicam.WO]:
-                        await self._sdk(self.camera.Width.SetValue, int(roi.get("width", 1920)), timeout=self._op_timeout_s)
-                        roi_success += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set ROI Width for camera '{self.camera_name}': {e}")
-
-                try:
-                    if hasattr(self.camera, "Height") and self.camera.Height.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        await self._sdk(self.camera.Height.SetValue, int(roi.get("height", 1080)), timeout=self._op_timeout_s)
-                        roi_success += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set ROI Height for camera '{self.camera_name}': {e}")
-
-                try:
-                    if hasattr(self.camera, "OffsetX") and self.camera.OffsetX.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        await self._sdk(self.camera.OffsetX.SetValue, int(roi.get("x", 0)), timeout=self._op_timeout_s)
-                        roi_success += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set ROI OffsetX for camera '{self.camera_name}': {e}")
-
-                try:
-                    if hasattr(self.camera, "OffsetY") and self.camera.OffsetY.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        await self._sdk(self.camera.OffsetY.SetValue, int(roi.get("y", 0)), timeout=self._op_timeout_s)
-                        roi_success += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set ROI OffsetY for camera '{self.camera_name}': {e}")
-
-                if roi_success > 0:
-                    success_count += 1
-
-            # Set pixel format
-            if "pixel_format" in config_data:
-                total_settings += 1
-                try:
-                    if hasattr(self.camera, "PixelFormat") and self.camera.PixelFormat.GetAccessMode() in [
-                        genicam.RW,
-                        genicam.WO,
-                    ]:
-                        available_formats = self.get_pixel_format_range()
-                        pixel_format = config_data["pixel_format"]
-                        if pixel_format in available_formats:
-                            await self._sdk(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
+            async with self._grabbing_suspended():
+                # Set exposure time
+                if "exposure_time" in config_data:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "ExposureTime") and self.camera.ExposureTime.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            await self._sdk(self.camera.ExposureTime.SetValue, float(config_data["exposure_time"]), timeout=self._op_timeout_s)
                             success_count += 1
-                except Exception as e:
-                    self.logger.warning(f"Could not set pixel format for camera '{self.camera_name}': {e}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
 
-            # Apply other settings
-            if "image_enhancement" in config_data:
-                self.img_quality_enhancement = config_data["image_enhancement"]
-                success_count += 1
-                total_settings += 1
+                # Set gain
+                if "gain" in config_data:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "Gain") and self.camera.Gain.GetAccessMode() in [genicam.RW, genicam.WO]:
+                            await self._sdk(self.camera.Gain.SetValue, float(config_data["gain"]), timeout=self._op_timeout_s)
+                            success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
 
-            if "retrieve_retry_count" in config_data:
-                self.retrieve_retry_count = config_data["retrieve_retry_count"]
-                success_count += 1
-                total_settings += 1
+                # Set trigger mode
+                if "trigger_mode" in config_data:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "TriggerMode") and self.camera.TriggerMode.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            if config_data["trigger_mode"] == "continuous":
+                                await self._sdk(self.camera.TriggerMode.SetValue, "Off", timeout=self._op_timeout_s)
+                            else:
+                                if hasattr(self.camera, "TriggerSelector"):
+                                    await self._sdk(self.camera.TriggerSelector.SetValue, "FrameStart", timeout=self._op_timeout_s)
+                                await self._sdk(self.camera.TriggerMode.SetValue, "On", timeout=self._op_timeout_s)
+                                if hasattr(self.camera, "TriggerSource"):
+                                    await self._sdk(self.camera.TriggerSource.SetValue, "Software", timeout=self._op_timeout_s)
+                            self.triggermode = config_data["trigger_mode"]
+                            success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set trigger mode for camera '{self.camera_name}': {e}")
 
-            if "timeout_ms" in config_data:
-                self.timeout_ms = config_data["timeout_ms"]
-                success_count += 1
-                total_settings += 1
+                # Set white balance
+                if "white_balance" in config_data:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "BalanceWhiteAuto") and self.camera.BalanceWhiteAuto.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            wb_mode = config_data["white_balance"]
+                            if wb_mode == "off":
+                                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)
+                            elif wb_mode == "once":
+                                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Once", timeout=self._op_timeout_s)
+                            elif wb_mode == "continuous":
+                                await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Continuous", timeout=self._op_timeout_s)
+                            success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set white balance for camera '{self.camera_name}': {e}")
 
-            if was_grabbing:
-                await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
+                # Set ROI
+                if "roi" in config_data:
+                    roi = config_data["roi"]
+                    roi_success = 0
+                    total_settings += 1
+
+                    try:
+                        if hasattr(self.camera, "Width") and self.camera.Width.GetAccessMode() in [genicam.RW, genicam.WO]:
+                            await self._sdk(self.camera.Width.SetValue, int(roi.get("width", 1920)), timeout=self._op_timeout_s)
+                            roi_success += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set ROI Width for camera '{self.camera_name}': {e}")
+
+                    try:
+                        if hasattr(self.camera, "Height") and self.camera.Height.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            await self._sdk(self.camera.Height.SetValue, int(roi.get("height", 1080)), timeout=self._op_timeout_s)
+                            roi_success += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set ROI Height for camera '{self.camera_name}': {e}")
+
+                    try:
+                        if hasattr(self.camera, "OffsetX") and self.camera.OffsetX.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            await self._sdk(self.camera.OffsetX.SetValue, int(roi.get("x", 0)), timeout=self._op_timeout_s)
+                            roi_success += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set ROI OffsetX for camera '{self.camera_name}': {e}")
+
+                    try:
+                        if hasattr(self.camera, "OffsetY") and self.camera.OffsetY.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            await self._sdk(self.camera.OffsetY.SetValue, int(roi.get("y", 0)), timeout=self._op_timeout_s)
+                            roi_success += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set ROI OffsetY for camera '{self.camera_name}': {e}")
+
+                    if roi_success > 0:
+                        success_count += 1
+
+                # Set pixel format
+                if "pixel_format" in config_data:
+                    total_settings += 1
+                    try:
+                        if hasattr(self.camera, "PixelFormat") and self.camera.PixelFormat.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            available_formats = self.get_pixel_format_range()
+                            pixel_format = config_data["pixel_format"]
+                            if pixel_format in available_formats:
+                                await self._sdk(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
+                                success_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Could not set pixel format for camera '{self.camera_name}': {e}")
+
+                # Apply other settings
+                if "image_enhancement" in config_data:
+                    self.img_quality_enhancement = config_data["image_enhancement"]
+                    success_count += 1
+                    total_settings += 1
+
+                if "retrieve_retry_count" in config_data:
+                    self.retrieve_retry_count = config_data["retrieve_retry_count"]
+                    success_count += 1
+                    total_settings += 1
+
+                if "timeout_ms" in config_data:
+                    self.timeout_ms = config_data["timeout_ms"]
+                    success_count += 1
+                    total_settings += 1
 
             self.logger.info(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
