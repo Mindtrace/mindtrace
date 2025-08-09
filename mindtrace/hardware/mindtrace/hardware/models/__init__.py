@@ -1,5 +1,4 @@
-"""
-Models module for Camera API.
+"""Models module for Camera API.
 
 This module contains all Pydantic models for request/response handling.
 """

@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from mindtrace.hardware.api.dependencies import get_camera_manager
-from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.models.responses import BackendInfoResponse, DictResponse, ListResponse
 
 logger = logging.getLogger(__name__)

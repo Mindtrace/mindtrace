@@ -15,7 +15,7 @@ from mindtrace.hardware.api.dependencies import (
     validate_backend_name,
     validate_camera_exists,
 )
-from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.core.exceptions import CameraError
 from mindtrace.hardware.models.requests import BatchCameraInitializeRequest, CameraInitializeRequest
 from mindtrace.hardware.models.responses import (

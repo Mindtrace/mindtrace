@@ -14,7 +14,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     """
     # Patch camera_manager asyncio.sleep: skip only the 0.1s settle used in HDR
     try:
-        import mindtrace.hardware.cameras.camera_manager as cm
+        import mindtrace.hardware.cameras.core.camera_manager as cm
 
         _orig_sleep = cm.asyncio.sleep
 
