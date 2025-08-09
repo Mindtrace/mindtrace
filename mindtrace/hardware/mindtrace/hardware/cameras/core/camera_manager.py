@@ -114,7 +114,7 @@ class CameraManager(Mindtrace):
     management, async operations, and comprehensive error handling.
     """
 
-    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None):
+    def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
         """Initialize camera manager.
 
         Args:
@@ -123,10 +123,11 @@ class CameraManager(Mindtrace):
                                     (important for network bandwidth management, especially for GigE cameras).
                                     If None, uses value from configuration system.
         """
-        super().__init__()
+        super().__init__(**kwargs)
 
         self._cameras: Dict[str, Camera] = {}
         self._include_mocks = include_mocks
+        self.logger.debug(f"Initializing CameraManager (include_mocks={include_mocks})")
         self._discovered_backends = self._discover_all_backends()
 
         # Get max_concurrent_captures from config if not provided
@@ -152,13 +153,18 @@ class CameraManager(Mindtrace):
 
         # Check hardware backends
         for backend_name in ["Basler", "OpenCV"]:
+            self.logger.debug(f"Checking availability for backend '{backend_name}'")
             available, _ = _discover_backend(backend_name, self.logger)
             if available:
                 backends.append(backend_name)
+                self.logger.debug(f"Backend '{backend_name}' available")
+            else:
+                self.logger.debug(f"Backend '{backend_name}' not available")
 
         # Add mock backends if requested
         if self._include_mocks:
             backends.extend(["MockBasler"])
+            self.logger.debug("Including mock backends: ['MockBasler']")
 
         return backends
 
@@ -216,6 +222,8 @@ class CameraManager(Mindtrace):
         else:
             raise ValueError(f"Invalid backends parameter: {backends}. Must be None, str, or List[str]")
 
+        self.logger.debug(f"Discovering cameras. Backends requested: {backends_to_search}")
+
         # Validate that specified backends are available
         for backend in backends_to_search:
             if backend not in self._discovered_backends:
@@ -226,19 +234,22 @@ class CameraManager(Mindtrace):
 
         # Filter to only include available backends
         backends_to_search = [b for b in backends_to_search if b in self._discovered_backends]
+        self.logger.debug(f"Backends to search after filtering: {backends_to_search}")
 
         for backend in backends_to_search:
             try:
                 if backend in ["Basler", "OpenCV"]:
-                    available, camera_class = _discover_backend(backend.lower())
+                    available, camera_class = _discover_backend(backend.lower(), self.logger)
                     if available and camera_class:
                         cameras = camera_class.get_available_cameras()
+                        self.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
                         all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
 
                 elif backend.startswith("Mock"):
                     backend_name = backend.replace("Mock", "").lower()
                     mock_class = _get_mock_camera(backend_name)
                     cameras = mock_class.get_available_cameras()
+                    self.logger.debug(f"Found {len(cameras)} mock cameras for backend '{backend}'")
                     all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
 
             except Exception as e:
@@ -249,6 +260,9 @@ class CameraManager(Mindtrace):
     def _parse_camera_name(self, camera_name: str) -> Tuple[str, str]:
         """Parse full camera name into backend and device name."""
         if ":" not in camera_name:
+            self.logger.error(
+                f"Invalid camera name format received: '{camera_name}'. Expected 'Backend:device_name'"
+            )
             raise CameraConfigurationError(
                 f"Invalid camera name format: '{camera_name}'. Expected 'Backend:device_name'"
             )
@@ -259,24 +273,30 @@ class CameraManager(Mindtrace):
     def _create_camera_instance(self, backend: str, device_name: str, **kwargs) -> CameraBackend:
         """Create camera instance for specified backend."""
         if backend not in self._discovered_backends:
+            self.logger.error(f"Requested backend '{backend}' not in discovered backends: {self._discovered_backends}")
             raise CameraNotFoundError(f"Backend '{backend}' not available")
 
         try:
             if backend in ["Basler", "OpenCV"]:
-                available, camera_class = _discover_backend(backend.lower())
+                available, camera_class = _discover_backend(backend.lower(), self.logger)
                 if not available or not camera_class:
+                    self.logger.error(f"Requested backend '{backend}' is not available or has no class")
                     raise CameraNotFoundError(f"Backend '{backend}' not available")
+                self.logger.debug(f"Creating camera instance for {backend}:{device_name}")
                 return camera_class(device_name, **kwargs)
 
             elif backend.startswith("Mock"):
                 backend_name = backend.replace("Mock", "").lower()
+                self.logger.debug(f"Creating mock camera instance for {backend}:{device_name}")
                 mock_class = _get_mock_camera(backend_name)
                 return mock_class(device_name, **kwargs)
 
             else:
+                self.logger.error(f"Unknown backend requested: {backend}")
                 raise CameraNotFoundError(f"Unknown backend: {backend}")
 
         except Exception as e:
+            self.logger.error(f"Failed to create camera '{backend}:{device_name}': {e}")
             raise CameraInitializationError(f"Failed to create camera '{backend}:{device_name}': {e}")
 
     async def initialize_camera(self, camera_name: str, test_connection: bool = True, **kwargs) -> None:
@@ -294,18 +314,23 @@ class CameraManager(Mindtrace):
         """
         # Check if already initialized
         if camera_name in self._cameras:
+            self.logger.warning(f"Camera '{camera_name}' is already initialized")
             raise ValueError(f"Camera '{camera_name}' is already initialized")
 
         # Parse and validate camera name
         backend, device_name = self._parse_camera_name(camera_name)
 
         # Create camera instance
+        self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
         camera = self._create_camera_instance(backend, device_name, **kwargs)
 
         # Initialize camera
         try:
+            self.logger.debug(f"Setting up camera backend for '{camera_name}'")
             await camera.setup_camera()
+            self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
         except Exception as e:
+            self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
             raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
 
         # Test camera connection by attempting to capture
@@ -397,6 +422,7 @@ class CameraManager(Mindtrace):
             KeyError: If camera is not initialized
         """
         if camera_name not in self._cameras:
+            self.logger.error(f"Requested camera '{camera_name}' is not initialized")
             raise KeyError(f"Camera '{camera_name}' is not initialized. Use initialize_camera() first.")
 
         return self._cameras[camera_name]
@@ -656,10 +682,12 @@ class CameraManager(Mindtrace):
     # Context manager support
     async def __aenter__(self):
         """Async context manager entry."""
+        self.logger.debug("Entering CameraManager context")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit with proper cleanup."""
+        self.logger.debug("Exiting CameraManager context; closing all cameras")
         await self.close_all_cameras()
 
     def __del__(self):

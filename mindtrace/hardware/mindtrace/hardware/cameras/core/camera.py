@@ -35,6 +35,9 @@ class Camera(Mindtrace):
         parts = full_name.split(":", 1)
         self._backend = parts[0]
         self._device_name = parts[1] if len(parts) > 1 else full_name
+        self.logger.debug(
+            f"Camera created: name={self._full_name}, backend={self._backend}, device={self._device_name}"
+        )
 
     @property
     def name(self) -> str:
@@ -60,6 +63,9 @@ class Camera(Mindtrace):
         """Capture image from camera with advanced retry logic."""
         async with self._lock:
             retry_count = self._camera.retrieve_retry_count
+            self.logger.debug(
+                f"Starting capture for '{self._full_name}' with up to {retry_count} attempts, save_path={save_path!r}"
+            )
             for attempt in range(retry_count):
                 try:
                     success, image = await self._camera.capture()
@@ -69,17 +75,21 @@ class Camera(Mindtrace):
                             if dirname:
                                 os.makedirs(dirname, exist_ok=True)
                             cv2.imwrite(save_path, image)
+                            self.logger.debug(f"Saved captured image to '{save_path}'")
+                        self.logger.debug(
+                            f"Capture successful for '{self._full_name}' on attempt {attempt + 1}/{retry_count}"
+                        )
                         return image
                     raise CameraCaptureError(f"Capture returned failure for camera '{self._full_name}'")
                 except CameraCaptureError as e:
                     delay = 0.1 * (2**attempt)
-                    self._camera.logger.warning(
+                    self.logger.warning(
                         f"Capture retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
                     )
                     if attempt < retry_count - 1:
                         await asyncio.sleep(delay)
                     else:
-                        self._camera.logger.error(
+                        self.logger.error(
                             f"Capture failed after {retry_count} attempts for camera '{self._full_name}': {e}"
                         )
                         raise CameraCaptureError(
@@ -87,13 +97,13 @@ class Camera(Mindtrace):
                         )
                 except CameraConnectionError as e:
                     delay = 0.5 * (2**attempt)
-                    self._camera.logger.warning(
+                    self.logger.warning(
                         f"Network retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
                     )
                     if attempt < retry_count - 1:
                         await asyncio.sleep(delay)
                     else:
-                        self._camera.logger.error(
+                        self.logger.error(
                             f"Connection failed after {retry_count} attempts for camera '{self._full_name}': {e}"
                         )
                         raise CameraConnectionError(
@@ -101,30 +111,30 @@ class Camera(Mindtrace):
                         )
                 except CameraTimeoutError as e:
                     delay = 0.3 * (2**attempt)
-                    self._camera.logger.warning(
+                    self.logger.warning(
                         f"Timeout retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
                     )
                     if attempt < retry_count - 1:
                         await asyncio.sleep(delay)
                     else:
-                        self._camera.logger.error(
+                        self.logger.error(
                             f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}"
                         )
                         raise CameraTimeoutError(
                             f"Timeout failed after {retry_count} attempts for camera '{self._full_name}': {e}"
                         )
                 except (CameraNotFoundError, CameraInitializationError, CameraConfigurationError) as e:
-                    self._camera.logger.error(f"Non-retryable error for camera '{self._full_name}': {e}")
+                    self.logger.error(f"Non-retryable error for camera '{self._full_name}': {e}")
                     raise
                 except Exception as e:
                     delay = 0.2 * (2**attempt)
-                    self._camera.logger.warning(
+                    self.logger.warning(
                         f"Unexpected error retry {attempt + 1}/{retry_count} for camera '{self._full_name}': {e}"
                     )
                     if attempt < retry_count - 1:
                         await asyncio.sleep(delay)
                     else:
-                        self._camera.logger.error(
+                        self.logger.error(
                             f"Unexpected error failed after {retry_count} attempts for camera '{self._full_name}': {e}"
                         )
                         raise RuntimeError(
@@ -134,6 +144,7 @@ class Camera(Mindtrace):
 
     async def configure(self, **settings) -> bool:
         async with self._lock:
+            self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
             success = True
             if "exposure" in settings:
                 success &= await self._camera.set_exposure(settings["exposure"])
@@ -150,6 +161,9 @@ class Camera(Mindtrace):
                 success &= await self._camera.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 success &= self._camera.set_image_quality_enhancement(settings["image_enhancement"])
+            self.logger.debug(
+                f"Configuration {'succeeded' if success else 'had failures'} for camera '{self._full_name}'"
+            )
             return success
 
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
@@ -254,7 +268,7 @@ class Camera(Mindtrace):
                     exposure = max(min_exposure, min(max_exposure, exposure))
                     exposures.append(exposure)
                 exposures = sorted(list(set(exposures)))
-                self._camera.logger.info(
+                self.logger.info(
                     f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}"
                 )
                 captured_images = []
@@ -263,7 +277,7 @@ class Camera(Mindtrace):
                     try:
                         success = await self._camera.set_exposure(exposure)
                         if not success:
-                            self._camera.logger.warning(
+                            self.logger.warning(
                                 f"Failed to set exposure {exposure} for HDR capture {i + 1}/{len(exposures)}"
                             )
                             continue
@@ -281,32 +295,32 @@ class Camera(Mindtrace):
                             if return_images:
                                 captured_images.append(image)
                             successful_captures += 1
-                            self._camera.logger.debug(
+                            self.logger.debug(
                                 f"HDR capture {i + 1}/{len(exposures)} successful at exposure {exposure}μs"
                             )
                         else:
-                            self._camera.logger.warning(
+                            self.logger.warning(
                                 f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs"
                             )
                     except Exception as e:
-                        self._camera.logger.warning(
+                        self.logger.warning(
                             f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs: {e}"
                         )
                         continue
                 try:
                     await self._camera.set_exposure(original_exposure)
-                    self._camera.logger.debug(f"Restored original exposure {original_exposure}μs")
+                    self.logger.debug(f"Restored original exposure {original_exposure}μs")
                 except Exception as e:
-                    self._camera.logger.warning(f"Failed to restore original exposure: {e}")
+                    self.logger.warning(f"Failed to restore original exposure: {e}")
                 if successful_captures == 0:
                     raise CameraCaptureError(
                         f"HDR capture failed - no successful captures from camera '{self._full_name}'"
                     )
                 if successful_captures < len(exposures):
-                    self._camera.logger.warning(
+                    self.logger.warning(
                         f"HDR capture partially successful: {successful_captures}/{len(exposures)} captures succeeded"
                     )
-                self._camera.logger.info(
+                self.logger.info(
                     f"HDR capture completed for camera '{self._full_name}': {successful_captures}/{len(exposures)} successful"
                 )
                 if return_images:
@@ -316,9 +330,11 @@ class Camera(Mindtrace):
             except (CameraCaptureError, CameraConnectionError, CameraConfigurationError):
                 raise
             except Exception as e:
-                self._camera.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
+                self.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
 
     async def close(self):
         async with self._lock:
-            await self._camera.close() 
+            self.logger.info(f"Closing camera '{self._full_name}'")
+            await self._camera.close()
+            self.logger.debug(f"Camera '{self._full_name}' closed") 
