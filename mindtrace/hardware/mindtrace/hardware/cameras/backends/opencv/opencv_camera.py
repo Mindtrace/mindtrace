@@ -124,14 +124,12 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class OpenCVCamera(CameraBackend):
-    """
-    OpenCV camera implementation for USB cameras and webcams.
+class OpenCVCameraBackend(CameraBackend):
+    """OpenCV camera implementation for USB cameras and webcams.
 
-    This camera backend works with any video capture device supported by OpenCV,
-    including USB cameras, built-in webcams, and IP cameras. It provides a
-    standardized interface for camera operations while handling platform-specific
-    device discovery and configuration.
+    This camera backend works with any video capture device supported by OpenCV, including USB cameras, built-in 
+    webcams, and IP cameras. It provides a standardized interface for camera operations while handling 
+    platform-specific device discovery and configuration.
 
     The implementation includes:
     - Automatic camera discovery across platforms
