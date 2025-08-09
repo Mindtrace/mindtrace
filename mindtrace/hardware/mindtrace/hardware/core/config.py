@@ -63,9 +63,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import structlog
-
-logger = structlog.get_logger(__name__)
+from mindtrace.core.base.mindtrace_base import Mindtrace
 
 
 @dataclass
@@ -322,7 +320,7 @@ class HardwareConfig:
     plc_backends: PLCBackends = field(default_factory=PLCBackends)
 
 
-class HardwareConfigManager:
+class HardwareConfigManager(Mindtrace):
     """
     Hardware configuration manager for Mindtrace project.
 
@@ -335,29 +333,32 @@ class HardwareConfigManager:
         _config: Internal configuration data structure
     """
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None, **kwargs):
         """
         Initialize hardware configuration manager.
 
         Args:
             config_file: Path to configuration file (uses environment variable or default if None)
         """
+        super().__init__(**kwargs)
         self.config_file = config_file or os.getenv("MINDTRACE_HW_CONFIG", "hardware_config.json")
         self._config = HardwareConfig()
+        self.logger.info(f"hardware_config_manager_initialized file={self.config_file}")
         self._load_config()
 
     def _load_config(self):
         """Load configuration from environment variables and config file."""
+        self.logger.debug(f"hardware_config_load_start file={self.config_file}")
         self._load_from_env()
 
         if os.path.exists(Path(self.config_file).expanduser()):
             try:
                 self._load_from_file(str(Path(self.config_file).expanduser()))
-                logger.info("hardware_config_loaded", source="file", file=self.config_file)
+                self.logger.debug(f"hardware_config_loaded source=file file={self.config_file}")
             except Exception as e:
-                logger.warning("hardware_config_load_failed", source="file", file=self.config_file, error=str(e))
+                self.logger.warning(f"hardware_config_load_failed source=file file={self.config_file} error={e}")
         else:
-            logger.info("hardware_config_file_not_found", file=self.config_file, message="Using default configuration")
+            self.logger.info(f"hardware_config_file_not_found file={self.config_file} Using default configuration.")
 
     def _load_from_env(self):
         """Load configuration from environment variables with MINDTRACE_HW_ prefix."""
@@ -551,48 +552,32 @@ class HardwareConfigManager:
         Args:
             config_file: Path to JSON configuration file
         """
+        self.logger.debug(f"hardware_config_file_load_start file={config_file}")
         with open(config_file, "r") as f:
             config_data = json.load(f)
+        self.logger.debug(f"hardware_config_file_parsed file={config_file}")
 
-        if "cameras" in config_data:
-            for key, value in config_data["cameras"].items():
-                if hasattr(self._config.cameras, key):
-                    setattr(self._config.cameras, key, value)
+        sections = (
+            ("cameras", self._config.cameras),
+            ("backends", self._config.backends),
+            ("paths", self._config.paths),
+            ("network", self._config.network),
+            ("sensors", self._config.sensors),
+            ("actuators", self._config.actuators),
+            ("plcs", self._config.plcs),
+            ("plc_backends", self._config.plc_backends),
+        )
 
-        if "backends" in config_data:
-            for key, value in config_data["backends"].items():
-                if hasattr(self._config.backends, key):
-                    setattr(self._config.backends, key, value)
-
-        if "paths" in config_data:
-            for key, value in config_data["paths"].items():
-                if hasattr(self._config.paths, key):
-                    setattr(self._config.paths, key, value)
-
-        if "network" in config_data:
-            for key, value in config_data["network"].items():
-                if hasattr(self._config.network, key):
-                    setattr(self._config.network, key, value)
-
-        if "sensors" in config_data:
-            for key, value in config_data["sensors"].items():
-                if hasattr(self._config.sensors, key):
-                    setattr(self._config.sensors, key, value)
-
-        if "actuators" in config_data:
-            for key, value in config_data["actuators"].items():
-                if hasattr(self._config.actuators, key):
-                    setattr(self._config.actuators, key, value)
-
-        if "plcs" in config_data:
-            for key, value in config_data["plcs"].items():
-                if hasattr(self._config.plcs, key):
-                    setattr(self._config.plcs, key, value)
-
-        if "plc_backends" in config_data:
-            for key, value in config_data["plc_backends"].items():
-                if hasattr(self._config.plc_backends, key):
-                    setattr(self._config.plc_backends, key, value)
+        for section_name, target in sections:
+            section_data = config_data.get(section_name)
+            if isinstance(section_data, dict):
+                self.logger.debug(
+                    f"hardware_config_section_merge section={section_name} keys={list(section_data.keys())}"
+                )
+                for key, value in section_data.items():
+                    if hasattr(target, key):
+                        setattr(target, key, value)
+        self.logger.debug(f"hardware_config_file_load_complete file={config_file}")
 
     def save_to_file(self, config_file: Optional[str] = None):
         """
@@ -609,7 +594,7 @@ class HardwareConfigManager:
         with open(Path(file_path).expanduser(), "w") as f:
             json.dump(config_dict, f, indent=2)
 
-        logger.info("hardware_config_saved", file=file_path)
+        self.logger.debug(f"hardware_config_saved file={file_path}")
 
     def get_config(self) -> HardwareConfig:
         """
