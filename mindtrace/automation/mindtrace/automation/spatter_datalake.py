@@ -564,7 +564,7 @@ def perform_cropping(base_dir, cropping_config_path, zone_class_mapping, save_up
     print("Cropping complete.")
 
 def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False, clean_up=False, class_names=None, download=False):
-
+    
     dataset_name = huggingface_config.get('dataset_name')
     version = huggingface_config.get('version')
     existing_dataset = huggingface_config.get('existing_dataset')
@@ -574,6 +574,22 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
     
     os.environ['HF_TOKEN'] = token
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = gcp_creds_path
+    
+    def _normalize_binary_mask_to_class_ids(mask_fp: str) -> None:
+        try:
+            mask = cv2.imread(mask_fp, cv2.IMREAD_UNCHANGED)
+            if mask is None:
+                return
+            if mask.ndim == 3:
+                mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+            unique_vals = np.unique(mask)
+            nonzero = unique_vals[unique_vals > 0]
+            # If strictly binary 0/255, remap to 0/1 class-ids
+            if nonzero.size == 1 and nonzero[0] == 255:
+                bin_mask = (mask > 0).astype(np.uint8)
+                cv2.imwrite(mask_fp, bin_mask)
+        except Exception as e:
+            print(f"[WARN] Could not normalize mask {mask_fp}: {e}")
     
     if existing_dataset is not None:
         missing_count = 0
@@ -592,7 +608,10 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
             datalake_train_path = os.path.join(download_dir, existing_dataset, 'splits', 'train')
             datalake_test_path = os.path.join(download_dir, existing_dataset, 'splits', 'test')
             
-            for file in os.listdir(os.path.join(datalake_train_path, 'images')):
+            train_images_dir = os.path.join(datalake_train_path, 'images')
+            test_images_dir = os.path.join(datalake_test_path, 'images')
+            train_files = os.listdir(train_images_dir)
+            for file in tqdm(train_files, desc="Merging train files", unit="file"):
                 image_path = os.path.join(datalake_train_path, 'images', file)
                 mask_path = os.path.join(datalake_train_path, 'masks', file.replace('.jpg', '_mask.png'))
 
@@ -601,16 +620,21 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
                     new_mask_path = os.path.join(download_dir, 'spatter_masks', 'train', os.path.basename(mask_path))
                     shutil.move(image_path, new_image_path)
                     shutil.move(mask_path, new_mask_path)
+                    _normalize_binary_mask_to_class_ids(new_mask_path)
                 else:
                     missing_count += 1
 
-            for file in os.listdir(os.path.join(datalake_test_path, 'images')):
+            test_files = os.listdir(test_images_dir)
+            for file in tqdm(test_files, desc="Merging test files", unit="file"):
                 image_path = os.path.join(datalake_test_path, 'images', file)
                 mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
 
                 if os.path.exists(mask_path) and os.path.exists(image_path):
-                    shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
-                    shutil.move(mask_path, os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png')))
+                    dest_image_path = os.path.join(download_dir, 'images', 'test', file)
+                    dest_mask_path = os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png'))
+                    shutil.move(image_path, dest_image_path)
+                    shutil.move(mask_path, dest_mask_path)
+                    _normalize_binary_mask_to_class_ids(dest_mask_path)
                 else:
                     missing_count += 1
 
