@@ -12,7 +12,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from mindtrace.hardware.api.dependencies import get_camera_manager, validate_camera_exists
-from mindtrace.hardware.cameras.camera_manager import CameraManager
+from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.core.exceptions import CameraError
 from mindtrace.hardware.models.requests import (
     BatchCameraConfigRequest,

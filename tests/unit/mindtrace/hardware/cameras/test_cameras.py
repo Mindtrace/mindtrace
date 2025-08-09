@@ -35,7 +35,7 @@ def event_loop():
 @pytest_asyncio.fixture
 async def camera_manager():
     """Create a camera manager instance with mock backends."""
-    from mindtrace.hardware.cameras.camera_manager import CameraManager
+    from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
     manager = CameraManager(include_mocks=True)
     yield manager
@@ -260,7 +260,7 @@ class TestCameraManager:
     @pytest.mark.asyncio
     async def test_convenience_function_with_backend_filtering(self):
         """Test convenience function with backend filtering."""
-        from mindtrace.hardware.cameras.camera_manager import discover_all_cameras
+        from mindtrace.hardware.cameras.core.camera_manager import discover_all_cameras
 
         # Test convenience function (all)
         all_cameras = discover_all_cameras(include_mocks=True)
@@ -370,7 +370,7 @@ class TestCameraManager:
     @pytest.mark.asyncio
     async def test_context_manager(self):
         """Test camera manager as context manager."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         async with CameraManager(include_mocks=True) as manager:
             cameras = manager.discover_cameras()
@@ -495,7 +495,7 @@ class TestCameraPerformance:
     @pytest.mark.asyncio
     async def test_batch_capture_with_bandwidth_management(self):
         """Test batch capture with network bandwidth management."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         # Test with different concurrent capture limits
         for max_concurrent in [1, 2, 3]:
@@ -533,7 +533,7 @@ class TestCameraPerformance:
     @pytest.mark.asyncio
     async def test_dynamic_bandwidth_adjustment(self):
         """Test dynamic adjustment of concurrent capture limits."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=1)
 
@@ -573,7 +573,7 @@ class TestCameraPerformance:
     @pytest.mark.asyncio
     async def test_bandwidth_management_with_hdr(self):
         """Test HDR capture with network bandwidth management (generic)."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
@@ -613,7 +613,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_manager_initialization_with_bandwidth_limit(self):
         """Test camera manager initialization with bandwidth limits."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         # Test different bandwidth limits
         for max_concurrent in [1, 2, 5, 10]:
@@ -633,7 +633,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_info_structure(self):
         """Test the structure of network bandwidth information."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
@@ -668,7 +668,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_invalid_bandwidth_settings(self):
         """Test handling of invalid bandwidth settings."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
@@ -695,7 +695,7 @@ class TestNetworkBandwidthManagement:
         """Test that concurrent captures are properly limited."""
         import time
 
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         # Test with very restrictive limit
         manager = CameraManager(include_mocks=True, max_concurrent_captures=1)
@@ -750,7 +750,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_management_with_mixed_operations(self):
         """Test bandwidth management with mixed capture operations."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
@@ -791,7 +791,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_management_persistence(self):
         """Test that bandwidth settings persist across operations."""
-        from mindtrace.hardware.cameras.camera_manager import CameraManager
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         manager = CameraManager(include_mocks=True, max_concurrent_captures=3)
 
@@ -834,7 +834,7 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_management_with_convenience_functions(self):
         """Test bandwidth management with convenience functions."""
-        from mindtrace.hardware.cameras.camera_manager import discover_all_cameras
+        from mindtrace.hardware.cameras.core.camera_manager import discover_all_cameras
 
         # Test that convenience function supports bandwidth parameter
         cameras = discover_all_cameras(include_mocks=True, max_concurrent_captures=5)

@@ -1,5 +1,4 @@
-"""
-Routes module for Camera API.
+"""Routes module for Camera API.
 
 This module contains all FastAPI route definitions organized by functionality.
 """

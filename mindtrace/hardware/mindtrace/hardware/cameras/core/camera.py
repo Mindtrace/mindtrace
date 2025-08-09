@@ -20,8 +20,8 @@ from mindtrace.hardware.core.exceptions import (
 class Camera:
     """Unified camera interface that wraps backend-specific camera instances.
 
-    Provides a clean, consistent API regardless of the underlying camera backend
-    while maintaining thread-safe operations through internal locking.
+    Provides a clean, consistent API regardless of the underlying camera backend while maintaining thread-safe 
+    operations through internal locking.
     """
 
     def __init__(self, camera: CameraBackend, full_name: str):

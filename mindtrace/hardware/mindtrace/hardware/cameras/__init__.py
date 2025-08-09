@@ -8,8 +8,8 @@ error management.
 # this is too weird for ruff to work out what's going on
 
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
-from mindtrace.hardware.cameras.camera_manager import CameraManager
-from mindtrace.hardware.cameras.camera import Camera
+from mindtrace.hardware.cameras.core.camera_manager import CameraManager
+from mindtrace.hardware.cameras.core.camera import Camera
 
 
 # Lazy import availability flags to avoid loading SDKs unnecessarily
