@@ -599,7 +599,6 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
                 if os.path.exists(mask_path) and os.path.exists(image_path):
                     new_image_path = os.path.join(download_dir, 'images', 'train', os.path.basename(image_path))
                     new_mask_path = os.path.join(download_dir, 'spatter_masks', 'train', os.path.basename(mask_path))
-                    print(f"Moving {image_path} and {mask_path} to {new_image_path} and {new_mask_path}")
                     shutil.move(image_path, new_image_path)
                     shutil.move(mask_path, new_mask_path)
                 else:
@@ -610,7 +609,6 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
                 mask_path = os.path.join(datalake_test_path, 'masks', file.replace('.jpg', '_mask.png'))
 
                 if os.path.exists(mask_path) and os.path.exists(image_path):
-                    print(f"Moving {image_path} and {mask_path}")
                     shutil.move(image_path, os.path.join(download_dir, 'images', 'test', file))
                     shutil.move(mask_path, os.path.join(download_dir, 'spatter_masks', 'test', file.replace('.jpg', '_mask.png')))
                 else:
@@ -650,13 +648,11 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
         }
         train_data_files[i] = os.path.join(source_images_train, i)
         shutil.copy(os.path.join(source_images_train, i), os.path.join(target_path, 'splits', 'train', 'images', i))
-        # Handle mask if present
         mask_name = i.rsplit('.', 1)[0] + '_mask.png'
         mask_src = os.path.join(source_masks_train, mask_name)
-        if os.path.exists(mask_src):
-            train_annotations[i]['masks'] = mask_name
-            train_data_files[mask_name] = os.path.join(target_path, 'splits', 'train', 'masks', mask_name)
-            shutil.copy(mask_src, os.path.join(target_path, 'splits', 'train', 'masks', mask_name))
+        train_annotations[i]['masks'] = mask_name
+        train_data_files[mask_name] = os.path.join(target_path, 'splits', 'train', 'masks', mask_name)
+        shutil.copy(mask_src, os.path.join(target_path, 'splits', 'train', 'masks', mask_name))
         
         train_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}              
 
@@ -667,13 +663,11 @@ def upload_to_huggingface_yolo(download_dir, huggingface_config, use_mask=False,
         }
         val_data_files[i] = os.path.join(source_images_test, i)
         shutil.copy(os.path.join(source_images_test, i), os.path.join(target_path,'splits',  'test', 'images', i))
-        # Handle mask if present
         mask_name = i.rsplit('.', 1)[0] + '_mask.png'
         mask_src = os.path.join(source_masks_test, mask_name)
-        if os.path.exists(mask_src):
-            val_annotations[i]['masks'] = mask_name
-            val_data_files[mask_name] = os.path.join(target_path, 'splits', 'test', 'masks', mask_name)
-            shutil.copy(mask_src, os.path.join(target_path, 'splits', 'test', 'masks', mask_name))
+        val_annotations[i]['masks'] = mask_name
+        val_data_files[mask_name] = os.path.join(target_path, 'splits', 'test', 'masks', mask_name)
+        shutil.copy(mask_src, os.path.join(target_path, 'splits', 'test', 'masks', mask_name))
 
         val_metadata[i] = {"file_name": i, "metadata" : {'CameraIDX' : 'M'}}
 
