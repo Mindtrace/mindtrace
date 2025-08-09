@@ -41,26 +41,55 @@ class Camera(Mindtrace):
 
     @property
     def name(self) -> str:
-        """Full camera name (Backend:device)."""
+        """Full camera name (Backend:device).
+
+        Returns:
+            The full camera name including backend prefix (e.g., "Basler:cam1").
+        """
         return self._full_name
 
     @property
     def backend(self) -> str:
-        """Backend name."""
+        """Backend name.
+
+        Returns:
+            The backend identifier (e.g., "Basler", "OpenCV").
+        """
         return self._backend
 
     @property
     def device_name(self) -> str:
-        """Device name without backend prefix."""
+        """Device name without backend prefix.
+
+        Returns:
+            The device identifier without the backend prefix.
+        """
         return self._device_name
 
     @property
     def is_connected(self) -> bool:
-        """Check if camera is initialized and connected."""
+        """Check if camera is initialized and connected.
+
+        Returns:
+            True if the underlying backend reports initialized/open, otherwise False.
+        """
         return self._camera.initialized
 
     async def capture(self, save_path: Optional[str] = None) -> Any:
-        """Capture image from camera with advanced retry logic."""
+        """Capture an image from the camera with retry logic.
+
+        Args:
+            save_path: Optional path to save the captured image (written as-is, typically RGB uint8).
+
+        Returns:
+            The captured image as a numpy array (RGB) if successful.
+
+        Raises:
+            CameraCaptureError: If image capture ultimately fails after retries.
+            CameraConnectionError: If the camera connection fails during capture.
+            CameraTimeoutError: If the capture exceeds the configured timeout.
+            RuntimeError: For unexpected errors after exhausting retries.
+        """
         async with self._lock:
             retry_count = self._camera.retrieve_retry_count
             self.logger.debug(
@@ -143,6 +172,19 @@ class Camera(Mindtrace):
             raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts")
 
     async def configure(self, **settings) -> bool:
+        """Configure common camera properties via a single call.
+
+        Args:
+            **settings: Supported keys include: "exposure", "gain", "roi" (x, y, w, h),
+                "trigger_mode", "pixel_format", "white_balance", "image_enhancement".
+
+        Returns:
+            True if all applied settings succeeded, False if any failed.
+
+        Raises:
+            CameraConfigurationError: If a provided setting is invalid for the backend.
+            CameraConnectionError: If the camera is not available to be configured.
+        """
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
             success = True
@@ -167,79 +209,228 @@ class Camera(Mindtrace):
             return success
 
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
+        """Set the exposure value on the camera.
+
+        Args:
+            exposure: Exposure value appropriate for the backend (e.g., microseconds or log scale).
+
+        Returns:
+            True if the exposure was set successfully, otherwise False.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized.
+            CameraConfigurationError: If the value is outside the allowed range.
+        """
         async with self._lock:
             return await self._camera.set_exposure(exposure)
 
     async def get_exposure(self) -> float:
+        """Get the current exposure value from the camera.
+
+        Returns:
+            The current exposure value as a float.
+        """
         return await self._camera.get_exposure()
 
     async def get_exposure_range(self) -> Tuple[float, float]:
+        """Get the valid exposure range for the camera.
+
+        Returns:
+            A tuple of (min_exposure, max_exposure).
+        """
         range_list = await self._camera.get_exposure_range()
         return range_list[0], range_list[1]
 
     def set_gain(self, gain: Union[int, float]) -> bool:
+        """Set the camera gain.
+
+        Args:
+            gain: Gain value to set.
+
+        Returns:
+            True if successfully applied, otherwise False.
+        """
         return self._camera.set_gain(gain)
 
     def get_gain(self) -> float:
+        """Get the current camera gain.
+
+        Returns:
+            The current gain value as a float.
+        """
         return self._camera.get_gain()
 
     def get_gain_range(self) -> Tuple[float, float]:
+        """Get the valid gain range.
+
+        Returns:
+            A tuple of (min_gain, max_gain).
+        """
         range_list = self._camera.get_gain_range()
         return range_list[0], range_list[1]
 
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
+        """Set the Region of Interest (ROI) if supported by the backend.
+
+        Args:
+            x: Top-left x pixel
+            y: Top-left y pixel
+            width: ROI width in pixels
+            height: ROI height in pixels
+
+        Returns:
+            True if applied (or emulated), otherwise False.
+        """
         return self._camera.set_ROI(x, y, width, height)
 
     def get_roi(self) -> Dict[str, int]:
+        """Get the current ROI.
+
+        Returns:
+            A dict with keys x, y, width, height.
+        """
         return self._camera.get_ROI()
 
     def reset_roi(self) -> bool:
+        """Reset ROI to full frame, if supported.
+
+        Returns:
+            True if reset was applied, otherwise False.
+        """
         return self._camera.reset_ROI()
 
     async def set_trigger_mode(self, mode: str) -> bool:
+        """Set the trigger mode.
+
+        Args:
+            mode: Trigger mode string (backend-specific). E.g., "continuous".
+
+        Returns:
+            True if supported and applied, otherwise False.
+        """
         async with self._lock:
             return await self._camera.set_triggermode(mode)
 
     async def get_trigger_mode(self) -> str:
+        """Get the current trigger mode.
+
+        Returns:
+            Trigger mode string.
+        """
         return await self._camera.get_triggermode()
 
     def set_pixel_format(self, format: str) -> bool:
+        """Set the pixel format if supported by the backend.
+
+        Args:
+            format: Pixel format string.
+
+        Returns:
+            True if supported and applied, otherwise False.
+        """
         return self._camera.set_pixel_format(format)
 
     def get_pixel_format(self) -> str:
+        """Get the current output pixel format.
+
+        Returns:
+            Pixel format string.
+        """
         return self._camera.get_current_pixel_format()
 
     def get_available_pixel_formats(self) -> List[str]:
+        """Get supported pixel formats.
+
+        Returns:
+            List of pixel format strings.
+        """
         return self._camera.get_pixel_format_range()
 
     async def set_white_balance(self, mode: str) -> bool:
+        """Set the white balance mode (if supported).
+
+        Args:
+            mode: White balance mode, e.g., "auto", "manual".
+
+        Returns:
+            True if supported and applied, otherwise False.
+        """
         async with self._lock:
             return await self._camera.set_auto_wb_once(mode)
 
     async def get_white_balance(self) -> str:
+        """Get the current white balance mode.
+
+        Returns:
+            White balance mode string.
+        """
         return await self._camera.get_wb()
 
     def get_available_white_balance_modes(self) -> List[str]:
+        """Get supported white balance modes.
+
+        Returns:
+            List of white balance mode strings.
+        """
         return self._camera.get_wb_range()
 
     def set_image_enhancement(self, enabled: bool) -> bool:
+        """Enable or disable image enhancement pipeline (if supported).
+
+        Args:
+            enabled: True to enable enhancement, False to disable.
+
+        Returns:
+            True if applied, otherwise False.
+        """
         return self._camera.set_image_quality_enhancement(enabled)
 
     def get_image_enhancement(self) -> bool:
+        """Return whether image enhancement is enabled.
+
+        Returns:
+            True if enabled, False otherwise.
+        """
         return self._camera.get_image_quality_enhancement()
 
     async def save_config(self, path: str) -> bool:
+        """Export current camera configuration to a file via backend.
+
+        Args:
+            path: Destination file path (JSON expected by backends).
+
+        Returns:
+            True if the export succeeded, otherwise False.
+        """
         async with self._lock:
             return await self._camera.export_config(path)
 
     async def load_config(self, path: str) -> bool:
+        """Import camera configuration from a file via backend.
+
+        Args:
+            path: Configuration file path (JSON expected by backends).
+
+        Returns:
+            True if the import succeeded, otherwise False.
+        """
         async with self._lock:
             return await self._camera.import_config(path)
 
     async def check_connection(self) -> bool:
+        """Check whether the backend connection is healthy.
+
+        Returns:
+            True if the backend reports a healthy connection, otherwise False.
+        """
         return await self._camera.check_connection()
 
     async def get_sensor_info(self) -> Dict[str, Any]:
+        """Get basic sensor information for diagnostics.
+
+        Returns:
+            A dictionary with fields: name, backend, device_name, connected.
+        """
         return {
             "name": self._full_name,
             "backend": self._backend,
@@ -254,6 +445,20 @@ class Camera(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
     ) -> Union[List[Any], bool]:
+        """Capture a bracketed HDR sequence and optionally return images.
+
+        Args:
+            save_path_pattern: Optional path pattern containing "{exposure}" placeholder.
+            exposure_levels: Number of exposure steps to capture.
+            exposure_multiplier: Multiplier between consecutive exposure steps.
+            return_images: If True, returns list of captured images; otherwise returns success bool.
+
+        Returns:
+            List of images if return_images is True, otherwise a boolean success flag.
+
+        Raises:
+            CameraCaptureError: If no images could be captured successfully.
+        """
         async with self._lock:
             try:
                 original_exposure = await self._camera.get_exposure()
@@ -334,6 +539,11 @@ class Camera(Mindtrace):
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
 
     async def close(self):
+        """Close the wrapped backend camera.
+
+        Raises:
+            CameraConnectionError: If the backend fails to close properly.
+        """
         async with self._lock:
             self.logger.info(f"Closing camera '{self._full_name}'")
             await self._camera.close()
