@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.camera import Camera
 
 
@@ -83,10 +84,13 @@ class CameraManager(Mindtrace):
         )
 
     def get_camera(self, camera_name: str) -> Camera:
-        return self._manager.get_camera(camera_name)
+        async_cam: AsyncCamera = self._manager.get_camera(camera_name)
+        # Wrap with sync facade bound to this manager's loop
+        return Camera(async_cam, self._loop)
 
     def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
-        return self._manager.get_cameras(camera_names)
+        async_map = self._manager.get_cameras(camera_names)
+        return {name: Camera(async_cam, self._loop) for name, async_cam in async_map.items()}
 
     def get_active_cameras(self) -> List[str]:
         return self._manager.get_active_cameras()

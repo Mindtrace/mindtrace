@@ -11,6 +11,7 @@ from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.camera import Camera
+from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 
 
 # Lazy import availability flags to avoid loading SDKs unnecessarily
@@ -69,6 +70,7 @@ __all__ = [
     "AsyncCameraManager",
     "CameraBackend",
     "Camera",
+    "AsyncCamera",
     # Availability flags
     "BASLER_AVAILABLE",
     "OPENCV_AVAILABLE",

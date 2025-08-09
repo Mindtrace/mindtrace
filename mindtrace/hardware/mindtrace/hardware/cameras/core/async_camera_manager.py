@@ -7,7 +7,7 @@ import cv2
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
-from mindtrace.hardware.cameras.core.camera import Camera
+from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
@@ -70,7 +70,7 @@ class AsyncCameraManager(Mindtrace):
         """
         super().__init__(**kwargs)
 
-        self._cameras: Dict[str, Camera] = {}
+        self._cameras: Dict[str, AsyncCamera] = {}
         self._include_mocks = include_mocks
         self.logger.debug(f"Initializing AsyncCameraManager (include_mocks={include_mocks})")
         self._discovered_backends = self._discover_all_backends()
@@ -237,7 +237,7 @@ class AsyncCameraManager(Mindtrace):
                     raise
                 raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
 
-        proxy = Camera(camera, camera_name)
+        proxy = AsyncCamera(camera, camera_name)
         self._cameras[camera_name] = proxy
 
         self.logger.info(f"Camera '{camera_name}' initialized successfully")
@@ -291,7 +291,7 @@ class AsyncCameraManager(Mindtrace):
 
         return failed_cameras
 
-    def get_camera(self, camera_name: str) -> Camera:
+    def get_camera(self, camera_name: str) -> AsyncCamera:
         """Get an initialized camera by name.
 
         Args:
@@ -309,7 +309,7 @@ class AsyncCameraManager(Mindtrace):
 
         return self._cameras[camera_name]
 
-    def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
+    def get_cameras(self, camera_names: List[str]) -> Dict[str, AsyncCamera]:
         """Get multiple initialized cameras by name.
 
         Args:
@@ -566,7 +566,7 @@ class AsyncCameraManager(Mindtrace):
             raise CameraInitializationError(f"Failed to create camera '{backend}:{device_name}': {e}")
 
     @classmethod
-    async def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "Camera":
+    async def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "AsyncCamera":
         """Quick access function to initialize and get a single camera."""
         manager = cls()
         await manager.initialize_camera(camera_name, **kwargs)
