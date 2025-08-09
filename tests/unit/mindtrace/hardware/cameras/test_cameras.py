@@ -259,27 +259,27 @@ class TestCameraManager:
     @pytest.mark.asyncio
     async def test_convenience_function_with_backend_filtering(self):
         """Test convenience function with backend filtering."""
-        from mindtrace.hardware.cameras.core.camera_manager import discover_all_cameras
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         # Test convenience function (all)
-        all_cameras = discover_all_cameras(include_mocks=True)
+        all_cameras = CameraManager.discover_all_cameras(include_mocks=True)
         assert isinstance(all_cameras, list)
         assert len(all_cameras) > 0
 
         # Test with specific backend (MockBasler)
-        basler_cameras = discover_all_cameras(include_mocks=True, backends="MockBasler")
+        basler_cameras = CameraManager.discover_all_cameras(include_mocks=True, backends="MockBasler")
         assert isinstance(basler_cameras, list)
         for camera in basler_cameras:
             assert camera.startswith("MockBasler:")
 
         # Test with multiple backends
-        multi_cameras = discover_all_cameras(include_mocks=True, backends=["MockBasler", "OpenCV"])
+        multi_cameras = CameraManager.discover_all_cameras(include_mocks=True, backends=["MockBasler", "OpenCV"])
         assert isinstance(multi_cameras, list)
         for camera in multi_cameras:
             assert camera.startswith("MockBasler:") or camera.startswith("OpenCV:")
 
         # Test with non-existent backend
-        empty_cameras = discover_all_cameras(include_mocks=True, backends="NonExistentBackend")
+        empty_cameras = CameraManager.discover_all_cameras(include_mocks=True, backends="NonExistentBackend")
         assert isinstance(empty_cameras, list)
         assert len(empty_cameras) == 0
 
@@ -833,10 +833,10 @@ class TestNetworkBandwidthManagement:
     @pytest.mark.asyncio
     async def test_bandwidth_management_with_convenience_functions(self):
         """Test bandwidth management with convenience functions."""
-        from mindtrace.hardware.cameras.core.camera_manager import discover_all_cameras
+        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         # Test that convenience function supports bandwidth parameter
-        cameras = discover_all_cameras(include_mocks=True, max_concurrent_captures=5)
+        cameras = CameraManager.discover_all_cameras(include_mocks=True, max_concurrent_captures=5)
         assert isinstance(cameras, list)
         assert len(cameras) > 0
 
@@ -845,13 +845,13 @@ class TestNetworkBandwidthManagement:
         assert len(mock_cameras) > 0
 
         # Test convenience function with backend filtering and bandwidth management
-        basler_cameras = discover_all_cameras(include_mocks=True, max_concurrent_captures=3, backends="MockBasler")
+        basler_cameras = CameraManager.discover_all_cameras(include_mocks=True, max_concurrent_captures=3, backends="MockBasler")
         assert isinstance(basler_cameras, list)
         for camera in basler_cameras:
             assert camera.startswith("MockBasler:")
 
         # Test with multiple backends
-        multi_cameras = discover_all_cameras(
+        multi_cameras = CameraManager.discover_all_cameras(
             include_mocks=True, max_concurrent_captures=2, backends=["MockBasler", "OpenCV"]
         )
         assert isinstance(multi_cameras, list)
