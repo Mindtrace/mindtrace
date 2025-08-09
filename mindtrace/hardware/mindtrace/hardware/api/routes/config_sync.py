@@ -44,8 +44,7 @@ async def get_gain(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> FloatResponse:
-    """
-    Get current camera gain value.
+    """Get current camera gain value.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -71,8 +70,7 @@ async def get_gain(
 
 @router.put("/gain", response_model=BoolResponse)
 async def set_gain(request: GainRequest, manager: CameraManager = Depends(get_camera_manager)) -> BoolResponse:
-    """
-    Set camera gain value.
+    """Set camera gain value.
 
     Args:
         request: Gain setting request
@@ -116,8 +114,7 @@ async def get_gain_range(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> RangeResponse:
-    """
-    Get camera gain range.
+    """Get camera gain range.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -148,8 +145,7 @@ async def get_roi(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> DictResponse:
-    """
-    Get current Region of Interest (ROI) settings.
+    """Get current Region of Interest (ROI) settings.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -175,8 +171,7 @@ async def get_roi(
 
 @router.put("/roi", response_model=BoolResponse)
 async def set_roi(request: ROIRequest, manager: CameraManager = Depends(get_camera_manager)) -> BoolResponse:
-    """
-    Set camera Region of Interest (ROI).
+    """Set camera Region of Interest (ROI).
 
     Args:
         request: ROI setting request with x, y, width, height
@@ -231,8 +226,7 @@ async def reset_roi(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> BoolResponse:
-    """
-    Reset ROI to full sensor size.
+    """Reset ROI to full sensor size.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -266,8 +260,7 @@ async def get_pixel_format(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> StringResponse:
-    """
-    Get current pixel format.
+    """Get current pixel format.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -295,8 +288,7 @@ async def get_pixel_format(
 async def set_pixel_format(
     request: PixelFormatRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Set camera pixel format.
+    """Set camera pixel format.
 
     Args:
         request: Pixel format setting request
@@ -340,8 +332,7 @@ async def get_pixel_format_options(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> PixelFormatListResponse:
-    """
-    Get available pixel formats.
+    """Get available pixel formats.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -374,8 +365,7 @@ async def get_image_enhancement(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> BoolResponse:
-    """
-    Get current image enhancement status.
+    """Get current image enhancement status.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -406,8 +396,7 @@ async def get_image_enhancement(
 async def set_image_enhancement(
     request: ImageEnhancementRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Enable or disable image quality enhancement.
+    """Enable or disable image quality enhancement.
 
     Image enhancement may include gamma correction, contrast adjustment,
     and color correction depending on the camera backend.
@@ -453,8 +442,7 @@ async def set_image_enhancement(
 async def configure_batch_sync(
     request: BatchCameraConfigRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BatchOperationResponse:
-    """
-    Configure multiple cameras with sync settings (gain, ROI, pixel format, image enhancement).
+    """Configure multiple cameras with sync settings (gain, ROI, pixel format, image enhancement).
 
     This endpoint allows batch configuration of sync camera settings across multiple cameras.
     Only supports sync configuration parameters: gain, roi, pixel_format, image_enhancement.

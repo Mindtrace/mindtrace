@@ -24,8 +24,7 @@ router = APIRouter()
 
 @router.get("/bandwidth", response_model=DictResponse)
 async def get_bandwidth_info(manager: CameraManager = Depends(get_camera_manager)) -> DictResponse:
-    """
-    Get network bandwidth management information.
+    """Get network bandwidth management information.
 
     Returns comprehensive information about network bandwidth usage,
     concurrent capture limits, and camera status for network management.
@@ -93,8 +92,7 @@ async def get_bandwidth_info(manager: CameraManager = Depends(get_camera_manager
 
 @router.get("/concurrent-limit", response_model=IntResponse)
 async def get_concurrent_limit(manager: CameraManager = Depends(get_camera_manager)) -> IntResponse:
-    """
-    Get current concurrent capture limit.
+    """Get current concurrent capture limit.
 
     Returns the current maximum number of cameras that can capture simultaneously.
     This limit is used for network bandwidth management.
@@ -129,8 +127,7 @@ async def get_concurrent_limit(manager: CameraManager = Depends(get_camera_manag
 async def set_concurrent_limit(
     request: NetworkConcurrentLimitRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Set concurrent capture limit for network bandwidth management.
+    """Set concurrent capture limit for network bandwidth management.
 
     Updates the maximum number of cameras that can capture simultaneously.
     This is crucial for managing network bandwidth, especially with GigE cameras.
@@ -175,8 +172,7 @@ async def set_concurrent_limit(
 
 @router.get("/health", response_model=DictResponse)
 async def get_network_health(manager: CameraManager = Depends(get_camera_manager)) -> DictResponse:
-    """
-    Get network health status and recommendations.
+    """Get network health status and recommendations.
 
     Provides a comprehensive health check of the network configuration
     including current usage, capacity, and optimization recommendations.

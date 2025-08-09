@@ -1,5 +1,4 @@
-"""
-Async configuration routes for Camera API.
+"""Async configuration routes for Camera API.
 
 This module provides endpoints for camera settings that require async operations:
 - Exposure control
@@ -41,8 +40,7 @@ async def get_exposure(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> FloatResponse:
-    """
-    Get current camera exposure time.
+    """Get current camera exposure time.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -68,8 +66,7 @@ async def get_exposure(
 
 @router.put("/exposure", response_model=BoolResponse)
 async def set_exposure(request: ExposureRequest, manager: CameraManager = Depends(get_camera_manager)) -> BoolResponse:
-    """
-    Set camera exposure time.
+    """Set camera exposure time.
 
     Args:
         request: Exposure setting request
@@ -113,8 +110,7 @@ async def get_exposure_range(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> RangeResponse:
-    """
-    Get camera exposure range.
+    """Get camera exposure range.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -147,8 +143,7 @@ async def get_trigger_mode(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> StringResponse:
-    """
-    Get current camera trigger mode.
+    """Get current camera trigger mode.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -176,8 +171,7 @@ async def get_trigger_mode(
 async def set_trigger_mode(
     request: TriggerModeRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Set camera trigger mode.
+    """Set camera trigger mode.
 
     Args:
         request: Trigger mode setting request
@@ -225,8 +219,7 @@ async def get_white_balance(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> StringResponse:
-    """
-    Get current white balance mode.
+    """Get current white balance mode.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -254,8 +247,7 @@ async def get_white_balance(
 async def set_white_balance(
     request: WhiteBalanceRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Set white balance mode.
+    """Set white balance mode.
 
     Args:
         request: White balance setting request
@@ -299,8 +291,7 @@ async def get_white_balance_modes(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> WhiteBalanceListResponse:
-    """
-    Get available white balance modes.
+    """Get available white balance modes.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -330,8 +321,7 @@ async def get_white_balance_modes(
 async def configure_batch_async(
     request: BatchCameraConfigRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BatchOperationResponse:
-    """
-    Configure multiple cameras with async settings (exposure, trigger mode, white balance).
+    """Configure multiple cameras with async settings (exposure, trigger mode, white balance).
 
     This endpoint allows batch configuration of async camera settings across multiple cameras.
     Only supports async configuration parameters: exposure, trigger_mode, white_balance.
