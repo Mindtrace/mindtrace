@@ -98,12 +98,12 @@ async def temp_config_file():
 @pytest.fixture(autouse=True)
 def _disable_real_opencv_camera_discovery(monkeypatch):
     try:
-        from mindtrace.hardware.cameras.backends.opencv.opencv_camera import OpenCVCamera
+        from mindtrace.hardware.cameras.backends.opencv.opencv_camera import OpenCVCameraBackend
 
         def _fake_get_available_cameras(include_details: bool = False):
             return {} if include_details else []
 
-        monkeypatch.setattr(OpenCVCamera, "get_available_cameras", staticmethod(_fake_get_available_cameras))
+        monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_get_available_cameras))
     except Exception:
         # If OpenCV backend is not importable, nothing to do
         pass

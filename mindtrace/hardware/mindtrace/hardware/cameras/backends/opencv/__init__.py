@@ -17,7 +17,7 @@ Usage:
 
     # USB camera (index 0)
     if OPENCV_AVAILABLE:
-        camera = OpenCVCamera("0")
+        camera = OpenCVCameraBackend("0")
         success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
         if success:
             success, image = await camera.capture()
@@ -28,7 +28,7 @@ Usage:
 try:
     from mindtrace.hardware.cameras.backends.opencv.opencv_camera import (
         OPENCV_AVAILABLE,
-        OpenCVCamera as OpenCVCameraBackend,
+        OpenCVCameraBackend,
     )
 except ImportError:
     OpenCVCameraBackend = None

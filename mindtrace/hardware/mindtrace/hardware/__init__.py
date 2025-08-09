@@ -1,9 +1,7 @@
-"""
-Mindtrace Hardware Module
+"""Mindtrace Hardware Module
 
-A comprehensive hardware abstraction layer providing unified access to
-cameras, PLCs, sensors, and other industrial hardware components with
-lazy imports to prevent cross-contamination between different backends.
+A comprehensive hardware abstraction layer providing unified access to cameras, PLCs, sensors, and other industrial 
+hardware components with lazy imports to prevent cross-contamination between different backends.
 
 Key Features:
     - Lazy import system to avoid loading all backends at startup
@@ -60,6 +58,14 @@ def __getattr__(name):
         from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
         return CameraManager
+    elif name == "Camera":
+        from mindtrace.hardware.cameras.core.camera import Camera
+
+        return Camera
+    elif name == "CameraBackend":
+        from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
+
+        return CameraBackend
     elif name == "PLCManager":
         from mindtrace.hardware.plcs.plc_manager import PLCManager
 
