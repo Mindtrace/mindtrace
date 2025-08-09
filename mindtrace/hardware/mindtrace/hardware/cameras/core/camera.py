@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
@@ -17,14 +18,15 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class Camera:
+class Camera(Mindtrace):
     """Unified camera interface that wraps backend-specific camera instances.
 
     Provides a clean, consistent API regardless of the underlying camera backend while maintaining thread-safe 
     operations through internal locking.
     """
 
-    def __init__(self, camera: CameraBackend, full_name: str):
+    def __init__(self, camera: CameraBackend, full_name: str, **kwargs):
+        super().__init__(**kwargs)
         self._camera = camera
         self._full_name = full_name
         self._lock = asyncio.Lock()
