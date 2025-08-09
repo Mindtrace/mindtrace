@@ -9,6 +9,7 @@ error management.
 
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
+from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.camera import Camera
 
 
@@ -65,6 +66,7 @@ def __getattr__(name):
 __all__ = [
     # Core camera functionality
     "CameraManager",
+    "AsyncCameraManager",
     "CameraBackend",
     "Camera",
     # Availability flags
