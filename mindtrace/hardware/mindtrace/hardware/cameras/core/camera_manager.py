@@ -1,35 +1,4 @@
-"""Modern Camera Manager for Mindtrace Hardware System
-
-A clean, intuitive camera management system that provides unified access to
-multiple camera backends with async operations and proper resource management.
-
-Key Features:
-    - Automatic backend discovery and lazy loading
-    - Clean async API with context manager support
-    - Unified camera proxy interface
-    - Thread-safe operations with proper locking
-    - Comprehensive configuration management
-    - Integrated error handling
-
-Supported Backends:
-    - Basler: Industrial cameras (pypylon SDK)
-    - OpenCV: USB cameras and webcams
-    - Mock backends for testing
-
-Usage:
-    # Simple usage
-    async with CameraManager() as manager:
-        cameras = manager.discover_cameras()
-        camera = await manager.get_camera(cameras[0])
-        image = await camera.capture()
-
-    # With configuration
-    async with CameraManager(include_mocks=True) as manager:
-        cameras = manager.discover_cameras(["MockBasler"])  # example mock backend
-        cam = await manager.get_camera(cameras[0])
-        await cam.configure(exposure=20000, gain=2.5)
-        image = await cam.capture("output.jpg")
-"""
+"""Mindtrace camera manager module."""
 
 import asyncio
 import os
@@ -51,10 +20,38 @@ from mindtrace.hardware.core.exceptions import (
 
 
 class CameraManager(Mindtrace):
-    """Modern camera manager with clean API and automatic backend discovery.
+    """Mindtrace Camera Manager class.
 
-    Provides unified access to multiple camera backends with proper resource
-    management, async operations, and comprehensive error handling.
+    A clean, intuitive camera management system that provides unified access to multiple camera backends with async 
+    operations and proper resource management.
+
+    Key Features:
+        - Automatic backend discovery and lazy loading
+        - Clean async API with context manager support
+        - Unified camera proxy interface
+        - Thread-safe operations with proper locking
+        - Comprehensive configuration management
+        - Integrated error handling
+
+    Supported Backends:
+        - Basler: Industrial cameras (pypylon SDK)
+        - OpenCV: USB cameras and webcams
+        - Mock backends for testing
+
+    Usage::
+
+        # Simple usage
+        async with CameraManager() as manager:
+            cameras = manager.discover_cameras()
+            camera = await manager.get_camera(cameras[0])
+            image = await camera.capture()
+
+        # With configuration
+        async with CameraManager(include_mocks=True) as manager:
+            cameras = manager.discover_cameras(["MockBasler"])  # example mock backend
+            cam = await manager.get_camera(cameras[0])
+            await cam.configure(exposure=20000, gain=2.5)
+            image = await cam.capture("output.jpg")
     """
 
     # Backend discovery and lazy loading (class-level cache shared across instances)
@@ -97,11 +94,19 @@ class CameraManager(Mindtrace):
         )
 
     def get_available_backends(self) -> List[str]:
-        """Get list of available backend names."""
+        """Get list of available backend names.
+
+        Returns:
+            A copy of the discovered backend names.
+        """
         return self._discovered_backends.copy()
 
     def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
-        """Get detailed information about all backends."""
+        """Get detailed information about all backends.
+
+        Returns:
+            Mapping of backend name to info dict with availability and type metadata.
+        """
         info = {}
 
         for backend in ["Basler", "OpenCV"]:
@@ -125,15 +130,19 @@ class CameraManager(Mindtrace):
         Returns:
             List of camera names in format "Backend:device_name"
 
-        Examples:
-            # Discover all cameras (existing behavior)
-            all_cameras = manager.discover_cameras()
+        Raises:
+            ValueError: If backends parameter is not None, str, or List[str].
+
+        Example::
+
+            # Discover all cameras
+            cameras = manager.discover_cameras()
 
             # Discover only Basler cameras
-            basler_cameras = manager.discover_cameras("Basler")
+            baslers = manager.discover_cameras("Basler")
 
-            # Discover from multiple specific backends
-            cameras = manager.discover_cameras(["Basler", "OpenCV"])
+            # Discover multiple backends
+            mixed = manager.discover_cameras(["Basler", "OpenCV"])
         """
         all_cameras = []
 
@@ -257,6 +266,10 @@ class CameraManager(Mindtrace):
 
         Returns:
             List of camera names that failed to initialize
+
+        Raises:
+            CameraInitializationError: If a backend fails to initialize.
+            CameraConnectionError: If a connection test fails.
         """
         failed_cameras = []
 
@@ -518,7 +531,8 @@ class CameraManager(Mindtrace):
         Returns:
             Dict mapping camera names to HDR capture results
 
-        Example:
+        Example::
+
             # Capture HDR from multiple cameras
             results = await manager.batch_capture_hdr(
                 ["Basler:cam2"],
@@ -681,6 +695,11 @@ class CameraManager(Mindtrace):
 
         Returns:
             List of available camera names
+
+        Example::
+
+            # Discover all cameras quickly
+            names = CameraManager.discover_all_cameras(include_mocks=True)
         """
         manager = cls(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
         return manager.discover_cameras(backends=backends)
