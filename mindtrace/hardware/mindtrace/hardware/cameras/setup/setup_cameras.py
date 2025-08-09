@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Camera Setup and Configuration Script
+"""Camera Setup and Configuration Script
 
 This script provides a unified interface for installing and configuring all
 camera SDKs and related network settings for the Mindtrace hardware system.

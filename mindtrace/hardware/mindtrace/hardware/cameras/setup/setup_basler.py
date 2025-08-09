@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Basler Pylon SDK Setup Script
+"""Basler Pylon SDK Setup Script
 
 This script automates the download and installation of the Basler Pylon SDK
 for both Linux and Windows systems. The Pylon SDK is required to connect
