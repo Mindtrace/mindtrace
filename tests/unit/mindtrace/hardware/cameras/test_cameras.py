@@ -1,5 +1,4 @@
-"""
-Comprehensive unit tests for the camera system (Basler/OpenCV only).
+"""Comprehensive unit tests for the camera system (Basler/OpenCV only).
 
 This module tests camera functionality using mock implementations to avoid
 hardware dependencies. Daheng-related tests have been removed.

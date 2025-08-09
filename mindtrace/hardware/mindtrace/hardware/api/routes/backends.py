@@ -1,5 +1,4 @@
-"""
-Backend management routes for Camera API.
+"""Backend management routes for Camera API.
 
 This module provides endpoints for managing and querying camera backends.
 """
@@ -19,8 +18,7 @@ router = APIRouter()
 
 @router.get("/", response_model=ListResponse)
 async def list_backends(manager: CameraManager = Depends(get_camera_manager)) -> ListResponse:
-    """
-    List all available camera backends.
+    """List all available camera backends.
 
     Returns a list of discovered backend names. Backends are automatically
     discovered during CameraManager initialization.
@@ -42,8 +40,7 @@ async def list_backends(manager: CameraManager = Depends(get_camera_manager)) ->
 
 @router.get("/info", response_model=BackendInfoResponse)
 async def get_backend_info(manager: CameraManager = Depends(get_camera_manager)) -> BackendInfoResponse:
-    """
-    Get detailed information about all available backends.
+    """Get detailed information about all available backends.
 
     Returns detailed information about each backend including:
     - Backend name
@@ -102,8 +99,7 @@ async def get_backend_info(manager: CameraManager = Depends(get_camera_manager))
 async def get_specific_backend_info(
     backend_name: str, manager: CameraManager = Depends(get_camera_manager)
 ) -> DictResponse:
-    """
-    Get information about a specific backend.
+    """Get information about a specific backend.
 
     Args:
         backend_name: Name of the backend to get information for
@@ -158,8 +154,7 @@ async def get_specific_backend_info(
 
 @router.get("/status/health", response_model=DictResponse)
 async def check_backends_health(manager: CameraManager = Depends(get_camera_manager)) -> DictResponse:
-    """
-    Check the health status of all backends.
+    """Check the health status of all backends.
 
     Performs a health check on all discovered backends to ensure they
     are functioning properly.

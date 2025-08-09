@@ -30,8 +30,7 @@ router = APIRouter()
 
 
 def _encode_image_to_base64(image_array) -> Optional[str]:
-    """
-    Convert image array to base64 string.
+    """Convert image array to base64 string.
 
     Args:
         image_array: Numpy array or image data
@@ -73,8 +72,7 @@ def _encode_image_to_base64(image_array) -> Optional[str]:
 async def capture_image(
     request: CaptureRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> CaptureResponse:
-    """
-    Capture a single image from the specified camera.
+    """Capture a single image from the specified camera.
 
     Args:
         request: Capture request with camera name and optional save path
@@ -146,8 +144,7 @@ async def capture_image(
 async def capture_batch(
     request: BatchCaptureRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BatchOperationResponse:
-    """
-    Capture images from multiple cameras simultaneously.
+    """Capture images from multiple cameras simultaneously.
 
     Uses network bandwidth management to prevent saturation when capturing
     from multiple cameras, especially important for GigE cameras.
@@ -210,8 +207,7 @@ async def capture_batch(
 async def capture_hdr(
     request: HDRCaptureRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> HDRCaptureResponse:
-    """
-    Capture HDR (High Dynamic Range) images with multiple exposure levels.
+    """Capture HDR (High Dynamic Range) images with multiple exposure levels.
 
     This endpoint captures multiple images at different exposure levels to create
     HDR imagery. It temporarily modifies the camera's exposure settings and
@@ -293,8 +289,7 @@ async def capture_hdr(
 async def capture_hdr_batch(
     request: BatchHDRCaptureRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> Dict[str, HDRCaptureResponse]:
-    """
-    Capture HDR images from multiple cameras simultaneously.
+    """Capture HDR images from multiple cameras simultaneously.
 
     Args:
         request: Batch HDR capture request

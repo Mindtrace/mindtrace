@@ -1,5 +1,4 @@
-"""
-Camera discovery and lifecycle routes for Camera API.
+"""Camera discovery and lifecycle routes for Camera API.
 
 This module provides endpoints for discovering cameras, managing their
 lifecycle (initialize/close), and checking their status.
@@ -36,8 +35,7 @@ async def discover_cameras(
     manager: CameraManager = Depends(get_camera_manager),
     validated_backend: Optional[str] = Depends(validate_backend_name),
 ) -> ListResponse:
-    """
-    Discover available cameras from all or specific backends.
+    """Discover available cameras from all or specific backends.
 
     Args:
         backend: Optional backend name to filter cameras by
@@ -79,8 +77,7 @@ async def discover_cameras(
 
 @router.get("/active", response_model=ListResponse)
 async def list_active_cameras(manager: CameraManager = Depends(get_camera_manager)) -> ListResponse:
-    """
-    List currently active (initialized) cameras.
+    """List currently active (initialized) cameras.
 
     Returns:
         ListResponse: List of active camera names
@@ -101,8 +98,7 @@ async def list_active_cameras(manager: CameraManager = Depends(get_camera_manage
 async def initialize_camera(
     request: CameraInitializeRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """
-    Initialize a single camera.
+    """Initialize a single camera.
 
     Args:
         request: Camera initialization request with camera name and options
@@ -148,8 +144,7 @@ async def initialize_camera(
 async def initialize_cameras_batch(
     request: BatchCameraInitializeRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BatchOperationResponse:
-    """
-    Initialize multiple cameras in batch.
+    """Initialize multiple cameras in batch.
 
     Args:
         request: Batch camera initialization request
@@ -202,8 +197,7 @@ async def close_camera(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> BoolResponse:
-    """
-    Close a specific camera.
+    """Close a specific camera.
 
     Args:
         camera: Camera name to close
@@ -228,8 +222,7 @@ async def close_camera(
 
 @router.delete("/all", response_model=BoolResponse)
 async def close_all_cameras(manager: CameraManager = Depends(get_camera_manager)) -> BoolResponse:
-    """
-    Close all active cameras.
+    """Close all active cameras.
 
     Returns:
         BoolResponse: Success status of closure
@@ -255,8 +248,7 @@ async def check_camera_connection(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> StatusResponse:
-    """
-    Check camera connection status.
+    """Check camera connection status.
 
     Args:
         camera: Camera name to check
@@ -298,8 +290,7 @@ async def get_camera_info(
     manager: CameraManager = Depends(get_camera_manager),
     validated_camera: str = Depends(validate_camera_exists),
 ) -> StatusResponse:
-    """
-    Get detailed camera information.
+    """Get detailed camera information.
 
     Args:
         camera: Camera name to get info for

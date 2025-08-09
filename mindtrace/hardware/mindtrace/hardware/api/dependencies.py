@@ -1,5 +1,4 @@
-"""
-Dependencies for Camera API.
+"""Dependencies for Camera API.
 
 This module provides FastAPI dependency injection for the CameraManager
 and other shared resources.
@@ -61,8 +60,7 @@ camera_manager_dependency = CameraManagerDependency()
 
 
 async def get_camera_manager() -> CameraManager:
-    """
-    FastAPI dependency to get the CameraManager instance.
+    """FastAPI dependency to get the CameraManager instance.
 
     Returns:
         CameraManager: The camera manager instance
@@ -74,8 +72,7 @@ async def get_camera_manager() -> CameraManager:
 
 
 async def get_camera_manager_with_validation() -> CameraManager:
-    """
-    FastAPI dependency to get the CameraManager with additional validation.
+    """FastAPI dependency to get the CameraManager with additional validation.
 
     Returns:
         CameraManager: The camera manager instance
@@ -101,8 +98,7 @@ async def get_camera_manager_with_validation() -> CameraManager:
 
 @asynccontextmanager
 async def lifespan_manager():
-    """
-    Context manager for application lifespan management.
+    """Context manager for application lifespan management.
 
     This can be used with FastAPI's lifespan events to properly
     initialize and cleanup the CameraManager.
@@ -118,8 +114,7 @@ async def lifespan_manager():
 
 # Dependency for specific camera validation
 async def validate_camera_name(camera: str) -> str:
-    """
-    Dependency to validate camera name format.
+    """Dependency to validate camera name format.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -145,8 +140,7 @@ async def validate_camera_name(camera: str) -> str:
 async def validate_camera_exists(
     camera: str = Depends(validate_camera_name), manager: CameraManager = Depends(get_camera_manager)
 ) -> str:
-    """
-    Dependency to validate that a camera exists and is initialized.
+    """Dependency to validate that a camera exists and is initialized.
 
     Args:
         camera: Camera name in format 'Backend:device_name'
@@ -172,8 +166,7 @@ async def validate_camera_exists(
 
 # Dependency for backend validation
 async def validate_backend_name(backend: Optional[str] = None) -> Optional[str]:
-    """
-    Dependency to validate backend name if provided.
+    """Dependency to validate backend name if provided.
 
     Args:
         backend: Optional backend name

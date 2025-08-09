@@ -28,8 +28,7 @@ async def export_config(
     validated_camera: str = Depends(validate_camera_exists),
     manager: CameraManager = Depends(get_camera_manager),
 ) -> BoolResponse:
-    """
-    Export camera configuration to a file.
+    """Export camera configuration to a file.
 
     Saves the current camera configuration (exposure, gain, ROI, etc.) to a specified file.
     The configuration file uses JSON format and includes all current camera settings.
@@ -85,8 +84,7 @@ async def import_config(
     validated_camera: str = Depends(validate_camera_exists),
     manager: CameraManager = Depends(get_camera_manager),
 ) -> BoolResponse:
-    """
-    Import camera configuration from a file.
+    """Import camera configuration from a file.
 
     Loads camera configuration from a specified file and applies it to the camera.
     The configuration file should be in JSON format with camera settings.
@@ -142,8 +140,7 @@ async def export_batch_config(
     config_path_pattern: str,  # Path pattern with {camera} placeholder
     manager: CameraManager = Depends(get_camera_manager),
 ) -> BatchOperationResponse:
-    """
-    Export configurations from multiple cameras to files.
+    """Export configurations from multiple cameras to files.
 
     Exports configurations from multiple cameras using a path pattern.
     The path pattern should include {camera} placeholder for camera names.
@@ -212,8 +209,7 @@ async def import_batch_config(
     config_path_pattern: str,  # Path pattern with {camera} placeholder
     manager: CameraManager = Depends(get_camera_manager),
 ) -> BatchOperationResponse:
-    """
-    Import configurations to multiple cameras from files.
+    """Import configurations to multiple cameras from files.
 
     Imports configurations to multiple cameras using a path pattern.
     The path pattern should include {camera} placeholder for camera names.

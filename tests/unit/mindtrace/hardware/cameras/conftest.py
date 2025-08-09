@@ -6,10 +6,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def fast_camera_sleep_and_imwrite(monkeypatch):
-    """Speed up camera unit tests by:
-    - Skipping the 0.1s settle sleep used only in HDR capture
-    - Replacing cv2.imwrite with a fast placeholder write
-    - Replacing mock camera image generation/enhancement with lightweight ops
+    """Pytest fixture to speed up camera unit tests.
+
+    - Skip the 0.1s settle sleep used only in HDR capture
+    - Replace cv2.imwrite with a fast placeholder write
+    - Replace mock camera image generation/enhancement with lightweight ops
+
     This avoids affecting retry timing assertions elsewhere.
     """
     # Patch camera_manager asyncio.sleep: skip only the 0.1s settle used in HDR
@@ -64,8 +66,10 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def enforce_timing_for_concurrency_test(monkeypatch, request):
-    """Only for the sequential concurrency timing test, ensure each capture has a small delay
-    so the measured time reflects sequential execution without significantly slowing the suite.
+    """Enforce timing for the sequential concurrency timing test.
+    
+    Only for the sequential concurrency timing test, ensure each capture has a small delay so the measured time 
+    reflects sequential execution without significantly slowing the suite.
     """
     if request.node and request.node.name == "test_concurrent_capture_limiting":
         try:
