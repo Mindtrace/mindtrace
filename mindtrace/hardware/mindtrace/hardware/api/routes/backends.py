@@ -62,7 +62,7 @@ async def get_backend_info(manager: CameraManager = Depends(get_camera_manager))
 
                 # Try to get cameras for this backend
                 try:
-                    cameras = manager.discover_cameras(backends=backend)
+                    cameras = manager.discover(backends=backend)
                     info["cameras"] = cameras
                     info["camera_count"] = len(cameras)
                 except Exception as e:
@@ -123,7 +123,7 @@ async def get_specific_backend_info(
 
         try:
             # Get cameras for this specific backend
-            cameras = manager.discover_cameras(backends=backend_name)
+            cameras = manager.discover(backends=backend_name)
             info["cameras"] = cameras
             info["camera_count"] = len(cameras)
 
@@ -174,7 +174,7 @@ async def check_backends_health(manager: CameraManager = Depends(get_camera_mana
         for backend in backends:
             try:
                 # Test backend by trying to discover cameras
-                cameras = manager.discover_cameras(backends=backend)
+                cameras = manager.discover(backends=backend)
                 health_status["backend_status"][backend] = {
                     "healthy": True,
                     "camera_count": len(cameras),

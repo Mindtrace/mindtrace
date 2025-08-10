@@ -81,16 +81,14 @@ class CameraManager(Mindtrace):
     def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
         return self._call_in_loop(self._manager.get_backend_info)
 
-    def discover_cameras(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
+    def discover(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
         return self._call_in_loop(self._manager.discover_cameras, backends=backends)
 
-    def initialize_camera(self, camera_name: str, test_connection: bool = True, **kwargs) -> None:
-        return self._submit_coro(self._manager.initialize_camera(camera_name, test_connection=test_connection, **kwargs))
-
-    def initialize_cameras(self, camera_names: List[str], test_connections: bool = True, **kwargs) -> List[str]:
-        return self._submit_coro(
-            self._manager.initialize_cameras(camera_names, test_connections=test_connections, **kwargs)
-        )
+    def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs):
+        if isinstance(names, str):
+            return self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        else:
+            return self._submit_coro(self._manager.open(names, test_connections=test_connection, **kwargs))
 
     def get_camera(self, camera_name: str) -> Camera:
         async_cam: AsyncCamera = self._call_in_loop(self._manager.get_camera, camera_name)
@@ -101,17 +99,20 @@ class CameraManager(Mindtrace):
         async_map = self._call_in_loop(self._manager.get_cameras, camera_names)
         return {name: Camera(async_cam, self._loop) for name, async_cam in async_map.items()}
 
-    def get_active_cameras(self) -> List[str]:
-        return self._call_in_loop(self._manager.get_active_cameras)
+    @property
+    def active_cameras(self) -> List[str]:
+        return self._manager.active_cameras
 
-    def get_max_concurrent_captures(self) -> int:
-        return self._call_in_loop(self._manager.get_max_concurrent_captures)
+    @property
+    def max_concurrent_captures(self) -> int:
+        return self._manager.max_concurrent_captures
 
-    def set_max_concurrent_captures(self, max_captures: int) -> None:
-        return self._call_in_loop(self._manager.set_max_concurrent_captures, max_captures)
+    @max_concurrent_captures.setter
+    def max_concurrent_captures(self, max_captures: int) -> None:
+        self._manager.max_concurrent_captures = max_captures
 
-    def get_network_bandwidth_info(self) -> Dict[str, Any]:
-        return self._call_in_loop(self._manager.get_network_bandwidth_info)
+    def diagnostics(self) -> Dict[str, Any]:
+        return self._manager.diagnostics()
 
     def close_camera(self, camera_name: str) -> None:
         return self._submit_coro(self._manager.close_camera(camera_name))
@@ -129,10 +130,10 @@ class CameraManager(Mindtrace):
     ) -> List[str]:
         mgr = cls(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
         try:
-            return mgr.discover_cameras(backends=backends)
+            return mgr.discover(backends=backends)
         finally:
             try:
-                mgr.shutdown()
+                mgr.close()
             except Exception:
                 pass
 
@@ -140,16 +141,16 @@ class CameraManager(Mindtrace):
     def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "Camera":
         mgr = cls()
         try:
-            mgr.initialize_camera(camera_name, **kwargs)
+            mgr.open(camera_name, **kwargs)
             return mgr.get_camera(camera_name)
         finally:
             try:
-                mgr.shutdown()
+                mgr.close()
             except Exception:
                 pass
 
     # ===== Lifecycle =====
-    def shutdown(self):
+    def close(self):
         if self._shutting_down:
             return
         self._shutting_down = True

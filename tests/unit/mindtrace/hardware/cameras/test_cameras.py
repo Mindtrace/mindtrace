@@ -1,7 +1,7 @@
 """Comprehensive unit tests for the camera system (Basler/OpenCV only).
 
-This module tests camera functionality using mock implementations to avoid
-hardware dependencies. Daheng-related tests have been removed.
+This module tests camera functionality using mock implementations to avoid hardware dependencies. Daheng-related tests 
+have been removed.
 """
 
 import asyncio
@@ -197,7 +197,7 @@ class TestCameraManager:
         manager = camera_manager
 
         # Test available cameras discovery
-        available = manager.discover_cameras()
+        available = manager.discover()
         assert isinstance(available, list)
 
         # Should include mock cameras (at least MockBasler)
@@ -210,30 +210,30 @@ class TestCameraManager:
         manager = camera_manager
 
         # Discover only MockBasler cameras
-        basler_cameras = manager.discover_cameras("MockBasler")
+        basler_cameras = manager.discover("MockBasler")
         assert isinstance(basler_cameras, list)
         for camera in basler_cameras:
             assert camera.startswith("MockBasler:")
 
         # Discover from multiple backends (Basler + OpenCV)
-        multi_backend_cameras = manager.discover_cameras(["MockBasler", "OpenCV"])
+        multi_backend_cameras = manager.discover(["MockBasler", "OpenCV"])
         assert isinstance(multi_backend_cameras, list)
         for camera in multi_backend_cameras:
             assert camera.startswith("MockBasler:") or camera.startswith("OpenCV:")
 
         # Non-existent backend returns empty
-        empty_cameras = manager.discover_cameras("NonExistentBackend")
+        empty_cameras = manager.discover("NonExistentBackend")
         assert isinstance(empty_cameras, list)
         assert len(empty_cameras) == 0
 
         # Empty list returns empty
-        empty_list_cameras = manager.discover_cameras([])
+        empty_list_cameras = manager.discover([])
         assert isinstance(empty_list_cameras, list)
         assert len(empty_list_cameras) == 0
 
         # Invalid parameter type
         with pytest.raises(ValueError, match="Invalid backends parameter"):
-            manager.discover_cameras(123)
+            manager.discover(123)
 
     @pytest.mark.asyncio
     async def test_backend_specific_discovery_consistency(self, camera_manager):
@@ -241,11 +241,11 @@ class TestCameraManager:
         manager = camera_manager
 
         # Get all cameras
-        all_cameras = manager.discover_cameras()
+        all_cameras = manager.discover()
 
         # Get cameras by backend (Basler + OpenCV)
-        basler_cameras = manager.discover_cameras("MockBasler")
-        opencv_cameras = manager.discover_cameras("OpenCV")
+        basler_cameras = manager.discover("MockBasler")
+        opencv_cameras = manager.discover("OpenCV")
 
         # Union of backend-specific discoveries should equal full discovery
         combined_cameras = basler_cameras + opencv_cameras
@@ -289,14 +289,14 @@ class TestCameraManager:
         manager = camera_manager
 
         # Get a mock camera through the manager (prefer MockBasler)
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         mock_cameras = [cam for cam in cameras if "MockBasler" in cam]
 
         if mock_cameras:
             camera_name = mock_cameras[0]
 
-            # Initialize the camera first
-            await manager.initialize_camera(camera_name)
+            # Open the camera first
+            await manager.open(camera_name)
 
             # Then get the camera proxy
             camera_proxy = manager.get_camera(camera_name)
@@ -334,13 +334,14 @@ class TestCameraManager:
         manager = camera_manager
 
         # Get multiple mock cameras
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]  # Limit to 3 for testing
 
         if len(mock_cameras) >= 2:
-            # Initialize cameras in batch
-            failed_list = await manager.initialize_cameras(mock_cameras)
-            assert len(failed_list) == 0  # No cameras should fail
+            # Open cameras in batch
+            opened = await manager.open(mock_cameras)
+            assert isinstance(opened, dict)
+            assert set(opened.keys()) == set(mock_cameras)
 
             # Ensure short exposure for fast tests
             await _set_low_exposure(manager, mock_cameras, 1000)
@@ -372,15 +373,15 @@ class TestCameraManager:
         from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager as CameraManager
 
         async with CameraManager(include_mocks=True) as manager:
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             assert isinstance(cameras, list)
 
             mock_cameras = [cam for cam in cameras if "Mock" in cam]
             if mock_cameras:
                 camera_name = mock_cameras[0]
 
-                # Initialize the camera first
-                await manager.initialize_camera(camera_name)
+                # Open the camera first
+                await manager.open(camera_name)
 
                 # Then get the camera proxy
                 camera_proxy = manager.get_camera(camera_name)
@@ -404,23 +405,23 @@ class TestCameraErrorHandling:
         manager = camera_manager
 
         with pytest.raises(CameraConfigurationError, match="Invalid camera name format"):
-            await manager.initialize_camera("NonExistentCamera")
+            await manager.open("NonExistentCamera")
 
     @pytest.mark.asyncio
     async def test_double_initialization(self, camera_manager):
         """Test double initialization of the same camera."""
         manager = camera_manager
 
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         if cameras:
             camera_name = cameras[0]
 
-            # First initialization should succeed
-            await manager.initialize_camera(camera_name)
+            # First open should succeed
+            await manager.open(camera_name)
 
             # Second initialization should raise an error (preventing resource conflicts)
             with pytest.raises(ValueError, match="Camera .* is already initialized"):
-                await manager.initialize_camera(camera_name)
+                await manager.open(camera_name)
 
             # Camera should still be accessible after failed double init
             camera_proxy = manager.get_camera(camera_name)
@@ -431,7 +432,7 @@ class TestCameraErrorHandling:
         """Test accessing uninitialized camera."""
         manager = camera_manager
 
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         if cameras:
             camera_name = cameras[0]
 
@@ -444,10 +445,10 @@ class TestCameraErrorHandling:
         """Test camera operations after shutdown."""
         manager = camera_manager
 
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         if cameras:
             camera_name = cameras[0]
-            await manager.initialize_camera(camera_name)
+            await manager.open(camera_name)
             camera_proxy = manager.get_camera(camera_name)
 
             # Close the camera
@@ -467,13 +468,14 @@ class TestCameraPerformance:
         manager = camera_manager
 
         # Get multiple mock cameras
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
 
         if len(mock_cameras) >= 2:
-            # Initialize cameras in batch
-            failed_list = await manager.initialize_cameras(mock_cameras)
-            assert len(failed_list) == 0  # No cameras should fail
+            # Open cameras in batch
+            opened = await manager.open(mock_cameras)
+            assert isinstance(opened, dict)
+            assert set(opened.keys()) == set(mock_cameras)
 
             # Ensure short exposure for fast tests
             await _set_low_exposure(manager, mock_cameras, 1000)
@@ -502,13 +504,13 @@ class TestCameraPerformance:
 
             try:
                 # Get multiple mock cameras
-                cameras = manager.discover_cameras()
+                cameras = manager.discover()
                 mock_cameras = [cam for cam in cameras if "Mock" in cam][:4]
 
                 if len(mock_cameras) >= 2:
-                    # Initialize cameras
-                    failed_list = await manager.initialize_cameras(mock_cameras)
-                    assert len(failed_list) == 0
+                    # Open cameras
+                    opened = await manager.open(mock_cameras)
+                    assert set(opened.keys()) == set(mock_cameras)
 
                     # Test batch capture with bandwidth management
                     results = await manager.batch_capture(mock_cameras)
@@ -521,7 +523,7 @@ class TestCameraPerformance:
                         assert isinstance(image, np.ndarray)
 
                     # Verify bandwidth management info
-                    bandwidth_info = manager.get_network_bandwidth_info()
+                    bandwidth_info = manager.diagnostics()
                     assert bandwidth_info["max_concurrent_captures"] == max_concurrent
                     assert bandwidth_info["bandwidth_management_enabled"] is True
                     assert bandwidth_info["active_cameras"] == len(mock_cameras)
@@ -538,29 +540,29 @@ class TestCameraPerformance:
 
         try:
             # Initialize cameras
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
 
             if len(mock_cameras) >= 2:
-                await manager.initialize_cameras(mock_cameras)
+                await manager.open(mock_cameras)
 
                 # Use short exposure
                 await _set_low_exposure(manager, mock_cameras, 1000)
 
                 # Verify initial setting
-                assert manager.get_max_concurrent_captures() == 1
+                assert manager.max_concurrent_captures == 1
 
                 # Change to higher limit
-                manager.set_max_concurrent_captures(3)
-                assert manager.get_max_concurrent_captures() == 3
+                manager.max_concurrent_captures = 3
+                assert manager.max_concurrent_captures == 3
 
                 # Test batch capture with new limit
                 results = await manager.batch_capture(mock_cameras)
                 assert len(results) == len(mock_cameras)
 
                 # Change back to lower limit
-                manager.set_max_concurrent_captures(1)
-                assert manager.get_max_concurrent_captures() == 1
+                manager.max_concurrent_captures = 1
+                assert manager.max_concurrent_captures == 1
 
                 # Test batch capture with lower limit
                 results = await manager.batch_capture(mock_cameras)
@@ -578,11 +580,11 @@ class TestCameraPerformance:
 
         try:
             # Initialize cameras
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             mock_cameras = [cam for cam in cameras if "Mock" in cam][:2]
 
             if len(mock_cameras) >= 2:
-                await manager.initialize_cameras(mock_cameras)
+                await manager.open(mock_cameras)
 
                 # Short exposure for fast tests
                 await _set_low_exposure(manager, mock_cameras, 1000)
@@ -599,7 +601,7 @@ class TestCameraPerformance:
                     assert result is True
 
                 # Verify bandwidth info shows GigE cameras counted (Basler is GigE in mocks)
-                bandwidth_info = manager.get_network_bandwidth_info()
+                bandwidth_info = manager.diagnostics()
                 assert bandwidth_info["gige_cameras"] >= 0
 
         finally:
@@ -619,9 +621,9 @@ class TestNetworkBandwidthManagement:
             manager = CameraManager(include_mocks=True, max_concurrent_captures=max_concurrent)
 
             try:
-                assert manager.get_max_concurrent_captures() == max_concurrent
+                assert manager.max_concurrent_captures == max_concurrent
 
-                bandwidth_info = manager.get_network_bandwidth_info()
+                bandwidth_info = manager.diagnostics()
                 assert bandwidth_info["max_concurrent_captures"] == max_concurrent
                 assert bandwidth_info["bandwidth_management_enabled"] is True
                 assert "recommended_settings" in bandwidth_info
@@ -637,7 +639,7 @@ class TestNetworkBandwidthManagement:
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
         try:
-            bandwidth_info = manager.get_network_bandwidth_info()
+            bandwidth_info = manager.diagnostics()
 
             # Check required fields
             required_fields = [
@@ -674,17 +676,17 @@ class TestNetworkBandwidthManagement:
         try:
             # Test setting invalid values
             with pytest.raises(ValueError, match="max_captures must be at least 1"):
-                manager.set_max_concurrent_captures(0)
+                manager.max_concurrent_captures = 0
 
             with pytest.raises(ValueError, match="max_captures must be at least 1"):
-                manager.set_max_concurrent_captures(-1)
+                manager.max_concurrent_captures = -1
 
             # Valid settings should work
-            manager.set_max_concurrent_captures(1)
-            assert manager.get_max_concurrent_captures() == 1
+            manager.max_concurrent_captures = 1
+            assert manager.max_concurrent_captures == 1
 
-            manager.set_max_concurrent_captures(5)
-            assert manager.get_max_concurrent_captures() == 5
+            manager.max_concurrent_captures = 5
+            assert manager.max_concurrent_captures == 5
 
         finally:
             await manager.close_all_cameras()
@@ -700,11 +702,11 @@ class TestNetworkBandwidthManagement:
         manager = CameraManager(include_mocks=True, max_concurrent_captures=1)
 
         try:
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
 
             if len(mock_cameras) >= 2:
-                await manager.initialize_cameras(mock_cameras)
+                await manager.open(mock_cameras)
 
                 # Short exposure for fast tests
                 await _set_low_exposure(manager, mock_cameras, 1000)
@@ -754,11 +756,11 @@ class TestNetworkBandwidthManagement:
         manager = CameraManager(include_mocks=True, max_concurrent_captures=2)
 
         try:
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
 
             if len(mock_cameras) >= 2:
-                await manager.initialize_cameras(mock_cameras)
+                await manager.open(mock_cameras)
 
                 # Short exposure for fast tests
                 await _set_low_exposure(manager, mock_cameras, 1000)
@@ -781,7 +783,7 @@ class TestNetworkBandwidthManagement:
                 assert len(individual_results) == len(camera_proxies)
 
                 # All operations should respect bandwidth limits
-                bandwidth_info = manager.get_network_bandwidth_info()
+                bandwidth_info = manager.diagnostics()
                 assert bandwidth_info["max_concurrent_captures"] == 2
 
         finally:
@@ -795,17 +797,17 @@ class TestNetworkBandwidthManagement:
         manager = CameraManager(include_mocks=True, max_concurrent_captures=3)
 
         try:
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             mock_cameras = [cam for cam in cameras if "Mock" in cam][:2]
 
             if len(mock_cameras) >= 2:
-                await manager.initialize_cameras(mock_cameras)
+                await manager.open(mock_cameras)
 
                 # Short exposure for fast tests
                 await _set_low_exposure(manager, mock_cameras, 1000)
 
                 # Verify initial setting
-                assert manager.get_max_concurrent_captures() == 3
+                assert manager.max_concurrent_captures == 3
 
                 # Perform multiple operations
                 for i in range(3):
@@ -813,11 +815,11 @@ class TestNetworkBandwidthManagement:
                     assert len(results) == len(mock_cameras)
 
                     # Setting should remain the same
-                    assert manager.get_max_concurrent_captures() == 3
+                    assert manager.max_concurrent_captures == 3
 
                 # Change setting
-                manager.set_max_concurrent_captures(1)
-                assert manager.get_max_concurrent_captures() == 1
+                manager.max_concurrent_captures = 1
+                assert manager.max_concurrent_captures == 1
 
                 # Perform more operations
                 for i in range(2):
@@ -825,7 +827,7 @@ class TestNetworkBandwidthManagement:
                     assert len(results) == len(mock_cameras)
 
                     # New setting should persist
-                    assert manager.get_max_concurrent_captures() == 1
+                    assert manager.max_concurrent_captures == 1
 
         finally:
             await manager.close_all_cameras()

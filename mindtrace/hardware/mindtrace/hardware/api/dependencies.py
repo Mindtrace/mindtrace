@@ -154,7 +154,7 @@ async def validate_camera_exists(
         CameraError: If camera system error occurs
     """
     # Check if camera is initialized
-    active_cameras = manager.get_active_cameras()
+    active_cameras = manager.active_cameras
     if camera not in active_cameras:
         # Import here to avoid circular imports
         from mindtrace.hardware.core.exceptions import CameraNotFoundError

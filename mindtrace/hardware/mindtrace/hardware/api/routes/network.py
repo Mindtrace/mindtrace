@@ -194,8 +194,8 @@ async def get_network_health(manager: CameraManager = Depends(get_camera_manager
         logger.info("Checking network health status")
 
         # Get current network information
-        bandwidth_info = manager.get_network_bandwidth_info()
-        active_cameras = list(manager.get_active_cameras())
+        bandwidth_info = manager.diagnostics()
+        active_cameras = list(manager.active_cameras)
 
         # Calculate health metrics
         max_concurrent = bandwidth_info["max_concurrent_captures"]
@@ -243,7 +243,7 @@ async def get_network_health(manager: CameraManager = Depends(get_camera_manager
             },
             "recommendations": recommendations,
             "warning_messages": warning_messages,
-            "timestamp": manager.get_network_bandwidth_info(),  # This will include timestamp if available
+            "timestamp": manager.diagnostics(),  # This will include timestamp if available
         }
 
         logger.info(f"Network health check completed: {health_status} ({usage_percentage:.1f}% usage)")

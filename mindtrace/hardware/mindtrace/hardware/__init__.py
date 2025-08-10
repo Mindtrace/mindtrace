@@ -29,7 +29,7 @@ Usage:
 
     # Camera operations
     async with CameraManager() as camera_manager:
-        cameras = camera_manager.discover_cameras()
+        cameras = camera_manager.discover()
         camera = await camera_manager.get_camera(cameras[0])
         image = await camera.capture()
 

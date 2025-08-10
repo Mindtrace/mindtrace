@@ -84,7 +84,7 @@ async def set_gain(request: GainRequest, manager: CameraManager = Depends(get_ca
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -192,7 +192,7 @@ async def set_roi(request: ROIRequest, manager: CameraManager = Depends(get_came
             raise HTTPException(status_code=400, detail="ROI x and y coordinates must be non-negative")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -302,7 +302,7 @@ async def set_pixel_format(
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -413,7 +413,7 @@ async def set_image_enhancement(
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
