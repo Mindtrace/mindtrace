@@ -417,13 +417,13 @@ class TestCameraErrorHandling:
             camera_name = cameras[0]
 
             # First open should succeed
-            await manager.open(camera_name)
+            first = await manager.open(camera_name)
 
-            # Second initialization should raise an error (preventing resource conflicts)
-            with pytest.raises(ValueError, match="Camera .* is already initialized"):
-                await manager.open(camera_name)
+            # Second open should be idempotent and return the existing proxy
+            second = await manager.open(camera_name)
+            assert first is second
 
-            # Camera should still be accessible after failed double init
+            # Camera should still be accessible
             camera_proxy = manager.get_camera(camera_name)
             assert camera_proxy is not None
 

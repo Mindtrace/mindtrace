@@ -264,22 +264,40 @@ class AsyncCameraManager(Mindtrace):
             return all_details
         return all_cameras
 
-    async def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
+    async def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
         """Open one or more cameras with optional connection testing.
 
         Args:
-            names: Camera name or list of names in the form "Backend:device_name".
+            names: Camera name or list of names in the form "Backend:device_name". If None, opens the first available camera (preferring OpenCV).
             test_connection: Whether to test camera connection(s) after opening.
             **kwargs: Camera configuration parameters.
 
         Returns:
             AsyncCamera if a single name was provided, otherwise a dict mapping names to AsyncCamera.
         """
+        # If no name provided, choose the first available (prefer OpenCV)
+        if names is None:
+            try:
+                names_list = self.discover(["OpenCV"])  # type: ignore[assignment]
+            except Exception:
+                names_list = []
+            target: Optional[str] = None
+            if isinstance(names_list, list) and names_list:
+                target = names_list[0]
+            if target is None:
+                all_names = self.discover()  # type: ignore[assignment]
+                if isinstance(all_names, list) and all_names:
+                    target = all_names[0]
+            if target is None:
+                raise CameraNotFoundError("No cameras available to open by default")
+            names = target
+
         if isinstance(names, str):
             camera_name = names
             if camera_name in self._cameras:
-                self.logger.warning(f"Camera '{camera_name}' is already initialized")
-                raise ValueError(f"Camera '{camera_name}' is already initialized")
+                # Idempotent: return existing proxy
+                self.logger.warning(f"Camera '{camera_name}' already open; returning existing instance")
+                return self._cameras[camera_name]
 
             backend, device_name = self._parse_camera_name(camera_name)
             self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
@@ -344,6 +362,14 @@ class AsyncCameraManager(Mindtrace):
         else:
             self.logger.info("All cameras initialized successfully")
         return opened
+
+    async def open_default(self, **kwargs) -> AsyncCamera:
+        """Open the first available camera with sensible defaults.
+
+        This is a convenience method that opens the first available camera. If no cameras are available, it raises a 
+        CameraNotFoundError.
+        """
+        return await self.open(None, **kwargs)  # type: ignore[return-value]
 
     def get_camera(self, camera_name: str) -> AsyncCamera:
         """Get an initialized camera by name.
