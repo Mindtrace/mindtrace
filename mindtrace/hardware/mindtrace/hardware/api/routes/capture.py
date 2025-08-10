@@ -97,7 +97,7 @@ async def capture_image(
             )
 
         # Get camera proxy and capture image
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
 
         # Capture image - this returns success status and image data
         capture_result = await camera_proxy.capture(save_path=request.save_path)
@@ -230,7 +230,7 @@ async def capture_hdr(
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
         # Get camera proxy and perform HDR capture
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
 
         hdr_result = await camera_proxy.capture_hdr(
             save_path_pattern=request.save_path_pattern,

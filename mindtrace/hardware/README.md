@@ -9,7 +9,7 @@ The Mindtrace Hardware Component provides a unified interface for managing indus
 
 This component offers:
 - **Unified Configuration System**: Single configuration for all hardware components
-- **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with mock implementations
+- **Multiple Camera Backends**: Support for Basler, OpenCV cameras with mock implementations
 - **Network Bandwidth Management**: Intelligent concurrent capture limiting for GigE cameras
 - **Multiple PLC Backends**: Support for Allen Bradley PLCs with LogixDriver, SLCDriver, and CIPDriver
 - **Async Operations**: Thread-safe asynchronous operations for both cameras and PLCs
@@ -31,9 +31,6 @@ mindtrace/hardware/
         │   ├── camera_manager.py  # Main camera management interface
         │   ├── backends/
         │   │   ├── base.py        # Abstract base camera class
-        │   │   ├── daheng/        # Daheng camera implementation + mock
-        │   │   │   ├── daheng_camera.py
-        │   │   │   └── mock_daheng.py
         │   │   ├── basler/        # Basler camera implementation + mock
         │   │   │   ├── basler_camera.py
         │   │   │   └── mock_basler.py
@@ -81,19 +78,12 @@ mindtrace-setup-cameras
 
 #### Individual Camera Backend Setup
 ```bash
-# Setup Daheng cameras (gxipy SDK needs to be installed separately)
-mindtrace-setup-daheng
-pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
-
 # Setup Basler cameras (installs pypylon SDK)
 mindtrace-setup-basler
 ```
 
 #### Camera Backend Removal
 ```bash
-# Remove Daheng camera support
-mindtrace-uninstall-daheng
-
 # Remove Basler camera support
 mindtrace-uninstall-basler
 ```
@@ -114,7 +104,7 @@ async def camera_example():
         # Initialize and get a camera using the proper pattern
         if cameras:
             await manager.open(cameras[0])
-            camera_proxy = manager.get_camera(cameras[0])
+            camera_proxy = await manager.open(cameras[0])
             
             # Capture image
             image = await camera_proxy.capture()
@@ -185,7 +175,7 @@ async def modern_camera_usage():
         
         # Initialize and get camera proxy for unified interface
         await manager.open(cameras[0])
-        camera_proxy = manager.get_camera(cameras[0])
+        camera_proxy = await manager.open(cameras[0])
         
         # Use camera through proxy
         image = await camera_proxy.capture()
@@ -211,8 +201,8 @@ async def modern_camera_usage():
 ```python
 # Get available backends
 manager = CameraManager(include_mocks=True)
-backends = manager.get_available_backends()
-backend_info = manager.get_backend_info()
+backends = manager.backends()
+backend_info = manager.backend_info()
 print(f"Available backends: {backends}")
 print(f"Backend details: {backend_info}")
 
@@ -230,8 +220,8 @@ from mindtrace.hardware.cameras.camera_manager import initialize_and_get_camera
 
 async def quick_camera_access():
     # Initialize and get camera in one step
-    camera = await initialize_and_get_camera(
-        "MockDaheng:test_camera",
+    camera = await manager.open(
+        "MockBasler:mock_basler_1",
         exposure=20000,
         gain=1.5,
         trigger_mode="continuous"
@@ -254,15 +244,15 @@ async def camera_setup():
         cameras = manager.discover()
         
         # Initialize and get specific camera
-        await manager.open('Daheng:cam1')
-        camera = manager.get_camera('Daheng:cam1')
+        await manager.open('OpenCV:opencv_camera_0')
+        camera = await manager.open('OpenCV:opencv_camera_0')
         
         # Initialize camera with configuration during initialization
         await manager.open(
-            camera_name='Daheng:cam1',
+            camera_name='OpenCV:opencv_camera_0',
             test_connection=True
         )
-        camera = manager.get_camera('Basler:serial123')
+        camera = await manager.open('Basler:serial123')
         
         # Check active cameras
         active = manager.active_cameras
@@ -275,8 +265,8 @@ async def camera_setup():
 async def image_operations():
     async with CameraManager() as manager:
         # Initialize camera first
-        await manager.open('Daheng:cam1')
-        camera = manager.get_camera('Daheng:cam1')
+        await manager.open('OpenCV:opencv_camera_0')
+        camera = await manager.open('OpenCV:opencv_camera_0')
         
         # Basic capture
         image = await camera.capture()
@@ -362,7 +352,7 @@ async def bandwidth_management_example():
         )
         
     finally:
-        await manager.close_all_cameras()
+        await manager.close()
 
 # Different bandwidth management strategies
 async def bandwidth_strategies():
@@ -387,7 +377,7 @@ async def advanced_control():
     async with CameraManager() as manager:
         # Initialize camera first
         await manager.open('Basler:serial123')
-        camera = manager.get_camera('Basler:serial123')
+        camera = await manager.open('Basler:serial123')
         
         # Exposure control
         exposure_range = await camera.get_exposure_range()
@@ -436,7 +426,7 @@ success = manager.register_backend("AllenBradley")
 
 # Get backend information
 backends = manager.get_supported_backends()
-available = manager.get_available_backends()
+available = manager.backends()
 status = manager.get_backend_status()
 ```
 
@@ -632,7 +622,6 @@ export MINDTRACE_HW_PLC_RETRY_COUNT="3"
 export MINDTRACE_HW_PLC_RETRY_DELAY="1.0"
 
 # Backend control
-export MINDTRACE_HW_CAMERA_DAHENG_ENABLED="true"
 export MINDTRACE_HW_CAMERA_BASLER_ENABLED="true"
 export MINDTRACE_HW_CAMERA_OPENCV_ENABLED="true"
 export MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED="true"
@@ -664,7 +653,6 @@ Create a `hardware_config.json` file for persistent configuration:
     "enhancement_contrast": 1.2
   },
   "backends": {
-    "daheng_enabled": true,
     "basler_enabled": true,
     "opencv_enabled": true,
     "mock_enabled": false,
@@ -696,19 +684,9 @@ Create a `hardware_config.json` file for persistent configuration:
 
 ### Camera Backends
 
-#### Daheng Cameras
-- **SDK**: gxipy
-- **Setup**: `mindtrace-setup-daheng` or `pip install mindtrace-hardware[cameras-daheng]`
-- **Features**: Industrial cameras with advanced controls
-- **Supported Models**: All Daheng USB3 and GigE cameras
-- **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
-- **Image Enhancement**: Gamma correction, contrast adjustment, color correction
-- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format
-- **Mock Support**: Comprehensive mock implementation for testing
-
 #### Basler Cameras
 - **SDK**: pypylon
-- **Setup**: Install Basler pylon SDK + `mindtrace-setup-basler`
+- **Setup**: `mindtrace-setup-basler` or install pypylon
 - **Features**: High-performance industrial cameras
 - **Supported Models**: All Basler USB3, GigE, and CameraLink cameras
 - **Advanced Features**: ROI selection, gain control, pixel format selection
@@ -836,7 +814,7 @@ from mindtrace.hardware.core.exceptions import (
 # Camera exception handling
 try:
     async with CameraManager(include_mocks=True) as manager:
-        camera_proxy = await manager.get_camera('Daheng:cam1')
+        camera_proxy = await manager.open('OpenCV:opencv_camera_0')
         image = await camera_proxy.capture()
 except CameraNotFoundError:
     print("Camera not found")
@@ -879,7 +857,7 @@ async def industrial_automation():
             # Setup cameras with bandwidth management
             cameras = camera_manager.discover()
             await camera_manager.open(cameras[0])
-            inspection_camera = camera_manager.get_camera(cameras[0])
+            inspection_camera = await camera_manager.open(cameras[0])
             
             # Check bandwidth management status
             bandwidth_info = camera_manager.diagnostics()
@@ -1011,7 +989,7 @@ async def testing_setup():
             
             # Test image capture (respects bandwidth limits)
             for camera_name in cameras[:2]:
-                camera = camera_manager.get_camera(camera_name)
+                camera = await camera_manager.open(camera_name)
                 await camera.configure(image_enhancement=True)
                 image = await camera.capture()
                 print(f"Mock image captured from {camera_name}: {image.shape}")
@@ -1100,7 +1078,7 @@ pytest --cov=mindtrace.hardware mindtrace/hardware/tests/unit/
 pytest mindtrace/hardware/tests/unit/ -v
 
 # Run specific test classes
-pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py::TestMockDahengCamera
+pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py::TestMockBaslerCamera
 pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py::TestMockAllenBradleyPLC
 ```
 
@@ -1122,8 +1100,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 ### Test Categories
 
 #### Camera Unit Tests (`mindtrace/hardware/tests/unit/cameras/test_cameras.py`)
-- **MockDahengCamera Tests**: Initialization, connection, capture, configuration
-- **MockBaslerCamera Tests**: Basler-specific features and serial connections
+- **MockBaslerCamera Tests**: Initialization, connection, capture, configuration
 - **CameraManager Tests**: Backend registration, discovery, batch operations
 - **Network Bandwidth Management Tests**: Concurrent capture limiting, dynamic adjustment, bandwidth info
 - **Error Handling Tests**: Timeout, connection, and configuration errors

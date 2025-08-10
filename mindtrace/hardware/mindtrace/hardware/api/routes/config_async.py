@@ -49,7 +49,7 @@ async def get_exposure(
         FloatResponse: Current exposure time in microseconds
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         exposure = await camera_proxy.get_exposure()
 
         logger.info(f"Retrieved exposure for '{validated_camera}': {exposure} μs")
@@ -84,7 +84,7 @@ async def set_exposure(request: ExposureRequest, manager: CameraManager = Depend
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = await camera_proxy.set_exposure(request.exposure)
 
         if success:
@@ -119,7 +119,7 @@ async def get_exposure_range(
         RangeResponse: Tuple of (minimum_exposure, maximum_exposure) in microseconds
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         exposure_range = await camera_proxy.get_exposure_range()
 
         logger.info(f"Retrieved exposure range for '{validated_camera}': {exposure_range}")
@@ -152,7 +152,7 @@ async def get_trigger_mode(
         StringResponse: Current trigger mode ('continuous' or 'trigger')
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         trigger_mode = await camera_proxy.get_trigger_mode()
 
         logger.info(f"Retrieved trigger mode for '{validated_camera}': {trigger_mode}")
@@ -192,7 +192,7 @@ async def set_trigger_mode(
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = await camera_proxy.set_trigger_mode(request.mode)
 
         if success:
@@ -228,7 +228,7 @@ async def get_white_balance(
         StringResponse: Current white balance mode
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         white_balance = await camera_proxy.get_white_balance()
 
         logger.info(f"Retrieved white balance for '{validated_camera}': {white_balance}")
@@ -265,7 +265,7 @@ async def set_white_balance(
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = await camera_proxy.set_white_balance(request.mode)
 
         if success:
@@ -300,7 +300,7 @@ async def get_white_balance_modes(
         WhiteBalanceListResponse: List of supported white balance modes
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         wb_modes = camera_proxy.get_available_white_balance_modes()
 
         logger.info(f"Retrieved white balance modes for '{validated_camera}': {wb_modes}")

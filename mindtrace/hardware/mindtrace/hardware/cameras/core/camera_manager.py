@@ -37,6 +37,109 @@ class CameraManager(Mindtrace):
         )
         self.logger.info("CameraManager (sync) initialized with background event loop")
 
+    # ===== Public sync API (delegating) =====
+    def backends(self) -> List[str]:
+        return self._call_in_loop(self._manager.backends)
+
+    def backend_info(self) -> Dict[str, Dict[str, Any]]:
+        return self._call_in_loop(self._manager.backend_info)
+
+    @classmethod
+    def discover(
+        cls,
+        backends: Optional[Union[str, List[str]]] = None,
+        details: bool = False,
+        include_mocks: bool = False,
+    ):
+        from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+        return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
+
+    def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union["Camera", Dict[str, "Camera"]]:
+        """Open one or more cameras.
+
+        Args:
+            names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera 
+                (prefers OpenCV).
+            test_connection: If True, perform a lightweight connection test after opening.
+            **kwargs: Optional backend-specific configuration to apply during open.
+
+        Returns:
+            If a single name or None is provided, returns a `Camera`.
+            If a list of names is provided, returns a `Dict[str, Camera]` mapping each name to a `Camera`.
+
+        Raises:
+            CameraNotFoundError: If no cameras are available when names is None.
+            CameraInitializationError: If opening the camera fails.
+            CameraConnectionError: If the connection test fails when test_connection is True.
+            ValueError: If a provided camera name is already open (depending on backend policy) or invalid.
+
+        Notes:
+            - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
+        """
+        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        if isinstance(result, AsyncCamera):
+            return Camera(result, self._loop)
+        # assume dict[str, AsyncCamera]
+        return {name: Camera(async_cam, self._loop) for name, async_cam in result.items()}
+
+    @property
+    def active_cameras(self) -> List[str]:
+        return self._manager.active_cameras
+
+    @property
+    def max_concurrent_captures(self) -> int:
+        return self._manager.max_concurrent_captures
+
+    @max_concurrent_captures.setter
+    def max_concurrent_captures(self, max_captures: int) -> None:
+        self._manager.max_concurrent_captures = max_captures
+
+    def diagnostics(self) -> Dict[str, Any]:
+        return self._manager.diagnostics()
+
+    def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
+        return self._submit_coro(self._manager.close(names))
+
+    # ===== Lifecycle =====
+    def close(self):
+        if self._shutting_down:
+            return
+        self._shutting_down = True
+        try:
+            try:
+                # Bound shutdown time; if closing cameras stalls, continue stopping loop
+                self._submit_coro(self._manager.close(), timeout=1.0)
+            except Exception:
+                pass
+            try:
+                if self._loop.is_running():
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
+            try:
+                self._thread.join(timeout=1.5)
+            except Exception:
+                pass
+        finally:
+            self.logger.info("CameraManager (sync) shutdown complete")
+
+    def __del__(self):
+        # Avoid blocking in destructor; perform best-effort stop
+        try:
+            if hasattr(self, "_loop") and isinstance(getattr(self, "_loop"), asyncio.AbstractEventLoop):
+                try:
+                    if self._loop.is_running():
+                        self._loop.call_soon_threadsafe(self._loop.stop)
+                except Exception:
+                    pass
+            if hasattr(self, "_thread") and getattr(self, "_thread") is not None:
+                try:
+                    self._thread.join(timeout=0.2)
+                except Exception:
+                    pass
+        except Exception:
+            pass 
+
     # ===== Loop helpers =====
     def _run_loop(self):
         asyncio.set_event_loop(self._loop)
@@ -73,140 +176,3 @@ class CameraManager(Mindtrace):
             except Exception:
                 pass
             raise
-
-    # ===== Public sync API (delegating) =====
-    def get_available_backends(self) -> List[str]:
-        return self._call_in_loop(self._manager.get_available_backends)
-
-    def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
-        return self._call_in_loop(self._manager.get_backend_info)
-
-    def discover(self, backends: Optional[Union[str, List[str]]] = None, details: bool = False):
-        return self._call_in_loop(self._manager.discover, backends=backends, details=details)
-
-    def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union["Camera", Dict[str, "Camera"]]:
-        """Open one or more cameras.
-
-        Args:
-            names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera 
-                (prefers OpenCV).
-            test_connection: If True, perform a lightweight connection test after opening.
-            **kwargs: Optional backend-specific configuration to apply during open.
-
-        Returns:
-            If a single name or None is provided, returns a `Camera`.
-            If a list of names is provided, returns a `Dict[str, Camera]` mapping each name to a `Camera`.
-
-        Raises:
-            CameraNotFoundError: If no cameras are available when names is None.
-            CameraInitializationError: If opening the camera fails.
-            CameraConnectionError: If the connection test fails when test_connection is True.
-            ValueError: If a provided camera name is already open (depending on backend policy) or invalid.
-
-        Notes:
-            - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
-        """
-        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
-        if isinstance(result, AsyncCamera):
-            return Camera(result, self._loop)
-        # assume dict[str, AsyncCamera]
-        return {name: Camera(async_cam, self._loop) for name, async_cam in result.items()}
-
-    def get_camera(self, camera_name: str) -> Camera:
-        async_cam: AsyncCamera = self._call_in_loop(self._manager.get_camera, camera_name)
-        # Wrap with sync facade bound to this manager's loop
-        return Camera(async_cam, self._loop)
-
-    def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
-        async_map = self._call_in_loop(self._manager.get_cameras, camera_names)
-        return {name: Camera(async_cam, self._loop) for name, async_cam in async_map.items()}
-
-    @property
-    def active_cameras(self) -> List[str]:
-        return self._manager.active_cameras
-
-    @property
-    def max_concurrent_captures(self) -> int:
-        return self._manager.max_concurrent_captures
-
-    @max_concurrent_captures.setter
-    def max_concurrent_captures(self, max_captures: int) -> None:
-        self._manager.max_concurrent_captures = max_captures
-
-    def diagnostics(self) -> Dict[str, Any]:
-        return self._manager.diagnostics()
-
-    def close_camera(self, camera_name: str) -> None:
-        return self._submit_coro(self._manager.close_camera(camera_name))
-
-    def close_all_cameras(self) -> None:
-        return self._submit_coro(self._manager.close_all_cameras())
-
-    # Convenience/class methods
-    @classmethod
-    def discover_all_cameras(
-        cls,
-        include_mocks: bool = False,
-        max_concurrent_captures: int = 2,
-        backends: Optional[Union[str, List[str]]] = None,
-    ) -> List[str]:
-        mgr = cls(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
-        try:
-            return mgr.discover(backends=backends)
-        finally:
-            try:
-                mgr.close()
-            except Exception:
-                pass
-
-    @classmethod
-    def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "Camera":
-        mgr = cls()
-        try:
-            mgr.open(camera_name, **kwargs)
-            return mgr.get_camera(camera_name)
-        finally:
-            try:
-                mgr.close()
-            except Exception:
-                pass
-
-    # ===== Lifecycle =====
-    def close(self):
-        if self._shutting_down:
-            return
-        self._shutting_down = True
-        try:
-            try:
-                # Bound shutdown time; if closing cameras stalls, continue stopping loop
-                self._submit_coro(self._manager.close_all_cameras(), timeout=1.0)
-            except Exception:
-                pass
-            try:
-                if self._loop.is_running():
-                    self._loop.call_soon_threadsafe(self._loop.stop)
-            except Exception:
-                pass
-            try:
-                self._thread.join(timeout=1.5)
-            except Exception:
-                pass
-        finally:
-            self.logger.info("CameraManager (sync) shutdown complete")
-
-    def __del__(self):
-        # Avoid blocking in destructor; perform best-effort stop
-        try:
-            if hasattr(self, "_loop") and isinstance(getattr(self, "_loop"), asyncio.AbstractEventLoop):
-                try:
-                    if self._loop.is_running():
-                        self._loop.call_soon_threadsafe(self._loop.stop)
-                except Exception:
-                    pass
-            if hasattr(self, "_thread") and getattr(self, "_thread") is not None:
-                try:
-                    self._thread.join(timeout=0.2)
-                except Exception:
-                    pass
-        except Exception:
-            pass 

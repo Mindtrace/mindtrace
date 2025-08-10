@@ -36,7 +36,7 @@ async def get_bandwidth_info(manager: CameraManager = Depends(get_camera_manager
         DictResponse: Network bandwidth information including:
         - max_concurrent_captures: Current concurrent capture limit
         - active_cameras: Number of active cameras
-        - gige_cameras: Number of GigE cameras (Basler/Daheng)
+        - gige_cameras: Number of GigE cameras (Basler)
         - bandwidth_management_enabled: Always True
         - recommended_settings: Recommended limits for different scenarios
 
@@ -53,7 +53,7 @@ async def get_bandwidth_info(manager: CameraManager = Depends(get_camera_manager
         active_cameras = list(manager.get_active_cameras())
 
         # Categorize cameras by type
-        gige_cameras = [cam for cam in active_cameras if "Basler" in cam or "Daheng" in cam]
+        gige_cameras = [cam for cam in active_cameras if "Basler" in cam]
         usb_cameras = [cam for cam in active_cameras if "OpenCV" in cam]
         mock_cameras = [cam for cam in active_cameras if "Mock" in cam]
 
@@ -219,7 +219,7 @@ async def get_network_health(manager: CameraManager = Depends(get_camera_manager
             recommendations.append("Monitor network bandwidth during simultaneous captures")
             warning_messages.append(f"Current usage ({current_usage}) exceeds 80% of capacity ({max_concurrent})")
 
-        gige_count = len([cam for cam in active_cameras if "Basler" in cam or "Daheng" in cam])
+        gige_count = len([cam for cam in active_cameras if "Basler" in cam])
         if gige_count > 2:
             recommendations.append("Monitor GigE network switch performance with multiple cameras")
             if max_concurrent > 2:
@@ -237,7 +237,7 @@ async def get_network_health(manager: CameraManager = Depends(get_camera_manager
             "current_usage": current_usage,
             "max_capacity": max_concurrent,
             "camera_breakdown": {
-                "gige": len([cam for cam in active_cameras if "Basler" in cam or "Daheng" in cam]),
+                "gige": len([cam for cam in active_cameras if "Basler" in cam]),
                 "usb": len([cam for cam in active_cameras if "OpenCV" in cam]),
                 "mock": len([cam for cam in active_cameras if "Mock" in cam]),
             },

@@ -42,13 +42,13 @@ class AsyncCameraManager(Mindtrace):
         # Simple usage
         async with AsyncCameraManager() as manager:
             cameras = manager.discover()
-            camera = await manager.get_camera(cameras[0])
+            camera = await manager.open(cameras[0])
             image = await camera.capture()
 
         # With configuration
         async with AsyncCameraManager(include_mocks=True) as manager:
             cameras = manager.discover(["MockBasler"])  # example mock backend
-            cam = await manager.get_camera(cameras[0])
+            cam = await manager.open(cameras[0])
             await cam.configure(exposure=20000, gain=2.5)
             image = await cam.capture("output.jpg")
     """
@@ -91,39 +91,34 @@ class AsyncCameraManager(Mindtrace):
             f"max_concurrent_captures={max_concurrent_captures}"
         )
 
-    def get_available_backends(self) -> List[str]:
-        """Get list of available backend names.
-
-        Returns:
-            A copy of the discovered backend names.
-        """
+    def backends(self) -> List[str]:
+        """Available backend names."""
         return self._discovered_backends.copy()
 
-    def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
-        """Get detailed information about all backends.
-
-        Returns:
-            Mapping of backend name to info dict with availability and type metadata.
-        """
-        info = {}
-
+    def backend_info(self) -> Dict[str, Dict[str, Any]]:
+        """Detailed information about all backends."""
+        info: Dict[str, Dict[str, Any]] = {}
         for backend in ["Basler", "OpenCV"]:
             available, _ = self._discover_backend(backend.lower())
             info[backend] = {"available": available, "type": "hardware", "sdk_required": True}
-
         if self._include_mocks:
             info["MockBasler"] = {"available": True, "type": "mock", "sdk_required": False}
-
         return info
 
-    def discover(self, backends: Optional[Union[str, List[str]]] = None, details: bool = False) -> Union[List[str], List[Dict[str, Any]]]:
+    @classmethod
+    def discover(
+        cls,
+        backends: Optional[Union[str, List[str]]] = None,
+        details: bool = False,
+        include_mocks: bool = False,
+    ) -> Union[List[str], List[Dict[str, Any]]]:
         """Discover available cameras across specified backends or all backends.
 
         Args:
             backends: Optional backend(s) to discover cameras from. Can be:
-                     - None: Discover from all available backends (default behavior)
-                     - str: Single backend name (e.g., "Basler", "OpenCV")
-                     - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
+                - None: Discover from all available backends (default behavior)
+                - str: Single backend name (e.g., "Basler", "OpenCV")
+                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
             details: If True, return a list of dicts with detailed camera information.
 
         Returns:
@@ -148,7 +143,23 @@ class AsyncCameraManager(Mindtrace):
 
         # Determine which backends to search
         if backends is None:
-            backends_to_search = self._discovered_backends
+            # Compute discovered backends for this call
+            discovered = []
+            try:
+                available, _ = cls._discover_backend("opencv")
+                if available:
+                    discovered.append("OpenCV")
+            except Exception:
+                pass
+            try:
+                available, _ = cls._discover_backend("basler")
+                if available:
+                    discovered.append("Basler")
+            except Exception:
+                pass
+            if include_mocks:
+                discovered.append("MockBasler")
+            backends_to_search = discovered
         elif isinstance(backends, str):
             backends_to_search = [backends]
         elif isinstance(backends, list):
@@ -156,19 +167,43 @@ class AsyncCameraManager(Mindtrace):
         else:
             raise ValueError(f"Invalid backends parameter: {backends}. Must be None, str, or List[str]")
 
-        self.logger.debug(f"Discovering cameras. Backends requested: {backends_to_search}")
+        try:
+            cls.logger.debug(f"Discovering cameras. Backends requested: {backends_to_search}")
+        except Exception:
+            pass
 
         # Validate specified backends
         for backend in backends_to_search:
-            if backend not in self._discovered_backends:
-                self.logger.warning(
-                    f"Backend '{backend}' not available or not discovered. Available backends: {self._discovered_backends}"
-                )
+            valid = {"OpenCV", "Basler"}
+            if include_mocks:
+                valid.add("MockBasler")
+            if backend not in valid:
+                try:
+                    cls.logger.warning(
+                        f"Backend '{backend}' not available or not discovered. Available backends: {sorted(list(valid))}"
+                    )
+                except Exception:
+                    pass
                 continue
 
         # Filter
-        backends_to_search = [b for b in backends_to_search if b in self._discovered_backends]
-        self.logger.debug(f"Backends to search after filtering: {backends_to_search}")
+        valid_list = []
+        for b in backends_to_search:
+            if b == "OpenCV":
+                available, _ = cls._discover_backend("opencv")
+                if available:
+                    valid_list.append(b)
+            elif b == "Basler":
+                available, _ = cls._discover_backend("basler")
+                if available:
+                    valid_list.append(b)
+            elif b == "MockBasler" and include_mocks:
+                valid_list.append(b)
+        backends_to_search = valid_list
+        try:
+            cls.logger.debug(f"Backends to search after filtering: {backends_to_search}")
+        except Exception:
+            pass
 
         for backend in backends_to_search:
             try:
@@ -179,7 +214,10 @@ class AsyncCameraManager(Mindtrace):
 
                     if details:
                         det = OpenCVCameraBackend.get_available_cameras(include_details=True)
-                        self.logger.debug(f"Found {len(det)} OpenCV cameras (detailed)")
+                        try:
+                            cls.logger.debug(f"Found {len(det)} OpenCV cameras (detailed)")
+                        except Exception:
+                            pass
                         for cam_name, d in det.items():
                             try:
                                 idx = int(d.get("index", -1))
@@ -209,13 +247,19 @@ class AsyncCameraManager(Mindtrace):
                             )
                     else:
                         cameras = OpenCVCameraBackend.get_available_cameras()
-                        self.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        try:
+                            cls.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        except Exception:
+                            pass
                         all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
                 elif backend == "Basler":
-                    available, camera_class = self._discover_backend(backend.lower())
+                    available, camera_class = cls._discover_backend(backend.lower())
                     if available and camera_class:
                         cameras = camera_class.get_available_cameras()
-                        self.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        try:
+                            cls.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        except Exception:
+                            pass
                         if details:
                             for cam in cameras:
                                 # Detailed discovery for Basler not available at this stage
@@ -231,17 +275,19 @@ class AsyncCameraManager(Mindtrace):
                                 )
                         else:
                             all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
-                elif backend == "MockBasler" and self._include_mocks:
+                elif backend == "MockBasler" and include_mocks:
                     backend_key = backend.replace("Mock", "").lower()
-                    mock_class = self._get_mock_camera(backend_key)
+                    mock_class = cls._get_mock_camera(backend_key)
                     cameras = mock_class.get_available_cameras()
-                    self.logger.debug(f"Found {len(cameras)} mock cameras for backend '{backend}'")
+                    try:
+                        cls.logger.debug(f"Found {len(cameras)} mock cameras for backend '{backend}'")
+                    except Exception:
+                        pass
                     if details:
                         for cam in cameras:
                             # Attempt to parse index from name suffix
-                            idx = -1
                             try:
-                                idx = int(str(cam).split("_")[-1])
+                                idx = int(cam.split("_")[-1])
                             except Exception:
                                 idx = -1
                             all_details.append(
@@ -256,9 +302,16 @@ class AsyncCameraManager(Mindtrace):
                             )
                     else:
                         all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
-
+                else:
+                    try:
+                        cls.logger.warning(f"Unknown backend '{backend}' requested during discovery")
+                    except Exception:
+                        pass
             except Exception as e:
-                self.logger.error(f"Camera discovery failed for {backend}: {e}")
+                try:
+                    cls.logger.warning(f"Failed discovery for backend '{backend}': {e}")
+                except Exception:
+                    pass
 
         if details:
             return all_details
@@ -351,7 +404,7 @@ class AsyncCameraManager(Mindtrace):
                 self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
                 if camera_name in self._cameras:
                     try:
-                        await self.close_camera(camera_name)
+                        await self.close(camera_name)
                     except Exception:
                         pass
             except Exception as e:
@@ -362,52 +415,6 @@ class AsyncCameraManager(Mindtrace):
         else:
             self.logger.info("All cameras initialized successfully")
         return opened
-
-    async def open_default(self, **kwargs) -> AsyncCamera:
-        """Open the first available camera with sensible defaults.
-
-        This is a convenience method that opens the first available camera. If no cameras are available, it raises a 
-        CameraNotFoundError.
-        """
-        return await self.open(None, **kwargs)  # type: ignore[return-value]
-
-    def get_camera(self, camera_name: str) -> AsyncCamera:
-        """Get an initialized camera by name.
-
-        Args:
-            camera_name: Full camera name "Backend:device_name"
-
-        Returns:
-            Camera instance
-
-        Raises:
-            KeyError: If camera is not initialized
-        """
-        if camera_name not in self._cameras:
-            self.logger.error(f"Requested camera '{camera_name}' is not initialized")
-            raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
-
-        return self._cameras[camera_name]
-
-    def get_cameras(self, camera_names: List[str]) -> Dict[str, AsyncCamera]:
-        """Get multiple initialized cameras by name.
-
-        Args:
-            camera_names: List of camera names to retrieve
-
-        Returns:
-            Dictionary mapping camera names to Camera instances.
-            Only includes successfully retrieved cameras.
-        """
-        cameras = {}
-
-        for camera_name in camera_names:
-            try:
-                cameras[camera_name] = self.get_camera(camera_name)
-            except KeyError as e:
-                self.logger.warning(f"Could not retrieve camera '{camera_name}': {e}")
-
-        return cameras
 
     @property
     def active_cameras(self) -> List[str]:
@@ -461,24 +468,27 @@ class AsyncCameraManager(Mindtrace):
             },
         }
 
-    async def close_camera(self, camera_name: str) -> None:
-        """Close and remove a specific camera."""
-        if camera_name in self._cameras:
-            try:
-                await self._cameras[camera_name].close()
-                del self._cameras[camera_name]
-                self.logger.info(f"Camera '{camera_name}' closed")
-            except Exception as e:
-                self.logger.error(f"Error closing camera '{camera_name}': {e}")
-                raise
+    async def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
+        """Close one, many, or all cameras.
 
-    async def close_all_cameras(self) -> None:
-        """Close all active cameras."""
-        for camera_name in list(self._cameras.keys()):
-            try:
-                await self.close_camera(camera_name)
-            except Exception as e:
-                self.logger.error(f"Error closing camera '{camera_name}': {e}")
+        Args:
+            names: None to close all; str for single; list[str] for multiple.
+        """
+        if names is None:
+            targets = list(self._cameras.keys())
+        elif isinstance(names, str):
+            targets = [names]
+        else:
+            targets = list(names)
+
+        for camera_name in targets:
+            if camera_name in self._cameras:
+                try:
+                    await self._cameras[camera_name].close()
+                    del self._cameras[camera_name]
+                    self.logger.info(f"Camera '{camera_name}' closed")
+                except Exception as e:
+                    self.logger.warning(f"Failed to close '{camera_name}': {e}")
 
     async def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
         """Configure multiple cameras simultaneously."""
@@ -486,7 +496,9 @@ class AsyncCameraManager(Mindtrace):
 
         async def configure_camera(camera_name: str, settings: Dict[str, Any]) -> Tuple[str, bool]:
             try:
-                camera = self.get_camera(camera_name)
+                if camera_name not in self._cameras:
+                    raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+                camera = self._cameras[camera_name]
                 success = await camera.configure(**settings)
                 return camera_name, success
             except Exception as e:
@@ -512,7 +524,9 @@ class AsyncCameraManager(Mindtrace):
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
             try:
                 async with self._capture_semaphore:
-                    camera = self.get_camera(camera_name)
+                    if camera_name not in self._cameras:
+                        raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+                    camera = self._cameras[camera_name]
                     image = await camera.capture()
                     return camera_name, image
             except Exception as e:
@@ -545,7 +559,9 @@ class AsyncCameraManager(Mindtrace):
         async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Union[List[Any], bool]]:
             try:
                 async with self._capture_semaphore:
-                    camera = self.get_camera(camera_name)
+                    if camera_name not in self._cameras:
+                        raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
+                    camera = self._cameras[camera_name]
 
                     camera_save_pattern = None
                     if save_path_pattern:
@@ -583,7 +599,7 @@ class AsyncCameraManager(Mindtrace):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit with proper cleanup."""
         self.logger.debug("Exiting AsyncCameraManager context; closing all cameras")
-        await self.close_all_cameras()
+        await self.close()
 
     def __del__(self):
         """Destructor warning for improper cleanup."""
@@ -651,24 +667,6 @@ class AsyncCameraManager(Mindtrace):
         except Exception as e:
             self.logger.error(f"Failed to create camera '{backend}:{device_name}': {e}")
             raise CameraInitializationError(f"Failed to create camera '{backend}:{device_name}': {e}")
-
-    @classmethod
-    async def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "AsyncCamera":
-        """Quick access function to initialize and get a single camera."""
-        manager = cls()
-        await manager.open(camera_name, **kwargs)
-        return manager.get_camera(camera_name)
-
-    @classmethod
-    def discover_all_cameras(
-        cls,
-        include_mocks: bool = False,
-        max_concurrent_captures: int = 2,
-        backends: Optional[Union[str, List[str]]] = None,
-    ) -> List[str]:
-        """Discover cameras from all or specific backends via a temporary manager."""
-        manager = cls(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
-        return manager.discover(backends=backends)
 
     @classmethod
     def _discover_backend(cls, backend_name: str) -> Tuple[bool, Optional[Any]]:

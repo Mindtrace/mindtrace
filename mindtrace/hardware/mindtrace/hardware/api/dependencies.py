@@ -46,7 +46,7 @@ class CameraManagerDependency:
         if self._manager is not None:
             try:
                 logger.info("Closing CameraManager...")
-                await self._manager.close_all_cameras()
+                await self._manager.close()
                 await self._manager.__aexit__(None, None, None)
                 self._manager = None
                 self._initialized = False
@@ -181,7 +181,7 @@ async def validate_backend_name(backend: Optional[str] = None) -> Optional[str]:
         return None
 
     # List of valid backends (could be dynamically determined)
-    valid_backends = ["Daheng", "Basler", "OpenCV", "MockDaheng", "MockBasler"]
+    valid_backends = ["Basler", "OpenCV", "MockBasler"]
 
     if backend not in valid_backends:
         raise ValueError(f"Invalid backend '{backend}'. Valid backends: {', '.join(valid_backends)}")
