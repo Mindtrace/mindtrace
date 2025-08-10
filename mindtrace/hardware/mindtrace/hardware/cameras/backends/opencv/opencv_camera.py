@@ -141,6 +141,10 @@ class OpenCVCameraBackend(CameraBackend):
     - Resource management and cleanup
     - Platform-specific optimizations
 
+    Concurrency and serialization:
+    - All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
+    - A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
+    
     Attributes:
         camera_index: Camera device index or path
         cap: OpenCV VideoCapture object
@@ -233,6 +237,7 @@ class OpenCVCameraBackend(CameraBackend):
         # Executor and loop for thread-affinity and event-loop hygiene
         self._sdk_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._io_lock: asyncio.Lock = asyncio.Lock()
 
         self.logger.info(
             f"OpenCV camera '{camera_name}' initialized with configuration: "
@@ -350,11 +355,13 @@ class OpenCVCameraBackend(CameraBackend):
                 self.logger.error(f"Could not open camera {self.camera_index}")
                 raise CameraNotFoundError(f"Could not open camera {self.camera_index}")
 
-            # Configure camera settings
-            await self._configure_camera()
+            # Configure camera settings (serialized)
+            async with self._io_lock:
+                await self._configure_camera()
 
-            # Test capture to verify camera is working
-            ret, frame = await self._sdk(self.cap.read, timeout=self._op_timeout_s)
+            # Test capture to verify camera is working (serialized)
+            async with self._io_lock:
+                ret, frame = await self._sdk(self.cap.read, timeout=self._op_timeout_s)
             if not ret or frame is None:
                 self.logger.error(f"Camera {self.camera_index} failed to capture test frame")
                 raise CameraInitializationError(f"Camera {self.camera_index} failed to capture test frame")
@@ -578,7 +585,8 @@ class OpenCVCameraBackend(CameraBackend):
             try:
                 # Bound the blocking read by timeout_ms
                 read_timeout_s = max(0.1, float(self.timeout_ms) / 1000.0)
-                ret, frame = await self._sdk(self.cap.read, timeout=read_timeout_s)
+                async with self._io_lock:
+                    ret, frame = await self._sdk(self.cap.read, timeout=read_timeout_s)
 
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -689,10 +697,12 @@ class OpenCVCameraBackend(CameraBackend):
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
 
         try:
-            is_open = await self._sdk(self.cap.isOpened)
+            async with self._io_lock:
+                is_open = await self._sdk(self.cap.isOpened)
 
             if is_open:
-                width = await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)
+                async with self._io_lock:
+                    width = await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH)
                 return width > 0
 
             return False
@@ -715,7 +725,8 @@ class OpenCVCameraBackend(CameraBackend):
         if self.cap:
             try:
                 # Release on executor to avoid blocking the event loop
-                await self._sdk(self.cap.release)
+                async with self._io_lock:
+                    await self._sdk(self.cap.release)
                 self.logger.debug(f"VideoCapture released successfully for camera '{self.camera_name}'")
             except Exception as e:
                 self.logger.warning(f"Error releasing VideoCapture for camera '{self.camera_name}': {e}")
@@ -746,7 +757,8 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            original = await self.get_exposure()
+            async with self._io_lock:
+                original = await self.get_exposure()
             # Try to set to a different value within the valid range
             exposure_range = await self.get_exposure_range()
             test_value = original - 1 if original > exposure_range[0] else original + 1
@@ -754,12 +766,15 @@ class OpenCVCameraBackend(CameraBackend):
             test_value = max(min(test_value, exposure_range[1]), exposure_range[0])
             if abs(test_value - original) < 1e-3:
                 test_value = original + 1 if (original + 1) <= exposure_range[1] else original - 1
-            success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(test_value))
+            async with self._io_lock:
+                success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(test_value))
             if not success:
                 return False
-            new_value = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+            async with self._io_lock:
+                new_value = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
             # Restore original
-            await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(original))
+            async with self._io_lock:
+                await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(original))
             # If the value actually changed, exposure control is supported
             return abs(new_value - test_value) < 1e-2
         except Exception:
@@ -793,10 +808,12 @@ class OpenCVCameraBackend(CameraBackend):
                 raise CameraConfigurationError(
                     f"Exposure {exposure} outside valid range {exposure_range} for camera '{self.camera_name}'"
                 )
-            success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
+            async with self._io_lock:
+                success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
             if success:
                 self._exposure = float(exposure)
-                actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+                async with self._io_lock:
+                    actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
                 self.logger.info(
                     f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
                 )
@@ -826,7 +843,8 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+            async with self._io_lock:
+                exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
             return float(exposure)
         except Exception as e:
             self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
