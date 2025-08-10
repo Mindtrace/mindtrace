@@ -133,6 +133,23 @@ class AsyncCamera(Mindtrace):
         """
         return self._camera.initialized
 
+    # Async context manager support
+    async def __aenter__(self) -> "AsyncCamera":
+        parent_aenter = getattr(super(), "__aenter__", None)
+        if callable(parent_aenter):
+            res = await parent_aenter()  # type: ignore[misc]
+            return res if res is not None else self
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        try:
+            await self._camera.close()
+        finally:
+            parent_aexit = getattr(super(), "__aexit__", None)
+            if callable(parent_aexit):
+                return await parent_aexit(exc_type, exc, tb)  # type: ignore[misc]
+            return False
+
     async def capture(self, save_path: Optional[str] = None) -> Any:
         """Capture an image from the camera with retry logic.
 
