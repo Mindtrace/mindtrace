@@ -647,7 +647,7 @@ class OpenCVCameraBackend(CameraBackend):
             except Exception as e:
                 self.logger.error(
                     f"Capture error for camera '{self.camera_name}' "
-                    f"(attempt {attempt + 1}/{self.retrieve_retry_count}): {str(e)}"
+                    f"(attempt {attempt + 1}/{self.retrieve_retry_count}, timeout_ms={self.timeout_ms}): {str(e)}"
                 )
 
                 if attempt == self.retrieve_retry_count - 1:
@@ -1055,19 +1055,24 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             True if white balance was set successfully
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized or not self.cap or not self.cap.isOpened():
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
             return False
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
+            target = None
             if value.lower() in ["auto", "continuous"]:
-                success = self.cap.set(cv2.CAP_PROP_AUTO_WB, 1)
+                target = 1
             elif value.lower() in ["manual", "off"]:
-                success = self.cap.set(cv2.CAP_PROP_AUTO_WB, 0)
+                target = 0
             else:
                 self.logger.error(f"Unsupported white balance mode: {value}")
                 return False
+
+            async with self._io_lock:
+                await self._ensure_open()
+                success = await self._sdk(self.cap.set, cv2.CAP_PROP_AUTO_WB, target)
 
             if success:
                 self.logger.info(f"White balance set to '{value}' for camera '{self.camera_name}'")
