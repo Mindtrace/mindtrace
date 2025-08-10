@@ -127,6 +127,7 @@ class MockBaslerCameraBackend(CameraBackend):
         # Internal state
         self.converter = None
         self.grabbing_mode = "LatestImageOnly"  # Mock grabbing mode
+        self._grabbing = False
 
         # Error simulation flags
         self.fail_init = os.getenv("MOCK_BASLER_FAIL_INIT", "false").lower() == "true"
@@ -233,6 +234,10 @@ class MockBaslerCameraBackend(CameraBackend):
             raise CameraTimeoutError(f"Simulated timeout for mock camera '{self.camera_name}'")
 
         try:
+            # Auto-start grabbing if not already grabbing, to mirror SDK behavior
+            if not self.IsGrabbing():
+                self.StartGrabbing(self.grabbing_mode)
+
             # Simulate capture delay based on exposure time
             capture_delay = max(0.01, self.exposure_time / 1000000.0)  # Convert to seconds
             await asyncio.sleep(min(capture_delay, 0.1))  # Cap at 100ms for testing
@@ -256,6 +261,26 @@ class MockBaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Mock capture failed for camera '{self.camera_name}': {str(e)}")
             raise CameraCaptureError(f"Failed to capture image from mock camera '{self.camera_name}': {str(e)}")
+
+    def IsGrabbing(self) -> bool:
+        """Return whether the mock camera is currently in a grabbing state."""
+        return self._grabbing
+
+    def StartGrabbing(self, grabbing_mode: Optional[str] = None) -> None:
+        """Enter grabbing state, optionally updating grabbing mode.
+
+        Args:
+            grabbing_mode: Optional grabbing mode string; if provided, updates current mode.
+        """
+        if grabbing_mode is not None:
+            self.grabbing_mode = grabbing_mode
+        self._grabbing = True
+        self.logger.debug(f"StartGrabbing called; mode={self.grabbing_mode}")
+
+    def StopGrabbing(self) -> None:
+        """Exit grabbing state."""
+        self._grabbing = False
+        self.logger.debug("StopGrabbing called; grabbing stopped")
 
     def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting.
@@ -642,6 +667,7 @@ class MockBaslerCameraBackend(CameraBackend):
     async def close(self):
         """Close the mock camera and release resources."""
         try:
+            self._grabbing = False
             self.initialized = False
             self.camera = None
             self.logger.info(f"Mock Basler camera '{self.camera_name}' closed successfully")
