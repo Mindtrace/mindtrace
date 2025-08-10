@@ -13,7 +13,7 @@ Key Features:
     - Mock backends for testing and development
 
 Hardware Components:
-    - CameraManager: Unified camera management (Daheng, Basler, OpenCV)
+    - CameraManager: Unified camera management (Basler, OpenCV)
     - PLCManager: Unified PLC management (Allen-Bradley, Siemens, Modbus)
     - SensorManager: Sensor data acquisition and monitoring (Future)
     - ActuatorManager: Actuator control and positioning (Future)
@@ -30,7 +30,7 @@ Usage:
     # Camera operations
     async with CameraManager() as camera_manager:
         cameras = camera_manager.discover()
-        camera = await camera_manager.get_camera(cameras[0])
+        camera = await camera_manager.open(cameras[0])
         image = await camera.capture()
 
     # PLC operations

@@ -50,7 +50,7 @@ async def export_config(
         logger.info(f"Exporting configuration for camera '{validated_camera}' to '{request.config_path}'")
 
         # Get camera and export configuration
-        camera = manager.get_camera(validated_camera)
+        camera = await manager.open(validated_camera)
         success = await camera.save_config(request.config_path)
 
         if success:
@@ -106,7 +106,7 @@ async def import_config(
         logger.info(f"Importing configuration for camera '{validated_camera}' from '{request.config_path}'")
 
         # Get camera and import configuration
-        camera = manager.get_camera(validated_camera)
+        camera = await manager.open(validated_camera)
         success = await camera.load_config(request.config_path)
 
         if success:
@@ -174,7 +174,7 @@ async def export_batch_config(
                 safe_camera_name = camera_name.replace(":", "_")
                 config_path = config_path_pattern.replace("{camera}", safe_camera_name)
 
-                camera = manager.get_camera(camera_name)
+                camera = await manager.open(camera_name)
                 success = await camera.save_config(config_path)
                 results[camera_name] = success
 
@@ -243,7 +243,7 @@ async def import_batch_config(
                 safe_camera_name = camera_name.replace(":", "_")
                 config_path = config_path_pattern.replace("{camera}", safe_camera_name)
 
-                camera = manager.get_camera(camera_name)
+                camera = await manager.open(camera_name)
                 success = await camera.load_config(config_path)
                 results[camera_name] = success
 

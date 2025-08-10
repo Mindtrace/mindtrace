@@ -30,7 +30,6 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
     - MINDTRACE_HW_CAMERA_OPENCV_HEIGHT: OpenCV default frame height
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
-    - MINDTRACE_HW_CAMERA_DAHENG_ENABLED: Enable Daheng backend
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
@@ -144,14 +143,12 @@ class CameraBackends:
     Configuration for camera backends.
 
     Attributes:
-        daheng_enabled: Enable Daheng camera backend
         basler_enabled: Enable Basler camera backend
         opencv_enabled: Enable OpenCV camera backend
         mock_enabled: Enable mock camera backend for testing
         discovery_timeout: Camera discovery timeout in seconds
     """
 
-    daheng_enabled: bool = True
     basler_enabled: bool = True
     opencv_enabled: bool = True
     mock_enabled: bool = False
@@ -410,9 +407,6 @@ class HardwareConfigManager(Mindtrace):
             self._config.cameras.max_concurrent_captures = int(env_val)
 
         # Camera backends
-        if env_val := os.getenv("MINDTRACE_HW_CAMERA_DAHENG_ENABLED"):
-            self._config.backends.daheng_enabled = env_val.lower() == "true"
-
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_ENABLED"):
             self._config.backends.basler_enabled = env_val.lower() == "true"
 

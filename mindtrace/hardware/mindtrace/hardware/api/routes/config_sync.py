@@ -53,7 +53,7 @@ async def get_gain(
         FloatResponse: Current gain value
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         gain = camera_proxy.get_gain()
 
         logger.info(f"Retrieved gain for '{validated_camera}': {gain}")
@@ -88,7 +88,7 @@ async def set_gain(request: GainRequest, manager: CameraManager = Depends(get_ca
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = camera_proxy.set_gain(request.gain)
 
         if success:
@@ -123,7 +123,7 @@ async def get_gain_range(
         RangeResponse: Tuple of (minimum_gain, maximum_gain)
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         gain_range = camera_proxy.get_gain_range()
 
         logger.info(f"Retrieved gain range for '{validated_camera}': {gain_range}")
@@ -154,7 +154,7 @@ async def get_roi(
         DictResponse: Dictionary with keys: 'x', 'y', 'width', 'height'
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         roi = camera_proxy.get_roi()
 
         logger.info(f"Retrieved ROI for '{validated_camera}': {roi}")
@@ -196,7 +196,7 @@ async def set_roi(request: ROIRequest, manager: CameraManager = Depends(get_came
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = camera_proxy.set_roi(request.x, request.y, request.width, request.height)
 
         if success:
@@ -235,7 +235,7 @@ async def reset_roi(
         BoolResponse: Success status of ROI reset
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         success = camera_proxy.reset_roi()
 
         if success:
@@ -269,7 +269,7 @@ async def get_pixel_format(
         StringResponse: Current pixel format string
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         pixel_format = camera_proxy.get_pixel_format()
 
         logger.info(f"Retrieved pixel format for '{validated_camera}': {pixel_format}")
@@ -306,7 +306,7 @@ async def set_pixel_format(
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = camera_proxy.set_pixel_format(request.format)
 
         if success:
@@ -341,7 +341,7 @@ async def get_pixel_format_options(
         PixelFormatListResponse: List of supported pixel format strings
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         pixel_formats = camera_proxy.get_available_pixel_formats()
 
         logger.info(f"Retrieved pixel formats for '{validated_camera}': {pixel_formats}")
@@ -374,7 +374,7 @@ async def get_image_enhancement(
         BoolResponse: Current image enhancement status (enabled/disabled)
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         enhancement_enabled = camera_proxy.get_image_enhancement()
 
         logger.info(f"Retrieved image enhancement for '{validated_camera}': {enhancement_enabled}")
@@ -417,7 +417,7 @@ async def set_image_enhancement(
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
-        camera_proxy = manager.get_camera(request.camera)
+        camera_proxy = await manager.open(request.camera)
         success = camera_proxy.set_image_enhancement(request.enabled)
 
         if success:

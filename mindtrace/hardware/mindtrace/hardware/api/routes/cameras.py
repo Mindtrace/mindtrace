@@ -206,7 +206,7 @@ async def close_camera(
         BoolResponse: Success status of closure
     """
     try:
-        await manager.close_camera(validated_camera)
+        await manager.close(validated_camera)
 
         logger.info(f"Successfully closed camera '{validated_camera}'")
 
@@ -231,7 +231,7 @@ async def close_all_cameras(manager: CameraManager = Depends(get_camera_manager)
         active_cameras = manager.active_cameras
         camera_count = len(active_cameras)
 
-        await manager.close_all_cameras()
+        await manager.close()
 
         logger.info(f"Successfully closed {camera_count} cameras")
 
@@ -257,7 +257,7 @@ async def check_camera_connection(
         StatusResponse: Camera connection status
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
         is_connected = await camera_proxy.check_connection()
 
         status_info = {
@@ -299,7 +299,7 @@ async def get_camera_info(
         StatusResponse: Detailed camera information
     """
     try:
-        camera_proxy = manager.get_camera(validated_camera)
+        camera_proxy = await manager.open(validated_camera)
 
         # Get sensor info and other details
         sensor_info = await camera_proxy.get_sensor_info()
