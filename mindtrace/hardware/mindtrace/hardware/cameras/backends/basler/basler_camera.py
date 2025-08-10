@@ -31,7 +31,7 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class BaslerCamera(CameraBackend):
+class BaslerCameraBackend(CameraBackend):
     """Basler Camera Backend Implementation
 
     This class provides a comprehensive implementation for Basler cameras using the pypylon SDK. It supports advanced
