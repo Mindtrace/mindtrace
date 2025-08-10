@@ -89,6 +89,11 @@ class MockBaslerCameraBackend(CameraBackend):
                 - simulate_fail_capture: If True, simulate capture failure (overrides env)
                 - simulate_timeout: If True, simulate timeout on capture (overrides env)
                 - simulate_cancel: If True, simulate asyncio cancellation during capture
+                - synthetic_width: Override synthetic image width (int)
+                - synthetic_height: Override synthetic image height (int)
+                - synthetic_pattern: One of {"auto","gradient","checkerboard","circular","noise"}
+                - synthetic_checker_size: Checker size (int) used when pattern is checkerboard
+                - synthetic_overlay_text: If False, disables text overlays in synthetic images
 
         Raises:
             CameraConfigurationError: If configuration is invalid
@@ -132,6 +137,23 @@ class MockBaslerCameraBackend(CameraBackend):
         self.converter = None
         self.grabbing_mode = "LatestImageOnly"  # Mock grabbing mode
         self._grabbing = False
+
+        # Synthetic image knobs for testing
+        self.synthetic_pattern: str = str(backend_kwargs.get("synthetic_pattern", "auto")).lower()
+        self.synthetic_checker_size: int = int(backend_kwargs.get("synthetic_checker_size", 50))
+        self.synthetic_overlay_text: bool = bool(backend_kwargs.get("synthetic_overlay_text", True))
+
+        # Optionally override image size via constructor
+        syn_w = backend_kwargs.get("synthetic_width")
+        syn_h = backend_kwargs.get("synthetic_height")
+        try:
+            if syn_w is not None:
+                self.roi["width"] = int(syn_w)
+            if syn_h is not None:
+                self.roi["height"] = int(syn_h)
+        except Exception:
+            # Ignore invalid overrides; keep defaults
+            pass
 
         # Error/cancellation simulation flags (constructor kwargs override env defaults)
         env_fail_init = os.getenv("MOCK_BASLER_FAIL_INIT", "false").lower() == "true"
@@ -716,8 +738,13 @@ class MockBaslerCameraBackend(CameraBackend):
             y_coords = np.arange(height)
             X, Y = np.meshgrid(x_coords, y_coords)
 
-            # Generate different patterns based on frame counter for variety
-            pattern_type = self.image_counter % 4
+            # Determine pattern selection
+            pattern_map = {"gradient": 0, "checkerboard": 1, "circular": 2, "noise": 3}
+            if self.synthetic_pattern in pattern_map:
+                pattern_type = pattern_map[self.synthetic_pattern]
+            else:
+                # auto-rotate
+                pattern_type = self.image_counter % 4
 
             if pattern_type == 0:
                 # Gradient pattern using vectorized operations
@@ -727,7 +754,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 image = np.stack([b_channel, g_channel, r_channel], axis=-1)
             elif pattern_type == 1:
                 # Checkerboard pattern using vectorized operations
-                checker_size = 50
+                checker_size = int(self.synthetic_checker_size) if self.synthetic_checker_size > 0 else 50
                 checker_x = (X // checker_size) % 2
                 checker_y = (Y // checker_size) % 2
                 checkerboard = (checker_x + checker_y) % 2
@@ -758,56 +785,57 @@ class MockBaslerCameraBackend(CameraBackend):
                 noise = np.random.randint(-noise_level, noise_level + 1, image.shape, dtype=np.int16)
                 image = np.clip(image.astype(np.int16) + noise, 0, 255).astype(np.uint8)
 
-            # Add text overlay
-            timestamp = time.strftime("%H:%M:%S")
-            font_scale = min(width, height) / 1000.0  # Scale font with image size
-            thickness = max(1, int(font_scale * 2))
+            # Add text overlay (optional)
+            if self.synthetic_overlay_text:
+                timestamp = time.strftime("%H:%M:%S")
+                font_scale = min(width, height) / 1000.0  # Scale font with image size
+                thickness = max(1, int(font_scale * 2))
 
-            cv2.putText(
-                image,
-                f"Mock Basler {timestamp}",
-                (50, 50),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (255, 255, 255),
-                thickness,
-            )
-            cv2.putText(
-                image,
-                f"Frame: {self.image_counter}",
-                (50, 90),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (255, 255, 255),
-                thickness,
-            )
-            cv2.putText(
-                image,
-                f"Exp: {self.exposure_time:.0f}us",
-                (50, 130),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (255, 255, 255),
-                thickness,
-            )
-            cv2.putText(
-                image,
-                f"Gain: {self.gain:.1f}",
-                (50, 170),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (255, 255, 255),
-                thickness,
-            )
-            cv2.putText(
-                image,
-                f"ROI: {width}x{height}",
-                (50, 210),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                font_scale,
-                (255, 255, 255),
-                thickness,
-            )
+                cv2.putText(
+                    image,
+                    f"Mock Basler {timestamp}",
+                    (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                cv2.putText(
+                    image,
+                    f"Frame: {self.image_counter}",
+                    (50, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                cv2.putText(
+                    image,
+                    f"Exp: {self.exposure_time:.0f}us",
+                    (50, 130),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                cv2.putText(
+                    image,
+                    f"Gain: {self.gain:.1f}",
+                    (50, 170),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
+                cv2.putText(
+                    image,
+                    f"ROI: {width}x{height}",
+                    (50, 210),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    thickness,
+                )
 
             return image
 
