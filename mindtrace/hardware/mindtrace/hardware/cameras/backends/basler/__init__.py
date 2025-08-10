@@ -38,7 +38,7 @@ Usage:
 try:
     from mindtrace.hardware.cameras.backends.basler.basler_camera import (
         PYPYLON_AVAILABLE,
-        BaslerCamera as BaslerCameraBackend,
+        BaslerCameraBackend,
     )
 
     BASLER_AVAILABLE = PYPYLON_AVAILABLE
