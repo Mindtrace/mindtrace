@@ -574,17 +574,11 @@ class OpenCVCameraBackend(CameraBackend):
             f"Starting capture with {self.retrieve_retry_count} max attempts for camera '{self.camera_name}'"
         )
 
-        start_time = time.time()
-
         for attempt in range(self.retrieve_retry_count):
             try:
-                elapsed_time = (time.time() - start_time) * 1000
-                if elapsed_time > self.timeout_ms:
-                    raise CameraTimeoutError(
-                        f"Capture timeout after {elapsed_time:.1f}ms for camera '{self.camera_name}'"
-                    )
-
-                ret, frame = await self._sdk(self.cap.read, timeout=self._op_timeout_s)
+                # Bound the blocking read by timeout_ms
+                read_timeout_s = max(0.1, float(self.timeout_ms) / 1000.0)
+                ret, frame = await self._sdk(self.cap.read, timeout=read_timeout_s)
 
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -607,8 +601,16 @@ class OpenCVCameraBackend(CameraBackend):
                         f"no frame returned (attempt {attempt + 1}/{self.retrieve_retry_count})"
                     )
 
-            except CameraTimeoutError:
+            except asyncio.CancelledError:
+                # Propagate cancellations unchanged
                 raise
+            except asyncio.TimeoutError:
+                if attempt == self.retrieve_retry_count - 1:
+                    raise CameraTimeoutError(
+                        f"Capture timeout after {self.timeout_ms}ms for camera '{self.camera_name}'"
+                    )
+                # retry next attempt
+                continue
             except Exception as e:
                 self.logger.error(
                     f"Capture error for camera '{self.camera_name}' "
