@@ -30,7 +30,7 @@ router = APIRouter()
 
 
 @router.get("/discover", response_model=ListResponse)
-async def discover_cameras(
+async def discover(
     backend: Optional[str] = Query(None, description="Backend name to filter by"),
     manager: CameraManager = Depends(get_camera_manager),
     validated_backend: Optional[str] = Depends(validate_backend_name),
@@ -50,7 +50,7 @@ async def discover_cameras(
     """
     try:
         # Use validated backend if provided
-        cameras = manager.discover_cameras(backends=validated_backend)
+        cameras = manager.discover(backends=validated_backend)
 
         logger.info(
             f"Discovered {len(cameras)} cameras"
@@ -83,7 +83,7 @@ async def list_active_cameras(manager: CameraManager = Depends(get_camera_manage
         ListResponse: List of active camera names
     """
     try:
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
 
         logger.info(f"Retrieved {len(active_cameras)} active cameras")
 
@@ -94,11 +94,11 @@ async def list_active_cameras(manager: CameraManager = Depends(get_camera_manage
         raise HTTPException(status_code=500, detail=f"Failed to list active cameras: {str(e)}")
 
 
-@router.post("/initialize", response_model=BoolResponse)
-async def initialize_camera(
+@router.post("/open", response_model=BoolResponse)
+async def open_camera(
     request: CameraInitializeRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BoolResponse:
-    """Initialize a single camera.
+    """Open a single camera.
 
     Args:
         request: Camera initialization request with camera name and options
@@ -115,16 +115,16 @@ async def initialize_camera(
             raise ValueError("Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is already initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera in active_cameras:
             return BoolResponse(success=True, message=f"Camera '{request.camera}' is already initialized")
 
-        # Initialize the camera
-        await manager.initialize_camera(request.camera, test_connection=request.test_connection)
+        # Open the camera
+        await manager.open(request.camera, test_connection=request.test_connection)
 
-        logger.info(f"Successfully initialized camera '{request.camera}'")
+        logger.info(f"Successfully opened camera '{request.camera}'")
 
-        return BoolResponse(success=True, message=f"Camera '{request.camera}' initialized successfully")
+        return BoolResponse(success=True, message=f"Camera '{request.camera}' opened successfully")
 
     except CameraError as e:
         logger.error(f"Camera initialization failed for '{request.camera}': {e}")
@@ -140,11 +140,11 @@ async def initialize_camera(
         raise HTTPException(status_code=500, detail=f"Unexpected error during initialization: {str(e)}")
 
 
-@router.post("/initialize/batch", response_model=BatchOperationResponse)
-async def initialize_cameras_batch(
+@router.post("/open/batch", response_model=BatchOperationResponse)
+async def open_cameras_batch(
     request: BatchCameraInitializeRequest, manager: CameraManager = Depends(get_camera_manager)
 ) -> BatchOperationResponse:
-    """Initialize multiple cameras in batch.
+    """Open multiple cameras in batch.
 
     Args:
         request: Batch camera initialization request
@@ -158,26 +158,26 @@ async def initialize_cameras_batch(
             if ":" not in camera:
                 raise ValueError(f"Invalid camera name format '{camera}'. Expected 'Backend:device_name'")
 
-        # Perform batch initialization
-        failed_cameras = await manager.initialize_cameras(request.cameras, test_connections=request.test_connections)
+        # Perform batch open
+        opened = await manager.open(request.cameras, test_connection=request.test_connections)
 
         # Calculate results
-        successful_count = len(request.cameras) - len(failed_cameras)
-        failed_count = len(failed_cameras)
+        successful = set(opened.keys())
+        successful_count = len(successful)
+        failed = [c for c in request.cameras if c not in successful]
+        failed_count = len(failed)
 
         # Create result mapping
-        results = {}
-        for camera in request.cameras:
-            results[camera] = camera not in failed_cameras
+        results = {c: (c in successful) for c in request.cameras}
 
-        logger.info(f"Batch initialization completed: {successful_count} successful, {failed_count} failed")
+        logger.info(f"Batch open completed: {successful_count} successful, {failed_count} failed")
 
         return BatchOperationResponse(
             success=failed_count == 0,
             results=results,
             successful_count=successful_count,
             failed_count=failed_count,
-            message=f"Batch initialization completed: {successful_count} successful, {failed_count} failed",
+            message=f"Batch open completed: {successful_count} successful, {failed_count} failed",
         )
 
     except ValueError:
@@ -228,7 +228,7 @@ async def close_all_cameras(manager: CameraManager = Depends(get_camera_manager)
         BoolResponse: Success status of closure
     """
     try:
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         camera_count = len(active_cameras)
 
         await manager.close_all_cameras()
@@ -264,7 +264,7 @@ async def check_camera_connection(
             "camera": validated_camera,
             "connected": is_connected,
             "initialized": camera_proxy.is_connected,
-            "backend": camera_proxy.backend,
+            "backend": camera_proxy.backend_name,
             "device_name": camera_proxy.device_name,
         }
 
@@ -308,7 +308,7 @@ async def get_camera_info(
         info = {
             **sensor_info,
             "camera": validated_camera,
-            "backend": camera_proxy.backend,
+            "backend": camera_proxy.backend_name,
             "device_name": camera_proxy.device_name,
             "initialized": camera_proxy.is_connected,
         }

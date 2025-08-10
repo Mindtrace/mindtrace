@@ -41,13 +41,13 @@ class AsyncCameraManager(Mindtrace):
 
         # Simple usage
         async with AsyncCameraManager() as manager:
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
             camera = await manager.get_camera(cameras[0])
             image = await camera.capture()
 
         # With configuration
         async with AsyncCameraManager(include_mocks=True) as manager:
-            cameras = manager.discover_cameras(["MockBasler"])  # example mock backend
+            cameras = manager.discover(["MockBasler"])  # example mock backend
             cam = await manager.get_camera(cameras[0])
             await cam.configure(exposure=20000, gain=2.5)
             image = await cam.capture("output.jpg")
@@ -84,6 +84,7 @@ class AsyncCameraManager(Mindtrace):
 
         # Network bandwidth management - global semaphore to limit concurrent captures
         self._capture_semaphore = asyncio.Semaphore(max_concurrent_captures)
+        self._max_concurrent_captures = max_concurrent_captures
 
         self.logger.info(
             f"AsyncCameraManager initialized. Available backends: {self._discovered_backends}, "
@@ -115,7 +116,7 @@ class AsyncCameraManager(Mindtrace):
 
         return info
 
-    def discover_cameras(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
+    def discover(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
         """Discover available cameras across specified backends or all backends.
 
         Args:
@@ -133,13 +134,13 @@ class AsyncCameraManager(Mindtrace):
         Example::
 
             # Discover all cameras
-            cameras = manager.discover_cameras()
+            cameras = manager.discover()
 
             # Discover only Basler cameras
-            baslers = manager.discover_cameras("Basler")
+            baslers = manager.discover("Basler")
 
             # Discover multiple backends
-            mixed = manager.discover_cameras(["Basler", "OpenCV"])"""
+            mixed = manager.discover(["Basler", "OpenCV"])"""
         all_cameras = []
 
         # Determine which backends to search
@@ -187,109 +188,86 @@ class AsyncCameraManager(Mindtrace):
 
         return all_cameras
 
-    async def initialize_camera(self, camera_name: str, test_connection: bool = True, **kwargs) -> None:
-        """Initialize a single camera with optional connection testing.
+    async def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
+        """Open one or more cameras with optional connection testing.
 
         Args:
-            camera_name: Full camera name "Backend:device_name"
-            test_connection: Whether to test camera by capturing a test image
-            **kwargs: Camera configuration parameters
-
-        Raises:
-            CameraInitializationError: If camera initialization fails
-            CameraConnectionError: If connection test fails
-            ValueError: If camera is already initialized
-        """
-        if camera_name in self._cameras:
-            self.logger.warning(f"Camera '{camera_name}' is already initialized")
-            raise ValueError(f"Camera '{camera_name}' is already initialized")
-
-        backend, device_name = self._parse_camera_name(camera_name)
-
-        self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
-        camera = self._create_camera_instance(backend, device_name, **kwargs)
-
-        try:
-            self.logger.debug(f"Setting up camera backend for '{camera_name}'")
-            await camera.setup_camera()
-            self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
-            raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
-
-        if test_connection:
-            self.logger.info(f"Testing connection for camera '{camera_name}'...")
-            try:
-                success = await camera.check_connection()
-                if not success:
-                    success, test_image = await camera.capture()
-                    if not success or test_image is None:
-                        await camera.close()
-                        raise CameraConnectionError(
-                            f"Camera '{camera_name}' failed connection test - could not capture test image"
-                        )
-
-                self.logger.info(f"Camera '{camera_name}' passed connection test")
-
-            except Exception as e:
-                await camera.close()
-                if isinstance(e, CameraConnectionError):
-                    raise
-                raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
-
-        proxy = AsyncCamera(camera, camera_name)
-        self._cameras[camera_name] = proxy
-
-        self.logger.info(f"Camera '{camera_name}' initialized successfully")
-
-    async def initialize_cameras(self, camera_names: List[str], test_connections: bool = True, **kwargs) -> List[str]:
-        """Initialize multiple cameras with optional connection testing.
-
-        Args:
-            camera_names: List of camera names to initialize
-            test_connections: Whether to test camera connections
-            **kwargs: Camera configuration parameters
+            names: Camera name or list of names in the form "Backend:device_name".
+            test_connection: Whether to test camera connection(s) after opening.
+            **kwargs: Camera configuration parameters.
 
         Returns:
-            List of camera names that failed to initialize
-
-        Raises:
-            CameraInitializationError: If a backend fails to initialize.
-            CameraConnectionError: If a connection test fails.
+            AsyncCamera if a single name was provided, otherwise a dict mapping names to AsyncCamera.
         """
-        failed_cameras = []
+        if isinstance(names, str):
+            camera_name = names
+            if camera_name in self._cameras:
+                self.logger.warning(f"Camera '{camera_name}' is already initialized")
+                raise ValueError(f"Camera '{camera_name}' is already initialized")
 
+            backend, device_name = self._parse_camera_name(camera_name)
+            self.logger.debug(f"Creating camera backend instance for '{camera_name}'")
+            camera = self._create_camera_instance(backend, device_name, **kwargs)
+
+            try:
+                self.logger.debug(f"Setting up camera backend for '{camera_name}'")
+                await camera.setup_camera()
+                self.logger.debug(f"Camera backend setup completed for '{camera_name}'")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
+                raise CameraInitializationError(f"Failed to initialize camera '{camera_name}': {e}")
+
+            if test_connection:
+                self.logger.info(f"Testing connection for camera '{camera_name}'...")
+                try:
+                    success = await camera.check_connection()
+                    if not success:
+                        success, test_image = await camera.capture()
+                        if not success or test_image is None:
+                            await camera.close()
+                            raise CameraConnectionError(
+                                f"Camera '{camera_name}' failed connection test - could not capture test image"
+                            )
+                    self.logger.info(f"Camera '{camera_name}' passed connection test")
+                except Exception as e:
+                    await camera.close()
+                    if isinstance(e, CameraConnectionError):
+                        raise
+                    raise CameraConnectionError(f"Camera '{camera_name}' connection test failed: {e}")
+
+            proxy = AsyncCamera(camera, camera_name)
+            self._cameras[camera_name] = proxy
+            self.logger.info(f"Camera '{camera_name}' initialized successfully")
+            return proxy
+
+        # Multiple
+        camera_names = names
+        opened: Dict[str, AsyncCamera] = {}
         self.logger.info(f"Initializing {len(camera_names)} cameras...")
-
         for camera_name in camera_names:
             try:
                 if camera_name in self._cameras:
                     self.logger.info(f"Camera '{camera_name}' already initialized")
+                    opened[camera_name] = self._cameras[camera_name]
                     continue
-
-                await self.initialize_camera(camera_name, test_connection=test_connections, **kwargs)
+                proxy = await self.open(camera_name, test_connection=test_connection, **kwargs)
+                opened[camera_name] = proxy
                 self.logger.info(f"Camera '{camera_name}' initialized successfully")
-
             except (CameraInitializationError, CameraConnectionError, ValueError) as e:
                 self.logger.error(f"Failed to initialize camera '{camera_name}': {e}")
-                failed_cameras.append(camera_name)
-
                 if camera_name in self._cameras:
                     try:
                         await self.close_camera(camera_name)
                     except Exception:
                         pass
-
             except Exception as e:
                 self.logger.error(f"Unexpected error initializing camera '{camera_name}': {e}")
-                failed_cameras.append(camera_name)
-
-        if failed_cameras:
-            self.logger.warning(f"Failed to initialize cameras: {failed_cameras}")
+        if len(opened) != len(camera_names):
+            missing = [n for n in camera_names if n not in opened]
+            self.logger.warning(f"Some cameras failed to initialize: {missing}")
         else:
             self.logger.info("All cameras initialized successfully")
-
-        return failed_cameras
+        return opened
 
     def get_camera(self, camera_name: str) -> AsyncCamera:
         """Get an initialized camera by name.
@@ -305,7 +283,7 @@ class AsyncCameraManager(Mindtrace):
         """
         if camera_name not in self._cameras:
             self.logger.error(f"Requested camera '{camera_name}' is not initialized")
-            raise KeyError(f"Camera '{camera_name}' is not initialized. Use initialize_camera() first.")
+            raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
 
         return self._cameras[camera_name]
 
@@ -329,7 +307,8 @@ class AsyncCameraManager(Mindtrace):
 
         return cameras
 
-    def get_active_cameras(self) -> List[str]:
+    @property
+    def active_cameras(self) -> List[str]:
         """Get names of currently active (initialized) cameras.
 
         Returns:
@@ -337,15 +316,21 @@ class AsyncCameraManager(Mindtrace):
         """
         return list(self._cameras.keys())
 
-    def get_max_concurrent_captures(self) -> int:
+    @property
+    def max_concurrent_captures(self) -> int:
         """Get the current maximum number of concurrent captures.
 
         Returns:
             Current maximum concurrent captures limit
         """
-        return self._capture_semaphore._value
+        try:
+            return self._max_concurrent_captures
+        except AttributeError:
+            # fallback if not yet set
+            return 1
 
-    def set_max_concurrent_captures(self, max_captures: int) -> None:
+    @max_concurrent_captures.setter
+    def max_concurrent_captures(self, max_captures: int) -> None:
         """Set the maximum number of concurrent captures allowed.
 
         Args:
@@ -356,14 +341,14 @@ class AsyncCameraManager(Mindtrace):
         """
         if max_captures < 1:
             raise ValueError("max_captures must be at least 1")
-
+        self._max_concurrent_captures = max_captures
         self._capture_semaphore = asyncio.Semaphore(max_captures)
         self.logger.info(f"Max concurrent captures set to {max_captures}")
 
-    def get_network_bandwidth_info(self) -> Dict[str, Any]:
-        """Get information about network bandwidth management."""
+    def diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostics information including bandwidth management."""
         return {
-            "max_concurrent_captures": self.get_max_concurrent_captures(),
+            "max_concurrent_captures": self.max_concurrent_captures,
             "active_cameras": len(self._cameras),
             "gige_cameras": len([cam for cam in self._cameras.keys() if "Basler" in cam]),
             "bandwidth_management_enabled": True,
@@ -569,7 +554,7 @@ class AsyncCameraManager(Mindtrace):
     async def initialize_and_get_camera(cls, camera_name: str, **kwargs) -> "AsyncCamera":
         """Quick access function to initialize and get a single camera."""
         manager = cls()
-        await manager.initialize_camera(camera_name, **kwargs)
+        await manager.open(camera_name, **kwargs)
         return manager.get_camera(camera_name)
 
     @classmethod
@@ -581,7 +566,7 @@ class AsyncCameraManager(Mindtrace):
     ) -> List[str]:
         """Discover cameras from all or specific backends via a temporary manager."""
         manager = cls(include_mocks=include_mocks, max_concurrent_captures=max_concurrent_captures)
-        return manager.discover_cameras(backends=backends)
+        return manager.discover(backends=backends)
 
     @classmethod
     def _discover_backend(cls, backend_name: str) -> Tuple[bool, Optional[Any]]:

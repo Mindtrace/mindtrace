@@ -80,7 +80,7 @@ async def set_exposure(request: ExposureRequest, manager: CameraManager = Depend
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -188,7 +188,7 @@ async def set_trigger_mode(
             raise HTTPException(status_code=400, detail="Invalid trigger mode. Must be 'continuous' or 'trigger'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -261,7 +261,7 @@ async def set_white_balance(
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 

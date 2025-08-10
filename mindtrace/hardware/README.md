@@ -108,12 +108,12 @@ async def camera_example():
     # Initialize camera manager with mock support for testing
     async with CameraManager(include_mocks=True) as manager:
         # Discover available cameras
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         print(f"Found cameras: {cameras}")
         
         # Initialize and get a camera using the proper pattern
         if cameras:
-            await manager.initialize_camera(cameras[0])
+            await manager.open(cameras[0])
             camera_proxy = manager.get_camera(cameras[0])
             
             # Capture image
@@ -181,10 +181,10 @@ async def modern_camera_usage():
     # Initialize with network bandwidth management (important for GigE cameras)
     async with CameraManager(include_mocks=True, max_concurrent_captures=2) as manager:
         # Discover cameras
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         
         # Initialize and get camera proxy for unified interface
-        await manager.initialize_camera(cameras[0])
+        await manager.open(cameras[0])
         camera_proxy = manager.get_camera(cameras[0])
         
         # Use camera through proxy
@@ -202,7 +202,7 @@ async def modern_camera_usage():
         print(f"Camera info: {info}")
         
         # Check network bandwidth management info
-        bandwidth_info = manager.get_network_bandwidth_info()
+        bandwidth_info = manager.diagnostics()
         print(f"Bandwidth management: {bandwidth_info}")
 ```
 
@@ -217,7 +217,7 @@ print(f"Available backends: {backends}")
 print(f"Backend details: {backend_info}")
 
 # Discover cameras across all backends
-cameras = manager.discover_cameras()
+cameras = manager.discover()
 print(f"All cameras: {cameras}")
 ```
 
@@ -251,23 +251,21 @@ async def quick_camera_access():
 async def camera_setup():
     async with CameraManager(include_mocks=True) as manager:
         # Discover cameras
-        cameras = manager.discover_cameras()
+        cameras = manager.discover()
         
         # Initialize and get specific camera
-        await manager.initialize_camera('Daheng:cam1')
+        await manager.open('Daheng:cam1')
         camera = manager.get_camera('Daheng:cam1')
         
         # Initialize camera with configuration during initialization
-        await manager.initialize_camera(
-            'Basler:serial123',
-            exposure=20000,
-            gain=2.0,
-            trigger_mode="continuous"
+        await manager.open(
+            camera_name='Daheng:cam1',
+            test_connection=True
         )
         camera = manager.get_camera('Basler:serial123')
         
         # Check active cameras
-        active = manager.get_active_cameras()
+        active = manager.active_cameras
         print(f"Active cameras: {active}")
 ```
 
@@ -277,7 +275,7 @@ async def camera_setup():
 async def image_operations():
     async with CameraManager() as manager:
         # Initialize camera first
-        await manager.initialize_camera('Daheng:cam1')
+        await manager.open('Daheng:cam1')
         camera = manager.get_camera('Daheng:cam1')
         
         # Basic capture
@@ -310,10 +308,10 @@ async def image_operations():
 ```python
 async def batch_operations():
     async with CameraManager(include_mocks=True) as manager:
-        cameras = manager.discover_cameras()[:3]  # Get first 3 cameras
+        cameras = manager.discover()[:3]  # Get first 3 cameras
         
         # Initialize all cameras first
-        await manager.initialize_cameras(cameras)
+        await manager.open(cameras)
         
         # Batch configuration
         configurations = {
@@ -339,13 +337,13 @@ async def bandwidth_management_example():
     manager = CameraManager(include_mocks=True, max_concurrent_captures=1)
     
     try:
-        cameras = manager.discover_cameras()[:4]
+        cameras = manager.discover()[:4]
         
         # Initialize all cameras first
-        await manager.initialize_cameras(cameras)
+        await manager.open(cameras)
         
         # Get bandwidth management information
-        bandwidth_info = manager.get_network_bandwidth_info()
+        bandwidth_info = manager.diagnostics()
         print(f"Current settings: {bandwidth_info}")
         
         # Batch capture with bandwidth limiting
@@ -378,7 +376,7 @@ async def bandwidth_strategies():
     aggressive_manager = CameraManager(max_concurrent_captures=3)
     
     # Get recommended settings
-    info = balanced_manager.get_network_bandwidth_info()
+    info = balanced_manager.diagnostics()
     print(f"Recommended settings: {info['recommended_settings']}")
 ```
 
@@ -388,7 +386,7 @@ async def bandwidth_strategies():
 async def advanced_control():
     async with CameraManager() as manager:
         # Initialize camera first
-        await manager.initialize_camera('Basler:serial123')
+        await manager.open('Basler:serial123')
         camera = manager.get_camera('Basler:serial123')
         
         # Exposure control
@@ -879,12 +877,12 @@ async def industrial_automation():
         
         try:
             # Setup cameras with bandwidth management
-            cameras = camera_manager.discover_cameras()
-            await camera_manager.initialize_camera(cameras[0])
+            cameras = camera_manager.discover()
+            await camera_manager.open(cameras[0])
             inspection_camera = camera_manager.get_camera(cameras[0])
             
             # Check bandwidth management status
-            bandwidth_info = camera_manager.get_network_bandwidth_info()
+            bandwidth_info = camera_manager.diagnostics()
             print(f"Network bandwidth management: {bandwidth_info}")
             
             # Setup PLCs
@@ -1001,14 +999,14 @@ async def testing_setup():
         
         try:
             # Test camera functionality with bandwidth management
-            cameras = camera_manager.discover_cameras()
+            cameras = camera_manager.discover()
             print(f"Mock cameras available: {cameras}")
             
             # Initialize cameras first
-            await camera_manager.initialize_cameras(cameras[:2])
+            await camera_manager.open(cameras[:2])
             
             # Check bandwidth management info
-            bandwidth_info = camera_manager.get_network_bandwidth_info()
+            bandwidth_info = camera_manager.diagnostics()
             print(f"Bandwidth management: {bandwidth_info}")
             
             # Test image capture (respects bandwidth limits)
@@ -1020,7 +1018,7 @@ async def testing_setup():
             
             # Initialize third camera for batch capture test
             if len(cameras) > 2:
-                await camera_manager.initialize_camera(cameras[2])
+                await camera_manager.open(cameras[2])
             
             # Test batch capture with bandwidth management
             batch_results = await camera_manager.batch_capture(cameras[:3])

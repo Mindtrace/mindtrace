@@ -89,7 +89,7 @@ async def capture_image(
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(
                 status_code=404,
@@ -164,7 +164,7 @@ async def capture_batch(
                 )
 
         # Check if all cameras are initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         uninitialized_cameras = [cam for cam in request.cameras if cam not in active_cameras]
 
         if uninitialized_cameras:
@@ -225,7 +225,7 @@ async def capture_hdr(
             raise HTTPException(status_code=400, detail="Invalid camera name format. Expected 'Backend:device_name'")
 
         # Check if camera is initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         if request.camera not in active_cameras:
             raise HTTPException(status_code=404, detail=f"Camera '{request.camera}' is not initialized")
 
@@ -306,7 +306,7 @@ async def capture_hdr_batch(
                 )
 
         # Check if all cameras are initialized
-        active_cameras = manager.get_active_cameras()
+        active_cameras = manager.active_cameras
         uninitialized_cameras = [cam for cam in request.cameras if cam not in active_cameras]
 
         if uninitialized_cameras:
