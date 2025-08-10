@@ -14,10 +14,25 @@ class Camera(Mindtrace):
     All operations are executed on a background event loop (owned by the sync CameraManager).
     """
 
-    def __init__(self, async_camera: AsyncCamera, loop: asyncio.AbstractEventLoop, **kwargs):
+    def __init__(self, async_camera: Optional[AsyncCamera] = None, loop: Optional[asyncio.AbstractEventLoop] = None, name: Optional[str] = None, **kwargs):
+        """Create a sync Camera facade.
+
+        If no async_camera/loop is supplied, a default OpenCV camera is created under the hood using a private 
+        background loop, targeting ``OpenCV:opencv_camera_0``.
+        """
         super().__init__(**kwargs)
-        self._camera = async_camera
-        self._loop = loop
+        if async_camera is None or loop is None:
+            # Build a private background loop and default OpenCV camera
+            private_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(private_loop)
+            async def _make() -> AsyncCamera:
+                return await AsyncCamera.open(name)
+            async_cam = private_loop.run_until_complete(_make())
+            self._camera = async_cam
+            self._loop = private_loop
+        else:
+            self._camera = async_camera
+            self._loop = loop
 
     # Helpers
     def _submit(self, coro):
@@ -353,4 +368,17 @@ class Camera(Mindtrace):
 
     def close(self) -> None:
         """Close the camera and release resources."""
-        return self._submit(self._camera.close()) 
+        try:
+            return self._submit(self._camera.close())
+        finally:
+            # If we own a private loop, shut it down
+            try:
+                if self._loop and self._loop.is_running() is False:
+                    self._loop.stop()
+            except Exception:
+                pass
+            try:
+                if self._loop:
+                    self._loop.close()
+            except Exception:
+                pass 

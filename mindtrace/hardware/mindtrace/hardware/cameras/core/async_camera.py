@@ -21,18 +21,81 @@ from mindtrace.hardware.core.exceptions import (
 class AsyncCamera(Mindtrace):
     """Unified async camera interface that wraps backend-specific camera instances."""
 
-    def __init__(self, camera: CameraBackend, full_name: str, **kwargs):
+    def __init__(self, camera: CameraBackend, name: str, **kwargs):
         super().__init__(**kwargs)
         self._camera = camera
-        self._full_name = full_name
+        self._full_name = name
         self._lock = asyncio.Lock()
 
-        parts = full_name.split(":", 1)
+        parts = name.split(":", 1)
         self._backend = parts[0]
-        self._device_name = parts[1] if len(parts) > 1 else full_name
+        self._device_name = parts[1] if len(parts) > 1 else name
         self.logger.debug(
             f"AsyncCamera created: name={self._full_name}, backend={self._backend}, device={self._device_name}"
         )
+
+    @classmethod
+    async def open(cls, name: Optional[str] = None, **kwargs) -> "AsyncCamera":
+        """Create and initialize an AsyncCamera with sensible defaults.
+
+        If no name is provided, probes OpenCV and uses the first available device
+        (e.g., ``OpenCV:opencv_camera_0``), rather than assuming index 0 is present.
+
+        Args:
+            name: Optional full name in the form ``Backend:device_name``.
+
+        Returns:
+            An initialized AsyncCamera instance.
+
+        Raises:
+            CameraInitializationError: If the backend cannot be initialized
+            CameraConnectionError: If the device cannot be opened
+        """
+        if name is None:
+            # Discover first available OpenCV device
+            try:
+                from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import (
+                    OpenCVCameraBackend,
+                )
+                names = OpenCVCameraBackend.get_available_cameras(include_details=False)
+                if not names:
+                    raise CameraNotFoundError("No OpenCV cameras available for default open")
+                target = f"OpenCV:{names[0]}"
+            except Exception as e:
+                raise CameraInitializationError(f"Failed to discover default OpenCV camera: {e}")
+        else:
+            target = name
+        parts = target.split(":", 1)
+        backend_name = parts[0]
+        device_name = parts[1] if len(parts) > 1 else target
+
+        backend: CameraBackend
+        try:
+            if backend_name.lower() == "opencv":
+                from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import (
+                    OpenCVCameraBackend,
+                )
+
+                backend = OpenCVCameraBackend(device_name)
+            elif backend_name.lower() in {"basler", "mockbasler", "mock_basler"}:
+                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
+                    MockBaslerCameraBackend,
+                )
+
+                backend = MockBaslerCameraBackend(device_name)
+            else:
+                raise CameraInitializationError(
+                    f"Unsupported backend '{backend_name}'. Try 'OpenCV:opencv_camera_0' or a mock Basler."
+                )
+
+            ok, _, _ = await backend.initialize()
+            if not ok:
+                raise CameraInitializationError(f"Failed to initialize camera '{target}'")
+            return cls(backend, name=target, **kwargs)
+        except (CameraInitializationError, CameraConnectionError):
+            raise
+        except Exception as e:
+            raise CameraInitializationError(f"Failed to open camera '{target}': {e}")
 
     @property
     def name(self) -> str:
