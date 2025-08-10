@@ -4,7 +4,7 @@ Provides support for Basler cameras via pypylon SDK with mock implementation for
 
 Components:
     - BaslerCameraBackend: Real Basler camera implementation (requires pypylon SDK)
-    - MockBaslerCamera: Mock implementation for testing and development
+    - MockBaslerCameraBackend: Mock implementation for testing and development
 
 Requirements:
     - Real cameras: pypylon SDK (Pylon SDK for Python)
@@ -16,18 +16,18 @@ Installation:
     3. Configure camera permissions (Linux may require udev rules)
 
 Usage:
-    from mindtrace.hardware.cameras.backends.basler import BaslerCamera, MockBaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import BaslerCameraBackend, MockBaslerCameraBackend
 
     # Real camera
     if BASLER_AVAILABLE:
-        camera = BaslerCamera("camera_name")
+        camera = BaslerCameraBackend("camera_name")
         success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
         if success:
             success, image = await camera.capture()
             await camera.close()
 
     # Mock camera (always available)
-    mock_camera = MockBaslerCamera("mock_cam_0")
+    mock_camera = MockBaslerCameraBackend("mock_cam_0")
     success, cam_obj, remote_obj = await mock_camera.initialize()  # Initialize first
     if success:
         success, image = await mock_camera.capture()
@@ -47,6 +47,6 @@ except ImportError:
     BASLER_AVAILABLE = False
 
 # Import mock camera (always available)
-from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
+from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
 
-__all__ = ["BaslerCameraBackend", "MockBaslerCamera", "BASLER_AVAILABLE"]
+__all__ = ["BaslerCameraBackend", "MockBaslerCameraBackend", "BASLER_AVAILABLE"]

@@ -49,9 +49,9 @@ async def camera_manager():
 @pytest_asyncio.fixture
 async def mock_basler_camera():
     """Create a mock Basler camera instance."""
-    from mindtrace.hardware.cameras.backends.basler import MockBaslerCamera
+    from mindtrace.hardware.cameras.backends.basler import MockBaslerCameraBackend
 
-    camera = MockBaslerCamera(camera_name="mock_basler_1", camera_config=None)
+    camera = MockBaslerCameraBackend(camera_name="mock_basler_1", camera_config=None)
     yield camera
 
     # Cleanup

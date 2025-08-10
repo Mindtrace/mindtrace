@@ -48,7 +48,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     # Patch mock camera image generation to be lightweight
     try:
         import numpy as np  # noqa: F401
-        from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
+        from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
 
         def _fast_generate_basler(self):  # type: ignore[no-redef]
             return np.zeros((480, 640, 3), dtype=np.uint8)
@@ -56,8 +56,8 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
         def _no_enhance_b(self, img):  # type: ignore[no-redef]
             return img
 
-        monkeypatch.setattr(MockBaslerCamera, "_generate_synthetic_image", _fast_generate_basler, raising=False)
-        monkeypatch.setattr(MockBaslerCamera, "_enhance_image", _no_enhance_b, raising=False)
+        monkeypatch.setattr(MockBaslerCameraBackend, "_generate_synthetic_image", _fast_generate_basler, raising=False)
+        monkeypatch.setattr(MockBaslerCameraBackend, "_enhance_image", _no_enhance_b, raising=False)
     except Exception:
         pass
 
@@ -73,16 +73,16 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
     """
     if request.node and request.node.name == "test_concurrent_capture_limiting":
         try:
-            from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
+            from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
 
-            original_capture = MockBaslerCamera.capture
+            original_capture = MockBaslerCameraBackend.capture
 
             async def _slightly_slow_capture(self, *args, **kwargs):  # type: ignore[no-redef]
                 # Add ~0.08s so 3 sequential captures >= 0.24s
                 await asyncio.sleep(0.08)
                 return await original_capture(self, *args, **kwargs)
 
-            monkeypatch.setattr(MockBaslerCamera, "capture", _slightly_slow_capture, raising=False)
+            monkeypatch.setattr(MockBaslerCameraBackend, "capture", _slightly_slow_capture, raising=False)
         except Exception:
             pass
     yield 
