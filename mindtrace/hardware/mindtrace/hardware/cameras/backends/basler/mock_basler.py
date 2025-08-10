@@ -20,7 +20,7 @@ from mindtrace.hardware.core.exceptions import (
 )
 
 
-class MockBaslerCamera(CameraBackend):
+class MockBaslerCameraBackend(CameraBackend):
     """Mock Basler Camera Backend Implementation
 
     This class provides a mock implementation of the Basler camera backend for testing and development. It simulates
@@ -36,9 +36,9 @@ class MockBaslerCamera(CameraBackend):
 
     Usage::
 
-        from mindtrace.hardware.cameras.backends.basler import MockBaslerCamera
+        from mindtrace.hardware.cameras.backends.basler import MockBaslerCameraBackend
 
-        camera = MockBaslerCamera("mock_camera_1")
+        camera = MockBaslerCameraBackend("mock_camera_1")
         await camera.set_exposure(20000)
         success, image = await camera.capture()
         await camera.close()
