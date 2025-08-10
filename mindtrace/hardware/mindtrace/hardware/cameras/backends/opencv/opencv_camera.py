@@ -1,101 +1,4 @@
-"""
-OpenCV Camera Backend Implementation
-
-This module provides a comprehensive interface to USB cameras, webcams, and other
-video capture devices using OpenCV's VideoCapture. It supports cross-platform
-camera operations with robust error handling and configuration management.
-
-Features:
-    - USB camera and webcam support across Windows, Linux, and macOS
-    - Automatic camera discovery and enumeration
-    - Configurable resolution, frame rate, and exposure settings
-    - Image quality enhancement using CLAHE
-    - Robust error handling with comprehensive retry logic
-    - BGR to RGB color space conversion for consistency
-    - Thread-safe operations with proper resource management
-
-Requirements:
-    - opencv-python: Core video capture functionality
-    - numpy: Array operations and image processing
-    - Platform-specific camera drivers (automatically detected)
-
-Installation:
-    pip install opencv-python
-
-Usage:
-    from mindtrace.hardware.cameras.backends.opencv import OpenCVCameraBackend
-
-    # Discover available cameras
-    cameras = OpenCVCameraBackend.get_available_cameras()
-
-    # Initialize camera
-    camera = OpenCVCameraBackend("0", width=1280, height=720, img_quality_enhancement=True)
-    success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
-
-    if success:
-        # Configure and capture
-        await camera.set_exposure(-5)
-        success, image = await camera.capture()
-        await camera.close()
-
-Configuration:
-    All parameters are configurable via the hardware configuration system:
-    - MINDTRACE_CAMERA_OPENCV_DEFAULT_WIDTH: Default frame width (1280)
-    - MINDTRACE_CAMERA_OPENCV_DEFAULT_HEIGHT: Default frame height (720)
-    - MINDTRACE_CAMERA_OPENCV_DEFAULT_FPS: Default frame rate (30)
-    - MINDTRACE_CAMERA_OPENCV_DEFAULT_EXPOSURE: Default exposure (-1 for auto)
-    - MINDTRACE_CAMERA_OPENCV_MAX_CAMERA_INDEX: Maximum camera index to test (10)
-    - MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT: Enable CLAHE enhancement
-    - MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT: Number of capture retry attempts
-    - MINDTRACE_CAMERA_TIMEOUT_MS: Capture timeout in milliseconds
-
-Supported Devices:
-    - USB cameras (UVC compatible)
-    - Built-in webcams and laptop cameras
-    - IP cameras (with proper RTSP/HTTP URLs)
-    - Any device supported by OpenCV VideoCapture
-    - Multiple cameras simultaneously
-
-Error Handling:
-    The module uses a comprehensive exception hierarchy for precise error reporting:
-    - SDKNotAvailableError: OpenCV not installed or available
-    - CameraNotFoundError: Camera not detected or accessible
-    - CameraInitializationError: Failed to initialize camera
-    - CameraConfigurationError: Invalid configuration parameters
-    - CameraConnectionError: Connection issues or device disconnected
-    - CameraCaptureError: Image acquisition failures
-    - CameraTimeoutError: Operation timeout
-    - HardwareOperationError: General hardware operation failures
-
-Platform Notes:
-    Linux:
-        - Automatically detects /dev/video* devices
-        - Requires appropriate permissions for camera access
-        - May need to add user to 'video' group: sudo usermod -a -G video $USER
-        - Supports V4L2 backend for advanced camera control
-
-    Windows:
-        - Uses DirectShow backend by default
-        - Supports most USB UVC cameras out of the box
-        - May require specific camera drivers for advanced features
-        - MSMF backend available for newer cameras
-
-    macOS:
-        - Uses AVFoundation backend for optimal performance
-        - Built-in cameras work without additional setup
-        - External USB cameras typically supported via UVC drivers
-        - May require camera permissions in System Preferences
-
-Thread Safety:
-    All camera operations are thread-safe. Multiple cameras can be used
-    simultaneously from different threads without interference.
-
-Performance Notes:
-    - Camera discovery may take several seconds on first run
-    - Frame capture performance depends on camera capabilities and USB bandwidth
-    - Use appropriate buffer sizes for high-speed capture
-    - Consider camera-specific optimizations for production use
-"""
+"""OpenCV camera backend module."""
 
 import asyncio
 import concurrent.futures
@@ -129,17 +32,30 @@ from mindtrace.hardware.core.exceptions import (
 class OpenCVCameraBackend(CameraBackend):
     """OpenCV camera implementation for USB cameras and webcams.
 
-    This camera backend works with any video capture device supported by OpenCV, including USB cameras, built-in 
-    webcams, and IP cameras. It provides a standardized interface for camera operations while handling 
-    platform-specific device discovery and configuration.
+    This backend provides a comprehensive interface to USB cameras, webcams, and other video capture devices using 
+    OpenCV's ``VideoCapture`` with robust error handling and resource management. It works across Windows, Linux, and 
+    macOS with platform-aware discovery.
 
-    The implementation includes:
-    - Automatic camera discovery across platforms
-    - Configurable resolution, frame rate, and exposure
-    - Robust error handling with retry logic
-    - Image format conversion (BGR to RGB)
-    - Resource management and cleanup
-    - Platform-specific optimizations
+    Features:
+        - USB camera and webcam support across Windows, Linux, and macOS
+        - Automatic camera discovery and enumeration
+        - Configurable resolution, frame rate, and exposure settings
+        - Optional image quality enhancement (CLAHE)
+        - Robust error handling with retries and bounded timeouts
+        - BGR to RGB conversion for consistency
+        - Thread-safe operations with per-instance serialization
+        - Platform-specific optimizations
+
+    Configuration:
+        All parameters are configurable via the hardware configuration system:
+        - ``MINDTRACE_CAMERA_OPENCV_DEFAULT_WIDTH``: Default frame width (1280)
+        - ``MINDTRACE_CAMERA_OPENCV_DEFAULT_HEIGHT``: Default frame height (720)
+        - ``MINDTRACE_CAMERA_OPENCV_DEFAULT_FPS``: Default frame rate (30)
+        - ``MINDTRACE_CAMERA_OPENCV_DEFAULT_EXPOSURE``: Default exposure (-1 for auto)
+        - ``MINDTRACE_CAMERA_OPENCV_MAX_CAMERA_INDEX``: Maximum camera index to test (10)
+        - ``MINDTRACE_CAMERA_IMAGE_QUALITY_ENHANCEMENT``: Enable CLAHE enhancement
+        - ``MINDTRACE_CAMERA_RETRIEVE_RETRY_COUNT``: Number of capture retry attempts
+        - ``MINDTRACE_CAMERA_TIMEOUT_MS``: Capture timeout in milliseconds
 
     Concurrency and serialization:
     - All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
@@ -155,6 +71,17 @@ class OpenCVCameraBackend(CameraBackend):
         fps: Current frame rate
         exposure: Current exposure setting
         timeout_ms: Capture timeout in milliseconds
+
+    Example::
+
+        from mindtrace.hardware.cameras.backends.opencv import OpenCVCameraBackend
+
+        async def main():
+            camera = OpenCVCameraBackend("0", width=1280, height=720)
+            ok, cap, _ = await camera.initialize()
+            if ok:
+                success, image = await camera.capture()
+                await camera.close()
     """
 
     def __init__(
@@ -310,8 +237,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not open")
 
     def _parse_camera_identifier(self, camera_name: str) -> Union[int, str]:
-        """
-        Parse camera identifier from name.
+        """Parse camera identifier from name.
 
         Args:
             camera_name: Camera name or identifier
@@ -344,12 +270,11 @@ class OpenCVCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Invalid camera identifier: {camera_name}")
 
     async def initialize(self) -> Tuple[bool, Any, Any]:
-        """
-        Initialize the camera and establish connection.
+        """Initialize the camera and establish connection.
 
         Returns:
-            Tuple of (success, camera_object, remote_control_object)
-            For OpenCV cameras, both objects are the same VideoCapture instance
+            Tuple[bool, Any, Any]: (success, camera_object, remote_control_object). For OpenCV
+            cameras, both objects are the same ``VideoCapture`` instance.
 
         Raises:
             CameraNotFoundError: If camera cannot be opened
@@ -417,8 +342,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraInitializationError(f"Failed to initialize OpenCV camera '{self.camera_name}': {str(e)}")
 
     async def _configure_camera(self) -> None:
-        """
-        Configure camera properties.
+        """Configure camera properties.
 
         Raises:
             CameraConfigurationError: If configuration fails
@@ -477,8 +401,7 @@ class OpenCVCameraBackend(CameraBackend):
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
-        """
-        Cross-platform OpenCV camera discovery with backend-aware probing.
+        """Discover cameras with backend-aware probing.
 
         - Linux: prefer CAP_V4L2 probing across indices
         - Windows: try CAP_DSHOW then CAP_MSMF
@@ -489,7 +412,8 @@ class OpenCVCameraBackend(CameraBackend):
             include_details: If True, return a dict of details per camera.
 
         Returns:
-            List of camera names (e.g., ["opencv_camera_0"]) or a dict of details.
+            Union[List[str], Dict[str, Dict[str, str]]]: List of camera names (e.g.,
+            ``["opencv_camera_0"]``) or a dict of details when ``include_details=True``.
         """
         if not OPENCV_AVAILABLE:
             return {} if include_details else []
@@ -582,16 +506,14 @@ class OpenCVCameraBackend(CameraBackend):
             return {} if include_details else []
 
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
-        """
-        Capture an image from the camera.
+        """Capture an image from the camera.
 
         Implements retry logic and proper error handling for robust image capture.
         Converts OpenCV's default BGR format to RGB for consistency.
 
         Returns:
-            Tuple of (success, image_array)
-            - success: True if capture successful, False otherwise
-            - image_array: Captured image as RGB numpy array, None if failed
+            Tuple[bool, Optional[np.ndarray]]: (success, image_array). On success, the image is
+            an RGB numpy array; on failure, image_array is None.
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -806,12 +728,14 @@ class OpenCVCameraBackend(CameraBackend):
             return False
 
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
-        """
-        Set camera exposure time.
+        """Set camera exposure time.
+
         Args:
             exposure: Exposure value (OpenCV uses log scale, typically -13 to -1)
+
         Returns:
-            True if exposure was set successfully
+            bool: True if exposure was set successfully, otherwise False.
+
         Raises:
             CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If exposure value is invalid
@@ -854,8 +778,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise HardwareOperationError(f"Failed to set exposure for camera '{self.camera_name}': {str(e)}")
 
     async def get_exposure(self) -> float:
-        """
-        Get current camera exposure time.
+        """Get current camera exposure time.
 
         Returns:
             Current exposure time value
@@ -878,8 +801,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise HardwareOperationError(f"Failed to get exposure for camera '{self.camera_name}': {str(e)}")
 
     async def get_exposure_range(self) -> List[Union[int, float]]:
-        """
-        Get camera exposure time range.
+        """Get camera exposure time range.
 
         Returns:
             List containing [min_exposure, max_exposure] in OpenCV log scale
@@ -890,8 +812,7 @@ class OpenCVCameraBackend(CameraBackend):
         ]
 
     async def get_width_range(self) -> List[int]:
-        """
-        Get supported width range.
+        """Get supported width range.
 
         Returns:
             List containing [min_width, max_width]
@@ -902,8 +823,7 @@ class OpenCVCameraBackend(CameraBackend):
         ]
 
     async def get_height_range(self) -> List[int]:
-        """
-        Get supported height range.
+        """Get supported height range.
 
         Returns:
             List containing [min_height, max_height]
@@ -914,8 +834,7 @@ class OpenCVCameraBackend(CameraBackend):
         ]
 
     def get_gain_range(self) -> List[Union[int, float]]:
-        """
-        Get the supported gain range.
+        """Get the supported gain range.
 
         Returns:
             List with [min_gain, max_gain]
@@ -923,8 +842,7 @@ class OpenCVCameraBackend(CameraBackend):
         return [0.0, 100.0]
 
     def set_gain(self, gain: Union[int, float]) -> bool:
-        """
-        Set camera gain.
+        """Set camera gain.
 
         Args:
             gain: Gain value
@@ -960,8 +878,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
     def get_gain(self) -> float:
-        """
-        Get current camera gain.
+        """Get current camera gain.
 
         Returns:
             Current gain value
@@ -978,8 +895,7 @@ class OpenCVCameraBackend(CameraBackend):
             return 0.0
 
     def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
-        """
-        Set Region of Interest (ROI).
+        """Set Region of Interest (ROI).
 
         Note: OpenCV cameras typically don't support hardware ROI,
         this would need to be implemented in software.
@@ -997,8 +913,7 @@ class OpenCVCameraBackend(CameraBackend):
         return False
 
     def get_ROI(self) -> Dict[str, int]:
-        """
-        Get current Region of Interest (ROI).
+        """Get current Region of Interest (ROI).
 
         Returns:
             Dictionary with full frame dimensions (ROI not supported)
@@ -1016,8 +931,7 @@ class OpenCVCameraBackend(CameraBackend):
             return {"x": 0, "y": 0, "width": 0, "height": 0}
 
     def reset_ROI(self) -> bool:
-        """
-        Reset ROI to full sensor size.
+        """Reset ROI to full sensor size.
 
         Returns:
             False (not supported by OpenCV backend)
@@ -1026,8 +940,7 @@ class OpenCVCameraBackend(CameraBackend):
         return False
 
     async def get_wb(self) -> str:
-        """
-        Get current white balance mode.
+        """Get current white balance mode.
 
         Returns:
             Current white balance mode ("auto" or "manual")
@@ -1046,14 +959,13 @@ class OpenCVCameraBackend(CameraBackend):
             return "unknown"
 
     async def set_auto_wb_once(self, value: str) -> bool:
-        """
-        Set white balance mode.
+        """Set white balance mode.
 
         Args:
             value: White balance mode ("auto", "manual", "off")
 
         Returns:
-            True if white balance was set successfully
+            True if white balance was set successfully, otherwise False.
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
@@ -1085,8 +997,7 @@ class OpenCVCameraBackend(CameraBackend):
             return False
 
     def get_wb_range(self) -> List[str]:
-        """
-        Get available white balance modes.
+        """Get available white balance modes.
 
         Returns:
             List of available white balance modes
@@ -1094,8 +1005,7 @@ class OpenCVCameraBackend(CameraBackend):
         return ["auto", "manual", "off"]
 
     def get_pixel_format_range(self) -> List[str]:
-        """
-        Get available pixel formats.
+        """Get available pixel formats.
 
         Returns:
             List of available pixel formats (OpenCV always uses BGR internally)
@@ -1103,8 +1013,7 @@ class OpenCVCameraBackend(CameraBackend):
         return ["BGR8", "RGB8"]
 
     def get_current_pixel_format(self) -> str:
-        """
-        Get current pixel format.
+        """Get current pixel format.
 
         Returns:
             Current pixel format (always BGR8 for OpenCV, converted to RGB8 in capture)
@@ -1112,8 +1021,7 @@ class OpenCVCameraBackend(CameraBackend):
         return "RGB8"  # We convert BGR to RGB in capture method
 
     def set_pixel_format(self, pixel_format: str) -> bool:
-        """
-        Set pixel format.
+        """Set pixel format.
 
         Args:
             pixel_format: Pixel format to set
@@ -1132,8 +1040,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
 
     async def get_triggermode(self) -> str:
-        """
-        Get trigger mode (always continuous for USB cameras).
+        """Get trigger mode (always continuous for USB cameras).
 
         Returns:
             "continuous" (USB cameras only support continuous mode)
@@ -1141,8 +1048,7 @@ class OpenCVCameraBackend(CameraBackend):
         return "continuous"
 
     async def set_triggermode(self, triggermode: str = "continuous") -> bool:
-        """
-        Set trigger mode.
+        """Set trigger mode.
 
         USB cameras only support continuous mode.
 
@@ -1173,8 +1079,7 @@ class OpenCVCameraBackend(CameraBackend):
         return self.img_quality_enhancement
 
     def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
-        """
-        Set image quality enhancement.
+        """Set image quality enhancement.
 
         Args:
             img_quality_enhancement: Whether to enable image quality enhancement
@@ -1205,14 +1110,13 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}")
 
     async def export_config(self, config_path: str) -> bool:
-        """
-        Export current camera configuration to common JSON format.
+        """Export current camera configuration to common JSON format.
 
         Args:
-            config_path: Path to save configuration file
+            config_path (str): Path to save configuration file
 
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
 
         Raises:
             CameraConnectionError: If camera is not connected
@@ -1272,14 +1176,13 @@ class OpenCVCameraBackend(CameraBackend):
             )
 
     async def import_config(self, config_path: str) -> bool:
-        """
-        Import camera configuration from common JSON format.
+        """Import camera configuration from common JSON format.
 
         Args:
             config_path: Path to configuration file
 
         Returns:
-            True if successful, False otherwise
+            bool: True if successful, False otherwise.
 
         Raises:
             CameraConnectionError: If camera is not connected
