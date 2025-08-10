@@ -25,9 +25,7 @@ dependencies = [
 [project.scripts]
 mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
 mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
-mindtrace-setup-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:install_daheng_sdk"
 mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
-mindtrace-uninstall-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:uninstall_daheng_sdk"
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
