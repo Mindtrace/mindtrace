@@ -2,7 +2,9 @@
 
 import asyncio
 import concurrent.futures
+import contextlib
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -422,19 +424,50 @@ class OpenCVCameraBackend(CameraBackend):
         import sys, os, glob
         from typing import Iterable, Optional
 
+        @contextlib.contextmanager
+        def _suppress_cv_output():
+            prev_level = None
+            try:
+                if hasattr(cv2, "utils") and hasattr(cv2.utils, "logging"):
+                    prev_level = cv2.utils.logging.getLogLevel()
+                    cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_SILENT)
+            except Exception:
+                prev_level = None
+            # Suppress C-level stderr temporarily (AVFoundation/VideoIO prints)
+            try:
+                stderr_fd = sys.stderr.fileno()
+                with open(os.devnull, "w") as devnull:
+                    old_stderr = os.dup(stderr_fd)
+                    try:
+                        os.dup2(devnull.fileno(), stderr_fd)
+                        yield
+                    finally:
+                        try:
+                            os.dup2(old_stderr, stderr_fd)
+                        except Exception:
+                            pass
+                        os.close(old_stderr)
+            finally:
+                try:
+                    if prev_level is not None and hasattr(cv2, "utils") and hasattr(cv2.utils, "logging"):
+                        cv2.utils.logging.setLogLevel(prev_level)
+                except Exception:
+                    pass
+
         def _quick_can_open(index: int, backend: int) -> bool:
             try:
-                cap = cv2.VideoCapture(index, backend)
-                if not cap.isOpened():
+                with _suppress_cv_output():
+                    cap = cv2.VideoCapture(index, backend)
+                    if not cap.isOpened():
+                        cap.release()
+                        return False
+                    # Light-touch configure to speed first read
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+                    cap.set(cv2.CAP_PROP_FPS, 15)
+                    ok, _ = cap.read()
                     cap.release()
-                    return False
-                # Light-touch configure to speed first read
-                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-                cap.set(cv2.CAP_PROP_FPS, 15)
-                ok, _ = cap.read()
-                cap.release()
-                return bool(ok)
+                    return bool(ok)
             except Exception:
                 return False
 
@@ -478,15 +511,16 @@ class OpenCVCameraBackend(CameraBackend):
                     name = f"opencv_camera_{i}"
                     found.append(name)
                     if include_details:
-                        cap = cv2.VideoCapture(i, chosen)
-                        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if cap.isOpened() else 0
-                        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if cap.isOpened() else 0
-                        fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 0.0
-                        backend_str = (
-                            cap.getBackendName() if hasattr(cap, "getBackendName") and cap.isOpened() else _backend_name(chosen)
-                        )
-                        if cap.isOpened():
-                            cap.release()
+                        with _suppress_cv_output():
+                            cap = cv2.VideoCapture(i, chosen)
+                            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) if cap.isOpened() else 0
+                            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if cap.isOpened() else 0
+                            fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 0.0
+                            backend_str = (
+                                cap.getBackendName() if hasattr(cap, "getBackendName") and cap.isOpened() else _backend_name(chosen)
+                            )
+                            if cap.isOpened():
+                                cap.release()
                         details[name] = {
                             "user_id": name,
                             "device_id": str(i),
@@ -501,7 +535,7 @@ class OpenCVCameraBackend(CameraBackend):
 
             return details if include_details else found
 
-        except Exception as e:
+        except Exception:
             # Defer raising to not crash discovery; return empty
             return {} if include_details else []
 
