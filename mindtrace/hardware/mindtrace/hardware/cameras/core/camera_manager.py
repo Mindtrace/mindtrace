@@ -81,8 +81,8 @@ class CameraManager(Mindtrace):
     def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
         return self._call_in_loop(self._manager.get_backend_info)
 
-    def discover(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
-        return self._call_in_loop(self._manager.discover_cameras, backends=backends)
+    def discover(self, backends: Optional[Union[str, List[str]]] = None, details: bool = False):
+        return self._call_in_loop(self._manager.discover, backends=backends, details=details)
 
     def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs):
         if isinstance(names, str):

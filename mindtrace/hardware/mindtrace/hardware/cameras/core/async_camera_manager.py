@@ -116,7 +116,7 @@ class AsyncCameraManager(Mindtrace):
 
         return info
 
-    def discover(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
+    def discover(self, backends: Optional[Union[str, List[str]]] = None, details: bool = False) -> Union[List[str], List[Dict[str, Any]]]:
         """Discover available cameras across specified backends or all backends.
 
         Args:
@@ -124,9 +124,11 @@ class AsyncCameraManager(Mindtrace):
                      - None: Discover from all available backends (default behavior)
                      - str: Single backend name (e.g., "Basler", "OpenCV")
                      - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
+            details: If True, return a list of dicts with detailed camera information.
 
         Returns:
-            List of camera names in format "Backend:device_name"
+            If details is False (default): List of camera names in format "Backend:device_name".
+            If details is True: List of records with keys {name, backend, index, width, height, fps}.
 
         Raises:
             ValueError: If backends parameter is not None, str, or List[str].
@@ -141,7 +143,8 @@ class AsyncCameraManager(Mindtrace):
 
             # Discover multiple backends
             mixed = manager.discover(["Basler", "OpenCV"])"""
-        all_cameras = []
+        all_cameras: List[str] = []
+        all_details: List[Dict[str, Any]] = []
 
         # Determine which backends to search
         if backends is None:
@@ -169,23 +172,96 @@ class AsyncCameraManager(Mindtrace):
 
         for backend in backends_to_search:
             try:
-                if backend in ["Basler", "OpenCV"]:
+                if backend == "OpenCV":
+                    from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import (
+                        OpenCVCameraBackend,
+                    )
+
+                    if details:
+                        det = OpenCVCameraBackend.get_available_cameras(include_details=True)
+                        self.logger.debug(f"Found {len(det)} OpenCV cameras (detailed)")
+                        for cam_name, d in det.items():
+                            try:
+                                idx = int(d.get("index", -1))
+                            except Exception:
+                                idx = -1
+                            try:
+                                w = int(d.get("width", 0))
+                            except Exception:
+                                w = 0
+                            try:
+                                h = int(d.get("height", 0))
+                            except Exception:
+                                h = 0
+                            try:
+                                fps = float(d.get("fps", 0.0))
+                            except Exception:
+                                fps = 0.0
+                            all_details.append(
+                                {
+                                    "name": f"{backend}:{cam_name}",
+                                    "backend": backend,
+                                    "index": idx,
+                                    "width": w,
+                                    "height": h,
+                                    "fps": fps,
+                                }
+                            )
+                    else:
+                        cameras = OpenCVCameraBackend.get_available_cameras()
+                        self.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
+                elif backend == "Basler":
                     available, camera_class = self._discover_backend(backend.lower())
                     if available and camera_class:
                         cameras = camera_class.get_available_cameras()
                         self.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
-                        all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
-
-                elif backend.startswith("Mock"):
-                    backend_name = backend.replace("Mock", "").lower()
-                    mock_class = self._get_mock_camera(backend_name)
+                        if details:
+                            for cam in cameras:
+                                # Detailed discovery for Basler not available at this stage
+                                all_details.append(
+                                    {
+                                        "name": f"{backend}:{cam}",
+                                        "backend": backend,
+                                        "index": None,
+                                        "width": 0,
+                                        "height": 0,
+                                        "fps": 0.0,
+                                    }
+                                )
+                        else:
+                            all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
+                elif backend == "MockBasler" and self._include_mocks:
+                    backend_key = backend.replace("Mock", "").lower()
+                    mock_class = self._get_mock_camera(backend_key)
                     cameras = mock_class.get_available_cameras()
                     self.logger.debug(f"Found {len(cameras)} mock cameras for backend '{backend}'")
-                    all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
+                    if details:
+                        for cam in cameras:
+                            # Attempt to parse index from name suffix
+                            idx = -1
+                            try:
+                                idx = int(str(cam).split("_")[-1])
+                            except Exception:
+                                idx = -1
+                            all_details.append(
+                                {
+                                    "name": f"{backend}:{cam}",
+                                    "backend": backend,
+                                    "index": idx,
+                                    "width": 0,
+                                    "height": 0,
+                                    "fps": 0.0,
+                                }
+                            )
+                    else:
+                        all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
 
             except Exception as e:
                 self.logger.error(f"Camera discovery failed for {backend}: {e}")
 
+        if details:
+            return all_details
         return all_cameras
 
     async def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
