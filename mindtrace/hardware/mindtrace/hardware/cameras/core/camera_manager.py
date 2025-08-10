@@ -98,17 +98,24 @@ class CameraManager(Mindtrace):
         return self._manager.diagnostics()
 
     def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
-        return self._submit_coro(self._manager.close(names))
+        """Close cameras or shut down the manager.
 
-    # ===== Lifecycle =====
-    def close(self):
+        - If names is provided (str or list[str]), closes those cameras via the async manager.
+        - If names is None, closes all cameras and shuts down the background event loop thread.
+        """
+        # Close specific cameras
+        if names is not None:
+            self._submit_coro(self._manager.close(names))
+            return
+
+        # Shutdown path
         if self._shutting_down:
             return
         self._shutting_down = True
         try:
             try:
                 # Bound shutdown time; if closing cameras stalls, continue stopping loop
-                self._submit_coro(self._manager.close(), timeout=1.0)
+                self._submit_coro(self._manager.close(None), timeout=1.0)
             except Exception:
                 pass
             try:
