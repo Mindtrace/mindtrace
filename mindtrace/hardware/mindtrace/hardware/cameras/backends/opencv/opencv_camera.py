@@ -585,7 +585,7 @@ class OpenCVCameraBackend(CameraBackend):
 
                     if self.img_quality_enhancement:
                         try:
-                            frame_rgb = self._enhance_image_quality(frame_rgb)
+                            frame_rgb = await asyncio.to_thread(self._enhance_image_quality, frame_rgb)
                         except Exception as enhance_error:
                             self.logger.warning(f"Image enhancement failed, using original image: {enhance_error}")
 
