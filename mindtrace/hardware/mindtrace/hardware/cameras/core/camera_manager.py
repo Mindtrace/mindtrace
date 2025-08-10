@@ -84,11 +84,33 @@ class CameraManager(Mindtrace):
     def discover(self, backends: Optional[Union[str, List[str]]] = None, details: bool = False):
         return self._call_in_loop(self._manager.discover, backends=backends, details=details)
 
-    def open(self, names: Union[str, List[str]], test_connection: bool = True, **kwargs):
-        if isinstance(names, str):
-            return self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
-        else:
-            return self._submit_coro(self._manager.open(names, test_connections=test_connection, **kwargs))
+    def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union["Camera", Dict[str, "Camera"]]:
+        """Open one or more cameras.
+
+        Args:
+            names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera 
+                (prefers OpenCV).
+            test_connection: If True, perform a lightweight connection test after opening.
+            **kwargs: Optional backend-specific configuration to apply during open.
+
+        Returns:
+            If a single name or None is provided, returns a `Camera`.
+            If a list of names is provided, returns a `Dict[str, Camera]` mapping each name to a `Camera`.
+
+        Raises:
+            CameraNotFoundError: If no cameras are available when names is None.
+            CameraInitializationError: If opening the camera fails.
+            CameraConnectionError: If the connection test fails when test_connection is True.
+            ValueError: If a provided camera name is already open (depending on backend policy) or invalid.
+
+        Notes:
+            - This method is idempotent for single-name calls; if the camera is already open, the existing instance is returned.
+        """
+        result = self._submit_coro(self._manager.open(names, test_connection=test_connection, **kwargs))
+        if isinstance(result, AsyncCamera):
+            return Camera(result, self._loop)
+        # assume dict[str, AsyncCamera]
+        return {name: Camera(async_cam, self._loop) for name, async_cam in result.items()}
 
     def get_camera(self, camera_name: str) -> Camera:
         async_cam: AsyncCamera = self._call_in_loop(self._manager.get_camera, camera_name)
