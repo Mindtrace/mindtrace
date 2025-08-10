@@ -237,13 +237,13 @@ class MockBaslerCameraBackend(CameraBackend):
             capture_delay = max(0.01, self.exposure_time / 1000000.0)  # Convert to seconds
             await asyncio.sleep(min(capture_delay, 0.1))  # Cap at 100ms for testing
 
-            # Generate synthetic image
-            image = self._generate_synthetic_image()
+            # Generate synthetic image off the event loop
+            image = await asyncio.to_thread(self._generate_synthetic_image)
 
-            # Apply image enhancement if enabled
+            # Apply image enhancement if enabled (off the event loop)
             if self.img_quality_enhancement:
                 try:
-                    image = self._enhance_image(image)
+                    image = await asyncio.to_thread(self._enhance_image, image)
                 except Exception as enhance_error:
                     self.logger.warning(f"Image enhancement failed, using original image: {enhance_error}")
 
