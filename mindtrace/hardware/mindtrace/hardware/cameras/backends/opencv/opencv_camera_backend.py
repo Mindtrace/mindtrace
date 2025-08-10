@@ -490,7 +490,17 @@ class OpenCVCameraBackend(CameraBackend):
             return m.get(backend, str(backend))
 
         try:
-            max_probe = 16
+            # Limit probing to keep discovery fast, especially on macOS where probing many indices can stall.
+            if sys.platform.startswith("darwin"):
+                default_max_probe = 4
+            elif sys.platform.startswith("linux"):
+                default_max_probe = 8
+            elif sys.platform.startswith("win"):
+                default_max_probe = 6
+            else:
+                default_max_probe = 6
+
+            max_probe = int(os.getenv("MINDTRACE_OPENCV_MAX_PROBE", default_max_probe))
             backends = list(_backend_list_for_platform())
 
             # Probe indices using platform-preferred backends
@@ -519,24 +529,15 @@ class OpenCVCameraBackend(CameraBackend):
                             backend_str = (
                                 cap.getBackendName() if hasattr(cap, "getBackendName") and cap.isOpened() else _backend_name(chosen)
                             )
-                            if cap.isOpened():
-                                cap.release()
-                        details[name] = {
-                            "user_id": name,
-                            "device_id": str(i),
-                            "device_name": f"OpenCV Camera {i}",
-                            "device_type": "OpenCV",
-                            "width": str(w),
-                            "height": str(h),
-                            "fps": f"{fps:.1f}",
-                            "backend": backend_str,
-                            "interface": f"VideoIndex:{i}",
-                        }
+                            cap.release()
+                            details[name] = {"index": str(i), "backend": backend_str, "width": str(w), "height": str(h), "fps": f"{fps:.2f}"}
+                    else:
+                        # On macOS and in simple list mode, stop after first successful device
+                        if sys.platform.startswith("darwin"):
+                            break
 
             return details if include_details else found
-
         except Exception:
-            # Defer raising to not crash discovery; return empty
             return {} if include_details else []
 
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
