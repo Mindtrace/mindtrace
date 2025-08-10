@@ -26,7 +26,7 @@ Usage:
 
 # Try to import OpenCV camera implementation
 try:
-    from mindtrace.hardware.cameras.backends.opencv.opencv_camera import (
+    from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import (
         OPENCV_AVAILABLE,
         OpenCVCameraBackend,
     )
