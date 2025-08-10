@@ -144,6 +144,7 @@ class OpenCVCameraBackend(CameraBackend):
     Concurrency and serialization:
     - All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
     - A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
+    - Unlike Basler, OpenCV cameras do not have an explicit "grabbing" state; all operations use continuous mode.
     
     Attributes:
         camera_index: Camera device index or path
@@ -267,7 +268,14 @@ class OpenCVCameraBackend(CameraBackend):
             return func(*args, **kwargs)
 
         fut = self._loop.run_in_executor(self._sdk_executor, _call)
-        return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
+        except asyncio.TimeoutError as e:
+            raise CameraTimeoutError(
+                f"OpenCV operation timed out after {timeout or self._op_timeout_s:.2f}s for camera '{self.camera_name}'"
+            ) from e
+        except Exception as e:
+            raise HardwareOperationError(f"OpenCV operation failed for camera '{self.camera_name}': {e}") from e
 
     def _sdk_sync(self, func, *args, timeout: Optional[float] = None, **kwargs):
         """Run a potentially blocking OpenCV call on a dedicated thread synchronously with timeout.
@@ -282,6 +290,24 @@ class OpenCVCameraBackend(CameraBackend):
             return func(*args, **kwargs)
         future = self._sdk_executor.submit(_call)
         return future.result(timeout or self._op_timeout_s)
+
+    async def _ensure_open(self) -> None:
+        """Ensure the VideoCapture is initialized and open.
+
+        Raises:
+            CameraConnectionError: If the camera is not initialized or open
+        """
+        if not OPENCV_AVAILABLE:
+            raise SDKNotAvailableError(
+                "opencv-python", "OpenCV is required for USB camera support. Install with: pip install opencv-python"
+            )
+        else:
+            assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
+        if self.cap is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+        is_open = await self._sdk(self.cap.isOpened)
+        if not is_open:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not open")
 
     def _parse_camera_identifier(self, camera_name: str) -> Union[int, str]:
         """
@@ -361,6 +387,7 @@ class OpenCVCameraBackend(CameraBackend):
 
             # Test capture to verify camera is working (serialized)
             async with self._io_lock:
+                await self._ensure_open()
                 ret, frame = await self._sdk(self.cap.read, timeout=self._op_timeout_s)
             if not ret or frame is None:
                 self.logger.error(f"Camera {self.camera_index} failed to capture test frame")
@@ -403,8 +430,7 @@ class OpenCVCameraBackend(CameraBackend):
             )
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
-        if not self.cap or not await self._sdk(self.cap.isOpened):
-            raise CameraConnectionError("Camera not available for configuration")
+        await self._ensure_open()
 
         try:
             width_set = await self._sdk(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, self._width)
@@ -572,7 +598,7 @@ class OpenCVCameraBackend(CameraBackend):
             CameraCaptureError: If image capture fails
             CameraTimeoutError: If capture times out
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not ready for capture")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
@@ -586,6 +612,7 @@ class OpenCVCameraBackend(CameraBackend):
                 # Bound the blocking read by timeout_ms
                 read_timeout_s = max(0.1, float(self.timeout_ms) / 1000.0)
                 async with self._io_lock:
+                    await self._ensure_open()
                     ret, frame = await self._sdk(self.cap.read, timeout=read_timeout_s)
 
                 if ret and frame is not None:
@@ -612,11 +639,9 @@ class OpenCVCameraBackend(CameraBackend):
             except asyncio.CancelledError:
                 # Propagate cancellations unchanged
                 raise
-            except asyncio.TimeoutError:
+            except CameraTimeoutError:
                 if attempt == self.retrieve_retry_count - 1:
-                    raise CameraTimeoutError(
-                        f"Capture timeout after {self.timeout_ms}ms for camera '{self.camera_name}'"
-                    )
+                    raise
                 # retry next attempt
                 continue
             except Exception as e:
@@ -691,7 +716,7 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             True if camera is connected and responsive, False otherwise
         """
-        if not self.initialized or not self.cap:
+        if not self.initialized:
             return False
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
@@ -796,6 +821,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+        await self._ensure_open()
         # Check if exposure control is supported
         if not await self.is_exposure_control_supported():
             self.logger.warning(
@@ -838,12 +864,13 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConnectionError: If camera is not initialized
             HardwareOperationError: If exposure retrieval fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
+        if not self.initialized:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure reading")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             async with self._io_lock:
+                await self._ensure_open()
                 exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
             return float(exposure)
         except Exception as e:
@@ -1186,10 +1213,8 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConnectionError: If camera is not connected
             CameraConfigurationError: If configuration export fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        else:
-            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+        await self._ensure_open()
+        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             import json
 
@@ -1255,10 +1280,8 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConnectionError: If camera is not connected
             CameraConfigurationError: If configuration import fails
         """
-        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        else:
-            assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
+        await self._ensure_open()
+        assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         if not os.path.exists(config_path):
             raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
