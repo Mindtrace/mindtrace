@@ -631,7 +631,7 @@ class AsyncCameraManager(Mindtrace):
         """Get mock camera class for backend (class method for consistent logging)."""
         try:
             if backend_name.lower() == "basler":
-                from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
+                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
                 return MockBaslerCameraBackend
             else:

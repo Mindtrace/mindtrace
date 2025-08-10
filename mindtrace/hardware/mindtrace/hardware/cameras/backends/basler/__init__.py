@@ -36,7 +36,7 @@ Usage:
 
 # Try to import real Basler camera implementation
 try:
-    from mindtrace.hardware.cameras.backends.basler.basler_camera import (
+    from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import (
         PYPYLON_AVAILABLE,
         BaslerCameraBackend,
     )
@@ -47,6 +47,6 @@ except ImportError:
     BASLER_AVAILABLE = False
 
 # Import mock camera (always available)
-from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
+from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
 __all__ = ["BaslerCameraBackend", "MockBaslerCameraBackend", "BASLER_AVAILABLE"]
