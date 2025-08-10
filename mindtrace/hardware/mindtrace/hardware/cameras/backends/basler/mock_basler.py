@@ -85,6 +85,10 @@ class MockBaslerCameraBackend(CameraBackend):
                 - pixel_format: Pixel format (simulated)
                 - buffer_count: Buffer count (simulated)
                 - timeout_ms: Timeout in milliseconds
+                - simulate_fail_init: If True, simulate initialization failure (overrides env)
+                - simulate_fail_capture: If True, simulate capture failure (overrides env)
+                - simulate_timeout: If True, simulate timeout on capture (overrides env)
+                - simulate_cancel: If True, simulate asyncio cancellation during capture
 
         Raises:
             CameraConfigurationError: If configuration is invalid
@@ -129,10 +133,16 @@ class MockBaslerCameraBackend(CameraBackend):
         self.grabbing_mode = "LatestImageOnly"  # Mock grabbing mode
         self._grabbing = False
 
-        # Error simulation flags
-        self.fail_init = os.getenv("MOCK_BASLER_FAIL_INIT", "false").lower() == "true"
-        self.fail_capture = os.getenv("MOCK_BASLER_FAIL_CAPTURE", "false").lower() == "true"
-        self.simulate_timeout = os.getenv("MOCK_BASLER_TIMEOUT", "false").lower() == "true"
+        # Error/cancellation simulation flags (constructor kwargs override env defaults)
+        env_fail_init = os.getenv("MOCK_BASLER_FAIL_INIT", "false").lower() == "true"
+        env_fail_capture = os.getenv("MOCK_BASLER_FAIL_CAPTURE", "false").lower() == "true"
+        env_timeout = os.getenv("MOCK_BASLER_TIMEOUT", "false").lower() == "true"
+        env_cancel = os.getenv("MOCK_BASLER_CANCEL", "false").lower() == "true"
+
+        self.fail_init = bool(backend_kwargs.get("simulate_fail_init", env_fail_init))
+        self.fail_capture = bool(backend_kwargs.get("simulate_fail_capture", env_fail_capture))
+        self.simulate_timeout = bool(backend_kwargs.get("simulate_timeout", env_timeout))
+        self.simulate_cancel = bool(backend_kwargs.get("simulate_cancel", env_cancel))
 
         # Initialize camera state (actual initialization happens in async initialize method)
         self.initialized = False
@@ -226,12 +236,15 @@ class MockBaslerCameraBackend(CameraBackend):
         if not self.initialized:
             raise CameraConnectionError(f"Mock camera '{self.camera_name}' is not initialized")
 
-        # Simulate different error conditions
+        # Simulate different error/cancellation conditions
         if self.fail_capture:
             raise CameraCaptureError(f"Simulated capture failure for mock camera '{self.camera_name}'")
 
         if self.simulate_timeout:
             raise CameraTimeoutError(f"Simulated timeout for mock camera '{self.camera_name}'")
+
+        if self.simulate_cancel:
+            raise asyncio.CancelledError()
 
         try:
             # Auto-start grabbing if not already grabbing, to mirror SDK behavior
@@ -256,6 +269,9 @@ class MockBaslerCameraBackend(CameraBackend):
             self.logger.debug(f"Captured frame {self.image_counter} from mock camera '{self.camera_name}'")
             return True, image
 
+        except asyncio.CancelledError:
+            # Propagate cancellations unchanged to mirror real behavior
+            raise
         except (CameraConnectionError, CameraCaptureError, CameraTimeoutError):
             raise
         except Exception as e:
