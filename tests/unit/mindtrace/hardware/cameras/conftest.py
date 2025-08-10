@@ -48,7 +48,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     # Patch mock camera image generation to be lightweight
     try:
         import numpy as np  # noqa: F401
-        from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
+        from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
         def _fast_generate_basler(self):  # type: ignore[no-redef]
             return np.zeros((480, 640, 3), dtype=np.uint8)
@@ -73,8 +73,8 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
     """
     if request.node and request.node.name == "test_concurrent_capture_limiting":
         try:
-            from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCameraBackend
-
+            from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+ 
             original_capture = MockBaslerCameraBackend.capture
 
             async def _slightly_slow_capture(self, *args, **kwargs):  # type: ignore[no-redef]
