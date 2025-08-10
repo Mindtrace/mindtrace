@@ -398,3 +398,20 @@ class Camera(Mindtrace):
                     self._loop.close()
                 except Exception:
                     pass 
+
+    # Context manager support
+    def __enter__(self) -> "Camera":
+        parent_enter = getattr(super(), "__enter__", None)
+        if callable(parent_enter):
+            res = parent_enter()
+            return res if res is not None else self
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            self.close()
+        finally:
+            parent_exit = getattr(super(), "__exit__", None)
+            if callable(parent_exit):
+                return parent_exit(exc_type, exc, tb)
+            return False 
