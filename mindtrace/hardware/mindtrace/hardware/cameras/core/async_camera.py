@@ -23,12 +23,12 @@ class AsyncCamera(Mindtrace):
 
     def __init__(self, camera: CameraBackend, name: str, **kwargs):
         super().__init__(**kwargs)
-        self._camera = camera
+        self._backend = camera
         self._full_name = name
         self._lock = asyncio.Lock()
 
         parts = name.split(":", 1)
-        self._backend = parts[0]
+        self._backend_name = parts[0]
         self._device_name = parts[1] if len(parts) > 1 else name
         self.logger.debug(
             f"AsyncCamera created: name={self._full_name}, backend={self._backend}, device={self._device_name}"
@@ -38,8 +38,8 @@ class AsyncCamera(Mindtrace):
     async def open(cls, name: Optional[str] = None, **kwargs) -> "AsyncCamera":
         """Create and initialize an AsyncCamera with sensible defaults.
 
-        If no name is provided, probes OpenCV and uses the first available device
-        (e.g., ``OpenCV:opencv_camera_0``), rather than assuming index 0 is present.
+        If no name is provided, probes OpenCV and uses the first available device (e.g., ``OpenCV:opencv_camera_0``), 
+        rather than assuming index 0 is present.
 
         Args:
             name: Optional full name in the form ``Backend:device_name``.
@@ -107,11 +107,20 @@ class AsyncCamera(Mindtrace):
         return self._full_name
 
     @property
-    def backend(self) -> str:
-        """Backend identifier.
+    def backend_name(self) -> str:
+        """Backend identifier string.
 
         Returns:
             The backend name (e.g., "Basler", "OpenCV").
+        """
+        return self._backend_name
+
+    @property
+    def backend(self) -> CameraBackend:
+        """Backend instance implementing the camera SDK.
+
+        Returns:
+            The concrete backend object implementing `CameraBackend`.
         """
         return self._backend
 
@@ -131,7 +140,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True if the underlying backend is initialized/open, otherwise False.
         """
-        return self._camera.initialized
+        return self._backend.initialized
 
     # Async context manager support
     async def __aenter__(self) -> "AsyncCamera":
@@ -143,7 +152,7 @@ class AsyncCamera(Mindtrace):
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         try:
-            await self._camera.close()
+            await self._backend.close()
         finally:
             parent_aexit = getattr(super(), "__aexit__", None)
             if callable(parent_aexit):
@@ -166,13 +175,13 @@ class AsyncCamera(Mindtrace):
             RuntimeError: For unexpected errors after exhausting retries.
         """
         async with self._lock:
-            retry_count = self._camera.retrieve_retry_count
+            retry_count = self._backend.retrieve_retry_count
             self.logger.debug(
                 f"Starting capture for '{self._full_name}' with up to {retry_count} attempts, save_path={save_path!r}"
             )
             for attempt in range(retry_count):
                 try:
-                    success, image = await self._camera.capture()
+                    success, image = await self._backend.capture()
                     if success and image is not None:
                         if save_path:
                             dirname = os.path.dirname(save_path)
@@ -264,20 +273,20 @@ class AsyncCamera(Mindtrace):
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
             success = True
             if "exposure" in settings:
-                success &= await self._camera.set_exposure(settings["exposure"])
+                success &= await self._backend.set_exposure(settings["exposure"])
             if "gain" in settings:
-                success &= self._camera.set_gain(settings["gain"])
+                success &= self._backend.set_gain(settings["gain"])
             if "roi" in settings:
                 x, y, w, h = settings["roi"]
-                success &= self._camera.set_ROI(x, y, w, h)
+                success &= self._backend.set_ROI(x, y, w, h)
             if "trigger_mode" in settings:
-                success &= await self._camera.set_triggermode(settings["trigger_mode"])
+                success &= await self._backend.set_triggermode(settings["trigger_mode"])
             if "pixel_format" in settings:
-                success &= self._camera.set_pixel_format(settings["pixel_format"])
+                success &= self._backend.set_pixel_format(settings["pixel_format"])
             if "white_balance" in settings:
-                success &= await self._camera.set_auto_wb_once(settings["white_balance"])
+                success &= await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
-                success &= self._camera.set_image_quality_enhancement(settings["image_enhancement"])
+                success &= self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             self.logger.debug(
                 f"Configuration {'succeeded' if success else 'had failures'} for camera '{self._full_name}'"
             )
@@ -293,7 +302,7 @@ class AsyncCamera(Mindtrace):
             True on success, otherwise False.
         """
         async with self._lock:
-            return await self._camera.set_exposure(exposure)
+            return await self._backend.set_exposure(exposure)
 
     async def get_exposure(self) -> float:
         """Get the current exposure value.
@@ -301,7 +310,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             The current exposure as a float.
         """
-        return await self._camera.get_exposure()
+        return await self._backend.get_exposure()
 
     async def get_exposure_range(self) -> Tuple[float, float]:
         """Get the valid exposure range.
@@ -309,7 +318,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             A tuple of (min_exposure, max_exposure).
         """
-        range_list = await self._camera.get_exposure_range()
+        range_list = await self._backend.get_exposure_range()
         return range_list[0], range_list[1]
 
     def set_gain(self, gain: Union[int, float]) -> bool:
@@ -321,7 +330,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._camera.set_gain(gain)
+        return self._backend.set_gain(gain)
 
     def get_gain(self) -> float:
         """Get the current camera gain.
@@ -329,7 +338,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             The current gain as a float.
         """
-        return self._camera.get_gain()
+        return self._backend.get_gain()
 
     def get_gain_range(self) -> Tuple[float, float]:
         """Get the valid gain range.
@@ -337,7 +346,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             A tuple of (min_gain, max_gain).
         """
-        range_list = self._camera.get_gain_range()
+        range_list = self._backend.get_gain_range()
         return range_list[0], range_list[1]
 
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
@@ -352,7 +361,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._camera.set_ROI(x, y, width, height)
+        return self._backend.set_ROI(x, y, width, height)
 
     def get_roi(self) -> Dict[str, int]:
         """Get the current ROI.
@@ -360,7 +369,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             A dict with keys x, y, width, height.
         """
-        return self._camera.get_ROI()
+        return self._backend.get_ROI()
 
     def reset_roi(self) -> bool:
         """Reset the ROI to full frame if supported.
@@ -368,7 +377,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._camera.reset_ROI()
+        return self._backend.reset_ROI()
 
     async def set_trigger_mode(self, mode: str) -> bool:
         """Set the trigger mode.
@@ -380,7 +389,7 @@ class AsyncCamera(Mindtrace):
             True on success, otherwise False.
         """
         async with self._lock:
-            return await self._camera.set_triggermode(mode)
+            return await self._backend.set_triggermode(mode)
 
     async def get_trigger_mode(self) -> str:
         """Get the current trigger mode.
@@ -388,7 +397,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             Trigger mode string.
         """
-        return await self._camera.get_triggermode()
+        return await self._backend.get_triggermode()
 
     def set_pixel_format(self, format: str) -> bool:
         """Set the output pixel format if supported.
@@ -399,7 +408,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._camera.set_pixel_format(format)
+        return self._backend.set_pixel_format(format)
 
     def get_pixel_format(self) -> str:
         """Get the current output pixel format.
@@ -407,7 +416,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             Pixel format string.
         """
-        return self._camera.get_current_pixel_format()
+        return self._backend.get_current_pixel_format()
 
     def get_available_pixel_formats(self) -> List[str]:
         """List supported pixel formats.
@@ -415,7 +424,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             A list of pixel format strings.
         """
-        return self._camera.get_pixel_format_range()
+        return self._backend.get_pixel_format_range()
 
     async def set_white_balance(self, mode: str) -> bool:
         """Set white balance mode.
@@ -427,7 +436,7 @@ class AsyncCamera(Mindtrace):
             True on success, otherwise False.
         """
         async with self._lock:
-            return await self._camera.set_auto_wb_once(mode)
+            return await self._backend.set_auto_wb_once(mode)
 
     async def get_white_balance(self) -> str:
         """Get the current white balance mode.
@@ -435,7 +444,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             White balance mode string.
         """
-        return await self._camera.get_wb()
+        return await self._backend.get_wb()
 
     def get_available_white_balance_modes(self) -> List[str]:
         """List supported white balance modes.
@@ -443,7 +452,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             A list of mode strings.
         """
-        return self._camera.get_wb_range()
+        return self._backend.get_wb_range()
 
     def set_image_enhancement(self, enabled: bool) -> bool:
         """Enable or disable image enhancement pipeline.
@@ -454,7 +463,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._camera.set_image_quality_enhancement(enabled)
+        return self._backend.set_image_quality_enhancement(enabled)
 
     def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
@@ -462,7 +471,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True if enabled, otherwise False.
         """
-        return self._camera.get_image_quality_enhancement()
+        return self._backend.get_image_quality_enhancement()
 
     async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
@@ -474,7 +483,7 @@ class AsyncCamera(Mindtrace):
             True on success, otherwise False.
         """
         async with self._lock:
-            return await self._camera.export_config(path)
+            return await self._backend.export_config(path)
 
     async def load_config(self, path: str) -> bool:
         """Import camera configuration from a file via backend.
@@ -486,7 +495,7 @@ class AsyncCamera(Mindtrace):
             True on success, otherwise False.
         """
         async with self._lock:
-            return await self._camera.import_config(path)
+            return await self._backend.import_config(path)
 
     async def check_connection(self) -> bool:
         """Check whether the backend connection is healthy.
@@ -494,7 +503,7 @@ class AsyncCamera(Mindtrace):
         Returns:
             True if healthy, otherwise False.
         """
-        return await self._camera.check_connection()
+        return await self._backend.check_connection()
 
     async def get_sensor_info(self) -> Dict[str, Any]:
         """Get basic sensor information for diagnostics.
@@ -532,8 +541,8 @@ class AsyncCamera(Mindtrace):
         """
         async with self._lock:
             try:
-                original_exposure = await self._camera.get_exposure()
-                exposure_range = await self._camera.get_exposure_range()
+                original_exposure = await self._backend.get_exposure()
+                exposure_range = await self._backend.get_exposure_range()
                 min_exposure, max_exposure = exposure_range[0], exposure_range[1]
                 base_exposure = original_exposure
                 exposures = []
@@ -551,7 +560,7 @@ class AsyncCamera(Mindtrace):
                 successful_captures = 0
                 for i, exposure in enumerate(exposures):
                     try:
-                        success = await self._camera.set_exposure(exposure)
+                        success = await self._backend.set_exposure(exposure)
                         if not success:
                             self.logger.warning(
                                 f"Failed to set exposure {exposure} for HDR capture {i + 1}/{len(exposures)}"
@@ -561,7 +570,7 @@ class AsyncCamera(Mindtrace):
                         save_path = None
                         if save_path_pattern:
                             save_path = save_path_pattern.format(exposure=int(exposure))
-                        success, image = await self._camera.capture()
+                        success, image = await self._backend.capture()
                         if success and image is not None:
                             if save_path and save_path.strip():
                                 save_dir = os.path.dirname(save_path)
@@ -584,7 +593,7 @@ class AsyncCamera(Mindtrace):
                         )
                         continue
                 try:
-                    await self._camera.set_exposure(original_exposure)
+                    await self._backend.set_exposure(original_exposure)
                     self.logger.debug(f"Restored original exposure {original_exposure}μs")
                 except Exception as e:
                     self.logger.warning(f"Failed to restore original exposure: {e}")
@@ -613,5 +622,5 @@ class AsyncCamera(Mindtrace):
         """Close the camera and release resources."""
         async with self._lock:
             self.logger.info(f"Closing camera '{self._full_name}'")
-            await self._camera.close()
+            await self._backend.close()
             self.logger.debug(f"Camera '{self._full_name}' closed") 

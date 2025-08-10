@@ -303,7 +303,7 @@ class TestCameraManager:
 
             assert camera_proxy is not None
             assert camera_proxy.name == camera_name
-            assert "MockBasler" in camera_proxy.backend
+            assert "MockBasler" in camera_proxy.backend_name
             assert camera_proxy.is_connected
 
             # Use short exposure for fast tests
@@ -730,15 +730,15 @@ class TestNetworkBandwidthManagement:
                 proxies = [manager.get_camera(name) for name in mock_cameras]
                 originals = []
                 for p in proxies:
-                    originals.append(p._camera.capture)
-                    p._camera.capture = lambda p=p: wrap_capture(p)
+                    originals.append(p._backend.capture)
+                    p._backend.capture = lambda p=p: wrap_capture(p)
 
                 try:
                     results = await manager.batch_capture(mock_cameras)
                 finally:
                     # restore originals
                     for p, orig in zip(proxies, originals):
-                        p._camera.capture = orig
+                        p._backend.capture = orig
 
                 assert max_seen <= 1
                 assert len(results) == len(mock_cameras)

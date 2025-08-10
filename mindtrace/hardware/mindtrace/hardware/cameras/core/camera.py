@@ -41,9 +41,9 @@ class Camera(Mindtrace):
             async def _make() -> AsyncCamera:
                 return await AsyncCamera.open(name)
 
-            self._camera = self._submit(_make())
+            self._backend = self._submit(_make())
         else:
-            self._camera = async_camera
+            self._backend = async_camera
             self._loop = loop
 
     # Helpers
@@ -71,16 +71,25 @@ class Camera(Mindtrace):
         Returns:
             The full name in the form "Backend:device_name".
         """
-        return self._camera.name
+        return self._backend.name
 
     @property
-    def backend(self) -> str:
-        """Backend identifier.
+    def backend_name(self) -> str:
+        """Backend identifier string.
 
         Returns:
             The backend name (e.g., "Basler", "OpenCV").
         """
-        return self._camera.backend
+        return self._backend.backend_name
+
+    @property
+    def backend(self):
+        """Backend instance implementing the camera SDK.
+
+        Returns:
+            The concrete backend object implementing `CameraBackend`.
+        """
+        return self._backend.backend
 
     @property
     def device_name(self) -> str:
@@ -89,7 +98,7 @@ class Camera(Mindtrace):
         Returns:
             The device name (e.g., camera serial or index).
         """
-        return self._camera.device_name
+        return self._backend.device_name
 
     @property
     def is_connected(self) -> bool:
@@ -98,7 +107,7 @@ class Camera(Mindtrace):
         Returns:
             True if the underlying backend is initialized/open, otherwise False.
         """
-        return self._camera.is_connected
+        return self._backend.is_connected
 
     # Sync methods delegating to async
     def capture(self, save_path: Optional[str] = None) -> Any:
@@ -115,14 +124,14 @@ class Camera(Mindtrace):
             CameraConnectionError: On connection issues during capture.
             CameraTimeoutError: If capture times out.
         """
-        return self._submit(self._camera.capture(save_path))
+        return self._submit(self._backend.capture(save_path))
 
     def configure(self, **settings) -> bool:
         """Configure multiple camera settings atomically.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement.
+            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format, 
+                white_balance, image_enhancement.
 
         Returns:
             True if all settings were applied successfully, otherwise False.
@@ -131,7 +140,7 @@ class Camera(Mindtrace):
             CameraConfigurationError: If a provided value is invalid for the backend.
             CameraConnectionError: If the camera cannot be configured.
         """
-        return self._submit(self._camera.configure(**settings))
+        return self._submit(self._backend.configure(**settings))
 
     def set_exposure(self, exposure: Union[int, float]) -> bool:
         """Set the camera exposure.
@@ -142,7 +151,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._submit(self._camera.set_exposure(exposure))
+        return self._submit(self._backend.set_exposure(exposure))
 
     def get_exposure(self) -> float:
         """Get the current exposure value.
@@ -150,7 +159,7 @@ class Camera(Mindtrace):
         Returns:
             The current exposure as a float.
         """
-        return self._submit(self._camera.get_exposure())
+        return self._submit(self._backend.get_exposure())
 
     def get_exposure_range(self) -> Tuple[float, float]:
         """Get the valid exposure range.
@@ -158,7 +167,7 @@ class Camera(Mindtrace):
         Returns:
             A tuple of (min_exposure, max_exposure).
         """
-        return self._submit(self._camera.get_exposure_range())
+        return self._submit(self._backend.get_exposure_range())
 
     # Backend sync ops routed through loop for thread safety
     def set_gain(self, gain: Union[int, float]) -> bool:
@@ -170,7 +179,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._camera.set_gain, gain)
+        return self._call_in_loop(self._backend.set_gain, gain)
 
     def get_gain(self) -> float:
         """Get the current camera gain.
@@ -178,7 +187,7 @@ class Camera(Mindtrace):
         Returns:
             The current gain as a float.
         """
-        return self._call_in_loop(self._camera.get_gain)
+        return self._call_in_loop(self._backend.get_gain)
 
     def get_gain_range(self) -> Tuple[float, float]:
         """Get the valid gain range.
@@ -186,7 +195,7 @@ class Camera(Mindtrace):
         Returns:
             A tuple of (min_gain, max_gain).
         """
-        return self._call_in_loop(self._camera.get_gain_range)
+        return self._call_in_loop(self._backend.get_gain_range)
 
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
         """Set the Region of Interest (ROI).
@@ -200,7 +209,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._camera.set_roi, x, y, width, height)
+        return self._call_in_loop(self._backend.set_roi, x, y, width, height)
 
     def get_roi(self) -> Dict[str, int]:
         """Get the current ROI.
@@ -208,7 +217,7 @@ class Camera(Mindtrace):
         Returns:
             A dict with keys x, y, width, height.
         """
-        return self._call_in_loop(self._camera.get_roi)
+        return self._call_in_loop(self._backend.get_roi)
 
     def reset_roi(self) -> bool:
         """Reset the ROI to full frame if supported.
@@ -216,7 +225,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._camera.reset_roi)
+        return self._call_in_loop(self._backend.reset_roi)
 
     def set_trigger_mode(self, mode: str) -> bool:
         """Set the trigger mode.
@@ -227,7 +236,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._submit(self._camera.set_trigger_mode(mode))
+        return self._submit(self._backend.set_trigger_mode(mode))
 
     def get_trigger_mode(self) -> str:
         """Get the current trigger mode.
@@ -235,7 +244,7 @@ class Camera(Mindtrace):
         Returns:
             Trigger mode string.
         """
-        return self._submit(self._camera.get_trigger_mode())
+        return self._submit(self._backend.get_trigger_mode())
 
     def set_pixel_format(self, format: str) -> bool:
         """Set the output pixel format if supported.
@@ -246,7 +255,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._camera.set_pixel_format, format)
+        return self._call_in_loop(self._backend.set_pixel_format, format)
 
     def get_pixel_format(self) -> str:
         """Get the current output pixel format.
@@ -254,7 +263,7 @@ class Camera(Mindtrace):
         Returns:
             Pixel format string.
         """
-        return self._call_in_loop(self._camera.get_pixel_format)
+        return self._call_in_loop(self._backend.get_pixel_format)
 
     def get_available_pixel_formats(self) -> List[str]:
         """List supported pixel formats.
@@ -262,7 +271,7 @@ class Camera(Mindtrace):
         Returns:
             A list of pixel format strings.
         """
-        return self._call_in_loop(self._camera.get_available_pixel_formats)
+        return self._call_in_loop(self._backend.get_available_pixel_formats)
 
     def set_white_balance(self, mode: str) -> bool:
         """Set white balance mode.
@@ -273,7 +282,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._submit(self._camera.set_white_balance(mode))
+        return self._submit(self._backend.set_white_balance(mode))
 
     def get_white_balance(self) -> str:
         """Get the current white balance mode.
@@ -281,7 +290,7 @@ class Camera(Mindtrace):
         Returns:
             White balance mode string.
         """
-        return self._submit(self._camera.get_white_balance())
+        return self._submit(self._backend.get_white_balance())
 
     def get_available_white_balance_modes(self) -> List[str]:
         """List supported white balance modes.
@@ -289,7 +298,7 @@ class Camera(Mindtrace):
         Returns:
             A list of mode strings.
         """
-        return self._call_in_loop(self._camera.get_available_white_balance_modes)
+        return self._call_in_loop(self._backend.get_available_white_balance_modes)
 
     def set_image_enhancement(self, enabled: bool) -> bool:
         """Enable or disable image enhancement pipeline.
@@ -300,7 +309,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._camera.set_image_enhancement, enabled)
+        return self._call_in_loop(self._backend.set_image_enhancement, enabled)
 
     def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
@@ -308,7 +317,7 @@ class Camera(Mindtrace):
         Returns:
             True if enabled, otherwise False.
         """
-        return self._call_in_loop(self._camera.get_image_enhancement)
+        return self._call_in_loop(self._backend.get_image_enhancement)
 
     def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
@@ -319,7 +328,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._submit(self._camera.save_config(path))
+        return self._submit(self._backend.save_config(path))
 
     def load_config(self, path: str) -> bool:
         """Import camera configuration from a file via backend.
@@ -330,7 +339,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._submit(self._camera.load_config(path))
+        return self._submit(self._backend.load_config(path))
 
     def check_connection(self) -> bool:
         """Check whether the backend connection is healthy.
@@ -338,7 +347,7 @@ class Camera(Mindtrace):
         Returns:
             True if healthy, otherwise False.
         """
-        return self._submit(self._camera.check_connection())
+        return self._submit(self._backend.check_connection())
 
     def get_sensor_info(self) -> Dict[str, Any]:
         """Get basic sensor information for diagnostics.
@@ -346,7 +355,7 @@ class Camera(Mindtrace):
         Returns:
             A dict with fields: name, backend, device_name, connected.
         """
-        return self._submit(self._camera.get_sensor_info())
+        return self._submit(self._backend.get_sensor_info())
 
     def capture_hdr(
         self,
@@ -370,7 +379,7 @@ class Camera(Mindtrace):
             CameraCaptureError: If no images could be captured successfully.
         """
         return self._submit(
-            self._camera.capture_hdr(
+            self._backend.capture_hdr(
                 save_path_pattern=save_path_pattern,
                 exposure_levels=exposure_levels,
                 exposure_multiplier=exposure_multiplier,
@@ -381,7 +390,7 @@ class Camera(Mindtrace):
     def close(self) -> None:
         """Close the camera and release resources."""
         try:
-            return self._submit(self._camera.close())
+            return self._submit(self._backend.close())
         finally:
             # If we own a private loop, shut it down
             if self._owns_loop_thread and self._loop is not None:
