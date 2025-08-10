@@ -28,6 +28,7 @@ class CameraManager(Mindtrace):
 
     def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
         super().__init__(**kwargs)
+        self._shutting_down = False
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -61,19 +62,27 @@ class CameraManager(Mindtrace):
             self._loop.call_soon_threadsafe(_create)
             return result_future.result()
 
-    def _submit_coro(self, coro):
+    def _submit_coro(self, coro, timeout: float | None = None):
         fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return fut.result()
+        try:
+            return fut.result(timeout=timeout)
+        except Exception:
+            # Best-effort cancellation on timeout or other failures
+            try:
+                fut.cancel()
+            except Exception:
+                pass
+            raise
 
     # ===== Public sync API (delegating) =====
     def get_available_backends(self) -> List[str]:
-        return self._manager.get_available_backends()
+        return self._call_in_loop(self._manager.get_available_backends)
 
     def get_backend_info(self) -> Dict[str, Dict[str, Any]]:
-        return self._manager.get_backend_info()
+        return self._call_in_loop(self._manager.get_backend_info)
 
     def discover_cameras(self, backends: Optional[Union[str, List[str]]] = None) -> List[str]:
-        return self._manager.discover_cameras(backends=backends)
+        return self._call_in_loop(self._manager.discover_cameras, backends=backends)
 
     def initialize_camera(self, camera_name: str, test_connection: bool = True, **kwargs) -> None:
         return self._submit_coro(self._manager.initialize_camera(camera_name, test_connection=test_connection, **kwargs))
@@ -84,25 +93,25 @@ class CameraManager(Mindtrace):
         )
 
     def get_camera(self, camera_name: str) -> Camera:
-        async_cam: AsyncCamera = self._manager.get_camera(camera_name)
+        async_cam: AsyncCamera = self._call_in_loop(self._manager.get_camera, camera_name)
         # Wrap with sync facade bound to this manager's loop
         return Camera(async_cam, self._loop)
 
     def get_cameras(self, camera_names: List[str]) -> Dict[str, Camera]:
-        async_map = self._manager.get_cameras(camera_names)
+        async_map = self._call_in_loop(self._manager.get_cameras, camera_names)
         return {name: Camera(async_cam, self._loop) for name, async_cam in async_map.items()}
 
     def get_active_cameras(self) -> List[str]:
-        return self._manager.get_active_cameras()
+        return self._call_in_loop(self._manager.get_active_cameras)
 
     def get_max_concurrent_captures(self) -> int:
-        return self._manager.get_max_concurrent_captures()
+        return self._call_in_loop(self._manager.get_max_concurrent_captures)
 
     def set_max_concurrent_captures(self, max_captures: int) -> None:
-        return self._manager.set_max_concurrent_captures(max_captures)
+        return self._call_in_loop(self._manager.set_max_concurrent_captures, max_captures)
 
     def get_network_bandwidth_info(self) -> Dict[str, Any]:
-        return self._manager.get_network_bandwidth_info()
+        return self._call_in_loop(self._manager.get_network_bandwidth_info)
 
     def close_camera(self, camera_name: str) -> None:
         return self._submit_coro(self._manager.close_camera(camera_name))
@@ -141,16 +150,40 @@ class CameraManager(Mindtrace):
 
     # ===== Lifecycle =====
     def shutdown(self):
+        if self._shutting_down:
+            return
+        self._shutting_down = True
         try:
-            self.close_all_cameras()
-        except Exception:
-            pass
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=2)
-        self.logger.info("CameraManager (sync) shutdown complete")
+            try:
+                # Bound shutdown time; if closing cameras stalls, continue stopping loop
+                self._submit_coro(self._manager.close_all_cameras(), timeout=1.0)
+            except Exception:
+                pass
+            try:
+                if self._loop.is_running():
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
+            try:
+                self._thread.join(timeout=1.5)
+            except Exception:
+                pass
+        finally:
+            self.logger.info("CameraManager (sync) shutdown complete")
 
     def __del__(self):
+        # Avoid blocking in destructor; perform best-effort stop
         try:
-            self.shutdown()
+            if hasattr(self, "_loop") and isinstance(getattr(self, "_loop"), asyncio.AbstractEventLoop):
+                try:
+                    if self._loop.is_running():
+                        self._loop.call_soon_threadsafe(self._loop.stop)
+                except Exception:
+                    pass
+            if hasattr(self, "_thread") and getattr(self, "_thread") is not None:
+                try:
+                    self._thread.join(timeout=0.2)
+                except Exception:
+                    pass
         except Exception:
             pass 
