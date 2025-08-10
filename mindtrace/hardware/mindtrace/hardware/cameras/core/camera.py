@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from concurrent.futures import Future
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -17,19 +18,30 @@ class Camera(Mindtrace):
     def __init__(self, async_camera: Optional[AsyncCamera] = None, loop: Optional[asyncio.AbstractEventLoop] = None, name: Optional[str] = None, **kwargs):
         """Create a sync Camera facade.
 
-        If no async_camera/loop is supplied, a default OpenCV camera is created under the hood using a private 
-        background loop, targeting ``OpenCV:opencv_camera_0``.
+        If no async_camera/loop is supplied, a default OpenCV camera is created under the hood
+        using a private background loop, targeting ``OpenCV:opencv_camera_0``.
         """
         super().__init__(**kwargs)
+        self._owns_loop_thread = False
+        self._loop_thread: Optional[threading.Thread] = None
+
         if async_camera is None or loop is None:
-            # Build a private background loop and default OpenCV camera
-            private_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(private_loop)
+            # Create background event loop in a dedicated thread
+            self._loop = asyncio.new_event_loop()
+
+            def _run_loop():
+                asyncio.set_event_loop(self._loop)
+                self._loop.run_forever()
+
+            self._loop_thread = threading.Thread(target=_run_loop, name="CameraLoop", daemon=True)
+            self._loop_thread.start()
+            self._owns_loop_thread = True
+
+            # Create AsyncCamera on the running loop
             async def _make() -> AsyncCamera:
                 return await AsyncCamera.open(name)
-            async_cam = private_loop.run_until_complete(_make())
-            self._camera = async_cam
-            self._loop = private_loop
+
+            self._camera = self._submit(_make())
         else:
             self._camera = async_camera
             self._loop = loop
@@ -372,13 +384,17 @@ class Camera(Mindtrace):
             return self._submit(self._camera.close())
         finally:
             # If we own a private loop, shut it down
-            try:
-                if self._loop and self._loop.is_running() is False:
-                    self._loop.stop()
-            except Exception:
-                pass
-            try:
-                if self._loop:
+            if self._owns_loop_thread and self._loop is not None:
+                try:
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+                except Exception:
+                    pass
+                if self._loop_thread is not None:
+                    try:
+                        self._loop_thread.join(timeout=1.0)
+                    except Exception:
+                        pass
+                try:
                     self._loop.close()
-            except Exception:
-                pass 
+                except Exception:
+                    pass 
