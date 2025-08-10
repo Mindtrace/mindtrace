@@ -187,7 +187,49 @@ class BaslerCameraBackend(CameraBackend):
         except Exception:
             self._op_timeout_s = 5.0
 
+        # Thread executor and event loop for _sdk method
+        self._loop = None
+        self._sdk_executor = None
+
         self.logger.info(f"Basler camera '{self.camera_name}' initialized successfully")
+
+    async def _sdk(self, func, *args, timeout: Optional[float] = None, **kwargs):
+        """Run a potentially blocking pypylon call on a dedicated thread with timeout.
+
+        Args:
+            func: Callable to execute
+            *args: Positional args for the callable
+            timeout: Optional timeout (seconds). Defaults to self._op_timeout_s
+            **kwargs: Keyword args for the callable
+
+        Returns:
+            Result of the callable
+
+        Raises:
+            CameraTimeoutError: If operation times out
+            HardwareOperationError: If operation fails
+        """
+        import concurrent.futures
+        
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
+        if self._sdk_executor is None:
+            self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
+            )
+
+        def _call():
+            return func(*args, **kwargs)
+
+        fut = self._loop.run_in_executor(self._sdk_executor, _call)
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout or self._op_timeout_s)
+        except asyncio.TimeoutError as e:
+            raise CameraTimeoutError(
+                f"Pypylon operation timed out after {timeout or self._op_timeout_s:.2f}s for camera '{self.camera_name}'"
+            ) from e
+        except Exception as e:
+            raise HardwareOperationError(f"Pypylon operation failed for camera '{self.camera_name}': {e}") from e
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
@@ -237,32 +279,6 @@ class BaslerCameraBackend(CameraBackend):
 
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover Basler cameras: {str(e)}")
-
-    @asynccontextmanager
-    async def _grabbing_suspended(self):
-        """Temporarily stop grabbing for configuration, then restore prior state.
-
-        Ensures the camera is open, stops grabbing if it was active, yields to perform
-        configuration work, and then restarts grabbing only if it was running before.
-        """
-        await self._ensure_open()
-        was_grabbing = False
-        try:
-            try:
-                was_grabbing = await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s)
-                if was_grabbing:
-                    await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
-            except Exception as e:
-                self.logger.warning(f"Error stopping grab for camera '{self.camera_name}': {e}")
-
-            yield
-        finally:
-            if was_grabbing and self.camera is not None:
-                try:
-                    await self._ensure_open()
-                    await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
-                except Exception as e:
-                    self.logger.warning(f"Error restarting grab for camera '{self.camera_name}': {e}")
 
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
@@ -342,6 +358,69 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Unexpected error initializing Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing camera '{self.camera_name}': {str(e)}")
+
+    async def _ensure_open(self):
+        """Ensure camera is open.
+
+        Raises:
+            CameraConnectionError: If camera cannot be opened
+        """
+        if self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
+        
+        try:
+            if not await self._sdk(self.camera.IsOpen, timeout=self._op_timeout_s):
+                await self._sdk(self.camera.Open, timeout=self._op_timeout_s)
+        except Exception as e:
+            raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' is open: {e}") from e
+
+    async def _ensure_grabbing(self):
+        """Ensure camera is grabbing images.
+
+        Raises:
+            CameraConnectionError: If camera cannot start grabbing
+        """
+        if self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
+        
+        try:
+            await self._ensure_open()
+            if not await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
+                await self._sdk(self.camera.StartGrabbing, self.grabbing_mode, timeout=self._op_timeout_s)
+        except Exception as e:
+            raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' is grabbing: {e}") from e
+
+    async def _ensure_stopped_grabbing(self):
+        """Ensure camera has stopped grabbing images.
+
+        Raises:
+            CameraConnectionError: If camera cannot stop grabbing
+        """
+        if self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
+        
+        try:
+            if await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s):
+                await self._sdk(self.camera.StopGrabbing, timeout=self._op_timeout_s)
+        except Exception as e:
+            raise CameraConnectionError(f"Failed to ensure camera '{self.camera_name}' stopped grabbing: {e}") from e
+
+    @asynccontextmanager
+    async def _grabbing_suspended(self):
+        """Context manager that temporarily suspends grabbing.
+        
+        Useful for configuration operations that require grabbing to be stopped.
+        """
+        was_grabbing = False
+        try:
+            if self.camera is not None:
+                was_grabbing = await self._sdk(self.camera.IsGrabbing, timeout=self._op_timeout_s)
+                if was_grabbing:
+                    await self._ensure_stopped_grabbing()
+            yield
+        finally:
+            if was_grabbing and self.camera is not None:
+                await self._ensure_grabbing()
 
     async def _configure_camera(self):
         """Configure initial camera settings.
