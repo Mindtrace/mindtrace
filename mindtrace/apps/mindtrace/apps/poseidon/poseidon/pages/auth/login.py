@@ -10,26 +10,31 @@ Provides user authentication interface with:
 """
 
 import reflex as rx
-from poseidon.state.auth import AuthState
-from poseidon.components import (
-    login_form, redirect_component,
-    logo_mindtrace, card_mindtrace, header_mindtrace,
-    link_mindtrace, page_layout_mindtrace, css_animations_mindtrace,
-)
 
+from poseidon.styles.global_styles import COLORS
+
+from poseidon.state.auth import AuthState
+
+from poseidon.components_v2.core import loader, link
+from poseidon.components_v2.branding import logo_poseidon
+from poseidon.components_v2.layout import main_css_animation
+from poseidon.components_v2.containers import card, full_page_container
+
+from .components.login_form import login_form
+from .components.auth_headers import auth_headers
 
 def login_content() -> rx.Component:
     """
     Modern login form content using unified Poseidon UI components.
     All state and event logic is handled in the page/state, not in the components.
     """
-    return page_layout_mindtrace([
-        card_mindtrace([
+    return full_page_container([
+        card([
             rx.box(
-                logo_mindtrace(),
+                logo_poseidon(),
                 text_align="center",
             ),
-            header_mindtrace(
+            auth_headers(
                 "Sign in to your account",
                 "Welcome back! Enter your credentials to access your workspace"
             ),
@@ -44,12 +49,12 @@ def login_content() -> rx.Component:
             ),
             rx.box(
                 rx.vstack(
-                    link_mindtrace(
+                    link(
                         "Don't have an account? ",
                         "Sign up",
                         "/register"
                     ),
-                    link_mindtrace(
+                    link(
                         "Need admin access? ",
                         "Admin Registration",
                         "/register-admin"
@@ -57,7 +62,7 @@ def login_content() -> rx.Component:
                     spacing="2",
                     width="100%",
                 ),
-                border_top="1px solid rgba(226, 232, 240, 0.5)",
+                border_top=f"1px solid {COLORS['border_divider']}",
                 padding_top="1rem",
                 margin_top="1rem",
             ),
@@ -73,9 +78,9 @@ def login_page() -> rx.Component:
     return rx.box(
         rx.cond(
             AuthState.is_authenticated,
-            redirect_component("Redirecting to dashboard..."),
+            loader(size="large", variant="primary"),
             login_content(),
         ),
         # CSS animations and keyframes
-        css_animations_mindtrace(),
+        main_css_animation(),
     ) 

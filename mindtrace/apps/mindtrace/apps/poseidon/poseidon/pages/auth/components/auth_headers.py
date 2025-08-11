@@ -4,7 +4,7 @@ import reflex as rx
 from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
-def header_mindtrace(title: str, subtitle: str) -> rx.Component:
+def auth_headers(title: str, subtitle: str) -> rx.Component:
     """
     Animated page header with staggered animations.
     """

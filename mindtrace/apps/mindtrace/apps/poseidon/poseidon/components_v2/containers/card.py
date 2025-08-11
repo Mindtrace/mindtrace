@@ -5,7 +5,7 @@ from poseidon.styles.global_styles import COLORS
 from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
-def card_mindtrace(children, **kwargs) -> rx.Component:
+def card(children, **kwargs) -> rx.Component:
     """
     Ultra-modern glass morphism card.
     """

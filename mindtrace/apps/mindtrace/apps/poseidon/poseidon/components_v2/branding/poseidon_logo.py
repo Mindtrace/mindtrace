@@ -1,12 +1,12 @@
-"""Mindtrace Branding Components - Logo and Brand Elements."""
+"""Poseidon Branding Components - Logo and Brand Elements."""
 
 import reflex as rx
 from poseidon.styles.variants import COMPONENT_VARIANTS
 
 
-def logo_mindtrace() -> rx.Component:
+def logo_poseidon() -> rx.Component:
     """
-    Professional logo design with mindtrace styling.
+    Professional logo design with Poseidon styling.
     """
     return rx.box(
         rx.hstack(

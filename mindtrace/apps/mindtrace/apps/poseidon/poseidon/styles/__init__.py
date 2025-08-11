@@ -1,15 +1,29 @@
-"""Simplified styling configuration.
+"""
+Styles package for Poseidon components.
 
-This module provides essential styling for the Reflex app:
-- Basic theme configuration for Reflex
-- Minimal global styles for consistent typography
-- Buridan UI components handle their own styling
+This package contains global styling variables and configurations
+for the Poseidon application.
 """
 
-from .theme import theme_config
-from .styles import styles
+from .global_styles import (
+    COLORS,
+    TYPOGRAPHY, 
+    SPACING,
+    SIZING,
+    EFFECTS,
+    ANIMATIONS,
+    SIZE_VARIANTS,
+)
+
+from .variants import COMPONENT_VARIANTS
 
 __all__ = [
-    "theme_config",
-    "styles",
+    "COLORS",
+    "TYPOGRAPHY", 
+    "SPACING",
+    "SIZING",
+    "EFFECTS",
+    "COMPONENT_VARIANTS",
+    "ANIMATIONS",
+    "SIZE_VARIANTS",
 ] 

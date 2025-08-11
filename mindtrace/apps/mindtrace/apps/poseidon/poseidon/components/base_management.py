@@ -3,7 +3,8 @@ from typing import List, Callable, Optional, Any
 from .sidebar import sidebar
 from .headers import app_header, page_header_with_actions
 from .buttons import refresh_button
-from .inputs import success_message, error_message, filter_bar
+from .inputs import success_message
+from poseidon.components_v2.alerts import Alert
 from .layouts import page_container
 from .utilities import access_denied_component, authentication_required_component
 from poseidon.state.auth import AuthState
@@ -103,7 +104,11 @@ def base_management_page(
                 ),
                 rx.cond(
                     state_class.error if hasattr(state_class, 'error') else False,
-                    error_message(state_class.error if hasattr(state_class, 'error') else ""),
+                    Alert.create(
+                        severity="error",
+                        title="Error",
+                        message=state_class.error if hasattr(state_class, 'error') else "",
+                    ),
                 ),
                 
                 # Main content component
