@@ -7,7 +7,6 @@ import os
 import re
 import signal
 import subprocess
-import time
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib.metadata import version
@@ -211,7 +210,7 @@ class Service(Mindtrace):
 
         status = ServerStatus(response.json()["status"])
         return status
-    
+
     @classmethod
     def _connect_with_interrupt_handling(cls, url, process, timeout):
         """Connect while checking if the subprocess died."""
@@ -373,7 +372,9 @@ class Service(Mindtrace):
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
             try:
-                connection_manager = timeout_handler.run(cls._connect_with_interrupt_handling, url=launch_url, process=process, timeout=timeout)
+                connection_manager = timeout_handler.run(
+                    cls._connect_with_interrupt_handling, url=launch_url, process=process, timeout=timeout
+                )
             except KeyboardInterrupt:
                 cls.logger.warning("User interrupted the launch (Ctrl+C).")
                 cls._cleanup_server(server_id)
