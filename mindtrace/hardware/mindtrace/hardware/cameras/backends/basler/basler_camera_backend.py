@@ -233,8 +233,7 @@ class BaslerCameraBackend(CameraBackend):
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
-        """
-        Get available Basler cameras.
+        """Get available Basler cameras.
 
         Args:
             include_details: If True, return detailed information
@@ -1084,6 +1083,17 @@ class BaslerCameraBackend(CameraBackend):
             if self.camera.IsGrabbing():
                 self.camera.StopGrabbing()
 
+            # Check bounds against camera capabilities before setting
+            max_width = self.camera.Width.GetMax()
+            max_height = self.camera.Height.GetMax()
+            max_offset_x = self.camera.OffsetX.GetMax()
+            max_offset_y = self.camera.OffsetY.GetMax()
+            
+            if width > max_width or height > max_height:
+                raise CameraConfigurationError(f"ROI dimensions {width}x{height} out of range (max {max_width}x{max_height})")
+            if x > max_offset_x or y > max_offset_y:
+                raise CameraConfigurationError(f"ROI offsets ({x}, {y}) out of range (max {max_offset_x}, {max_offset_y})")
+
             x_inc = self.camera.OffsetX.GetInc()
             y_inc = self.camera.OffsetY.GetInc()
             width_inc = self.camera.Width.GetInc()
@@ -1195,12 +1205,20 @@ class BaslerCameraBackend(CameraBackend):
 
         Raises:
             CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If gain value is out of range
             HardwareOperationError: If gain setting fails
         """
         if not self.initialized or self.camera is None:
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
+            min_gain, max_gain = self.get_gain_range()
+            
+            if gain < min_gain or gain > max_gain:
+                raise CameraConfigurationError(
+                    f"Gain {gain} outside valid range [{min_gain}, {max_gain}] for camera '{self.camera_name}'"
+                )
+            
             was_open = self.camera.IsOpen()
             if not was_open:
                 self.camera.Open()
@@ -1209,10 +1227,10 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.info(f"Gain set to {gain} for camera '{self.camera_name}'")
             return True
 
+        except (CameraConnectionError, CameraConfigurationError):
+            raise  # Re-raise these specific errors
         except Exception as e:
-            self.logger.warning(f"Gain setting not available for camera '{self.camera_name}': {str(e)}")
-            # Return True if gain feature is not available (graceful degradation)
-            return True
+            raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}") from e
 
     def get_gain(self) -> float:
         """Get current camera gain.
