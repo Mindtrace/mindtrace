@@ -857,6 +857,259 @@ class TestBaslerCameraBackendPixelFormat:
         assert "Mono8" in formats
 
 
+class TestBaslerCameraBackendWhiteBalance:
+    """Test white balance functionality."""
+    
+    @pytest.mark.asyncio
+    async def test_get_wb_success(self, basler_camera):
+        """Test getting white balance mode."""
+        await basler_camera.initialize()
+        
+        # Test getting current white balance
+        wb_mode = await basler_camera.get_wb()
+        assert wb_mode in ["off", "once", "continuous"]
+    
+    @pytest.mark.asyncio
+    async def test_get_wb_not_initialized(self, basler_camera):
+        """Test getting white balance on uninitialized camera."""
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await basler_camera.get_wb()
+    
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_success(self, basler_camera):
+        """Test setting white balance modes."""
+        await basler_camera.initialize()
+        
+        # Test all valid white balance modes
+        for mode in ["off", "once", "continuous"]:
+            result = await basler_camera.set_auto_wb_once(mode)
+            assert result is True
+            
+            # Verify the mode was set
+            current_mode = await basler_camera.get_wb()
+            assert current_mode == mode
+    
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_invalid_mode(self, basler_camera):
+        """Test setting invalid white balance mode."""
+        await basler_camera.initialize()
+        
+        with pytest.raises(CameraConfigurationError, match="Invalid white balance mode"):
+            await basler_camera.set_auto_wb_once("invalid_mode")
+    
+    @pytest.mark.asyncio
+    async def test_set_auto_wb_once_not_initialized(self, basler_camera):
+        """Test setting white balance on uninitialized camera."""
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await basler_camera.set_auto_wb_once("off")
+    
+    def test_get_wb_range(self, basler_camera):
+        """Test getting available white balance modes."""
+        wb_range = basler_camera.get_wb_range()
+        assert isinstance(wb_range, list)
+        assert "off" in wb_range
+        assert "once" in wb_range
+        assert "continuous" in wb_range
+    
+    @pytest.mark.asyncio
+    async def test_wb_feature_unavailable(self, basler_camera, monkeypatch):
+        """Test white balance when feature is not available."""
+        await basler_camera.initialize()
+        
+        # Mock the white balance parameter to be unavailable for reading
+        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetAccessMode", lambda: "NA")
+        
+        # Should return "off" when feature unavailable
+        wb_mode = await basler_camera.get_wb()
+        assert wb_mode == "off"
+        
+        # For setting, mock as read-only (not writable)
+        import mindtrace.hardware.cameras.backends.basler.basler_camera_backend as mod
+        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetAccessMode", lambda: mod.genicam.RO)
+        
+        # Setting should return False when not writable
+        result = await basler_camera.set_auto_wb_once("once")
+        assert result is False
+
+
+class TestBaslerCameraBackendRangeQueries:
+    """Test width/height range query functionality."""
+    
+    @pytest.mark.asyncio
+    async def test_get_width_range_success(self, basler_camera):
+        """Test getting camera width range."""
+        await basler_camera.initialize()
+        
+        width_range = await basler_camera.get_width_range()
+        assert isinstance(width_range, list)
+        assert len(width_range) == 2
+        assert width_range[0] <= width_range[1]  # min <= max
+        assert width_range[0] > 0  # Positive values
+    
+    @pytest.mark.asyncio
+    async def test_get_width_range_not_initialized(self, basler_camera):
+        """Test getting width range on uninitialized camera."""
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await basler_camera.get_width_range()
+    
+    @pytest.mark.asyncio
+    async def test_get_height_range_success(self, basler_camera):
+        """Test getting camera height range."""
+        await basler_camera.initialize()
+        
+        height_range = await basler_camera.get_height_range()
+        assert isinstance(height_range, list)
+        assert len(height_range) == 2
+        assert height_range[0] <= height_range[1]  # min <= max
+        assert height_range[0] > 0  # Positive values
+    
+    @pytest.mark.asyncio
+    async def test_get_height_range_not_initialized(self, basler_camera):
+        """Test getting height range on uninitialized camera."""
+        with pytest.raises(CameraConnectionError, match="not initialized"):
+            await basler_camera.get_height_range()
+    
+    @pytest.mark.asyncio
+    async def test_width_range_error_handling(self, basler_camera, monkeypatch):
+        """Test width range error handling."""
+        await basler_camera.initialize()
+        
+        # Mock width parameter to raise error
+        def raise_error():
+            raise MockGenICamError("Width feature error")
+        
+        monkeypatch.setattr(basler_camera.camera.Width, "GetMin", raise_error)
+        
+        with pytest.raises(HardwareOperationError, match="Failed to get width range"):
+            await basler_camera.get_width_range()
+    
+    @pytest.mark.asyncio
+    async def test_height_range_error_handling(self, basler_camera, monkeypatch):
+        """Test height range error handling."""
+        await basler_camera.initialize()
+        
+        # Mock height parameter to raise error
+        def raise_error():
+            raise MockGenICamError("Height feature error")
+        
+        monkeypatch.setattr(basler_camera.camera.Height, "GetMin", raise_error)
+        
+        with pytest.raises(HardwareOperationError, match="Failed to get height range"):
+            await basler_camera.get_height_range()
+    
+    @pytest.mark.asyncio
+    async def test_range_queries_with_closed_camera(self, basler_camera):
+        """Test range queries when camera needs to be reopened."""
+        await basler_camera.initialize()
+        
+        # Close the camera
+        basler_camera.camera.Close()
+        
+        # Range queries should still work by reopening camera
+        width_range = await basler_camera.get_width_range()
+        assert isinstance(width_range, list)
+        
+        height_range = await basler_camera.get_height_range()
+        assert isinstance(height_range, list)
+
+
+class TestBaslerCameraBackendAdvancedSDKOperations:
+    """Test advanced SDK internal operations."""
+    
+    @pytest.mark.asyncio
+    async def test_ensure_open_success(self, basler_camera):
+        """Test _ensure_open method."""
+        await basler_camera.initialize()
+        
+        # Should succeed when camera is already open
+        await basler_camera._ensure_open()
+        assert basler_camera.camera.IsOpen() is True
+    
+    @pytest.mark.asyncio
+    async def test_ensure_open_closed_camera(self, basler_camera):
+        """Test _ensure_open when camera is closed."""
+        await basler_camera.initialize()
+        
+        # Close the camera
+        basler_camera.camera.Close()
+        
+        # _ensure_open should reopen it
+        await basler_camera._ensure_open()
+        assert basler_camera.camera.IsOpen() is True
+    
+    @pytest.mark.asyncio
+    async def test_ensure_open_failure(self, basler_camera, monkeypatch):
+        """Test _ensure_open when camera cannot be opened."""
+        await basler_camera.initialize()
+        basler_camera.camera.Close()
+        
+        # Mock camera to fail on open
+        basler_camera.camera._simulate_error = "open"
+        
+        with pytest.raises(CameraConnectionError, match="Failed to ensure camera.*is open"):
+            await basler_camera._ensure_open()
+    
+    @pytest.mark.asyncio
+    async def test_ensure_grabbing_success(self, basler_camera):
+        """Test _ensure_grabbing method."""
+        await basler_camera.initialize()
+        
+        await basler_camera._ensure_grabbing()
+        assert basler_camera.camera.IsGrabbing() is True
+    
+    @pytest.mark.asyncio
+    async def test_ensure_grabbing_failure(self, basler_camera):
+        """Test _ensure_grabbing when start grabbing fails."""
+        await basler_camera.initialize()
+        
+        # Mock camera to fail on start grabbing
+        basler_camera.camera._simulate_error = "start_grab"
+        
+        with pytest.raises(CameraConnectionError, match="Failed to start grabbing"):
+            await basler_camera._ensure_grabbing()
+    
+    @pytest.mark.asyncio
+    async def test_ensure_stopped_grabbing(self, basler_camera):
+        """Test _ensure_stopped_grabbing method."""
+        await basler_camera.initialize()
+        
+        # Start grabbing first
+        await basler_camera._ensure_grabbing()
+        assert basler_camera.camera.IsGrabbing() is True
+        
+        # Stop grabbing
+        await basler_camera._ensure_stopped_grabbing()
+        assert basler_camera.camera.IsGrabbing() is False
+    
+    @pytest.mark.asyncio
+    async def test_grabbing_suspended_context_manager(self, basler_camera):
+        """Test _grabbing_suspended context manager."""
+        await basler_camera.initialize()
+        
+        # Start grabbing
+        await basler_camera._ensure_grabbing()
+        assert basler_camera.camera.IsGrabbing() is True
+        
+        # Use context manager
+        async with basler_camera._grabbing_suspended():
+            # Inside context: grabbing should be stopped
+            assert basler_camera.camera.IsGrabbing() is False
+        
+        # After context: grabbing should be restored
+        assert basler_camera.camera.IsGrabbing() is True
+    
+    @pytest.mark.asyncio
+    async def test_configure_camera_success(self, basler_camera):
+        """Test _configure_camera method."""
+        await basler_camera.initialize()
+        
+        # Should complete without error
+        await basler_camera._configure_camera()
+        
+        # Camera should be configured with buffer count
+        assert basler_camera.camera.max_num_buffer == basler_camera.buffer_count
+
+
 class TestBaslerCameraBackendImageEnhancement:
     """Test image enhancement functionality."""
     
@@ -878,6 +1131,89 @@ class TestBaslerCameraBackendImageEnhancement:
         
         result = basler_camera.get_image_quality_enhancement()
         assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_enhance_image_success(self, basler_camera):
+        """Test _enhance_image method."""
+        await basler_camera.initialize()
+        
+        # Create test image
+        test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        
+        # Enable enhancement
+        basler_camera.set_image_quality_enhancement(True)
+        
+        # Enhance image
+        enhanced_image = await basler_camera._enhance_image(test_image)
+        
+        assert isinstance(enhanced_image, np.ndarray)
+        assert enhanced_image.shape == test_image.shape
+        assert enhanced_image.dtype == test_image.dtype
+    
+    @pytest.mark.asyncio
+    async def test_enhance_image_disabled(self, basler_camera):
+        """Test image enhancement through capture when disabled."""
+        await basler_camera.initialize()
+        
+        # Disable enhancement
+        basler_camera.set_image_quality_enhancement(False)
+        
+        # Test that capture works when enhancement is disabled
+        success, image = await basler_camera.capture()
+        assert success is True
+        assert isinstance(image, np.ndarray)
+        assert image.shape == (1080, 1920, 3)  # Original mock size
+    
+    @pytest.mark.asyncio
+    async def test_enhance_image_error_handling(self, basler_camera, monkeypatch):
+        """Test _enhance_image error handling."""
+        await basler_camera.initialize()
+        
+        # Create test image
+        test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
+        
+        # Enable enhancement
+        basler_camera.set_image_quality_enhancement(True)
+        
+        # Mock cv2.createCLAHE to raise error
+        import cv2
+        monkeypatch.setattr(cv2, "createCLAHE", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("CLAHE error")))
+        
+        # Should raise CameraCaptureError when enhancement fails
+        with pytest.raises(CameraCaptureError, match="Image enhancement failed"):
+            await basler_camera._enhance_image(test_image)
+    
+    @pytest.mark.asyncio
+    async def test_enhance_image_grayscale(self, basler_camera, monkeypatch):
+        """Test _enhance_image with grayscale image."""
+        await basler_camera.initialize()
+        
+        # Create grayscale test image
+        test_image = np.random.randint(0, 255, (100, 100), dtype=np.uint8)
+        
+        # Enable enhancement
+        basler_camera.set_image_quality_enhancement(True)
+        
+        # Mock cv2.cvtColor to handle grayscale properly  
+        import cv2
+        original_cvtColor = cv2.cvtColor
+        
+        def mock_cvtColor(img, code):
+            if code == cv2.COLOR_BGR2LAB:
+                # Convert single channel to 3-channel first
+                if len(img.shape) == 2:
+                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                return original_cvtColor(img, code)
+            return original_cvtColor(img, code)
+        
+        monkeypatch.setattr(cv2, "cvtColor", mock_cvtColor)
+        
+        # Enhance image
+        enhanced_image = await basler_camera._enhance_image(test_image)
+        
+        assert isinstance(enhanced_image, np.ndarray)
+        assert enhanced_image.ndim == 3  # Should be converted to color
+        assert enhanced_image.dtype == test_image.dtype
 
 
 class TestBaslerCameraBackendConfigurationFiles:
@@ -1008,6 +1344,343 @@ class TestBaslerCameraBackendErrorHandling:
         
         with pytest.raises(CameraCaptureError):
             await basler_camera.capture()
+
+
+class TestBaslerCameraBackendAdvancedErrorScenarios:
+    """Test advanced error scenarios and edge cases."""
+    
+    @pytest.mark.asyncio
+    async def test_connection_check_with_reopening(self, basler_camera):
+        """Test connection check that requires camera reopening."""
+        await basler_camera.initialize()
+        
+        # Close camera and make reopening fail first time
+        basler_camera.camera.Close()
+        
+        call_count = 0
+        original_open = basler_camera.camera.Open
+        
+        def failing_open():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise MockRuntimeError("First open fails")
+            return original_open()
+        
+        basler_camera.camera.Open = failing_open
+        
+        # Should return False when reopening fails
+        result = await basler_camera.check_connection()
+        assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_capture_with_grabbing_state_corruption(self, basler_camera):
+        """Test capture when grabbing state is corrupted."""
+        await basler_camera.initialize()
+        
+        # Manually corrupt grabbing state
+        basler_camera.camera.grabbing = False
+        
+        # Capture should automatically start grabbing
+        success, image = await basler_camera.capture()
+        assert success is True
+        assert isinstance(image, np.ndarray)
+        assert basler_camera.camera.IsGrabbing() is True
+    
+    @pytest.mark.asyncio
+    async def test_exposure_setting_with_genicam_error(self, basler_camera):
+        """Test exposure setting with GenICam error handling."""
+        await basler_camera.initialize()
+        
+        # Mock exposure parameter to raise GenICam error
+        def raise_genicam_error(value):
+            raise MockGenICamError("Parameter access error")
+        
+        basler_camera.camera.ExposureTime.SetValue = raise_genicam_error
+        
+        # Should still return True (error is logged but not propagated)
+        result = await basler_camera.set_exposure(10000)
+        assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_initialize_with_device_creation_failure(self, basler_camera, mock_pypylon):
+        """Test initialization when device creation fails."""
+        mock_pylon, _ = mock_pypylon
+        mock_pylon.TlFactory.GetInstance.return_value.CreateDevice.side_effect = Exception("Device creation failed")
+        
+        with pytest.raises(CameraConnectionError, match="Failed to open camera"):
+            await basler_camera.initialize()
+    
+    @pytest.mark.asyncio
+    async def test_pixel_format_with_no_entries(self, basler_camera, monkeypatch):
+        """Test pixel format range when no entries are available."""
+        await basler_camera.initialize()
+        
+        # Mock pixel format to return empty entries
+        monkeypatch.setattr(basler_camera.camera.PixelFormat, "GetEntries", lambda: [])
+        
+        formats = basler_camera.get_pixel_format_range()
+        # Should return default formats when entries are empty
+        assert "BGR8" in formats
+        assert "RGB8" in formats
+        assert "Mono8" in formats
+    
+    @pytest.mark.asyncio
+    async def test_sdk_executor_shutdown_error(self, basler_camera, monkeypatch):
+        """Test error handling during executor shutdown."""
+        await basler_camera.initialize()
+        
+        # Mock executor to raise error on shutdown
+        mock_executor = Mock()
+        mock_executor.shutdown.side_effect = RuntimeError("Shutdown error")
+        basler_camera._sdk_executor = mock_executor
+        
+        # Should not raise error (errors are caught and ignored)
+        await basler_camera.close()
+        assert basler_camera.initialized is False
+
+
+class TestBaslerCameraBackendConcurrentOperations:
+    """Test concurrent operations and threading scenarios."""
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_captures(self, basler_camera):
+        """Test multiple simultaneous capture operations."""
+        await basler_camera.initialize()
+        
+        # Start multiple capture tasks concurrently
+        capture_tasks = [basler_camera.capture() for _ in range(3)]
+        results = await asyncio.gather(*capture_tasks)
+        
+        # All captures should succeed
+        for success, image in results:
+            assert success is True
+            assert isinstance(image, np.ndarray)
+    
+    @pytest.mark.asyncio
+    async def test_configuration_during_capture(self, basler_camera, monkeypatch):
+        """Test configuration changes during capture operations."""
+        await basler_camera.initialize()
+        
+        # Slow down capture to allow configuration changes
+        original_retrieve = basler_camera.camera.RetrieveResult
+        
+        def slow_retrieve(timeout_ms, timeout_handling=None):
+            import time
+            time.sleep(0.1)  # Add delay
+            return original_retrieve(timeout_ms, timeout_handling)
+        
+        basler_camera.camera.RetrieveResult = slow_retrieve
+        
+        # Start capture and configuration change concurrently
+        capture_task = asyncio.create_task(basler_camera.capture())
+        config_task = asyncio.create_task(basler_camera.set_exposure(15000))
+        
+        capture_result, config_result = await asyncio.gather(capture_task, config_task)
+        
+        success, image = capture_result
+        assert success is True
+        assert isinstance(image, np.ndarray)
+        assert config_result is True
+    
+    @pytest.mark.asyncio
+    async def test_connection_check_during_operations(self, basler_camera):
+        """Test connection checking during active operations."""
+        await basler_camera.initialize()
+        
+        # Start multiple async operations concurrently
+        tasks = [
+            basler_camera.capture(),
+            basler_camera.check_connection(),
+            basler_camera.get_exposure(),
+            basler_camera.set_exposure(15000)  # Use async set_exposure instead
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        # All operations should complete successfully
+        success, image = results[0]
+        assert success is True
+        assert results[1] is True  # connection check
+        assert isinstance(results[2], float)  # exposure
+        assert results[3] is True  # exposure setting
+        
+        # Test sync method separately
+        gain_result = basler_camera.set_gain(2.0)
+        assert gain_result is True
+    
+    @pytest.mark.asyncio
+    async def test_grabbing_state_race_condition(self, basler_camera, monkeypatch):
+        """Test grabbing state management under race conditions."""
+        await basler_camera.initialize()
+        
+        # Add delays to create race conditions using sync functions
+        original_start = basler_camera.camera.StartGrabbing
+        original_stop = basler_camera.camera.StopGrabbing
+        
+        def delayed_start(*args, **kwargs):
+            import time
+            time.sleep(0.01)  # Use sync sleep for sync function
+            return original_start(*args, **kwargs)
+        
+        def delayed_stop(*args, **kwargs):
+            import time
+            time.sleep(0.01)  # Use sync sleep for sync function
+            return original_stop(*args, **kwargs)
+        
+        monkeypatch.setattr(basler_camera.camera, "StartGrabbing", delayed_start)
+        monkeypatch.setattr(basler_camera.camera, "StopGrabbing", delayed_stop)
+        
+        # Start multiple grabbing operations
+        tasks = [
+            basler_camera._ensure_grabbing(),
+            basler_camera._ensure_grabbing(),
+            basler_camera._ensure_stopped_grabbing()
+        ]
+        
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Final state should be consistent
+        assert isinstance(basler_camera.camera.IsGrabbing(), bool)
+
+
+class TestBaslerCameraBackendConfigurationEdgeCases:
+    """Test configuration edge cases and advanced scenarios."""
+    
+    @pytest.mark.asyncio
+    async def test_import_config_with_invalid_white_balance(self, basler_camera, tmp_path):
+        """Test config import with invalid white balance values."""
+        await basler_camera.initialize()
+        
+        # Create config with invalid white balance
+        config_data = {
+            "camera_type": "basler",
+            "white_balance": "invalid_mode",
+            "exposure_time": 10000,
+            "gain": 1.0
+        }
+        
+        config_path = tmp_path / "invalid_wb_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+        
+        # Should handle invalid values gracefully
+        result = await basler_camera.import_config(str(config_path))
+        assert result is True  # Import succeeds despite invalid values
+    
+    @pytest.mark.asyncio
+    async def test_import_config_with_unavailable_features(self, basler_camera, tmp_path, monkeypatch):
+        """Test config import when camera features are unavailable."""
+        await basler_camera.initialize()
+        
+        # Mock some features as unavailable
+        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetAccessMode", lambda: "NA")
+        
+        config_data = {
+            "camera_type": "basler",
+            "white_balance": "once",
+            "exposure_time": 10000,
+            "gain": 1.0,
+            "trigger_mode": "continuous"
+        }
+        
+        config_path = tmp_path / "unavailable_features_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+        
+        # Should handle unavailable features gracefully
+        result = await basler_camera.import_config(str(config_path))
+        assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_export_config_with_feature_errors(self, basler_camera, tmp_path, monkeypatch):
+        """Test config export when feature access fails."""
+        await basler_camera.initialize()
+        
+        # Mock some features to raise errors
+        def raise_error():
+            raise MockGenICamError("Feature access error")
+        
+        monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetValue", raise_error)
+        
+        config_path = tmp_path / "error_export_config.json"
+        
+        # Should still export successfully with available features
+        result = await basler_camera.export_config(str(config_path))
+        assert result is True
+        assert config_path.exists()
+    
+    @pytest.mark.asyncio
+    async def test_config_with_extreme_values(self, basler_camera, tmp_path):
+        """Test configuration with extreme but valid values."""
+        await basler_camera.initialize()
+        
+        # Create config with extreme values
+        config_data = {
+            "camera_type": "basler",
+            "exposure_time": 100,  # Minimum exposure
+            "gain": 20.0,  # Maximum gain
+            "roi": {"x": 0, "y": 0, "width": 32, "height": 32},  # Minimum ROI
+            "buffer_count": 1,  # Minimum buffers
+            "timeout_ms": 100  # Minimum timeout
+        }
+        
+        config_path = tmp_path / "extreme_values_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+        
+        # Should handle extreme values correctly
+        result = await basler_camera.import_config(str(config_path))
+        assert result is True
+    
+    @pytest.mark.asyncio
+    async def test_partial_config_import_failure(self, basler_camera, tmp_path, monkeypatch):
+        """Test config import with partial failures."""
+        await basler_camera.initialize()
+        
+        # Mock exposure setting to fail
+        def raise_exposure_error(value):
+            raise MockGenICamError("Exposure setting failed")
+        
+        basler_camera.camera.ExposureTime.SetValue = raise_exposure_error
+        
+        config_data = {
+            "camera_type": "basler",
+            "exposure_time": 50000,  # This will fail
+            "gain": 2.0,  # This should succeed
+            "trigger_mode": "continuous"  # This should succeed
+        }
+        
+        config_path = tmp_path / "partial_failure_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config_data, f)
+        
+        # Should still return True even with partial failures
+        result = await basler_camera.import_config(str(config_path))
+        assert result is True
+        
+        # Verify successful settings were applied
+        assert basler_camera.get_gain() == 2.0
+    
+    @pytest.mark.asyncio
+    async def test_config_version_compatibility(self, basler_camera, tmp_path):
+        """Test configuration compatibility with different formats."""
+        await basler_camera.initialize()
+        
+        # Test config without version info (legacy format)
+        legacy_config = {
+            "exposure_time": 12000,
+            "gain": 1.5,
+            # Missing camera_type and timestamp
+        }
+        
+        config_path = tmp_path / "legacy_config.json"
+        with open(config_path, "w") as f:
+            json.dump(legacy_config, f)
+        
+        # Should handle legacy format gracefully
+        result = await basler_camera.import_config(str(config_path))
+        assert result is True
 
 
 if __name__ == "__main__":

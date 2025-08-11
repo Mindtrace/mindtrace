@@ -1,9 +1,9 @@
 import logging
 
 import pytest
-from _pytest.mark import Mark
 
-empty_mark = Mark("", (), {})
+# Use the public API instead of private _pytest.mark.Mark
+empty_mark = pytest.mark.empty
 
 
 def by_slow_marker(item):
