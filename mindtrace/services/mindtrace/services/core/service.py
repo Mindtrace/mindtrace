@@ -215,22 +215,14 @@ class Service(Mindtrace):
     @classmethod
     def _connect_with_interrupt_handling(cls, url, process, timeout):
         """Connect while checking if the subprocess died."""
-        poll_interval = 0.5
-        max_attempts = int(timeout / poll_interval)
-
-        for _ in range(max_attempts):
-            if process.poll() is not None:
-                if process.returncode == 0:
-                    raise SystemExit("Service exited cleanly.")
-                elif process.returncode == -signal.SIGINT:
-                    raise KeyboardInterrupt("Service terminated by SIGINT.")
-                else:
-                    raise RuntimeError(f"Server exited with code {process.returncode}")
-            try:
-                return cls.connect(url=url)
-            except (ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException):
-                time.sleep(poll_interval)
-        raise TimeoutError(f"Timed out waiting for server to become available at {url}")
+        if process.poll() is not None:
+            if process.returncode == 0:
+                raise SystemExit("Service exited cleanly.")
+            elif process.returncode == -signal.SIGINT:
+                raise KeyboardInterrupt("Service terminated by SIGINT.")
+            else:
+                raise RuntimeError(f"Server exited with code {process.returncode}")
+        return cls.connect(url=url)
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
