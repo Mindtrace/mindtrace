@@ -1683,5 +1683,122 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         assert result is True
 
 
+class TestBaslerCameraBackendMissingCoverageLines:
+    """Test additional error handling and edge cases for improved coverage."""
+    
+    def test_pypylon_available_true_branch(self, mock_pypylon):
+        """Test that PYPYLON_AVAILABLE is properly set to True when pypylon is available."""
+        # Import the module to ensure the True branch is executed
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import PYPYLON_AVAILABLE
+        assert PYPYLON_AVAILABLE is True
+    
+    @pytest.mark.asyncio
+    async def test_sdk_method_loop_and_executor_initialization(self, basler_camera):
+        """Test that _sdk method properly initializes asyncio loop and thread pool executor when needed."""
+        await basler_camera.initialize()
+        
+        # Reset loop and executor to trigger initialization paths
+        basler_camera._loop = None
+        basler_camera._sdk_executor = None
+        
+        def test_func():
+            return "test_result"
+        
+        result = await basler_camera._sdk(test_func)
+        assert result == "test_result"
+        assert basler_camera._loop is not None
+        assert basler_camera._sdk_executor is not None
+    
+    @pytest.mark.asyncio
+    async def test_sdk_method_hardware_operation_error_branch(self, basler_camera):
+        """Test that _sdk method properly wraps exceptions in HardwareOperationError."""
+        await basler_camera.initialize()
+        
+        def failing_func():
+            raise RuntimeError("Generic SDK error")
+        
+        with pytest.raises(HardwareOperationError, match="Pypylon operation failed"):
+            await basler_camera._sdk(failing_func)
+    
+    def test_discovery_error_handling_branches(self, mock_pypylon):
+        """Test error handling when device enumeration fails during camera discovery."""
+        # Unpack the tuple
+        mock_pylon, mock_genicam = mock_pypylon
+        
+        # Test when device enumeration fails - should raise HardwareOperationError
+        mock_pylon.TlFactory.GetInstance.return_value.EnumerateDevices.side_effect = Exception("Enum failed")
+        
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+        with pytest.raises(HardwareOperationError, match="Failed to discover Basler cameras"):
+            BaslerCameraBackend.get_available_cameras()
+        
+        # Test with details - should also raise HardwareOperationError
+        with pytest.raises(HardwareOperationError, match="Failed to discover Basler cameras"):
+            BaslerCameraBackend.get_available_cameras(include_details=True)
+    
+    @pytest.mark.asyncio
+    async def test_initialize_pypylon_unavailable_branch(self, monkeypatch):
+        """Test initialization behavior when pypylon SDK is not available."""
+        # Mock PYPYLON_AVAILABLE to be False
+        monkeypatch.setattr("mindtrace.hardware.cameras.backends.basler.basler_camera_backend.PYPYLON_AVAILABLE", False)
+        
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+        
+        # The constructor itself will raise SDKNotAvailableError when PYPYLON_AVAILABLE is False
+        with pytest.raises(SDKNotAvailableError, match="SDK 'pypylon' is not available"):
+            BaslerCameraBackend("test_camera")
+    
+
+    
+    @pytest.mark.asyncio
+    async def test_enhance_image_error_branch(self, basler_camera):
+        """Test _enhance_image error branch (lines 756)."""
+        await basler_camera.initialize()
+        
+        # Create an image that will cause enhancement to fail
+        import cv2
+        
+        # Mock cv2.createCLAHE to fail
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr(cv2, "createCLAHE", lambda: (_ for _ in ()).throw(Exception("CLAHE failed")))
+            
+            test_image = np.zeros((100, 100, 3), dtype=np.uint8)
+            with pytest.raises(CameraCaptureError):
+                await basler_camera._enhance_image(test_image)
+    
+    def test_roi_error_branches(self, basler_camera):
+        """Test ROI setting error branches (lines 1049-1051, etc.)."""
+        basler_camera.initialized = True
+        basler_camera.camera = Mock()
+        
+        # Test when Width feature is None
+        basler_camera.camera.Width = None
+        with pytest.raises(HardwareOperationError):
+            basler_camera.set_ROI(0, 0, 100, 100)
+    
+    def test_gain_error_branches(self, basler_camera):
+        """Test gain setting error branches (lines 1193-1195, etc.)."""
+        basler_camera.initialized = True
+        basler_camera.camera = Mock()
+        
+        # Test when Gain feature is None  
+        basler_camera.camera.Gain = None
+        with pytest.raises(HardwareOperationError):
+            basler_camera.set_gain(2.0)
+    
+    @pytest.mark.asyncio  
+    async def test_close_error_branches(self, basler_camera):
+        """Test close method error branches (lines 1571, 1591-1593)."""
+        await basler_camera.initialize()
+        
+        # Test executor shutdown error  
+        mock_executor = Mock()
+        mock_executor.shutdown.side_effect = Exception("Shutdown failed")
+        basler_camera._sdk_executor = mock_executor
+        
+        # Should handle executor errors gracefully - this tests the exception handling in close()
+        await basler_camera.close()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"]) 
