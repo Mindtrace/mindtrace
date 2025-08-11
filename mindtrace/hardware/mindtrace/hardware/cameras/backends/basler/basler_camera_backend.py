@@ -13,7 +13,7 @@ try:
     from pypylon import genicam, pylon  # type: ignore
 
     PYPYLON_AVAILABLE = True
-except ImportError:
+except ImportError:  
     PYPYLON_AVAILABLE = False
     pylon = None
     genicam = None

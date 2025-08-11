@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-# Use the public API instead of private _pytest.mark.Mark
+
 empty_mark = pytest.mark.empty
 
 
