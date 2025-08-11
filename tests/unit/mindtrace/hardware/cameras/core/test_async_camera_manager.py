@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraConnectionError
 
 
 @pytest.mark.asyncio
@@ -74,6 +75,79 @@ async def test_diagnostics_structure():
         assert info2["active_cameras"] == len(names)
     finally:
         await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_camera_proxy_operations(camera_manager):
+    manager = camera_manager
+    cameras = manager.discover()
+    mock_cameras = [cam for cam in cameras if "MockBasler" in cam]
+    if mock_cameras:
+        camera_name = mock_cameras[0]
+        await manager.open(camera_name)
+        camera_proxy = await manager.open(camera_name)
+        assert camera_proxy is not None
+        assert camera_proxy.name == camera_name
+        assert camera_proxy.is_connected
+        await camera_proxy.set_exposure(1000)
+        image = await camera_proxy.capture()
+        assert image is not None
+        success = await camera_proxy.configure(exposure=20000, gain=2.0, trigger_mode="continuous")
+        assert success is True
+        exposure = await camera_proxy.get_exposure()
+        assert exposure == 20000
+        gain = camera_proxy.get_gain()
+        assert gain == 2.0
+        tm = await camera_proxy.get_trigger_mode()
+        assert isinstance(tm, str)
+
+
+@pytest.mark.asyncio
+async def test_batch_operations(camera_manager):
+    manager = camera_manager
+    cameras = manager.discover()
+    mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
+    if len(mock_cameras) >= 2:
+        opened = await manager.open(mock_cameras)
+        assert set(opened.keys()) == set(mock_cameras)
+        # re-open proxies and batch
+        _ = await manager.open(mock_cameras)
+        results = await manager.batch_configure({n: {"exposure": 15000} for n in mock_cameras})
+        assert isinstance(results, dict)
+        caps = await manager.batch_capture(mock_cameras)
+        assert isinstance(caps, dict) and len(caps) == len(mock_cameras)
+
+
+@pytest.mark.asyncio
+async def test_manager_context_manager():
+    async with AsyncCameraManager(include_mocks=True) as manager:
+        cameras = manager.discover()
+        assert isinstance(cameras, list)
+        mock_cameras = [cam for cam in cameras if "Mock" in cam]
+        if mock_cameras:
+            camera_name = mock_cameras[0]
+            await manager.open(camera_name)
+            camera_proxy = await manager.open(camera_name)
+            await camera_proxy.set_exposure(1000)
+            image = await camera_proxy.capture()
+            assert image is not None
+
+
+@pytest.mark.asyncio
+async def test_error_handling_and_idempotency(camera_manager):
+    manager = camera_manager
+    with pytest.raises(CameraConfigurationError):
+        await manager.open("NonExistentCamera")
+    cameras = manager.discover()
+    if cameras:
+        nm = cameras[0]
+        first = await manager.open(nm)
+        second = await manager.open(nm)
+        assert first is second
+        # after closing, capture should error
+        await manager.close(nm)
+        with pytest.raises(CameraConnectionError):
+            await first.capture()
 
 
 @pytest.mark.asyncio
@@ -297,6 +371,81 @@ async def test_batch_methods_baseexception_branch(monkeypatch):
         await mgr.close(None)
 
 
+@pytest.mark.asyncio
+async def test_manager_initialization(camera_manager):
+    """Test camera manager initialization."""
+    manager = camera_manager
+    assert manager is not None
+    backends = manager.backends()
+    assert isinstance(backends, list)
+    backend_info = manager.backend_info()
+    assert isinstance(backend_info, dict)
+
+
+@pytest.mark.asyncio
+async def test_camera_discovery(camera_manager):
+    """Test camera discovery functionality."""
+    manager = camera_manager
+    available = manager.__class__.discover(include_mocks=True)
+    assert isinstance(available, list)
+    mock_cameras = [cam for cam in available if "Mock" in cam]
+    assert len(mock_cameras) > 0
+
+
+@pytest.mark.asyncio
+async def test_backend_specific_discovery(camera_manager):
+    """Test backend-specific camera discovery functionality."""
+    manager = camera_manager
+    # Discover only MockBasler cameras
+    basler_cameras = manager.__class__.discover(backends="MockBasler", include_mocks=True)
+    assert isinstance(basler_cameras, list)
+    for camera in basler_cameras:
+        assert camera.startswith("MockBasler:")
+    # Discover from multiple backends
+    multi_backend_cameras = manager.__class__.discover(backends=["MockBasler", "OpenCV"], include_mocks=True)
+    assert isinstance(multi_backend_cameras, list)
+    for camera in multi_backend_cameras:
+        assert camera.startswith("MockBasler:") or camera.startswith("OpenCV:")
+    # Non-existent backend returns empty
+    empty_cameras = manager.__class__.discover(backends="NonExistentBackend", include_mocks=True)
+    assert isinstance(empty_cameras, list)
+    assert len(empty_cameras) == 0
+    # Invalid parameter type
+    with pytest.raises(ValueError, match="Invalid backends parameter"):
+        manager.__class__.discover(123, include_mocks=True)
+
+
+@pytest.mark.asyncio
+async def test_backend_specific_discovery_consistency(camera_manager):
+    """Test that backend-specific discovery is consistent with full discovery."""
+    manager = camera_manager
+    all_cameras = manager.__class__.discover(include_mocks=True)
+    basler_cameras = manager.__class__.discover(backends="MockBasler", include_mocks=True)
+    opencv_cameras = manager.__class__.discover(backends="OpenCV", include_mocks=True)
+    combined_cameras = basler_cameras + opencv_cameras
+    all_cameras_sorted = sorted(all_cameras)
+    combined_cameras_sorted = sorted(combined_cameras)
+    assert all_cameras_sorted == combined_cameras_sorted
+
+
+@pytest.mark.asyncio
+async def test_convenience_function_with_backend_filtering():
+    """Test convenience function with backend filtering."""
+    mgr = AsyncCameraManager(include_mocks=True)
+    all_cameras = AsyncCameraManager.discover(include_mocks=True)
+    assert isinstance(all_cameras, list)
+    assert len(all_cameras) > 0
+    basler_cameras = AsyncCameraManager.discover(backends="MockBasler", include_mocks=True)
+    assert isinstance(basler_cameras, list)
+    for camera in basler_cameras:
+        assert camera.startswith("MockBasler:")
+    multi_cameras = AsyncCameraManager.discover(backends=["MockBasler", "OpenCV"])
+    assert isinstance(multi_cameras, list)
+    empty_cameras = AsyncCameraManager.discover(backends="NonExistentBackend")
+    assert isinstance(empty_cameras, list)
+    assert len(empty_cameras) == 0
+
+
 # removed problematic default-open behavior test; default-open without include_mocks is expected to raise
 
 @pytest.mark.asyncio
@@ -408,6 +557,84 @@ async def test_invalid_camera_name_no_colon():
             await mgr.open("InvalidNameNoColon")
     finally:
         await mgr.close(None)
+
+
+@pytest.mark.asyncio
+async def test_bandwidth_management_with_mixed_operations():
+    """Test bandwidth management with mixed capture operations."""
+    manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
+    try:
+        cameras = manager.discover(include_mocks=True)
+        mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
+        if len(mock_cameras) >= 2:
+            await manager.open(mock_cameras)
+            # Test regular batch capture
+            regular_results = await manager.batch_capture(mock_cameras)
+            assert len(regular_results) == len(mock_cameras)
+            # Test HDR batch capture
+            hdr_results = await manager.batch_capture_hdr(
+                camera_names=mock_cameras, exposure_levels=2, return_images=False
+            )
+            assert len(hdr_results) == len(mock_cameras)
+            # Test individual camera captures
+            camera_proxies = [await manager.open(name) for name in mock_cameras]
+            individual_tasks = [proxy.capture() for proxy in camera_proxies]
+            individual_results = await asyncio.gather(*individual_tasks)
+            assert len(individual_results) == len(camera_proxies)
+            # All operations should respect bandwidth limits
+            bandwidth_info = manager.diagnostics()
+            assert bandwidth_info["max_concurrent_captures"] == 2
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_bandwidth_management_persistence():
+    """Test that bandwidth settings persist across operations."""
+    manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=3)
+    try:
+        cameras = manager.discover(include_mocks=True)
+        mock_cameras = [cam for cam in cameras if "Mock" in cam][:2]
+        if len(mock_cameras) >= 2:
+            await manager.open(mock_cameras)
+            # Verify initial setting
+            assert manager.max_concurrent_captures == 3
+            # Perform multiple operations
+            for i in range(3):
+                results = await manager.batch_capture(mock_cameras)
+                assert len(results) == len(mock_cameras)
+                assert manager.max_concurrent_captures == 3
+            # Change setting
+            manager.max_concurrent_captures = 1
+            assert manager.max_concurrent_captures == 1
+            # Perform more operations
+            for i in range(2):
+                results = await manager.batch_capture(mock_cameras)
+                assert len(results) == len(mock_cameras)
+                assert manager.max_concurrent_captures == 1
+    finally:
+        await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_bandwidth_management_with_convenience_functions():
+    """Test bandwidth management with convenience functions."""
+    mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=5)
+    cameras = AsyncCameraManager.discover(include_mocks=True)
+    assert isinstance(cameras, list)
+    assert len(cameras) > 0
+    mock_cameras = [cam for cam in cameras if "Mock" in cam]
+    assert len(mock_cameras) > 0
+    mgr2 = AsyncCameraManager(include_mocks=True, max_concurrent_captures=3)
+    basler_cameras = mgr2.discover(backends="MockBasler", include_mocks=True)
+    assert isinstance(basler_cameras, list)
+    for camera in basler_cameras:
+        assert camera.startswith("MockBasler:")
+    mgr3 = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
+    multi_cameras = mgr3.discover(backends=["MockBasler", "OpenCV"], include_mocks=True)
+    assert isinstance(multi_cameras, list)
+    for camera in multi_cameras:
+        assert camera.startswith("MockBasler:") or camera.startswith("OpenCV:")
 
 
 def test_discover_mixed_backends_filters(monkeypatch):
