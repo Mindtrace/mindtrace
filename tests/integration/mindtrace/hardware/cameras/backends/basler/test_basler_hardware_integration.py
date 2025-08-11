@@ -29,7 +29,7 @@ def get_connected_cameras():
 # Skip all tests if no cameras are connected
 connected_cameras = get_connected_cameras()
 if not connected_cameras:
-    pytest.skip("No Basler cameras detected. Skipping hardware integration tests.", allow_module_level=True)
+    pytest.skip("No Basler cameras detected. Skipping Basler hardware integration tests.", allow_module_level=True)
 
 
 @pytest.fixture

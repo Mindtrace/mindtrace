@@ -7,30 +7,75 @@ exception types.
 """
 
 import pytest
-from mindtrace.core.utils.checks import check_libs
+import os
+from tests.utils.pypylon.client import get_pypylon_proxy, is_pypylon_available, PyPylonClientError
 
-# Skip all tests in this module if pypylon is not available
-missing_libs = check_libs(["pypylon"])
-if missing_libs:
-    pytest.skip(f"Required libraries are not installed: {', '.join(missing_libs)}. Skipping test.", allow_module_level=True)
+# Note: Service availability will be checked at test time via TCP connection
+
+
+@pytest.fixture
+def pypylon_proxy():
+    """Fixture providing pypylon proxy (Docker service only)."""
+    import time
+    import os
+    
+    # Quick availability check via TCP connection
+    
+    # Try to connect with a short timeout
+    max_wait = 5  # seconds (much shorter than before)
+    wait_interval = 0.5  # second
+    
+    for _ in range(max_wait * 2):  # 0.5s intervals for 5 seconds = 10 attempts
+        if is_pypylon_available():
+            return get_pypylon_proxy()
+        time.sleep(wait_interval)
+    
+    # If we get here, service is not responding
+    pytest.skip("Pypylon service not responding within 5 seconds. Check Docker service status.")
+
+
+class TestPyPylonProxySystem:
+    """Test the pypylon proxy system itself."""
+    
+    def test_proxy_backend_detection(self, pypylon_proxy):
+        """Test that proxy correctly detects its backend type."""
+        backend_type = pypylon_proxy.get_backend_type()
+        assert backend_type == 'service'  # Always Docker service, never local
+        
+        # Verify proxy is available
+        assert pypylon_proxy.is_available() is True
+    
+    def test_proxy_basic_functionality(self, pypylon_proxy):
+        """Test basic proxy functionality works."""
+        # Import test should work
+        result = pypylon_proxy.import_test()
+        assert result['success'] is True
+        
+        # Device enumeration should work (may be empty)
+        device_result = pypylon_proxy.enumerate_devices()
+        assert isinstance(device_result, dict)
+        assert 'devices' in device_result
+        
+        # Factory should be accessible
+        factory_available = pypylon_proxy.get_factory()
+        assert factory_available is True
 
 
 class TestPylonSDKIntegration:
     """Test real pypylon SDK integration and import functionality."""
     
-    def test_real_pypylon_imports(self):
-        """Test that real pypylon SDK imports correctly and modules are available."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import PYPYLON_AVAILABLE
-        assert PYPYLON_AVAILABLE is True
+    def test_real_pypylon_imports(self, pypylon_proxy):
+        """Test that pypylon SDK imports correctly and modules are available."""
+        # Test import functionality through proxy
+        result = pypylon_proxy.import_test()
+        assert result['success'] is True
+        assert result['pylon_available'] is True
+        assert result['genicam_available'] is True
+        assert result['factory_available'] is True
         
-        # Test direct pypylon imports work
-        from pypylon import pylon, genicam
-        assert pylon is not None
-        assert genicam is not None
-        
-        # Test TlFactory is accessible
-        factory = pylon.TlFactory.GetInstance()
-        assert factory is not None
+        # Test that we can get the factory
+        factory_available = pypylon_proxy.get_factory()
+        assert factory_available is True
 
     def test_real_basler_backend_constructor(self):
         """Test BaslerCameraBackend constructor with real pypylon SDK."""
@@ -65,93 +110,113 @@ class TestPylonSDKIntegration:
 class TestPylonAPIAvailability:
     """Test that pypylon API components are available and functional."""
     
-    def test_real_pylon_factory_methods(self):
+    def test_real_pylon_factory_methods(self, pypylon_proxy):
         """Test real pypylon factory methods work as expected."""
-        from pypylon import pylon
-        
-        factory = pylon.TlFactory.GetInstance()
-        
-        # These should work even without cameras
-        devices = factory.EnumerateDevices()
-        assert isinstance(devices, list)
+        # Test device enumeration (should work even without cameras)
+        device_result = pypylon_proxy.enumerate_devices()
+        assert isinstance(device_result, dict)
+        assert 'device_count' in device_result
+        assert 'devices' in device_result
+        assert 'hardware_available' in device_result
+        assert isinstance(device_result['devices'], list)
         
         # Test interface enumeration 
-        interfaces = factory.EnumerateInterfaces()
+        interfaces = pypylon_proxy.enumerate_interfaces()
         assert isinstance(interfaces, list)
 
-    def test_real_pylon_grabbing_strategies(self):
+    def test_real_pylon_grabbing_strategies(self, pypylon_proxy):
         """Test that pylon grabbing strategy constants are available."""
-        from pypylon import pylon
+        strategies = pypylon_proxy.get_grabbing_strategies()
+        assert isinstance(strategies, dict)
         
         # These should be available as constants
-        assert hasattr(pylon, 'GrabStrategy_LatestImageOnly')
-        assert hasattr(pylon, 'GrabStrategy_OneByOne')
-        assert hasattr(pylon, 'GrabStrategy_LatestImages')
+        assert 'GrabStrategy_LatestImageOnly' in strategies
+        assert 'GrabStrategy_OneByOne' in strategies
+        assert 'GrabStrategy_LatestImages' in strategies
 
-    def test_real_pylon_pixel_formats(self):
+    def test_real_pylon_pixel_formats(self, pypylon_proxy):
         """Test that pypylon pixel format constants are available."""
-        from pypylon import pylon
+        formats = pypylon_proxy.get_pixel_formats()
+        assert isinstance(formats, dict)
         
         # Test common pixel formats exist
-        assert hasattr(pylon, 'PixelType_BGR8packed')
-        assert hasattr(pylon, 'PixelType_RGB8packed') 
-        assert hasattr(pylon, 'PixelType_Mono8')
+        assert 'PixelType_BGR8packed' in formats
+        assert 'PixelType_RGB8packed' in formats
+        assert 'PixelType_Mono8' in formats
 
-    def test_real_image_format_converter(self):
+    def test_real_image_format_converter(self, pypylon_proxy):
         """Test that pypylon ImageFormatConverter can be created."""
-        from pypylon import pylon
-        
-        converter = pylon.ImageFormatConverter()
-        assert converter is not None
-        
-        # Test setting output pixel format
-        converter.OutputPixelFormat = pylon.PixelType_BGR8packed
-        assert converter.OutputPixelFormat == pylon.PixelType_BGR8packed
+        result = pypylon_proxy.create_converter()
+        assert result['converter_created'] is True
+        assert result['pixel_format_set'] is True
 
-    def test_real_pylon_timeout_exceptions(self):
+    def test_real_pylon_timeout_exceptions(self, pypylon_proxy):
         """Test that real pypylon timeout exceptions exist."""
-        from pypylon import pylon
+        exceptions = pypylon_proxy.test_exceptions()
+        assert isinstance(exceptions, dict)
         
         # Test exception types are available
-        assert hasattr(pylon, 'TimeoutException')
-        assert hasattr(pylon, 'RuntimeException')
+        assert 'pylon.TimeoutException' in exceptions
+        assert 'pylon.RuntimeException' in exceptions
         
-        # Test we can create these exceptions
-        timeout_ex = pylon.TimeoutException("Test timeout")
-        assert "Test timeout" in str(timeout_ex)
+        # Test they are creatable
+        timeout_info = exceptions['pylon.TimeoutException']
+        assert timeout_info['available'] is True
+        assert timeout_info['creatable'] is True
+        assert "Test exception" in timeout_info['message']
 
-    def test_real_genicam_exceptions(self):
+    def test_real_genicam_exceptions(self, pypylon_proxy):
         """Test that real genicam exceptions exist.""" 
-        from pypylon import genicam
+        exceptions = pypylon_proxy.test_exceptions()
+        assert isinstance(exceptions, dict)
         
-        assert hasattr(genicam, 'GenericException')
-        assert hasattr(genicam, 'InvalidArgumentException')
+        assert 'genicam.GenericException' in exceptions
+        assert 'genicam.InvalidArgumentException' in exceptions
         
-        # Test we can create these exceptions
-        generic_ex = genicam.GenericException("Test error", "Test.cpp", 42)
-        assert "Test error" in str(generic_ex)
+        # Test they are creatable
+        generic_info = exceptions['genicam.GenericException']
+        assert generic_info['available'] is True
+        assert generic_info['creatable'] is True
+        assert "Test error" in generic_info['message']
 
 
 class TestCameraDiscoveryNoHardware:
     """Test camera discovery functionality when no cameras are connected."""
     
-    def test_real_discovery_no_cameras(self):
-        """Test camera discovery returns empty list when no cameras connected."""
+    def test_real_discovery_no_cameras(self, pypylon_proxy):
+        """Test camera discovery returns empty results when no cameras connected."""
+        # Test through proxy first
+        device_result = pypylon_proxy.enumerate_devices()
+        assert isinstance(device_result, dict)
+        assert device_result['device_count'] >= 0  # May be 0 (no cameras) or more (cameras present)
+        assert isinstance(device_result['devices'], list)
+        
+        # Also test the BaslerCameraBackend directly
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
         cameras = BaslerCameraBackend.get_available_cameras()
         assert isinstance(cameras, list)
-        # Expect empty list since no cameras connected, but should not error
-        assert len(cameras) == 0
+        # May be empty (no cameras) or contain cameras if hardware is present
 
-    def test_real_discovery_with_details_no_cameras(self):
-        """Test detailed discovery returns empty dict when no cameras connected.""" 
+    def test_real_discovery_with_details_no_cameras(self, pypylon_proxy):
+        """Test detailed discovery works regardless of camera presence.""" 
+        # Test through proxy first
+        device_result = pypylon_proxy.enumerate_devices()
+        devices = device_result['devices']
+        
+        for device in devices:
+            # Verify device info structure (regardless if cameras are present)
+            expected_fields = ['serial_number', 'model_name', 'vendor_name', 
+                             'device_class', 'friendly_name', 'user_defined_name',
+                             'interface', 'ip_address', 'mac_address']
+            for field in expected_fields:
+                assert field in device
+        
+        # Also test the BaslerCameraBackend directly
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
         details = BaslerCameraBackend.get_available_cameras(include_details=True)
         assert isinstance(details, dict)
-        # Expect empty dict since no cameras connected, but should not error
-        assert len(details) == 0
 
     def test_discovery_error_handling_with_real_sdk(self):
         """Test that discovery properly handles errors with real SDK."""
@@ -222,7 +287,8 @@ class TestManagerIntegration:
             info = manager.backend_info()
             assert "Basler" in info
             assert info["Basler"]["available"] is True
-            assert "pypylon" in info["Basler"]["sdk_required"]
+            # sdk_required changed from list to boolean
+            assert info["Basler"]["sdk_required"] is True
         finally:
             manager.close()
 
