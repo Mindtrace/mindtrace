@@ -2,6 +2,7 @@ import asyncio
 import os
 import pathlib
 import pytest
+import pytest_asyncio
 
 
 @pytest.fixture(autouse=True)
@@ -86,3 +87,86 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
         except Exception:
             pass
     yield 
+
+
+# ===== Moved fixtures from test_cameras.py =====
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture
+async def camera_manager():
+    """Async camera manager with mocks enabled."""
+    from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager as CameraManager
+
+    manager = CameraManager(include_mocks=True)
+    yield manager
+    try:
+        await manager.close(None)
+    except Exception:
+        pass
+
+
+@pytest_asyncio.fixture
+async def mock_basler_camera():
+    """Mock Basler backend instance."""
+    from mindtrace.hardware.cameras.backends.basler import MockBaslerCameraBackend
+
+    camera = MockBaslerCameraBackend(camera_name="mock_basler_1", camera_config=None)
+    yield camera
+    try:
+        await camera.close()
+    except Exception:
+        pass
+
+
+@pytest_asyncio.fixture
+async def temp_config_file():
+    """Temporary configuration file for camera tests."""
+    import json
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        config_data = {
+            "camera_type": "mock_basler",
+            "camera_name": "test_camera",
+            "timestamp": 1234567890.123,
+            "exposure_time": 15000.0,
+            "gain": 2.5,
+            "trigger_mode": "continuous",
+            "white_balance": "auto",
+            "width": 1920,
+            "height": 1080,
+            "roi": {"x": 0, "y": 0, "width": 1920, "height": 1080},
+            "pixel_format": "BGR8",
+            "image_enhancement": True,
+            "retrieve_retry_count": 3,
+            "timeout_ms": 5000,
+            "buffer_count": 25,
+        }
+        json.dump(config_data, f, indent=2)
+        temp_path = f.name
+    yield temp_path
+    try:
+        os.unlink(temp_path)
+    except Exception:
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _disable_real_opencv_camera_discovery(monkeypatch):
+    try:
+        from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
+        def _fake_get_available_cameras(include_details: bool = False):
+            return {} if include_details else []
+
+        monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_get_available_cameras))
+    except Exception:
+        pass 

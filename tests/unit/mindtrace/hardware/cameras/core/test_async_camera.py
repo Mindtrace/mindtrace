@@ -1,3 +1,5 @@
+import asyncio
+
 import numpy as np
 import pytest
 
@@ -243,3 +245,35 @@ async def test_async_camera_async_context_manager(monkeypatch):
             assert entered is cam
     finally:
         await manager.close(None)
+
+
+@pytest.mark.asyncio
+async def test_async_performance_concurrent_capture(camera_manager):
+    manager = camera_manager
+    cameras = manager.discover()
+    mock_cameras = [cam for cam in cameras if "Mock" in cam][:3]
+    if len(mock_cameras) >= 2:
+        opened = await manager.open(mock_cameras)
+        proxies = list(opened.values())
+        tasks = [p.capture() for p in proxies]
+        results = await asyncio.gather(*tasks)
+        assert len(results) == len(proxies)
+
+
+@pytest.mark.asyncio
+async def test_async_bandwidth_limit_and_adjustment():
+    mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=1)
+    try:
+        cams = mgr.discover(include_mocks=True)
+        mocks = [c for c in cams if "Mock" in c][:3]
+        if len(mocks) < 2:
+            pytest.skip("need two mocks")
+        await mgr.open(mocks)
+        assert mgr.max_concurrent_captures == 1
+        mgr.max_concurrent_captures = 3
+        assert mgr.max_concurrent_captures == 3
+        await mgr.batch_capture(mocks)
+        mgr.max_concurrent_captures = 1
+        await mgr.batch_capture(mocks)
+    finally:
+        await mgr.close(None)
