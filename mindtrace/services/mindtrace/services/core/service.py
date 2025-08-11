@@ -377,11 +377,11 @@ class Service(Mindtrace):
             except KeyboardInterrupt:
                 cls.logger.warning("User interrupted the launch (Ctrl+C).")
                 cls._cleanup_server(server_id)
-                return None
+                raise
             except SystemExit as e:
                 cls.logger.info(str(e))
                 cls._cleanup_server(server_id)
-                return None
+                raise
             except Exception as e:
                 cls._cleanup_server(server_id)
                 raise e
