@@ -6,15 +6,27 @@ import pytest_asyncio
 
 
 @pytest.fixture(autouse=True)
-def fast_camera_sleep_and_imwrite(monkeypatch):
+def fast_camera_sleep_and_imwrite(monkeypatch, request):
     """Pytest fixture to speed up camera unit tests.
 
     - Skip the 0.1s settle sleep used only in HDR capture
     - Replace cv2.imwrite with a fast placeholder write
     - Replace mock camera image generation/enhancement with lightweight ops
+      (but skip this for tests that specifically need to test image generation)
 
     This avoids affecting retry timing assertions elsewhere.
     """
+    # Check if this is a test that needs real image generation
+    test_name = getattr(request.node, 'name', '')
+    needs_real_image_generation = any(pattern in test_name for pattern in [
+        'test_different_image_patterns',
+        'test_auto_pattern_rotation', 
+        'test_exposure_and_gain_effects_on_image',
+        'test_roi_get_set_cycle',
+        'test_extreme_roi_values',
+        'test_checkerboard_size_parameter'
+    ])
+    
     # Patch camera_manager asyncio.sleep: skip only the 0.1s settle used in HDR
     try:
         import mindtrace.hardware.cameras.core.camera_manager as cm
@@ -46,21 +58,22 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     except Exception:
         pass
 
-    # Patch mock camera image generation to be lightweight
-    try:
-        import numpy as np  # noqa: F401
-        from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+    # Patch mock camera image generation to be lightweight (but skip for image generation tests)
+    if not needs_real_image_generation:
+        try:
+            import numpy as np  # noqa: F401
+            from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
-        def _fast_generate_basler(self):  # type: ignore[no-redef]
-            return np.zeros((480, 640, 3), dtype=np.uint8)
+            def _fast_generate_basler(self):  # type: ignore[no-redef]
+                return np.zeros((480, 640, 3), dtype=np.uint8)
 
-        def _no_enhance_b(self, img):  # type: ignore[no-redef]
-            return img
+            def _no_enhance_b(self, img):  # type: ignore[no-redef]
+                return img
 
-        monkeypatch.setattr(MockBaslerCameraBackend, "_generate_synthetic_image", _fast_generate_basler, raising=False)
-        monkeypatch.setattr(MockBaslerCameraBackend, "_enhance_image", _no_enhance_b, raising=False)
-    except Exception:
-        pass
+            monkeypatch.setattr(MockBaslerCameraBackend, "_generate_synthetic_image", _fast_generate_basler, raising=False)
+            monkeypatch.setattr(MockBaslerCameraBackend, "_enhance_image", _no_enhance_b, raising=False)
+        except Exception:
+            pass
 
     yield
 
