@@ -212,6 +212,18 @@ class Service(Mindtrace):
         return status
 
     @classmethod
+    def _connect_with_interrupt_handling(cls, url, process, timeout):
+        """Connect while checking if the subprocess died."""
+        if process.poll() is not None:
+            if process.returncode == 0:
+                raise SystemExit("Service exited cleanly.")
+            elif process.returncode == -signal.SIGINT:
+                raise KeyboardInterrupt("Service terminated by SIGINT.")
+            else:
+                raise RuntimeError(f"Server exited with code {process.returncode}")
+        return cls.connect(url=url)
+
+    @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
         """Connect to an existing service.
 
@@ -360,7 +372,17 @@ class Service(Mindtrace):
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
             try:
-                connection_manager = timeout_handler.run(cls.connect, url=launch_url)
+                connection_manager = timeout_handler.run(
+                    cls._connect_with_interrupt_handling, url=launch_url, process=process, timeout=timeout
+                )
+            except KeyboardInterrupt:
+                cls.logger.warning("User interrupted the launch (Ctrl+C).")
+                cls._cleanup_server(server_id)
+                raise
+            except SystemExit as e:
+                cls.logger.info(str(e))
+                cls._cleanup_server(server_id)
+                raise
             except Exception as e:
                 cls._cleanup_server(server_id)
                 raise e
