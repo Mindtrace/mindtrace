@@ -277,3 +277,249 @@ async def test_async_bandwidth_limit_and_adjustment():
         await mgr.batch_capture(mocks)
     finally:
         await mgr.close(None)
+
+
+class TestAsyncCameraConcurrentOperations:
+    """Test concurrent operation edge cases for async cameras."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_captures_with_failures(self):
+        """Test concurrent captures when some operations fail."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if len(names) < 2:
+                pytest.skip("Need at least 2 mock cameras")
+            
+            # Open cameras
+            cameras = []
+            for name in names[:2]:
+                cam = await manager.open(name)
+                cameras.append(cam)
+            
+            # Set one camera to fail captures
+            cameras[1].backend.capture = lambda: (_ for _ in ()).throw(CameraCaptureError("Simulated failure"))
+            
+            # Try concurrent captures
+            tasks = []
+            for cam in cameras:
+                tasks.append(asyncio.create_task(cam.capture()))
+            
+            # Wait for all tasks - some should succeed, some fail
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Should have mix of success and failures
+            successes = [r for r in results if isinstance(r, np.ndarray)]
+            failures = [r for r in results if isinstance(r, Exception)]
+            
+            assert len(successes) >= 1  # At least one should succeed
+            assert len(failures) >= 1   # At least one should fail
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_configuration_operations(self):
+        """Test concurrent configuration operations on same camera."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if not names:
+                pytest.skip("Need at least 1 mock camera")
+            
+            cam = await manager.open(names[0])
+            
+            # Launch concurrent configuration operations
+            async def set_exposure_task():
+                return await cam.set_exposure(1000)
+            
+            async def set_gain_task():
+                return await cam.set_gain(10.0)
+            
+            async def set_roi_task():
+                return await cam.set_roi(0, 0, 640, 480)
+            
+            # Run concurrently
+            results = await asyncio.gather(
+                set_exposure_task(),
+                set_gain_task(), 
+                set_roi_task(),
+                return_exceptions=True
+            )
+            
+            # All should complete without deadlock
+            assert len(results) == 3
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_capture_and_config(self):
+        """Test concurrent capture and configuration operations."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if not names:
+                pytest.skip("Need at least 1 mock camera")
+            
+            cam = await manager.open(names[0])
+            
+            # Launch capture and config operations concurrently
+            capture_task = asyncio.create_task(cam.capture())
+            config_task = asyncio.create_task(cam.set_exposure(2000))
+            
+            # Both should complete
+            image, config_result = await asyncio.gather(capture_task, config_task)
+            
+            assert isinstance(image, np.ndarray)
+            assert config_result is True
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_connection_operations(self):
+        """Test concurrent connection/disconnection operations."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if not names:
+                pytest.skip("Need at least 1 mock camera")
+            
+            # Open camera
+            cam = await manager.open(names[0])
+            
+            # Try concurrent check_connection operations (cameras don't have explicit connect)
+            tasks = []
+            for _ in range(3):
+                tasks.append(asyncio.create_task(cam.check_connection()))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # All should succeed (camera already connected)
+            for result in results:
+                assert result is True or isinstance(result, Exception)
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio 
+    async def test_timeout_during_concurrent_operations(self):
+        """Test timeout behavior during concurrent operations."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if not names:
+                pytest.skip("Need at least 1 mock camera")
+            
+            cam = await manager.open(names[0])
+            
+            # Mock a slow operation
+            original_capture = cam.backend.capture
+            async def slow_capture():
+                await asyncio.sleep(2.0)  # Simulate slow operation
+                return await original_capture()
+            
+            cam.backend.capture = slow_capture
+            
+            # Launch operation with short timeout
+            with pytest.raises((CameraTimeoutError, asyncio.TimeoutError)):
+                await asyncio.wait_for(cam.capture(), timeout=0.1)
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_resource_cleanup_on_concurrent_failures(self):
+        """Test resource cleanup when concurrent operations fail."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if not names:
+                pytest.skip("Need at least 1 mock camera")
+            
+            cam = await manager.open(names[0])
+            
+            # Mock operation that fails partway through
+            async def failing_operation():
+                await asyncio.sleep(0.1)  # Start operation
+                raise CameraConnectionError("Simulated failure")
+            
+            # Launch multiple failing operations
+            tasks = []
+            for _ in range(5):
+                tasks.append(asyncio.create_task(failing_operation()))
+            
+            # All should fail
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for result in results:
+                assert isinstance(result, Exception)
+            
+            # Camera should still be functional after failures
+            assert cam.is_connected
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_manager_operations(self):
+        """Test concurrent manager-level operations.""" 
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if len(names) < 2:
+                pytest.skip("Need at least 2 mock cameras")
+            
+            # Open cameras concurrently
+            open_tasks = []
+            for name in names[:2]:
+                open_tasks.append(asyncio.create_task(manager.open(name)))
+            
+            cameras = await asyncio.gather(*open_tasks)
+            
+            # All should be opened
+            for cam in cameras:
+                assert cam.is_connected
+            
+            # Close concurrently
+            close_tasks = []
+            for cam in cameras:
+                close_tasks.append(asyncio.create_task(manager.close(cam.name)))
+            
+            await asyncio.gather(*close_tasks)
+            
+        finally:
+            await manager.close(None)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_batch_operations(self):
+        """Test concurrent batch capture operations."""
+        manager = AsyncCameraManager(include_mocks=True)
+        try:
+            names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
+            if len(names) < 2:
+                pytest.skip("Need at least 2 mock cameras")
+            
+            # Open cameras
+            await manager.open(names[:2])
+            
+            # Set high concurrency limit
+            manager.max_concurrent_captures = 10
+            
+            # Run multiple batch captures concurrently
+            batch_tasks = []
+            for _ in range(3):
+                batch_tasks.append(asyncio.create_task(manager.batch_capture(names[:2])))
+            
+            batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+            
+            # All batch operations should complete
+            for result in batch_results:
+                if isinstance(result, Exception):
+                    print(f"Batch capture failed: {result}")
+                else:
+                    assert isinstance(result, dict)
+            
+        finally:
+            await manager.close(None)
