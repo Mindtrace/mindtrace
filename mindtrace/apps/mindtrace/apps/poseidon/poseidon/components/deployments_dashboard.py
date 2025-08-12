@@ -5,6 +5,7 @@ import reflex as rx
 from poseidon.components.image_components import (
     COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants, button_variants, card_variants
 )
+from poseidon.components_v2.core import button
 from poseidon.state.model_deployment import ModelDeploymentState, DeploymentDict
 
 def deployment_status_badge(status: str) -> rx.Component:
@@ -58,31 +59,31 @@ def deployment_health_indicator(health: str) -> rx.Component:
 def deployment_actions(deployment_id: str) -> rx.Component:
     """Action buttons for deployment"""
     return rx.hstack(
-        rx.button(
-            rx.text("📊", font_size="0.875rem"),
-            **button_variants["ghost"],
+        button(
+            text="📊",
+            variant="ghost",
             size="1",
             padding="0.25rem",
             title="View metrics",
         ),
-        rx.button(
-            rx.text("📝", font_size="0.875rem"),
-            **button_variants["ghost"],
+        button(
+            text="📝",
+            variant="ghost",
             size="1",
             padding="0.25rem",
             title="View logs",
         ),
-        rx.button(
-            rx.text("⚙️", font_size="0.875rem"),
-            **button_variants["ghost"],
+        button(
+            text="⚙️",
+            variant="ghost",
             size="1",
             padding="0.25rem",
             title="Settings",
         ),
-        rx.button(
-            rx.text("🗑️", font_size="0.875rem"),
+        button(
+            text="🗑️",
             on_click=ModelDeploymentState.undeploy_model(deployment_id),
-            **button_variants["ghost"],
+            variant="ghost",
             size="1",
             padding="0.25rem",
             title="Undeploy",
@@ -251,27 +252,17 @@ def deployments_dashboard() -> rx.Component:
             ),
             rx.spacer(),
             rx.hstack(
-                rx.button(
-                    rx.hstack(
-                        rx.text("🔄", font_size="0.875rem"),
-                        rx.text("Refresh", font_weight="500"),
-                        spacing="2",
-                        align="center",
-                    ),
+                button(
+                    text="🔄",
+                    variant="secondary",
                     on_click=ModelDeploymentState.load_deployments,
-                    **button_variants["secondary"],
-                    size="2",
+                    size="sm",
                     disabled=ModelDeploymentState.is_loading,
                 ),
-                rx.button(
-                    rx.hstack(
-                        rx.text("➕", font_size="0.875rem"),
-                        rx.text("New Deployment", font_weight="500"),
-                        spacing="2",
-                        align="center",
-                    ),
-                    **button_variants["primary"],
-                    size="2",
+                button(
+                    text="New Deployment",
+                    variant="primary",
+                    size="sm",
                 ),
                 spacing="2",
             ),

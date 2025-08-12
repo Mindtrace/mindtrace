@@ -1,13 +1,10 @@
 import reflex as rx
-from poseidon.components import sidebar, app_header, page_container
+from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components.image_components import (
     COLORS,
     TYPOGRAPHY,
     SIZING,
     SPACING,
-    content_variants,
-    button_variants,
-    card_variants,
 )
 from poseidon.components_v2.core import button
 from poseidon.components.stepper import stepper, StepConfig
@@ -57,33 +54,7 @@ def new_deployment_stepper() -> rx.Component:
 
 def model_deployment_content() -> rx.Component:
     """Model deployment page content"""
-    return rx.box(
-        page_container(
-            rx.box(
-                rx.heading("Model Deployment", **content_variants["page_title"]),
-                rx.text("Deploy ML models to process camera feeds in real-time", **content_variants["page_subtitle"]),
-                **content_variants["page_header"],
-            ),
-            # Action buttons
-            rx.hstack(
-                button(
-                    text="Refresh Data",
-                    icon="🔄",
-                    on_click=ModelDeploymentState.on_mount,
-                    variant="secondary",
-                    disabled=ModelDeploymentState.is_loading,
-                ),
-                button(
-                    text="Reset Stepper",
-                    icon="↩️",
-                    on_click=ModelDeploymentState.reset_stepper,
-                    variant="secondary",
-                ),
-                rx.spacer(),
-                spacing="2",
-                align="center",
-                width="100%",
-            ),
+    return page_container(
             # Loading state
             rx.cond(
                 ModelDeploymentState.is_loading,
@@ -134,10 +105,13 @@ def model_deployment_content() -> rx.Component:
                     width="100%",
                 ),
             ),
-        ),
-        width="100%",
-        min_height="100vh",
-        position="relative",
+    
+        title="Model Deployment",
+        sub_text="Deploy Brains to process camera feeds in real-time",
+        tools=[
+            button("Refresh", icon=rx.icon("refresh-ccw"), on_click=ModelDeploymentState.on_mount, variant="secondary", disabled=ModelDeploymentState.is_loading),
+            button("Reset Stepper", icon=rx.icon("arrow-left"), on_click=ModelDeploymentState.reset_stepper, variant="secondary"),
+        ],
         # Load data on mount
         on_mount=ModelDeploymentState.on_mount,
     )

@@ -85,6 +85,7 @@ class LayoutTokens:
     sidebar_w_collapsed: str
     header_h: str
     content_pad: str
+    content_gap: str
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,7 @@ THEME = ThemeTokens(
         accent="#0057FF",
         accent_fg="#ffffff",
         ring="rgba(0,87,255,.35)",
-        bg="#f8fafc",
+        bg="#F9F9F9",
         surface="#ffffff",
         surface_2="#fbfdff",
         border="#e2e8f0",
@@ -183,8 +184,9 @@ THEME = ThemeTokens(
     layout=LayoutTokens(
         sidebar_w="260px",
         sidebar_w_collapsed="72px",
-        header_h="56px",
-        content_pad="1.5rem",  # var(--space-6)
+        header_h="60px",
+        content_pad="24px",  
+        content_gap="24px",
     ),
     z=ZTokens(
         z_header=10,
