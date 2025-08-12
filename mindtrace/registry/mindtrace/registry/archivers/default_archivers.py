@@ -5,10 +5,18 @@ from mindtrace.registry.core.registry import Registry
 
 def register_default_materializers():
     # Core zenml materializers
-    Registry.register_default_materializer("builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-    Registry.register_default_materializer("builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-    Registry.register_default_materializer("builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
-    Registry.register_default_materializer("builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer")
+    Registry.register_default_materializer(
+        "builtins.str", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
+    )
+    Registry.register_default_materializer(
+        "builtins.int", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
+    )
+    Registry.register_default_materializer(
+        "builtins.float", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
+    )
+    Registry.register_default_materializer(
+        "builtins.bool", "zenml.materializers.built_in_materializer.BuiltInMaterializer"
+    )
     Registry.register_default_materializer("builtins.list", "zenml.materializers.BuiltInContainerMaterializer")
     Registry.register_default_materializer("builtins.dict", "zenml.materializers.BuiltInContainerMaterializer")
     Registry.register_default_materializer("builtins.tuple", "zenml.materializers.BuiltInContainerMaterializer")
@@ -24,23 +32,23 @@ def register_default_materializers():
 
     # (Optional) Huggingface materializers
     Registry.register_default_materializer(
-        "datasets.Dataset", 
+        "datasets.Dataset",
         "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
     )
     Registry.register_default_materializer(
-        "datasets.DatasetDict", 
+        "datasets.DatasetDict",
         "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
     )
     Registry.register_default_materializer(
-        "datasets.IterableDataset", 
+        "datasets.IterableDataset",
         "zenml.integrations.huggingface.materializers.huggingface_datasets_materializer.HFDatasetMaterializer",
     )
     Registry.register_default_materializer(
-        "transformers.PreTrainedModel", 
+        "transformers.PreTrainedModel",
         "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
     )
     Registry.register_default_materializer(
-        "transformers.TFPreTrainedModel", 
+        "transformers.TFPreTrainedModel",
         "zenml.integrations.huggingface.materializers.huggingface_pt_model_materializer.HFPTModelMaterializer",
     )
 
@@ -51,28 +59,28 @@ def register_default_materializers():
 
     # (Optional) Pillow materializers
     Registry.register_default_materializer(
-        "PIL.Image.Image", 
+        "PIL.Image.Image",
         "zenml.integrations.pillow.materializers.pillow_image_materializer.PillowImageMaterializer",
     )
 
     # (Optional) PyTorch materializers
     Registry.register_default_materializer(
-        "torch.utils.data.DataLoader", 
+        "torch.utils.data.DataLoader",
         "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.utils.data.Dataset", 
+        "torch.utils.data.Dataset",
         "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.utils.data.IterableDataset", 
+        "torch.utils.data.IterableDataset",
         "zenml.integrations.pytorch.materializers.pytorch_dataloader_materializer.PyTorchDataLoaderMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.nn.Module", 
+        "torch.nn.Module",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )
     Registry.register_default_materializer(
-        "torch.jit.ScriptModule", 
+        "torch.jit.ScriptModule",
         "zenml.integrations.pytorch.materializers.pytorch_module_materializer.PyTorchModuleMaterializer",
     )
