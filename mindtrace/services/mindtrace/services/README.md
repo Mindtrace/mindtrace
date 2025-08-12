@@ -1,5 +1,15 @@
 # Mindtrace Services
 
+[Purpose](#purpose)<br>
+[Installation](#installation)<br>
+[Architecture](#architecture)<br>
+[Auto-generation for Connection Managers](#auto-generation-for-connection-managers)<br>
+[Usage Example](#usage-example)<br>
+[Testing & Coverage](#testing--coverage)<br>
+[API Reference](#api-reference)<br>
+[MCP Integration: Exposing Service Endpoints as Tools](#mcp-integration-exposing-service-endpoints-as-tools)<br>
+[Remote MCP Server Usage with Cursor](#remote-mcp-server-usage-with-cursor)
+
 The `mindtrace-services` module provides the core microservice framework for the Mindtrace ecosystem. It enables rapid development, deployment, and management of distributed services with robust and auto generated connection management, and comprehensive testing support.
 
 ## Purpose
@@ -138,7 +148,10 @@ stress:      7 passed in 208.89s (0:03:28)
 - Dynamically creates a ConnectionManager for a given Service, exposing all endpoints as methods.
 
 ### add_endpoint
-- Register a new endpoint with a schema for input/output validation.
+- Register a new endpoint with a schema for input/output validation. Set `as_tool = true` for MCP tool registration.
+
+### add_tool
+- Register a new tool to the MCP HTTP app mounted on FastAPI app.
 
 ### TaskSchema
 - Used to define input/output types for endpoints.
@@ -229,4 +242,50 @@ asyncio.run(mcp_example())
 
 For trial purposes, see the sample files:
 - [`sample/echo_mcp.py`](./sample/echo_mcp.py)
-- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
+- [`samples/services/echo_mcp_service.py`](../../../../samples/services/echo_mcp_service.py)
+
+
+## Remote MCP Server Usage with Cursor
+
+You can use Cursor's UI to interact directly with any Mindtrace service that exposes its endpoints as MCP tools. This allows you to call your service's functions from within Cursor chat, making development and testing seamless.
+
+### How to Connect Cursor to a Remote MCP Server
+
+Follow these steps to set up and use a remote MCP server with Cursor:
+
+1. **Launch the MCP Server**
+   
+   Start your Mindtrace service with MCP enabled. For example, to launch the EchoService:
+
+   ```python
+   from mindtrace.services.sample.echo_mcp import EchoService
+   connection_manager = EchoService.launch(port=8080, host="localhost")
+   ```
+   This will start the service and host the MCP server at `http://localhost:8080/mcp-server/mcp/`.
+
+2. **Configure Cursor to Use the MCP Server**
+   
+   - Open Cursor settings: Press `Ctrl+Shift+J` (or open the Command Palette and search for "Settings").
+   - Navigate to **Tools & Integrations**.
+   - Find and select **Add Custom MCP**.
+   - In the configuration, add your MCP server details. For example, in your `mcp.json`:
+
+     ```json
+     {
+       "mcpServers": {
+         "mindtrace_echo": {
+           "url": "http://localhost:8080/mcp-server/mcp/"
+         }
+       }
+     }
+     ```
+
+   - Save the configuration. Cursor will now recognize your MCP server and list its available tools.
+
+3. **Interact with Your Service via Cursor Chat**
+   
+   - Start a new chat session in Cursor.
+   - You can now use natural language prompts to call your service's MCP tools. For example:
+     - `Could you reverse the message 'POP' using mindtrace_echo tool?`
+     - `Can you check the status of echo service using mindtrace_echo tool?`
+   - Cursor will route these requests to your MCP server and display the results in the chat.

@@ -42,11 +42,11 @@ class TestTimer:
 
     @patch("time.perf_counter")
     def test_timer_stop_without_start(self, mock_perf_counter):
-        """Test stopping timer without starting raises TypeError due to None arithmetic."""
+        """Test stopping timer without starting raises ValueError."""
         mock_perf_counter.return_value = 15.0
         timer = Timer()
-        # This should raise TypeError because _start_time is None
-        with pytest.raises(TypeError):
+        # This should raise ValueError because _start_time is None
+        with pytest.raises(ValueError):
             timer.stop()
 
     @patch("time.perf_counter")

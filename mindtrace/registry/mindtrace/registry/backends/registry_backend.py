@@ -16,7 +16,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         super().__init__(**kwargs)
 
     @abstractmethod
-    def push(self, name: str, version: str, local_path: str):
+    def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local object version to the remote backend.
 
         Args:
@@ -27,7 +27,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
-    def pull(self, name: str, version: str, local_path: str):
+    def pull(self, name: str, version: str, local_path: str | Path):
         """Download a remote object version into a local path.
 
         Args:
@@ -72,15 +72,12 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
-    def delete_metadata(self, model_name: str, version: str) -> dict:
+    def delete_metadata(self, model_name: str, version: str):
         """Delete metadata for a specific model version.
 
         Args:
             model_name: Name of the model.
             version: Version string.
-
-        Returns:
-            Metadata dictionary.
         """
         pass
 
