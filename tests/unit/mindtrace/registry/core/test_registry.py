@@ -1856,6 +1856,7 @@ def test_materializer_cache_warming_error(registry):
 
 def test_class_level_materializer_registration():
     from mindtrace.registry.core.registry import Registry
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1868,10 +1869,13 @@ def test_class_level_materializer_registration():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_class_level_materializer_registration_with_type():
     from mindtrace.registry.core.registry import Registry
+
     class Dummy:
         pass
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1884,8 +1888,10 @@ def test_class_level_materializer_registration_with_type():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
     from mindtrace.registry.core.registry import Registry
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1898,12 +1904,16 @@ def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_materializer_registration_thread_safety():
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
+
         def register(i):
             Registry.register_default_materializer(f"test.thread.Class{i}", f"test.thread.Materializer{i}")
+
         threads = [threading.Thread(target=register, args=(i,)) for i in range(10)]
         for t in threads:
             t.start()
@@ -1917,8 +1927,10 @@ def test_materializer_registration_thread_safety():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_materializer_registration_idempotency():
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.IdemClass", "test.module.IdemMaterializer")
@@ -1930,8 +1942,10 @@ def test_materializer_registration_idempotency():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_instance_materializer_override_class_level(temp_registry_dir):
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.OverrideClass", "test.module.ClassLevelMaterializer")
@@ -1943,18 +1957,23 @@ def test_instance_materializer_override_class_level(temp_registry_dir):
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_register_materializer_type_assigns_fully_qualified_name(registry):
     class CoverageDummy2:
         pass
+
     registry.register_materializer(CoverageDummy2, "coverage.DummyMaterializer2")
     expected_key = f"{CoverageDummy2.__module__}.{CoverageDummy2.__name__}"
     assert registry.registered_materializer(expected_key) == "coverage.DummyMaterializer2"
 
+
 def test_register_materializer_accepts_materializer_class_type(registry):
     class DummyClass:
         pass
+
     class DummyMaterializer:
         pass
+
     registry.register_materializer(DummyClass, DummyMaterializer)
     expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
     expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"

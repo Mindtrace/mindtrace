@@ -27,6 +27,7 @@ class Registry(Mindtrace):
     for different object types and provides both a high-level API and a dictionary-like
     interface.
     """
+
     # Class-level default materializer registry and lock
     _default_materializers = {}
     _materializer_lock = threading.Lock()
@@ -423,10 +424,10 @@ class Registry(Mindtrace):
             materializer_class: Materializer class to register.
         """
         if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}" 
+            object_class = f"{object_class.__module__}.{object_class.__name__}"
         if isinstance(materializer_class, type):
             materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
-        
+
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
 
@@ -591,13 +592,15 @@ class Registry(Mindtrace):
                     progress_bar=False,  # Don't show progress bar for lock acquisition
                     desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
                 )
-                
+
                 def acquire_lock_with_retry():
                     """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
                     if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                        raise LockAcquisitionError(
+                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
+                        )
                     return True
-                
+
                 # Use the timeout handler to retry lock acquisition
                 timeout_handler.run(acquire_lock_with_retry)
                 yield
