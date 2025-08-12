@@ -13,7 +13,7 @@ try:
     from pypylon import genicam, pylon  # type: ignore
 
     PYPYLON_AVAILABLE = True
-except ImportError:  
+except ImportError:  # pragma: no cover
     PYPYLON_AVAILABLE = False
     pylon = None
     genicam = None
@@ -182,10 +182,7 @@ class BaslerCameraBackend(CameraBackend):
         self.triggermode = self.camera_config.cameras.trigger_mode
 
         # Derived operation timeout for non-capture SDK calls
-        try:
-            self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
-        except Exception:
-            self._op_timeout_s = 5.0
+        self._op_timeout_s = max(1.0, float(self.timeout_ms) / 1000.0)
 
         # Thread executor and event loop for _sdk method
         self._loop = None

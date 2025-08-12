@@ -1,13 +1,14 @@
 """Integration tests for BaslerCameraBackend with real pypylon SDK (no hardware required).
 
-These tests validate that the BaslerCameraBackend correctly integrates with the real pypylon SDK
-without requiring physical cameras to be connected. They test SDK availability, camera discovery
-(expecting empty results), initialization failure modes, and error handling with real pypylon
-exception types.
+These tests validate that the BaslerCameraBackend correctly integrates with the real pypylon SDK without requiring 
+physical cameras to be connected. They test SDK availability, camera discovery (expecting empty results), 
+initialization failure modes, and error handling with real pypylon exception types.
 """
 
-import pytest
 import os
+
+import pytest
+
 from tests.utils.pypylon.client import get_pypylon_proxy, is_pypylon_available, PyPylonClientError
 
 # Note: Service availability will be checked at test time via TCP connection
