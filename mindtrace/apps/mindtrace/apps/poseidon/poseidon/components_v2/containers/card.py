@@ -12,7 +12,7 @@ def card(children, **kwargs) -> rx.Component:
     return rx.box(
         rx.vstack(
             *children,
-            spacing="0",
+            spacing="1",
             width="100%",
         ),
         style={

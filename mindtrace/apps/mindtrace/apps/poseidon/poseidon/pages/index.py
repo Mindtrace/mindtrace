@@ -321,32 +321,6 @@ def index() -> rx.Component:
             </style>
             """
         ),
-        # Conditional sidebar - only show for authenticated users
-        rx.cond(
-            AuthState.is_authenticated,
-            rx.box(
-                sidebar(),
-                position="fixed",
-                left="0",
-                top="0",
-                width="240px",
-                height="100vh",
-                z_index="1000",
-            ),
-        ),
-        # Conditional header - only show for authenticated users
-        rx.cond(
-            AuthState.is_authenticated,
-            rx.box(
-                app_header(),
-                position="fixed",
-                top="0",
-                left="240px",
-                right="0",
-                height="60px",
-                z_index="999",
-            ),
-        ),
         # Main content area with animated gradient background
         rx.box(
             # Animated hero section

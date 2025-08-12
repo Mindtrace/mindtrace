@@ -5,7 +5,7 @@ This module contains all component styling variants including
 cards, inputs, buttons, headers, and logos.
 """
 
-from .global_styles import COLORS, TYPOGRAPHY, SPACING, SIZING, EFFECTS
+from .global_styles import COLORS, TYPOGRAPHY, SPACING, SIZING, EFFECTS, THEME as T
 
 # Component Variants
 COMPONENT_VARIANTS = {
@@ -24,14 +24,14 @@ COMPONENT_VARIANTS = {
     "input": {
         "base": {
             "width": "100%",
-            "font_family": TYPOGRAPHY["font_family"],
-            "border_radius": SIZING["border_radius"]["md"],
-            "background": COLORS["background_input"],
-            "border": f"2px solid {COLORS['border_primary']}",
+            "font_family": T.typography.font_sans,
+            "font_size": T.typography.fs_base,
+            "border_radius": T.radius.r_md,
+            "background": T.colors.surface,
+            "border": f"1px solid {T.colors.border}",
             "outline": "none",
-            "transition": EFFECTS["transitions"]["normal"],
-            "backdrop_filter": EFFECTS["backdrop_filter_light"],
-            "color": COLORS["text_primary"],
+            "transition": f"all {T.motion.dur_fast} {T.motion.ease}",
+            "color": T.colors.fg,
         },
         "focus": {
             "border_color": COLORS["border_focus"],
@@ -104,33 +104,69 @@ COMPONENT_VARIANTS = {
         },
     },
     "button": {
+        # Clean dashboard buttons using new tokens
         "primary": {
-            "background": f"linear-gradient(135deg, {COLORS['primary']} 0%, {COLORS['primary_dark']} 100%)",
-            "hover_background": f"linear-gradient(135deg, {COLORS['primary_dark']} 0%, #003399 100%)",
-            "shadow": EFFECTS["shadows"]["xl"],
-            "hover_shadow": "0 8px 24px rgba(0, 87, 255, 0.4)",
-            "color": COLORS["white"],
+            "background": T.colors.accent,
+            "color": T.colors.accent_fg,
+            "border": "none",
+            "hover_background": "#0047E0",  # Slightly darker
+            "hover_transform": "translateY(-1px)",
+            "active_transform": "translateY(0)",
+        },
+        "secondary": {
+            "background": T.colors.surface,
+            "color": T.colors.fg,
+            "border": f"1px solid {T.colors.border}",
+            "hover_background": T.colors.surface_2,
+            "hover_border_color": T.colors.accent,
+            "hover_color": T.colors.accent,
+        },
+        "ghost": {
+            "background": "transparent",
+            "color": T.colors.fg,
+            "border": "none",
+            "hover_background": "rgba(0, 87, 255, 0.08)",
+            "hover_color": T.colors.accent,
         },
         "danger": {
-            "background": f"linear-gradient(135deg, {COLORS['danger']} 0%, {COLORS['danger_dark']} 100%)",
-            "hover_background": f"linear-gradient(135deg, {COLORS['danger_dark']} 0%, #991B1B 100%)",
-            "shadow": EFFECTS["shadows"]["danger"],
-            "hover_shadow": "0 8px 24px rgba(220, 38, 38, 0.4)",
-            "color": COLORS["white"],
+            "background": T.colors.danger,
+            "color": "#FFFFFF",
+            "border": "none",
+            "hover_background": "#DC2626",  # Slightly darker
+            "hover_transform": "translateY(-1px)",
+            "active_transform": "translateY(0)",
         },
+        "outline": {
+            "background": "transparent",
+            "color": T.colors.accent,
+            "border": f"1px solid {T.colors.accent}",
+            "hover_background": "rgba(0, 87, 255, 0.08)",
+            "hover_border_color": T.colors.accent,
+        },
+        # Base styles shared by all buttons
         "base": {
-            "width": "100%",
-            "font_weight": TYPOGRAPHY["font_weights"]["semibold"],
-            "font_family": TYPOGRAPHY["font_family"],
-            "border_radius": SIZING["border_radius"]["md"],
-            "color": COLORS["text_primary"],
-            "border": f"2px solid {COLORS['border_primary']}",
+            "font_weight": T.typography.fw_500,
+            "font_family": T.typography.font_sans,
+            "border_radius": T.radius.r_md,
             "cursor": "pointer",
             "outline": "none",
-            "background": COLORS["background_card"],
-            "hover_background": "rgba(255, 255, 255, 0.98)",
-            "shadow": "0 1px 3px rgba(0, 0, 0, 0.1)",
-            "hover_shadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
+            "transition": f"all {T.motion.dur_fast} {T.motion.ease}",
+            "display": "inline-flex",
+            "align_items": "center",
+            "justify_content": "center",
+            "gap": T.spacing.space_2,
+            "white_space": "nowrap",
+            "user_select": "none",
+            "position": "relative",
+            "_focus_visible": {
+                "outline": "none",
+                "box_shadow": f"0 0 0 3px {T.colors.ring}",
+            },
+            "_disabled": {
+                "opacity": "0.5",
+                "cursor": "not-allowed",
+                "pointer_events": "none",
+            },
         },
     },
     "header": {
@@ -245,4 +281,4 @@ COMPONENT_VARIANTS = {
             "box_shadow": EFFECTS["shadows"]["sm"],
         },
     },
-} 
+}

@@ -21,27 +21,6 @@ def profile_content() -> rx.Component:
     All state and event logic is handled in the page/state, not in the components.
     """
     return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        # Main content using page_container with centered layout
         page_container(
             rx.center(
                 rx.vstack(

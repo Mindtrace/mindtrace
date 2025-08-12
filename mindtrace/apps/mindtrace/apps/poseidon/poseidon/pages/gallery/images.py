@@ -6,6 +6,7 @@ from poseidon.components.image_components import (
     image_card, pagination_controls, image_modal, search_bar, 
     COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants,button_variants,card_variants
 )
+from poseidon.components_v2.core import button
 from poseidon.components import (
     sidebar, app_header, authentication_required_component, page_container
 )
@@ -80,11 +81,11 @@ def image_card(image: rx.Var[ImageDict]) -> rx.Component:
 def pagination_controls() -> rx.Component:
     """Create pagination controls"""
     return rx.hstack(
-        rx.button(
+        button(
             "← Previous",
             on_click=ImageState.prev_page,
             disabled=ImageState.current_page <= 1,
-            **button_variants["secondary"],
+            variant="secondary",
         ),
         rx.hstack(
             rx.text(
@@ -99,11 +100,11 @@ def pagination_controls() -> rx.Component:
             ),
             spacing="2",
         ),
-        rx.button(
+        button(
             "Next →",
             on_click=ImageState.next_page,
             disabled=ImageState.current_page >= ImageState.total_pages,
-            **button_variants["secondary"],
+            variant="secondary",
         ),
         justify="between",
         align="center",
@@ -123,10 +124,10 @@ def image_modal() -> rx.Component:
                         font_size=TYPOGRAPHY["font_sizes"]["xl"],
                         color=COLORS["text"],
                     ),
-                    rx.button(
+                    button(
                         "✕",
                         on_click=ImageState.close_modal,
-                        **button_variants["ghost"],
+                        variant="ghost",
                         font_size=TYPOGRAPHY["font_sizes"]["lg"],
                     ),
                     justify="between",
@@ -282,15 +283,15 @@ def search_bar() -> rx.Component:
             on_change=ImageState.set_search_query,
             width="300px",
         ),
-        rx.button(
+        button(
             "Search",
             on_click=lambda: ImageState.search_images(ImageState.search_query),
-            **button_variants["primary"],
+            variant="primary",
         ),
-        rx.button(
+        button(
             "Clear",
             on_click=lambda: ImageState.search_images(""),
-            **button_variants["ghost"],
+            variant="ghost",
         ),
         spacing="2",
         align="center",
@@ -299,28 +300,6 @@ def search_bar() -> rx.Component:
 def image_gallery_content() -> rx.Component:
     """Image gallery content using unified Poseidon UI components."""
     return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        
         # Main content using page_container
         page_container(
             # Page header

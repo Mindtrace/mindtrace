@@ -10,6 +10,7 @@ from .user import profile_page
 from .camera import camera_configurator_page
 from .gallery import images_page
 from .inference import inference_page
+from .component_showcase import component_showcase_page
 
 __all__ = [
     "index", 
@@ -33,4 +34,6 @@ __all__ = [
     "images_page",
     # Inference pages
     "inference_page",
+    # Component showcase
+    "component_showcase_page",
 ] 

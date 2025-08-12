@@ -27,8 +27,9 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
                 form_input_with_label("Password", "Enter your password", "password", "password", True, "medium"),
                 button(
                   text="Sign In",
-                  button_type="submit",
-                  size="medium",
+                  type="submit",
+                  size="md",
+                  full_width=True,
                 ),
                 # Error display
                 rx.cond(
