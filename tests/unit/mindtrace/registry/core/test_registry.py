@@ -1,10 +1,10 @@
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-import threading
 
 import pytest
 from minio import S3Error

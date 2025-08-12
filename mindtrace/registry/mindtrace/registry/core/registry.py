@@ -2,7 +2,7 @@ import shutil
 import threading
 import uuid
 from contextlib import contextmanager, nullcontext
-from pathlib import Path, PosixPath
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
 
