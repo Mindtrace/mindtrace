@@ -1,6 +1,6 @@
 import asyncio
-import os
 import pathlib
+
 import pytest
 
 
@@ -46,6 +46,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
     # Patch mock camera image generation to be lightweight
     try:
         import numpy as np  # noqa: F401
+
         from mindtrace.hardware.cameras.backends.daheng.mock_daheng import MockDahengCamera
 
         def _fast_generate_daheng(self):  # type: ignore[no-redef]
@@ -61,6 +62,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch):
 
     try:
         import numpy as np  # noqa: F401
+
         from mindtrace.hardware.cameras.backends.basler.mock_basler import MockBaslerCamera
 
         def _fast_generate_basler(self):  # type: ignore[no-redef]
@@ -96,4 +98,4 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
             monkeypatch.setattr(MockDahengCamera, "capture", _slightly_slow_capture, raising=False)
         except Exception:
             pass
-    yield 
+    yield
