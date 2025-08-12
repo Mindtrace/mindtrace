@@ -278,7 +278,7 @@ class TestServiceProperties:
         assert heartbeat.details is None
 
     def test_endpoints_func(self):
-        """Test endpoints_func method (covers line 151)."""
+        """Test endpoints_func method."""
         service = SampleService()
         result = service.endpoints_func()
 
@@ -289,7 +289,7 @@ class TestServiceProperties:
         assert "echo" in result["endpoints"]
 
     def test_status_func(self):
-        """Test status_func method (covers line 155)."""
+        """Test status_func method."""
         service = SampleService()
         result = service.status_func()
 
@@ -298,7 +298,7 @@ class TestServiceProperties:
         assert result["status"] == service.status.value
 
     def test_heartbeat_func(self):
-        """Test heartbeat_func method (covers line 159)."""
+        """Test heartbeat_func method."""
         service = SampleService()
         result = service.heartbeat_func()
 
@@ -575,7 +575,7 @@ class TestServiceLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_context_manager(self):
-        """Test FastAPI lifespan context manager (covers lines 98-101)."""
+        """Test FastAPI lifespan context manager."""
         service = SampleService()
 
         # Get the lifespan function from the FastAPI app
@@ -603,7 +603,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_runtime_error_handling(self, mock_build_url, mock_status_at_host):
-        """Test launch method RuntimeError handling (covers lines 234-240)."""
+        """Test launch method RuntimeError handling."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host raise RuntimeError
         mock_status_at_host.side_effect = RuntimeError("Connection failed")
@@ -623,7 +623,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_service_already_running_http_exception(self, mock_build_url, mock_status_at_host):
-        """Test launch method HTTPException when service already running (covers line 234)."""
+        """Test launch method HTTPException when service already running."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host return AVAILABLE (service already running)
         mock_status_at_host.return_value = ServerStatus.AVAILABLE
@@ -647,7 +647,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_keyboard_interrupt(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking with KeyboardInterrupt (covers lines 290-299)."""
+        """Test launch method blocking with KeyboardInterrupt."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -700,7 +700,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_finally_cleanup(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking finally block (covers lines 290-299)."""
+        """Test launch method blocking finally block."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -734,7 +734,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with child NoSuchProcess exception (covers lines 328-331)."""
+        """Test _cleanup_server with child NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -767,7 +767,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent NoSuchProcess exception (covers lines 335-338)."""
+        """Test _cleanup_server with parent NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -796,7 +796,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent terminate NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent terminate NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -830,7 +830,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent wait NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent wait NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -862,7 +862,7 @@ class TestServiceCleanupMethods:
             Service._active_servers = original_servers
 
     def test_cleanup_all_servers(self):
-        """Test _cleanup_all_servers method (covers lines 345-346)."""
+        """Test _cleanup_all_servers method."""
         # Setup multiple mock servers
         test_uuid1 = UUID("12345678-1234-5678-1234-567812345678")
         test_uuid2 = UUID("87654321-4321-8765-4321-876543218765")
@@ -930,7 +930,7 @@ class TestServiceInterruption:
     """Test Service interruption handling during launch."""
 
     def test_connect_with_interrupt_handling_process_exited_cleanly(self):
-        """Test _connect_with_interrupt_handling when process exits cleanly (covers line 218)."""
+        """Test _connect_with_interrupt_handling when process exits cleanly."""
         mock_process = Mock()
         mock_process.poll.return_value = 0  # Process has exited
         mock_process.returncode = 0  # Clean exit
@@ -939,7 +939,7 @@ class TestServiceInterruption:
             Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
     def test_connect_with_interrupt_handling_process_error_exit(self):
-        """Test _connect_with_interrupt_handling when process exits with error (covers line 222-223)."""
+        """Test _connect_with_interrupt_handling when process exits with error."""
         mock_process = Mock()
         mock_process.poll.return_value = 0  # Process has exited
         mock_process.returncode = 1  # Error exit
@@ -948,7 +948,7 @@ class TestServiceInterruption:
             Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
 
     def test_connect_with_interrupt_handling_process_running(self):
-        """Test _connect_with_interrupt_handling when process is still running (covers line 224)."""
+        """Test _connect_with_interrupt_handling when process is still running."""
         mock_process = Mock()
         mock_process.poll.return_value = None  # Process is still running
 
@@ -969,7 +969,7 @@ class TestServiceInterruption:
     def test_launch_keyboard_interrupt_during_wait_for_launch(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method KeyboardInterrupt during wait_for_launch (covers lines 367-388)."""
+        """Test launch method KeyboardInterrupt during wait_for_launch."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -1012,7 +1012,7 @@ class TestServiceInterruption:
     def test_launch_system_exit_during_wait_for_launch(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method SystemExit during wait_for_launch (covers lines 367-388)."""
+        """Test launch method SystemExit during wait_for_launch."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -1055,7 +1055,7 @@ class TestServiceInterruption:
     def test_launch_general_exception_during_wait_for_launch(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method general exception during wait_for_launch (covers lines 367-388)."""
+        """Test launch method general exception during wait_for_launch."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -1095,7 +1095,7 @@ class TestServiceInterruption:
     def test_launch_successful_wait_for_launch(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method successful wait_for_launch (covers lines 367-388)."""
+        """Test launch method successful wait_for_launch."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -1139,7 +1139,7 @@ class TestServiceInterruption:
     def test_launch_timeout_handler_configuration(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method timeout handler configuration (covers lines 367-388)."""
+        """Test launch method timeout handler configuration."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
@@ -1182,7 +1182,7 @@ class TestServiceInterruption:
     def test_launch_no_wait_for_launch_returns_none(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
     ):
-        """Test launch method when wait_for_launch=False returns None (covers lines 367-388)."""
+        """Test launch method when wait_for_launch=False returns None."""
         # Setup mocks
         mock_status_at_host.return_value = ServerStatus.DOWN
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
