@@ -30,7 +30,7 @@ class ObservableContext:
         # [MyContext] y changed: 0 → 2
     """
 
-    def __init__(self, vars: List[str] | Dict[str, Type]):
+    def __init__(self, vars: str | List[str] | Dict[str, Type]):
         """Initialize the observable context.
 
         Args:

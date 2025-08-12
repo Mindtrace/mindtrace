@@ -10,12 +10,11 @@ This script shows how to:
 """
 
 import asyncio
-import time
 
-from mindtrace.services import ServerStatus, generate_connection_manager
-from mindtrace.services.sample.echo_mcp import EchoService
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+
+from mindtrace.services.sample.echo_mcp import EchoService
 
 
 async def mcp_example():
@@ -29,7 +28,7 @@ async def mcp_example():
         wait_for_launch=True,  # Wait for service to be ready
         timeout=30,
     )
-    mcp_url = str(connection_manager.url)+'mcp-server/mcp/'
+    mcp_url = str(connection_manager.url) + "mcp-server/mcp/"
     print("Service launched successfully!")
     print(f"Service URL: {connection_manager.url}")
     print(f"MCP Service URl: {mcp_url}")
@@ -73,8 +72,6 @@ async def mcp_example():
                 result = await session.call_tool("reverse_message", {"payload": {"message": "Alice"}})
                 print("Tool response:", result)
 
-
-
     except Exception as e:
         print(f"Error during sync calls: {e}")
 
@@ -98,8 +95,6 @@ def main():
     print("EchoService MCP Example")
     print("=" * 50)
     asyncio.run(mcp_example())
-
-
 
     print("\nAll examples completed!")
 

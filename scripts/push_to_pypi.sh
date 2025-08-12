@@ -1,20 +1,37 @@
 #!/bin/bash
 
 # Script to push all mindtrace packages to PyPI
-# Usage: ./scripts/push_to_pypi.sh [testpypi|pypi]
+# Usage: ./scripts/push_to_pypi.sh [testpypi|pypi] [version]
 # 
 # Defaults to testpypi if no repository specified
+# Version is required as the second parameter
 # Requires ~/.pypirc configuration with standard sections:
 # [testpypi]  # For Test PyPI
 # [pypi]      # For production PyPI
 
 # Default to testpypi if no repository specified
 REPOSITORY=${1:-testpypi}
+VERSION=${2:-}
 
 # Validate repository argument
 if [[ "$REPOSITORY" != "testpypi" && "$REPOSITORY" != "pypi" ]]; then
     print_error "Invalid repository. Use 'testpypi' or 'pypi'"
-    echo "Usage: $0 [testpypi|pypi]"
+    echo "Usage: $0 [testpypi|pypi] [version]"
+    exit 1
+fi
+
+# Validate version argument
+if [[ -z "$VERSION" ]]; then
+    print_error "Version is required"
+    echo "Usage: $0 [testpypi|pypi] [version]"
+    echo "Example: $0 testpypi 0.2.0"
+    exit 1
+fi
+
+# Validate version format (basic check for semantic versioning)
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    print_error "Invalid version format. Expected semantic version (e.g., 0.2.0)"
+    echo "Usage: $0 [testpypi|pypi] [version]"
     exit 1
 fi
 
@@ -44,7 +61,7 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-print_status "Pushing packages to $REPOSITORY..."
+print_status "Pushing packages to $REPOSITORY with version $VERSION..."
 
 # List of all packages 
 PACKAGES=(
@@ -75,12 +92,12 @@ upload_package() {
     # Handle the main mindtrace package (empty string) vs sub-packages
     if [[ -z "$package" ]]; then
         local package_name="mindtrace"
-        local package_pattern="dist/mindtrace-0.1.0*"
+        local package_pattern="dist/mindtrace-${VERSION}*"
         local repository_name="$REPOSITORY"
         print_status "Uploading $package_name..."
     else
         local package_name="mindtrace-$package"
-        local package_pattern="dist/mindtrace_${package}-0.1.0*"
+        local package_pattern="dist/mindtrace_${package}-${VERSION}*"
         local repository_name="$REPOSITORY"
         print_status "Uploading $package_name..."
     fi
