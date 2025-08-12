@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 import requests
 from fastapi import HTTPException
+from fastmcp import Client
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, Timeout, ifnone
@@ -138,3 +139,22 @@ class ConnectionManager(Mindtrace):
                 self.logger.exception("Exception occurred", exc_info=info)
                 return self.suppress
         return False
+
+    @property
+    def mcp_client(self) -> Client:
+        """Get an MCP client for this service.
+        
+        Returns a FastMCP Client instance that can be used to interact with the service
+        through the MCP protocol. The client connects to the service's MCP endpoint.
+        
+        Returns:
+            FastMCP Client instance for MCP protocol communication
+            
+        Example::
+            cm = MyService.launch()
+            client = cm.mcp_client
+            # Use client for MCP protocol interactions
+        """
+        # Construct the MCP endpoint URL
+        mcp_url = f"{str(self.url).rstrip('/')}/mcp-server/mcp"
+        return Client(mcp_url)
