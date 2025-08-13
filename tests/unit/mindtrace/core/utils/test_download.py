@@ -1,16 +1,18 @@
 import io
-import pytest
 from pathlib import Path
 from unittest import mock
 
-from mindtrace.core.utils.download import download_and_extract_zip, download_and_extract_tarball
+import pytest
+
+from mindtrace.core.utils.download import download_and_extract_tarball, download_and_extract_zip
 
 
 @pytest.fixture
 def fake_zip_bytes():
     import zipfile
+
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w') as zf:
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
         zf.writestr("test.txt", "This is a test file.")
     zip_buffer.seek(0)
     return zip_buffer
@@ -19,8 +21,9 @@ def fake_zip_bytes():
 @pytest.fixture
 def fake_tar_bytes():
     import tarfile
+
     tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode='w:gz') as tf:
+    with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tf:
         info = tarfile.TarInfo(name="test.txt")
         data = b"This is a test file."
         info.size = len(data)
@@ -74,8 +77,10 @@ def test_download_and_extract_tarball_failure_unlink(mock_urlretrieve, mock_exis
 
 
 def test_default_zip_filename(tmp_path):
-    with mock.patch("mindtrace.core.utils.download.urlretrieve") as mock_urlretrieve, \
-         mock.patch("mindtrace.core.utils.download.zipfile.ZipFile") as mock_zipfile:
+    with (
+        mock.patch("mindtrace.core.utils.download.urlretrieve") as mock_urlretrieve,
+        mock.patch("mindtrace.core.utils.download.zipfile.ZipFile") as mock_zipfile,
+    ):
         mock_zip = mock.MagicMock()
         mock_zipfile.return_value.__enter__.return_value = mock_zip
 
@@ -93,12 +98,14 @@ def test_tarball_mode_detection(tmp_path):
         "test.tbz2": "r:bz2",
         "test.tar.xz": "r:xz",
         "test.txz": "r:xz",
-        "test.tar": "r"
+        "test.tar": "r",
     }
 
     for filename, expected_mode in extensions_modes.items():
-        with mock.patch("mindtrace.core.utils.download.urlretrieve") as mock_urlretrieve, \
-             mock.patch("mindtrace.core.utils.download.tarfile.open") as mock_tar_open:
+        with (
+            mock.patch("mindtrace.core.utils.download.urlretrieve") as mock_urlretrieve,
+            mock.patch("mindtrace.core.utils.download.tarfile.open") as mock_tar_open,
+        ):
             mock_tar = mock.MagicMock()
             mock_tar_open.return_value.__enter__.return_value = mock_tar
 
@@ -110,33 +117,44 @@ def test_tarball_mode_detection(tmp_path):
 
 
 def test_download_and_extract_zip_failure_no_file_to_unlink(tmp_path):
-    with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False) as mock_exists, \
-         mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink:
+    with (
+        mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")),
+        mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False),
+        mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink,
+    ):
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_zip("http://example.com/fail.zip", tmp_path)
         mock_unlink.assert_not_called()
 
+
 def test_download_and_extract_zip_failure_unlink_raises(tmp_path):
-    with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=True), \
-         mock.patch("mindtrace.core.utils.download.Path.unlink", side_effect=Exception("Unlink failed")) as mock_unlink:
+    with (
+        mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")),
+        mock.patch("mindtrace.core.utils.download.Path.exists", return_value=True),
+        mock.patch("mindtrace.core.utils.download.Path.unlink", side_effect=Exception("Unlink failed")) as mock_unlink,
+    ):
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_zip("http://example.com/fail.zip", tmp_path)
         mock_unlink.assert_called_once()
 
+
 def test_download_and_extract_tarball_failure_no_file_to_unlink(tmp_path):
-    with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False) as mock_exists, \
-         mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink:
+    with (
+        mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")),
+        mock.patch("mindtrace.core.utils.download.Path.exists", return_value=False),
+        mock.patch("mindtrace.core.utils.download.Path.unlink") as mock_unlink,
+    ):
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_tarball("http://example.com/fail.tar.gz", tmp_path)
         mock_unlink.assert_not_called()
 
+
 def test_download_and_extract_tarball_failure_unlink_raises(tmp_path):
-    with mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")), \
-         mock.patch("mindtrace.core.utils.download.Path.exists", return_value=True), \
-         mock.patch("mindtrace.core.utils.download.Path.unlink", side_effect=Exception("Unlink failed")) as mock_unlink:
+    with (
+        mock.patch("mindtrace.core.utils.download.urlretrieve", side_effect=Exception("Download failed")),
+        mock.patch("mindtrace.core.utils.download.Path.exists", return_value=True),
+        mock.patch("mindtrace.core.utils.download.Path.unlink", side_effect=Exception("Unlink failed")) as mock_unlink,
+    ):
         with pytest.raises(Exception, match="Download failed"):
             download_and_extract_tarball("http://example.com/fail.tar.gz", tmp_path)
         mock_unlink.assert_called_once()

@@ -2,35 +2,41 @@
 
 import base64
 import io
+
 import PIL
 from PIL.Image import Image
 
 try:
     import numpy as np
+
     _HAS_NUMPY = True
 except ImportError:  # pragma: no cover
     _HAS_NUMPY = False
 
 try:
     import torch
+
     _HAS_TORCH = True
 except ImportError:  # pragma: no cover
     _HAS_TORCH = False
 
 try:
     from torchvision.transforms.v2 import functional as F
+
     _HAS_TORCHVISION = True
 except ImportError:  # pragma: no cover
     _HAS_TORCHVISION = False
 
 try:
     import cv2
+
     _HAS_CV2 = True
 except ImportError:  # pragma: no cover
     _HAS_CV2 = False
 
 try:
     from discord import Attachment, File
+
     _HAS_DISCORD = True
 except ImportError:  # pragma: no cover
     _HAS_DISCORD = False
@@ -38,9 +44,9 @@ except ImportError:  # pragma: no cover
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from discord import File, Attachment
     import numpy as np
     import torch
+    from discord import Attachment, File
 
 
 def pil_to_ascii(image: Image) -> str:
@@ -48,12 +54,12 @@ def pil_to_ascii(image: Image) -> str:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_ascii, ascii_to_pil
+        import PIL
+        from mindtrace.core import pil_to_ascii, ascii_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          ascii_image = pil_to_ascii(image)
-          decoded_image = ascii_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        ascii_image = pil_to_ascii(image)
+        decoded_image = ascii_to_pil(ascii_image)
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -67,12 +73,12 @@ def ascii_to_pil(ascii_image: str) -> Image:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_ascii, ascii_to_pil
+        import PIL
+        from mindtrace.core import pil_to_ascii, ascii_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          ascii_image = pil_to_ascii(image)
-          decoded_image = ascii_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        ascii_image = pil_to_ascii(image)
+        decoded_image = ascii_to_pil(ascii_image)
     """
     return PIL.Image.open(io.BytesIO(base64.b64decode(ascii_image)))
 
@@ -82,12 +88,12 @@ def pil_to_bytes(image: Image) -> bytes:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_bytes, bytes_to_pil
+        import PIL
+        from mindtrace.core import pil_to_bytes, bytes_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          bytes_image = pil_to_bytes(image)
-          decoded_image = bytes_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        bytes_image = pil_to_bytes(image)
+        decoded_image = bytes_to_pil(bytes_image)
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -100,12 +106,12 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_bytes, bytes_to_pil
+        import PIL
+        from mindtrace.core import pil_to_bytes, bytes_to_pil
 
-          image = PIL.Image.open('tests/resources/hopper.png')
-          bytes_image = pil_to_bytes(image)
-          decoded_image = bytes_to_pil(ascii_image)
+        image = PIL.Image.open('tests/resources/hopper.png')
+        bytes_image = pil_to_bytes(image)
+        decoded_image = bytes_to_pil(bytes_image)
     """
     return PIL.Image.open(io.BytesIO(bytes_image))
 
@@ -258,11 +264,11 @@ def pil_to_cv2(image: Image) -> np.ndarray:
 
     Example::
 
-          import PIL
-          from mindtrace.core import pil_to_cv2
+        import PIL
+        from mindtrace.core import pil_to_cv2
 
-          pil_image = PIL.Image.open('tests/resources/hopper.png')
-          cv2_image = pil_to_cv2(pil_image)
+        pil_image = PIL.Image.open('tests/resources/hopper.png')
+        cv2_image = pil_to_cv2(pil_image)
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for pil_to_cv2 but is not installed.")
@@ -285,11 +291,11 @@ def cv2_to_pil(image: np.ndarray) -> Image:
 
     Example::
 
-          import cv2
-          from mindtrace.core import cv2_to_pil
+        import cv2
+        from mindtrace.core import cv2_to_pil
 
-          cv2_image = cv2.imread('tests/resources/hopper.png')
-          pil_image = cv2_to_pil(cv2_image)
+        cv2_image = cv2.imread('tests/resources/hopper.png')
+        pil_image = cv2_to_pil(cv2_image)
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for cv2_to_pil but is not installed.")

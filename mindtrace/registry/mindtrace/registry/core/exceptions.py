@@ -10,4 +10,4 @@ class LockTimeoutError(Exception):
 class LockAcquisitionError(Exception):
     """Exception raised when a lock cannot be acquired immediately (lock is in use)."""
 
-    pass 
+    pass

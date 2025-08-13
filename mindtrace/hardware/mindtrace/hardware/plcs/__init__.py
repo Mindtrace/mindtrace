@@ -9,4 +9,4 @@ from .plc_manager import PLCManager
 
 __all__ = [
     "PLCManager",
-] 
+]
