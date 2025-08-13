@@ -5,6 +5,7 @@ Example demonstrating the new MCP client functionality in the Service class.
 This shows how to use service.mcp.launch() method to get FastMCP Client instances for interacting with services via the MCP protocol.
 """
 import asyncio
+
 from mindtrace.services.sample.echo_mcp import EchoService
 
 

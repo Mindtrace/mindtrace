@@ -143,13 +143,13 @@ class ConnectionManager(Mindtrace):
     @property
     def mcp_client(self) -> Client:
         """Get an MCP client for this service.
-        
+
         Returns a FastMCP Client instance that can be used to interact with the service
         through the MCP protocol. The client connects to the service's MCP endpoint.
-        
+
         Returns:
             FastMCP Client instance for MCP protocol communication
-            
+
         Example::
             cm = MyService.launch()
             client = cm.mcp_client

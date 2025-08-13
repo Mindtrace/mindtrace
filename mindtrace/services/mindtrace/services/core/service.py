@@ -23,6 +23,7 @@ from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
     EndpointsSchema,
     Heartbeat,
@@ -34,7 +35,6 @@ from mindtrace.services.core.types import (
     StatusSchema,
 )
 from mindtrace.services.core.utils import generate_connection_manager
-from mindtrace.services.core.mcp_client_manager import MCPClientManager
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -46,7 +46,7 @@ class Service(Mindtrace):
     _status = ServerStatus.DOWN
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
-    mcp: MCPClientManager = None 
+    mcp: MCPClientManager = None
 
     def __init__(
         self,
