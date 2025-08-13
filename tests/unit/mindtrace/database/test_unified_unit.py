@@ -511,3 +511,98 @@ def test_unified_model_to_redis_model():
     assert issubclass(redis_model, MindtraceRedisDocument)
     assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "test"
+
+
+def test_unified_backend_auto_generation_with_field_default_factory():
+    """Test auto-generation with field default_factory."""
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from pydantic import Field
+    from typing import List
+    
+    # Test model with default_factory
+    class DefaultFactoryUser(UnifiedMindtraceDocument):
+        name: str
+        tags: List[str] = Field(default_factory=list)
+        scores: List[int] = Field(default_factory=lambda: [0, 0, 0])
+        
+        class Meta:
+            collection_name = "default_factory_users"
+            indexed_fields = ["name"]
+    
+    # Test MongoDB auto-generation with default_factory
+    mongo_model = DefaultFactoryUser._auto_generate_mongo_model()
+    assert mongo_model is not None
+    assert hasattr(mongo_model, 'Settings')
+    assert mongo_model.Settings.name == "default_factory_users"
+    
+    # Test Redis auto-generation with default_factory
+    redis_model = DefaultFactoryUser._auto_generate_redis_model()
+    assert redis_model is not None
+    assert hasattr(redis_model, 'Meta')
+    assert redis_model.Meta.global_key_prefix == "mindtrace"
+
+
+def test_unified_backend_auto_generation_with_optional_indexed_fields():
+    """Test auto-generation with optional indexed fields."""
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+    from typing import Optional
+    
+    # Test model with optional indexed fields
+    class OptionalIndexedUser(UnifiedMindtraceDocument):
+        name: str
+        email: Optional[str] = None
+        phone: Optional[str] = None
+        
+        class Meta:
+            collection_name = "optional_indexed_users"
+            indexed_fields = ["name", "email"]  # email is optional but indexed
+    
+    # Test MongoDB auto-generation with optional indexed fields
+    mongo_model = OptionalIndexedUser._auto_generate_mongo_model()
+    assert mongo_model is not None
+    assert hasattr(mongo_model, 'Settings')
+    assert mongo_model.Settings.name == "optional_indexed_users"
+    
+    # Test Redis auto-generation with optional indexed fields
+    redis_model = OptionalIndexedUser._auto_generate_redis_model()
+    assert redis_model is not None
+    assert hasattr(redis_model, 'Meta')
+    assert redis_model.Meta.global_key_prefix == "mindtrace"
+
+
+def test_unified_backend_get_active_backend_with_no_backends():
+    """Test _get_active_backend with no backends configured."""
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceODMBackend, BackendType
+    
+    # Create a backend with valid configuration first
+    backend = UnifiedMindtraceODMBackend(
+        unified_model_cls=UnifiedUserDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO
+    )
+    
+    # Manually set backends to None to test the error condition
+    backend.mongo_backend = None
+    backend.redis_backend = None
+    backend._active_backend = None
+    
+    # Test that RuntimeError is raised when no backends are available
+    with pytest.raises(RuntimeError, match="No backend available"):
+        backend._get_active_backend()
+
+
+def test_unified_backend_switch_backend_with_unknown_type():
+    """Test switch_backend with unknown backend type."""
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceODMBackend, BackendType
+    
+    backend = UnifiedMindtraceODMBackend(
+        unified_model_cls=UnifiedUserDoc,
+        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_name="test_db",
+        preferred_backend=BackendType.MONGO
+    )
+    
+    # Test that ValueError is raised when unknown backend type is provided
+    with pytest.raises(ValueError, match="Unknown backend type"):
+        backend.switch_backend("unknown_backend")
