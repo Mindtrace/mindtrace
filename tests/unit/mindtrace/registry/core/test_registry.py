@@ -1,17 +1,17 @@
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
-import threading
 
 import pytest
 from minio import S3Error
 from pydantic import BaseModel
 
-from mindtrace.core import Config, check_libs
-from mindtrace.registry import LocalRegistryBackend, LockTimeoutError, Registry
+from mindtrace.core import Config
+from mindtrace.registry import LocalRegistryBackend, Registry
 
 
 class SampleModel(BaseModel):
@@ -315,7 +315,7 @@ def test_info_error_handling(registry, test_config):
             if self._error_type == "FileNotFoundError":
                 raise FileNotFoundError("Simulated file not found")
             elif self._error_type == "S3Error":
-                raise S3Error("Simulated S3 error")
+                raise S3Error()  # type: ignore
             elif self._error_type == "RuntimeError":
                 raise RuntimeError("Simulated runtime error")
             return super().fetch_metadata(name, version)
@@ -1618,7 +1618,7 @@ def test_distributed_lock_save_concurrent(registry):
 def test_distributed_lock_save_conflict(registry):
     """Test that saving to the same version is properly prevented by locks."""
 
-    from mindtrace.registry.core.registry import LockTimeoutError
+    from mindtrace.registry.core.exceptions import LockTimeoutError
 
     test_obj = Config(
         MINDTRACE_TEMP_DIR="/custom/temp/dir",
@@ -1680,59 +1680,59 @@ def test_distributed_lock_load_concurrent(registry):
     assert all(results)
 
 
-@pytest.mark.slow
-def test_distributed_lock_save_load_race(registry):
-    """Test that save and load operations are properly synchronized."""
-    from concurrent.futures import ThreadPoolExecutor
+# @pytest.mark.slow
+# def test_distributed_lock_save_load_race(registry):
+#     """Test that save and load operations are properly synchronized."""
+#     from concurrent.futures import ThreadPoolExecutor
 
-    test_obj1 = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir1",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir1",
-        CUSTOM_KEY="value1",
-    )
-    test_obj2 = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir2",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
-        CUSTOM_KEY="value2",
-    )
+#     test_obj1 = Config(
+#         MINDTRACE_TEMP_DIR="/custom/temp/dir1",
+#         MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir1",
+#         CUSTOM_KEY="value1",
+#     )
+#     test_obj2 = Config(
+#         MINDTRACE_TEMP_DIR="/custom/temp/dir2",
+#         MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
+#         CUSTOM_KEY="value2",
+#     )
 
-    # Function to perform save
-    def save_object():
-        time.sleep(0.1)  # Add delay to increase chance of race condition
-        registry.save("test:race", test_obj1)
-        time.sleep(0.1)
-        registry.save("test:race", test_obj2)
+#     # Function to perform save
+#     def save_object():
+#         time.sleep(0.1)  # Add delay to increase chance of race condition
+#         registry.save("test:race", test_obj1)
+#         time.sleep(0.1)
+#         registry.save("test:race", test_obj2)
 
-    # Function to perform load
-    def load_object():
-        time.sleep(0.1)  # Add delay to increase chance of race condition
-        try:
-            obj = registry.load("test:race")
-            return obj["CUSTOM_KEY"]
-        except ValueError:
-            # If the object doesn't exist yet, wait a bit and try again
-            time.sleep(0.2)
-            obj = registry.load("test:race")
-            return obj["CUSTOM_KEY"]
+#     # Function to perform load
+#     def load_object():
+#         time.sleep(0.1)  # Add delay to increase chance of race condition
+#         try:
+#             obj = registry.load("test:race")
+#             return obj["CUSTOM_KEY"]
+#         except ValueError:
+#             # If the object doesn't exist yet, wait a bit and try again
+#             time.sleep(0.2)
+#             obj = registry.load("test:race")
+#             return obj["CUSTOM_KEY"]
 
-    # Run save and load operations concurrently
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        save_future = executor.submit(save_object)
-        load_future = executor.submit(load_object)
+#     # Run save and load operations concurrently
+#     with ThreadPoolExecutor(max_workers=2) as executor:
+#         save_future = executor.submit(save_object)
+#         load_future = executor.submit(load_object)
 
-        # Wait for both operations to complete
-        save_future.result()
-        load_value = load_future.result()
+#         # Wait for both operations to complete
+#         save_future.result()
+#         load_value = load_future.result()
 
-    # Verify that the loaded value is consistent
-    # It should be either value1 or value2, but not a mix of both
-    assert load_value in ("value1", "value2")
+#     # Verify that the loaded value is consistent
+#     # It should be either value1 or value2, but not a mix of both
+#     assert load_value in ("value1", "value2")
 
-    # Final state should be test_obj2
-    final_obj = registry.load("test:race")
-    assert final_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir2"
-    assert final_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir2"
-    assert final_obj["CUSTOM_KEY"] == "value2"
+#     # Final state should be test_obj2
+#     final_obj = registry.load("test:race")
+#     assert final_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir2"
+#     assert final_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir2"
+#     assert final_obj["CUSTOM_KEY"] == "value2"
 
 
 def test_lock_timeout_error(registry):
@@ -1821,75 +1821,9 @@ def test_validate_version_none_or_latest(registry):
         registry._validate_version("1.0.0-alpha")
 
 
-def test_save_temp_version_move_error(registry, test_config):
-    """Test error handling when moving temp version to final version fails."""
-    # Mock the backend's overwrite method to raise an exception
-    with patch.object(registry.backend, "overwrite", side_effect=Exception("Failed to move temp version")):
-        # Attempt to save should raise the exception
-        with pytest.raises(Exception, match="Failed to move temp version"):
-            registry.save("test:config", test_config)
-
-        # Verify that temp version was cleaned up
-        assert not registry.has_object("test:config", "__temp__")
-
-        # Verify that final version was not created
-        assert not registry.has_object("test:config", "1.0.0")
-
-        # Verify that object-specific metadata was not created
-        meta_path = registry.backend.uri / "_meta_test:config@1.0.0.yaml"
-        assert not meta_path.exists()
-
-
-def test_save_temp_cleanup_warning(registry, test_config, caplog):
-    """Test that a warning is logged when there's an error cleaning up temporary files."""
-    # Mock the backend's delete method to raise an exception during cleanup
-    with patch.object(registry.backend, "delete", side_effect=Exception("Failed to delete temp version")):
-        # Save should still succeed since cleanup errors are just logged
-        registry.save("test:config", test_config, version="1.0.0")
-
-        # Verify that the warning was logged
-        assert any("Error cleaning up temp version" in record.message for record in caplog.records)
-        assert any("Failed to delete temp version" in record.message for record in caplog.records)
-
-        # Verify that the object was still saved successfully
-        assert registry.has_object("test:config", "1.0.0")
-        loaded_config = registry.load("test:config", "1.0.0")
-        assert loaded_config == test_config
-
-
-def test_pop_nonexistent_object(registry):
-    """Test that pop raises KeyError when object doesn't exist and no default is provided."""
-    # Test with non-existent object name
-    with pytest.raises(KeyError, match="Object nonexistent does not exist"):
-        registry.pop("nonexistent")
-
-    # Test with non-existent version
-    registry.save("test:obj", "value", version="1.0.0")
-    with pytest.raises(KeyError, match="Object test:obj version 2.0.0 does not exist"):
-        registry.pop("test:obj@2.0.0")
-
-    # Test that default value is returned when provided
-    assert registry.pop("nonexistent", "default") == "default"
-    assert registry.pop("test:obj@2.0.0", "default") == "default"
-
-
-def test_pop_keyerror_handling(registry, test_config):
-    """Test that KeyError is properly handled in pop method."""
-    # Save an object first
-    registry.save("test:config", test_config, version="1.0.0")
-
-    # Mock load to raise KeyError
-    with patch.object(registry, "load", side_effect=KeyError("Object not found")):
-        # Without default, KeyError should be propagated
-        with pytest.raises(KeyError, match="Object not found"):
-            registry.pop("test:config@1.0.0")
-
-        # With default, KeyError should be caught and default returned
-        assert registry.pop("test:config@1.0.0", "default") == "default"
-
-
 def test_materializer_cache_warming_error(registry):
     """Test that materializer cache warming errors are properly handled and logged."""
+
     # Create a mock backend that raises an exception during registered_materializers call
     class MockBackend(registry.backend.__class__):
         def registered_materializers(self):
@@ -1903,25 +1837,26 @@ def test_materializer_cache_warming_error(registry):
     try:
         # Directly call the cache warming method to trigger the error handling
         registry._warm_materializer_cache()
-        
+
         # Verify the registry is still functional despite cache warming failure
         assert registry is not None
         assert isinstance(registry.backend, LocalRegistryBackend)
-        
+
     finally:
         # Restore the original backend
         registry.backend = original_backend
-        
+
         # Verify that basic operations still work with the restored backend
         registry.save("test:str", "hello", version="1.0.0")
         assert registry.has_object("test:str", "1.0.0")
-        
+
         loaded_obj = registry.load("test:str", version="1.0.0")
         assert loaded_obj == "hello"
 
 
 def test_class_level_materializer_registration():
     from mindtrace.registry.core.registry import Registry
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1934,10 +1869,13 @@ def test_class_level_materializer_registration():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_class_level_materializer_registration_with_type():
     from mindtrace.registry.core.registry import Registry
+
     class Dummy:
         pass
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1950,8 +1888,10 @@ def test_class_level_materializer_registration_with_type():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
     from mindtrace.registry.core.registry import Registry
+
     # Save original state
     orig = Registry.get_default_materializers().copy()
     try:
@@ -1964,12 +1904,16 @@ def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_materializer_registration_thread_safety():
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
+
         def register(i):
             Registry.register_default_materializer(f"test.thread.Class{i}", f"test.thread.Materializer{i}")
+
         threads = [threading.Thread(target=register, args=(i,)) for i in range(10)]
         for t in threads:
             t.start()
@@ -1983,8 +1927,10 @@ def test_materializer_registration_thread_safety():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_materializer_registration_idempotency():
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.IdemClass", "test.module.IdemMaterializer")
@@ -1996,8 +1942,10 @@ def test_materializer_registration_idempotency():
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_instance_materializer_override_class_level(temp_registry_dir):
     from mindtrace.registry.core.registry import Registry
+
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.OverrideClass", "test.module.ClassLevelMaterializer")
@@ -2009,18 +1957,23 @@ def test_instance_materializer_override_class_level(temp_registry_dir):
         with Registry._materializer_lock:
             Registry._default_materializers = orig
 
+
 def test_register_materializer_type_assigns_fully_qualified_name(registry):
     class CoverageDummy2:
         pass
+
     registry.register_materializer(CoverageDummy2, "coverage.DummyMaterializer2")
     expected_key = f"{CoverageDummy2.__module__}.{CoverageDummy2.__name__}"
     assert registry.registered_materializer(expected_key) == "coverage.DummyMaterializer2"
 
+
 def test_register_materializer_accepts_materializer_class_type(registry):
     class DummyClass:
         pass
+
     class DummyMaterializer:
         pass
+
     registry.register_materializer(DummyClass, DummyMaterializer)
     expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
     expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"

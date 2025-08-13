@@ -838,6 +838,14 @@ class TestEchoServiceThroughput:
                 print("   - Shared resource contention")
                 print("   - Network/HTTP overhead still dominates")
                 efficiency_rating = "poor"
+        else:
+            max_scaling = None
+            theoretical_max = None
+            overall_efficiency = None
+            efficiency_rating = None
+            expected_min_rt = None
+            actual_min_rt = None
+            overhead_ms = None
 
         # Save results to file
         results_dir = Path("stress_test_results")
@@ -856,13 +864,13 @@ class TestEchoServiceThroughput:
             "scaling_analysis": {
                 "best_config": best_config,
                 "best_throughput": best_throughput,
-                "max_scaling": max_scaling if best_config and baseline_throughput else None,
-                "theoretical_max": theoretical_max if best_config and baseline_throughput else None,
-                "overall_efficiency": overall_efficiency if best_config and baseline_throughput else None,
-                "efficiency_rating": efficiency_rating if best_config and baseline_throughput else None,
-                "expected_min_rt_ms": expected_min_rt if best_config and baseline_throughput else None,
-                "actual_min_rt_ms": actual_min_rt if best_config and baseline_throughput else None,
-                "overhead_ms": overhead_ms if best_config and baseline_throughput else None,
+                "max_scaling": max_scaling,
+                "theoretical_max": theoretical_max,
+                "overall_efficiency": overall_efficiency,
+                "efficiency_rating": efficiency_rating,
+                "expected_min_rt_ms": expected_min_rt,
+                "actual_min_rt_ms": actual_min_rt,
+                "overhead_ms": overhead_ms,
             },
             "summary": {
                 "configurations_tested": len([r for r in results.values() if r is not None]),

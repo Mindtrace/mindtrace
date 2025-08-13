@@ -1,18 +1,18 @@
 import shutil
+import threading
 import uuid
 from contextlib import contextmanager, nullcontext
-from pathlib import Path, PosixPath
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
-import threading
 
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, check_libs, first_not_none, ifnone, instantiate_target, Timeout
-from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.core import Mindtrace, Timeout, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
-from mindtrace.registry.core.exceptions import LockTimeoutError, LockAcquisitionError
+from mindtrace.registry.backends.registry_backend import RegistryBackend
+from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):
@@ -27,13 +27,14 @@ class Registry(Mindtrace):
     for different object types and provides both a high-level API and a dictionary-like
     interface.
     """
+
     # Class-level default materializer registry and lock
     _default_materializers = {}
     _materializer_lock = threading.Lock()
 
     def __init__(
         self,
-        registry_dir: str | None = None,
+        registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = True,
         **kwargs,
@@ -422,13 +423,13 @@ class Registry(Mindtrace):
             materializer_class: Materializer class to register.
         """
         if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}" 
+            object_class = f"{object_class.__module__}.{object_class.__name__}"
         if isinstance(materializer_class, type):
             materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
-        
+
         with self._get_object_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
-            
+
             # Update cache
             with self._materializer_cache_lock:
                 self._materializer_cache[object_class] = materializer_class
@@ -446,15 +447,15 @@ class Registry(Mindtrace):
         with self._materializer_cache_lock:
             if object_class in self._materializer_cache:
                 return self._materializer_cache[object_class]
-        
+
         # Cache miss - need to check backend (slow path)
         with self._get_object_lock("_registry", "materializers", shared=True):
             materializer = self.backend.registered_materializer(object_class)
-            
+
             # Cache the result (even if None)
             with self._materializer_cache_lock:
                 self._materializer_cache[object_class] = materializer
-            
+
             return materializer
 
     def registered_materializers(self) -> Dict[str, str]:
@@ -590,13 +591,15 @@ class Registry(Mindtrace):
                     progress_bar=False,  # Don't show progress bar for lock acquisition
                     desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
                 )
-                
+
                 def acquire_lock_with_retry():
                     """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
                     if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                        raise LockAcquisitionError(
+                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
+                        )
                     return True
-                
+
                 # Use the timeout handler to retry lock acquisition
                 timeout_handler.run(acquire_lock_with_retry)
                 yield
@@ -655,8 +658,8 @@ class Registry(Mindtrace):
             return "Registry is empty."
 
         if use_rich:
-            console = Console()
-            table = Table(title=f"Registry at {self.backend.uri}")
+            console = Console()  # type: ignore
+            table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
 
             table.add_column("Object", style="bold cyan")
             table.add_column("Version", style="green")
@@ -804,10 +807,10 @@ class Registry(Mindtrace):
             # Get all registered materializers and cache them
             with self._get_object_lock("_registry", "materializers", shared=True):
                 all_materializers = self.backend.registered_materializers()
-                
+
                 with self._materializer_cache_lock:
                     self._materializer_cache.update(all_materializers)
-            
+
             self.logger.debug(f"Warmed materializer cache with {len(all_materializers)} entries")
         except Exception as e:
             self.logger.warning(f"Failed to warm materializer cache: {e}")

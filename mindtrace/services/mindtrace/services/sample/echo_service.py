@@ -15,13 +15,7 @@ class EchoOutput(BaseModel):
     echoed: str
 
 
-class EchoTaskSchema(TaskSchema):
-    name: str = "echo"
-    input_schema: type[EchoInput] = EchoInput
-    output_schema: type[EchoOutput] = EchoOutput
-
-
-echo_task = EchoTaskSchema()
+echo_task = TaskSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
 
 
 class EchoService(Service):
