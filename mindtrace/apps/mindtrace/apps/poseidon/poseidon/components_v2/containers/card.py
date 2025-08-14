@@ -28,7 +28,7 @@ def card(children, **kwargs) -> rx.Component:
                 "height": "4px",
                 "background": f"linear-gradient(90deg, {C.accent}, {C.ring}, {C.accent}, {C.accent})",
                 "background_size": "200% 100%",
-                "animation": "shimmer 1s ease-in-out",
+                "animation": "shimmer 0.7s ease-in-out",
             },
         },
         **kwargs,
