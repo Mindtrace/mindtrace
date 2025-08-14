@@ -124,6 +124,13 @@ uv run reflex run
 
 ---
 
+## Formatting & Linting
+
+```bash
+uv run ruff format
+uv run ruff check --fix
+```
+
 ## Configuration
 
 - The Reflex app is configured in `rxconfig.py`.
