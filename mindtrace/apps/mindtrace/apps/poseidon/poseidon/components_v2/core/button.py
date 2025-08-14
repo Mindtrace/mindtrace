@@ -1,48 +1,62 @@
 """Dashboard Button Component using Token System"""
 
+from typing import Literal
+
 import reflex as rx
+
 from poseidon.styles.global_styles import THEME as T
 from poseidon.styles.variants import COMPONENT_VARIANTS
+
+Variant = Literal[
+    "primary",
+    "secondary",
+    "ghost",
+    "danger",
+    "link",
+    "outline",
+]
 
 # Button size variants using tokens
 BUTTON_SIZES = {
     "xs": {
         "padding": f"{T.spacing.space_1} {T.spacing.space_3}",
         "font_size": T.typography.fs_xs,
-        "height": "2rem",
+        "height": "1.75rem",
     },
     "sm": {
         "padding": f"{T.spacing.space_2} {T.spacing.space_4}",
         "font_size": T.typography.fs_sm,
-        "height": "2.25rem",
+        "height": "2rem",
     },
     "md": {
         "padding": f"{T.spacing.space_2} {T.spacing.space_5}",
         "font_size": T.typography.fs_base,
-        "height": "2.5rem",
+        "height": "2.25rem",
     },
     "lg": {
         "padding": f"{T.spacing.space_3} {T.spacing.space_6}",
         "font_size": T.typography.fs_base,
-        "height": "2.75rem",
+        "height": "2.50rem",
     },
 }
+
+
 def button(
     text: str = "",
-    variant: str = "primary",
+    variant: Variant = "primary",
     size: str = "md",
     icon: str | None = None,
     icon_position: str = "left",
-    loading=False,           # may be Var[bool] or bool
-    disabled=False,          
-    full_width=False,        
+    loading=False,  # may be Var[bool] or bool
+    disabled=False,
+    full_width=False,
     type: str = "button",
     on_click=None,
-    **kwargs
+    **kwargs,
 ) -> rx.Component:
     # Extract style from kwargs to merge properly
     additional_styles = kwargs.pop("style", {})
-    
+
     variant_map = COMPONENT_VARIANTS["button"]
     variant_styles = variant_map.get(variant, variant_map["primary"])
     base_styles = variant_map["base"].copy()
@@ -106,9 +120,9 @@ def button(
         *content,
         type=type,
         on_click=on_click,
-        disabled=is_disabled,             # Var-safe
-        style=button_styles,              # base/variant/size + reactive props
-        _hover=hover_styles,              # pass pseudo styles separately
+        disabled=is_disabled,  # Var-safe
+        style=button_styles,  # base/variant/size + reactive props
+        _hover=hover_styles,  # pass pseudo styles separately
         _active=active_styles,
         _focus_visible={
             "outline": "none",
@@ -118,16 +132,10 @@ def button(
     )
 
 
-
-def button_group(
-    *buttons,
-    spacing: str = None,
-    direction: str = "horizontal",
-    **kwargs
-) -> rx.Component:
+def button_group(*buttons, spacing: str = None, direction: str = "horizontal", **kwargs) -> rx.Component:
     """
     Group multiple buttons together.
-    
+
     Args:
         *buttons: Button components to group
         spacing: Gap between buttons (uses token spacing)
@@ -135,14 +143,6 @@ def button_group(
         **kwargs: Additional props
     """
     if direction == "vertical":
-        return rx.vstack(
-            *buttons,
-            gap=spacing or T.spacing.space_2,
-            **kwargs
-        )
+        return rx.vstack(*buttons, gap=spacing or T.spacing.space_2, **kwargs)
     else:
-        return rx.hstack(
-            *buttons,
-            gap=spacing or T.spacing.space_2,
-            **kwargs
-        )
+        return rx.hstack(*buttons, gap=spacing or T.spacing.space_2, **kwargs)

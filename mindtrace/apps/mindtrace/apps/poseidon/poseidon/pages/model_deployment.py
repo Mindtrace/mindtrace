@@ -1,17 +1,16 @@
 import reflex as rx
-from poseidon.components_v2.containers.page_container import page_container
+
+from poseidon.components.camera_selection_grid import camera_selection_grid
+from poseidon.components.deployment_review import deployment_review
+from poseidon.components.deployments_dashboard import deployments_dashboard
 from poseidon.components.image_components import (
     COLORS,
-    TYPOGRAPHY,
-    SIZING,
     SPACING,
 )
-from poseidon.components_v2.core import button
-from poseidon.components.stepper import stepper, StepConfig
-from poseidon.components.deployments_dashboard import deployments_dashboard
-from poseidon.components.camera_selection_grid import camera_selection_grid
 from poseidon.components.model_selection_list import model_selection_list
-from poseidon.components.deployment_review import deployment_review
+from poseidon.components.stepper import StepConfig, stepper
+from poseidon.components_v2.containers.page_container import page_container
+from poseidon.components_v2.core import button
 from poseidon.state.model_deployment import ModelDeploymentState
 
 
@@ -55,62 +54,72 @@ def new_deployment_stepper() -> rx.Component:
 def model_deployment_content() -> rx.Component:
     """Model deployment page content"""
     return page_container(
-            # Loading state
-            rx.cond(
-                ModelDeploymentState.is_loading,
-                rx.center(
-                    rx.vstack(
-                        rx.spinner(size="3"),
+        # Loading state
+        rx.cond(
+            ModelDeploymentState.is_loading,
+            rx.center(
+                rx.vstack(
+                    rx.spinner(size="3"),
+                    rx.text(
+                        "Loading cameras and models...",
+                        font_size="1rem",
+                        color=COLORS["text_muted"],
+                    ),
+                    spacing="3",
+                    align="center",
+                ),
+                padding=SPACING["xl"],
+                width="100%",
+            ),
+            # Page content
+            rx.vstack(
+                # Active deployments dashboard
+                deployments_dashboard(),
+                # Divider
+                rx.divider(
+                    size="4",
+                    color_scheme="gray",
+                    margin=SPACING["xl"],
+                ),
+                # New deployment section
+                rx.vstack(
+                    rx.hstack(
                         rx.text(
-                            "Loading cameras and models...",
-                            font_size="1rem",
-                            color=COLORS["text_muted"],
+                            "Create New Deployment",
+                            font_size="1.5rem",
+                            font_weight="600",
+                            color=COLORS["primary"],
                         ),
+                        rx.spacer(),
                         spacing="3",
                         align="center",
-                    ),
-                    padding=SPACING["xl"],
-                    width="100%",
-                ),
-                # Page content
-                rx.vstack(
-                    # Active deployments dashboard
-                    deployments_dashboard(),
-                    # Divider
-                    rx.divider(
-                        size="4",
-                        color_scheme="gray",
-                        margin=SPACING["xl"],
-                    ),
-                    # New deployment section
-                    rx.vstack(
-                        rx.hstack(
-                            rx.text(
-                                "Create New Deployment",
-                                font_size="1.5rem",
-                                font_weight="600",
-                                color=COLORS["primary"],
-                            ),
-                            rx.spacer(),
-                            spacing="3",
-                            align="center",
-                            width="100%",
-                        ),
-                        # Stepper component
-                        new_deployment_stepper(),
-                        spacing="6",
                         width="100%",
                     ),
-                    spacing="8",
+                    # Stepper component
+                    new_deployment_stepper(),
+                    spacing="6",
                     width="100%",
                 ),
+                spacing="8",
+                width="100%",
             ),
-    
+        ),
         title="Model Deployment",
         sub_text="Deploy Brains to process camera feeds in real-time",
         tools=[
-            button("Refresh", icon=rx.icon("refresh-ccw"), on_click=ModelDeploymentState.on_mount, variant="secondary", disabled=ModelDeploymentState.is_loading),
-            button("Reset Stepper", icon=rx.icon("arrow-left"), on_click=ModelDeploymentState.reset_stepper, variant="secondary"),
+            button(
+                "Refresh",
+                icon=rx.icon("refresh-ccw"),
+                on_click=ModelDeploymentState.on_mount,
+                variant="secondary",
+                disabled=ModelDeploymentState.is_loading,
+            ),
+            button(
+                "Reset Stepper",
+                icon=rx.icon("arrow-left"),
+                on_click=ModelDeploymentState.reset_stepper,
+                variant="secondary",
+            ),
         ],
         # Load data on mount
         on_mount=ModelDeploymentState.on_mount,

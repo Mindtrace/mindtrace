@@ -1,10 +1,12 @@
 """Text Input Component for Poseidon Forms"""
 
+from typing import Callable, Optional
+
 import reflex as rx
-from typing import Optional, Callable, Any
-from poseidon.styles.global_styles import COLORS, TYPOGRAPHY, SIZE_VARIANTS
-from poseidon.styles.variants import COMPONENT_VARIANTS
+
 from poseidon.components_v2.alerts import Alert
+from poseidon.styles.global_styles import SIZE_VARIANTS, C, Ty
+
 
 def text_input(
     label: Optional[str] = None,
@@ -23,11 +25,11 @@ def text_input(
     success: bool = False,
     success_message: Optional[str] = None,
     hint: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ) -> rx.Component:
     """
     Modern text input component with validation states and error handling.
-    
+
     Args:
         label: Input label text
         placeholder: Placeholder text
@@ -48,29 +50,29 @@ def text_input(
         hint: Helper text to display below input
         **kwargs: Additional props to pass to the input
     """
-    
+
     # Get size styles
     current_size = SIZE_VARIANTS["input"].get(size, SIZE_VARIANTS["input"]["large"])
-    
+
     # Build input styles - using minimal styling without custom borders
     input_styles = {
         "width": "100%",
         "padding": current_size["padding"],
         "font_size": current_size["font_size"],
-        "font_family": TYPOGRAPHY["font_family"],
+        "font_family": Ty.font_sans,
         "border": "1px solid #e2e8f0",
         "border_radius": "6px",
         "background": "white",
         "min_height": "40px",
         "box_sizing": "border-box",
     }
-    
+
     # Add error/success styling if needed
     if error:
-        input_styles["border_color"] = COLORS["error"]
+        input_styles["border_color"] = C.danger
     elif success:
-        input_styles["border_color"] = COLORS["success"]
-    
+        input_styles["border_color"] = C.success
+
     # Build the input component
     input_component = rx.input(
         placeholder=placeholder,
@@ -83,77 +85,77 @@ def text_input(
         required=required,
         disabled=disabled,
         style=input_styles,
-        **kwargs
+        **kwargs,
     )
-    
+
     # Build label component if provided
     label_component = None
     if label:
         label_component = rx.el.label(
             label,
             style={
-                "font_size": TYPOGRAPHY["font_sizes"]["sm"],
-                "font_weight": TYPOGRAPHY["font_weights"]["medium"],
-                "color": COLORS["text_secondary"],
+                "font_size": Ty.fs_sm,
+                "font_weight": Ty.fw_500,
+                "color": C.fg_muted,
                 "margin_bottom": "0.25rem",
                 "display": "block",
-                "font_family": TYPOGRAPHY["font_family"],
-            }
+                "font_family": Ty.font_sans,
+            },
         )
-    
+
     # Build message components
     message_components = []
-    
+
     # Error message
     if error and error_message:
         message_components.append(
             rx.el.div(
                 error_message,
                 style={
-                    "font_size": TYPOGRAPHY["font_sizes"]["xs"],
-                    "color": COLORS["error"],
+                    "font_size": Ty.fs_xs,
+                    "color": C.danger,
                     "margin_top": "0.25rem",
-                    "font_family": TYPOGRAPHY["font_family"],
-                }
+                    "font_family": Ty.font_sans,
+                },
             )
         )
-    
+
     # Success message
     if success and success_message:
         message_components.append(
             rx.el.div(
                 success_message,
                 style={
-                    "font_size": TYPOGRAPHY["font_sizes"]["xs"],
-                    "color": COLORS["success"],
+                    "font_size": Ty.fs_xs,
+                    "color": C.success,
                     "margin_top": "0.25rem",
-                    "font_family": TYPOGRAPHY["font_family"],
-                }
+                    "font_family": Ty.font_sans,
+                },
             )
         )
-    
+
     # Hint message
     if hint and not error and not success:
         message_components.append(
             rx.el.div(
                 hint,
                 style={
-                    "font_size": TYPOGRAPHY["font_sizes"]["xs"],
-                    "color": COLORS["text_muted"],
+                    "font_size": Ty.fs_xs,
+                    "color": C.fg_muted,
                     "margin_top": "0.25rem",
-                    "font_family": TYPOGRAPHY["font_family"],
-                }
+                    "font_family": Ty.font_sans,
+                },
             )
         )
-    
+
     # Build the complete component
     components = []
     if label_component:
         components.append(label_component)
-    
+
     components.append(input_component)
     components.extend(message_components)
-    
+
     return rx.vstack(
         *components,
         width="100%",
@@ -182,41 +184,40 @@ def text_input_with_form(
     success_message: Optional[str] = None,
     hint: Optional[str] = None,
     server_invalid: bool = False,
-    **kwargs
+    **kwargs,
 ) -> rx.Component:
     """
     Text input wrapped in a form field for better validation integration.
     This version is compatible with Reflex form components.
     """
-    
+
     # Get size styles
     current_size = SIZE_VARIANTS["input"].get(size, SIZE_VARIANTS["input"]["large"])
-    
+
     # Build input styles - using minimal styling without custom borders
     input_styles = {
         "width": "100%",
         "padding": current_size["padding"],
         "font_size": current_size["font_size"],
-        "font_family": TYPOGRAPHY["font_family"],
+        "font_family": Ty.font_sans,
         "border": "1px solid #e2e8f0",
         "border_radius": "6px",
         "background": "white",
         "min_height": "40px",
         "box_sizing": "border-box",
     }
-    
+
     # Add error/success styling if needed
     if error or server_invalid:
-        input_styles["border_color"] = COLORS["error"]
+        input_styles["border_color"] = C.danger
     elif success:
-        input_styles["border_color"] = COLORS["success"]
-    
+        input_styles["border_color"] = C.success
+
     # Build the form field
     return rx.form.field(
         rx.flex(
             # Label
             rx.form.label(label) if label else None,
-            
             # Input control
             rx.form.control(
                 rx.input(
@@ -230,11 +231,10 @@ def text_input_with_form(
                     required=required,
                     disabled=disabled,
                     style=input_styles,
-                    **kwargs
+                    **kwargs,
                 ),
                 as_child=True,
             ),
-            
             # Error message
             rx.cond(
                 error and error_message,
@@ -244,25 +244,22 @@ def text_input_with_form(
                     message=error_message,
                 ),
             ),
-            
             # Success message
             rx.cond(
                 success and success_message,
                 rx.form.message(
                     success_message,
-                    color=COLORS["success"],
+                    color=C.success,
                 ),
             ),
-            
             # Hint message
             rx.cond(
                 hint and not error and not success,
                 rx.form.message(
                     hint,
-                    color=COLORS["text_muted"],
+                    color=C.fg_muted,
                 ),
             ),
-            
             direction="column",
             spacing="0",
             align="stretch",
@@ -271,4 +268,4 @@ def text_input_with_form(
         name=name,
         server_invalid=server_invalid,
         style={"width": "100%"},
-    ) 
+    )

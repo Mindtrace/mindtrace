@@ -3,9 +3,20 @@ from poseidon.state.auth import AuthState
 from poseidon.components_v2.core import button
 from .form_input_with_label import form_input_with_label
 from poseidon.components_v2.alerts import Alert
+from poseidon.components_v2.core import button
 from poseidon.components_v2.forms.select_input import select_input_with_form
+from poseidon.state.auth import AuthState
 
-def register_form(title: str = "Create your account", subtitle: str = "Fill out the form to get started", extra_fields=None, submit_label="Create Account", on_submit=AuthState.register):
+from .form_input_with_label import form_input_with_label
+
+
+def register_form(
+    title: str = "Create your account",
+    subtitle: str = "Fill out the form to get started",
+    extra_fields=None,
+    submit_label="Create Account",
+    on_submit=AuthState.register,
+):
     """Registration form - keeps Buridan UI styling."""
     if extra_fields is None:
         extra_fields = []
@@ -38,12 +49,12 @@ def register_form(title: str = "Create your account", subtitle: str = "Fill out 
                         items=AuthState.available_organizations,
                         name="organization_id",
                         required=True,
-                        size="medium"
+                        size="medium",
                     ),
                 ),
                 # Inject extra fields here (e.g., admin key input)
                 *extra_fields,
-                button(submit_label, "submit", "medium"),
+                button(submit_label, type="submit", size="md"),
                 # Error display
                 rx.cond(
                     AuthState.error,

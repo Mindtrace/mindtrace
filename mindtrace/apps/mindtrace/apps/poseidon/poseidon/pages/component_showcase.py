@@ -1,16 +1,17 @@
 """Component Showcase Page - Demonstrates all components_v2 components."""
 
 import reflex as rx
-from poseidon.components_v2.core import button, button_group
-from poseidon.components_v2.containers import card, full_page_container
+
 from poseidon.components_v2.branding import logo_poseidon
+from poseidon.components_v2.containers import card, login_page_container
+from poseidon.components_v2.core import button, button_group
 from poseidon.styles.global_styles import THEME as T
 
 
 def component_showcase_page() -> rx.Component:
     """A showcase page demonstrating all components in components_v2."""
 
-    return full_page_container(
+    return login_page_container(
         [
             rx.vstack(
                 # Header
@@ -253,7 +254,7 @@ def component_showcase_page() -> rx.Component:
                                     spacing="3",
                                 ),
                                 rx.text(
-                                    "💡 Hover over buttons to see smooth transitions and transforms",
+                                    "states.",
                                     size="2",
                                     color=T.colors.fg_muted,
                                 ),

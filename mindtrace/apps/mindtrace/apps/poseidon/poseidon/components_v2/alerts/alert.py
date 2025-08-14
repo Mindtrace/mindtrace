@@ -5,16 +5,18 @@ A comprehensive alert component inspired by MUI alerts with multiple variants,
 severity levels, and styling options.
 """
 
+from typing import Callable, Literal, Optional
+
 import reflex as rx
-from typing import Literal, Optional, Union, Callable
+
+from poseidon.styles.global_styles import SP, M, Ty
 from poseidon.styles.variants import COMPONENT_VARIANTS
-from poseidon.styles.global_styles import TYPOGRAPHY, SPACING, EFFECTS
 
 
 class Alert(rx.Component):
     """
     A comprehensive alert component inspired by MUI alerts.
-    
+
     Features:
     - Multiple severity levels: success, error, warning, info
     - Multiple variants: filled, outlined, soft
@@ -22,7 +24,7 @@ class Alert(rx.Component):
     - Dismissible functionality
     - Customizable styling
     """
-    
+
     # Component props
     severity: Literal["success", "error", "warning", "info"] = "info"
     variant: Literal["filled", "outlined", "soft"] = "filled"
@@ -32,22 +34,22 @@ class Alert(rx.Component):
     dismissible: bool = False
     on_dismiss: Optional[Callable] = None
     show: bool = True
-    
+
     # Styling props
     margin: Optional[str] = None
     margin_bottom: Optional[str] = None
     width: Optional[str] = None
     max_width: Optional[str] = None
-    
+
     def _get_styles(self) -> dict:
         """Get the combined styles for the alert."""
         base_styles = COMPONENT_VARIANTS["alert"]["base"].copy()
         severity_styles = COMPONENT_VARIANTS["alert"][self.severity].copy()
         variant_styles = COMPONENT_VARIANTS["alert"][self.variant].copy()
-        
+
         # Merge all styles
         styles = {**base_styles, **severity_styles, **variant_styles}
-        
+
         # Add custom props
         if self.margin:
             styles["margin"] = self.margin
@@ -57,13 +59,13 @@ class Alert(rx.Component):
             styles["width"] = self.width
         if self.max_width:
             styles["max_width"] = self.max_width
-            
+
         return styles
-    
+
     def _render_content(self) -> rx.Component:
         """Render the alert content."""
         content = []
-        
+
         # Add text content
         text_content = []
         text_content.append(
@@ -71,44 +73,44 @@ class Alert(rx.Component):
                 self.title,
                 rx.text(
                     self.title,
-                    font_weight=TYPOGRAPHY["font_weights"]["semibold"],
+                    font_weight=Ty.fw_600,
                     margin_bottom="0.25rem",
                 ),
-                rx.fragment()
+                rx.fragment(),
             )
         )
-        
+
         text_content.append(
             rx.cond(
                 self.message,
                 rx.text(
                     self.message,
-                    font_weight=TYPOGRAPHY["font_weights"]["normal"],
+                    font_weight=Ty.fw_400,
                 ),
-                rx.fragment()
+                rx.fragment(),
             )
         )
-        
+
         content.append(
             rx.box(
                 *text_content,
                 flex="1",
             )
         )
-        
+
         # Add action
         content.append(
             rx.cond(
                 self.action,
                 rx.box(
                     self.action,
-                    margin_left=SPACING["sm"],
+                    margin_left=SP.space_2,
                     flex_shrink="0",
                 ),
-                rx.fragment()
+                rx.fragment(),
             )
         )
-        
+
         # Add dismiss button
         content.append(
             rx.cond(
@@ -121,25 +123,25 @@ class Alert(rx.Component):
                     cursor="pointer",
                     padding="0.25rem",
                     border_radius="50%",
-                    transition=EFFECTS["transitions"]["fast"],
+                    transition=M.ease,
                     _hover={
                         "background": "rgba(0, 0, 0, 0.1)",
                     },
-                    margin_left=SPACING["sm"],
+                    margin_left=SP.space_2,
                     flex_shrink="0",
                     font_size="1.2rem",
                     font_weight="bold",
                 ),
-                rx.fragment()
+                rx.fragment(),
             )
         )
-        
+
         return rx.hstack(
             *content,
             align="start",
             width="100%",
         )
-    
+
     def render(self) -> rx.Component:
         """Render the alert component."""
         return rx.cond(
@@ -148,7 +150,7 @@ class Alert(rx.Component):
                 self._render_content(),
                 **self._get_styles(),
             ),
-            rx.fragment()
+            rx.fragment(),
         )
 
 
@@ -159,7 +161,7 @@ def success_alert(
     variant: Literal["filled", "outlined", "soft"] = "filled",
     dismissible: bool = False,
     on_dismiss: Optional[Callable] = None,
-    **kwargs
+    **kwargs,
 ) -> Alert:
     """Create a success alert."""
     return Alert(
@@ -169,7 +171,7 @@ def success_alert(
         message=message,
         dismissible=dismissible,
         on_dismiss=on_dismiss,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -179,7 +181,7 @@ def error_alert(
     variant: Literal["filled", "outlined", "soft"] = "filled",
     dismissible: bool = False,
     on_dismiss: Optional[Callable] = None,
-    **kwargs
+    **kwargs,
 ) -> Alert:
     """Create an error alert."""
     return Alert(
@@ -189,7 +191,7 @@ def error_alert(
         message=message,
         dismissible=dismissible,
         on_dismiss=on_dismiss,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -199,7 +201,7 @@ def warning_alert(
     variant: Literal["filled", "outlined", "soft"] = "filled",
     dismissible: bool = False,
     on_dismiss: Optional[Callable] = None,
-    **kwargs
+    **kwargs,
 ) -> Alert:
     """Create a warning alert."""
     return Alert(
@@ -209,7 +211,7 @@ def warning_alert(
         message=message,
         dismissible=dismissible,
         on_dismiss=on_dismiss,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -219,7 +221,7 @@ def info_alert(
     variant: Literal["filled", "outlined", "soft"] = "filled",
     dismissible: bool = False,
     on_dismiss: Optional[Callable] = None,
-    **kwargs
+    **kwargs,
 ) -> Alert:
     """Create an info alert."""
     return Alert(
@@ -229,7 +231,7 @@ def info_alert(
         message=message,
         dismissible=dismissible,
         on_dismiss=on_dismiss,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -238,19 +240,19 @@ class AlertGroup(rx.Component):
     """
     A component to group multiple alerts together.
     """
-    
+
     alerts: list[Alert] = []
-    spacing: str = SPACING["sm"]
+    spacing: str = SP.space_2
     max_alerts: Optional[int] = None
-    
+
     def render(self) -> rx.Component:
         """Render the alert group."""
         alerts_to_show = self.alerts
         if self.max_alerts:
-            alerts_to_show = self.alerts[:self.max_alerts]
-        
+            alerts_to_show = self.alerts[: self.max_alerts]
+
         return rx.vstack(
             *alerts_to_show,
             spacing=self.spacing,
             width="100%",
-        ) 
+        )

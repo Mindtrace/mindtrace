@@ -1,5 +1,6 @@
 import reflex as rx
 
+
 def basic_ease_in_background() -> rx.Component:
     """
     Sophisticated animated background with floating elements.

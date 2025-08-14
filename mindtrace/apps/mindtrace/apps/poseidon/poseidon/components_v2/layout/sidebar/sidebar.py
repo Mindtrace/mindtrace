@@ -1,21 +1,33 @@
 import reflex as rx
+from poseidon.styles.global_styles import SP, T
+
 from .sidebar_state import SidebarState as S
-from poseidon.styles.global_styles import T, SP
 
 NAV = [
-    ("Main", [
-        {"label": "Camera Configurator", "icon": "camera", "href": "/camera-configurator"},
-        {"label": "Model Deployment", "icon": "layout-panel-left", "href": "/model-deployment"},
-        {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
-        {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
-        {"label": "Component Showcase", "icon": "bot", "href": "/component-showcase"},
-        {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
-    ]),
-    ("Other", [
-        {"label": "Organization Management", "icon": "alarm-clock", "href": "/organization-management"},
-        {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
-        {"label": "Profile", "icon": "bot", "href": "/profile"},
-    ]),
+    (
+        "Main",
+        [
+            {"label": "Camera Configurator", "icon": "camera", "href": "/camera-configurator"},
+            {"label": "Model Deployment", "icon": "layout-panel-left", "href": "/model-deployment"},
+            {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
+            {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
+        ],
+    ),
+    (
+        "Admin",
+        [
+            {"label": "Organization Management", "icon": "alarm-clock", "href": "/organization-management"},
+            {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
+            {"label": "Profile", "icon": "user", "href": "/profile"},
+            {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
+        ],
+    ),
+    (
+        "Developer",
+        [
+            {"label": "Component Showcase", "icon": "image", "href": "/component-showcase"},
+        ],
+    ),
 ]
 
 # Theme-based paddings
@@ -26,8 +38,7 @@ ACTIVE_BG = "rgba(0,87,255,.08)"
 
 def _active_bar():
     return rx.box(
-        position="absolute", left="0", top=V_PAD, bottom=V_PAD,
-        width="3px", bg=T.accent, border_radius=T.r_full
+        position="absolute", left="0", top=V_PAD, bottom=V_PAD, width="3px", bg=T.accent, border_radius=T.r_full
     )
 
 
@@ -65,8 +76,12 @@ def _nav_item(*, label: str, icon: str, href: str, active: bool, collapsed):
     row = _nav_row(label, icon, active, collapsed)
     row = rx.cond(collapsed, rx.tooltip(row, content=label, side="right"), row)
     return rx.link(
-        row, href=href, color="inherit", text_decoration="none",
-        aria_current="page" if active else "false", width="100%",
+        row,
+        href=href,
+        color="inherit",
+        text_decoration="none",
+        aria_current="page" if active else "false",
+        width="100%",
     )
 
 
@@ -84,10 +99,15 @@ def _section(*, title: str, items: list[dict], active_label: str, collapsed):
     )
     nodes = [title_node]
     for i in items:
-        nodes.append(_nav_item(
-            label=i["label"], icon=i["icon"], href=i["href"],
-            active=(i["label"] == active_label), collapsed=collapsed
-        ))
+        nodes.append(
+            _nav_item(
+                label=i["label"],
+                icon=i["icon"],
+                href=i["href"],
+                active=(i["label"] == active_label),
+                collapsed=collapsed,
+            )
+        )
     return rx.vstack(*nodes, gap="6px", width="100%", align_items="stretch")
 
 
@@ -110,7 +130,7 @@ def Sidebar(*, active: str):
             height="36px",
             min_width="36px",
             position="absolute",
-            right="-12px",
+            right="-16px",
             top=T.space_4,
             z_index="2",
         ),
@@ -118,19 +138,20 @@ def Sidebar(*, active: str):
         side="right",
     )
 
-    sections = [
-        _section(title=t, items=it, active_label=active, collapsed=S.collapsed)
-        for t, it in NAV
-    ]
+    sections = [_section(title=t, items=it, active_label=active, collapsed=S.collapsed) for t, it in NAV]
     nav_scroll = rx.vstack(*sections, gap="8px", padding=T.space_4, overflow_y="auto", overscroll_behavior="none")
 
     return rx.box(
-        toggle, nav_scroll,
+        toggle,
+        nav_scroll,
         width=rx.cond(S.collapsed, T.sidebar_w_collapsed, T.sidebar_w),
         min_width=rx.cond(S.collapsed, T.sidebar_w_collapsed, T.sidebar_w),
-        bg=T.surface, border_right=f"1px solid {T.border}",
-        position="sticky", top=T.header_h,
+        bg=T.surface,
+        border_right=f"1px solid {T.border}",
+        position="sticky",
+        top=T.header_h,
         height=f"calc(100vh - {T.header_h})",
         overscroll_behavior="none",
-        as_="nav", aria_label="Primary",
+        as_="nav",
+        aria_label="Primary",
     )

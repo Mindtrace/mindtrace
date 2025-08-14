@@ -1,9 +1,18 @@
+from typing import Callable, Optional, Sequence, Union
+
 import reflex as rx
+
 from poseidon.styles.global_styles import THEME
-from typing import Optional, Union, Sequence
 
 
-def page_container(*children, title: str | None = None, sub_text: str | None = None, tools: rx.Component | None = None, **props) -> rx.Component:
+def page_container(
+    *children,
+    title: str | None = None,
+    sub_text: str | None = None,
+    tools: rx.Component | None = None,
+    on_mount: Callable | None = None,
+    **props,
+) -> rx.Component:
     """Standard page container for content pages with optional title header."""
     inner_children = []
     if title is not None:
@@ -22,6 +31,7 @@ def page_container(*children, title: str | None = None, sub_text: str | None = N
         min_height="100vh",
         position="relative",
         bg=THEME.colors.bg,
+        on_mount=on_mount,
     )
 
 

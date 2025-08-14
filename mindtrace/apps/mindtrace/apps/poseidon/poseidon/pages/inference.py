@@ -9,19 +9,14 @@ Provides inference interface with:
 """
 
 import reflex as rx
+
 from poseidon.components import (
-    sidebar,
-    app_header,
-    page_container,
-    input_with_label_mindtrace,
-    select_mindtrace,
-    success_message,
-    error_message,
-    page_header_with_actions,
     card_mindtrace,
+    error_message,
     header_mindtrace,
+    success_message,
 )
-from poseidon.components_v2.core.button import button
+from poseidon.components_v2.containers.page_container import page_container
 from poseidon.state.inference import InferenceState
 
 
@@ -279,40 +274,30 @@ def scan_history_table() -> rx.Component:
 
 def inference_content() -> rx.Component:
     """Main inference page content"""
-    return rx.box(
-        # Main content
-        page_container(
-            # Page header
-            page_header_with_actions(
-                title="Inference Scanner",
-                description="Perform inference scans on parts using deployed models",
-                actions=[],
-            ),
-            # Success/Error messages
-            rx.cond(
-                InferenceState.success != "",
-                success_message(InferenceState.success),
-            ),
-            rx.cond(
-                InferenceState.error != "",
-                error_message(InferenceState.error),
-            ),
-            # Two-column layout
-            rx.grid(
-                # Left column - Inference form
-                rx.box(inference_form(), width="100%"),
-                # Right column - Scan history
-                rx.box(scan_history_table(), width="100%"),
-                columns="2",
-                gap="2rem",
-                width="100%",
-                align_items="start",
-            ),
+    return page_container(
+        # Success/Error messages
+        rx.cond(
+            InferenceState.success != "",
+            success_message(InferenceState.success),
         ),
-        width="100%",
-        min_height="100vh",
-        position="relative",
-        # Initialize data on mount
+        rx.cond(
+            InferenceState.error != "",
+            error_message(InferenceState.error),
+        ),
+        # Two-column layout
+        rx.grid(
+            # Left column - Inference form
+            rx.box(inference_form(), width="100%"),
+            # Right column - Scan history
+            rx.box(scan_history_table(), width="100%"),
+            columns="2",
+            gap="2rem",
+            width="100%",
+            align_items="start",
+        ),
+        title="Inference Scanner",
+        description="Perform inference scans on parts using deployed models",
+        actions=[],
         on_mount=InferenceState.on_mount,
     )
 

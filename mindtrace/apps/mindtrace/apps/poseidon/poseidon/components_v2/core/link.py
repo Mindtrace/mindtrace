@@ -1,7 +1,8 @@
 """Core Link Component for Poseidon UI."""
 
 import reflex as rx
-from poseidon.styles.global_styles import COLORS, TYPOGRAPHY
+
+from poseidon.styles.global_styles import C, Ty
 
 
 def link(text: str, link_text: str, href: str) -> rx.Component:
@@ -13,24 +14,24 @@ def link(text: str, link_text: str, href: str) -> rx.Component:
             text,
             display="inline",
             style={
-                "color": COLORS["text_secondary"],
-                "font_size": "0.95rem",
-                "font_family": TYPOGRAPHY["font_family"],
-            }
+                "color": C.fg_muted,
+                "font_size": Ty.fs_sm,
+                "font_family": Ty.font_sans,
+            },
         ),
         rx.link(
             link_text,
             href=href,
             style={
-                "color": COLORS["primary"],
-                "font_weight": TYPOGRAPHY["font_weights"]["medium"],
-                "font_size": "0.95rem",
-                "font_family": TYPOGRAPHY["font_family"],
+                "color": C.accent,
+                "font_weight": Ty.fw_500,
+                "font_size": Ty.fs_sm,
+                "font_family": Ty.font_sans,
                 "text_decoration": "none",
                 "position": "relative",
                 "transition": "all 0.3s ease",
                 "_hover": {
-                    "color": COLORS["primary_dark"],
+                    "color": C.accent,
                 },
                 "_after": {
                     "content": "''",
@@ -39,17 +40,17 @@ def link(text: str, link_text: str, href: str) -> rx.Component:
                     "left": "0",
                     "width": "0",
                     "height": "2px",
-                    "background": f"linear-gradient(90deg, {COLORS['primary']}, {COLORS['primary_dark']})",
+                    "background": f"linear-gradient(90deg, {C.accent}, {C.ring})",
                     "transition": "width 0.3s ease",
                 },
                 "_hover::after": {
                     "width": "100%",
-                }
-            }
+                },
+            },
         ),
         text_align="center",
         padding="0.2rem 0",
         style={
             "animation": "fadeIn 0.6s ease-out",
-        }
+        },
     )

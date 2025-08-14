@@ -6,24 +6,24 @@ for the Poseidon application.
 """
 
 from .global_styles import (
-    COLORS,
-    TYPOGRAPHY, 
-    SPACING,
-    SIZING,
-    EFFECTS,
-    ANIMATIONS,
+    FX,
+    SH,
     SIZE_VARIANTS,
+    SP,
+    C,
+    M,
+    R,
+    Ty,
 )
-
 from .variants import COMPONENT_VARIANTS
 
 __all__ = [
-    "COLORS",
-    "TYPOGRAPHY", 
-    "SPACING",
-    "SIZING",
-    "EFFECTS",
+    "C",
+    "Ty",
+    "SP",
+    "FX",
+    "SH",
+    "M",
+    "R",
     "COMPONENT_VARIANTS",
-    "ANIMATIONS",
-    "SIZE_VARIANTS",
-] 
+]

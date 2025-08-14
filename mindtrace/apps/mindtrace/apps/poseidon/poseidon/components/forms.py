@@ -5,12 +5,15 @@ while keeping the exact styling patterns.
 """
 
 import reflex as rx
-from poseidon.state.auth import AuthState
+
 from poseidon.components_v2.core.button import button
-from poseidon.components_v2.forms import text_input_with_form, select_input_with_form
+from poseidon.components_v2.forms import select_input_with_form, text_input_with_form
+from poseidon.state.auth import AuthState
 
 
-def form_input_with_label(label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
+def form_input_with_label(
+    label: str, placeholder: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"
+):
     """Form input with label - using mindtrace styling. Supports size variants: small, medium, large (default)."""
     return text_input_with_form(
         label=label,
@@ -22,7 +25,15 @@ def form_input_with_label(label: str, placeholder: str, input_type: str = "text"
     )
 
 
-def form_input_with_label_and_hint(label: str, placeholder: str, hint: str, input_type: str = "text", name: str = "", required: bool = False, size: str = "large"):
+def form_input_with_label_and_hint(
+    label: str,
+    placeholder: str,
+    hint: str,
+    input_type: str = "text",
+    name: str = "",
+    required: bool = False,
+    size: str = "large",
+):
     """Form input with label and hint - using mindtrace styling. Supports size variants: small, medium, large (default)."""
     return text_input_with_form(
         label=label,
@@ -56,7 +67,7 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
             rx.vstack(
                 form_input_with_label("Email", "example@company.com", "email", "email", True, "medium"),
                 form_input_with_label("Password", "Enter your password", "password", "password", True, "medium"),
-                modern_button("Sign In", "submit", "medium"),
+                modern_button("Sign In", "submit", "md"),
                 # Error display
                 rx.cond(
                     AuthState.error,
@@ -65,7 +76,7 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
                         color="red",
                         font_size="12px",
                         text_align="center",
-                    )
+                    ),
                 ),
                 width="100%",
                 spacing="3",
@@ -81,7 +92,13 @@ def login_form(title: str = "Sign in to your account", subtitle: str = "Enter yo
     )
 
 
-def registration_form(title: str = "Create your account", subtitle: str = "Fill out the form to get started", extra_fields=None, submit_label="Create Account", on_submit=AuthState.register):
+def registration_form(
+    title: str = "Create your account",
+    subtitle: str = "Fill out the form to get started",
+    extra_fields=None,
+    submit_label="Create Account",
+    on_submit=AuthState.register,
+):
     """Registration form - keeps Buridan UI styling."""
     if extra_fields is None:
         extra_fields = []
@@ -114,12 +131,12 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
                         AuthState.available_organizations,
                         "organization_id",
                         True,
-                        "medium"
+                        "medium",
                     ),
                 ),
                 # Inject extra fields here (e.g., admin key input)
                 *extra_fields,
-                modern_button(submit_label, "submit", "medium"),
+                modern_button(submit_label, "submit", "md"),
                 # Error display
                 rx.cond(
                     AuthState.error,
@@ -128,7 +145,7 @@ def registration_form(title: str = "Create your account", subtitle: str = "Fill 
                         color="red",
                         font_size="12px",
                         text_align="center",
-                    )
+                    ),
                 ),
                 width="100%",
                 spacing="1",
@@ -193,10 +210,9 @@ def contact_form(title: str = "Contact us", subtitle: str = "We'd love to hear f
     )
 
 
-
-
-
-def modern_select_field(label: str, placeholder: str, options, name: str = "", required: bool = False, size: str = "large"):
+def modern_select_field(
+    label: str, placeholder: str, options, name: str = "", required: bool = False, size: str = "large"
+):
     """Modern select field - using new select component. Supports size variants: small, medium, large (default)."""
     return select_input_with_form(
         label=label,
@@ -208,11 +224,6 @@ def modern_select_field(label: str, placeholder: str, options, name: str = "", r
     )
 
 
-def modern_button(text: str, button_type: str = "submit", size: str = "large", **kwargs):
+def modern_button(text: str, button_type: str = "submit", size: str = "md", **kwargs):
     """Modern button - using mindtrace styling. Supports size variants: small, medium, large (default)."""
-    return button(
-        text=text,
-        button_type=button_type,
-        size=size,
-        **kwargs
-    )
+    return button(text=text, type=button_type, size=size, **kwargs)

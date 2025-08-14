@@ -8,23 +8,18 @@ Provides reusable layout patterns used across multiple pages:
 """
 
 import reflex as rx
+
 from poseidon.state.auth import AuthState
-from .mindtrace_layouts import background_mindtrace
+from poseidon.styles.global_styles import THEME
 
 
 def page_container(*children, **props) -> rx.Component:
     """Standard page container with sidebar spacing and mindtrace background."""
     return rx.box(
-        rx.box(
-        *children,
-        padding="2rem",
-        min_height="100vh",
-            position="relative",
-            z_index="1",
-        **props
-        ),
+        rx.box(*children, display="flex", flex_direction="column", gap=THEME.layout.content_gap, z_index="1", **props),
         min_height="100vh",
         position="relative",
+        bg=THEME.colors.bg,
     )
 
 
@@ -48,7 +43,7 @@ def authenticated_page_wrapper(content_func, required_role=None) -> rx.Component
                     rx.box("Redirecting...", on_mount=AuthState.redirect_if_not_super_admin),
                 )
             )
-    
+
     # For regular authentication check
     return rx.box(
         rx.cond(
@@ -81,7 +76,7 @@ def content_section(*children, **props) -> rx.Component:
         border_radius="0.75rem",
         background=rx.color("gray", 2),
         border=f"1px solid {rx.color('gray', 6)}",
-        **props
+        **props,
     )
 
 
@@ -101,18 +96,14 @@ def two_column_layout(left_content, right_content, left_width="2fr", right_width
                 "grid-template-columns": "1fr",
                 "grid-template-areas": '"left" "right"',
             }
-        }
+        },
     )
 
 
 def three_column_grid(*children, **props) -> rx.Component:
     """Three-column responsive grid for cards."""
     return rx.box(
-        *children,
-        display="grid",
-        grid_template_columns="repeat(auto-fit, minmax(300px, 1fr))",
-        gap="1.5rem",
-        **props
+        *children, display="grid", grid_template_columns="repeat(auto-fit, minmax(300px, 1fr))", gap="1.5rem", **props
     )
 
 
@@ -126,7 +117,7 @@ def card_grid(*children, min_card_width="280px", **props) -> rx.Component:
         justify_items="center",
         align_items="start",
         width="100%",
-        **props
+        **props,
     )
 
 
@@ -189,4 +180,4 @@ def error_boundary(error_var, error_content, main_content) -> rx.Component:
             padding="2rem",
         ),
         main_content,
-    ) 
+    )

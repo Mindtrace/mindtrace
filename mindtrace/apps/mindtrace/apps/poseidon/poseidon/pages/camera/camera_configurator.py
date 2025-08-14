@@ -1,22 +1,19 @@
-from poseidon.styles.global_styles import THEME
 import reflex as rx
-from poseidon.components_v2.containers.page_container import page_container
+
+from poseidon.components.camera_card import camera_card
+from poseidon.components.camera_config_modal import camera_config_modal
 from poseidon.components.image_components import (
     COLORS,
-    TYPOGRAPHY,
-    SIZING,
     SPACING,
-    content_variants,
-    button_variants,
     card_variants,
 )
-from poseidon.state.camera import CameraState
-from poseidon.state.auth import AuthState
-from poseidon.components.camera_config_modal import camera_config_modal
-from poseidon.components.camera_card import camera_card
-from poseidon.components.status_banner import status_banner
 from poseidon.components.popups import camera_assignment_popup
+from poseidon.components.status_banner import status_banner
+from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.core.button import button
+from poseidon.state.auth import AuthState
+from poseidon.state.camera import CameraState
+from poseidon.styles.global_styles import THEME
 
 
 def project_selector() -> rx.Component:
@@ -205,14 +202,12 @@ def camera_configurator_content() -> rx.Component:
                     icon=rx.icon("refresh-ccw"),
                     on_click=CameraState.fetch_camera_list,
                     variant="secondary",
-                    size="sm",
                 ),
                 button(
                     "Close All Cameras",
                     icon=rx.icon("x"),
                     on_click=CameraState.close_all_cameras,
-                    variant="danger",
-                    size="sm",
+                    variant="secondary",
                 ),
             ],
         ),

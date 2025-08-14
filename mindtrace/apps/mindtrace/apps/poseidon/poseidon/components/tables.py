@@ -5,18 +5,20 @@ while keeping the exact styling patterns.
 """
 
 import reflex as rx
-from poseidon.state.user_management import UserManagementState
+
+from poseidon.components.popups import edit_organization_popup, edit_user_popup, show_admin_key_popup
+from poseidon.components_v2.core.button import button
 from poseidon.state.auth import AuthState
-from poseidon.components.popups import edit_user_popup, edit_organization_popup, show_admin_key_popup
 from poseidon.state.organization_management import OrganizationManagementState
+from poseidon.state.user_management import UserManagementState
 
 
 def user_management_table():
     """User management table - keeps Buridan UI styling."""
-    
+
     def create_user_header(title: str):
         return rx.table.column_header_cell(title)
-    
+
     def create_user_row(user):
         return rx.table.row(
             rx.table.cell(user["username"], cursor="pointer"),
@@ -30,17 +32,16 @@ def user_management_table():
                         color=rx.color("gray", 11),
                     )
                 ),
-                rx.fragment()
+                rx.fragment(),
             ),
             # Project assignments column
             rx.table.cell(
-                rx.button(
-                    "Manage Projects",
+                button(
+                    text="Manage Projects",
+                    icon=rx.icon("project"),
                     on_click=lambda: UserManagementState.open_project_management_dialog(user["id"]),
-                    size="1",
-                    color_scheme="blue",
-                    variant="soft",
-                    cursor="pointer",
+                    variant="primary",
+                    size="sm",
                 ),
                 max_width="200px",
             ),
@@ -75,7 +76,7 @@ def user_management_table():
                             rx.cond(
                                 user["is_active"],
                                 rx.button(
-                                    "Deactivate", 
+                                    "Deactivate",
                                     size="1",
                                     color_scheme="red",
                                     variant="surface",
@@ -84,7 +85,7 @@ def user_management_table():
                                 ),
                                 rx.button(
                                     "Activate",
-                                    size="1", 
+                                    size="1",
                                     color_scheme="green",
                                     variant="surface",
                                     cursor="pointer",
@@ -95,26 +96,21 @@ def user_management_table():
                         ),
                         spacing="2",
                     ),
-                    rx.text(
-                        "You",
-                        font_size="12px",
-                        color=rx.color("gray", 11),
-                        style={"font-style": "italic"}
-                    ),
+                    rx.text("You", font_size="12px", color=rx.color("gray", 11), style={"font-style": "italic"}),
                 ),
             ),
             _hover={"bg": rx.color(color="gray", shade=4)},
             align="center",
             white_space="nowrap",
         )
-    
+
     # Dynamic columns based on user role
     user_columns = rx.cond(
         AuthState.is_super_admin,
         ["Username", "Email", "Organization", "Project Assignments", "Status", "Actions"],
-        ["Username", "Email", "Project Assignments", "Status", "Actions"]
+        ["Username", "Email", "Project Assignments", "Status", "Actions"],
     )
-    
+
     return rx.vstack(
         # Table controls
         rx.hstack(
@@ -148,21 +144,21 @@ def user_management_table():
 
 def data_table(data: list, columns: list, title: str = "Data Table"):
     """Generic data table - keeps Buridan UI styling."""
-    
+
     def create_header(col: str):
         return rx.table.column_header_cell(col)
-    
+
     def create_row(item):
         def fill_cell(value):
             return rx.table.cell(f"{value[1]}", cursor="pointer")
-        
+
         return rx.table.row(
             rx.foreach(item, fill_cell),
             _hover={"bg": rx.color(color="gray", shade=4)},
             align="center",
             white_space="nowrap",
         )
-    
+
     return rx.vstack(
         rx.heading(title, size="3", weight="bold", margin_bottom="4"),
         rx.table.root(
@@ -182,7 +178,7 @@ def data_table(data: list, columns: list, title: str = "Data Table"):
 
 def project_assignments_table(assignments: list):
     """Project assignments table - keeps Buridan UI styling."""
-    
+
     def create_assignment_row(assignment):
         return rx.table.row(
             rx.table.cell(assignment.get("project_id", ""), cursor="pointer"),
@@ -197,7 +193,8 @@ def project_assignments_table(assignments: list):
                             border_radius="4px",
                             font_size="11px",
                             margin="1px",
-                        ) for role in assignment.get("roles", [])
+                        )
+                        for role in assignment.get("roles", [])
                     ],
                     spacing="1",
                     flex_wrap="wrap",
@@ -207,7 +204,7 @@ def project_assignments_table(assignments: list):
                 rx.button(
                     "Edit Roles",
                     size="1",
-                    color_scheme="gray", 
+                    color_scheme="gray",
                     variant="surface",
                     cursor="pointer",
                 ),
@@ -215,9 +212,9 @@ def project_assignments_table(assignments: list):
             _hover={"bg": rx.color(color="gray", shade=4)},
             align="center",
         )
-    
+
     assignment_columns = ["Project ID", "Roles", "Actions"]
-    
+
     return rx.vstack(
         rx.table.root(
             rx.table.header(
@@ -234,26 +231,16 @@ def project_assignments_table(assignments: list):
     )
 
 
-
-
-
 def organization_management_table():
     """Organization management table - keeps Buridan UI styling."""
-    
+
     def create_org_header(title: str):
         return rx.table.column_header_cell(title)
-    
+
     def create_org_row(org):
         return rx.table.row(
             rx.table.cell(org.name, cursor="pointer"),
-            rx.table.cell(
-                rx.cond(
-                    org.description,
-                    org.description,
-                    "No description"
-                ),
-                cursor="pointer"
-            ),
+            rx.table.cell(rx.cond(org.description, org.description, "No description"), cursor="pointer"),
             rx.table.cell(
                 rx.text(
                     org.subscription_plan.title(),
@@ -264,15 +251,8 @@ def organization_management_table():
             ),
             rx.table.cell(
                 rx.text(
-                    rx.cond(
-                        org.max_users,
-                        f"{org.max_users} users, ",
-                        "50 users, "
-                    ) + rx.cond(
-                        org.max_projects,
-                        f"{org.max_projects} projects",
-                        "10 projects"
-                    ),
+                    rx.cond(org.max_users, f"{org.max_users} users, ", "50 users, ")
+                    + rx.cond(org.max_projects, f"{org.max_projects} projects", "10 projects"),
                     font_size="12px",
                     color=rx.color("gray", 11),
                 )
@@ -298,20 +278,16 @@ def organization_management_table():
                         OrganizationManagementState.can_deactivate_organization(org.id),
                         rx.cond(
                             org.is_active,
-                            rx.button(
-                                "Deactivate", 
-                                size="1",
-                                color_scheme="red",
+                            button(
+                                text="Deactivate",
                                 variant="surface",
-                                cursor="pointer",
+                                size="sm",
                                 on_click=OrganizationManagementState.deactivate_organization(org.id),
                             ),
-                            rx.button(
-                                "Activate",
-                                size="1", 
-                                color_scheme="green",
+                            button(
+                                text="Activate",
                                 variant="surface",
-                                cursor="pointer",
+                                size="sm",
                                 on_click=OrganizationManagementState.activate_organization(org.id),
                             ),
                         ),
@@ -324,9 +300,9 @@ def organization_management_table():
             align="center",
             white_space="nowrap",
         )
-    
+
     org_columns = ["Name", "Description", "Plan", "Limits", "Status", "Actions"]
-    
+
     return rx.vstack(
         # Table controls
         rx.hstack(

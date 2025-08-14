@@ -1,7 +1,9 @@
 import reflex as rx
+
+from poseidon.styles.global_styles import T
+
 from .header import Header
 from .sidebar.sidebar import Sidebar
-from poseidon.styles.global_styles import T
 
 
 def AppShell(

@@ -1,5 +1,7 @@
 import reflex as rx
-from poseidon.styles.global_styles import ANIMATIONS
+
+from poseidon.styles.global_styles import THEME as T
+
 
 def main_css_animation() -> rx.Component:
     """
@@ -8,12 +10,12 @@ def main_css_animation() -> rx.Component:
     return rx.html(
         f"""
         <style>
-            {ANIMATIONS["float"]}
-            {ANIMATIONS["shimmer"]}
-            {ANIMATIONS["fadeInUp"]}
-            {ANIMATIONS["slideInUp"]}
-            {ANIMATIONS["fadeIn"]}
-            {ANIMATIONS["shake"]}
+            {T.animations.float}
+            {T.animations.shimmer}
+            {T.animations.fadeInUp}
+            {T.animations.slideInUp}
+            {T.animations.fadeIn}
+            {T.animations.shake}
             
 
             

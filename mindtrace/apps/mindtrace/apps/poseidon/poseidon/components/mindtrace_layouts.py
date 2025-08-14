@@ -1,7 +1,8 @@
 """Mindtrace Layout Components - Background, Page Layout, and CSS Animations."""
 
 import reflex as rx
-from poseidon.styles.global_styles import COLORS, SIZING, ANIMATIONS
+
+from poseidon.styles.global_styles import THEME as T
 
 
 def background_mindtrace() -> rx.Component:
@@ -63,7 +64,8 @@ def page_layout_mindtrace(children, **kwargs) -> rx.Component:
             rx.box(
                 *children,
                 width="100%",
-                padding=SIZING["container_padding"],
+                padding=T.layout.content_pad,
+                margin=T.layout.content_gap,
             ),
             center_content=True,
             style={
@@ -72,15 +74,15 @@ def page_layout_mindtrace(children, **kwargs) -> rx.Component:
                 "align_items": "center",
                 "justify_content": "center",
                 "padding": "1.5rem 0",
-            }
+            },
         ),
         style={
             "min_height": "100vh",
-            "background": COLORS["background_primary"],
+            "background": T.colors.bg,
             "width": "100%",
             "position": "relative",
         },
-        **kwargs
+        **kwargs,
     )
 
 
@@ -91,12 +93,12 @@ def css_animations_mindtrace() -> rx.Component:
     return rx.html(
         f"""
         <style>
-            {ANIMATIONS["float"]}
-            {ANIMATIONS["shimmer"]}
-            {ANIMATIONS["fadeInUp"]}
-            {ANIMATIONS["slideInUp"]}
-            {ANIMATIONS["fadeIn"]}
-            {ANIMATIONS["shake"]}
+            {T.animations.float}
+            {T.animations.shimmer}
+            {T.animations.fadeInUp}
+            {T.animations.slideInUp}
+            {T.animations.fadeIn}
+            {T.animations.shake}
             
 
             
@@ -177,4 +179,4 @@ def css_animations_mindtrace() -> rx.Component:
             }}
         </style>
         """
-    ) 
+    )

@@ -1,19 +1,21 @@
 import reflex as rx
+
 from poseidon.components import (
-    base_management_page, standard_filter_bar, standard_table_actions,
-    refresh_button, success_message, error_message
+    base_management_page,
+    standard_filter_bar,
+    standard_table_actions,
 )
 from poseidon.components.popups import add_project_popup, edit_project_popup
-from poseidon.state.project_management import ProjectManagementState, ProjectData
-from poseidon.state.auth import AuthState
+from poseidon.components_v2.core.button import button
+from poseidon.state.project_management import ProjectData, ProjectManagementState
 
 
 def project_management_table():
     """Project management table with filtering and actions."""
-    
+
     def create_project_header(title: str):
         return rx.table.column_header_cell(title)
-    
+
     def create_project_row(project: ProjectData):
         return rx.table.row(
             rx.table.cell(project.name, cursor="pointer"),
@@ -40,10 +42,10 @@ def project_management_table():
             align="center",
             white_space="nowrap",
         )
-    
+
     # Dynamic columns based on user role
     project_columns = ["Name", "Description", "Organization", "Status", "Actions"]
-    
+
     return rx.vstack(
         # Table controls
         rx.hstack(
@@ -88,7 +90,6 @@ def project_management_content():
     return rx.vstack(
         # Project management table
         project_management_table(),
-        
         # Dialogs
         rx.dialog.root(
             add_project_popup(),
@@ -96,7 +97,6 @@ def project_management_content():
             on_open_change=ProjectManagementState.set_add_project_dialog_open,
         ),
         edit_project_popup(),
-        
         width="100%",
         spacing="4",
     )
@@ -113,14 +113,19 @@ def project_management_page() -> rx.Component:
         state_class=ProjectManagementState,
         content_component=project_management_content,
         actions=[
-            refresh_button(
+            button(
+                text="Refresh",
+                icon=rx.icon("refresh-ccw"),
+                variant="secondary",
+                size="sm",
                 on_click=ProjectManagementState.load_projects,
                 loading=ProjectManagementState.loading,
             ),
-            rx.button(
-                "Add Project",
-                size="3",
-                color_scheme="blue",
+            button(
+                text="Add Project",
+                icon=rx.icon("plus"),
+                variant="primary",
+                size="sm",
                 on_click=ProjectManagementState.open_add_project_dialog,
             ),
         ],
@@ -128,11 +133,3 @@ def project_management_page() -> rx.Component:
         required_role="admin",
         on_mount=ProjectManagementState.load_projects,
     )
-
-
-# Register the page
-project_management_page = rx.page(
-    route="/project-management", 
-    title="Project Management", 
-    on_load=ProjectManagementState.load_projects
-)(project_management_page) 
