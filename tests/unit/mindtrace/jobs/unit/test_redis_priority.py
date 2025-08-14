@@ -15,7 +15,7 @@ def mock_redis():
 
 
 def test_push_calls_zadd(mock_redis):
-    queue = RedisPriorityQueue("testq", host="localhost", port=6379, db=0)
+    queue = RedisPriorityQueue("testq", host="localhost", port=6381, db=0)
     with patch("pickle.dumps", return_value=b"data"):
         queue.push("item", priority=5)
         assert mock_redis.zadd.called

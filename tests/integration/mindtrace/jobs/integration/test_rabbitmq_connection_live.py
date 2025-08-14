@@ -10,7 +10,7 @@ class TestRabbitMQConnection:
     def test_connection_lifecycle(self):
         connection = RabbitMQConnection(
             host="localhost",
-            port=5672,
+            port=5673,
             username="user",
             password="password",
         )
@@ -27,7 +27,7 @@ class TestRabbitMQConnection:
     def test_context_manager(self):
         connection = RabbitMQConnection(
             host="localhost",
-            port=5672,
+            port=5673,
             username="user",
             password="password",
         )

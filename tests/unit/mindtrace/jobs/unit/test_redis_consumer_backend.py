@@ -11,7 +11,7 @@ def backend():
     with patch("mindtrace.jobs.redis.consumer_backend.RedisConnection") as mock_conn_cls:
         mock_conn = MagicMock()
         mock_conn_cls.return_value = mock_conn
-        backend = RedisConsumerBackend("q", MagicMock(), "localhost", 6379, 0)
+        backend = RedisConsumerBackend("q", MagicMock(), "localhost", 6381, 0)
         backend.connection = mock_conn
         yield backend, mock_conn
 

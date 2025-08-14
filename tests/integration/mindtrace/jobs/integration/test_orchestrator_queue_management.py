@@ -34,7 +34,7 @@ class TestOrchestratorQueueManagement:
 
     @pytest.mark.redis
     def test_redis_backend_clean_and_delete_queue(self, unique_queue_name):
-        client = RedisClient(host="localhost", port=6379, db=0)
+        client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(client)
         queue_name = unique_queue_name("redis_queue_mgmt")
         schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
@@ -57,7 +57,7 @@ class TestOrchestratorQueueManagement:
 
     @pytest.mark.rabbitmq
     def test_rabbitmq_backend_clean_and_delete_queue(self, unique_queue_name):
-        client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(client)
         queue_name = unique_queue_name("rabbitmq_queue_mgmt")
         schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)

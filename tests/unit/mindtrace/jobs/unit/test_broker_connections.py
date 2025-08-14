@@ -41,7 +41,7 @@ class TestMockedConnections:
         mock_conn_instance.is_open = True
         mock_blocking_conn.return_value = mock_conn_instance
 
-        connection = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
+        connection = RabbitMQConnection(host="localhost", port=5671, username="user", password="password")
         connection.connect()
 
         assert connection.connection is mock_conn_instance

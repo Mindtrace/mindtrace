@@ -3,6 +3,7 @@ from typing import List
 import pytest
 from pydantic import BaseModel
 from redis_om import Field
+from redis_om.connections import get_redis_connection
 
 from mindtrace.database import (
     DocumentNotFoundError,
@@ -11,7 +12,7 @@ from mindtrace.database import (
     RedisMindtraceODMBackend,
 )
 
-REDIS_URL = "redis://localhost:6379"
+REDIS_URL = "redis://localhost:6380"
 
 
 class UserCreate(BaseModel):
@@ -37,18 +38,14 @@ def redis_backend():
     backend.initialize()
 
     # Clean up any existing data before test
-    redis = backend.redis
-    pattern = f"{UserDoc.Meta.global_key_prefix}:*"
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    for user in backend.all():
+        backend.delete(user.pk)
 
     yield backend
 
     # Clean up after test
-    keys = redis.keys(pattern)
-    if keys:
-        redis.delete(*keys)
+    for user in backend.all():
+        backend.delete(user.pk)
 
 
 def test_redis_backend_crud(redis_backend):
@@ -64,7 +61,7 @@ def test_redis_backend_crud(redis_backend):
     assert fetched.email == "alice@test.com"
 
     all_users = redis_backend.all()
-    assert len(all_users) >= 1
+    assert len(all_users) == 1
 
     redis_backend.delete(inserted.pk)
 
