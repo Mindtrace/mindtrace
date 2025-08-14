@@ -8,9 +8,13 @@ Displays user profile information with:
 """
 
 import reflex as rx
+
 from poseidon.components import (
-    sidebar, app_header, profile_info_card, user_profile_stats, 
-    page_header, page_container, authenticated_page_wrapper
+    authenticated_page_wrapper,
+    page_container,
+    page_header,
+    profile_info_card,
+    user_profile_stats,
 )
 from poseidon.state.auth import AuthState
 
@@ -21,27 +25,6 @@ def profile_content() -> rx.Component:
     All state and event logic is handled in the page/state, not in the components.
     """
     return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        # Main content using page_container with centered layout
         page_container(
             rx.center(
                 rx.vstack(
@@ -70,22 +53,22 @@ def profile_content() -> rx.Component:
                             {"label": "Username", "value": AuthState.current_username},
                             {"label": "User ID", "value": AuthState.user_id},
                             {"label": "Organization ID", "value": AuthState.user_organization_id},
-                            {"label": "Organization Role", "value": rx.cond(
-                                AuthState.user_org_role != "",
-                                AuthState.role_display,
-                                "No role assigned"
-                            )},
-                            {"label": "Admin Status", "value": rx.cond(
-                                AuthState.is_super_admin,
-                                "Super Admin",
-                                rx.cond(
-                                    AuthState.is_admin,
-                                    "Organization Admin",
-                                    "Regular User"
-                                )
-                            )},
+                            {
+                                "label": "Organization Role",
+                                "value": rx.cond(
+                                    AuthState.user_org_role != "", AuthState.role_display, "No role assigned"
+                                ),
+                            },
+                            {
+                                "label": "Admin Status",
+                                "value": rx.cond(
+                                    AuthState.is_super_admin,
+                                    "Super Admin",
+                                    rx.cond(AuthState.is_admin, "Organization Admin", "Regular User"),
+                                ),
+                            },
                             {"label": "Authentication Status", "value": "Active"},
-                        ]
+                        ],
                     ),
                     spacing="0",
                     width="100%",
@@ -109,4 +92,4 @@ def profile_page() -> rx.Component:
     Profile page with authentication check.
     Uses unified authentication wrapper for consistency.
     """
-    return authenticated_page_wrapper(profile_content) 
+    return authenticated_page_wrapper(profile_content)

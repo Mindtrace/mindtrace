@@ -1,21 +1,34 @@
 """
 Image gallery page for authenticated users.
 """
+
 import reflex as rx
 from poseidon.components.image_components import (
-    image_card, pagination_controls, image_modal, search_bar, 
-    COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants,button_variants,card_variants
+    image_card,
+    pagination_controls,
+    image_modal,
+    search_bar,
+    COLORS,
+    TYPOGRAPHY,
+    SIZING,
+    SPACING,
+    content_variants,
+    button_variants,
+    card_variants,
 )
+from poseidon.components_v2.core import button
 from poseidon.components import (
-    sidebar, app_header, authentication_required_component, page_container
+    authentication_required_component,
 )
 from poseidon.state.auth import AuthState
 from poseidon.state.images import ImageState, ImageDict
 
+from poseidon.components_v2.containers.page_container import page_container
+
 
 def image_card(image: rx.Var[ImageDict]) -> rx.Component:
     """Create an image card component"""
-    
+
     # Custom styles that don't conflict with card_variants
     custom_styles = {
         "width": "100%",
@@ -23,9 +36,9 @@ def image_card(image: rx.Var[ImageDict]) -> rx.Component:
         "_hover": {
             "transform": "translateY(-2px)",
             "box_shadow": "0 8px 25px rgba(0, 0, 0, 0.15)",
-        }
+        },
     }
-    
+
     return rx.box(
         rx.vstack(
             rx.box(
@@ -54,11 +67,7 @@ def image_card(image: rx.Var[ImageDict]) -> rx.Component:
                         width="100%",
                     ),
                     rx.text(
-                        rx.cond(
-                            image.created_at,
-                            image.created_at[:10],
-                            "No date"
-                        ),
+                        rx.cond(image.created_at, image.created_at[:10], "No date"),
                         font_size=TYPOGRAPHY["font_sizes"]["xs"],
                         color=COLORS["text_muted"],
                     ),
@@ -77,14 +86,15 @@ def image_card(image: rx.Var[ImageDict]) -> rx.Component:
         on_click=lambda: ImageState.open_image_modal(image),
     )
 
+
 def pagination_controls() -> rx.Component:
     """Create pagination controls"""
     return rx.hstack(
-        rx.button(
+        button(
             "← Previous",
             on_click=ImageState.prev_page,
             disabled=ImageState.current_page <= 1,
-            **button_variants["secondary"],
+            variant="secondary",
         ),
         rx.hstack(
             rx.text(
@@ -99,17 +109,18 @@ def pagination_controls() -> rx.Component:
             ),
             spacing="2",
         ),
-        rx.button(
+        button(
             "Next →",
             on_click=ImageState.next_page,
             disabled=ImageState.current_page >= ImageState.total_pages,
-            **button_variants["secondary"],
+            variant="secondary",
         ),
         justify="between",
         align="center",
         width="100%",
         margin_top=SPACING["lg"],
     )
+
 
 def image_modal() -> rx.Component:
     """Image detail modal"""
@@ -123,10 +134,10 @@ def image_modal() -> rx.Component:
                         font_size=TYPOGRAPHY["font_sizes"]["xl"],
                         color=COLORS["text"],
                     ),
-                    rx.button(
+                    button(
                         "✕",
                         on_click=ImageState.close_modal,
-                        **button_variants["ghost"],
+                        variant="ghost",
                         font_size=TYPOGRAPHY["font_sizes"]["lg"],
                     ),
                     justify="between",
@@ -177,7 +188,7 @@ def image_modal() -> rx.Component:
                                     rx.cond(
                                         ImageState.selected_image.created_at,
                                         ImageState.selected_image.created_at[:10],
-                                        "Unknown"
+                                        "Unknown",
                                     ),
                                     color=COLORS["text_muted"],
                                     font_size=TYPOGRAPHY["font_sizes"]["sm"],
@@ -196,7 +207,7 @@ def image_modal() -> rx.Component:
                                     rx.cond(
                                         ImageState.selected_image.file_size,
                                         rx.text(ImageState.selected_image.file_size, " bytes"),
-                                        "Unknown"
+                                        "Unknown",
                                     ),
                                     color=COLORS["text_muted"],
                                     font_size=TYPOGRAPHY["font_sizes"]["sm"],
@@ -214,8 +225,10 @@ def image_modal() -> rx.Component:
                                 rx.text(
                                     rx.cond(
                                         ImageState.selected_image.width & ImageState.selected_image.height,
-                                        rx.text(ImageState.selected_image.width, " × ", ImageState.selected_image.height),
-                                        "Unknown"
+                                        rx.text(
+                                            ImageState.selected_image.width, " × ", ImageState.selected_image.height
+                                        ),
+                                        "Unknown",
                                     ),
                                     color=COLORS["text_muted"],
                                     font_size=TYPOGRAPHY["font_sizes"]["sm"],
@@ -273,6 +286,7 @@ def image_modal() -> rx.Component:
         ),
     )
 
+
 def search_bar() -> rx.Component:
     """Search bar component"""
     return rx.hstack(
@@ -282,107 +296,69 @@ def search_bar() -> rx.Component:
             on_change=ImageState.set_search_query,
             width="300px",
         ),
-        rx.button(
+        button(
             "Search",
             on_click=lambda: ImageState.search_images(ImageState.search_query),
-            **button_variants["primary"],
+            variant="primary",
         ),
-        rx.button(
+        button(
             "Clear",
             on_click=lambda: ImageState.search_images(""),
-            **button_variants["ghost"],
+            variant="ghost",
         ),
         spacing="2",
         align="center",
     )
 
+
 def image_gallery_content() -> rx.Component:
     """Image gallery content using unified Poseidon UI components."""
-    return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        
-        # Main content using page_container
-        page_container(
-            # Page header
+    return page_container(
+        # Search and filters
+        search_bar(),
+        # Image grid
+        rx.cond(
+            ImageState.is_loading,
             rx.box(
-                rx.heading("Image Viewer", **content_variants["page_title"]),
-                rx.text("Browse and manage your image collection", **content_variants["page_subtitle"]),
-                **content_variants["page_header"]
+                rx.spinner(size="3"),
+                rx.text("Loading images...", margin_left=SPACING["sm"], color=COLORS["text_muted"]),
+                display="flex",
+                align_items="center",
+                justify_content="center",
+                padding=SPACING["xl"],
             ),
-            
-            # Search and filters
-            search_bar(),
-            
-            # Image grid
             rx.cond(
-                ImageState.is_loading,
-                rx.box(
-                    rx.spinner(size="3"),
-                    rx.text("Loading images...", margin_left=SPACING["sm"], color=COLORS["text_muted"]),
-                    display="flex",
-                    align_items="center",
-                    justify_content="center",
-                    padding=SPACING["xl"],
-                ),
-                rx.cond(
-                    ImageState.images.length() > 0,
-                    rx.vstack(
-                        rx.box(
-                            rx.foreach(ImageState.images, image_card),
-                            display="grid",
-                            grid_template_columns="repeat(auto-fill, minmax(250px, 1fr))",
-                            gap=SPACING["md"],
-                            padding=SPACING["md"],
-                            width="100%",
-                        ),
-                        pagination_controls(),
-                        spacing="4",
+                ImageState.images.length() > 0,
+                rx.vstack(
+                    rx.box(
+                        rx.foreach(ImageState.images, image_card),
+                        display="grid",
+                        grid_template_columns="repeat(auto-fill, minmax(250px, 1fr))",
+                        gap=SPACING["md"],
+                        padding=SPACING["md"],
                         width="100%",
                     ),
-                    rx.box(
-                        rx.text(
-                            rx.cond(ImageState.search_query, "No images found", "No images available"),
-                            color=COLORS["text_muted"],
-                            font_size=TYPOGRAPHY["font_sizes"]["lg"],
-                        ),
-                        padding=SPACING["xl"],
-                        text_align="center",
+                    pagination_controls(),
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.box(
+                    rx.text(
+                        rx.cond(ImageState.search_query, "No images found", "No images available"),
+                        color=COLORS["text_muted"],
+                        font_size=TYPOGRAPHY["font_sizes"]["lg"],
                     ),
+                    padding=SPACING["xl"],
+                    text_align="center",
                 ),
             ),
-            
-            margin_top="60px",  # Account for header
         ),
-        
         # Image modal
         image_modal(),
-        
-        width="100%",
-        min_height="100vh",
-        position="relative",
-        
-        # Load images on mount
+        title="Image Viewer",
+        sub_text="Browse and manage your image collection",
         on_mount=lambda: ImageState.load_images(1),
+        # Load images on mount
     )
 
 

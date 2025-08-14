@@ -1,28 +1,29 @@
 import reflex as rx
-from poseidon.components import sidebar, app_header, page_container, content_section
-from poseidon.components.image_components import (
-    COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants, button_variants, card_variants
-)
-from poseidon.state.camera import CameraState
-from poseidon.state.auth import AuthState
-from poseidon.components.camera_config_modal import camera_config_modal
+
 from poseidon.components.camera_card import camera_card
-from poseidon.components.status_banner import status_banner
+from poseidon.components.camera_config_modal import camera_config_modal
+from poseidon.components.image_components import (
+    COLORS,
+    SPACING,
+    card_variants,
+)
 from poseidon.components.popups import camera_assignment_popup
+from poseidon.components.status_banner import status_banner
+from poseidon.components_v2.containers.page_container import page_container
+from poseidon.components_v2.core.button import button
+from poseidon.state.auth import AuthState
+from poseidon.state.camera import CameraState
+from poseidon.styles.global_styles import THEME
 
 
 def project_selector() -> rx.Component:
     """Project selector dropdown for scoped camera access."""
     return rx.vstack(
         rx.text(
-            rx.cond(
-                CameraState.is_super_admin,
-                "Select Project (Optional for Super Admin)",
-                "Select Project"
-            ),
-            font_size="1rem",
-            font_weight="600",
-            color="#374151",
+            rx.cond(CameraState.is_super_admin, "Select Project (Optional for Super Admin)", "Select Project"),
+            font_size=THEME.typography.fs_base,
+            font_weight=THEME.typography.fw_600,
+            color=THEME.colors.fg,
             margin_bottom="0.5rem",
         ),
         rx.cond(
@@ -38,13 +39,13 @@ def project_selector() -> rx.Component:
             rx.box(
                 rx.text(
                     "No projects available",
-                    color="#6B7280",
-                    font_size="0.875rem",
+                    color=THEME.colors.fg_muted,
+                    font_size=THEME.typography.fs_sm,
                 ),
                 padding="0.75rem",
-                background="#F9FAFB",
-                border_radius="8px",
-                border="1px solid #E5E7EB",
+                background=THEME.colors.surface_2,
+                border_radius=THEME.radius.r_md,
+                border=f"1px solid {THEME.colors.border}",
                 width="100%",
             ),
         ),
@@ -52,15 +53,13 @@ def project_selector() -> rx.Component:
             CameraState.selected_project_name != "",
             rx.text(
                 f"Selected: {CameraState.selected_project_name}",
-                font_size="0.875rem",
-                color="#059669",
-                font_weight="500",
-                margin_top="0.5rem",
+                font_size=THEME.typography.fs_sm,
+                color=THEME.colors.success,
+                font_weight=THEME.typography.fw_500,
+                margin_top=THEME.spacing.space_2,
             ),
         ),
-
-        width="100%",
-        spacing="2",
+        gap=THEME.spacing.space_2,
     )
 
 
@@ -119,7 +118,7 @@ def camera_grid() -> rx.Component:
                     rx.cond(
                         CameraState.is_admin | CameraState.is_super_admin,
                         "Select a project or use 'All Cameras' to view cameras",
-                        "Select a project to view cameras"
+                        "Select a project to view cameras",
                     ),
                     font_size="1.25rem",
                     font_weight="500",
@@ -129,7 +128,7 @@ def camera_grid() -> rx.Component:
                     rx.cond(
                         CameraState.is_admin | CameraState.is_super_admin,
                         "As an admin, you can view all cameras or choose a specific project",
-                        "Choose a project from the dropdown above to access its cameras"
+                        "Choose a project from the dropdown above to access its cameras",
                     ),
                     color="#6B7280",
                     text_align="center",
@@ -146,73 +145,18 @@ def camera_grid() -> rx.Component:
 def camera_configurator_content() -> rx.Component:
     """Camera configurator content using unified Poseidon UI components."""
     return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
-        ),
-        
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
-        ),
-        
         # Main content using page_container
         page_container(
-            # Page header
-            rx.box(
-                rx.heading("Camera Configurator", **content_variants["page_title"]),
-                rx.text("Manage and configure cameras for your projects", **content_variants["page_subtitle"]),
-                **content_variants["page_header"]
-            ),
-            
             # Project selector section
             rx.box(
                 project_selector(),
                 **card_variants["base"],
                 margin_bottom=SPACING["lg"],
             ),
-            
             # Action buttons
             rx.cond(
                 (CameraState.project_id != "") | CameraState.is_super_admin,
                 rx.hstack(
-                    rx.button(
-                        rx.hstack(
-                            rx.text("🔄", font_size="1rem"),
-                            rx.text("Refresh", font_weight="500"),
-                            spacing="2",
-                            align="center",
-                        ),
-                        on_click=CameraState.fetch_camera_list,
-                        **button_variants["secondary"],
-                    ),
-                    rx.button(
-                        rx.hstack(
-                            rx.text("❌", font_size="1rem"),
-                            rx.text("Close All Cameras", font_weight="500"),
-                            spacing="2",
-                            align="center",
-                        ),
-                        on_click=CameraState.close_all_cameras,
-                        variant="solid",
-                        color_scheme="red",
-                        size="2",
-                        _hover={"transform": "translateY(-1px)", "box_shadow": "0 4px 8px rgba(0, 0, 0, 0.15)"},
-                        transition="all 0.2s ease",
-                    ),
-
                     rx.spacer(),
                     rx.cond(
                         CameraState.is_admin | CameraState.is_super_admin,
@@ -234,10 +178,8 @@ def camera_configurator_content() -> rx.Component:
                 ),
                 rx.box(height="2rem"),  # Spacer when no project selected
             ),
-            
             # Status messages
             status_banner(),
-            
             # Camera grid
             rx.cond(
                 CameraState.is_loading,
@@ -251,20 +193,31 @@ def camera_configurator_content() -> rx.Component:
                 ),
                 camera_grid(),
             ),
-            
-            margin_top="60px",  # Account for header
+            # Page header
+            title="Camera Configurator",
+            sub_text="Manage and configure cameras for your projects!!!",
+            tools=[
+                button(
+                    "Refresh",
+                    icon=rx.icon("refresh-ccw"),
+                    on_click=CameraState.fetch_camera_list,
+                    variant="secondary",
+                ),
+                button(
+                    "Close All Cameras",
+                    icon=rx.icon("x"),
+                    on_click=CameraState.close_all_cameras,
+                    variant="secondary",
+                ),
+            ],
         ),
-        
         # Camera configuration modal
         camera_config_modal(),
-        
         # Camera assignment popup
         camera_assignment_popup(),
-        
         width="100%",
         min_height="100vh",
         position="relative",
-        
         # Initialize context on mount
         on_mount=CameraState.initialize_context,
     )
@@ -306,4 +259,4 @@ def camera_configurator_page() -> rx.Component:
             ),
             height="100vh",
         ),
-    ) 
+    )

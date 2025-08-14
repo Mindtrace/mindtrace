@@ -2,6 +2,7 @@ import reflex as rx
 from poseidon.components.image_components import (
     COLORS, TYPOGRAPHY, SIZING, SPACING, content_variants, button_variants, card_variants
 )
+from poseidon.components_v2.core import button
 from poseidon.state.model_deployment import ModelDeploymentState, CameraDict
 
 def camera_selection_card(camera: rx.Var[CameraDict]) -> rx.Component:
@@ -180,17 +181,17 @@ def camera_selection_grid() -> rx.Component:
             
             # Action buttons
             rx.hstack(
-                rx.button(
+                button(
                     "Select All",
                     on_click=ModelDeploymentState.select_all_cameras,
-                    **button_variants["secondary"],
-                    size="2",
+                    variant="secondary",
+                    size="sm",
                 ),
-                rx.button(
+                button(
                     "Clear Selection",
                     on_click=ModelDeploymentState.clear_selections,
-                    **button_variants["secondary"],
-                    size="2",
+                    variant="secondary",
+                    size="sm",
                 ),
                 spacing="2",
             ),

@@ -5,8 +5,8 @@ while keeping the exact styling patterns.
 """
 
 import reflex as rx
-from .mindtrace_forms import input_mindtrace
 
+from .mindtrace_forms import input_mindtrace
 
 # Removed: text_input_with_label - use mindtrace_forms.input_with_label_mindtrace instead
 
@@ -27,7 +27,7 @@ def textarea_with_label(
     rows: int = 4,
     required: bool = False,
     value: str = "",
-    on_change=None
+    on_change=None,
 ):
     """Textarea with label - keeps Buridan UI styling."""
     return rx.box(
@@ -56,7 +56,7 @@ def role_filter_select(value: str = "", on_change=None, roles: list = None):
     """Role filter select - keeps Buridan UI styling."""
     if roles is None:
         roles = ["all_roles", "user", "admin", "super_admin"]
-    
+
     return rx.select(
         roles,
         placeholder="Filter by role",
@@ -70,16 +70,21 @@ def status_filter_select(value: str = "", on_change=None):
     """Status filter select - keeps Buridan UI styling."""
     return rx.select(
         ["active", "inactive", "all"],
-        placeholder="Filter by status", 
+        placeholder="Filter by status",
         value=value,
         on_change=on_change,
         size="2",
     )
 
 
-def filter_bar(search_value: str = "", search_on_change=None, 
-               role_value: str = "", role_on_change=None,
-               status_value: str = "", status_on_change=None):
+def filter_bar(
+    search_value: str = "",
+    search_on_change=None,
+    role_value: str = "",
+    role_on_change=None,
+    status_value: str = "",
+    status_on_change=None,
+):
     """Complete filter bar - keeps Buridan UI styling."""
     return rx.box(
         rx.hstack(
@@ -172,6 +177,3 @@ def info_message(message: str):
         border_radius="8px",
         margin_bottom="1rem",
     )
-
-
-

@@ -117,6 +117,22 @@ class AuthState(rx.State):
         """Check if user is assigned to a specific project"""
         return any(assignment.get("project_id") == project_id for assignment in self.user_project_assignments)
 
+    @rx.var
+    def initials(self) -> str:
+        """Derive user initials for avatar display."""
+        source = self.current_username or self.email or self.username
+        if not source:
+            return "U"
+        if "@" in source:
+            source = source.split("@")[0]
+        parts = [p for p in source.replace("-", " ").replace("_", " ").split() if p]
+        if len(parts) >= 2:
+            return (parts[0][0] + parts[1][0]).upper()
+        clean = "".join(ch for ch in source if ch.isalnum())
+        if len(clean) >= 2:
+            return clean[:2].upper()
+        return (clean[:1].upper() or "U")
+
     async def load_available_organizations(self):
         """Load available organizations for registration."""
         try:

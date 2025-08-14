@@ -9,6 +9,7 @@ from poseidon.state.user_management import UserManagementState
 from poseidon.state.organization_management import OrganizationManagementState
 from poseidon.state.auth import AuthState
 from poseidon.state.project_management import ProjectManagementState
+from poseidon.components_v2.core.button import button
 
 
 border = rx.color_mode_cond(
@@ -441,13 +442,12 @@ def add_organization_popup():
     """Add organization popup dialog using Buridan UI styling."""
     return rx.dialog.root(
         rx.dialog.trigger(
-            rx.button(
-                rx.icon("plus"),
-                "Add Organization",
-                variant="solid",
-                color_scheme="blue",
+            button(
+                icon=rx.icon("plus"),
+                text="Add Organization",
+                variant="primary",
                 cursor="pointer",
-                size="2",
+                size="sm",
             )
         ),
         rx.dialog.content(

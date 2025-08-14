@@ -9,14 +9,18 @@ Comprehensive organization administration interface using unified Poseidon UI co
 """
 
 import reflex as rx
+
 from poseidon.components import (
-    sidebar, app_header, organization_management_table, 
-    add_organization_popup, page_header_with_actions,
-    refresh_button, filter_bar, success_message,
-    page_container,
-    access_denied_component, authentication_required_component
+    access_denied_component,
+    add_organization_popup,
+    authentication_required_component,
+    filter_bar,
+    organization_management_table,
+    success_message,
 )
 from poseidon.components_v2.alerts import Alert
+from poseidon.components_v2.containers.page_container import page_container
+from poseidon.components_v2.core.button import button
 from poseidon.state.auth import AuthState
 from poseidon.state.organization_management import OrganizationManagementState
 
@@ -26,79 +30,44 @@ def organization_management_content() -> rx.Component:
     Organization management dashboard content using unified Poseidon UI components.
     All state and event logic is handled in the page/state, not in the components.
     """
-    return rx.box(
-        # Sidebar navigation (fixed position)
-        rx.box(
-            sidebar(),
-            position="fixed",
-            left="0",
-            top="0",
-            width="240px",
-            height="100vh",
-            z_index="1000",
+    return page_container(
+        # Filters and search using unified filter_bar
+        filter_bar(
+            search_value=OrganizationManagementState.search_query,
+            search_on_change=OrganizationManagementState.set_search_query,
+            role_value=OrganizationManagementState.status_filter,
+            role_on_change=OrganizationManagementState.set_status_filter,
+            status_value=OrganizationManagementState.plan_filter,
+            status_on_change=OrganizationManagementState.set_plan_filter,
         ),
-        
-        # Header (fixed position)
-        rx.box(
-            app_header(),
-            position="fixed",
-            top="0",
-            left="240px",
-            right="0",
-            height="60px",
-            z_index="999",
+        # Success/Error messages using unified components
+        rx.cond(
+            OrganizationManagementState.success,
+            success_message(OrganizationManagementState.success),
         ),
-        
-        # Main content using page_container
-        page_container(
-            # Page header with actions
-            page_header_with_actions(
-                title="Organization Management",
-                description="Manage all organizations across the system",
-                actions=[
-                    refresh_button(
-                        on_click=OrganizationManagementState.load_organizations,
-                        loading=OrganizationManagementState.loading,
-                    ),
-                    add_organization_popup(),
-                ],
+        rx.cond(
+            OrganizationManagementState.error,
+            Alert.create(
+                severity="error",
+                title="Error",
+                message=OrganizationManagementState.error,
             ),
-            
-            # Filters and search using unified filter_bar
-            filter_bar(
-                search_value=OrganizationManagementState.search_query,
-                search_on_change=OrganizationManagementState.set_search_query,
-                role_value=OrganizationManagementState.status_filter,
-                role_on_change=OrganizationManagementState.set_status_filter,
-                status_value=OrganizationManagementState.plan_filter,
-                status_on_change=OrganizationManagementState.set_plan_filter,
-            ),
-            
-            # Success/Error messages using unified components
-            rx.cond(
-                OrganizationManagementState.success,
-                success_message(OrganizationManagementState.success),
-            ),
-            rx.cond(
-                OrganizationManagementState.error,
-                Alert.create(
-                    severity="error",
-                    title="Error",
-                    message=OrganizationManagementState.error,
-                ),
-            ),
-            
-            # Organization management table using unified component
-            organization_management_table(),
-            
-            margin_top="60px",  # Account for header
         ),
-        
-        width="100%",
-        min_height="100vh",
-        position="relative",
-        
-        # Load organizations on mount
+        # Organization management table using unified component
+        organization_management_table(),
+        title="Organization Management",
+        description="Manage all organizations across the system",
+        tools=[
+            button(
+                text="Refresh",
+                icon=rx.icon("refresh-ccw"),
+                on_click=OrganizationManagementState.load_organizations,
+                loading=OrganizationManagementState.loading,
+                variant="secondary",
+                size="sm",
+            ),
+            add_organization_popup(),
+        ],
         on_mount=OrganizationManagementState.load_organizations,
     )
 
@@ -116,4 +85,4 @@ def organization_management_page() -> rx.Component:
             access_denied_component("Super Admin privileges required to access Organization Management."),
         ),
         authentication_required_component(),
-    ) 
+    )

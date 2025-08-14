@@ -9,16 +9,13 @@ Provides small, reusable utility components:
 
 import reflex as rx
 
+from poseidon.styles.global_styles import THEME as T
+
 
 def loading_spinner(size="md", color="blue") -> rx.Component:
     """Animated loading spinner."""
-    size_map = {
-        "sm": "1rem",
-        "md": "1.5rem", 
-        "lg": "2rem",
-        "xl": "3rem"
-    }
-    
+    size_map = {"sm": "1rem", "md": "1.5rem", "lg": "2rem", "xl": "3rem"}
+
     return rx.box(
         rx.box(
             width=size_map.get(size, "1.5rem"),
@@ -88,29 +85,25 @@ def empty_state(
     )
 
 
-def status_badge(
-    status,
-    variant="default",
-    size="sm"
-) -> rx.Component:
+def status_badge(status, variant="default", size="sm") -> rx.Component:
     """Status badge with different variants."""
     color_map = {
         "default": "gray",
-        "success": "green", 
+        "success": "green",
         "warning": "orange",
         "error": "red",
         "info": "blue",
     }
-    
+
     size_map = {
         "sm": {"padding": "0.25rem 0.5rem", "font_size": "0.75rem"},
         "md": {"padding": "0.375rem 0.75rem", "font_size": "0.875rem"},
         "lg": {"padding": "0.5rem 1rem", "font_size": "1rem"},
     }
-    
+
     color = color_map.get(variant, "gray")
     sizing = size_map.get(size, size_map["sm"])
-    
+
     return rx.box(
         status,
         background=rx.color(color, 3),
@@ -119,7 +112,7 @@ def status_badge(
         border_radius="0.375rem",
         font_weight="500",
         display="inline-block",
-        **sizing
+        **sizing,
     )
 
 
@@ -127,23 +120,19 @@ def role_badge(role) -> rx.Component:
     """Role-specific badge with appropriate colors."""
     role_colors = {
         "super_admin": "red",
-        "admin": "orange", 
+        "admin": "orange",
         "user": "blue",
     }
-    
+
     color = role_colors.get(role.lower(), "gray")
     display_name = role.replace("_", " ").title()
-    
+
     return status_badge(display_name, variant=color, size="sm")
 
 
 def conditional_wrapper(condition, wrapper_func, content) -> rx.Component:
     """Conditionally wrap content with a wrapper function."""
-    return rx.cond(
-        condition,
-        wrapper_func(content),
-        content
-    )
+    return rx.cond(condition, wrapper_func(content), content)
 
 
 def tooltip_wrapper(content, tooltip_text, position="top") -> rx.Component:
@@ -153,11 +142,7 @@ def tooltip_wrapper(content, tooltip_text, position="top") -> rx.Component:
         title=tooltip_text,
         position="relative",
         # Add hover styles for better UX
-        **{
-            "&:hover": {
-                "cursor": "help"
-            }
-        }
+        **{"&:hover": {"cursor": "help"}},
     )
 
 
@@ -187,12 +172,7 @@ def skeleton_loader(width="100%", height="1rem", border_radius="0.25rem") -> rx.
         background=rx.color("gray", 4),
         border_radius=border_radius,
         animation="pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        **{
-            "@keyframes pulse": {
-                "0%, 100%": {"opacity": "1"},
-                "50%": {"opacity": "0.5"}
-            }
-        }
+        **{"@keyframes pulse": {"0%, 100%": {"opacity": "1"}, "50%": {"opacity": "0.5"}}},
     )
 
 
@@ -214,7 +194,7 @@ def skeleton_card() -> rx.Component:
 def progress_bar(value, max_value=100, color="blue", height="0.5rem") -> rx.Component:
     """Progress bar component."""
     percentage = (value / max_value) * 100 if max_value > 0 else 0
-    
+
     return rx.box(
         rx.box(
             width=f"{percentage}%",
@@ -239,17 +219,17 @@ def access_denied_component(message: str = "You don't have permission to access 
                 "Access Denied",
                 size="6",
                 weight="bold",
-                color=rx.color("red", 11),
+                color=T.colors.danger,
             ),
             rx.text(
                 message,
-                color=rx.color("gray", 11),
+                color=T.colors.fg_muted,
                 text_align="center",
             ),
             rx.link(
                 "Return to Dashboard",
                 href="/",
-                color=rx.color("blue", 11),
+                color=T.colors.accent,
                 weight="medium",
             ),
             spacing="4",
@@ -268,17 +248,17 @@ def authentication_required_component() -> rx.Component:
                 "Authentication Required",
                 size="6",
                 weight="bold",
-                color=rx.color("red", 11),
+                color=T.colors.danger,
             ),
             rx.text(
                 "Please sign in to access this page.",
-                color=rx.color("gray", 11),
+                color=T.colors.fg_muted,
                 text_align="center",
             ),
             rx.link(
                 "Sign In",
                 href="/login",
-                color=rx.color("blue", 11),
+                color=T.colors.accent,
                 weight="medium",
             ),
             spacing="4",
