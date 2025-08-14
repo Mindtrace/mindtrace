@@ -38,7 +38,7 @@ def user_management_table():
             rx.table.cell(
                 button(
                     text="Manage Projects",
-                    icon=rx.icon("project"),
+                    icon=rx.icon("folder-dot"),
                     on_click=lambda: UserManagementState.open_project_management_dialog(user["id"]),
                     variant="primary",
                     size="sm",

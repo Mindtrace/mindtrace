@@ -136,6 +136,7 @@ def Sidebar(*, active: str):
         ),
         content=rx.cond(S.collapsed, "Expand", "Collapse"),
         side="right",
+        cursor="pointer",
     )
 
     sections = [_section(title=t, items=it, active_label=active, collapsed=S.collapsed) for t, it in NAV]

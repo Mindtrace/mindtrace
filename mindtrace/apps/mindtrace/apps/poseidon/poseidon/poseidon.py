@@ -47,62 +47,62 @@ def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=Non
 
 
 # Route definitions with descriptive titles
-app.add_page(index, title="MindTrace - Home", route="/")
+app.add_page(index, title="Mindtrace - Home", route="/")
 
 # Auth routes
-app.add_page(login_page, route="/login", title="MindTrace - Login")
-app.add_page(register_page, route="/register", title="MindTrace - Register")
-app.add_page(register_admin_page, route="/register-admin", title="MindTrace - Admin Registration")
-app.add_page(register_super_admin_page, route="/register-super-admin", title="MindTrace - Super Admin Setup")
+app.add_page(login_page, route="/login", title="Mindtrace - Login")
+app.add_page(register_page, route="/register", title="Mindtrace - Register")
+app.add_page(register_admin_page, route="/register-admin", title="Mindtrace - Admin Registration")
+app.add_page(register_super_admin_page, route="/register-super-admin", title="Mindtrace - Super Admin Setup")
 
 # Dashboard routes
-app.add_page(with_shell(admin_page, title="MindTrace - Admin", active="Admin"), route="/admin")
+app.add_page(with_shell(admin_page, title="Mindtrace - Admin", active="Admin"), route="/admin")
 app.add_page(
-    with_shell(super_admin_dashboard_page, title="MindTrace - Super Admin Dashboard", active="Super Admin Dashboard"),
+    with_shell(super_admin_dashboard_page, title="Mindtrace - Super Admin Dashboard", active="Super Admin Dashboard"),
     route="/super-admin-dashboard",
 )
 
 # Camera Configurator route
 app.add_page(
-    with_shell(camera_configurator_page, title="MindTrace - Camera Configurator", active="Camera Configurator"),
+    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
     route="/camera-configurator",
 )
 
 
 # Model Deployment route
 app.add_page(
-    with_shell(model_deployment_page, title="MindTrace - Model Deployment", active="Model Deployment"),
+    with_shell(model_deployment_page, title="Mindtrace - Model Deployment", active="Model Deployment"),
     route="/model-deployment",
 )
 
 
 # Inference route
 app.add_page(
-    with_shell(inference_page, title="MindTrace - Inference Scanner", active="Inference Scanner"), route="/inference"
+    with_shell(inference_page, title="Mindtrace - Inference Scanner", active="Inference Scanner"), route="/inference"
 )
 
 # Management routes
 app.add_page(
-    with_shell(user_management_page, title="MindTrace - User Management", active="User Management"),
+    with_shell(user_management_page, title="Mindtrace - User Management", active="User Management"),
     route="/user-management",
 )
 app.add_page(
     with_shell(
-        organization_management_page, title="MindTrace - Organization Management", active="Organization Management"
+        organization_management_page, title="Mindtrace - Organization Management", active="Organization Management"
     ),
     route="/organization-management",
 )
 app.add_page(
-    with_shell(project_management_page, title="MindTrace - Project Management", active="Project Management"),
+    with_shell(project_management_page, title="Mindtrace - Project Management", active="Project Management"),
     route="/project-management",
 )
 
 # User routes
-app.add_page(with_shell(profile_page, title="MindTrace - Profile", active="Profile"), route="/profile")
-app.add_page(with_shell(images_page, title="MindTrace - Image Viewer", active="Image Viewer"), route="/image-viewer")
+app.add_page(with_shell(profile_page, title="Mindtrace - Profile", active="Profile"), route="/profile")
+app.add_page(with_shell(images_page, title="Mindtrace - Image Viewer", active="Image Viewer"), route="/image-viewer")
 
 #DEV
 app.add_page(
-    with_shell(component_showcase_page, title="MindTrace - Component Showcase", active="Component Showcase"),
+    with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
     route="/component-showcase",
 )
