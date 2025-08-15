@@ -139,6 +139,7 @@ def pie_chart(
                     "box_shadow": T.shadows.shadow_1,
                     "backdrop_filter": T.effects.backdrop_filter,
                     "padding": T.spacing.space_4,
+                    "padding_bottom": 0,
                     "font_family": T.typography.font_sans,
                     "font_size": T.typography.fs_sm,
                     "color": T.colors.fg,
@@ -154,7 +155,8 @@ def pie_chart(
                 height=36,
                 icon_type="circle",
                 wrapper_style={
-                    "padding_top": T.spacing.space_4,
+                    "padding": T.spacing.space_4,
+                    "padding_bottom": 0,
                     "font_family": T.typography.font_sans,
                     "font_size": T.typography.fs_sm,
                     "color": T.colors.fg_muted,
@@ -202,7 +204,7 @@ def pie_chart(
             spacing="1",
         ),
         chart_container,
-        spacing="6",
+        spacing="1",
         width="100%",
     )
 
@@ -261,7 +263,8 @@ def pie_chart_card(
         "border_radius": T.radius.r_xl,
         "border": f"1px solid {T.colors.border}",
         "box_shadow": T.shadows.shadow_2,
-        "padding": T.spacing.space_10,
+        "padding": T.spacing.space_4,
+        "padding_bottom": 0,
         "position": "relative",
         "overflow": "hidden",
         "transition": T.motion.dur,
@@ -304,7 +307,7 @@ def pie_chart_card(
             rx.vstack(
                 rx.text(
                     title,
-                    font_size=T.typography.fs_2xl,
+                    font_size=T.typography.fs_lg,
                     font_weight=T.typography.fw_600,
                     color=T.colors.fg,
                     text_align="center",
@@ -320,7 +323,7 @@ def pie_chart_card(
                 spacing="1",
             ),
             chart,
-            spacing="6",
+            spacing="1",
             width="100%",
         ),
         style=card_styles,
