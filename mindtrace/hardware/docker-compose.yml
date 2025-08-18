@@ -1,0 +1,56 @@
+services:
+  # Camera service with all backends and SDKs included
+  camera-service:
+    build:
+      context: ../..
+      dockerfile: mindtrace/hardware/Dockerfile.camera
+    network_mode: "host"  # Use host networking for IP camera discovery
+    environment:
+      # Configurable port
+      - PORT=${PORT:-8000}
+      # Enable all camera backends with SDKs installed
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MOCK_ENABLED=true
+      - MINDTRACE_HW_CAMERA_DAHENG_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=4
+      # Network settings for GigE cameras
+      - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE=192.168.100.0/24
+      - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS=30
+      - MINDTRACE_HW_NETWORK_RETRY_COUNT=3
+      # Optional GCS configuration
+      # - MINDTRACE_HW_GCS_DEFAULT_BUCKET=my-camera-bucket
+      # - MINDTRACE_HW_GCS_AUTO_UPLOAD=false
+      # - GOOGLE_APPLICATION_CREDENTIALS=/app/config/gcs-credentials.json
+    devices:
+      # Pass through USB camera devices for comprehensive support
+      # Note: Only mount devices that exist on your system
+      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      # Persist captured images and logs
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+      - /run/udev:/run/udev:ro  # For device detection
+    privileged: true  # Enable full device access for USB cameras
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8000}/cameras/discover"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  camera-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  camera-data:
+  camera-logs:
+  camera-config:
