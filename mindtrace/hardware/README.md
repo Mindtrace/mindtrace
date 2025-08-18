@@ -100,7 +100,7 @@ uv run mindtrace-setup-cameras
 #### Camera Backend Removal
 ```bash
 # Remove Daheng system SDK
-mindtrace-uninstall-daheng
+uv run mindtrace-uninstall-daheng
 
 # Note: Basler (pypylon) removal not needed - uninstall Python package only
 uv pip uninstall pypylon
@@ -112,7 +112,7 @@ The hardware component includes a comprehensive REST API service for camera mana
 
 ```bash
 # Start the camera API service
-python -m mindtrace.hardware.api.app
+uv run python -m mindtrace.hardware.api.app
 
 # The service will be available at http://localhost:8000
 # API documentation available at http://localhost:8000/docs
