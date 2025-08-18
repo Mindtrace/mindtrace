@@ -16,8 +16,8 @@ dependencies = [
     "psycopg2-binary>=2.9.10",
     "pyyaml>=6.0.2",
     "python-dotenv>=1.1.0",
-    "torch>=2.7.1",
-    "torchvision>=0.22.1",
+    "torch<2.6",
+    "torchvision",
     "huggingface>=0.0.1",
     "opencv-python>=4.11.0.86",
     "reflex>=0.8.2",
@@ -31,4 +31,5 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.uv.sources]
-mtrix = { git = "ssh://git@github.com/mindtrace/mt-rix.git", branch="modelbank/feature/v1"}
+mtrix = { git = "ssh://git@github.com/mindtrace/mt-rix.git", branch="feature/automation_v2"}
+

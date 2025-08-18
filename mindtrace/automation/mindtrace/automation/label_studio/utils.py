@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 import torch
 from torch.utils.data import random_split
 from pathlib import Path
-
+import uuid
 
 def detections_to_label_studio(
     dict_format: List[Dict], mask_from_name: str, mask_tool_type: str, polygon_epsilon_factor: float = 0.005
@@ -178,8 +178,10 @@ def detections_to_label_studio(
                             # confidence = float(bbox_data['confidence'])
                             class_name = bbox_data['class_name']
                             severity = bbox_data["severity"]
+                            labelid = str(uuid.uuid4())
 
                             rect_annotation = {
+                                "id": labelid,
                                 "original_width": img_width,
                                 "original_height": img_height,
                                 "from_name": "label",
@@ -193,20 +195,32 @@ def detections_to_label_studio(
                                     "height": height,
                                     "rotation": 0,
                                     "rectanglelabels": [class_name],
+
                                     # "score": severity,
-                                    "severity": severity
+                                    # "severity": severity
                                 },
+                                "origin": "prediction"
 
                             }
 
                             severity_annotation = {
+                                "id": labelid,
+                                 "original_width": img_width,
+                                "original_height": img_height,
                                     "from_name": "severity",
                                     "to_name": "image",
                                     "type": "number",
+                                    "image_rotation": 0,
                                     "value":{
+                                         "x": x,
+                                    "y": y,
+                                    "width": width,
+                                    "height": height,
+                                    "rotation": 0,
                                     "number": severity
-                                    }
-                                
+                                    },   # links it to the rectangle
+                                    "origin": "prediction"
+
                                 }
                             image_annotations.append(rect_annotation)
                             image_annotations.append(severity_annotation)

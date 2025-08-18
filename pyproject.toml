@@ -2,7 +2,7 @@
 name = "mindtrace"
 version = "0.1.0"
 description = "Mindtrace monorepo with modular packages"
-requires-python = ">=3.12"
+requires-python = "==3.12.*"
 readme = "README.md"
 dependencies = [
   "mindtrace-core>=0.1.0",
@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]"]
-cameras-daheng = ["mindtrace-hardware[cameras-daheng]"] 
+cameras-daheng = ["mindtrace-hardware[cameras-daheng]"]
 cameras-all = ["mindtrace-hardware[cameras-all]"]
 hardware-all = ["mindtrace-hardware[hardware-all]"]
 
