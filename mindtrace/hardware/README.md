@@ -72,30 +72,34 @@ uv sync --extra cameras-all
 
 ### Camera Backend Setup
 
-The hardware component provides automated setup commands for camera backends. Use these commands to install the required SDKs and dependencies:
+The hardware component provides different setup approaches for camera backends:
 
-#### Setup All Camera Backends
+#### Automatic Setup (Recommended)
 ```bash
-# Interactive setup for all supported camera backends
-mindtrace-setup-cameras
+# Install all camera backends via Python packages
+uv sync --extra cameras-all
+
+# This installs:
+# - pypylon (Basler) - self-contained, no additional setup needed
+# - gxipy (Daheng) - requires system SDK configuration
 ```
 
-#### Individual Camera Backend Setup
+#### System SDK Configuration (Daheng Only)
 ```bash
-# Setup Daheng cameras (installs gxipy SDK)
-mindtrace-setup-daheng
+# Configure Daheng system SDK (required for gxipy to function)
+uv run mindtrace-setup-daheng
 
-# Setup Basler cameras (installs pypylon SDK)
-mindtrace-setup-basler
+# Configure all backends including firewall setup
+uv run mindtrace-setup-cameras
 ```
 
 #### Camera Backend Removal
 ```bash
-# Remove Daheng camera support
+# Remove Daheng system SDK
 mindtrace-uninstall-daheng
 
-# Remove Basler camera support
-mindtrace-uninstall-basler
+# Note: Basler (pypylon) removal not needed - uninstall Python package only
+uv pip uninstall pypylon
 ```
 
 ### REST API Service
@@ -109,6 +113,103 @@ python -m mindtrace.hardware.api.app
 # The service will be available at http://localhost:8000
 # API documentation available at http://localhost:8000/docs
 ```
+
+## 🐳 Docker Containerization
+
+The hardware component provides Docker containerization for easy deployment and consistent runtime environments. The Docker setup is organized by hardware component type for scalability and maintainability.
+
+### Camera Service Container
+
+The camera service can be run in a Docker container with all required SDKs and dependencies pre-installed:
+
+**Files:**
+- `Dockerfile.camera` - Builds camera service container with all backends
+- `docker-compose.yml` - Orchestrates camera service with proper configuration
+
+**Features:**
+- **Complete SDK Installation**: Daheng Galaxy SDK automatically installed during build
+- **Self-Contained Basler Support**: pypylon included without additional setup
+- **USB Device Access**: Proper device mounting for USB cameras
+- **Network Camera Discovery**: Host networking for GigE camera detection
+- **Persistent Storage**: Volumes for captured images, logs, and configuration
+- **Health Monitoring**: Built-in health checks for service availability
+
+### Quick Docker Start
+
+```bash
+# Build and start camera service
+cd mindtrace/hardware/
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View logs
+docker-compose logs camera-service
+
+# Test camera discovery
+curl http://localhost:8000/cameras/discover
+
+# Stop service
+docker-compose down
+```
+
+### Docker Configuration
+
+The `docker-compose.yml` provides production-ready configuration:
+
+```yaml
+services:
+  camera-service:
+    build:
+      context: ../..
+      dockerfile: mindtrace/hardware/Dockerfile.camera
+    network_mode: "host"  # Required for IP camera discovery
+    environment:
+      - PORT=8000
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MOCK_ENABLED=true
+      - MINDTRACE_HW_CAMERA_DAHENG_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=4
+    devices:
+      - /dev/video0:/dev/video0  # USB camera access
+      - /dev/bus/usb:/dev/bus/usb  # USB device access
+    volumes:
+      - ./data:/app/data  # Captured images
+      - ./logs:/app/logs  # Service logs
+      - ./config:/app/config  # Configuration files
+    privileged: true  # Required for USB device access
+```
+
+### Container Features
+
+**Pre-installed Components:**
+- **Python Dependencies**: All camera backends via `uv sync --extra cameras-all`
+- **Daheng SDK**: Galaxy Camera SDK with gxipy bindings
+- **Basler Support**: pypylon (self-contained, no additional setup needed)
+- **System Dependencies**: OpenCV, USB tools, network utilities
+- **API Service**: FastAPI-based REST API on port 8000
+
+**Runtime Configuration:**
+- **Non-root User**: Service runs as `mindtrace` user for security
+- **Environment Variables**: Configurable via docker-compose environment
+- **Health Checks**: Automatic service health monitoring
+- **Graceful Shutdown**: Proper container lifecycle management
+
+### Future Expansion
+
+The Docker configuration is designed for future expansion with additional hardware services:
+
+```yaml
+# Future services (placeholder - not yet implemented)
+# plc-service:          # PLC management service
+# sensors-service:      # Sensor management service
+```
+
+Each service will have its own Dockerfile and can be scaled independently:
+- `Dockerfile.plc` - PLC service container (future)
+- `Dockerfile.sensors` - Sensor service container (future)
 
 ### Camera Quick Start
 
