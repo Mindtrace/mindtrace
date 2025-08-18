@@ -79,10 +79,14 @@ COPY . ./
 # Install Python dependencies and configure SDKs as root
 ENV UV_HTTP_TIMEOUT=120
 RUN cd mindtrace/hardware && \
+    # Remove directories that conflict with setuptools package discovery
+    rm -rf /app/config /app/data /app/logs && \
     uv sync --extra cameras-all --extra setup-tools && \
     uv pip install -e . && \
     echo "=== Configuring Daheng SDK (Basler pypylon is self-contained) ===" && \
     (uv run mindtrace-setup-daheng --verbose 2>&1 | tee /tmp/daheng_setup.log || (echo "Daheng SDK installation failed:" && cat /tmp/daheng_setup.log && echo "Continuing...")) && \
+    # Recreate directories for runtime
+    mkdir -p /app/data /app/logs /app/config && \
     chown -R mindtrace:mindtrace /app
 
 # Switch to mindtrace user for runtime
