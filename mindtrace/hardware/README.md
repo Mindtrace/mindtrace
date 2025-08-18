@@ -1649,51 +1649,88 @@ The hardware component maintains high code quality standards:
 The hardware component uses a well-organized test structure:
 
 ```
-mindtrace/hardware/mindtrace/hardware/tests/
-├── __init__.py                 # Main test package
-└── unit/                       # Unit tests only
-    ├── cameras/               # Camera-specific tests
-    │   ├── __init__.py
-    │   └── test_cameras.py    # All camera unit tests
+tests/unit/mindtrace/hardware/          # Unit tests (from repo root)
+├── __init__.py                         # Main test package
+├── cameras/                           # Camera-specific tests
+│   ├── __init__.py
+│   ├── conftest.py                    # Camera test fixtures
+│   └── test_cameras.py                # All camera unit tests
+└── plcs/                              # PLC-specific tests
     ├── __init__.py
-    └── plcs/                  # PLC-specific tests
-        ├── __init__.py
-        └── test_plcs.py       # All PLC unit tests
+    ├── conftest.py                    # PLC test fixtures
+    └── test_plcs.py                   # All PLC unit tests
+```
+
+The component also includes comprehensive integration tests:
+
+```
+tests/integration/mindtrace/hardware/
+├── __init__.py                          # Integration test package
+├── conftest.py                          # Test fixtures and configuration
+└── test_camera_api_integration.py       # Comprehensive API integration tests
+```
+
+### Integration Tests
+
+The hardware component includes comprehensive integration tests that validate end-to-end camera workflows through the REST API with real hardware:
+
+**Key Features:**
+- **Real Hardware Testing**: Tests with actual Basler and OpenCV camera backends
+- **Complete API Validation**: Validates all major endpoints through HTTP requests
+- **Network Bandwidth Management**: Tests concurrent capture limiting with real cameras
+- **Hardware State Management**: Verifies proper camera lifecycle management
+- **Graceful Failure Handling**: Skips tests when real hardware unavailable
+
+**Test Coverage:**
+- Backend discovery and health monitoring
+- Camera discovery and connection testing  
+- Complete camera workflow (init → configure → capture → cleanup)
+- Image capture, HDR capture, and configuration persistence
+- Video streaming and batch operations
+- Error handling and edge cases
+
+```bash
+# Run integration tests (requires real hardware)
+cd /path/to/mindtrace/
+pytest tests/integration/mindtrace/hardware/ -v
+
+# Run specific integration test
+pytest tests/integration/mindtrace/hardware/test_camera_api_integration.py::test_complete_camera_workflow -v
+
+# Run with real hardware markers
+pytest tests/integration/mindtrace/hardware/ -m hardware -v
 ```
 
 ### Running Tests
 
 ```bash
-# Run all hardware unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/
+# Run all hardware unit tests (from repo root)
+pytest tests/unit/mindtrace/hardware/
 
-
-# Run all camera unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/cameras/
+# Run all camera unit tests  
+pytest tests/unit/mindtrace/hardware/cameras/
 
 # Run all PLC unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/plcs/
+pytest tests/unit/mindtrace/hardware/plcs/
 
 # Run specific camera tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py
+pytest tests/unit/mindtrace/hardware/cameras/test_cameras.py
 
 # Run specific PLC tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py
+pytest tests/unit/mindtrace/hardware/plcs/test_plcs.py
 
 # Run with coverage
-pytest --cov=mindtrace.hardware mindtrace/hardware/tests/unit/
+pytest --cov=mindtrace.hardware tests/unit/mindtrace/hardware/
 
 # Run with verbose output
-pytest mindtrace/hardware/tests/unit/ -v
+pytest tests/unit/mindtrace/hardware/ -v
 
 # Run specific test classes
-pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py::TestMockDahengCamera
-pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py::TestMockAllenBradleyPLC
+pytest tests/unit/mindtrace/hardware/cameras/test_cameras.py::TestMockDahengCamera
+pytest tests/unit/mindtrace/hardware/plcs/test_plcs.py::TestMockAllenBradleyPLC
+
+# Run integration tests
+pytest tests/integration/mindtrace/hardware/ -v --tb=short
 ```
 
 
@@ -1713,7 +1750,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 
 ### Test Categories
 
-#### Camera Unit Tests (`mindtrace/hardware/tests/unit/cameras/test_cameras.py`)
+#### Camera Unit Tests (`tests/unit/mindtrace/hardware/cameras/test_cameras.py`)
 - **MockDahengCamera Tests**: Initialization, connection, capture, configuration
 - **MockBaslerCamera Tests**: Basler-specific features and serial connections
 - **CameraManager Tests**: Backend registration, discovery, batch operations
@@ -1722,7 +1759,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 - **Performance Tests**: Concurrent capture, rapid sequences, resource cleanup
 - **Configuration Tests**: Persistence, validation, trigger modes
 
-#### PLC Unit Tests (`mindtrace/hardware/tests/unit/plcs/test_plcs.py`)
+#### PLC Unit Tests (`tests/unit/mindtrace/hardware/plcs/test_plcs.py`)
 - **MockAllenBradleyPLC Tests**: Initialization, connection, auto-detection
 - **LogixDriver Tests**: Tag operations, writing, discovery
 - **SLCDriver Tests**: Data files, timers, counters, I/O operations
@@ -1738,7 +1775,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 3. Add configuration options to `core/config.py`
 4. Add appropriate exceptions to `core/exceptions.py`
 5. Create both real and mock implementations
-6. Add comprehensive unit tests in `tests/unit/[component]/`
+6. Add comprehensive unit tests in `tests/unit/mindtrace/hardware/[component]/`
 7. **Documentation Requirements**:
    - Add detailed docstrings to all functions with Args/Returns/Raises sections
    - Ensure consistent error handling and logging
