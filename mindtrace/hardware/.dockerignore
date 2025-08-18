@@ -1,0 +1,33 @@
+# Docker-created directories that cause package discovery conflicts
+config/
+data/
+logs/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+.coverage
+.tox/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+*.log

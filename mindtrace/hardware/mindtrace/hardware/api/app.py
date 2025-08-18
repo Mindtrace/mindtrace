@@ -7,7 +7,7 @@ and network management. The service supports multiple camera backends (OpenCV,
 Basler, Daheng, and mock backends) with unified async interfaces.
 """
 
-import logging
+# No module-level logging import - using Service base class logger
 import base64
 from datetime import datetime, UTC
 from typing import Dict, Any, List, Optional, Tuple
@@ -36,8 +36,6 @@ from mindtrace.hardware.models.responses import ErrorResponse
 from mindtrace.hardware.api.dependencies import get_camera_manager
 from mindtrace.hardware.models.requests import *
 from mindtrace.hardware.models.responses import *
-
-logger = logging.getLogger(__name__)
 
 EXCEPTION_MAPPING = {
     CameraNotFoundError: (404, "CAMERA_NOT_FOUND"),
@@ -103,46 +101,6 @@ def general_exception_handler(request: Request, exc: Exception):
         ).model_dump(mode="json")
     )
 
-async def log_requests(request: Request, call_next):
-    """Middleware to log request processing time and status."""
-    start_time = datetime.now(UTC)
-    response = await call_next(request)
-    process_time = (datetime.now(UTC) - start_time).total_seconds()
-    logger.info(f"{request.method} {request.url} - {response.status_code} - {process_time:.4f}s")
-    return response
-
-def _encode_image_to_base64(image_array) -> Optional[str]:
-    """Convert image array to base64 string.
-    
-    Args:
-        image_array: numpy array representing the image
-        
-    Returns:
-        Base64 encoded string of the image in JPEG format, or None if conversion fails
-    """
-    try:
-        import cv2
-        import numpy as np
-        
-        if image_array is None:
-            return None
-        
-        if isinstance(image_array, np.ndarray):
-            if len(image_array.shape) == 3 and image_array.shape[2] == 3:
-                image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-            else:
-                image_bgr = image_array
-            
-            success, buffer = cv2.imencode('.jpg', image_bgr)
-            if success:
-                jpg_as_text = base64.b64encode(buffer).decode('utf-8')
-                return jpg_as_text
-        
-        return None
-        
-    except Exception as e:
-        logger.warning(f"Failed to encode image to base64: {e}")
-        return None
 
 # Camera Management Endpoints
 async def discover_cameras(backend: str = None) -> ListResponse:
@@ -498,7 +456,7 @@ async def capture_image(camera: str, payload: CaptureRequest = None) -> CaptureR
     # Conditionally encode and include image data
     image_base64 = None
     if return_image:
-        image_base64 = _encode_image_to_base64(image_data)
+        image_base64 = camera_api_service._encode_image_to_base64(image_data)
     
     # Build response message
     message_parts = [f"Image captured from '{camera}'"]
@@ -607,7 +565,7 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     if return_images and isinstance(hdr_result, dict) and hdr_result.get("images"):
         # New structured response with GCS URIs
         for img in hdr_result["images"]:
-            img_b64 = _encode_image_to_base64(img)
+            img_b64 = camera_api_service._encode_image_to_base64(img)
             if img_b64:
                 images_base64.append(img_b64)
         exposure_levels_list = hdr_result.get("exposure_levels", [])
@@ -615,7 +573,7 @@ async def capture_hdr(camera: str, payload: HDRCaptureRequest = None) -> HDRCapt
     elif return_images and isinstance(hdr_result, list):
         # Legacy list response (no GCS URIs)
         for img in hdr_result:
-            img_b64 = _encode_image_to_base64(img)
+            img_b64 = camera_api_service._encode_image_to_base64(img)
             if img_b64:
                 images_base64.append(img_b64)
     
@@ -679,7 +637,7 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
             # New structured response with GCS URIs
             encoded_images = []
             for image in hdr_result["images"]:
-                encoded_image = _encode_image_to_base64(image)
+                encoded_image = camera_api_service._encode_image_to_base64(image)
                 if encoded_image:
                     encoded_images.append(encoded_image)
             
@@ -706,7 +664,7 @@ async def capture_hdr_batch(payload: BatchHDRCaptureRequest) -> BatchHDRCaptureR
             # Legacy list response (no GCS URIs)
             encoded_images = []
             for image in hdr_result:
-                encoded_image = _encode_image_to_base64(image)
+                encoded_image = camera_api_service._encode_image_to_base64(image)
                 if encoded_image:
                     encoded_images.append(encoded_image)
             
@@ -771,7 +729,6 @@ async def video_stream(camera: str) -> StreamingResponse:
                 # Check if camera is still active before attempting capture
                 active_cameras = manager.get_active_cameras()
                 if camera not in active_cameras:
-                    logger.info(f"Camera '{camera}' no longer active, stopping video stream")
                     break
                 
                 capture_result = await camera_proxy.capture()
@@ -784,7 +741,6 @@ async def video_stream(camera: str) -> StreamingResponse:
                 if not success or img is None:
                     consecutive_failures += 1
                     if consecutive_failures >= max_consecutive_failures:
-                        logger.warning(f"Camera '{camera}' failed {max_consecutive_failures} consecutive captures, stopping stream")
                         break
                     await asyncio.sleep(0.1)
                     continue
@@ -802,17 +758,13 @@ async def video_stream(camera: str) -> StreamingResponse:
                 await asyncio.sleep(0.01)
             except CameraConnectionError:
                 # Camera connection lost, likely closed
-                logger.info(f"Camera '{camera}' connection lost, stopping video stream")
                 break
             except KeyError:
                 # Camera proxy no longer exists, likely closed
-                logger.info(f"Camera '{camera}' proxy no longer exists, stopping video stream")
                 break
             except Exception as e:
                 consecutive_failures += 1
-                logger.error(f"video_stream_frame_failed: {e}")
                 if consecutive_failures >= max_consecutive_failures:
-                    logger.warning(f"Camera '{camera}' failed {max_consecutive_failures} consecutive times, stopping stream")
                     break
                 await asyncio.sleep(0.1)
     
@@ -1635,7 +1587,7 @@ class CameraAPIService(Service):
         self.app.add_exception_handler(Exception, general_exception_handler)
         
         # Add request logging middleware
-        self.app.middleware("http")(log_requests)
+        self.app.middleware("http")(self._log_requests)
         
         # Register all endpoints with proper HTTP methods
         self._register_camera_management_endpoints()
@@ -1643,6 +1595,43 @@ class CameraAPIService(Service):
         self._register_capture_endpoints()
         self._register_configuration_endpoints()
         self._register_network_management_endpoints()
+    
+    async def _log_requests(self, request: Request, call_next):
+        """Middleware to log request processing time and status."""
+        start_time = datetime.now(UTC)
+        response = await call_next(request)
+        process_time = (datetime.now(UTC) - start_time).total_seconds()
+        self.logger.info(f"{request.method} {request.url} - {response.status_code} - {process_time:.4f}s")
+        return response
+    
+    def _encode_image_to_base64(self, image_array) -> Optional[str]:
+        """Convert image array to base64 string.
+        
+        Args:
+            image_array: numpy array representing the image
+            
+        Returns:
+            Base64 encoded string or None on error
+        """
+        try:
+            import cv2
+            import numpy as np
+            
+            if image_array is None or not isinstance(image_array, np.ndarray):
+                return None
+                
+            # Encode image to bytes
+            success, buffer = cv2.imencode('.jpg', image_array)
+            if not success:
+                return None
+                
+            # Convert to base64
+            image_base64 = base64.b64encode(buffer).decode('utf-8')
+            return image_base64
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to encode image to base64: {e}")
+            return None
     
     def _register_camera_management_endpoints(self):
         """Register camera management endpoints."""
@@ -1738,4 +1727,4 @@ app = camera_api_service.app
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")

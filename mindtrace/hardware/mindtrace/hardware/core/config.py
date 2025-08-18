@@ -76,8 +76,9 @@ from pathlib import Path
 from typing import Optional
 
 import structlog
+from mindtrace.core.base.mindtrace_base import Mindtrace
 
-logger = structlog.get_logger(__name__)
+# Module-level logger removed - HardwareConfigManager will use self.logger from Mindtrace base class
 
 
 @dataclass
@@ -369,7 +370,7 @@ class HardwareConfig:
     gcs: GCSSettings = field(default_factory=GCSSettings)
 
 
-class HardwareConfigManager:
+class HardwareConfigManager(Mindtrace):
     """
     Hardware configuration manager for Mindtrace project.
 
@@ -389,6 +390,9 @@ class HardwareConfigManager:
         Args:
             config_file: Path to configuration file (uses environment variable or default if None)
         """
+        # Initialize base class first
+        super().__init__()
+        
         self.config_file = config_file or os.getenv("MINDTRACE_HW_CONFIG", "hardware_config.json")
         self._config = HardwareConfig()
         self._load_config()
@@ -400,11 +404,11 @@ class HardwareConfigManager:
         if os.path.exists(Path(self.config_file).expanduser()):
             try:
                 self._load_from_file(str(Path(self.config_file).expanduser()))
-                logger.info("hardware_config_loaded", source="file", file=self.config_file)
+                self.logger.info(f"Hardware config loaded from file: {self.config_file}")
             except Exception as e:
-                logger.warning("hardware_config_load_failed", source="file", file=self.config_file, error=str(e))
+                self.logger.warning(f"Failed to load hardware config from file {self.config_file}: {e}")
         else:
-            logger.info("hardware_config_file_not_found", file=self.config_file, message="Using default configuration")
+            self.logger.info(f"Hardware config file not found: {self.config_file} - Using default configuration")
 
     def _load_from_env(self):
         """Load configuration from environment variables with MINDTRACE_HW_ prefix."""
@@ -698,7 +702,7 @@ class HardwareConfigManager:
         with open(Path(file_path).expanduser(), "w") as f:
             json.dump(config_dict, f, indent=2)
 
-        logger.info("hardware_config_saved", file=file_path)
+        self.logger.info(f"Hardware config saved to file: {file_path}")
 
     def get_config(self) -> HardwareConfig:
         """

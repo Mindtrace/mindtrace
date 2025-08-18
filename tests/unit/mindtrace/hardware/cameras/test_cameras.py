@@ -35,10 +35,15 @@ def event_loop():
 
 @pytest_asyncio.fixture
 async def camera_manager():
-    """Create a camera manager instance with mock backends."""
+    """Create a camera manager instance with mock backends for unit testing."""
     from mindtrace.hardware.cameras.camera_manager import CameraManager
 
+    # Create manager with mocks enabled
     manager = CameraManager(include_mocks=True)
+    
+    # Override the discovered backends to only include mock backends for unit tests
+    manager._discovered_backends = ["MockDaheng", "MockBasler", "OpenCV"]
+    
     yield manager
 
     # Cleanup
@@ -183,8 +188,8 @@ class TestMockDahengCamera:
         assert exposure == 15000
 
         # Test gain
-        camera.set_gain(2.5)
-        gain = camera.get_gain()
+        await camera.set_gain(2.5)
+        gain = await camera.get_gain()
         assert gain == 2.5
 
         # Test trigger mode
@@ -204,20 +209,20 @@ class TestMockDahengCamera:
         await camera.initialize()
 
         # Set ROI
-        success = camera.set_ROI(100, 100, 800, 600)
+        success = await camera.set_ROI(100, 100, 800, 600)
         assert success is True
 
         # Get ROI
-        roi = camera.get_ROI()
+        roi = await camera.get_ROI()
         assert roi["x"] == 100
         assert roi["y"] == 100
         assert roi["width"] == 800
         assert roi["height"] == 600
 
         # Reset ROI
-        success = camera.reset_ROI()
+        success = await camera.reset_ROI()
         assert success is True
-        roi = camera.get_ROI()
+        roi = await camera.get_ROI()
         assert roi["x"] == 0
         assert roi["y"] == 0
 
@@ -229,7 +234,7 @@ class TestMockDahengCamera:
 
         # Configure camera
         await camera.set_exposure(25000)
-        camera.set_gain(3.0)
+        await camera.set_gain(3.0)
         await camera.set_triggermode("trigger")
 
         # Export configuration
@@ -248,7 +253,7 @@ class TestMockDahengCamera:
 
         # Reset camera settings
         await camera.set_exposure(10000)
-        camera.set_gain(1.0)
+        await camera.set_gain(1.0)
 
         # Import configuration
         success = await camera.import_config(export_path)
@@ -256,7 +261,7 @@ class TestMockDahengCamera:
 
         # Verify settings were restored
         assert await camera.get_exposure() == 25000
-        assert camera.get_gain() == 3.0
+        assert await camera.get_gain() == 3.0
         assert await camera.get_triggermode() == "trigger"
 
         # Cleanup
@@ -315,12 +320,12 @@ class TestMockBaslerCamera:
         assert trigger_mode == "trigger"
 
         # Test gain range
-        gain_range = camera.get_gain_range()
+        gain_range = await camera.get_gain_range()
         assert isinstance(gain_range, list)
         assert len(gain_range) == 2
 
         # Test pixel format range
-        pixel_formats = camera.get_pixel_format_range()
+        pixel_formats = await camera.get_pixel_format_range()
         assert isinstance(pixel_formats, list)
         assert "BGR8" in pixel_formats
 
@@ -336,7 +341,7 @@ class TestMockBaslerCamera:
 
         # Verify settings were applied
         assert await camera.get_exposure() == 15000.0
-        assert camera.get_gain() == 2.5
+        assert await camera.get_gain() == 2.5
 
 
 class TestCameraManager:
@@ -505,7 +510,7 @@ class TestCameraManager:
             exposure = await camera_proxy.get_exposure()
             assert exposure == 20000
 
-            gain = camera_proxy.get_gain()
+            gain = await camera_proxy.get_gain()
             assert gain == 2.0
 
             trigger_mode = await camera_proxy.get_trigger_mode()
@@ -1380,9 +1385,9 @@ class TestConfigurationFormat:
 
         # Configure camera
         await camera.set_exposure(30000)
-        camera.set_gain(4.0)
+        await camera.set_gain(4.0)
         await camera.set_triggermode("trigger")
-        camera.set_image_quality_enhancement(True)
+        await camera.set_image_quality_enhancement(True)
 
         # Export configuration
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -1444,8 +1449,8 @@ class TestConfigurationFormat:
             assert await daheng_camera.get_exposure() == 15000.0
             assert await basler_camera.get_exposure() == 15000.0
 
-            assert daheng_camera.get_gain() == 2.5
-            assert basler_camera.get_gain() == 2.5
+            assert await daheng_camera.get_gain() == 2.5
+            assert await basler_camera.get_gain() == 2.5
 
         finally:
             await daheng_camera.close()
