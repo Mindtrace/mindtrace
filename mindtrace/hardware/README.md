@@ -1,3 +1,6 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-hardware)](https://pypi.org/project/mindtrace-hardware/)
+[![License](https://img.shields.io/pypi/l/mindtrace-hardware)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware/LICENSE)
+
 # Mindtrace Hardware Component
 
 The Mindtrace Hardware Component provides a unified interface for managing industrial hardware devices including cameras, PLCs, sensors, and actuators. The component is designed with modularity, extensibility, and production-ready reliability in mind.
@@ -86,8 +89,9 @@ uv sync --extra cameras-all
 
 #### System SDK Configuration (Daheng Only)
 ```bash
-# Configure Daheng system SDK (required for gxipy to function)
-uv run mindtrace-setup-daheng
+# Setup Daheng cameras (gxipy SDK needs to be installed separately)
+mindtrace-setup-daheng
+pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
 
 # Configure all backends including firewall setup
 uv run mindtrace-setup-cameras

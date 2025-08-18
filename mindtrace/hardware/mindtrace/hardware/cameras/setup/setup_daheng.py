@@ -34,46 +34,45 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
-from mindtrace.core.utils import download_and_extract_zip, download_and_extract_tarball
+from mindtrace.core.utils import download_and_extract_tarball, download_and_extract_zip
 from mindtrace.hardware.core.config import get_hardware_config
 
 
 class DahengSDKInstaller(Mindtrace):
     """
     Daheng Galaxy SDK installer and manager.
-    
+
     This class handles the download, installation, and uninstallation
     of the Daheng Galaxy SDK across different platforms.
     """
-    
+
     # SDK URLs for different platforms
     LINUX_SDK_URL_TEMPLATE = "https://github.com/Mindtrace/gxipy/releases/download/{version}/Galaxy_Linux.tar.gz"
     WINDOWS_SDK_URL_TEMPLATE = "https://github.com/Mindtrace/gxipy/releases/download/{version}/Galaxy_Windows.zip"
-    
+
     def __init__(self, release_version: str = "v1.0-stable"):
         """
         Initialize the Daheng SDK installer.
-        
+
         Args:
             release_version: SDK release version to download
         """
         # Initialize base class first
         super().__init__()
-        
+
         # Get hardware configuration
         self.hardware_config = get_hardware_config()
-        
+
         self.release_version = release_version
         self.daheng_dir = Path(self.hardware_config.get_config().paths.lib_dir).expanduser() / "daheng"
         self.platform = platform.system()
-        
+
         # Generate URLs based on version
         self.linux_sdk_url = self.LINUX_SDK_URL_TEMPLATE.format(version=release_version)
         self.windows_sdk_url = self.WINDOWS_SDK_URL_TEMPLATE.format(version=release_version)
-        
+
         self.logger.info(f"Initializing Daheng SDK installer for {self.platform}")
         self.logger.debug(f"Release version: {release_version}")
         self.logger.debug(f"Installation directory: {self.daheng_dir}")
@@ -140,7 +139,7 @@ class DahengSDKInstaller(Mindtrace):
     def install(self) -> bool:
         """
         Install the Daheng SDK for the current platform.
-        
+
         Returns:
             True if installation successful, False otherwise
         """
@@ -160,20 +159,20 @@ class DahengSDKInstaller(Mindtrace):
                 self.logger.error(f"Unsupported operating system: {self.platform}")
                 self.logger.info("The Daheng SDK is only available for Linux and Windows")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Installation failed with unexpected error: {e}")
             return False
-    
+
     def _install_linux(self) -> bool:
         """
         Install Daheng SDK on Linux using .run script.
-        
+
         Returns:
             True if installation successful, False otherwise
         """
         self.logger.info("Installing Daheng Galaxy SDK for Linux")
-        
+
         try:
             # Download and extract the SDK
             self.logger.info(f"Downloading SDK from {self.linux_sdk_url}")
@@ -195,7 +194,7 @@ class DahengSDKInstaller(Mindtrace):
             # Find and prepare the installer script
             # The installer might be directly in the extracted directory or in a subdirectory
             runfile_path = Path(extracted_dir) / "Galaxy_camera.run"
-            
+
             if not runfile_path.exists():
                 # Look for the installer in subdirectories
                 self.logger.info("Installer not found in root, searching subdirectories...")
@@ -234,13 +233,13 @@ class DahengSDKInstaller(Mindtrace):
             # Make the installer executable
             self.logger.info("Making installer script executable")
             self._make_executable(runfile_path)
-            
+
             # Change to directory containing the installer and run installer
             original_cwd = os.getcwd()
             installer_dir = runfile_path.parent
             os.chdir(installer_dir)
             self.logger.debug(f"Changed working directory to {installer_dir}")
-            
+
             try:
                 self.logger.info("Running Galaxy SDK installer")
                 self.logger.warning("The installer may require user interaction")
@@ -343,12 +342,12 @@ class DahengSDKInstaller(Mindtrace):
                 else:
                     self.logger.error(f"Installer failed with return code: {result.returncode}")
                     return False
-                    
+
             finally:
                 # Always restore original working directory
                 os.chdir(original_cwd)
                 self.logger.debug(f"Restored working directory to {original_cwd}")
-                
+
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Installation failed: {e}")
             return False
@@ -358,11 +357,11 @@ class DahengSDKInstaller(Mindtrace):
         except Exception as e:
             self.logger.error(f"Unexpected error during Linux installation: {e}")
             return False
-    
+
     def _make_executable(self, file_path: Path) -> None:
         """
         Make a file executable by adding execute permissions.
-        
+
         Args:
             file_path: Path to the file to make executable
         """
@@ -371,109 +370,104 @@ class DahengSDKInstaller(Mindtrace):
         new_mode = current_mode | stat.S_IXUSR | stat.S_IXGRP
         file_path.chmod(new_mode)
         self.logger.debug(f"Changed file permissions from {oct(current_mode)} to {oct(new_mode)}")
-    
+
     def _install_windows(self) -> bool:
         """
         Install Daheng SDK on Windows.
-        
+
         Returns:
             True if installation successful, False otherwise
         """
         self.logger.info("Installing Daheng Galaxy SDK for Windows")
-        
+
         # Check for administrative privileges
         is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         self.logger.debug(f"Administrative privileges: {is_admin}")
-        
+
         if not is_admin:
             self.logger.warning("Administrative privileges required for Windows installation")
             return self._elevate_privileges()
-        
+
         try:
             # Download and extract the SDK
             self.logger.info(f"Downloading SDK from {self.windows_sdk_url}")
-            extracted_dir = download_and_extract_zip(
-                url=self.windows_sdk_url,
-                extract_to=str(self.daheng_dir)
-            )
-            
+            extracted_dir = download_and_extract_zip(url=self.windows_sdk_url, extract_to=str(self.daheng_dir))
+
             # Find the SDK executable
             sdk_exe = self._find_windows_executable(extracted_dir)
             self.logger.info(f"Found SDK executable: {sdk_exe}")
-            
+
             # Run the installer silently
             self.logger.info("Running Daheng Galaxy SDK installer")
             self.logger.info("This will also install the gxipy Python library")
             subprocess.run([sdk_exe, "/S"], check=True)
             self.logger.info("Daheng Galaxy SDK installation completed successfully")
             return True
-            
+
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Installation failed: {e}")
             return False
         except Exception as e:
             self.logger.error(f"Unexpected error during Windows installation: {e}")
             return False
-    
+
     def _find_windows_executable(self, extracted_dir: str) -> str:
         """
         Find the Windows SDK executable in the extracted directory.
-        
+
         Args:
             extracted_dir: Path to extracted SDK directory
-            
+
         Returns:
             Path to the SDK executable
-            
+
         Raises:
             FileNotFoundError: If executable not found
         """
-        if '.exe' in extracted_dir:
+        if ".exe" in extracted_dir:
             return extracted_dir
-        
+
         # Look for .exe files in the directory
         exe_files = list(Path(extracted_dir).glob("*.exe"))
         if exe_files:
             return str(exe_files[0])
-        
+
         # Fallback to first file in directory
         contents = os.listdir(extracted_dir)
         if contents:
             return os.path.join(extracted_dir, contents[0])
-        
+
         raise FileNotFoundError(f"No executable found in {extracted_dir}")
-    
+
     def _elevate_privileges(self) -> bool:
         """
         Attempt to elevate privileges on Windows.
-        
+
         Returns:
             False (elevation requires restart)
         """
         self.logger.info("Attempting to elevate privileges")
         self.logger.warning("Please restart VS Code with administrator privileges")
-        
+
         try:
             ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, 
-                " ".join([sys.argv[0]] + sys.argv[1:]), 
-                None, 1
+                None, "runas", sys.executable, " ".join([sys.argv[0]] + sys.argv[1:]), None, 1
             )
         except Exception as e:
             self.logger.error(f"Failed to elevate process: {e}")
             self.logger.error("Please run the script in Administrator mode")
-        
+
         return False
-    
+
     def uninstall(self) -> bool:
         """
         Uninstall the Daheng SDK.
-        
+
         Returns:
             True if uninstallation successful, False otherwise
         """
         self.logger.info("Starting Daheng Galaxy SDK uninstallation")
-        
+
         try:
             if self.platform == "Linux":
                 return self._uninstall_linux()
@@ -482,40 +476,40 @@ class DahengSDKInstaller(Mindtrace):
             else:
                 self.logger.error(f"Unsupported operating system: {self.platform}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"Uninstallation failed with unexpected error: {e}")
             return False
-    
+
     def _uninstall_linux(self) -> bool:
         """
         Uninstall Daheng SDK on Linux.
-        
+
         Returns:
             True if uninstallation successful, False otherwise
         """
         self.logger.info("Uninstalling Daheng Galaxy SDK from Linux")
-        
+
         try:
             # Remove Galaxy Camera packages
             self.logger.info("Removing galaxy-camera packages")
             subprocess.run(["sudo", "apt-get", "remove", "-y", "galaxy-camera*"], check=True)
-            
+
             # Clean up unused packages
             self.logger.info("Cleaning up unused packages")
             subprocess.run(["sudo", "apt-get", "autoremove", "-y"], check=True)
-            
+
             self.logger.info("Daheng Galaxy SDK uninstalled successfully")
             return True
-            
+
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Uninstallation failed: {e}")
             return False
-    
+
     def _uninstall_windows(self) -> bool:
         """
         Uninstall Daheng SDK on Windows.
-        
+
         Returns:
             False (manual uninstallation required)
         """
@@ -527,22 +521,22 @@ class DahengSDKInstaller(Mindtrace):
 def install_daheng_sdk(release_version: str = "v1.0-stable") -> bool:
     """
     Install the Daheng Galaxy SDK.
-    
-    The Daheng SDK is required to connect and use Daheng cameras. The SDK is 
+
+    The Daheng SDK is required to connect and use Daheng cameras. The SDK is
     only available for Linux and Windows.
-    
-    The Linux installer used here is the X86 installer. An ARM installer is 
-    also available from the Daheng website, if you need to install the SDK 
+
+    The Linux installer used here is the X86 installer. An ARM installer is
+    also available from the Daheng website, if you need to install the SDK
     on an ARM-based system.
-    
-    For Windows, the SDK installer will also automatically install the 
-    associated Python library, gxipy. For Linux, the gxipy library may need 
-    to be installed separately after SDK installation. Note that the Windows 
+
+    For Windows, the SDK installer will also automatically install the
+    associated Python library, gxipy. For Linux, the gxipy library may need
+    to be installed separately after SDK installation. Note that the Windows
     and Linux versions of gxipy are different and do not have the same API.
-    
+
     Args:
         release_version: SDK release version to install
-        
+
     Returns:
         True if installation successful, False otherwise
     """
@@ -553,9 +547,9 @@ def install_daheng_sdk(release_version: str = "v1.0-stable") -> bool:
 def uninstall_daheng_sdk() -> bool:
     """
     Uninstall the Daheng Galaxy SDK.
-    
+
     This function removes the Daheng SDK from the system.
-    
+
     Returns:
         True if uninstallation successful, False otherwise
     """
@@ -574,40 +568,30 @@ Examples:
     %(prog)s --uninstall        # Uninstall Galaxy SDK
     
 For more information, visit: https://www.daheng-imaging.com/
-        """
+        """,
     )
+    parser.add_argument("--uninstall", action="store_true", help="Uninstall the Daheng SDK instead of installing")
     parser.add_argument(
-        "--uninstall", 
-        action="store_true", 
-        help="Uninstall the Daheng SDK instead of installing"
+        "--version", default="v1.0-stable", help="SDK release version to install (default: v1.0-stable)"
     )
-    parser.add_argument(
-        "--version",
-        default="v1.0-stable",
-        help="SDK release version to install (default: v1.0-stable)"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
-    
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+
     args = parser.parse_args()
-    
+
     # Create installer to access logger
     installer = DahengSDKInstaller(args.version)
-    
+
     # Configure logging level
     if args.verbose:
         installer.logger.setLevel(logging.DEBUG)
         installer.logger.debug("Verbose logging enabled")
-    
+
     # Perform the requested action
     if args.uninstall:
         success = installer.uninstall()
     else:
         success = installer.install()
-    
+
     # Exit with appropriate code
     sys.exit(0 if success else 1)
 

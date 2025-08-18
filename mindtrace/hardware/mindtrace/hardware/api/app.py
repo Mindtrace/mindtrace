@@ -23,14 +23,14 @@ from pydantic import BaseModel
 from mindtrace.services.core.service import Service
 from mindtrace.core import TaskSchema
 from mindtrace.hardware.core.exceptions import (
-    CameraError,
-    CameraNotFoundError,
-    CameraInitializationError,
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
-    SDKNotAvailableError,
+    CameraError,
+    CameraInitializationError,
+    CameraNotFoundError,
     CameraTimeoutError,
+    SDKNotAvailableError,
 )
 from mindtrace.hardware.models.responses import ErrorResponse
 from mindtrace.hardware.api.dependencies import get_camera_manager
@@ -1737,4 +1737,5 @@ app = camera_api_service.app
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info") 
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

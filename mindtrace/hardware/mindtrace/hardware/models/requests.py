@@ -5,7 +5,8 @@ Contains all Pydantic models for API requests, ensuring proper
 input validation and documentation.
 """
 
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from pydantic import BaseModel, Field
 
 
@@ -16,18 +17,21 @@ class CameraInitializeRequest(BaseModel):
 
 class BatchCameraInitializeRequest(BaseModel):
     """Request model for batch camera initialization."""
+
     cameras: List[str] = Field(..., description="List of camera names to initialize")
     test_connections: bool = Field(True, description="Test connections after initialization")
 
 
 class CameraConfigRequest(BaseModel):
     """Request model for camera configuration."""
+
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     properties: Dict[str, Any] = Field(..., description="Camera properties to configure")
 
 
 class BatchCameraConfigRequest(BaseModel):
     """Request model for batch camera configuration."""
+
     configurations: Dict[str, Dict[str, Any]] = Field(
         ..., description="Dictionary mapping camera names to their configuration properties"
     )
@@ -44,6 +48,7 @@ class CaptureRequest(BaseModel):
 
 class BatchCaptureRequest(BaseModel):
     """Request model for batch image capture."""
+
     cameras: List[str] = Field(..., description="List of camera names to capture from")
     return_images: bool = Field(True, description="Whether to return captured images in response")
 
@@ -67,13 +72,10 @@ class HDRCaptureRequest(BaseModel):
 
 class BatchHDRCaptureRequest(BaseModel):
     """Request model for batch HDR image capture."""
+
     cameras: List[str] = Field(..., description="List of camera names to capture HDR from")
-    exposure_levels: int = Field(
-        ge=2, le=10, default=3, description="Number of different exposure levels to capture"
-    )
-    exposure_multiplier: float = Field(
-        gt=1.0, le=5.0, default=2.0, description="Multiplier between exposure levels"
-    )
+    exposure_levels: int = Field(ge=2, le=10, default=3, description="Number of different exposure levels to capture")
+    exposure_multiplier: float = Field(gt=1.0, le=5.0, default=2.0, description="Multiplier between exposure levels")
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern. Use {camera} and {exposure} placeholders"
     )
@@ -128,23 +130,25 @@ class ImageEnhancementRequest(BaseModel):
 
 class NetworkConcurrentLimitRequest(BaseModel):
     """Request model for setting network concurrent capture limit."""
-    limit: int = Field(
-        ge=1, le=10, description="Maximum number of concurrent captures (1-10)"
-    )
+
+    limit: int = Field(ge=1, le=10, description="Maximum number of concurrent captures (1-10)")
 
 
 class CameraQueryRequest(BaseModel):
     """Request model for camera query operations."""
+
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
 
 
 class BackendFilterRequest(BaseModel):
     """Request model for backend filtering."""
+
     backend: Optional[str] = Field(None, description="Backend name to filter by")
 
 
 class CameraPropertiesRequest(BaseModel):
     """Request model for setting multiple camera properties."""
+
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     exposure: Optional[Union[int, float]] = Field(None, description="Exposure time in microseconds")
     gain: Optional[Union[int, float]] = Field(None, description="Gain value")
@@ -153,7 +157,7 @@ class CameraPropertiesRequest(BaseModel):
     pixel_format: Optional[str] = Field(None, description="Pixel format")
     white_balance: Optional[str] = Field(None, description="White balance mode")
     image_enhancement: Optional[bool] = Field(None, description="Image enhancement enabled")
-    
+
     class Config:
         # Allow tuple types in request
         arbitrary_types_allowed = True 

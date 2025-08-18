@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 class BaseResponse(BaseModel):
     """Base response model for all API endpoints."""
+
     success: bool
     message: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -19,36 +20,43 @@ class BaseResponse(BaseModel):
 
 class BoolResponse(BaseResponse):
     """Response model for boolean operations."""
+
     pass
 
 
 class ListResponse(BaseResponse):
     """Response model for list data."""
+
     data: List[str]
 
 
 class DictResponse(BaseResponse):
     """Response model for dictionary data."""
+
     data: Dict[str, Any]
 
 
 class FloatResponse(BaseResponse):
     """Response model for float values."""
+
     data: float
 
 
 class StringResponse(BaseResponse):
     """Response model for string values."""
+
     data: str
 
 
 class IntResponse(BaseResponse):
     """Response model for integer values."""
+
     data: int
 
 
 class CameraInfo(BaseModel):
     """Camera information model."""
+
     name: str
     backend: str
     device_name: str
@@ -58,6 +66,7 @@ class CameraInfo(BaseModel):
 
 class CameraProperties(BaseModel):
     """Camera properties model."""
+
     exposure: Optional[float] = None
     gain: Optional[float] = None
     roi: Optional[Tuple[int, int, int, int]] = None
@@ -69,6 +78,7 @@ class CameraProperties(BaseModel):
 
 class CaptureResponse(BaseResponse):
     """Response model for image capture operations."""
+
     image_data: Optional[str] = None  # Base64 encoded image
     save_path: Optional[str] = None
     gcs_uri: Optional[str] = None  # GCS URI of uploaded image
@@ -77,6 +87,7 @@ class CaptureResponse(BaseResponse):
 
 class HDRCaptureResponse(BaseResponse):
     """Response model for HDR capture operations."""
+
     images: Optional[List[str]] = None  # Base64 encoded images
     exposure_levels: Optional[List[float]] = None
     gcs_uris: Optional[List[str]] = None  # GCS URIs of uploaded images
@@ -85,6 +96,7 @@ class HDRCaptureResponse(BaseResponse):
 
 class ErrorResponse(BaseResponse):
     """Response model for error conditions."""
+
     success: bool = False
     error_type: str
     error_code: str
@@ -94,33 +106,39 @@ class ErrorResponse(BaseResponse):
 
 class CameraInfoResponse(BaseResponse):
     """Response model for camera information."""
+
     data: CameraInfo
 
 
 class CameraPropertiesResponse(BaseResponse):
     """Response model for camera properties."""
+
     data: CameraProperties
 
 
 class CameraListResponse(BaseResponse):
     """Response model for camera list operations."""
+
     data: List[CameraInfo]
 
 
 class BackendInfoResponse(BaseResponse):
     """Response model for backend information."""
+
     data: Dict[str, Any]
 
 
 class NetworkBandwidthResponse(BaseResponse):
     """Response model for network bandwidth information."""
+
     data: Dict[str, Any]
 
 
 class RangeResponse(BaseResponse):
     """Response model for parameter ranges (e.g., exposure range, gain range)."""
+
     data: Tuple[float, float]
-    
+
     class Config:
         # Allow tuple types in response
         arbitrary_types_allowed = True
@@ -128,16 +146,19 @@ class RangeResponse(BaseResponse):
 
 class PixelFormatListResponse(BaseResponse):
     """Response model for available pixel formats."""
+
     data: List[str]
 
 
 class WhiteBalanceListResponse(BaseResponse):
     """Response model for available white balance modes."""
+
     data: List[str]
 
 
 class BatchOperationResponse(BaseResponse):
     """Response model for batch operations."""
+
     results: Dict[str, bool]  # Maps camera names to success status
     successful_count: int
     failed_count: int
@@ -145,6 +166,7 @@ class BatchOperationResponse(BaseResponse):
 
 class ConfigurationResponse(BaseResponse):
     """Response model for configuration operations."""
+
     data: Dict[str, Any]  # Configuration data
 
 

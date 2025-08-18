@@ -1,7 +1,8 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hardware integration for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
@@ -32,8 +33,7 @@ mindtrace-uninstall-daheng = "mindtrace.hardware.cameras.setup.setup_daheng:unin
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
-cameras-daheng = ["gxipy @ git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy"]
-cameras-all = ["mindtrace-hardware[cameras-basler,cameras-daheng]"]
+cameras-all = ["mindtrace-hardware[cameras-basler]"]
 hardware-all = ["mindtrace-hardware[cameras-all]"]
 setup-tools = [
     "requests>=2.28.0",
@@ -47,11 +47,9 @@ dev = [
     "ruff>=0.1.0",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.hardware"]
-
-[tool.setuptools.package-dir]
-"mindtrace.hardware" = "mindtrace/hardware"
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware"
 
 [build-system]
 requires = ["setuptools"]
