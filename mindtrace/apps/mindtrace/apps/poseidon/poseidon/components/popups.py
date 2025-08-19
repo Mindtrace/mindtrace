@@ -935,12 +935,12 @@ def project_management_popup():
                             lambda assignment: rx.hstack(
                                 rx.vstack(
                                     rx.text(
-                                        assignment.get("project_id", "Unknown Project"),
+                                        assignment.get("project_name", "Unknown Project"),
                                         weight="medium",
                                         color=rx.color("blue", 11),
                                     ),
                                     rx.text(
-                                        f"Roles: {assignment.get('roles', 'No roles')}",
+                                        assignment.get("role_display", "Role: No role"),
                                         color=rx.color("green", 11),
                                         font_size="12px",
                                         weight="medium"
@@ -951,9 +951,9 @@ def project_management_popup():
                                 rx.spacer(),
                                 rx.button(
                                     "Remove",
-                                    on_click=lambda: UserManagementState.remove_user_from_project(
+                                    on_click=lambda project_id=assignment.get("project_id"): UserManagementState.remove_user_from_project(
                                         UserManagementState.project_management_user_id, 
-                                        assignment.get("project_id")
+                                        project_id
                                     ),
                                     size="2",
                                     color_scheme="red",
