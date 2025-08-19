@@ -23,6 +23,30 @@ class OrgRole(str, Enum):
     USER = "user"
     ADMIN = "admin"
     SUPER_ADMIN = "super_admin"
+    
+    @classmethod
+    def is_admin(cls, role) -> bool:
+        """Check if role is admin (excludes super admin)"""
+        return role == cls.ADMIN
+    
+    @classmethod
+    def is_super_admin(cls, role) -> bool:
+        """Check if role is super admin"""
+        return role == cls.SUPER_ADMIN
+    
+    @classmethod
+    def is_admin_or_higher(cls, role) -> bool:
+        """Check if role is admin or super admin"""
+        return role in (cls.ADMIN, cls.SUPER_ADMIN)
+    
+    @classmethod
+    def get_manageable_roles(cls) -> List[str]:
+        """Get roles that can be managed by admins"""
+        return [cls.USER, cls.ADMIN]
+
+class ProjectRole(str, Enum):
+    INSPECTOR = "inspector"
+    VIEWER = "viewer"
 
 class ProjectStatus(str, Enum):
     ACTIVE = "active"
