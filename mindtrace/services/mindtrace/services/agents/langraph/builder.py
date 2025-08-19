@@ -1,5 +1,5 @@
-from langchain_core.messages import HumanMessage, AIMessage
-from langgraph.graph import MessagesState
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langgraph.graph import MessagesState, END
 
 from mindtrace.core import MindtraceABC
 
@@ -49,24 +49,76 @@ class MCPAgentGraph(MindtraceABC):
             return {"messages": [fallback]}
 
     async def default_tool_node(self, state: MessagesState):
-        """Default tool node that executes tool calls from the last AI message."""
-        tool_calls = state["messages"][-1].tool_calls
-        tool_messages = await self.run_tools(tool_calls)
-        return {"messages": tool_messages}
+        """Default tool node that executes tool calls from the last AI message with retry.
+        If execution fails, return the error back to the LLM to regenerate tool calls and retry (up to 3 times).
+        """
+        tool_calls = getattr(state["messages"][-1], "tool_calls", None) or []
+        if not tool_calls:
+            return {"messages": []}
+
+        current_messages = list(state["messages"])  # do not mutate state
+        last_calls = tool_calls
+        last_error: Exception | None = None
+
+        for attempt in range(3):
+            try:
+                tool_messages = await self.run_tools(last_calls)
+                return {"messages": tool_messages}
+            except Exception as error:
+                last_error = error
+                # Send error back to LLM to repair tool arguments
+                repair = (
+                    f"The previous tool call failed with error: {error}.\n"
+                    "Please correct the tool's JSON arguments and emit a new tool call only."
+                )
+                current_messages = current_messages + [HumanMessage(content=repair)]
+                try:
+                    ai = self.llm_with_tools().invoke(current_messages)
+                    current_messages = current_messages + [ai]
+                    last_calls = getattr(ai, "tool_calls", None) or []
+                    if not last_calls:
+                        break
+                except Exception as e2:
+                    last_error = e2
+                    break
+
+        # Final failure: surface as a ToolMessage so downstream prints the error
+        tool_call_id = (
+            last_calls[0].get("id", "retry_failed") if isinstance(last_calls, list) and last_calls else "retry_failed"
+        )
+        content = (
+            "Tool execution failed after 3 attempts. "
+            + (f"Last error: {last_error}" if last_error else "No further details.")
+        )
+        return {"messages": [ToolMessage(content=str(content), tool_call_id=tool_call_id)]}
 
     def build_default(self, ctx: GraphContext):
-        """Construct the default two-node graph (llm -> tools)."""
+        """Construct a looping graph that supports consecutive tool calls.
+
+        Flow:
+          - llm -> tools if AI emits tool_calls, otherwise END
+          - tools -> llm (so the LLM sees tool results and may emit further calls)
+        """
         b = GraphBuilder(MessagesState)
         b.add_node("llm", self.default_llm_node)
         b.add_node("tools", self.default_tool_node)
-        b.add_edge("llm", "tools")
-        b.set_entry("llm").set_terminal("tools")
+
+        def llm_needs_tools(state: MessagesState):
+            ai = state["messages"][-1]
+            calls = getattr(ai, "tool_calls", None) or []
+            return "tools" if calls else END
+
+        b.add_conditional_edges("llm", llm_needs_tools, {"tools": "tools", END: END})
+        b.add_edge("tools", "llm")
+        b.set_entry("llm")
         return b
 
     def build(self, ctx: GraphContext):
         """Build and compile the graph using factory/plugins or default graph."""
         if self._factory:
-            return self._factory(ctx)
+            # When a factory is provided, store the compiled app so astream() can run
+            self._app = self._factory(ctx)
+            return self._app
 
         builder = self.build_default(ctx)
         for plugin in self._plugins:

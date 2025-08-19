@@ -35,8 +35,8 @@ class MCPAgent(Mindtrace):
     """
     def __init__(
         self,
-        service_cls,
-        config: AgentConfig,
+        service_cls=None,
+        config: AgentConfig | None = None,
         *,
         factory: GraphFactory | None = None,
         plugins: list[GraphPlugin] | None = None,
@@ -45,6 +45,11 @@ class MCPAgent(Mindtrace):
         mcp_session: MCPToolSession | None = None,
     ):
         super().__init__()
+        if mcp_session is None and service_cls is None:
+            raise ValueError("Either service_cls or mcp_session must be provided")
+        if config is None:
+            raise ValueError("config must be provided")
+
         self.service_cls = service_cls
         self.config = config
         self._session = mcp_session or MCPToolSession(service_cls)
