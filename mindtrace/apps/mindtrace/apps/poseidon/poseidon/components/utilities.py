@@ -10,6 +10,7 @@ Provides small, reusable utility components:
 import reflex as rx
 
 from poseidon.styles.global_styles import THEME as T
+from poseidon.backend.database.models.enums import OrgRole
 
 
 def loading_spinner(size="md", color="blue") -> rx.Component:
@@ -119,9 +120,9 @@ def status_badge(status, variant="default", size="sm") -> rx.Component:
 def role_badge(role) -> rx.Component:
     """Role-specific badge with appropriate colors."""
     role_colors = {
-        "super_admin": "red",
-        "admin": "orange",
-        "user": "blue",
+        OrgRole.SUPER_ADMIN: "red",
+        OrgRole.ADMIN: "orange",
+        OrgRole.USER: "blue",
     }
 
     color = role_colors.get(role.lower(), "gray")
