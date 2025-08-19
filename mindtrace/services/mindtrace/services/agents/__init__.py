@@ -3,7 +3,7 @@
 Provides stable import paths by re-exporting from the `langraph` subpackage.
 """
 
-from .langraph import AgentConfig, OllamaProvider, MCPToolSession, ToolExecutor, MCPAgentGraph, MCPAgent
+from .langraph import AgentConfig, MCPAgent, MCPAgentGraph, MCPToolSession, OllamaProvider, ToolExecutor
 
 # Backwards-compatibility alias
 
