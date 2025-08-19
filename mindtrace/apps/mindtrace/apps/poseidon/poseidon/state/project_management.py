@@ -46,8 +46,12 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
                 if project.organization_id == self.organization_filter
             ]
         
-        # Apply status filter
-        projects = self.filter_by_status(projects)
+        # Apply status filter (projects use 'status' field with string values)
+        if self.status_filter == "active":
+            projects = [p for p in projects if p.status == "active"]
+        elif self.status_filter == "inactive":
+            projects = [p for p in projects if p.status == "inactive"]
+        # "all" shows all projects
         
         return projects
 
@@ -175,6 +179,9 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
         async def load_project_data():
             auth_state = await self.get_auth_state()
             
+            # Clear existing projects to ensure fresh data
+            self.projects = []
+            
             if auth_state.is_super_admin:
                 # Super admin sees all projects across all organizations
                 projects = await ProjectRepository.get_all()
@@ -190,7 +197,6 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
                 return False
             
             # Convert to ProjectData objects
-            self.projects = []
             for project in projects:
                 # Fetch organization link if needed
                 if hasattr(project, 'organization') and project.organization:
@@ -298,6 +304,27 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
             if not self.validate_required_field(self.edit_project_organization_id, "Organization"):
                 return False
             
+            # Get current project to validate organization changes
+            current_project = await ProjectRepository.get_by_id(self.edit_project_id)
+            if not current_project:
+                self.set_error("Project not found")
+                return False
+            
+            # SECURITY: Prevent cross-organization project moves (unless super admin)
+            current_org_id = str(current_project.organization.id)
+            new_org_id = self.edit_project_organization_id
+            
+            if current_org_id != new_org_id and not auth_state.is_super_admin:
+                self.set_error("Access denied: Cannot move projects between organizations")
+                return False
+            
+            # For regular admins, ensure both orgs are theirs
+            if auth_state.is_admin and not auth_state.is_super_admin:
+                if (current_org_id != auth_state.user_organization_id or 
+                    new_org_id != auth_state.user_organization_id):
+                    self.set_error("Access denied: Project and organization must be yours")
+                    return False
+            
             # Update project
             success = await ProjectRepository.update(self.edit_project_id, {
                 "name": self.edit_project_name.strip(),
@@ -341,8 +368,20 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
         )
 
     async def activate_project(self, project_id: str):
-        """Activate a project"""
+        """Activate a project (admin/super admin only)"""
         async def activate_project_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_projects(auth_state.is_admin, auth_state.is_super_admin):
+                self.set_error("Access denied: Admin privileges required")
+                return False
+            
+            # For regular admins, validate organization access
+            if auth_state.is_admin and not auth_state.is_super_admin:
+                project = await ProjectRepository.get_by_id(project_id)
+                if not project or str(project.organization.id) != auth_state.user_organization_id:
+                    self.set_error("Access denied: Project not in your organization")
+                    return False
+            
             success = await ProjectRepository.update(project_id, {"status": "active"})
             
             if success:
@@ -358,8 +397,20 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
         )
 
     async def deactivate_project(self, project_id: str):
-        """Deactivate a project"""
+        """Deactivate a project (admin/super admin only)"""
         async def deactivate_project_data():
+            auth_state = await self.get_auth_state()
+            if not self.can_manage_projects(auth_state.is_admin, auth_state.is_super_admin):
+                self.set_error("Access denied: Admin privileges required")
+                return False
+            
+            # For regular admins, validate organization access
+            if auth_state.is_admin and not auth_state.is_super_admin:
+                project = await ProjectRepository.get_by_id(project_id)
+                if not project or str(project.organization.id) != auth_state.user_organization_id:
+                    self.set_error("Access denied: Project not in your organization")
+                    return False
+            
             success = await ProjectRepository.update(project_id, {"status": "inactive"})
             
             if success:
@@ -372,6 +423,31 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
         await self.handle_async_operation(
             deactivate_project_data,
             "Project deactivated successfully"
+        )
+
+    async def delete_project(self, project_id: str):
+        """Delete a project"""
+        async def delete_project_data():
+            auth_state = await self.get_auth_state()
+            
+            # Get organization ID for security check
+            if auth_state.is_super_admin:
+                # Super admin can delete any project
+                success = await ProjectRepository.delete(project_id)
+            else:
+                # Regular admin can only delete projects in their organization
+                success = await ProjectRepository.delete(project_id, auth_state.user_organization_id)
+            
+            if success:
+                await self.load_projects()
+                return True
+            else:
+                self.set_error("Failed to delete project")
+                return False
+
+        await self.handle_async_operation(
+            delete_project_data,
+            "Project deleted successfully"
         )
 
     # --- Filter Management ---
