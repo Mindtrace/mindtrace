@@ -6,6 +6,7 @@ import sys
 from poseidon.backend.database.models.user import User
 from poseidon.backend.database.models.organization import Organization
 from poseidon.backend.database.models.project import Project
+from poseidon.backend.database.models.project_assignment import ProjectAssignment
 from poseidon.backend.database.models.image import Image
 from poseidon.backend.database.models.camera import Camera
 from poseidon.backend.database.models.model import Model
@@ -26,6 +27,7 @@ def rebuild_all_models():
         organization_module = sys.modules['poseidon.backend.database.models.organization']
         project_module = sys.modules['poseidon.backend.database.models.project']
         user_module = sys.modules['poseidon.backend.database.models.user']
+        project_assignment_module = sys.modules['poseidon.backend.database.models.project_assignment']
         image_module = sys.modules['poseidon.backend.database.models.image']
         camera_module = sys.modules['poseidon.backend.database.models.camera']
         model_module = sys.modules['poseidon.backend.database.models.model']
@@ -39,6 +41,7 @@ def rebuild_all_models():
             'Organization': Organization,
             'Project': Project,
             'User': User,
+            'ProjectAssignment': ProjectAssignment,
             'Image': Image,
             'Camera': Camera,
             'Model': Model,
@@ -48,7 +51,7 @@ def rebuild_all_models():
             'ScanClassification': ScanClassification,
         }
         
-        for module in [organization_module, project_module, user_module, camera_module, model_module, model_deployment_module, scan_module, scan_image_module, scan_classification_module, image_module]:
+        for module in [organization_module, project_module, user_module, project_assignment_module, camera_module, model_module, model_deployment_module, scan_module, scan_image_module, scan_classification_module, image_module]:
             for name, model_class in models_dict.items():
                 setattr(module, name, model_class)
         
@@ -61,7 +64,10 @@ def rebuild_all_models():
         
         User.model_rebuild()
         
-        # 3. Image depends on Organization, Project, and User
+        # 3. ProjectAssignment depends on User and Project
+        ProjectAssignment.model_rebuild()
+        
+        # 4. Image depends on Organization, Project, and User
         Image.model_rebuild()
         
         # 4. Other models depend on Organization, Project, and User
@@ -101,6 +107,7 @@ async def initialize_database():
         Organization,  # Put Organization first so it's defined before other models
         Project,       # Put Project before models that reference it
         User,         # Put User before models that reference it
+        ProjectAssignment,  # Put ProjectAssignment after User and Project
         Image,        # Put Image after Organization, Project, and User
         Camera,
         Model,
