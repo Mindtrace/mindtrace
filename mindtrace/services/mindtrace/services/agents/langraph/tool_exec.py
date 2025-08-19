@@ -35,4 +35,3 @@ class ToolExecutor(Mindtrace):
                 content = f"Tool '{name}' failed: {error}"
             messages.append(ToolMessage(content=content, tool_call_id=call.get("id", name)))
         return messages
-

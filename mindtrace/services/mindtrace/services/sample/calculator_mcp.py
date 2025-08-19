@@ -106,4 +106,3 @@ class CalculatorService(Service):
             raise ValueError("Division by zero is not allowed")
         quotient = float(payload.a) / float(payload.b)
         return DivideOutput(result=quotient)
-

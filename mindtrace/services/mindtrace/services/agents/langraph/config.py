@@ -15,9 +15,9 @@ class AgentConfig:
     Example:
         AgentConfig(model="qwen2.5:7b", base_url="http://localhost:11434")
     """
+
     model: str = "qwen2.5:7b"
     base_url: str = "http://localhost:11434"
     tool_choice: str = "any"
     system_prompt: str = "You have access to tools. Use them as needed."
     request_timeout: int = 60
-

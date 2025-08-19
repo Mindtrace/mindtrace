@@ -20,6 +20,7 @@ class MCPToolSession(Mindtrace):
         async with MCPToolSession(EchoService, mode="connect", url="http://localhost:8000").open() as sess:
             ...
     """
+
     def __init__(
         self,
         service_cls=None,
@@ -67,4 +68,3 @@ class MCPToolSession(Mindtrace):
                 yield self
         finally:
             self._client = None
-

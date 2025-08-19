@@ -33,6 +33,7 @@ class MCPAgent(Mindtrace):
             async for step in compiled_agent.astream(history, cfg):
                 ...
     """
+
     def __init__(
         self,
         service_cls=None,
@@ -151,4 +152,3 @@ class MCPAgent(Mindtrace):
                 return await executor.execute(calls, tools_by_name)
 
         return _Concrete()
-

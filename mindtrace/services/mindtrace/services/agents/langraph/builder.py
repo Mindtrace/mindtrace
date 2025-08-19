@@ -15,6 +15,7 @@ class MCPAgentGraph(MindtraceABC):
       - register plugins to extend/modify the default graph
       - subclass and override `build_default` or node functions
     """
+
     def __init__(self, *, factory: GraphFactory | None = None, plugins: list[GraphPlugin] | None = None):
         super().__init__()
         self._factory = factory
@@ -94,9 +95,8 @@ class MCPAgentGraph(MindtraceABC):
         tool_call_id = (
             last_calls[0].get("id", "retry_failed") if isinstance(last_calls, list) and last_calls else "retry_failed"
         )
-        content = (
-            "Tool execution failed after 3 attempts. "
-            + (f"Last error: {last_error}" if last_error else "No further details.")
+        content = "Tool execution failed after 3 attempts. " + (
+            f"Last error: {last_error}" if last_error else "No further details."
         )
         return {"messages": [ToolMessage(content=str(content), tool_call_id=tool_call_id)]}
 
@@ -144,4 +144,3 @@ class MCPAgentGraph(MindtraceABC):
             raise RuntimeError("Graph not built. Call build(ctx) before streaming.")
         async for step in self._app.astream({"messages": messages}, config, stream_mode=stream_mode):
             yield step
-

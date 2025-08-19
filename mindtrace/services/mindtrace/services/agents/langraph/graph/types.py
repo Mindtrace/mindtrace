@@ -16,6 +16,7 @@ class GraphContext:
     - llm_provider: language model provider or client to be used by nodes
     - executor: execution backend used to run compiled graphs
     """
+
     def __init__(
         self,
         *,
@@ -38,6 +39,7 @@ class GraphBuilder:
     Provides helpers to add nodes and edges, define linear flows, specify
     entry and terminal nodes, and compile the underlying `StateGraph`.
     """
+
     def __init__(self, state_type: Any):
         self._g = StateGraph(state_type)
         self._start: str | None = None
@@ -74,7 +76,9 @@ class GraphBuilder:
         self._end = node_name
         return self
 
-    def add_conditional_edges(self, src: str, condition: Callable[[Any], str], mapping: dict[str, Any]) -> "GraphBuilder":
+    def add_conditional_edges(
+        self, src: str, condition: Callable[[Any], str], mapping: dict[str, Any]
+    ) -> "GraphBuilder":
         """Proxy to StateGraph.add_conditional_edges.
 
         mapping can route to other nodes by name or to END.
@@ -88,4 +92,3 @@ GraphFactory = Callable[[GraphContext], Any]
 
 GraphPlugin = Callable[[GraphBuilder, GraphContext], None]
 """Type alias for a plugin that mutates a `GraphBuilder` using data from `GraphContext`."""
-

@@ -12,8 +12,8 @@ class LLMProvider(Protocol):
     Implementors must return a LangChain Runnable that supports `.invoke(messages)`
     and accepts tool bindings via `with_tools`.
     """
-    def with_tools(self, tools, tool_choice: str = "any") -> Runnable:
-        ...
+
+    def with_tools(self, tools, tool_choice: str = "any") -> Runnable: ...
 
 
 class OllamaProvider(Mindtrace):
@@ -24,10 +24,10 @@ class OllamaProvider(Mindtrace):
         llm = provider.with_tools(tools, tool_choice="any")
         resp = llm.invoke(messages)
     """
+
     def __init__(self, model: str, base_url: str):
         super().__init__()
         self._llm = ChatOllama(model=model, base_url=base_url)
 
     def with_tools(self, tools, tool_choice: str = "any") -> Runnable:
         return self._llm.bind_tools(tools, tool_choice=tool_choice)
-
