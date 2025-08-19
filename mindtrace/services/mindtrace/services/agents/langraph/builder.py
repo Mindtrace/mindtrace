@@ -50,7 +50,15 @@ class MCPAgentGraph(MindtraceABC):
 
     async def default_tool_node(self, state: MessagesState):
         """Default tool node that executes tool calls from the last AI message with retry.
-        If execution fails, return the error back to the LLM to regenerate tool calls and retry (up to 3 times).
+
+        Behavior:
+        - Executes ALL tool calls returned by the most recent AI message in a single pass.
+          This favors single-step parallel execution when the LLM emits multiple calls.
+          If you prefer explicit multi-step planning (one tool per pass), modify this node
+          to execute only the first call and return (so the graph loops back to the LLM).
+
+        - If execution fails, returns the error back to the LLM to regenerate corrected
+          tool calls and retries up to 3 times.
         """
         tool_calls = getattr(state["messages"][-1], "tool_calls", None) or []
         if not tool_calls:
@@ -95,9 +103,10 @@ class MCPAgentGraph(MindtraceABC):
     def build_default(self, ctx: GraphContext):
         """Construct a looping graph that supports consecutive tool calls.
 
-        Flow:
-          - llm -> tools if AI emits tool_calls, otherwise END
-          - tools -> llm (so the LLM sees tool results and may emit further calls)
+        Flow routing (documented for maintainers):
+          - From `llm` -> `tools` IF the AI message includes `tool_calls`; otherwise -> END.
+          - From `tools` -> `llm` ALWAYS, so the LLM can use tool results and optionally emit
+            further tool calls. The loop terminates once the LLM stops emitting `tool_calls`.
         """
         b = GraphBuilder(MessagesState)
         b.add_node("llm", self.default_llm_node)
@@ -108,7 +117,9 @@ class MCPAgentGraph(MindtraceABC):
             calls = getattr(ai, "tool_calls", None) or []
             return "tools" if calls else END
 
+        # Conditional edge: if LLM emits tool calls, continue to tools; else end
         b.add_conditional_edges("llm", llm_needs_tools, {"tools": "tools", END: END})
+        # After tools execute, route back to LLM to allow chaining further calls
         b.add_edge("tools", "llm")
         b.set_entry("llm")
         return b

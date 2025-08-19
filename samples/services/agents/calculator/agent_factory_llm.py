@@ -17,7 +17,7 @@ def factory(ctx: GraphContext) -> Any:
     def primer(state: MessagesState):
         prompt = (
             "You are a helpful math assistant.\n"
-            "Task: Add 2 and 3 using calc_add, then divide the result by 4 using calc_divided.\n"
+            "Task: Add 2 and 3 using calc_add, then divide the result by 4 using calc_divide.\n"
             "Output only valid tool calls as needed."
         )
         return {"messages": state["messages"] + [HumanMessage(content=prompt)]}
