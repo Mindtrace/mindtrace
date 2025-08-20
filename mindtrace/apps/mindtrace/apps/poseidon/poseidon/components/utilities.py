@@ -49,7 +49,7 @@ def loading_state(message="Loading...", size="md") -> rx.Component:
             margin_top="0.5rem",
         ),
         align_items="center",
-        spacing="0.5rem",
+        spacing="1",
     )
 
 

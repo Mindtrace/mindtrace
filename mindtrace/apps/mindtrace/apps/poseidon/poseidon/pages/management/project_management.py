@@ -11,6 +11,35 @@ from poseidon.state.project_management import ProjectData, ProjectManagementStat
 from poseidon.backend.database.models.enums import OrgRole
 
 
+def project_license_indicator(project_id: str) -> rx.Component:
+    """License status indicator for projects"""
+    
+    # Check if this project has a valid license
+    has_license = ProjectManagementState.project_licenses.get(project_id, False)
+    
+    return rx.cond(
+        has_license,
+        rx.tooltip(
+            rx.badge(
+                "🟢",
+                color_scheme="green",
+                variant="soft",
+                size="1"
+            ),
+            content="Licensed - Full access enabled"
+        ),
+        rx.tooltip(
+            rx.badge(
+                "🔒",
+                color_scheme="red", 
+                variant="soft",
+                size="1"
+            ),
+            content="No license - Limited access"
+        )
+    )
+
+
 def project_management_table():
     """Project management table with filtering and actions."""
 
@@ -23,11 +52,17 @@ def project_management_table():
             rx.table.cell(project.description, cursor="pointer"),
             rx.table.cell(project.organization_name, cursor="pointer"),
             rx.table.cell(
-                rx.text(
-                    project.status.capitalize(),
-                    color=rx.cond(project.status == "active", "green", "red"),
-                    weight="bold",
-                    font_size="12px",
+                rx.hstack(
+                    rx.text(
+                        project.status.capitalize(),
+                        color=rx.cond(project.status == "active", "green", "red"),
+                        weight="bold",
+                        font_size="12px",
+                    ),
+                    # License status indicator
+                    project_license_indicator(project.id),
+                    spacing="2",
+                    align="center"
                 )
             ),
             rx.table.cell(

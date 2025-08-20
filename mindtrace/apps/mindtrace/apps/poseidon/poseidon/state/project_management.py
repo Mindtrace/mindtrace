@@ -1,6 +1,7 @@
 import reflex as rx
 from poseidon.backend.database.repositories.project_repository import ProjectRepository
 from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
+from poseidon.backend.database.repositories.license_repository import LicenseRepository
 from poseidon.state.base import BaseDialogState, RoleBasedAccessMixin
 from poseidon.state.models import ProjectData, OrganizationData, StatusTypes
 from poseidon.state.auth import AuthState
@@ -29,6 +30,9 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
     edit_project_description: str = ""
     edit_project_organization_id: str = ""
     edit_project_dialog_open: bool = False
+    
+    # License tracking for projects
+    project_licenses: Dict[str, bool] = {}  # project_id -> has_valid_license
 
     # --- Computed Properties ---
     @rx.var
@@ -54,6 +58,11 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
         # "all" shows all projects
         
         return projects
+    
+    @rx.var
+    def get_project_license_status(self) -> Dict[str, bool]:
+        """Get license status for all projects"""
+        return self.project_licenses
 
     @rx.var
     def show_organization_selector(self) -> bool:
@@ -196,7 +205,9 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Admin privileges required")
                 return False
             
-            # Convert to ProjectData objects
+            # Convert to ProjectData objects and check license status
+            self.project_licenses = {}  # Reset license tracking
+            
             for project in projects:
                 # Fetch organization link if needed
                 if hasattr(project, 'organization') and project.organization:
@@ -214,6 +225,10 @@ class ProjectManagementState(BaseDialogState, RoleBasedAccessMixin):
                         updated_at=project.updated_at
                     )
                     self.projects.append(project_data)
+                    
+                    # Check license status for this project
+                    has_valid_license = await LicenseRepository.validate_project_access(str(project.id))
+                    self.project_licenses[str(project.id)] = has_valid_license
             
             return True
 
