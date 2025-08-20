@@ -1,7 +1,7 @@
 import reflex as rx
 from typing import List, Dict, Optional, Union
 from datetime import datetime
-from poseidon.backend.database.models.enums import OrgRole, ProjectRole
+from poseidon.backend.database.models.enums import OrgRole, ProjectRole, LicenseStatus
 
 
 class BaseDataModel(rx.Base):
@@ -141,4 +141,22 @@ class StatusTypes:
             cls.ACTIVE: "Active",
             cls.INACTIVE: "Inactive",
             cls.ALL: "All"
-        } 
+        }
+
+
+class LicenseData(rx.Base):
+    """License data model for frontend"""
+    id: str
+    license_key: str
+    project_id: str = ""
+    project_name: str = ""
+    organization_id: str = ""
+    organization_name: str = ""
+    status: LicenseStatus
+    status_display: str = ""
+    issued_at: Union[str, datetime] = ""
+    expires_at: Union[str, datetime] = ""
+    days_until_expiry: int = 0
+    is_valid: bool = False
+    notes: str = ""
+    issued_by: str = "" 

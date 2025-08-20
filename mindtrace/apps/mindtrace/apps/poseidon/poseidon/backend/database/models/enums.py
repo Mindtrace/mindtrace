@@ -92,3 +92,21 @@ class ScanImageStatus(str, Enum):
     PROCESSING = "processing"
     PROCESSED = "processed"
     FAILED = "failed"
+
+class LicenseStatus(str, Enum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+    
+    @classmethod
+    def is_valid(cls, status) -> bool:
+        """Check if license status allows full functionality"""
+        return status == cls.ACTIVE
+    
+    @classmethod
+    def get_display_names(cls) -> Dict[str, str]:
+        return {
+            cls.ACTIVE: "Active",
+            cls.EXPIRED: "Expired", 
+            cls.CANCELLED: "Cancelled"
+        }
