@@ -97,9 +97,11 @@ Performance Notes:
     - Consider camera-specific optimizations for production use
 """
 
+import asyncio
 import os
 import time
-from typing import Optional, List, Tuple, Dict, Any, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 
 try:
@@ -223,7 +225,7 @@ class OpenCVCamera(BaseCamera):
         self._exposure = exposure
         self.timeout_ms = timeout_ms
         self._roi = None  # Initialize ROI to None (full frame)
-        
+
         self.logger.info(
             f"OpenCV camera '{camera_name}' initialized with configuration: "
             f"resolution={width}x{height}, fps={fps}, exposure={exposure}, timeout={timeout_ms}ms"
@@ -294,7 +296,7 @@ class OpenCVCamera(BaseCamera):
 
             # Configure camera settings
             await self._configure_camera()
-            
+
             # Test capture to verify camera is working
             ret, frame = self.cap.read()
             if not ret or frame is None:
@@ -344,18 +346,18 @@ class OpenCVCamera(BaseCamera):
         try:
             width_set = await asyncio.to_thread(self.cap.set, cv2.CAP_PROP_FRAME_WIDTH, self._width)
             height_set = await asyncio.to_thread(self.cap.set, cv2.CAP_PROP_FRAME_HEIGHT, self._height)
-            
+
             fps_set = await asyncio.to_thread(self.cap.set, cv2.CAP_PROP_FPS, self._fps)
-            
+
             exposure_set = True
             if self._exposure >= 0:
                 exposure_set = await asyncio.to_thread(self.cap.set, cv2.CAP_PROP_EXPOSURE, self._exposure)
-            
+
             actual_width = int(await asyncio.to_thread(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
             actual_height = int(await asyncio.to_thread(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
             actual_fps = await asyncio.to_thread(self.cap.get, cv2.CAP_PROP_FPS)
             actual_exposure = await asyncio.to_thread(self.cap.get, cv2.CAP_PROP_EXPOSURE)
-            
+
             self.logger.info(
                 f"Camera '{self.camera_name}' configuration applied: "
                 f"resolution={actual_width}x{actual_height} (requested {self._width}x{self._height}), "
@@ -499,16 +501,16 @@ class OpenCVCamera(BaseCamera):
 
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
+
                     # Apply ROI cropping if set
-                    if hasattr(self, '_roi') and self._roi is not None:
+                    if hasattr(self, "_roi") and self._roi is not None:
                         try:
-                            x, y, w, h = self._roi['x'], self._roi['y'], self._roi['width'], self._roi['height']
-                            frame_rgb = frame_rgb[y:y+h, x:x+w]
+                            x, y, w, h = self._roi["x"], self._roi["y"], self._roi["width"], self._roi["height"]
+                            frame_rgb = frame_rgb[y : y + h, x : x + w]
                             self.logger.debug(f"Applied ROI crop ({x}, {y}, {w}, {h}) for camera '{self.camera_name}'")
                         except Exception as roi_error:
                             self.logger.warning(f"ROI cropping failed, using full frame: {roi_error}")
-                    
+
                     if self.img_quality_enhancement:
                         try:
                             frame_rgb = self._enhance_image_quality(frame_rgb)
@@ -657,33 +659,33 @@ class OpenCVCamera(BaseCamera):
         try:
             original = self.cap.get(cv2.CAP_PROP_EXPOSURE)
             original_auto_exposure = self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
-            
+
             # Try to enable auto-exposure first (many cameras require this)
             auto_exposure_enabled = False
             auto_exposure_values = [1.0, 0.75, 3.0]  # Different cameras use different values
-            
+
             for auto_val in auto_exposure_values:
                 if self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_val):
                     new_auto_exposure = self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
                     if new_auto_exposure == auto_val:
                         auto_exposure_enabled = True
                         break
-            
+
             if not auto_exposure_enabled:
                 self.logger.debug(f"Could not enable auto-exposure for camera '{self.camera_name}'")
                 # Restore original auto-exposure
                 self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, float(original_auto_exposure))
                 return False
-            
+
             # Try to set to a different value within the valid range
             exposure_range = await self.get_exposure_range()
-            
+
             # Calculate a test value that's different from current
             if original > exposure_range[0]:
                 test_value = max(original - 1, exposure_range[0])
             else:
                 test_value = min(original + 1, exposure_range[1])
-            
+
             # If the test value is too close to original, try a larger difference
             if abs(test_value - original) < 1e-3:
                 if original + 5 <= exposure_range[1]:
@@ -694,19 +696,19 @@ class OpenCVCamera(BaseCamera):
                     # If we can't find a good test value, assume exposure control is not supported
                     self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, float(original_auto_exposure))
                     return False
-            
+
             success = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(test_value))
             if not success:
                 # Restore original auto-exposure
                 self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, float(original_auto_exposure))
                 return False
-                
+
             new_value = self.cap.get(cv2.CAP_PROP_EXPOSURE)
-            
+
             # Restore original settings
             self.cap.set(cv2.CAP_PROP_EXPOSURE, float(original))
             self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, float(original_auto_exposure))
-            
+
             # If the value actually changed, exposure control is supported
             return abs(new_value - test_value) > 1e-2
         except Exception:
@@ -726,22 +728,22 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for exposure setting")
-        
+
         try:
             exposure_range = await self.get_exposure_range()
             if exposure < exposure_range[0] or exposure > exposure_range[1]:
                 raise CameraConfigurationError(
                     f"Exposure {exposure} outside valid range {exposure_range} for camera '{self.camera_name}'"
                 )
-            
+
             # Check current auto-exposure mode
             current_auto_exposure = self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
             self.logger.debug(f"Current auto-exposure mode for camera '{self.camera_name}': {current_auto_exposure}")
-            
+
             # Try to enable auto-exposure first (many cameras require this for manual control)
             auto_exposure_enabled = False
             auto_exposure_values = [1.0, 0.75, 3.0]  # Different cameras use different values
-            
+
             for auto_val in auto_exposure_values:
                 if self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, auto_val):
                     new_auto_exposure = self.cap.get(cv2.CAP_PROP_AUTO_EXPOSURE)
@@ -749,10 +751,12 @@ class OpenCVCamera(BaseCamera):
                     if new_auto_exposure == auto_val:
                         auto_exposure_enabled = True
                         break
-            
+
             if not auto_exposure_enabled:
-                self.logger.warning(f"Could not enable auto-exposure for camera '{self.camera_name}', exposure control may not work")
-            
+                self.logger.warning(
+                    f"Could not enable auto-exposure for camera '{self.camera_name}', exposure control may not work"
+                )
+
             # Try to set the exposure
             success = self.cap.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
             if success:
@@ -761,7 +765,7 @@ class OpenCVCamera(BaseCamera):
                 self.logger.info(
                     f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
                 )
-                
+
                 # Check if the value was actually set (allow some tolerance)
                 tolerance = max(1.0, abs(exposure) * 0.01)  # 1% tolerance or 1.0 minimum
                 if abs(actual_exposure - exposure) <= tolerance:
@@ -774,7 +778,9 @@ class OpenCVCamera(BaseCamera):
                     )
                     return False
             else:
-                self.logger.warning(f"Failed to set exposure to {exposure} for camera '{self.camera_name}' (set() returned False)")
+                self.logger.warning(
+                    f"Failed to set exposure to {exposure} for camera '{self.camera_name}' (set() returned False)"
+                )
                 return False
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -807,30 +813,30 @@ class OpenCVCamera(BaseCamera):
     async def get_exposure_range(self) -> List[Union[int, float]]:
         """
         Get camera exposure time range by probing the camera.
-        
+
         This method attempts to find the actual supported exposure range
         by testing different values and seeing what the camera accepts.
-        
+
         Returns:
             List containing [min_exposure, max_exposure] in the camera's native scale
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             return [0.0, 10000.0]  # Default fallback range
-        
+
         try:
             # Get current exposure as reference
             current_exposure = self.cap.get(cv2.CAP_PROP_EXPOSURE)
             self.logger.debug(f"Current exposure for camera '{self.camera_name}': {current_exposure}")
-            
+
             # If current exposure is in log scale (-13 to -1), use that range
             if -15.0 <= current_exposure <= 0.0:
                 self.logger.info(f"Camera '{self.camera_name}' appears to use log scale exposure")
                 return [-13.0, -1.0]
-            
+
             # For other scales, try to probe the actual range
             min_exposure = 0.0
             max_exposure = 10000.0
-            
+
             # Test lower bound: try to find minimum supported value
             test_values = [0, 1, 10, 100, 1000]
             for test_val in test_values:
@@ -842,7 +848,7 @@ class OpenCVCamera(BaseCamera):
                         min_exposure = test_val
                         self.logger.debug(f"  Found minimum exposure: {min_exposure}")
                         break
-            
+
             # Test upper bound: try to find maximum supported value
             test_values = [1000, 5000, 10000, 50000, 100000, 1000000]
             for test_val in test_values:
@@ -862,23 +868,23 @@ class OpenCVCamera(BaseCamera):
                     # Setting failed - previous value was the max
                     self.logger.debug(f"  Setting failed for {test_val}, using previous max: {max_exposure}")
                     break
-            
+
             # Restore original exposure
             self.cap.set(cv2.CAP_PROP_EXPOSURE, float(current_exposure))
-            
+
             self.logger.info(
                 f"Probed exposure range for camera '{self.camera_name}': "
                 f"[{min_exposure}, {max_exposure}] (current: {current_exposure})"
             )
-            
+
             return [min_exposure, max_exposure]
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to probe exposure range for camera '{self.camera_name}': {e}")
             # Fallback to configurable range or default
             return [
-                getattr(self.camera_config.cameras, 'opencv_exposure_range_min', 0.0),
-                getattr(self.camera_config.cameras, 'opencv_exposure_range_max', 10000.0)
+                getattr(self.camera_config.cameras, "opencv_exposure_range_min", 0.0),
+                getattr(self.camera_config.cameras, "opencv_exposure_range_max", 10000.0),
             ]
 
     async def get_width_range(self) -> List[int]:
@@ -937,7 +943,7 @@ class OpenCVCamera(BaseCamera):
             gain_range = await self.get_gain_range()
             if gain < gain_range[0] or gain > gain_range[1]:
                 raise CameraConfigurationError(f"Gain {gain} out of range {gain_range}")
-            
+
             success = await asyncio.to_thread(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
             if success:
                 actual_gain = await asyncio.to_thread(self.cap.get, cv2.CAP_PROP_GAIN)
@@ -972,7 +978,7 @@ class OpenCVCamera(BaseCamera):
     async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set Region of Interest (ROI).
-        
+
         For OpenCV cameras, ROI is implemented by setting the frame size
         and storing the crop parameters for software cropping during capture.
 
@@ -987,33 +993,33 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for ROI setting")
-        
+
         try:
             # Validate ROI parameters
             if width <= 0 or height <= 0:
                 raise CameraConfigurationError(f"Invalid ROI dimensions: {width}x{height}")
             if x < 0 or y < 0:
                 raise CameraConfigurationError(f"Invalid ROI position: ({x}, {y})")
-            
+
             # Get current frame dimensions
             current_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             current_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
+
             # Check if ROI fits within current frame
             if x + width > current_width or y + height > current_height:
                 raise CameraConfigurationError(
                     f"ROI ({x}, {y}, {width}, {height}) exceeds frame dimensions ({current_width}x{current_height})"
                 )
-            
+
             # Store ROI parameters for software cropping
             self._roi = {"x": x, "y": y, "width": width, "height": height}
-            
+
             self.logger.info(
                 f"ROI set for camera '{self.camera_name}': "
                 f"({x}, {y}, {width}, {height}) on frame ({current_width}x{current_height})"
             )
             return True
-            
+
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
@@ -1033,7 +1039,7 @@ class OpenCVCamera(BaseCamera):
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
             # Return stored ROI if set, otherwise return full frame
-            if hasattr(self, '_roi') and self._roi is not None:
+            if hasattr(self, "_roi") and self._roi is not None:
                 return self._roi.copy()
             else:
                 width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -1052,14 +1058,14 @@ class OpenCVCamera(BaseCamera):
         """
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for ROI reset")
-        
+
         try:
             # Clear stored ROI parameters
             self._roi = None
-            
+
             self.logger.info(f"ROI reset for camera '{self.camera_name}' - using full frame")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to reset ROI for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to reset ROI for camera '{self.camera_name}': {str(e)}")
@@ -1241,10 +1247,10 @@ class OpenCVCamera(BaseCamera):
     async def set_config(self, config: str) -> bool:
         """
         Set camera configuration.
-        
+
         Args:
             config: Configuration string or path
-            
+
         Returns:
             True if configuration was set successfully
         """
@@ -1277,11 +1283,13 @@ class OpenCVCamera(BaseCamera):
         if not self.initialized or not self.cap or not self.cap.isOpened():
             raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
         try:
-            import json, os
+            import json
+            import os
+
             dir_name = os.path.dirname(config_path)
             if dir_name:
                 os.makedirs(dir_name, exist_ok=True)
-            
+
             # Common flat format
             config = {
                 "camera_type": "opencv",
