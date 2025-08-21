@@ -110,15 +110,17 @@ def pie_chart_demo_page() -> rx.Component:
                 color="text_primary",
             ),
             pie_chart_card(
-                data=sales_data,
                 title="Sales Distribution",
                 subtitle="Revenue by Category",
-                height=350,
-                show_labels=True,
-                show_legend=True,
-                show_tooltip=True,
-                inner_radius="30%",
-                padding_angle=3,
+                children=pie_chart(
+                    data=sales_data,
+                    height=350,
+                    show_labels=True,
+                    show_legend=True,
+                    show_tooltip=True,
+                    inner_radius="30%",
+                    padding_angle=3,
+                ),
                 card_variant="interactive",
             ),
             spacing="lg",
@@ -160,37 +162,43 @@ def pie_chart_demo_page() -> rx.Component:
             rx.responsive_grid(
                 rx.box(
                     pie_chart_card(
-                        data=traffic_data,
                         title="Mobile Traffic",
-                        height=250,
-                        show_labels=False,
-                        show_legend=True,
-                        show_tooltip=True,
-                        inner_radius="50%",
+                        children=pie_chart(
+                            data=traffic_data,
+                            height=250,
+                            show_labels=False,
+                            show_legend=True,
+                            show_tooltip=True,
+                            inner_radius="50%",
+                        ),
                         card_variant="default",
                     ),
                 ),
                 rx.box(
                     pie_chart_card(
-                        data=financial_data[:2],
                         title="Revenue vs Expenses",
-                        height=250,
-                        show_labels=True,
-                        show_legend=True,
-                        show_tooltip=True,
-                        inner_radius="20%",
+                        children=pie_chart(
+                            data=financial_data[:2],
+                            height=250,
+                            show_labels=True,
+                            show_legend=True,
+                            show_tooltip=True,
+                            inner_radius="20%",
+                        ),
                         card_variant="default",
                     ),
                 ),
                 rx.box(
                     pie_chart_card(
-                        data=sales_data[:3],
                         title="Top Products",
-                        height=250,
-                        show_labels=False,
-                        show_legend=True,
-                        show_tooltip=True,
-                        inner_radius="60%",
+                        children=pie_chart(
+                            data=sales_data[:3],
+                            height=250,
+                            show_labels=False,
+                            show_legend=True,
+                            show_tooltip=True,
+                            inner_radius="60%",
+                        ),
                         card_variant="default",
                     ),
                 ),
@@ -241,10 +249,9 @@ def advanced_pie_chart_example() -> rx.Component:
         {"name": "Basic", "value": 25},
     ]
 
-    return pie_chart_card(
+    # Create the chart component
+    chart = pie_chart(
         data=data,
-        title="Subscription Tiers",
-        subtitle="User distribution across plans",
         height=350,
         show_labels=True,
         show_legend=True,
@@ -255,6 +262,13 @@ def advanced_pie_chart_example() -> rx.Component:
         start_angle=90,
         end_angle=450,  # Full circle + 90 degrees
         animate=True,
+    )
+
+    # Wrap the chart in a card
+    return pie_chart_card(
+        title="Subscription Tiers",
+        subtitle="User distribution across plans",
+        children=chart,
         card_variant="interactive",
     )
 
@@ -298,20 +312,26 @@ def advanced_line_chart_example() -> rx.Component:
         {"month": "Jun", "sales": 700, "revenue": 3800},
     ]
 
-    return line_chart_card(
+    # Create the chart component
+    chart = line_chart(
         data=data,
         x_key="month",
         y_key="sales",
         y_keys=["sales", "revenue"],
         series_key=None,
-        title="Sales vs Revenue Trends",
-        subtitle="Multi-series line chart with smooth curves",
         height=350,
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
         show_dots=True,
         smooth=True,
+    )
+
+    # Wrap the chart in a card
+    return line_chart_card(
+        title="Sales vs Revenue Trends",
+        subtitle="Multi-series line chart with smooth curves",
+        children=chart,
         card_variant="interactive",
     )
 

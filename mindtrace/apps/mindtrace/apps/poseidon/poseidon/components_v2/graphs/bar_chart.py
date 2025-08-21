@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 import reflex as rx
 
 from poseidon.styles.global_styles import THEME as T
+from poseidon.components_v2.containers import chart_card
 
 # Poseidon Color Palette for Charts
 CHART_COLORS = [
@@ -102,60 +103,22 @@ def bar_chart(
             )
         )
 
-    # Add x-axis
-    if layout == "horizontal":
-        chart_components.append(
-            rx.recharts.x_axis(
-                data_key=x_key,
-                stroke=T.colors.fg_muted,
-                tick_line=False,
-                axis_line=False,
-                tick_margin=10,
-            )
-        )
-        chart_components.append(
-            rx.recharts.y_axis(
-                stroke=T.colors.fg_muted,
-                tick_line=False,
-                axis_line=False,
-                tick_margin=10,
-            )
-        )
-    else:
-        # Vertical layout
-        chart_components.append(
-            rx.recharts.x_axis(
-                type_="number",
-                stroke=T.colors.fg_muted,
-                tick_line=False,
-                axis_line=False,
-                tick_margin=10,
-            )
-        )
-        chart_components.append(
-            rx.recharts.y_axis(
-                data_key=x_key,
-                type_="category",
-                stroke=T.colors.fg_muted,
-                tick_line=False,
-                axis_line=False,
-                tick_margin=10,
-            )
-        )
-
-    # Handle single series vs multiple series
-    if y_keys and len(y_keys) > 1:
-        # Multiple y_keys - create a bar for each key
+    # Get colors for the chart
+    if y_keys:
         colors = get_chart_colors(len(y_keys))
+    else:
+        colors = get_chart_colors(1)
+
+    # Create bar components
+    if y_keys:
+        # Multiple series
         for i, key in enumerate(y_keys):
             chart_components.append(
                 rx.recharts.bar(
                     data_key=key,
-                    stroke=colors[i],
-                    fill=colors[i],
-                    stroke_width=1,
-                    name=key.title(),
-                    radius=[4, 4, 0, 0] if layout == "horizontal" else [0, 4, 4, 0],
+                    fill=colors[i % len(colors)],
+                    radius=[4, 4, 0, 0],
+                    stroke_width=0,
                 )
             )
     else:
@@ -163,29 +126,28 @@ def bar_chart(
         chart_components.append(
             rx.recharts.bar(
                 data_key=y_key,
-                stroke=CHART_COLORS[0],
-                fill=CHART_COLORS[0],
-                stroke_width=1,
-                radius=[4, 4, 0, 0] if layout == "horizontal" else [0, 4, 4, 0],
+                fill=colors[0],
+                radius=[4, 4, 0, 0],
+                stroke_width=0,
             )
         )
 
     # Add tooltip if requested
     if show_tooltip:
         chart_components.append(
-            rx.recharts.graphing_tooltip(
+            rx.recharts.tooltip(
                 content_style={
                     "background": T.colors.surface,
                     "border": f"1px solid {T.colors.border}",
                     "border_radius": T.radius.r_md,
-                    "box_shadow": T.shadows.shadow_1,
-                    "backdrop_filter": T.effects.backdrop_filter,
-                    "padding": T.spacing.space_4,
-                    "padding_bottom": 0,
+                    "box_shadow": T.shadows.shadow_2,
                     "font_family": T.typography.font_sans,
                     "font_size": T.typography.fs_sm,
                     "color": T.colors.fg,
-                }
+                },
+                cursor_style={
+                    "fill": "rgba(0, 87, 255, 0.1)",
+                },
             )
         )
 
@@ -196,13 +158,37 @@ def bar_chart(
                 vertical_align="top",
                 height=36,
                 wrapper_style={
-                    "padding_bottom": T.spacing.space_4,
                     "font_family": T.typography.font_sans,
                     "font_size": T.typography.fs_sm,
                     "color": T.colors.fg_muted,
                 },
             )
         )
+
+    # Add axes
+    chart_components.extend([
+        rx.recharts.x_axis(
+            data_key=x_key,
+            axis_line=False,
+            tick_line=False,
+            tick_margin=10,
+            style={
+                "font_family": T.typography.font_sans,
+                "font_size": T.typography.fs_sm,
+                "color": T.colors.fg_muted,
+            },
+        ),
+        rx.recharts.y_axis(
+            axis_line=False,
+            tick_line=False,
+            tick_margin=10,
+            style={
+                "font_family": T.typography.font_sans,
+                "font_size": T.typography.fs_sm,
+                "color": T.colors.fg_muted,
+            },
+        ),
+    ])
 
     # Create the chart container
     chart_container = rx.recharts.bar_chart(
@@ -254,81 +240,6 @@ def bar_chart(
     )
 
 
-def chart_card(
-    title: str,
-    subtitle: Optional[str] = None,
-    children: Optional[rx.Component] = None,
-    card_variant: str = "default",
-) -> rx.Component:
-    """
-    Create a card container for charts or other components.
-
-    Args:
-        title: Card title
-        subtitle: Card subtitle
-        children: The component to be wrapped in the card (e.g., a chart)
-        card_variant: Card styling variant
-
-    Returns:
-        A Reflex component containing the children in a card
-    """
-
-    # Card styles based on variant
-    card_styles = {
-        "background": T.colors.surface,
-        "backdrop_filter": T.effects.backdrop_filter,
-        "border_radius": T.radius.r_xl,
-        "border": f"1px solid {T.colors.border}",
-        "box_shadow": T.shadows.shadow_2,
-        "padding": T.spacing.space_4,
-        "padding_bottom": 0,
-        "position": "relative",
-        "overflow": "hidden",
-        "transition": T.motion.dur,
-    }
-
-    # Add hover effects for interactive cards
-    if card_variant == "interactive":
-        card_styles.update(
-            {
-                "_hover": {
-                    # "transform": "translateY(-4px)",
-                    "box_shadow": T.shadows.shadow_2,
-                    "border_color": T.colors.accent,
-                }
-            }
-        )
-
-    # Create the card container
-    return rx.box(
-        rx.vstack(
-            rx.vstack(
-                rx.text(
-                    title,
-                    font_size=T.typography.fs_lg,
-                    font_weight=T.typography.fw_600,
-                    color=T.colors.fg,
-                    text_align="center",
-                ),
-                rx.text(
-                    subtitle,
-                    font_size=T.typography.fs_sm,
-                    color=T.colors.fg_muted,
-                    text_align="center",
-                )
-                if subtitle
-                else None,
-                spacing="1",
-            ),
-            children,
-            spacing="1",
-            width="100%",
-        ),
-        style=card_styles,
-        width="100%",
-    )
-
-
 def bar_chart_card(
     title: str,
     subtitle: Optional[str] = None,
@@ -347,60 +258,11 @@ def bar_chart_card(
     Returns:
         A Reflex component containing the children in a card
     """
-
-    # Card styles based on variant
-    card_styles = {
-        "background": T.colors.surface,
-        "backdrop_filter": T.effects.backdrop_filter,
-        "border_radius": T.radius.r_xl,
-        "border": f"1px solid {T.colors.border}",
-        "box_shadow": T.shadows.shadow_2,
-        "padding": T.spacing.space_4,
-        "padding_bottom": 0,
-        "position": "relative",
-        "overflow": "hidden",
-        "transition": T.motion.dur,
-    }
-
-    # Add hover effects for interactive cards
-    if card_variant == "interactive":
-        card_styles.update(
-            {
-                "_hover": {
-                    # "transform": "translateY(-4px)",
-                    "box_shadow": T.shadows.shadow_2,
-                    "border_color": T.colors.accent,
-                }
-            }
-        )
-
-    # Create the card container
-    return rx.box(
-        rx.vstack(
-            rx.vstack(
-                rx.text(
-                    title,
-                    font_size=T.typography.fs_lg,
-                    font_weight=T.typography.fw_600,
-                    color=T.colors.fg,
-                    text_align="center",
-                ),
-                rx.text(
-                    subtitle,
-                    font_size=T.typography.fs_sm,
-                    color=T.colors.fg_muted,
-                    text_align="center",
-                )
-                if subtitle
-                else None,
-                spacing="1",
-            ),
-            children,
-            spacing="1",
-            width="100%",
-        ),
-        style=card_styles,
-        width="100%",
+    return chart_card(
+        title=title,
+        subtitle=subtitle,
+        children=children,
+        card_variant=card_variant,
     )
 
 

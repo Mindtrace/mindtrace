@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 import reflex as rx
 
 from poseidon.styles.global_styles import THEME as T
+from poseidon.components_v2.containers import chart_card
 
 # Poseidon Color Palette for Charts
 CHART_COLORS = [
@@ -256,120 +257,28 @@ def line_chart(
 
 
 def line_chart_card(
-    data: List[Dict[str, Any]],
     title: str,
     subtitle: Optional[str] = None,
-    x_key: str = "x",
-    y_key: str = "y",
-    series_key: Optional[str] = None,
-    y_keys: Optional[List[str]] = None,
-    width: Union[str, int] = "100%",
-    height: Union[str, int] = 300,
-    show_grid: bool = True,
-    show_legend: bool = True,
-    show_tooltip: bool = True,
-    show_dots: bool = True,
-    smooth: bool = False,
-    animate: bool = True,
+    children: Optional[rx.Component] = None,
     card_variant: str = "default",
-    **kwargs,
 ) -> rx.Component:
     """
-    Create a line chart wrapped in a beautiful card container.
+    Create a line chart wrapped in a card container.
 
     Args:
-        data: List of dictionaries containing the data
-        title: Chart title
-        subtitle: Chart subtitle
-        x_key: Key for the x-axis values
-        y_key: Key for the y-axis values
-        series_key: Key for grouping data into series (optional)
-        width: Chart width
-        height: Chart height
-        show_grid: Whether to show grid lines
-        show_legend: Whether to show legend
-        show_tooltip: Whether to show tooltip on hover
-        show_dots: Whether to show data points
-        smooth: Whether to use smooth curves
-        animate: Whether to animate the chart
+        title: Card title
+        subtitle: Card subtitle
+        children: The component to be wrapped in the card (e.g., a chart)
         card_variant: Card styling variant
-        **kwargs: Additional props for the chart
 
     Returns:
-        A Reflex component containing the line chart in a card
+        A Reflex component containing the children in a card
     """
-
-    # Card styles based on variant
-    card_styles = {
-        "background": T.colors.surface,
-        "backdrop_filter": T.effects.backdrop_filter,
-        "border_radius": T.radius.r_xl,
-        "border": f"1px solid {T.colors.border}",
-        "box_shadow": T.shadows.shadow_2,
-        "padding": T.spacing.space_4,
-        "padding_bottom": 0,
-        "position": "relative",
-        "overflow": "hidden",
-        "transition": T.motion.dur,
-    }
-
-    # Add hover effects for interactive cards
-    if card_variant == "interactive":
-        card_styles.update(
-            {
-                "_hover": {
-                    # "transform": "translateY(-4px)",
-                    "box_shadow": T.shadows.shadow_2,
-                    "border_color": T.colors.accent,
-                }
-            }
-        )
-
-    # Create the chart
-    chart = line_chart(
-        data=data,
-        x_key=x_key,
-        y_key=y_key,
-        series_key=series_key,
-        y_keys=y_keys,
-        width=width,
-        height=height,
-        show_grid=show_grid,
-        show_legend=show_legend,
-        show_tooltip=show_tooltip,
-        show_dots=show_dots,
-        smooth=smooth,
-        animate=animate,
-        **kwargs,
-    )
-
-    # Create the card container
-    return rx.box(
-        rx.vstack(
-            rx.vstack(
-                rx.text(
-                    title,
-                    font_size=T.typography.fs_lg,
-                    font_weight=T.typography.fw_600,
-                    color=T.colors.fg,
-                    text_align="center",
-                ),
-                rx.text(
-                    subtitle,
-                    font_size=T.typography.fs_sm,
-                    color=T.colors.fg_muted,
-                    text_align="center",
-                )
-                if subtitle
-                else None,
-                spacing="1",
-            ),
-            chart,
-            spacing="1",
-            width="100%",
-        ),
-        style=card_styles,
-        width="100%",
+    return chart_card(
+        title=title,
+        subtitle=subtitle,
+        children=children,
+        card_variant=card_variant,
     )
 
 
@@ -386,10 +295,9 @@ def demo_line_chart() -> rx.Component:
         {"month": "Jun", "sales": 239, "revenue": 3800},
     ]
 
-    return line_chart_card(
+    # Create the chart component
+    chart = line_chart(
         data=sample_data,
-        title="Sales & Revenue Trends",
-        subtitle="Monthly performance overview",
         x_key="month",
         y_key="sales",
         series_key=None,  # Single series
@@ -399,5 +307,12 @@ def demo_line_chart() -> rx.Component:
         show_tooltip=True,
         show_dots=True,
         smooth=True,
+    )
+
+    # Wrap the chart in a card
+    return line_chart_card(
+        title="Sales & Revenue Trends",
+        subtitle="Monthly performance overview",
+        children=chart,
         card_variant="interactive",
     )

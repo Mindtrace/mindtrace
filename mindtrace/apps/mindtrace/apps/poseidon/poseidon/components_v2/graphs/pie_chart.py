@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 import reflex as rx
 
 from poseidon.styles.global_styles import THEME as T
+from poseidon.components_v2.containers import chart_card
 
 # Poseidon Color Palette for Pie Charts
 CHART_COLORS = [
@@ -210,124 +211,28 @@ def pie_chart(
 
 
 def pie_chart_card(
-    data: List[Dict[str, Any]],
     title: str,
     subtitle: Optional[str] = None,
-    data_key: str = "value",
-    name_key: str = "name",
-    width: Union[str, int] = "100%",
-    height: Union[str, int] = 300,
-    show_labels: bool = True,
-    show_legend: bool = True,
-    show_tooltip: bool = True,
-    inner_radius: Union[str, int] = "0%",
-    outer_radius: Union[str, int] = "80%",
-    padding_angle: int = 2,
-    start_angle: int = 0,
-    end_angle: int = 360,
-    animate: bool = True,
+    children: Optional[rx.Component] = None,
     card_variant: str = "default",
-    **kwargs,
 ) -> rx.Component:
     """
     Create a pie chart wrapped in a beautiful card container.
 
     Args:
-        data: List of dictionaries containing the data
-        title: Chart title
-        subtitle: Chart subtitle
-        data_key: Key for the numerical values
-        name_key: Key for the category names
-        width: Chart width
-        height: Chart height
-        show_labels: Whether to show labels on pie slices
-        show_legend: Whether to show legend
-        show_tooltip: Whether to show tooltip on hover
-        inner_radius: Inner radius for doughnut chart
-        outer_radius: Outer radius of the chart
-        padding_angle: Space between pie slices
-        start_angle: Starting angle in degrees
-        end_angle: Ending angle in degrees
-        animate: Whether to animate the chart
+        title: Card title
+        subtitle: Card subtitle
+        children: The component to be wrapped in the card (e.g., a chart)
         card_variant: Card styling variant
-        **kwargs: Additional props for the chart
 
     Returns:
-        A Reflex component containing the pie chart in a card
+        A Reflex component containing the children in a card
     """
-
-    # Card styles based on variant
-    card_styles = {
-        "background": T.colors.surface,
-        "backdrop_filter": T.effects.backdrop_filter,
-        "border_radius": T.radius.r_xl,
-        "border": f"1px solid {T.colors.border}",
-        "box_shadow": T.shadows.shadow_2,
-        "padding": T.spacing.space_4,
-        "padding_bottom": 0,
-        "position": "relative",
-        "overflow": "hidden",
-        "transition": T.motion.dur,
-    }
-
-    # Add hover effects for interactive cards
-    if card_variant == "interactive":
-        card_styles.update(
-            {
-                "_hover": {
-                    # "transform": "translateY(-4px)",
-                    "box_shadow": T.shadows.shadow_2,
-                    "border_color": T.colors.accent,
-                }
-            }
-        )
-
-    # Create the chart
-    chart = pie_chart(
-        data=data,
-        data_key=data_key,
-        name_key=name_key,
-        width=width,
-        height=height,
-        show_labels=show_labels,
-        show_legend=show_legend,
-        show_tooltip=show_tooltip,
-        inner_radius=inner_radius,
-        outer_radius=outer_radius,
-        padding_angle=padding_angle,
-        start_angle=start_angle,
-        end_angle=end_angle,
-        animate=animate,
-        **kwargs,
-    )
-
-    # Create the card container
-    return rx.box(
-        rx.vstack(
-            rx.vstack(
-                rx.text(
-                    title,
-                    font_size=T.typography.fs_lg,
-                    font_weight=T.typography.fw_600,
-                    color=T.colors.fg,
-                    text_align="center",
-                ),
-                rx.text(
-                    subtitle,
-                    font_size=T.typography.fs_sm,
-                    color=T.colors.fg_muted,
-                    text_align="center",
-                )
-                if subtitle
-                else None,
-                spacing="1",
-            ),
-            chart,
-            spacing="1",
-            width="100%",
-        ),
-        style=card_styles,
-        width="100%",
+    return chart_card(
+        title=title,
+        subtitle=subtitle,
+        children=children,
+        card_variant=card_variant,
     )
 
 
@@ -342,10 +247,9 @@ def demo_pie_chart() -> rx.Component:
         {"name": "Investment", "value": 100},
     ]
 
-    return pie_chart_card(
+    # Create the chart component
+    chart = pie_chart(
         data=sample_data,
-        title="Financial Overview",
-        subtitle="Q4 2024 Performance",
         data_key="value",
         name_key="name",
         height=350,
@@ -353,6 +257,13 @@ def demo_pie_chart() -> rx.Component:
         show_legend=True,
         show_tooltip=True,
         inner_radius="30%",
+    )
+
+    # Wrap the chart in a card
+    return pie_chart_card(
+        title="Financial Overview",
+        subtitle="Q4 2024 Performance",
+        children=chart,
         card_variant="interactive",
     )
 
@@ -366,10 +277,9 @@ def demo_doughnut_chart() -> rx.Component:
         {"name": "Tablet", "value": 20},
     ]
 
-    return pie_chart_card(
+    # Create the chart component
+    chart = pie_chart(
         data=sample_data,
-        title="Device Usage",
-        subtitle="Traffic by Device Type",
         data_key="value",
         name_key="name",
         height=300,
@@ -379,5 +289,12 @@ def demo_doughnut_chart() -> rx.Component:
         inner_radius="60%",
         outer_radius="90%",
         padding_angle=5,
+    )
+
+    # Wrap the chart in a card
+    return pie_chart_card(
+        title="Device Usage",
+        subtitle="Traffic by Device Type",
+        children=chart,
         card_variant="default",
     )
