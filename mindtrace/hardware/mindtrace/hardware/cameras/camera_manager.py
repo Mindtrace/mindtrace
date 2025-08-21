@@ -158,15 +158,15 @@ class CameraProxy:
 
     # Core Operations
     async def capture(
-        self, 
+        self,
         save_path: Optional[str] = None,
         gcs_bucket: Optional[str] = None,
         gcs_path: Optional[str] = None,
-        gcs_metadata: Optional[Dict[str, str]] = None
+        gcs_metadata: Optional[Dict[str, str]] = None,
     ) -> Any:
         """
         Capture image from camera with advanced retry logic and optional GCS upload.
-        
+
         This method uses sophisticated retry logic with exponential backoff
         to handle different types of errors appropriately:
         - Capture errors: Fast retry (0.1s base delay)
@@ -178,7 +178,7 @@ class CameraProxy:
             gcs_bucket: Optional GCS bucket name for cloud storage
             gcs_path: Optional GCS path within bucket for cloud storage
             gcs_metadata: Optional metadata for GCS upload
-            
+
         Returns:
             Captured image as numpy array
 
@@ -204,28 +204,34 @@ class CameraProxy:
                             if dirname:  # Only create directory if there is one
                                 os.makedirs(dirname, exist_ok=True)
                             cv2.imwrite(save_path, image)
-                        
+
                         # Upload to GCS if bucket and path provided, or if auto-upload is enabled
                         should_upload = False
                         gcs_uri = None
-                        
+
                         try:
                             import tempfile
-                            from datetime import datetime, UTC
-                            from mindtrace.storage import GCSStorageHandler
+                            from datetime import UTC, datetime
+
                             from mindtrace.hardware.core.config import get_hardware_config
-                            
+                            from mindtrace.storage import GCSStorageHandler
+
                             # Get GCS configuration
                             config = get_hardware_config()
                             gcs_config = config.get_config().gcs
-                            
-                            should_upload = (gcs_bucket and gcs_path) or (gcs_config.auto_upload and gcs_config.default_bucket)
-                            
+
+                            should_upload = (gcs_bucket and gcs_path) or (
+                                gcs_config.auto_upload and gcs_config.default_bucket
+                            )
+
                             if should_upload:
                                 # Use provided bucket/path or default from config
                                 upload_bucket = gcs_bucket or gcs_config.default_bucket
-                                upload_path = gcs_path or f"auto_upload/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{self._full_name.replace(':', '_')}.{gcs_config.default_image_format}"
-                                
+                                upload_path = (
+                                    gcs_path
+                                    or f"auto_upload/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{self._full_name.replace(':', '_')}.{gcs_config.default_image_format}"
+                                )
+
                                 # Create GCS handler with configuration
                                 gcs_handler = GCSStorageHandler(
                                     bucket_name=upload_bucket,
@@ -233,62 +239,63 @@ class CameraProxy:
                                     credentials_path=gcs_config.credentials_path or None,
                                     create_if_missing=gcs_config.create_if_missing,
                                     location=gcs_config.location,
-                                    storage_class=gcs_config.storage_class
+                                    storage_class=gcs_config.storage_class,
                                 )
-                                
+
                                 # Create temporary file with configured format
-                                with tempfile.NamedTemporaryFile(suffix=f".{gcs_config.default_image_format}", delete=False) as temp_file:
+                                with tempfile.NamedTemporaryFile(
+                                    suffix=f".{gcs_config.default_image_format}", delete=False
+                                ) as temp_file:
                                     # Save image to temp file with configured quality
                                     if gcs_config.default_image_format.lower() == "jpg":
                                         encode_params = [cv2.IMWRITE_JPEG_QUALITY, gcs_config.default_image_quality]
                                     else:
                                         encode_params = []
-                                    
-                                    success, encoded_image = cv2.imencode(f".{gcs_config.default_image_format}", image, encode_params)
+
+                                    success, encoded_image = cv2.imencode(
+                                        f".{gcs_config.default_image_format}", image, encode_params
+                                    )
                                     if not success:
                                         raise ValueError(f"Failed to encode image as {gcs_config.default_image_format}")
-                                    
+
                                     temp_file.write(encoded_image.tobytes())
                                     temp_path = temp_file.name
-                                
+
                                 try:
                                     # Prepare metadata
                                     upload_metadata = gcs_metadata or {}
                                     if gcs_config.upload_metadata:
-                                        upload_metadata.update({
-                                            "camera_name": self._full_name,
-                                            "camera_backend": self._camera.__class__.__name__,
-                                            "capture_timestamp": datetime.now(UTC).isoformat(),
-                                            "upload_timestamp": datetime.now(UTC).isoformat(),
-                                            "image_format": gcs_config.default_image_format,
-                                            "image_shape": f"{image.shape[1]}x{image.shape[0]}",
-                                            "image_channels": str(image.shape[2]) if len(image.shape) > 2 else "1"
-                                        })
-                                    
+                                        upload_metadata.update(
+                                            {
+                                                "camera_name": self._full_name,
+                                                "camera_backend": self._camera.__class__.__name__,
+                                                "capture_timestamp": datetime.now(UTC).isoformat(),
+                                                "upload_timestamp": datetime.now(UTC).isoformat(),
+                                                "image_format": gcs_config.default_image_format,
+                                                "image_shape": f"{image.shape[1]}x{image.shape[0]}",
+                                                "image_channels": str(image.shape[2]) if len(image.shape) > 2 else "1",
+                                            }
+                                        )
+
                                     # Upload to GCS
                                     gcs_uri = gcs_handler.upload(
-                                        local_path=temp_path,
-                                        remote_path=upload_path,
-                                        metadata=upload_metadata
+                                        local_path=temp_path, remote_path=upload_path, metadata=upload_metadata
                                     )
-                                    
+
                                     self._camera.logger.info(f"Image uploaded to GCS: {gcs_uri}")
-                                    
+
                                 finally:
                                     # Clean up temporary file
                                     if os.path.exists(temp_path):
                                         os.unlink(temp_path)
-                                        
+
                         except Exception as e:
                             self._camera.logger.warning(f"Failed to upload image to GCS: {e}")
                             # Continue with capture even if GCS upload fails
-                        
+
                         # Return both image and GCS URI if upload was successful
                         if should_upload:
-                            return {
-                                "image": image,
-                                "gcs_uri": gcs_uri
-                            }
+                            return {"image": image, "gcs_uri": gcs_uri}
                         else:
                             return image
                     else:
@@ -386,7 +393,7 @@ class CameraProxy:
         async with self._lock:
             results = {}
             failed_settings = []
-            
+
             # Configure each setting independently
             if "exposure" in settings:
                 try:
@@ -398,7 +405,7 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set exposure {settings['exposure']}: {e}")
                     failed_settings.append(f"exposure={settings['exposure']} (error: {e})")
                     results["exposure"] = False
-            
+
             if "gain" in settings:
                 try:
                     gain_success = await self._camera.set_gain(settings["gain"])
@@ -409,7 +416,7 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set gain {settings['gain']}: {e}")
                     failed_settings.append(f"gain={settings['gain']} (error: {e})")
                     results["gain"] = False
-            
+
             if "roi" in settings:
                 try:
                     x, y, w, h = settings["roi"]
@@ -421,7 +428,7 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set ROI {settings['roi']}: {e}")
                     failed_settings.append(f"roi={settings['roi']} (error: {e})")
                     results["roi"] = False
-            
+
             if "trigger_mode" in settings:
                 try:
                     trigger_success = await self._camera.set_triggermode(settings["trigger_mode"])
@@ -432,7 +439,7 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set trigger_mode {settings['trigger_mode']}: {e}")
                     failed_settings.append(f"trigger_mode={settings['trigger_mode']} (error: {e})")
                     results["trigger_mode"] = False
-            
+
             if "pixel_format" in settings:
                 try:
                     pixel_success = await self._camera.set_pixel_format(settings["pixel_format"])
@@ -443,7 +450,7 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set pixel_format {settings['pixel_format']}: {e}")
                     failed_settings.append(f"pixel_format={settings['pixel_format']} (error: {e})")
                     results["pixel_format"] = False
-            
+
             if "white_balance" in settings:
                 try:
                     wb_success = await self._camera.set_auto_wb_once(settings["white_balance"])
@@ -454,10 +461,12 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set white_balance {settings['white_balance']}: {e}")
                     failed_settings.append(f"white_balance={settings['white_balance']} (error: {e})")
                     results["white_balance"] = False
-            
+
             if "image_enhancement" in settings:
                 try:
-                    enhancement_success = await self._camera.set_image_quality_enhancement(settings["image_enhancement"])
+                    enhancement_success = await self._camera.set_image_quality_enhancement(
+                        settings["image_enhancement"]
+                    )
                     results["image_enhancement"] = enhancement_success
                     if not enhancement_success:
                         failed_settings.append(f"image_enhancement={settings['image_enhancement']}")
@@ -465,17 +474,19 @@ class CameraProxy:
                     self._camera.logger.error(f"Failed to set image_enhancement {settings['image_enhancement']}: {e}")
                     failed_settings.append(f"image_enhancement={settings['image_enhancement']} (error: {e})")
                     results["image_enhancement"] = False
-            
+
             # Log results
             if failed_settings:
-                self._camera.logger.warning(f"Configuration partially failed for camera '{self._full_name}'. Failed settings: {', '.join(failed_settings)}")
+                self._camera.logger.warning(
+                    f"Configuration partially failed for camera '{self._full_name}'. Failed settings: {', '.join(failed_settings)}"
+                )
                 self._camera.logger.info(f"Configuration results: {results}")
             else:
                 self._camera.logger.info(f"Configuration successful for camera '{self._full_name}': {results}")
-            
+
             # Return True if at least one setting was successful
             return any(results.values())
-    
+
     # Exposure Control
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
         """
@@ -535,7 +546,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.set_gain(gain)
-    
+
     async def get_gain(self) -> float:
         """
         Get current camera gain value.
@@ -548,7 +559,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_gain()
-    
+
     async def get_gain_range(self) -> Tuple[float, float]:
         """
         Get camera gain range.
@@ -562,7 +573,7 @@ class CameraProxy:
         async with self._lock:
             range_list = await self._camera.get_gain_range()
             return range_list[0], range_list[1]
-    
+
     # ROI Control
     async def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
         """
@@ -582,7 +593,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.set_ROI(x, y, width, height)
-    
+
     async def get_roi(self) -> Dict[str, int]:
         """
         Get current Region of Interest settings.
@@ -595,7 +606,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_ROI()
-    
+
     async def reset_roi(self) -> bool:
         """
         Reset ROI to full sensor size.
@@ -609,8 +620,8 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.reset_ROI()
-    
-    # Trigger Control  
+
+    # Trigger Control
     async def set_trigger_mode(self, mode: str) -> bool:
         """
         Set camera trigger mode.
@@ -656,7 +667,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.set_pixel_format(format)
-    
+
     async def get_pixel_format(self) -> str:
         """
         Get current pixel format.
@@ -669,7 +680,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_current_pixel_format()
-    
+
     async def get_available_pixel_formats(self) -> List[str]:
         """
         Get list of available pixel formats.
@@ -682,7 +693,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_pixel_format_range()
-    
+
     # White Balance
     async def set_white_balance(self, mode: str) -> bool:
         """
@@ -712,7 +723,7 @@ class CameraProxy:
             CameraConnectionError: If camera is not connected
         """
         return await self._camera.get_wb()
-    
+
     async def get_available_white_balance_modes(self) -> List[str]:
         """
         Get list of available white balance modes.
@@ -725,7 +736,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_wb_range()
-    
+
     # Image Enhancement
     async def set_image_enhancement(self, enabled: bool) -> bool:
         """
@@ -742,7 +753,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.set_image_quality_enhancement(enabled)
-    
+
     async def get_image_enhancement(self) -> bool:
         """
         Get current image enhancement status.
@@ -752,7 +763,7 @@ class CameraProxy:
         """
         async with self._lock:
             return await self._camera.get_image_quality_enhancement()
-    
+
     # Configuration Management
     async def save_config(self, path: str) -> bool:
         """
@@ -777,7 +788,7 @@ class CameraProxy:
 
         Args:
             path: Path to configuration file
-            
+
         Returns:
             True if configuration was loaded successfully
         """
@@ -818,7 +829,7 @@ class CameraProxy:
         return_images: bool = True,
         gcs_bucket: Optional[str] = None,
         gcs_path_pattern: Optional[str] = None,
-        gcs_metadata: Optional[Dict[str, str]] = None
+        gcs_metadata: Optional[Dict[str, str]] = None,
     ) -> Union[List[Any], bool]:
         """
         Capture HDR (High Dynamic Range) images with multiple exposure levels.
@@ -892,7 +903,7 @@ class CameraProxy:
                 captured_images = []
                 successful_captures = 0
                 gcs_uris = []
-                
+
                 for i, exposure in enumerate(exposures):
                     try:
                         # Set exposure for this capture
@@ -921,31 +932,37 @@ class CameraProxy:
                                 if save_dir:  # Only create directory if it's not empty
                                     os.makedirs(save_dir, exist_ok=True)
                                 cv2.imwrite(save_path, image)
-                            
+
                             # Upload to GCS if bucket and path pattern provided, or if auto-upload is enabled
                             should_upload = False
                             gcs_uri = None
-                            
+
                             try:
                                 import tempfile
-                                from datetime import datetime, UTC
-                                from mindtrace.storage import GCSStorageHandler
+                                from datetime import UTC, datetime
+
                                 from mindtrace.hardware.core.config import get_hardware_config
-                                
+                                from mindtrace.storage import GCSStorageHandler
+
                                 # Get GCS configuration
                                 config = get_hardware_config()
                                 gcs_config = config.get_config().gcs
-                                
-                                should_upload = (gcs_bucket and gcs_path_pattern) or (gcs_config.auto_upload and gcs_config.default_bucket)
-                                
+
+                                should_upload = (gcs_bucket and gcs_path_pattern) or (
+                                    gcs_config.auto_upload and gcs_config.default_bucket
+                                )
+
                                 if should_upload:
                                     # Use provided bucket/path or default from config
                                     upload_bucket = gcs_bucket or gcs_config.default_bucket
-                                    upload_path_pattern = gcs_path_pattern or f"auto_upload/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{self._full_name.replace(':', '_')}/exposure_{{exposure}}.{gcs_config.default_image_format}"
-                                    
+                                    upload_path_pattern = (
+                                        gcs_path_pattern
+                                        or f"auto_upload/{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{self._full_name.replace(':', '_')}/exposure_{{exposure}}.{gcs_config.default_image_format}"
+                                    )
+
                                     # Format GCS path with exposure
                                     gcs_path = upload_path_pattern.format(exposure=int(exposure))
-                                    
+
                                     # Create GCS handler with configuration
                                     gcs_handler = GCSStorageHandler(
                                         bucket_name=upload_bucket,
@@ -953,60 +970,68 @@ class CameraProxy:
                                         credentials_path=gcs_config.credentials_path or None,
                                         create_if_missing=gcs_config.create_if_missing,
                                         location=gcs_config.location,
-                                        storage_class=gcs_config.storage_class
+                                        storage_class=gcs_config.storage_class,
                                     )
-                                    
+
                                     # Create temporary file with configured format
-                                    with tempfile.NamedTemporaryFile(suffix=f".{gcs_config.default_image_format}", delete=False) as temp_file:
+                                    with tempfile.NamedTemporaryFile(
+                                        suffix=f".{gcs_config.default_image_format}", delete=False
+                                    ) as temp_file:
                                         # Save image to temp file with configured quality
                                         if gcs_config.default_image_format.lower() == "jpg":
                                             encode_params = [cv2.IMWRITE_JPEG_QUALITY, gcs_config.default_image_quality]
                                         else:
                                             encode_params = []
-                                        
-                                        success, encoded_image = cv2.imencode(f".{gcs_config.default_image_format}", image, encode_params)
+
+                                        success, encoded_image = cv2.imencode(
+                                            f".{gcs_config.default_image_format}", image, encode_params
+                                        )
                                         if not success:
-                                            raise ValueError(f"Failed to encode image as {gcs_config.default_image_format}")
-                                        
+                                            raise ValueError(
+                                                f"Failed to encode image as {gcs_config.default_image_format}"
+                                            )
+
                                         temp_file.write(encoded_image.tobytes())
                                         temp_path = temp_file.name
-                                    
+
                                     try:
                                         # Prepare metadata
                                         upload_metadata = gcs_metadata or {}
                                         if gcs_config.upload_metadata:
-                                            upload_metadata.update({
-                                                "camera_name": self._full_name,
-                                                "camera_backend": self._camera.__class__.__name__,
-                                                "capture_timestamp": datetime.now(UTC).isoformat(),
-                                                "upload_timestamp": datetime.now(UTC).isoformat(),
-                                                "exposure_level": str(exposure),
-                                                "exposure_index": str(i),
-                                                "total_exposures": str(len(exposures)),
-                                                "image_format": gcs_config.default_image_format,
-                                                "image_shape": f"{image.shape[1]}x{image.shape[0]}",
-                                                "image_channels": str(image.shape[2]) if len(image.shape) > 2 else "1"
-                                            })
-                                        
+                                            upload_metadata.update(
+                                                {
+                                                    "camera_name": self._full_name,
+                                                    "camera_backend": self._camera.__class__.__name__,
+                                                    "capture_timestamp": datetime.now(UTC).isoformat(),
+                                                    "upload_timestamp": datetime.now(UTC).isoformat(),
+                                                    "exposure_level": str(exposure),
+                                                    "exposure_index": str(i),
+                                                    "total_exposures": str(len(exposures)),
+                                                    "image_format": gcs_config.default_image_format,
+                                                    "image_shape": f"{image.shape[1]}x{image.shape[0]}",
+                                                    "image_channels": str(image.shape[2])
+                                                    if len(image.shape) > 2
+                                                    else "1",
+                                                }
+                                            )
+
                                         # Upload to GCS
                                         gcs_uri = gcs_handler.upload(
-                                            local_path=temp_path,
-                                            remote_path=gcs_path,
-                                            metadata=upload_metadata
+                                            local_path=temp_path, remote_path=gcs_path, metadata=upload_metadata
                                         )
-                                        
+
                                         gcs_uris.append(gcs_uri)
                                         self._camera.logger.debug(f"HDR image uploaded to GCS: {gcs_uri}")
-                                        
+
                                     finally:
                                         # Clean up temporary file
                                         if os.path.exists(temp_path):
                                             os.unlink(temp_path)
-                                            
+
                             except Exception as e:
                                 self._camera.logger.warning(f"Failed to upload HDR image to GCS: {e}")
                                 # Continue with capture even if GCS upload fails
-                            
+
                             if return_images:
                                 captured_images.append(image)
                             successful_captures += 1
@@ -1050,11 +1075,7 @@ class CameraProxy:
                 if return_images:
                     # Return both images and GCS URIs if available
                     if gcs_uris:
-                        return {
-                            "images": captured_images,
-                            "gcs_uris": gcs_uris,
-                            "exposure_levels": exposures
-                        }
+                        return {"images": captured_images, "gcs_uris": gcs_uris, "exposure_levels": exposures}
                     else:
                         return captured_images
                 else:
@@ -1589,7 +1610,7 @@ class CameraManager(Mindtrace):
         return_images: bool = True,
         gcs_bucket: Optional[str] = None,
         gcs_path_pattern: Optional[str] = None,
-        gcs_metadata: Optional[Dict[str, str]] = None
+        gcs_metadata: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Union[List[Any], bool]]:
         """
         Capture HDR images from multiple cameras simultaneously.
@@ -1604,7 +1625,7 @@ class CameraManager(Mindtrace):
             gcs_bucket: Optional GCS bucket name for cloud storage
             gcs_path_pattern: Optional GCS path pattern. Use {camera} and {exposure} placeholders
             gcs_metadata: Optional metadata for GCS upload
-            
+
         Returns:
             Dict mapping camera names to HDR capture results
 
@@ -1632,14 +1653,14 @@ class CameraManager(Mindtrace):
                         # Replace {camera} placeholder with camera name (sanitized)
                         safe_camera_name = camera_name.replace(":", "_")
                         camera_save_pattern = save_path_pattern.replace("{camera}", safe_camera_name)
-                    
+
                     # Format GCS path pattern for this camera
                     camera_gcs_pattern = None
                     if gcs_path_pattern:
                         # Replace {camera} placeholder with camera name (sanitized)
                         safe_camera_name = camera_name.replace(":", "_")
                         camera_gcs_pattern = gcs_path_pattern.replace("{camera}", safe_camera_name)
-                    
+
                     result = await camera.capture_hdr(
                         save_path_pattern=camera_save_pattern,
                         exposure_levels=exposure_levels,
@@ -1647,7 +1668,7 @@ class CameraManager(Mindtrace):
                         return_images=return_images,
                         gcs_bucket=gcs_bucket,
                         gcs_path_pattern=camera_gcs_pattern,
-                        gcs_metadata=gcs_metadata
+                        gcs_metadata=gcs_metadata,
                     )
                     return camera_name, result
             except Exception as e:
