@@ -29,10 +29,8 @@ services:
       - /dev/video1:/dev/video1
       - /dev/bus/usb:/dev/bus/usb
     volumes:
-      # Persist captured images and logs
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
+      # Use named volume for config (GCS credentials, etc.)
+      - camera-config:/app/config
       - /run/udev:/run/udev:ro  # For device detection
     privileged: true  # Enable full device access for USB cameras
     restart: unless-stopped
