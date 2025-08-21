@@ -148,9 +148,7 @@ def bar_chart(
                     "min_width": "auto",
                     "max_width": "200px",
                 },
-                cursor_style={
-                    "fill": "transparent",
-                },
+                cursor=False,
             )
         )
 
@@ -204,9 +202,6 @@ def bar_chart(
         width=width,
         height=height,
         margin={"top": 20, "right": 20, "bottom": 20, "left": 20},
-        style={
-            "cursor": "default",
-        },
         **kwargs,
     )
 
