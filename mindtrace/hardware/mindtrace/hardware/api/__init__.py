@@ -2,6 +2,6 @@
 Camera API Service module.
 """
 
-from .app import CameraAPIService, camera_api_service, app
+from .app import CameraAPIService, app, camera_api_service
 
-__all__ = ["CameraAPIService", "camera_api_service", "app"] 
+__all__ = ["CameraAPIService", "camera_api_service", "app"]
