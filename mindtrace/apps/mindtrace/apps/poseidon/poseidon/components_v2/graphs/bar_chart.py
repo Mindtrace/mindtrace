@@ -144,9 +144,12 @@ def bar_chart(
                     "font_family": T.typography.font_sans,
                     "font_size": T.typography.fs_sm,
                     "color": T.colors.fg,
+                    "padding": "8px 12px",
+                    "min_width": "auto",
+                    "max_width": "200px",
                 },
                 cursor_style={
-                    "fill": "rgba(0, 87, 255, 0.1)",
+                    "fill": "transparent",
                 },
             )
         )
@@ -201,6 +204,9 @@ def bar_chart(
         width=width,
         height=height,
         margin={"top": 20, "right": 20, "bottom": 20, "left": 20},
+        style={
+            "cursor": "default",
+        },
         **kwargs,
     )
 
