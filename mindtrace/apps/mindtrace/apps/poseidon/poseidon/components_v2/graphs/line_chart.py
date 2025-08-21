@@ -318,7 +318,7 @@ def line_chart_card(
         card_styles.update(
             {
                 "_hover": {
-                    "transform": "translateY(-4px)",
+                    # "transform": "translateY(-4px)",
                     "box_shadow": T.shadows.shadow_2,
                     "border_color": T.colors.accent,
                 }
