@@ -5,8 +5,9 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all endpoints.
 """
 
-from datetime import datetime, UTC
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional, Tuple
+
 from pydantic import BaseModel, Field
 
 
@@ -172,19 +173,23 @@ class ConfigurationResponse(BaseResponse):
 
 class StatusResponse(BaseResponse):
     """Response model for status checks."""
-    data: Dict[str, Any]  # Status information 
+
+    data: Dict[str, Any]  # Status information
 
 
 class StreamResponse(BaseResponse):
     """Response model for video stream endpoint."""
+
     media_type: str = "multipart/x-mixed-replace; boundary=frame"
 
 
 class BatchHDRCaptureResponse(BaseResponse):
     """Response model for batch HDR capture operations."""
+
     data: Dict[str, HDRCaptureResponse]
 
 
 class BatchCaptureResponse(BaseResponse):
     """Response model for batch capture operations."""
-    data: Dict[str, CaptureResponse] 
+
+    data: Dict[str, CaptureResponse]
