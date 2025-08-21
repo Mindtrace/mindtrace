@@ -74,42 +74,38 @@ class PylonSDKInstaller(Mindtrace):
         self.logger.info(f"Initializing Pylon SDK installer for {self.platform}")
         self.logger.debug(f"Release version: {release_version}")
         self.logger.debug(f"Installation directory: {self.pylon_dir}")
-    
+
     def is_sdk_installed(self) -> bool:
         """
         Check if the Basler Pylon SDK is already installed and functional.
-        
+
         Returns:
             True if SDK is installed and working, False otherwise
         """
         try:
             # Check for SDK installation via dpkg
             try:
-                result = subprocess.run(
-                    ["dpkg", "-l", "pylon"], 
-                    capture_output=True, 
-                    text=True, 
-                    check=False
-                )
+                result = subprocess.run(["dpkg", "-l", "pylon"], capture_output=True, text=True, check=False)
                 if result.returncode == 0 and "pylon" in result.stdout:
                     self.logger.info("Basler Pylon SDK is already installed via dpkg")
                     return True
             except FileNotFoundError:
                 # dpkg not available (not on Debian/Ubuntu)
                 pass
-            
+
             # Check for SDK library files
             sdk_lib_paths = [
                 "/opt/pylon/lib64/libpylonbase.so",
                 "/usr/local/lib/libpylonbase.so",
-                "/opt/pylon5/lib64/libpylonbase.so"
+                "/opt/pylon5/lib64/libpylonbase.so",
             ]
-            
+
             sdk_lib_found = any(os.path.exists(path) for path in sdk_lib_paths)
-            
+
             # Check if pypylon Python binding is available and working
             try:
-                from pypylon import pylon
+                import pypylon.pylon  # noqa: F401
+
                 # This will work even with no cameras connected
                 pypylon_working = True
                 self.logger.info("pypylon is available and functional")
@@ -121,7 +117,7 @@ class PylonSDKInstaller(Mindtrace):
                 # Other exceptions might be operational issues with working SDK
                 self.logger.debug(f"pypylon available but had issues: {e}")
                 pypylon_working = True
-            
+
             if sdk_lib_found and pypylon_working:
                 self.logger.info("Basler Pylon SDK is already installed and functional")
                 return True
@@ -134,7 +130,7 @@ class PylonSDKInstaller(Mindtrace):
             else:
                 self.logger.debug("No SDK installation detected")
                 return False
-                
+
         except Exception as e:
             self.logger.debug(f"Error checking SDK installation: {e}")
             return False
@@ -147,12 +143,12 @@ class PylonSDKInstaller(Mindtrace):
             True if installation successful, False otherwise
         """
         self.logger.info("Starting Pylon SDK installation")
-        
+
         # First check if SDK is already installed
         if self.is_sdk_installed():
             self.logger.info("Basler Pylon SDK is already installed and working - skipping installation")
             return True
-        
+
         try:
             if self.platform == "Linux":
                 return self._install_linux()
