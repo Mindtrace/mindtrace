@@ -354,16 +354,18 @@ def defect_trends_example() -> rx.Component:
     ]
 
     return bar_chart_card(
-        data=data,
-        x_key="day",
-        y_key="defects",
-        y_keys=["defects", "resolved"],
         title="Defect Trends",
         subtitle="Defects found vs resolved per day",
-        height=350,
-        show_grid=True,
-        show_legend=True,
-        show_tooltip=True,
+        children=bar_chart(
+            data=data,
+            x_key="day",
+            y_key="defects",
+            y_keys=["defects", "resolved"],
+            height=350,
+            show_grid=True,
+            show_legend=True,
+            show_tooltip=True,
+        ),
         card_variant="interactive",
     )
 
@@ -380,18 +382,20 @@ def advanced_bar_chart_example() -> rx.Component:
     ]
 
     return bar_chart_card(
-        data=data,
-        x_key="team",
-        y_key="bugs",
-        y_keys=["bugs", "features", "improvements"],
         title="Team Performance",
         subtitle="Work items by team and type",
-        height=350,
-        show_grid=True,
-        show_legend=True,
-        show_tooltip=True,
-        layout="horizontal",
-        bar_gap=8,
-        bar_category_gap="15%",
+        children=bar_chart(
+            data=data,
+            x_key="team",
+            y_key="bugs",
+            y_keys=["bugs", "features", "improvements"],
+            height=350,
+            show_grid=True,
+            show_legend=True,
+            show_tooltip=True,
+            layout="horizontal",
+            bar_gap=8,
+            bar_category_gap="15%",
+        ),
         card_variant="interactive",
     )

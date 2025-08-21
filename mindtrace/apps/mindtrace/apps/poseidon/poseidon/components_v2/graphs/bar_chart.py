@@ -254,51 +254,23 @@ def bar_chart(
     )
 
 
-def bar_chart_card(
-    data: List[Dict[str, Any]],
+def chart_card(
     title: str,
     subtitle: Optional[str] = None,
-    x_key: str = "x",
-    y_key: str = "y",
-    y_keys: Optional[List[str]] = None,
-    width: Union[str, int] = "100%",
-    height: Union[str, int] = 300,
-    show_grid: bool = True,
-    show_legend: bool = True,
-    show_tooltip: bool = True,
-    layout: str = "horizontal",
-    bar_size: Optional[int] = None,
-    bar_gap: Union[str, int] = 4,
-    bar_category_gap: Union[str, int] = "10%",
-    animate: bool = True,
+    children: Optional[rx.Component] = None,
     card_variant: str = "default",
-    **kwargs,
 ) -> rx.Component:
     """
-    Create a bar chart wrapped in a beautiful card container.
+    Create a card container for charts or other components.
 
     Args:
-        data: List of dictionaries containing the data
-        title: Chart title
-        subtitle: Chart subtitle
-        x_key: Key for the x-axis values
-        y_key: Key for the y-axis values (single series)
-        y_keys: List of keys for multiple y-axis values (multiple series)
-        width: Chart width
-        height: Chart height
-        show_grid: Whether to show grid lines
-        show_legend: Whether to show legend
-        show_tooltip: Whether to show tooltip on hover
-        layout: Chart layout ("horizontal" or "vertical")
-        bar_size: Size of bars in pixels
-        bar_gap: Gap between bars in the same category
-        bar_category_gap: Gap between bar categories
-        animate: Whether to animate the chart
+        title: Card title
+        subtitle: Card subtitle
+        children: The component to be wrapped in the card (e.g., a chart)
         card_variant: Card styling variant
-        **kwargs: Additional props for the chart
 
     Returns:
-        A Reflex component containing the bar chart in a card
+        A Reflex component containing the children in a card
     """
 
     # Card styles based on variant
@@ -327,24 +299,80 @@ def bar_chart_card(
             }
         )
 
-    # Create the chart
-    chart = bar_chart(
-        data=data,
-        x_key=x_key,
-        y_key=y_key,
-        y_keys=y_keys,
-        width=width,
-        height=height,
-        show_grid=show_grid,
-        show_legend=show_legend,
-        show_tooltip=show_tooltip,
-        layout=layout,
-        bar_size=bar_size,
-        bar_gap=bar_gap,
-        bar_category_gap=bar_category_gap,
-        animate=animate,
-        **kwargs,
+    # Create the card container
+    return rx.box(
+        rx.vstack(
+            rx.vstack(
+                rx.text(
+                    title,
+                    font_size=T.typography.fs_lg,
+                    font_weight=T.typography.fw_600,
+                    color=T.colors.fg,
+                    text_align="center",
+                ),
+                rx.text(
+                    subtitle,
+                    font_size=T.typography.fs_sm,
+                    color=T.colors.fg_muted,
+                    text_align="center",
+                )
+                if subtitle
+                else None,
+                spacing="1",
+            ),
+            children,
+            spacing="1",
+            width="100%",
+        ),
+        style=card_styles,
+        width="100%",
     )
+
+
+def bar_chart_card(
+    title: str,
+    subtitle: Optional[str] = None,
+    children: Optional[rx.Component] = None,
+    card_variant: str = "default",
+) -> rx.Component:
+    """
+    Create a bar chart wrapped in a beautiful card container.
+
+    Args:
+        title: Card title
+        subtitle: Card subtitle
+        children: The component to be wrapped in the card (e.g., a chart)
+        card_variant: Card styling variant
+
+    Returns:
+        A Reflex component containing the children in a card
+    """
+
+    # Card styles based on variant
+    card_styles = {
+        "background": T.colors.surface,
+        "backdrop_filter": T.effects.backdrop_filter,
+        "border_radius": T.radius.r_xl,
+        "border": f"1px solid {T.colors.border}",
+        "box_shadow": T.shadows.shadow_2,
+        "padding": T.spacing.space_4,
+        "padding_bottom": 0,
+        "position": "relative",
+        "overflow": "hidden",
+        "transition": T.motion.dur,
+    }
+
+    # Add hover effects for interactive cards
+    if card_variant == "interactive":
+        card_styles.update(
+            {
+                "_hover": {
+                    "transform": "translateY(-4px)",
+                    "box_shadow": T.shadows.shadow_2,
+                    "border_color": T.colors.accent,
+                }
+            }
+        )
 
     # Create the card container
     return rx.box(
@@ -367,7 +395,7 @@ def bar_chart_card(
                 else None,
                 spacing="1",
             ),
-            chart,
+            children,
             spacing="1",
             width="100%",
         ),
@@ -387,10 +415,9 @@ def demo_bar_chart() -> rx.Component:
         {"category": "Q4", "sales": 800, "revenue": 3908},
     ]
 
-    return bar_chart_card(
+    # Create the chart component
+    chart = bar_chart(
         data=sample_data,
-        title="Quarterly Performance",
-        subtitle="Sales and Revenue by Quarter",
         x_key="category",
         y_key="sales",
         y_keys=["sales", "revenue"],
@@ -398,5 +425,12 @@ def demo_bar_chart() -> rx.Component:
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
+    )
+
+    # Wrap the chart in a card
+    return bar_chart_card(
+        title="Quarterly Performance",
+        subtitle="Sales and Revenue by Quarter",
+        children=chart,
         card_variant="interactive",
     )

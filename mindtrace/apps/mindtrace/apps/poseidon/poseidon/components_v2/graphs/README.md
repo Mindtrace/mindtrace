@@ -271,17 +271,19 @@ data = [
 ]
 
 card_chart = bar_chart_card(
-    data=data,
-    x_key="day",
-    y_key="defects",
-    y_keys=["defects", "resolved"],  # Multiple series
     title="Defect Trends",
     subtitle="Defects found vs resolved per day",
-    height=350,
-    show_grid=True,
-    show_legend=True,
-    bar_gap=8,
-    bar_category_gap="15%",
+    children=bar_chart(
+        data=data,
+        x_key="day",
+        y_key="defects",
+        y_keys=["defects", "resolved"],  # Multiple series
+        height=350,
+        show_grid=True,
+        show_legend=True,
+        bar_gap=8,
+        bar_category_gap="15%",
+    ),
     card_variant="interactive",
 )
 ```
@@ -306,6 +308,15 @@ card_chart = bar_chart_card(
 | `bar_gap` | `Union[str, int]` | `4` | Gap between bars in same category |
 | `bar_category_gap` | `Union[str, int]` | `"10%"` | Gap between bar categories |
 | `animate` | `bool` | `True` | Enable animations |
+
+### Bar Chart Card Configuration
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `title` | `str` | Required | Card title |
+| `subtitle` | `Optional[str]` | `None` | Card subtitle |
+| `children` | `Optional[rx.Component]` | `None` | The component to wrap in the card (e.g., a chart) |
+| `card_variant` | `str` | `"default"` | Card styling variant |
 
 ### Bar Chart Examples
 
@@ -358,7 +369,11 @@ All chart components support card variants:
 # All components support card variants
 pie_chart_card(data=data, title="Pie Chart", card_variant="interactive")
 line_chart_card(data=data, title="Line Chart", card_variant="interactive")
-bar_chart_card(data=data, title="Bar Chart", card_variant="interactive")
+bar_chart_card(
+    title="Bar Chart", 
+    children=bar_chart(data=data, x_key="x", y_key="y"),
+    card_variant="interactive"
+)
 ```
 
 ## Data Format
@@ -420,4 +435,4 @@ from poseidon.components_v2.graphs import (
     line_chart, line_chart_card,
     bar_chart, bar_chart_card
 )
-``` 
+```
