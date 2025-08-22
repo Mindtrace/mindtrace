@@ -1,6 +1,7 @@
 from poseidon.backend.database.models.scan_classification import ScanClassification
 from poseidon.backend.database.init import initialize_database
-from typing import Optional, List
+from typing import Optional, List, Dict
+from datetime import datetime
 
 class ScanClassificationRepository:
     @staticmethod
@@ -135,4 +136,86 @@ class ScanClassificationRepository:
         count = len(classifications)
         for classification in classifications:
             await classification.delete()
-        return count 
+        return count
+    
+    @staticmethod
+    async def get_by_project_and_date_range(
+        project_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[ScanClassification]:
+        """Get classifications for a project within a date range"""
+        await ScanClassificationRepository._ensure_init()
+        try:
+            # Note: This assumes ScanClassification has a relation to project through scan
+            # We'll need to join through the scan model
+            from poseidon.backend.database.models.scan import Scan
+            
+            # First get all scans for the project within date range
+            scan_conditions = [Scan.project.id == project_id]
+            if start_date:
+                scan_conditions.append(Scan.created_at >= start_date)
+            if end_date:
+                scan_conditions.append(Scan.created_at <= end_date)
+            
+            scans = await Scan.find(*scan_conditions).to_list()
+            if not scans:
+                return []
+            
+            scan_ids = [scan.id for scan in scans]
+            
+            # Then get classifications for those scans
+            return await ScanClassification.find(ScanClassification.scan.id.in_(scan_ids)).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project_and_date_range: {e}")
+            return []
+    
+    @staticmethod
+    async def get_by_camera_and_date_range(
+        camera_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[ScanClassification]:
+        """Get classifications for a camera within a date range"""
+        await ScanClassificationRepository._ensure_init()
+        try:
+            # Assuming camera relation exists through scan
+            from poseidon.backend.database.models.scan import Scan
+            
+            # Get scans for the camera within date range
+            scan_conditions = [Scan.camera.id == camera_id]
+            if start_date:
+                scan_conditions.append(Scan.created_at >= start_date)
+            if end_date:
+                scan_conditions.append(Scan.created_at <= end_date)
+            
+            scans = await Scan.find(*scan_conditions).to_list()
+            if not scans:
+                return []
+            
+            scan_ids = [scan.id for scan in scans]
+            
+            # Get classifications for those scans
+            return await ScanClassification.find(ScanClassification.scan.id.in_(scan_ids)).to_list()
+        except Exception as e:
+            print(f"Error in get_by_camera_and_date_range: {e}")
+            return []
+    
+    @staticmethod
+    async def get_defect_frequency_by_project(
+        project_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, int]:
+        """Get defect frequency counts by type for a project"""
+        await ScanClassificationRepository._ensure_init()
+        classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+            project_id, start_date, end_date
+        )
+        
+        frequency = {}
+        for cls in classifications:
+            defect_type = cls.name or "Unknown"
+            frequency[defect_type] = frequency.get(defect_type, 0) + 1
+        
+        return frequency 

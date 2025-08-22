@@ -222,3 +222,8 @@ class CameraRepository:
         except:
             pass
         return None
+    
+    @staticmethod
+    async def get_by_project(project_id: str) -> List[Camera]:
+        """Alias for get_by_project_id for consistency"""
+        return await CameraRepository.get_by_project_id(project_id)
