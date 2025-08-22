@@ -107,7 +107,8 @@ RUN cd mindtrace/hardware && \
     mkdir -p /app/data /app/logs /app/config && \
     chown -R mindtrace:mindtrace /app
 
-# Switch to mindtrace user for runtime
+# Switch to mindtrace user but with additional permissions
+RUN usermod -a -G root,dialout mindtrace
 USER mindtrace
 
 # Expose the API port

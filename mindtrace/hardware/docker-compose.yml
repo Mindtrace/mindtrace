@@ -4,10 +4,7 @@ services:
     build:
       context: ../..
       dockerfile: mindtrace/hardware/Dockerfile.camera
-    ports:
-      - "${PORT:-8000}:${PORT:-8000}"
-    networks:
-      - camera-network
+    network_mode: "host"  # Use host networking for GigE camera access
     environment:
       # Configurable port
       - PORT=${PORT:-8000}
