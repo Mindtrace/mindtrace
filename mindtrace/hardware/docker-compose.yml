@@ -4,7 +4,10 @@ services:
     build:
       context: ../..
       dockerfile: mindtrace/hardware/Dockerfile.camera
-    network_mode: "host"  # Use host networking for IP camera discovery
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    networks:
+      - camera-network
     environment:
       # Configurable port
       - PORT=${PORT:-8000}
