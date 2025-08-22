@@ -19,47 +19,65 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=4 \
     PORT=8000
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Basic system tools
-    curl \
-    wget \
-    unzip \
-    git \
-    build-essential \
-    pkg-config \
-    sudo \
-    # Camera and video dependencies
-    libopencv-dev \
-    python3-opencv \
-    v4l-utils \
-    # USB device access
-    udev \
-    # Network tools for camera discovery
-    net-tools \
-    iputils-ping \
-    nmap \
-    # GStreamer for advanced camera support
-    gstreamer1.0-tools \
-    gstreamer1.0-plugins-base \
-    gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad \
-    gstreamer1.0-plugins-ugly \
-    libgstreamer-plugins-base1.0-dev \
-    # Graphics libraries (for Basler/Daheng)
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libxcb-xinerama0 \
-    libxcb-xinput0 \
-    libxcb-cursor0 \
-    libxext6 \
-    libx11-6 \
-    # Additional dependencies for industrial cameras
-    libusb-1.0-0 \
-    libusb-1.0-0-dev \
+# Install system dependencies with retry and fix-missing for Windows compatibility
+RUN apt-get update && \
+    # First attempt with basic packages
+    apt-get install -y --no-install-recommends --fix-missing \
+        # Basic system tools
+        curl \
+        wget \
+        unzip \
+        git \
+        build-essential \
+        pkg-config \
+        sudo \
+        # Camera and video dependencies
+        libopencv-dev \
+        python3-opencv \
+        v4l-utils \
+        # USB device access
+        udev \
+        # Network tools for camera discovery
+        net-tools \
+        iputils-ping \
+        nmap \
+    || \
+    # Retry with updated package list if first attempt fails
+    (apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+        curl wget unzip git build-essential pkg-config sudo \
+        libopencv-dev python3-opencv v4l-utils udev \
+        net-tools iputils-ping nmap) && \
+    # Install additional packages in separate command for better error handling
+    apt-get install -y --no-install-recommends --fix-missing \
+        # GStreamer for advanced camera support
+        gstreamer1.0-tools \
+        gstreamer1.0-plugins-base \
+        gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad \
+        gstreamer1.0-plugins-ugly \
+        libgstreamer-plugins-base1.0-dev \
+        # Graphics libraries (for Basler/Daheng)
+        libgl1 \
+        libglx-mesa0 \
+        libglib2.0-0 \
+        libxcb-xinerama0 \
+        libxcb-xinput0 \
+        libxcb-cursor0 \
+        libxext6 \
+        libx11-6 \
+        # Additional dependencies for industrial cameras
+        libusb-1.0-0 \
+        libusb-1.0-0-dev \
+    || \
+    # Final retry with updated package list
+    (apt-get update && apt-get install -y --no-install-recommends --fix-missing \
+        gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly libgstreamer-plugins-base1.0-dev \
+        libgl1 libglx-mesa0 libglib2.0-0 libxcb-xinerama0 libxcb-xinput0 libxcb-cursor0 \
+        libxext6 libx11-6 libusb-1.0-0 libusb-1.0-0-dev) && \
     # Clean up
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
