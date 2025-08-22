@@ -14,6 +14,12 @@ NAV = [
         ],
     ),
     (
+        "Analytics",
+        [
+            {"label": "Line Insights", "icon": "chart-line", "href": "/line-insights"},
+        ],
+    ),
+    (
         "Admin",
         [
             {"label": "Organization Management", "icon": "alarm-clock", "href": "/organization-management"},
