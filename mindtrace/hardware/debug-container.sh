@@ -11,8 +11,9 @@ if ! docker ps | grep -q hardware-camera-service; then
     exit 1
 fi
 
-# Run the debug script inside container
-docker exec -it hardware-camera-service-1 bash -c "
+# Copy debug script into container and run it
+docker cp debug-cameras.py hardware-camera-service-1:/app/mindtrace/hardware/
+docker exec hardware-camera-service-1 bash -c "
     cd mindtrace/hardware && 
     uv run python debug-cameras.py
 "
