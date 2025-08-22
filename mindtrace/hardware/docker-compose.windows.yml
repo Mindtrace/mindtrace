@@ -1,0 +1,28 @@
+services:
+  camera-service:
+    # Override for Windows: bridge networking with camera network access
+    network_mode: bridge
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    # Add routes to camera networks
+    extra_hosts:
+      - "cam-gateway-100:192.168.100.1"
+      - "cam-gateway-200:192.168.200.1"
+    # Use host's network stack for camera discovery
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    # Try to access host networking for cameras
+    pid: "host"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - PORT=${PORT:-8000}
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MOCK_ENABLED=true
+      - MINDTRACE_HW_CAMERA_DAHENG_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=4
+      - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE=192.168.100.0/24,192.168.200.0/24
+      - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS=30
+      - MINDTRACE_HW_NETWORK_RETRY_COUNT=3
