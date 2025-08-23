@@ -62,12 +62,7 @@ def download_image(task, save_path):
     else:
         return download_image_http(task, save_path)
 
-def download_and_process_image(args):
-    d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map = args
-    idx2class = {i: n for i, n in enumerate(class2idx)}
-    fname = download_image(d, images_save_path)
-    camera_name = fname.split('-')[0]
-    # Prepare a proper uint8 morphological kernel for dilation
+def get_dilation_kernel(kernel_size):
     kernel_size = int(kernel_size)
     if isinstance(kernel_size, int):
         k = int(kernel_size)
@@ -83,6 +78,15 @@ def download_and_process_image(args):
         dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kx, ky))
     else:
         dilation_kernel = np.ones((3, 3), dtype=np.uint8)
+    return dilation_kernel
+    
+def download_and_process_image(args):
+    d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map, no_hole_fill_map = args
+    idx2class = {i: n for i, n in enumerate(class2idx)}
+    fname = download_image(d, images_save_path)
+    camera_name = fname.split('-')[0]
+    # Prepare a proper uint8 morphological kernel for dilation
+
     if fname.startswith("["):  # Error or skipped
         print(f"Skipping processing for {d['data']['image']} due to download issue: {fname}")
         return None
@@ -102,7 +106,7 @@ def download_and_process_image(args):
     for an in d['annotations']:
         hole_polygons = []
         normal_polygons = []
-        
+
         for result in an['result']:
             if result['type'] != 'polygonlabels':
                 continue
@@ -115,16 +119,17 @@ def download_and_process_image(args):
             points = points.reshape((-1, 1, 2))
 
             if class_name == 'Hole':
-                hole_polygons.append(points)
+                hole_polygons.append((points, class_name))
             else:
                 normal_polygons.append((points, class2idx[class_name]))
-        
+
         all_hole_polygons.extend(hole_polygons)
         all_normal_polygons.extend(normal_polygons)
 
     all_normal_polygons.sort(key=lambda p: p[1])
 
     for contour, class_id in all_normal_polygons:
+        fill_holes = not idx2class[class_id] in no_hole_fill_map
         if fill_holes:
             cv2.drawContours(mask, [contour], -1, color=class_id, thickness=cv2.FILLED)
         else:
@@ -133,19 +138,61 @@ def download_and_process_image(args):
             class_name = idx2class[class_id]
             if camera_name in enlarge_zones_map:
                 if class_name in enlarge_zones_map[camera_name]:
+                    kernel_size, num_iterations = enlarge_zones_map[camera_name][class_name]
+                    dilation_kernel = get_dilation_kernel(kernel_size)
                     mask = cv2.dilate(mask, dilation_kernel, iterations=int(num_iterations))
+        class_name = idx2class[class_id]
+    # Associate each hole with its parent zone via point-in-polygon, then carve selectively
+    zone_contours = []  # (contour, zone_name, zone_id)
+    for contour, class_id in all_normal_polygons:
+        zone_contours.append((contour, idx2class[class_id], class_id))
 
-    if not ignore_holes and 'Hole' in class2idx:
-        for contour in all_hole_polygons:
-            cv2.fillPoly(mask, [contour], color=class2idx['Hole'])
-    if remove_holes and 'background' in class2idx:
-        for contour in all_hole_polygons:
-            cv2.fillPoly(mask, [contour], color=class2idx['background'])
+    hole_to_zone = []  # (hole_contour, parent_zone_name, parent_zone_id)
+    for hole_contour, _hole_label in all_hole_polygons:
+        M = cv2.moments(hole_contour)
+        if M.get('m00', 0) != 0:
+            cx = int(M['m10'] / M['m00'])
+            cy = int(M['m01'] / M['m00'])
+        else:
+            cx, cy = int(hole_contour[0][0][0]), int(hole_contour[0][0][1])
+
+        parent_zone_name = None
+        parent_zone_id = None
+        for z_contour, z_name, z_id in zone_contours:
+            if cv2.pointPolygonTest(z_contour, (cx, cy), False) >= 0:
+                parent_zone_name = z_name
+                parent_zone_id = z_id
+                break
+        hole_to_zone.append((hole_contour, parent_zone_name, parent_zone_id))
+
+    for hole_contour, parent_zone_name, _parent_zone_id in hole_to_zone:
+        if no_hole_fill_map and parent_zone_name in no_hole_fill_map:
+            cv2.fillPoly(mask, [hole_contour], color=class2idx['background'])
+    # if not ignore_holes and 'Hole' in class2idx:
+    #     for contour in all_hole_polygons:
+    #         cv2.fillPoly(mask, [contour], color=class2idx['Hole'])
+    # if remove_holes and 'background' in class2idx:
+    #     for contour in all_hole_polygons:
+    #         cv2.fillPoly(mask, [contour], color=class2idx['background'])
 
     mask_fname = os.path.splitext(fname)[0] + '_mask.png'
     mask_save_path = os.path.join(masks_save_path, mask_fname)
     cv2.imwrite(mask_save_path, mask)
-    
+
+    # Debug mode: save overlay of mask on image
+    debug = True
+    if debug:
+        debug_dir = os.path.join(os.path.dirname(masks_save_path), "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        # Convert PIL image to numpy array
+        img_np = np.array(image.convert("RGB"))
+        # Resize mask to match image if needed (should already match)
+        mask_color = cv2.applyColorMap((mask * (255 // (max(1, mask.max())))).astype(np.uint8), cv2.COLORMAP_JET)
+        # Blend the mask with the image
+        overlay = cv2.addWeighted(img_np, 0.7, mask_color, 0.3, 0)
+        overlay_path = os.path.join(debug_dir, fname)
+        cv2.imwrite(overlay_path, cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR))
+
     has_holes = len(all_hole_polygons) > 0
     return d, fname, has_holes
 
@@ -163,7 +210,8 @@ def download_data(
     fill_holes=False,
     kernel_size=21,
     num_iterations=3,
-    enlarge_zones_map=None):
+    enlarge_zones_map=None,
+    no_hole_fill_map=None):
     os.makedirs(images_save_path, exist_ok=True)
     os.makedirs(masks_save_path, exist_ok=True)
     idx2class = {i: n for i, n in enumerate(class_names)}
@@ -171,7 +219,7 @@ def download_data(
     with open(json_path, 'r') as f:
         data = json.load(f)
 
-    tasks = [(d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map) for d in data]
+    tasks = [(d, images_save_path, masks_save_path, class2idx, ignore_holes, remove_holes, fill_holes, kernel_size, num_iterations, enlarge_zones_map, no_hole_fill_map) for d in data]
     
     processed_items = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -345,9 +393,9 @@ def upload_to_huggingface(download_dir, huggingface_config, class_names, clean_u
             shutil.move(mask_path, os.path.join(download_dir, 'masks', 'test', file.replace('.jpg', '_mask.png')))
 
         
-        shutil.rmtree(datalake_train_path)
-        shutil.rmtree(datalake_test_path)
-        shutil.rmtree(os.path.join(download_dir, existing_dataset))
+        # shutil.rmtree(datalake_train_path)
+        # shutil.rmtree(datalake_test_path)
+        # shutil.rmtree(os.path.join(download_dir, existing_dataset))
     
     target_path = os.path.join(download_dir, dataset_name)
     source_images_train = os.path.join(download_dir, 'images', 'train')
@@ -535,7 +583,7 @@ if __name__ == "__main__":
     
     os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = config['gcp']['credentials_file']
     
-    class_names = config['class_names']
+    class_names = config['zone_class_names']
     workers = config['workers']
     download_dir = config['download_dir']
     remove_holes = config['remove_holes']
@@ -588,7 +636,8 @@ if __name__ == "__main__":
             fill_holes=config['fill_holes'],
             kernel_size=config['enlarge_kernel_size'],
             num_iterations=config['enlarge_iterations'],
-            enlarge_zones_map=config['enlarge_zones_map']
+            enlarge_zones_map=config['enlarge_zones_map'],
+            no_hole_fill_map=config['no_hole_fill_map']
         )
         
         if no_hole_items:
@@ -597,7 +646,7 @@ if __name__ == "__main__":
                 print(f"  - Project: {project.title}, Image: {item['data']['image']}")
             print("--------------------------\n")
             
-    train_test_split(masks_save_path, images_save_path, desired_ratio=config['train_test_split_ratio'])
+    train_test_split(masks_save_path, images_save_path)#, desired_ratio=config['train_test_split_ratio'])
         
     upload_to_huggingface(download_dir, config.get('huggingface', {}), class_names, clean_up=True, remove_holes=remove_holes, hole_id=hole_id)
         
