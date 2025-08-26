@@ -11,6 +11,7 @@ from poseidon.state.line_insights import LineInsightsState
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.graphs.line_chart import line_chart
 from poseidon.components_v2.graphs.bar_chart import bar_chart
+from poseidon.components_v2.graphs.pie_chart import pie_chart
 from poseidon.components_v2.containers.chart_card import chart_card
 from poseidon.components_v2.core.button import button
 # from poseidon.components_v2.forms.select_input import select_input
@@ -131,21 +132,22 @@ def defect_rate_chart() -> rx.Component:
 
 
 def frequent_defects_chart() -> rx.Component:
-    """Most frequent defects bar chart."""
-    chart = bar_chart(
+    """Most frequent defects pie chart."""
+    chart = pie_chart(
         data=LineInsightsState.frequent_defects_data,
-        x_key="defect_type",
-        y_key="count",
+        data_key="count",
+        name_key="defect_type",
         height=350,
-        show_grid=True,
-        show_legend=False,
+        show_labels=True,
+        show_legend=True,
         show_tooltip=True,
-        layout="horizontal",  # Changed to horizontal for better defect type readability
+        inner_radius="30%",  # Creates a doughnut chart
+        outer_radius="80%",
     )
     
     return chart_card(
         title="Most Frequent Defects",
-        subtitle="Top 10 defect types by occurrence",
+        subtitle="Distribution of defect types",
         children=rx.cond(
             LineInsightsState.loading_frequent_chart,
             rx.center(

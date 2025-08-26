@@ -97,17 +97,15 @@ def pie_chart(
     # Create pie chart components
     chart_components = []
 
-    # Create cell components for colors
+    # Create cell components for colors (always create 12 cells for Reflex Vars)
     cell_components = []
-    if len(data) > 1:
-        for i, color in enumerate(CHART_COLORS[:12]):
-            if i < len(data):
-                cell_components.append(
-                    rx.recharts.cell(
-                        key=f"cell-{i}",
-                        fill=color,
-                    )
-                )
+    for i, color in enumerate(CHART_COLORS[:12]):
+        cell_components.append(
+            rx.recharts.cell(
+                key=f"cell-{i}",
+                fill=color,
+            )
+        )
 
     # Add the main pie component with cells as children
     pie_component = rx.recharts.pie(

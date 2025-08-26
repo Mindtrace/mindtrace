@@ -179,24 +179,24 @@ class ScanClassificationRepository:
         """Get classifications for a camera within a date range"""
         await ScanClassificationRepository._ensure_init()
         try:
-            # Assuming camera relation exists through scan
-            from poseidon.backend.database.models.scan import Scan
+            # Get classifications through ScanImage -> Camera relationship
+            from poseidon.backend.database.models.scan_image import ScanImage
             
-            # Get scans for the camera within date range
-            scan_conditions = [Scan.camera.id == camera_id]
+            # Get ScanImages for the camera within date range
+            image_conditions = [ScanImage.camera.id == camera_id]
             if start_date:
-                scan_conditions.append(Scan.created_at >= start_date)
+                image_conditions.append(ScanImage.created_at >= start_date)
             if end_date:
-                scan_conditions.append(Scan.created_at <= end_date)
+                image_conditions.append(ScanImage.created_at <= end_date)
             
-            scans = await Scan.find(*scan_conditions).to_list()
-            if not scans:
+            images = await ScanImage.find(*image_conditions).to_list()
+            if not images:
                 return []
             
-            scan_ids = [scan.id for scan in scans]
+            image_ids = [image.id for image in images]
             
-            # Get classifications for those scans
-            return await ScanClassification.find(ScanClassification.scan.id.in_(scan_ids)).to_list()
+            # Get classifications for those images
+            return await ScanClassification.find(ScanClassification.image.id.in_(image_ids)).to_list()
         except Exception as e:
             print(f"Error in get_by_camera_and_date_range: {e}")
             return []
