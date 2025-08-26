@@ -69,7 +69,7 @@ def date_range_selector() -> rx.Component:
             "Refresh",
             on_click=LineInsightsState.load_dashboard_data,
             variant="ghost",
-            size="sm",
+            size="2",
             loading=LineInsightsState.loading,
         ),
         spacing="3",
@@ -105,39 +105,92 @@ def parts_scanned_chart() -> rx.Component:
 
 
 def defect_rate_chart() -> rx.Component:
-    """Defect rate over time chart."""
+    """Defect rate over time chart with defect type filter."""
+    # Chart filter
+    filter_component = rx.hstack(
+        rx.text(
+            "Defect Type:",
+            font_size=T.typography.fs_sm,
+            color=T.colors.fg_muted,
+            font_weight=T.typography.fw_500,
+        ),
+        rx.select(
+            LineInsightsState.defect_types_with_all,
+            value=rx.cond(LineInsightsState.defect_rate_selected_defect, LineInsightsState.defect_rate_selected_defect, "all"),
+            on_change=LineInsightsState.set_defect_rate_filter,
+            placeholder="All Types",
+            width="180px",
+            size="2",
+        ),
+        spacing="2",
+        align="center",
+        justify="end",
+        width="100%",
+        padding_bottom=T.spacing.space_2,
+    )
+    
     chart = line_chart(
         data=LineInsightsState.defect_rate_data,
         x_key="date",
         y_key="defect_rate",  # Use y_key instead of y_keys for single series
-        height=350,
+        height=320,  # Slightly smaller to accommodate filter
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
         smooth=True,
     )
     
-    return chart_card(
-        title="Defect Rate Over Time",
-        subtitle="Percentage of parts with defects",
-        children=rx.cond(
+    chart_content = rx.vstack(
+        filter_component,
+        rx.cond(
             LineInsightsState.loading_defect_chart,
             rx.center(
                 rx.spinner(size="3"),
-                height="350px",
+                height="320px",
             ),
             chart,
         ),
+        spacing="2",
+        width="100%",
+    )
+    
+    return chart_card(
+        title="Defect Rate Over Time",
+        subtitle="Percentage of parts with defects",
+        children=chart_content,
     )
 
 
 def frequent_defects_chart() -> rx.Component:
-    """Most frequent defects pie chart."""
+    """Most frequent defects pie chart with defect type filter."""
+    # Chart filter
+    filter_component = rx.hstack(
+        rx.text(
+            "Focus Type:",
+            font_size=T.typography.fs_sm,
+            color=T.colors.fg_muted,
+            font_weight=T.typography.fw_500,
+        ),
+        rx.select(
+            LineInsightsState.defect_types_with_all,
+            value=rx.cond(LineInsightsState.frequent_defects_selected_type, LineInsightsState.frequent_defects_selected_type, "all"),
+            on_change=LineInsightsState.set_frequent_defects_filter,
+            placeholder="All Types",
+            width="180px",
+            size="2",
+        ),
+        spacing="2",
+        align="center",
+        justify="end",
+        width="100%",
+        padding_bottom=T.spacing.space_2,
+    )
+    
     chart = pie_chart(
         data=LineInsightsState.frequent_defects_data,
         data_key="count",
         name_key="defect_type",
-        height=350,
+        height=320,  # Slightly smaller to accommodate filter
         show_labels=True,
         show_legend=True,
         show_tooltip=True,
@@ -145,46 +198,104 @@ def frequent_defects_chart() -> rx.Component:
         outer_radius="80%",
     )
     
-    return chart_card(
-        title="Most Frequent Defects",
-        subtitle="Distribution of defect types",
-        children=rx.cond(
+    chart_content = rx.vstack(
+        filter_component,
+        rx.cond(
             LineInsightsState.loading_frequent_chart,
             rx.center(
                 rx.spinner(size="3"),
-                height="350px",
+                height="320px",
             ),
             chart,
         ),
+        spacing="2",
+        width="100%",
+    )
+    
+    return chart_card(
+        title="Most Frequent Defects",
+        subtitle="Distribution of defect types",
+        children=chart_content,
     )
 
 
 def camera_defect_matrix_chart() -> rx.Component:
-    """Camera defect matrix chart."""
+    """Camera defect matrix chart with defect type and camera filters."""
+    # Chart filters
+    filter_component = rx.vstack(
+        rx.hstack(
+            rx.text(
+                "Defect Type:",
+                font_size=T.typography.fs_sm,
+                color=T.colors.fg_muted,
+                font_weight=T.typography.fw_500,
+            ),
+            rx.select(
+                LineInsightsState.defect_types_with_all,
+                value=rx.cond(LineInsightsState.camera_matrix_selected_defect, LineInsightsState.camera_matrix_selected_defect, "all"),
+                on_change=LineInsightsState.set_camera_matrix_defect_filter,
+                placeholder="All Types",
+                width="150px",
+                size="2",
+            ),
+            spacing="2",
+            align="center",
+        ),
+        rx.hstack(
+            rx.text(
+                "Camera:",
+                font_size=T.typography.fs_sm,
+                color=T.colors.fg_muted,
+                font_weight=T.typography.fw_500,
+            ),
+            rx.select(
+                LineInsightsState.cameras_with_all,
+                value=rx.cond(LineInsightsState.camera_matrix_selected_camera, LineInsightsState.camera_matrix_selected_camera, "all"),
+                on_change=LineInsightsState.set_camera_matrix_camera_filter,
+                placeholder="All Cameras",
+                width="150px",
+                size="2",
+            ),
+            spacing="2",
+            align="center",
+        ),
+        spacing="2",
+        align="end",
+        width="100%",
+        padding_bottom=T.spacing.space_2,
+    )
+    
     # Create chart with predefined defect types for now
     # In a real implementation, this would be dynamically generated
     chart = bar_chart(
         data=LineInsightsState.camera_defect_matrix_data,
         x_key="camera",
         y_keys=["Surface Scratch", "Color Mismatch", "Dimension Error", "Missing Component"],
-        height=350,
+        height=280,  # Smaller to accommodate filters
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
         layout="horizontal",  # Changed to horizontal for better readability
     )
     
-    return chart_card(
-        title="Defect Distribution by Camera",
-        subtitle="Defect counts per camera position",
-        children=rx.cond(
+    chart_content = rx.vstack(
+        filter_component,
+        rx.cond(
             LineInsightsState.loading_matrix_chart,
             rx.center(
                 rx.spinner(size="3"),
-                height="350px",
+                height="280px",
             ),
             chart,
         ),
+        spacing="2",
+        width="100%",
+    )
+    
+    return chart_card(
+        title="Defect Distribution by Camera",
+        subtitle="Defect counts per camera position",
+        children=chart_content,
     )
 
 

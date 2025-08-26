@@ -175,3 +175,10 @@ cython_debug/
 
 # Stress test results
 stress_test_results/
+
+# Sensitive files
+gcp_keys/
+*.json
+.env.dev
+.env.local
+.env.production

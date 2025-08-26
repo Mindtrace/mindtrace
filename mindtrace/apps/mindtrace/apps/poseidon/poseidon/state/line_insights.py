@@ -22,10 +22,30 @@ class LineInsightsState(BaseFilterState):
     plant_id: str = "Adient"  # Default plant
     line_id: str = "MIG66"    # Default line
     
-    # Date range filtering
+    # Global time filtering (affects all charts)
     date_range: str = "last_7_days"  # last_7_days, last_30_days, last_90_days, custom
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
+    
+    # Individual chart filters
+    defect_rate_selected_defect: Optional[str] = None  # Filter defect rate chart by specific defect type
+    frequent_defects_selected_type: Optional[str] = None  # Filter frequent defects by type
+    camera_matrix_selected_defect: Optional[str] = None  # Filter camera matrix by defect type
+    camera_matrix_selected_camera: Optional[str] = None  # Filter camera matrix by camera
+    
+    # Available filter options (populated dynamically)
+    available_defect_types: List[str] = []
+    available_cameras: List[str] = []
+    
+    @rx.var
+    def defect_types_with_all(self) -> List[str]:
+        """Get defect types with 'all' option prepended."""
+        return ["all"] + self.available_defect_types
+    
+    @rx.var  
+    def cameras_with_all(self) -> List[str]:
+        """Get cameras with 'all' option prepended."""
+        return ["all"] + self.available_cameras
     
     # Chart data
     parts_scanned_data: List[Dict[str, Any]] = []
@@ -64,6 +84,26 @@ class LineInsightsState(BaseFilterState):
         # Refresh data when date range changes
         await self.load_dashboard_data()
     
+    async def set_defect_rate_filter(self, defect_type: Optional[str]):
+        """Set defect type filter for defect rate chart."""
+        self.defect_rate_selected_defect = defect_type if defect_type != "all" else None
+        await self.load_defect_rate_data()
+    
+    async def set_frequent_defects_filter(self, defect_type: Optional[str]):
+        """Set defect type filter for frequent defects chart."""
+        self.frequent_defects_selected_type = defect_type if defect_type != "all" else None
+        await self.load_frequent_defects_data()
+    
+    async def set_camera_matrix_defect_filter(self, defect_type: Optional[str]):
+        """Set defect type filter for camera matrix chart."""
+        self.camera_matrix_selected_defect = defect_type if defect_type != "all" else None
+        await self.load_camera_defect_matrix_data()
+    
+    async def set_camera_matrix_camera_filter(self, camera_name: Optional[str]):
+        """Set camera filter for camera matrix chart."""
+        self.camera_matrix_selected_camera = camera_name if camera_name != "all" else None
+        await self.load_camera_defect_matrix_data()
+    
     async def set_custom_date_range(self, start: str, end: str):
         """Set custom date range."""
         try:
@@ -89,6 +129,45 @@ class LineInsightsState(BaseFilterState):
         else:
             # Load dashboard data if date range already set
             await self.load_dashboard_data()
+        
+        # Load filter options
+        await self.load_filter_options()
+    
+    async def load_filter_options(self):
+        """Load available options for chart filters."""
+        try:
+            # Get all defect types from classifications
+            classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+                self.line_id, None, None  # Get all time to populate complete filter list
+            )
+            
+            # Extract unique defect types
+            defect_types = set()
+            for cls in classifications:
+                if cls.name:
+                    defect_types.add(cls.name)
+            
+            self.available_defect_types = sorted(list(defect_types))
+            
+            # Get all cameras for this project
+            cameras = await CameraRepository.get_by_project(self.line_id)
+            camera_names = set()
+            for camera in cameras:
+                if camera.name:
+                    camera_names.add(camera.name)
+            
+            self.available_cameras = sorted(list(camera_names))
+            
+        except Exception as e:
+            print(f"Error loading filter options: {e}")
+            # Use sample data as fallback
+            self.available_defect_types = [
+                "Surface Scratch", "Color Mismatch", "Dimension Error", 
+                "Missing Component", "Surface Dent", "Alignment Issue"
+            ]
+            self.available_cameras = [
+                "Camera Line 1", "Camera Line 2", "Camera Line 3", "Camera Line 4"
+            ]
     
     async def load_dashboard_data(self):
         """Load all dashboard data based on current filters."""
@@ -156,9 +235,10 @@ class LineInsightsState(BaseFilterState):
         """Load data for defect rate over time chart."""
         self.loading_defect_chart = True
         try:
-            # Get classifications for the project within date range
-            classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+            # Get classifications for the project within date range, filtered by defect type if selected
+            classifications = await ScanClassificationRepository.get_by_project_date_and_defect_type(
                 self.line_id,
+                self.defect_rate_selected_defect,  # Filter by selected defect type
                 self.start_date,
                 self.end_date
             )
@@ -210,9 +290,10 @@ class LineInsightsState(BaseFilterState):
         """Load data for most frequent defects chart."""
         self.loading_frequent_chart = True
         try:
-            # Get classifications and count by defect type
-            classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+            # Get classifications and count by defect type, filtered by selected type if any
+            classifications = await ScanClassificationRepository.get_by_project_date_and_defect_type(
                 self.line_id,
+                self.frequent_defects_selected_type,  # Filter by selected defect type
                 self.start_date,
                 self.end_date
             )
@@ -263,8 +344,13 @@ class LineInsightsState(BaseFilterState):
             has_any_data = False
             
             for camera in cameras:
-                camera_defects = await ScanClassificationRepository.get_by_camera_and_date_range(
+                # Skip camera if we're filtering by specific camera and this isn't it
+                if self.camera_matrix_selected_camera and camera.name != self.camera_matrix_selected_camera:
+                    continue
+                    
+                camera_defects = await ScanClassificationRepository.get_by_camera_date_and_defect_type(
                     camera.id,
+                    self.camera_matrix_selected_defect,  # Filter by selected defect type
                     self.start_date,
                     self.end_date
                 )
