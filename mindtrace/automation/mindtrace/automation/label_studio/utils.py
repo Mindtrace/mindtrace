@@ -40,12 +40,6 @@ def detections_to_label_studio(
 
     for image_data in dict_format:
         image_annotations = []
-
-        print("****INSIDE LABEL STUDIO DETECTION******")
-
-        print('bboxes' in image_data)
-        print(image_data)
-
         try:
             with Image.open(image_data['image_path']) as img:
                 img_width, img_height = img.size
@@ -260,8 +254,7 @@ def parse_yolo_box_file(pipeline: str, task_name:str, box_file_path: str, img_wi
                     continue
 
                 parts = line.split()
-                print("&&&&&&&&&&")
-                print(len(parts))
+
                 if len(parts) >= 5:
                     if pipeline == "sfz":
                         if task_name == "spatter_segmentation":

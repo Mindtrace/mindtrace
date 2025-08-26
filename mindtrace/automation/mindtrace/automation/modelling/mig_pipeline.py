@@ -396,11 +396,6 @@ class MIGPipeline:
 
                     current_export_type = export_types.get(inference_task) if export_types else None
 
-                    # print("*****DEBUGPOINT******")
-                    # print(result_type)
-                    # print(result)
-
-
                     # Save YOLO format boxes with original filename
                     if 'boxes' == result_type.strip():
 
@@ -416,10 +411,6 @@ class MIGPipeline:
                         boxes_filename = f"{image_name}.txt"
                         boxes_path = os.path.join(task_boxes_folder, boxes_filename)
 
-                        print("&&&&&&&&&")
-                        print("****BOXES*****")
-                        print(image_path)
-                        print(boxes)
 
                         with open(boxes_path, 'w') as f:
 
@@ -696,8 +687,6 @@ class MIGPipeline:
                                         cv2.rectangle(img_to_draw_on, (text_x, text_y - text_height - baseline), (text_x + text_width, text_y + baseline), (0,0,0), -1) # Black background
                                         # Draw the text
                                         cv2.putText(img_to_draw_on, text, (text_x, text_y), font, font_scale, (255,255,255), thickness, cv2.LINE_AA)
-                    print("*****DEBUGPOINT********")
-                    print(img_to_draw_on)
                     visualizations_folder = os.path.join(visualizations_folder, "defect_classification")
                     os.makedirs(visualizations_folder, exist_ok=True)
                     print(visualizations_folder)

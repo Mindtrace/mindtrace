@@ -92,12 +92,8 @@ class ModelInference:
             if self.inference_task == "weld_classification":
 
                 files = list_files_with_extensions(self.model_path, ['.pt', '.ckpt'])
-
-
                 detector_files = [file for file in files if 'detector' in file]
-
                 weld_detector = load_weld_detector(detector_files[0], self.model_path)
-
                 weld_detector.to(self.device)
                 self.model = weld_detector
 
@@ -110,8 +106,6 @@ class ModelInference:
                 model = model.eval()
                 model = model.to(self.device)
                 self.model = model
-
-                print("******")
                 print("defect classification LOADED")
 
 
@@ -140,12 +134,6 @@ class ModelInference:
         if self.model is None:
             raise ValueError("Model not initialized")
 
-        # # Convert image to PIL if needed
-        # if isinstance(image, str):
-        #     image = Image.open(image).convert('RGB')
-        # elif isinstance(image, np.ndarray):
-        #     image = Image.fromarray(image).convert('RGB')
-
         # Run task-specific inference
         if self.task_type == "object_detection":
             result = self._run_object_detection(image, threshold)
@@ -153,12 +141,6 @@ class ModelInference:
             result = self._run_semantic_segmentation(image, threshold, background_class)
         else:
             raise ValueError(f"Unsupported task type: {self.task_type}")
-
-        # Convert to requested export format
-        # if export_type == ExportType.BOUNDING_BOX and result.get('mask') is not None:
-        #     result = self._mask_to_bounding_box(result)
-        # elif export_type == ExportType.MASK and result.get('boxes') is not None:
-        #     result = self._bounding_box_to_mask(result)
 
         return result
 
@@ -177,6 +159,9 @@ class ModelInference:
 
                 imgs, keys, weld_boxes_list = weld_detection(imgs=  [image], model = self.model)
 
+                
+
+
                 return {
                         "boxes": weld_boxes_list,
                         'task_type': 'object_detection'
@@ -186,9 +171,7 @@ class ModelInference:
 
                 boxes_folder = os.path.join(self.config["output_folder"], str(self.job_id), "boxes", "weld_classification")
                 box_path = os.path.join(  boxes_folder, os.path.splitext(os.path.basename(image))[0] + ".txt")
-
                 boxes = []
-
 
                 from pathlib import Path
                 with open(Path(box_path), 'r') as f:
@@ -198,25 +181,17 @@ class ModelInference:
 
                         # Skip empty or malformed lines
                         if len(parts) == 7:
-
-
                             cls_id, cls_name, xc, yc, w, h, conf = map(str, parts)  # or map(str, parts) or map(int, parts)
                             boxes.append((float(xc), float(yc), float(w), float(h), float(conf), cls_id, cls_name))
 
-
-
                 img = Image.open(image)
                 image = np.array(img)
-
                 crops = crop_boxes(image, boxes)
 
                 classifications_list = []
                 severitys_list = []
 
-
                 if len(crops) > 0:
-
-
                     try:
                         # Convert crops to PIL Images if the model expects that format
                         pil_crops = [Image.fromarray(crop) for crop in crops]
@@ -229,9 +204,6 @@ class ModelInference:
 
                         classifications = classifications_preds.get('multiclass_preds', [])
                         classifications_list.extend(classifications)
-
-
-
 
                         # Check for severity predictions
                         if 'severity_preds' in classifications_preds:
@@ -257,11 +229,6 @@ class ModelInference:
                 severitys_list.extend(["N/A"] * (len(boxes) - len(severitys_list)))
                 classifications_list = classifications_list[:len(boxes)]
                 severitys_list = severitys_list[:len(boxes)]
-
-            print("DEFECT DETECTION")
-            print(classifications_list)
-            print(severitys_list)
-            print(self.model.idx_to_cls_map)
 
             return {"classification" : classifications_list,
                     "severity": severitys_list,
