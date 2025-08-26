@@ -162,35 +162,12 @@ def defect_rate_chart() -> rx.Component:
 
 
 def frequent_defects_chart() -> rx.Component:
-    """Most frequent defects pie chart with defect type filter."""
-    # Chart filter
-    filter_component = rx.hstack(
-        rx.text(
-            "Focus Type:",
-            font_size=T.typography.fs_sm,
-            color=T.colors.fg_muted,
-            font_weight=T.typography.fw_500,
-        ),
-        rx.select(
-            LineInsightsState.defect_types_with_all,
-            value=rx.cond(LineInsightsState.frequent_defects_selected_type, LineInsightsState.frequent_defects_selected_type, "all"),
-            on_change=LineInsightsState.set_frequent_defects_filter,
-            placeholder="All Types",
-            width="180px",
-            size="2",
-        ),
-        spacing="2",
-        align="center",
-        justify="end",
-        width="100%",
-        padding_bottom=T.spacing.space_2,
-    )
-    
+    """Most frequent defects pie chart - no filter needed as it shows distribution."""
     chart = pie_chart(
         data=LineInsightsState.frequent_defects_data,
         data_key="count",
         name_key="defect_type",
-        height=320,  # Slightly smaller to accommodate filter
+        height=350,  # Full height since no filter
         show_labels=True,
         show_legend=True,
         show_tooltip=True,
@@ -198,103 +175,52 @@ def frequent_defects_chart() -> rx.Component:
         outer_radius="80%",
     )
     
-    chart_content = rx.vstack(
-        filter_component,
-        rx.cond(
-            LineInsightsState.loading_frequent_chart,
-            rx.center(
-                rx.spinner(size="3"),
-                height="320px",
-            ),
-            chart,
+    chart_content = rx.cond(
+        LineInsightsState.loading_frequent_chart,
+        rx.center(
+            rx.spinner(size="3"),
+            height="350px",
         ),
-        spacing="2",
-        width="100%",
+        chart,
     )
     
     return chart_card(
         title="Most Frequent Defects",
-        subtitle="Distribution of defect types",
+        subtitle="Distribution of defect types in selected time range",
         children=chart_content,
     )
 
 
 def camera_defect_matrix_chart() -> rx.Component:
-    """Camera defect matrix chart with defect type and camera filters."""
-    # Chart filters
-    filter_component = rx.vstack(
-        rx.hstack(
-            rx.text(
-                "Defect Type:",
-                font_size=T.typography.fs_sm,
-                color=T.colors.fg_muted,
-                font_weight=T.typography.fw_500,
-            ),
-            rx.select(
-                LineInsightsState.defect_types_with_all,
-                value=rx.cond(LineInsightsState.camera_matrix_selected_defect, LineInsightsState.camera_matrix_selected_defect, "all"),
-                on_change=LineInsightsState.set_camera_matrix_defect_filter,
-                placeholder="All Types",
-                width="150px",
-                size="2",
-            ),
-            spacing="2",
-            align="center",
-        ),
-        rx.hstack(
-            rx.text(
-                "Camera:",
-                font_size=T.typography.fs_sm,
-                color=T.colors.fg_muted,
-                font_weight=T.typography.fw_500,
-            ),
-            rx.select(
-                LineInsightsState.cameras_with_all,
-                value=rx.cond(LineInsightsState.camera_matrix_selected_camera, LineInsightsState.camera_matrix_selected_camera, "all"),
-                on_change=LineInsightsState.set_camera_matrix_camera_filter,
-                placeholder="All Cameras",
-                width="150px",
-                size="2",
-            ),
-            spacing="2",
-            align="center",
-        ),
-        spacing="2",
-        align="end",
-        width="100%",
-        padding_bottom=T.spacing.space_2,
-    )
-    
-    # Create chart with predefined defect types for now
-    # In a real implementation, this would be dynamically generated
+    """Camera defect matrix chart - shows distribution across cameras, no filter needed."""  
     chart = bar_chart(
         data=LineInsightsState.camera_defect_matrix_data,
         x_key="camera",
-        y_keys=["Surface Scratch", "Color Mismatch", "Dimension Error", "Missing Component"],
-        height=280,  # Smaller to accommodate filters
+        # Note: Using hard-coded defect types due to Reflex VarTypeError when using dynamic state
+        # The bar_chart component cannot handle Vars in y_keys parameter at compile time
+        y_keys=[
+            "Burnthrough", "Skip", "Porosity", "Undercut", "Overlap", 
+            "Incomplete Penetration", "Crack", "Spatter", "Distortion"
+        ],
+        height=350,
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
-        layout="horizontal",  # Changed to horizontal for better readability
+        layout="horizontal",
     )
     
-    chart_content = rx.vstack(
-        filter_component,
-        rx.cond(
-            LineInsightsState.loading_matrix_chart,
-            rx.center(
-                rx.spinner(size="3"),
-                height="280px",
-            ),
-            chart,
+    chart_content = rx.cond(
+        LineInsightsState.loading_matrix_chart,
+        rx.center(
+            rx.spinner(size="3"),
+            height="350px",
         ),
-        spacing="2",
-        width="100%",
+        chart,
     )
     
     return chart_card(
-        title="Defect Distribution by Camera",
-        subtitle="Defect counts per camera position",
+        title="Defect Distribution by Camera", 
+        subtitle="Defect counts per camera position in selected time range",
         children=chart_content,
     )
 
@@ -312,7 +238,7 @@ def line_insights_header() -> rx.Component:
                     color=T.colors.fg,
                 ),
                 rx.text(
-                    f"{LineInsightsState.plant_id} - {LineInsightsState.line_id}",
+                    f"{LineInsightsState.plant_id} - {LineInsightsState.project_name}",  # Dynamic project name
                     font_size=T.typography.fs_lg,
                     color=T.colors.fg,
                     font_weight=T.typography.fw_500,
