@@ -18,7 +18,6 @@ from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.component_showcase import component_showcase_page
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
 from poseidon.pages.dashboards.line_insights import line_insights_page
-from poseidon.pages.dashboards.line_insights_index import line_insights_index_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.index import index
 from poseidon.pages.inference import inference_page
@@ -101,12 +100,8 @@ app.add_page(
 
 # Analytics routes
 app.add_page(
-    with_shell(line_insights_index_page, title="Mindtrace - Line Insights", active="Line Insights"),
-    route="/line-insights",
-)
-app.add_page(
     with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights"),
-    route="/line-insights/[plant_id]/[line_id]",
+    route="/line-insights",
 )
 
 # User routes

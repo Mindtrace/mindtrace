@@ -199,6 +199,12 @@ def line_insights_header() -> rx.Component:
                     color=T.colors.fg,
                 ),
                 rx.text(
+                    f"{LineInsightsState.plant_id} - {LineInsightsState.line_id}",
+                    font_size=T.typography.fs_lg,
+                    color=T.colors.fg,
+                    font_weight=T.typography.fw_500,
+                ),
+                rx.text(
                     LineInsightsState.formatted_date_range,
                     font_size=T.typography.fs_sm,
                     color=T.colors.fg_muted,

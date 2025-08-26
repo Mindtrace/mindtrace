@@ -18,8 +18,9 @@ from poseidon.backend.database.models.enums import ScanStatus
 class LineInsightsState(BaseFilterState):
     """State management for Line Insights dashboard."""
     
-    # Dynamic routing parameters are automatically added by Reflex
-    # plant_id and line_id will be available from the URL route
+    # Default plant and line values (replacing dynamic routing)
+    plant_id: str = "Adient"  # Default plant
+    line_id: str = "MIG66"    # Default line
     
     # Date range filtering
     date_range: str = "last_7_days"  # last_7_days, last_30_days, last_90_days, custom
@@ -116,17 +117,15 @@ class LineInsightsState(BaseFilterState):
         self.loading_parts_chart = True
         try:
             # Get scans for the project within date range
-            # line_id is automatically available from the route
-            line_id = getattr(self, 'line_id', '')
             scans = await ScanRepository.get_by_project_and_date_range(
-                line_id, 
+                self.line_id, 
                 self.start_date, 
                 self.end_date
             )
             
             # If no data found, use sample data for demo purposes
             if not scans or len(scans) == 0:
-                print(f"No scan data found for project {line_id}, using sample data")
+                print(f"No scan data found for project {self.line_id}, using sample data")
                 self.parts_scanned_data = self._get_sample_parts_data()
                 return
             
@@ -158,17 +157,15 @@ class LineInsightsState(BaseFilterState):
         self.loading_defect_chart = True
         try:
             # Get classifications for the project within date range
-            # line_id is automatically available from the route
-            line_id = getattr(self, 'line_id', '')
             classifications = await ScanClassificationRepository.get_by_project_and_date_range(
-                line_id,
+                self.line_id,
                 self.start_date,
                 self.end_date
             )
             
             # If no data found, use sample data for demo purposes
             if not classifications or len(classifications) == 0:
-                print(f"No classification data found for project {line_id}, using sample data")
+                print(f"No classification data found for project {self.line_id}, using sample data")
                 self.defect_rate_data = self._get_sample_defect_rate_data()
                 return
             
@@ -214,17 +211,15 @@ class LineInsightsState(BaseFilterState):
         self.loading_frequent_chart = True
         try:
             # Get classifications and count by defect type
-            # line_id is automatically available from the route
-            line_id = getattr(self, 'line_id', '')
             classifications = await ScanClassificationRepository.get_by_project_and_date_range(
-                line_id,
+                self.line_id,
                 self.start_date,
                 self.end_date
             )
             
             # If no data found, use sample data for demo purposes
             if not classifications or len(classifications) == 0:
-                print(f"No frequent defects data found for project {line_id}, using sample data")
+                print(f"No frequent defects data found for project {self.line_id}, using sample data")
                 self.frequent_defects_data = self._get_sample_frequent_defects_data()
                 return
             
@@ -255,13 +250,11 @@ class LineInsightsState(BaseFilterState):
         self.loading_matrix_chart = True
         try:
             # Get cameras for the project
-            # line_id is automatically available from the route
-            line_id = getattr(self, 'line_id', '')
-            cameras = await CameraRepository.get_by_project(line_id)
+            cameras = await CameraRepository.get_by_project(self.line_id)
             
             # If no cameras found, use sample data for demo purposes
             if not cameras or len(cameras) == 0:
-                print(f"No camera data found for project {line_id}, using sample data")
+                print(f"No camera data found for project {self.line_id}, using sample data")
                 self.camera_defect_matrix_data = self._get_sample_matrix_data()
                 return
             
@@ -294,7 +287,7 @@ class LineInsightsState(BaseFilterState):
             
             # If we have cameras but no classification data, use sample data
             if not has_any_data:
-                print(f"Cameras found but no classification data for project {line_id}, using sample data")
+                print(f"Cameras found but no classification data for project {self.line_id}, using sample data")
                 self.camera_defect_matrix_data = self._get_sample_matrix_data()
             else:
                 self.camera_defect_matrix_data = matrix_data
@@ -328,9 +321,7 @@ class LineInsightsState(BaseFilterState):
                 self.average_defect_rate = 0.0
             
             # Active cameras
-            # line_id is automatically available from the route
-            line_id = getattr(self, 'line_id', '')
-            cameras = await CameraRepository.get_by_project(line_id)
+            cameras = await CameraRepository.get_by_project(self.line_id)
             
             if cameras:
                 self.active_cameras = len([c for c in cameras if getattr(c, 'is_active', True)])
