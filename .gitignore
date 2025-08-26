@@ -179,6 +179,8 @@ stress_test_results/
 # Sensitive files
 gcp_keys/
 *.json
+gcp_keys/*.json
+paz-portal-*.json
 .env.dev
 .env.local
 .env.production
