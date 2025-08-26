@@ -573,11 +573,8 @@ class MIGPipeline:
 
             boxes = results["weld_classification"]["boxes"]
             for box in boxes[0]:
-                print(box)
                 if len(box) < 4: continue # Skip invalid boxes
 
-                print("COORDINATES")
-                print(len(box))
                 # Convert box format [xc, yc, w, h] to [x1, y1, x2, y2]
                 xc, yc, w, h = box[:4]
                 x1 = int(xc - w / 2)

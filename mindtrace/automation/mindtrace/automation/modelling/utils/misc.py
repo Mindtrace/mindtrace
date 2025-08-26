@@ -170,8 +170,6 @@ def obj_results_to_boxes_letterbox(obj_results, transformations=None):
 	for j, [obj_result, (ratio, dw, dh)] in enumerate(zip(obj_results, transformations)):
 		boxes = []
             
-		print("**** DEBUG POINT *****")
-		print(obj_result.boxes.data)
 		for box in obj_result.boxes.data.cpu().numpy():
 			x1, y1, x2, y2, conf, cls_id = box
 			cls_name = obj_result.names[int(box[5])]
