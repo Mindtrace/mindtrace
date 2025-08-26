@@ -19,6 +19,13 @@ DEFAULT_PLANT_NAME = "AdientPlant"
 DEFAULT_PROJECT_NAME = "Laser"
 FREQUENT_DEFECTS_LIMIT = 10  # Top N defects to display
 
+# Comprehensive defect types for chart y-axis (static - chart shows only data that exists)
+ALL_DEFECT_TYPES = [
+    "Burnthrough", "Skip", "Porosity", "Undercut", "Overlap", 
+    "Incomplete Penetration", "Crack", "Spatter", "Distortion", 
+    "Unknown", "Other"  # Fallbacks for any unmapped defect types
+]
+
 
 class LineInsightsState(BaseFilterState):
     """State management for Line Insights dashboard."""
@@ -50,6 +57,7 @@ class LineInsightsState(BaseFilterState):
     def cameras_with_all(self) -> List[str]:
         """Get cameras with 'all' option prepended."""
         return ["all"] + self.available_cameras
+    
     
     
     # Store defect types for camera matrix chart
