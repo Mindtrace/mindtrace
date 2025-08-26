@@ -147,25 +147,33 @@ class ScanClassificationRepository:
         """Get classifications for a project within a date range"""
         await ScanClassificationRepository._ensure_init()
         try:
-            # Note: This assumes ScanClassification has a relation to project through scan
-            # We'll need to join through the scan model
+            # Follow existing pattern: get the linked object first
             from poseidon.backend.database.models.scan import Scan
+            from poseidon.backend.database.models.project import Project
+            
+            # Get the project object first
+            project = await Project.get(project_id)
+            if not project:
+                return []
             
             # First get all scans for the project within date range
-            scan_conditions = [Scan.project.id == project_id]
+            scan_conditions = [Scan.project.id == project.id]
             if start_date:
                 scan_conditions.append(Scan.created_at >= start_date)
             if end_date:
                 scan_conditions.append(Scan.created_at <= end_date)
             
             scans = await Scan.find(*scan_conditions).to_list()
+            
             if not scans:
                 return []
             
             scan_ids = [scan.id for scan in scans]
             
             # Then get classifications for those scans
-            return await ScanClassification.find(ScanClassification.scan.id.in_(scan_ids)).to_list()
+            from beanie.operators import In
+            classifications = await ScanClassification.find(In(ScanClassification.scan.id, scan_ids)).to_list()
+            return classifications
         except Exception as e:
             print(f"Error in get_by_project_and_date_range: {e}")
             return []
@@ -179,11 +187,17 @@ class ScanClassificationRepository:
         """Get classifications for a camera within a date range"""
         await ScanClassificationRepository._ensure_init()
         try:
-            # Get classifications through ScanImage -> Camera relationship
+            # Follow existing pattern: get the linked object first
             from poseidon.backend.database.models.scan_image import ScanImage
+            from poseidon.backend.database.models.camera import Camera
+            
+            # Get the camera object first
+            camera = await Camera.get(camera_id)
+            if not camera:
+                return []
             
             # Get ScanImages for the camera within date range
-            image_conditions = [ScanImage.camera.id == camera_id]
+            image_conditions = [ScanImage.camera.id == camera.id]
             if start_date:
                 image_conditions.append(ScanImage.created_at >= start_date)
             if end_date:
@@ -196,7 +210,8 @@ class ScanClassificationRepository:
             image_ids = [image.id for image in images]
             
             # Get classifications for those images
-            return await ScanClassification.find(ScanClassification.image.id.in_(image_ids)).to_list()
+            from beanie.operators import In
+            return await ScanClassification.find(In(ScanClassification.image.id, image_ids)).to_list()
         except Exception as e:
             print(f"Error in get_by_camera_and_date_range: {e}")
             return []
@@ -230,10 +245,17 @@ class ScanClassificationRepository:
         """Get classifications for a project within date range, optionally filtered by defect type"""
         await ScanClassificationRepository._ensure_init()
         try:
+            # Follow existing pattern: get the linked object first
             from poseidon.backend.database.models.scan import Scan
+            from poseidon.backend.database.models.project import Project
+            
+            # Get the project object first
+            project = await Project.get(project_id)
+            if not project:
+                return []
             
             # First get all scans for the project within date range
-            scan_conditions = [Scan.project.id == project_id]
+            scan_conditions = [Scan.project.id == project.id]
             if start_date:
                 scan_conditions.append(Scan.created_at >= start_date)
             if end_date:
@@ -246,7 +268,8 @@ class ScanClassificationRepository:
             scan_ids = [scan.id for scan in scans]
             
             # Then get classifications for those scans
-            classification_conditions = [ScanClassification.scan.id.in_(scan_ids)]
+            from beanie.operators import In
+            classification_conditions = [In(ScanClassification.scan.id, scan_ids)]
             if defect_type:
                 classification_conditions.append(ScanClassification.name == defect_type)
             
@@ -265,10 +288,17 @@ class ScanClassificationRepository:
         """Get classifications for a camera within date range, optionally filtered by defect type"""
         await ScanClassificationRepository._ensure_init()
         try:
+            # Follow existing pattern: get the linked object first
             from poseidon.backend.database.models.scan_image import ScanImage
+            from poseidon.backend.database.models.camera import Camera
+            
+            # Get the camera object first
+            camera = await Camera.get(camera_id)
+            if not camera:
+                return []
             
             # Get ScanImages for the camera within date range
-            image_conditions = [ScanImage.camera.id == camera_id]
+            image_conditions = [ScanImage.camera.id == camera.id]
             if start_date:
                 image_conditions.append(ScanImage.created_at >= start_date)
             if end_date:
@@ -281,7 +311,8 @@ class ScanClassificationRepository:
             image_ids = [image.id for image in images]
             
             # Get classifications for those images
-            classification_conditions = [ScanClassification.image.id.in_(image_ids)]
+            from beanie.operators import In
+            classification_conditions = [In(ScanClassification.image.id, image_ids)]
             if defect_type:
                 classification_conditions.append(ScanClassification.name == defect_type)
             
