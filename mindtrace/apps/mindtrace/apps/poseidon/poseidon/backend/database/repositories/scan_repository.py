@@ -78,7 +78,19 @@ class ScanRepository:
     async def get_by_project(project_id: str) -> List[Scan]:
         """Get all scans for a project"""
         await ScanRepository._ensure_init()
-        return await Scan.find(Scan.project.id == project_id).to_list()
+        try:
+            # Follow existing pattern: get the linked object first
+            from poseidon.backend.database.models.project import Project
+            
+            # Get the project object first
+            project = await Project.get(project_id)
+            if not project:
+                return []
+            
+            return await Scan.find(Scan.project.id == project.id).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project: {e}")
+            return []
 
     @staticmethod
     async def get_by_status(status: ScanStatus) -> List[Scan]:
@@ -130,8 +142,16 @@ class ScanRepository:
         """Get scans for a project within a date range"""
         await ScanRepository._ensure_init()
         try:
+            # Follow existing pattern: get the linked object first
+            from poseidon.backend.database.models.project import Project
+            
+            # Get the project object first
+            project = await Project.get(project_id)
+            if not project:
+                return []
+            
             # Build query conditions
-            conditions = [Scan.project.id == project_id]
+            conditions = [Scan.project.id == project.id]
             
             if start_date:
                 conditions.append(Scan.created_at >= start_date)
