@@ -164,14 +164,20 @@ class CameraRepository:
         """Get cameras by project ID"""
         await CameraRepository._ensure_init()
         try:
+            # Follow existing pattern: get the linked object first
+            from poseidon.backend.database.models.project import Project
+            
+            # Get the project object first
             project = await Project.get(project_id)
             if not project:
                 return []
+            
             cameras = await Camera.find(Camera.project.id == project.id).to_list()
             for camera in cameras:
                 await camera.fetch_all_links()
             return cameras
-        except:
+        except Exception as e:
+            print(f"Error in get_by_project_id: {e}")
             return []
 
     @staticmethod
