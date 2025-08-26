@@ -35,10 +35,10 @@ class LineInsightsSeeder:
         self.organizations = []
         self.projects = []
         self.cameras = []
+        self.users = []
         self.defect_types = [
-            "Surface Scratch", "Color Mismatch", "Dimension Error", 
-            "Missing Component", "Surface Dent", "Alignment Issue",
-            "Material Defect", "Finish Quality", "Assembly Error", "Packaging Issue"
+            "Burnthrough", "Skip", "Porosity", "Undercut", "Overlap", 
+            "Incomplete Penetration", "Crack", "Spatter", "Distortion"
         ]
     
     async def seed_all(self):
@@ -46,6 +46,9 @@ class LineInsightsSeeder:
         print("🌱 Starting Line Insights data seeding...")
         
         await initialize_database()
+        
+        # Create a default user first (required for cameras)
+        await self.create_default_user()
         
         # Create organizations (plants)
         await self.create_organizations()
@@ -70,29 +73,37 @@ class LineInsightsSeeder:
         print("\n🚀 You can now view realistic data in the Line Insights dashboard!")
         print("   Visit: /line-insights")
     
+    async def create_default_user(self):
+        """Get existing user for camera creation."""
+        print("👤 Getting existing user...")
+        from poseidon.backend.database.repositories.user_repository import UserRepository
+        
+        try:
+            # Get any existing user
+            users = await UserRepository.get_all()
+            if users:
+                self.users.append(users[0])  # Use first user found
+                print(f"   ✓ Using existing user: {users[0].email}")
+                return
+        except Exception as e:
+            print(f"   ⚠️ Could not get users: {e}")
+    
     async def create_organizations(self):
         """Create sample organizations (manufacturing plants)."""
         print("📍 Creating organizations (plants)...")
         
         org_configs = [
             {
-                "name": "MindTrace Demo Plant",
-                "description": "Main demonstration manufacturing facility",
+                "name": "AdientPlant",
+                "description": "Adient automotive manufacturing plant",
                 "subscription_plan": SubscriptionPlan.ENTERPRISE,
                 "max_users": 100,
                 "max_projects": 50,
-            },
-            {
-                "name": "North Factory",
-                "description": "Northern production facility",
-                "subscription_plan": SubscriptionPlan.PREMIUM,
-                "max_users": 50,
-                "max_projects": 20,
             }
         ]
         
         for config in org_configs:
-            org = await OrganizationRepository.create_organization(config)
+            org = await OrganizationRepository.create(config)
             self.organizations.append(org)
             print(f"   ✓ Created organization: {org.name}")
     
@@ -101,63 +112,63 @@ class LineInsightsSeeder:
         print("🏭 Creating projects (production lines)...")
         
         line_configs = [
-            # Demo Plant Lines
-            {"name": "Assembly Line A", "description": "Primary assembly line for Product A"},
-            {"name": "Assembly Line B", "description": "Secondary assembly line for Product B"}, 
-            {"name": "Quality Control Line", "description": "Final quality inspection line"},
-            {"name": "Packaging Line", "description": "Product packaging and labeling"},
-            
-            # North Factory Lines  
-            {"name": "Production Line 1", "description": "Main production line"},
-            {"name": "Testing Line", "description": "Product testing and validation"},
+            {"name": "Laser", "description": "Laser welding production line"},
         ]
         
-        lines_per_org = len(line_configs) // len(self.organizations)
-        
-        for i, org in enumerate(self.organizations):
-            start_idx = i * lines_per_org
-            end_idx = start_idx + lines_per_org
-            org_lines = line_configs[start_idx:end_idx]
-            
-            for line_config in org_lines:
+        for org in self.organizations:
+            for line_config in line_configs:
                 project_data = {
                     **line_config,
                     "organization_id": str(org.id),
                     "status": ProjectStatus.ACTIVE,
-                    "project_type": "INSPECTION",
+                    "project_type": "inspection",
                     "tags": ["production", "quality-control"],
                 }
                 
-                project = await ProjectRepository.create_project(project_data)
+                project = await ProjectRepository.create(project_data)
                 self.projects.append(project)
                 print(f"   ✓ Created project: {project.name} (Org: {org.name})")
+                print(f"   ✓ Project ID: {project.id} (copy this for state file)")  # Show the actual ID
     
     async def create_cameras(self):
         """Create cameras for each production line."""
         print("📹 Creating cameras...")
         
-        camera_positions = [
-            "Station 1 - Intake", "Station 2 - Assembly", 
-            "Station 3 - Quality Check", "Station 4 - Output"
+        camera_configs = [
+            # Station 1 cameras
+            {"name": "cam1", "station": "Station 1", "position": 1},
+            {"name": "cam2", "station": "Station 1", "position": 2},
+            {"name": "cam3", "station": "Station 1", "position": 3},
+            {"name": "cam4", "station": "Station 1", "position": 4},
+            # Station 2 cameras  
+            {"name": "cam5", "station": "Station 2", "position": 5},
+            {"name": "cam6", "station": "Station 2", "position": 6},
+            {"name": "cam7", "station": "Station 2", "position": 7},
+            {"name": "cam8", "station": "Station 2", "position": 8},
         ]
         
         for project in self.projects:
-            for i, position in enumerate(camera_positions):
+            for camera_config in camera_configs:
                 camera_data = {
-                    "name": f"{position}",
-                    "backend": "opencv",
-                    "device_name": f"cam_{project.name.lower().replace(' ', '_')}_{i+1}",
+                    "name": camera_config["name"],
+                    "backend": "opencv", 
+                    "device_name": f"{camera_config['name']}_{project.name.lower()}",
                     "status": CameraStatus.ACTIVE,
                     "configuration": {
                         "resolution": "1920x1080",
                         "fps": 30,
-                        "position": position,
+                        "station": camera_config["station"],
+                        "position": camera_config["position"],
                     },
                     "organization_id": str(project.organization.id),
                     "project_id": str(project.id),
-                    "location": position,
-                    "model_info": f"Industrial Camera {i+1}",
+                    "location": camera_config["station"],
+                    "model_info": f"Welding Inspection Camera {camera_config['position']}",
                 }
+                
+                # Add created_by using existing user
+                if self.users:
+                    camera_data["created_by_id"] = str(self.users[0].id)
                 
                 camera = await CameraRepository.create_or_update(camera_data)
                 self.cameras.append(camera)
@@ -182,8 +193,8 @@ class LineInsightsSeeder:
                 continue
             
             for project in self.projects:
-                # Generate 8-15 scans per project per day
-                daily_scans = random.randint(8, 15)
+                # Generate 80-120 scans per project per day (realistic for 8 cameras)
+                daily_scans = random.randint(80, 120)
                 
                 for _ in range(daily_scans):
                     scan_time = current_date.replace(
@@ -204,13 +215,19 @@ class LineInsightsSeeder:
                         )[0],
                         "cls_result": random.choices(
                             ["pass", "defective"], 
-                            weights=[0.85, 0.15]  # 15% defect rate
+                            weights=[0.88, 0.12]  # 12% defect rate
                         )[0],
                         "cls_confidence": random.uniform(0.7, 0.99),
                         "cls_pred_time": random.uniform(0.1, 0.8),
                     }
                     
                     scan = await ScanRepository.create(scan_data)
+                    
+                    # IMPORTANT: Override the timestamp after creation to distribute over time
+                    scan.created_at = scan_time
+                    scan.updated_at = scan_time
+                    await scan.save()
+                    
                     total_scans += 1
                     
                     # For defective scans, create classifications
@@ -222,18 +239,26 @@ class LineInsightsSeeder:
                             defect_type = random.choice(self.defect_types)
                             
                             # Create scan image first
+                            file_name = f"scan_{scan.serial_number}_{random.randint(1, 4)}.jpg"
+                            path = f"scans/{scan.serial_number}/"
                             image_data = {
                                 "organization": project.organization,
                                 "project": project,
                                 "camera": random.choice([c for c in self.cameras if str(c.project.id) == str(project.id)]),
                                 "scan": scan,
                                 "status": ScanImageStatus.PROCESSED,
-                                "file_name": f"scan_{scan.serial_number}_{random.randint(1, 4)}.jpg",
-                                "path": f"scans/{scan.serial_number}/",
+                                "file_name": file_name,
+                                "path": path,
                                 "bucket_name": "mindtrace-scans",
+                                "full_path": f"gs://mindtrace-scans/{path}{file_name}",
                             }
                             
                             scan_image = await ScanImageRepository.create(image_data)
+                            
+                            # Override timestamps for proper time distribution
+                            scan_image.created_at = scan_time
+                            scan_image.updated_at = scan_time
+                            await scan_image.save()
                             
                             # Create classification
                             classification_data = {
@@ -250,7 +275,13 @@ class LineInsightsSeeder:
                                 "det_h": random.randint(30, 150),
                             }
                             
-                            await ScanClassificationRepository.create(classification_data)
+                            classification = await ScanClassificationRepository.create(classification_data)
+                            
+                            # Override timestamps for proper time distribution
+                            classification.created_at = scan_time
+                            classification.updated_at = scan_time
+                            await classification.save()
+                            
                             total_classifications += 1
             
             current_date += timedelta(days=1)
