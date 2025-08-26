@@ -7,7 +7,7 @@ Uses chart components to visualize parts scanned, defect rates, and more.
 
 import reflex as rx
 from typing import Optional
-from poseidon.state.line_insights import LineInsightsState
+from poseidon.state.line_insights import LineInsightsState, ALL_DEFECT_TYPES
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.graphs.line_chart import line_chart
 from poseidon.components_v2.graphs.bar_chart import bar_chart
@@ -196,12 +196,8 @@ def camera_defect_matrix_chart() -> rx.Component:
     chart = bar_chart(
         data=LineInsightsState.camera_defect_matrix_data,
         x_key="camera",
-        # Note: Using hard-coded defect types due to Reflex VarTypeError when using dynamic state
-        # The bar_chart component cannot handle Vars in y_keys parameter at compile time
-        y_keys=[
-            "Burnthrough", "Skip", "Porosity", "Undercut", "Overlap", 
-            "Incomplete Penetration", "Crack", "Spatter", "Distortion"
-        ],
+        # Using static defect types constant - chart automatically shows only data that exists
+        y_keys=ALL_DEFECT_TYPES,
         height=350,
         show_grid=True,
         show_legend=True,
