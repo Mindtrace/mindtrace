@@ -5,6 +5,15 @@ import reflex as rx
 from poseidon.components_v2.branding import logo_poseidon
 from poseidon.components_v2.containers import card, login_page_container
 from poseidon.components_v2.core import button, button_group
+from poseidon.components_v2.graphs.demo import (
+    advanced_bar_chart_example,
+    advanced_line_chart_example,
+    advanced_pie_chart_example,
+    defect_trends_example,
+    simple_bar_chart_example,
+    simple_line_chart_example,
+    simple_pie_chart_example,
+)
 from poseidon.styles.global_styles import THEME as T
 
 
@@ -262,6 +271,70 @@ def component_showcase_page() -> rx.Component:
                                 align_items="start",
                                 width="100%",
                             ),
+                        ),
+                    ]
+                ),
+                # Charts Section
+                card(
+                    [
+                        rx.vstack(
+                            rx.heading("Charts", size="4", color=T.colors.fg),
+                            rx.text(
+                                "Interactive charts with various configurations",
+                                size="2",
+                                color=T.colors.fg_muted,
+                            ),
+                            # Pie Charts
+                            rx.vstack(
+                                rx.heading("Pie Charts", size="3", color=T.colors.fg),
+                                rx.hstack(
+                                    simple_pie_chart_example(),
+                                    advanced_pie_chart_example(),
+                                    spacing="6",
+                                    flex_wrap="wrap",
+                                    width="100%",
+                                ),
+                                spacing="4",
+                                align_items="start",
+                                width="100%",
+                            ),
+                            # Line Charts
+                            rx.vstack(
+                                rx.heading("Line Charts", size="3", color=T.colors.fg),
+                                rx.hstack(
+                                    simple_line_chart_example(),
+                                    advanced_line_chart_example(),
+                                    spacing="6",
+                                    flex_wrap="wrap",
+                                    width="100%",
+                                ),
+                                spacing="4",
+                                align_items="start",
+                                width="100%",
+                            ),
+                            # Bar Charts
+                            rx.vstack(
+                                rx.heading("Bar Charts", size="3", color=T.colors.fg),
+                                rx.hstack(
+                                    simple_bar_chart_example(),
+                                    defect_trends_example(),
+                                    spacing="6",
+                                    flex_wrap="wrap",
+                                    width="100%",
+                                ),
+                                rx.hstack(
+                                    advanced_bar_chart_example(),
+                                    spacing="6",
+                                    flex_wrap="wrap",
+                                    width="100%",
+                                ),
+                                spacing="4",
+                                align_items="start",
+                                width="100%",
+                            ),
+                            spacing="6",
+                            align_items="start",
+                            width="100%",
                         ),
                     ]
                 ),
