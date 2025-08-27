@@ -62,4 +62,3 @@ async def test_mcp_client_manager_launch_integration():
             requests.request("POST", f"{base_url}/shutdown", timeout=10)
         except Exception:
             pass
-

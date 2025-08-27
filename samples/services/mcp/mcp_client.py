@@ -10,8 +10,8 @@ This script can:
 It also performs one tool call ("echo").
 """
 
-import asyncio
 import argparse
+import asyncio
 
 from mindtrace.services.sample.echo_mcp import EchoService
 
