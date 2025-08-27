@@ -19,14 +19,6 @@ DEFAULT_PLANT_NAME = "mindtrace"  # Updated to match seeded organization name
 DEFAULT_PROJECT_NAME = "Sample Inspection Project"  # Updated to match seeded data
 FREQUENT_DEFECTS_LIMIT = 10  # Top N defects to display
 
-# Comprehensive defect types for chart y-axis (static - chart shows only data that exists)
-# Updated to include actual defect types from seed data
-ALL_DEFECT_TYPES = [
-    "Healthy", "Burr", "Defective",  # From seed data
-    "Burnthrough", "Skip", "Porosity", "Undercut", "Overlap", 
-    "Incomplete Penetration", "Crack", "Spatter", "Distortion", 
-    "Unknown", "Other"  # Fallbacks for any unmapped defect types
-]
 
 
 class LineInsightsState(BaseFilterState):
