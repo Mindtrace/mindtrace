@@ -40,10 +40,10 @@ async def camera_manager():
 
     # Create manager with mocks enabled
     manager = CameraManager(include_mocks=True)
-    
+
     # Override the discovered backends to only include mock backends for unit tests
     manager._discovered_backends = ["MockDaheng", "MockBasler", "OpenCV"]
-    
+
     yield manager
 
     # Cleanup
