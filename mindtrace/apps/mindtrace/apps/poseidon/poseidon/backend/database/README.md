@@ -15,7 +15,7 @@ This directory contains the database seeding functionality for MindTrace. The se
 Run the standalone script from the poseidon directory:
 
 ```bash
-cd mindtrace/ui/mindtrace/ui/poseidon
+cd mindtrace/apps/mindtrace/apps/poseidon
 python seed_db.py
 ```
 
@@ -40,7 +40,7 @@ asyncio.run(reset_and_seed())
 ### Option 3: Command Line Module
 
 ```bash
-cd mindtrace/ui/mindtrace/ui/poseidon
+cd mindtrace/apps/mindtrace/apps/poseidon
 python -m poseidon.backend.database.seed
 ```
 
