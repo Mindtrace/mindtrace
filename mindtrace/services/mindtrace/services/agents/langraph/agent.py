@@ -1,7 +1,8 @@
 from mindtrace.core import Mindtrace
+import asyncio
 
 from .builder import MCPAgentGraph
-from .config import AgentConfig
+from .config import OllamaAgentConfig as AgentConfig
 from .graph.types import GraphContext, GraphFactory, GraphPlugin
 from .llm import LLMProvider, OllamaProvider
 from .mcp_tools import MCPToolSession
@@ -12,12 +13,12 @@ class MCPAgent(Mindtrace):
     """High-level agent orchestrator for MCP-backed tool-augmented LLMs.
 
     This class wires together:
-    - An MCP tool session (connect or launch)
+    - An MCP tool session
     - A pluggable LLM provider (LangChain Runnable via with_tools)
     - A pluggable LangGraph graph (factory/plugins/subclass hooks)
 
     Usage (single-turn):
-        agent = MCPLangGraphAgent(EchoService, AgentConfig())
+        agent = MCPLangGraphAgent(AgentConfig(mcp_url="http://localhost:8000"))
         async for step in agent.run("thread-1", user_input="hello"):
             print(step)
 
@@ -36,29 +37,37 @@ class MCPAgent(Mindtrace):
 
     def __init__(
         self,
-        service_cls=None,
         config: AgentConfig | None = None,
         *,
         factory: GraphFactory | None = None,
         plugins: list[GraphPlugin] | None = None,
         agent_graph: type[MCPAgentGraph] = MCPAgentGraph,
         llm_provider: LLMProvider | None = None,
-        mcp_session: MCPToolSession | None = None,
     ):
         super().__init__()
-        if mcp_session is None and service_cls is None:
-            raise ValueError("Either service_cls or mcp_session must be provided")
         if config is None:
             raise ValueError("config must be provided")
 
-        self.service_cls = service_cls
         self.config = config
-        self._session = mcp_session or MCPToolSession(service_cls)
+        # Setup MCP tool session: prefer explicit client, then config.mcp_client, then config.mcp_url
+        if getattr(self.config, "mcp_client", None) is not None:
+            self._session = MCPToolSession(client=self.config.mcp_client)
+        elif self.config.mcp_url:
+            self._session = MCPToolSession(url=self.config.mcp_url)
+        else:
+            raise ValueError("Provide one of:`config.mcp_client`, or `config.mcp_url`.")
         self._llm_provider = llm_provider or OllamaProvider(config.model, config.base_url)
         self._executor = ToolExecutor()
         self._agent_graph = agent_graph
         self._factory = factory
         self._plugins = plugins or []
+        # Persistent session state
+        self._thread_id = None
+        self._ctx = None
+        self._compiled_agent = None
+        self._cfg = None
+        self._session_acm = None
+        self._lifecycle_lock = asyncio.Lock()
 
     async def run(self, thread_id: str | int, user_input: str | None = None, messages: list | None = None):
         """Stream a run of the agent.
@@ -78,50 +87,78 @@ class MCPAgent(Mindtrace):
         if (user_input is None and messages is None) or (user_input is not None and messages is not None):
             raise ValueError("Provide exactly one of user_input or messages")
 
-        async with self._session.open():
-            ctx = GraphContext(
+        await self.start(thread_id)
+        initial_messages = messages if messages is not None else [{"role": "user", "content": user_input}]
+        async for step in self._compiled_agent.astream(initial_messages, self._cfg, stream_mode="values"):
+            yield step
+
+    async def start(self, thread_id: str | int):
+        """Open MCP session once and compile the agent for this thread.
+
+        If already started for the same thread, this is a no-op. If started for a
+        different thread, it will close and reopen for the new thread.
+        """
+        async with self._lifecycle_lock:
+            if self._session_acm is not None and self._thread_id == thread_id and self._compiled_agent is not None:
+                return
+            if self._session_acm is not None and self._thread_id != thread_id:
+                await self.close()
+
+            self._thread_id = thread_id
+            self._session_acm = self._session.open()
+            try:
+                await self._session_acm.__aenter__()
+            except Exception:
+                # Reset state on failure to enter session
+                self._session_acm = None
+                self._thread_id = None
+                raise
+
+            self._ctx = GraphContext(
                 tools=self._session.tools,
                 tools_by_name=self._session.tools_by_name,
                 config=self.config,
                 llm_provider=self._llm_provider,
                 executor=self._executor,
             )
-            agent = self._build_agent(ctx)
-            cfg = {"configurable": {"thread_id": thread_id}}
-            agent.build(ctx)
-            initial_messages = messages if messages is not None else [{"role": "user", "content": user_input}]
-            async for step in agent.astream(initial_messages, cfg, stream_mode="values"):
-                yield step
+            agent = self._build_agent(self._ctx)
+            self._cfg = {"configurable": {"thread_id": thread_id}}
+            agent.build(self._ctx)
+            self._compiled_agent = agent
+
+    async def close(self):
+        """Close the persistent MCP session and clear compiled agent state."""
+        async with self._lifecycle_lock:
+            if self._session_acm is not None:
+                try:
+                    await self._session_acm.__aexit__(None, None, None)
+                finally:
+                    self._session_acm = None
+                    self._compiled_agent = None
+                    self._ctx = None
+                    self._cfg = None
+                    self._thread_id = None
 
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
     async def open_agent(self, thread_id: str | int):
-        """Open a persistent MCP session and compiled graph for repeated turns.
+        """Ensure the persistent MCP session is started and yield compiled agent/config.
 
-        Useful for interactive CLI loops where you want to avoid re-launching or re-connecting
-        the MCP service on every turn.
+        Useful for interactive CLI loops where you want to access the compiled agent
+        and config; the session remains open until `close()` is called on the agent.
 
         Example:
             async with agent.open_agent("thread-1") as (compiled_agent, cfg):
                 async for step in compiled_agent.astream(messages, cfg):
                     ...
         """
-        async with self._session.open():
-            ctx = GraphContext(
-                tools=self._session.tools,
-                tools_by_name=self._session.tools_by_name,
-                config=self.config,
-                llm_provider=self._llm_provider,
-                executor=self._executor,
-            )
-            agent = self._build_agent(ctx)
-            cfg = {"configurable": {"thread_id": thread_id}}
-            agent.build(ctx)
-            try:
-                yield agent, cfg
-            finally:
-                pass
+        await self.start(thread_id)
+        try:
+            yield self._compiled_agent, self._cfg
+        finally:
+            # Session remains open for reuse; call `close()` when done globally
+            pass
 
     def _build_agent(self, ctx: GraphContext):
         """Build the concrete `AgentGraphBase` for this session.
@@ -143,7 +180,7 @@ class MCPAgent(Mindtrace):
                 super().__init__(factory=factory, plugins=plugins)
 
             def system_prompt(self_inner):
-                return config.system_prompt
+                return getattr(config, "system_prompt", None) or ""
 
             def llm_with_tools(self_inner):
                 return provider.with_tools(tools, tool_choice=config.tool_choice)
