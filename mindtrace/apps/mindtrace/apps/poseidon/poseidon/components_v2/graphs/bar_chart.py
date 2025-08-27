@@ -8,6 +8,7 @@ Supports both simple and advanced configurations with custom styling.
 from typing import Any, Dict, List, Optional, Union
 
 import reflex as rx
+from reflex.vars.base import Var
 
 from poseidon.styles.global_styles import THEME as T
 from poseidon.components_v2.containers import chart_card
@@ -46,10 +47,10 @@ def get_chart_colors(count: int) -> List[str]:
 
 
 def bar_chart(
-    data: List[Dict[str, Any]],
+    data: Union[List[Dict[str, Any]], Var[List[Dict[str, Any]]]],
     x_key: str = "x",
     y_key: str = "y",
-    y_keys: Optional[List[str]] = None,
+    y_keys: Optional[Union[List[str], Var[List[str]]]] = None,
     title: Optional[str] = None,
     subtitle: Optional[str] = None,
     width: Union[str, int] = "100%",
@@ -103,24 +104,38 @@ def bar_chart(
             )
         )
 
-    # Get colors for the chart
-    if y_keys:
-        colors = get_chart_colors(len(y_keys))
-    else:
-        colors = get_chart_colors(1)
-
-    # Create bar components
-    if y_keys:
-        # Multiple series
-        for i, key in enumerate(y_keys):
-            chart_components.append(
-                rx.recharts.bar(
-                    data_key=key,
-                    fill=colors[i % len(colors)],
-                    radius=[4, 4, 0, 0],
-                    stroke_width=0,
+    # Get colors for the chart - use generous amount for dynamic cases
+    colors = get_chart_colors(12)
+    
+    # Create bar components - support both static and Var y_keys
+    if y_keys is not None:
+        if isinstance(y_keys, Var):
+            # For Var y_keys, create multiple bars with different colors
+            # Since we can't use dynamic indexing, create fixed bars for each color
+            for i, color in enumerate(colors[:8]):  # Limit to 8 colors to avoid too many bars
+                chart_components.append(
+                    rx.cond(
+                        y_keys.length() > i,  # Only show if we have this many keys
+                        rx.recharts.bar(
+                            data_key=y_keys[i],  # Use indexed access
+                            fill=color,
+                            radius=[4, 4, 0, 0],
+                            stroke_width=0,
+                        ),
+                        rx.fragment(),  # Empty if not enough keys
+                    )
                 )
-            )
+        else:
+            # For static y_keys (list), iterate normally
+            for i, key in enumerate(y_keys):
+                chart_components.append(
+                    rx.recharts.bar(
+                        data_key=key,
+                        fill=colors[i % len(colors)],
+                        radius=[4, 4, 0, 0],
+                        stroke_width=0,
+                    )
+                )
     else:
         # Single series
         chart_components.append(
@@ -154,14 +169,29 @@ def bar_chart(
 
     # Add legend if requested
     if show_legend:
+        # Determine legend layout based on number of items
+        legend_height = 36
+        if y_keys is not None:
+            if isinstance(y_keys, Var):
+                # For Var, assume we might need more space
+                legend_height = 60
+            elif len(y_keys) > 6:
+                legend_height = 60  # More height for wrapped legend
+        
         chart_components.append(
             rx.recharts.legend(
                 vertical_align="top",
-                height=36,
+                height=legend_height,
                 wrapper_style={
                     "font_family": T.typography.font_sans,
-                    "font_size": T.typography.fs_sm,
+                    "font_size": T.typography.fs_xs,  # Smaller font for many items
                     "color": T.colors.fg_muted,
+                    "padding": "0 8px",
+                    "display": "flex",
+                    "flex_wrap": "wrap",
+                    "justify_content": "center",
+                    "align_items": "center",
+                    "gap": "8px",
                 },
             )
         )

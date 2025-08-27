@@ -8,6 +8,7 @@ Supports both simple and advanced configurations with custom styling.
 from typing import Any, Dict, List, Optional, Union
 
 import reflex as rx
+from reflex.vars.base import Var
 
 from poseidon.styles.global_styles import THEME as T
 from poseidon.components_v2.containers import chart_card
@@ -50,7 +51,7 @@ def get_chart_colors_for_data(data: List[Dict[str, Any]]) -> List[str]:
 
 
 def pie_chart(
-    data: List[Dict[str, Any]],
+    data: Union[List[Dict[str, Any]], Var[List[Dict[str, Any]]]],
     data_key: str = "value",
     name_key: str = "name",
     title: Optional[str] = None,
