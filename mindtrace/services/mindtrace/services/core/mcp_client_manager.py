@@ -47,7 +47,9 @@ class MCPClientManager:
         """
         # Build the URL with priority logic
         service_url = self.service_cls.build_url(url=url)
-        mcp_url = f"{str(service_url).rstrip('/')}/mcp-server/mcp"
+        # Build MCP URL from centralized class helper
+        mcp_mount_path, mcp_http_app_path = self.service_cls.get_mcp_paths()
+        mcp_url = f"{str(service_url).rstrip('/')}{mcp_mount_path}{mcp_http_app_path}"
         return Client(mcp_url)
 
     def launch(self, **launch_kwargs) -> "Client":
@@ -78,5 +80,6 @@ class MCPClientManager:
                 print(f"Available tools: {tools}")
         """
         connection_manager = self.service_cls.launch(**launch_kwargs)
-        mcp_url = f"{str(connection_manager.url).rstrip('/')}/mcp-server/mcp"
+        mcp_mount_path, mcp_http_app_path = self.service_cls.get_mcp_paths()
+        mcp_url = f"{str(connection_manager.url).rstrip('/')}{mcp_mount_path}{mcp_http_app_path}"
         return Client(mcp_url)

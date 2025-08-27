@@ -142,6 +142,14 @@ class ConnectionManager(Mindtrace):
         return False
 
     @property
+    def mcp_url(self) -> str:
+        """Return the MCP endpoint URL for this service instance using config paths."""
+        base = f"{str(self.url).rstrip('/')}/"
+        mount = str(self.config.get("MINDTRACE_MCP_MOUNT_PATH", "/mcp-server")).strip("/")
+        app = str(self.config.get("MINDTRACE_MCP_HTTP_APP_PATH", "/mcp")).strip("/")
+        return urljoin(urljoin(base, mount + "/"), app)
+
+    @property
     def mcp_client(self) -> Client:
         """Get an MCP client for this service.
 
@@ -156,8 +164,6 @@ class ConnectionManager(Mindtrace):
             client = cm.mcp_client
             # Use client for MCP protocol interactions
         """
-        # Construct the MCP endpoint URL
-        mcp_url = f"{str(self.url).rstrip('/')}/mcp-server/mcp"
         if self._mcp_client is None:
-            self._mcp_client = Client(mcp_url)
+            self._mcp_client = Client(self.mcp_url)
         return self._mcp_client
