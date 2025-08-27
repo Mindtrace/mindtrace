@@ -1,7 +1,7 @@
 import reflex as rx
 from poseidon.styles.global_styles import SP, T
-
 from .sidebar_state import SidebarState as S
+
 
 NAV = [
     (
@@ -16,7 +16,8 @@ NAV = [
     (
         "Analytics",
         [
-            {"label": "Line Insights", "icon": "chart-line", "href": "/line-insights"},
+            {"label": "Line Insights", "icon": "chart-line", "scope": "line", "to": "line-insights"},
+            {"label": "Line View", "icon": "panel-top", "scope": "line", "to": "line-view"},
         ],
     ),
     (
@@ -42,6 +43,18 @@ V_PAD = SP.space_2
 ACTIVE_BG = "rgba(0,87,255,.08)"
 
 
+# --------------------------------------------
+# Helper: build a Var[str] href for scoped items
+# --------------------------------------------
+def _scoped_href(scope: str, to: str):
+    to = to.lstrip("/")
+    if scope == "line":
+        return S.line_prefix + f"/{to}"
+    if scope == "plant":
+        return S.plant_prefix + f"/{to}"
+    return "/" + to
+
+
 def _active_bar():
     return rx.box(
         position="absolute", left="0", top=V_PAD, bottom=V_PAD, width="3px", bg=T.accent, border_radius=T.r_full
@@ -49,11 +62,10 @@ def _active_bar():
 
 
 def _nav_row(label: str, icon: str, active: bool, collapsed):
-    icon_size_px = "20px"
     icon_node = rx.box(
         rx.icon(tag=icon, size=20, color="currentColor"),
-        width=icon_size_px,
-        height=icon_size_px,
+        width="20px",
+        height="20px",
         display="grid",
         place_items="center",
         flex_shrink="0",
@@ -78,17 +90,45 @@ def _nav_row(label: str, icon: str, active: bool, collapsed):
     )
 
 
-def _nav_item(*, label: str, icon: str, href: str, active: bool, collapsed):
+def _nav_item(
+    *,
+    label: str,
+    icon: str,
+    href=None,
+    scope: str | None = None,
+    to: str | None = None,
+    active: bool = False,
+    collapsed=False,
+):
     row = _nav_row(label, icon, active, collapsed)
     row = rx.cond(collapsed, rx.tooltip(row, content=label, side="right"), row)
-    return rx.link(
-        row,
-        href=href,
-        color="inherit",
-        text_decoration="none",
-        aria_current="page" if active else "false",
-        width="100%",
-    )
+
+    # Scoped link: build Var[str] href and disable if *truly* no scope available.
+    if scope and to:
+        href_var = _scoped_href(scope, to)
+
+        # Disable when we have neither a current scope nor a saved last scope
+        if scope == "line":
+            missing = ((rx.State.plant_id == None) & (S.last_plant == "")) | (
+                (rx.State.line_id == None) & (S.last_line == "")
+            )
+        elif scope == "plant":
+            missing = (rx.State.plant_id == None) & (S.last_plant == "")
+        else:
+            missing = False
+
+        return rx.link(
+            row,
+            href=href_var,  # Var[str] → real link (Cmd/Ctrl-click works)
+            pointer_events=rx.cond(missing, "none", "auto"),
+            opacity=rx.cond(missing, "0.6", "1"),
+            color="inherit",
+            text_decoration="none",
+            width="100%",
+        )
+
+    # Static link
+    return rx.link(row, href=href or "#", color="inherit", text_decoration="none", width="100%")
 
 
 def _section(*, title: str, items: list[dict], active_label: str, collapsed):
@@ -109,22 +149,20 @@ def _section(*, title: str, items: list[dict], active_label: str, collapsed):
             _nav_item(
                 label=i["label"],
                 icon=i["icon"],
-                href=i["href"],
+                href=i.get("href"),
+                scope=i.get("scope"),
+                to=i.get("to"),
                 active=(i["label"] == active_label),
-                collapsed=collapsed,
+                collapsed=S.collapsed,
             )
         )
-    return rx.vstack(*nodes, gap="6px", width="100%", align_items="stretch")
+    return rx.vstack(*nodes, gap="8px", width="100%", align_items="stretch")
 
 
 def Sidebar(*, active: str):
     toggle = rx.tooltip(
         rx.button(
-            rx.cond(
-                S.collapsed,
-                rx.icon(tag="chevron-right", size=18),
-                rx.icon(tag="chevron-left", size=18),
-            ),
+            rx.cond(S.collapsed, rx.icon(tag="chevron-right", size=18), rx.icon(tag="chevron-left", size=18)),
             on_click=S.toggle,
             padding=f"{V_PAD}",
             border_radius=T.r_full,
