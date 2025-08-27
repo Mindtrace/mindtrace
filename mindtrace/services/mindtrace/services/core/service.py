@@ -495,7 +495,7 @@ class Service(Mindtrace):
             return parse_url(f"http://{final_host}:{final_port}/")
 
         return cls.default_url()
-        
+
     @classmethod
     def get_mcp_paths(cls) -> tuple[str, str]:
         """Return (mount_path, http_app_path) for MCP based on config defaults.
