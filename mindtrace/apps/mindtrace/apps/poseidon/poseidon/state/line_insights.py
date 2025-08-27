@@ -170,8 +170,8 @@ class LineInsightsState(BaseFilterState):
             # Extract unique defect types
             defect_types = set()
             for cls in classifications:
-                if cls.name:
-                    defect_types.add(cls.name)
+                if cls.det_cls:
+                    defect_types.add(cls.det_cls)
             
             self.available_defect_types = sorted(list(defect_types))
             
@@ -331,7 +331,7 @@ class LineInsightsState(BaseFilterState):
             # Count defects by type
             defect_counts = {}
             for cls in classifications:
-                defect_type = cls.name or "Unknown"
+                defect_type = cls.det_cls or "Unknown"
                 defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
             
             # Convert to list and sort by count
@@ -384,7 +384,7 @@ class LineInsightsState(BaseFilterState):
                 # Count defects by type for this camera
                 defect_counts = {}
                 for cls in camera_defects:
-                    defect_type = cls.name or "Unknown"
+                    defect_type = cls.det_cls or "Unknown"
                     defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
                 
                 # Add camera data with fallback name

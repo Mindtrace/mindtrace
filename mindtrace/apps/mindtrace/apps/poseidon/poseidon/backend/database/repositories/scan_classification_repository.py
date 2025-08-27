@@ -230,7 +230,7 @@ class ScanClassificationRepository:
         
         frequency = {}
         for cls in classifications:
-            defect_type = cls.name or "Unknown"
+            defect_type = cls.det_cls or "Unknown"
             frequency[defect_type] = frequency.get(defect_type, 0) + 1
         
         return frequency
@@ -271,7 +271,7 @@ class ScanClassificationRepository:
             from beanie.operators import In
             classification_conditions = [In(ScanClassification.scan.id, scan_ids)]
             if defect_type:
-                classification_conditions.append(ScanClassification.name == defect_type)
+                classification_conditions.append(ScanClassification.det_cls == defect_type)
             
             return await ScanClassification.find(*classification_conditions).to_list()
         except Exception as e:
@@ -314,7 +314,7 @@ class ScanClassificationRepository:
             from beanie.operators import In
             classification_conditions = [In(ScanClassification.image.id, image_ids)]
             if defect_type:
-                classification_conditions.append(ScanClassification.name == defect_type)
+                classification_conditions.append(ScanClassification.det_cls == defect_type)
             
             return await ScanClassification.find(*classification_conditions).to_list()
         except Exception as e:
