@@ -31,8 +31,12 @@ async def run_with_client(mcp_client, message: str):
 
 async def main():
     parser = argparse.ArgumentParser(description="Combined MCP client demo for EchoService")
-    parser.add_argument("--mode", choices=["launch", "connect", "manager"], default="launch",
-                        help="How to obtain the MCP client: launch|connect|manager")
+    parser.add_argument(
+        "--mode",
+        choices=["launch", "connect", "manager"],
+        default="launch",
+        help="How to obtain the MCP client: launch|connect|manager",
+    )
     parser.add_argument("--host", default="localhost", help="Host for the service")
     parser.add_argument("--port", type=int, default=8000, help="Port for the service")
     parser.add_argument("--url", default=None, help="Full URL for connect mode (e.g., http://localhost:8000/)")
@@ -50,7 +54,7 @@ async def main():
                 timeout=10,
             )
         elif args.mode == "connect":
-            cm =EchoService.mcp.launch(
+            cm = EchoService.mcp.launch(
                 host=args.host,
                 port=args.port,
                 wait_for_launch=True,
@@ -75,4 +79,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
