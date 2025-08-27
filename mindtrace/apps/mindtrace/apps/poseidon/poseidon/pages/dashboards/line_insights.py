@@ -7,7 +7,7 @@ Uses chart components to visualize parts scanned, defect rates, and more.
 
 import reflex as rx
 from typing import Optional
-from poseidon.state.line_insights import LineInsightsState, ALL_DEFECT_TYPES
+from poseidon.state.line_insights import LineInsightsState
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.graphs.line_chart import line_chart
 from poseidon.components_v2.graphs.bar_chart import bar_chart
@@ -139,13 +139,15 @@ def camera_defect_matrix_chart() -> rx.Component:
     chart = bar_chart(
         data=LineInsightsState.camera_defect_matrix_data,
         x_key="camera",
-        # Using static defect types constant - chart automatically shows only data that exists
-        y_keys=ALL_DEFECT_TYPES,
-        height=350,
+        y_keys=LineInsightsState.camera_chart_defect_types,
+        height=400,
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
         layout="horizontal",
+        bar_size=30,
+        bar_gap=4,
+        bar_category_gap="20%",
     )
     
     chart_content = rx.cond(
