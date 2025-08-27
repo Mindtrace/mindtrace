@@ -94,8 +94,8 @@ class LineInsightsSeeder:
         
         org_configs = [
             {
-                "name": "AdientPlant",
-                "description": "Adient automotive manufacturing plant",
+                "name": "MindtracePlant",
+                "description": "Mindtrace automotive manufacturing plant",
                 "subscription_plan": SubscriptionPlan.ENTERPRISE,
                 "max_users": 100,
                 "max_projects": 50,

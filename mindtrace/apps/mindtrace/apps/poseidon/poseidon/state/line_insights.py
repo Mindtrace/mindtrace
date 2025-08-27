@@ -15,7 +15,7 @@ from poseidon.backend.database.repositories.camera_repository import CameraRepos
 from poseidon.backend.database.models.enums import ScanStatus
 
 # Configuration constants - modify these for different deployments
-DEFAULT_PLANT_NAME = "AdientPlant"
+DEFAULT_PLANT_NAME = "MindtracePlant"
 DEFAULT_PROJECT_NAME = "Laser"
 FREQUENT_DEFECTS_LIMIT = 10  # Top N defects to display
 
