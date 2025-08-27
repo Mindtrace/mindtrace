@@ -12,6 +12,7 @@ and implements role-based authentication for secure access control.
 
 import reflex as rx
 
+from poseidon.components_v2.layout.header.scope_selector import ScopeSelector
 from poseidon.components_v2.layout.appshell import AppShell
 from poseidon.pages.auth import login_page, register_admin_page, register_page, register_super_admin_page
 from poseidon.pages.camera import camera_configurator_page
@@ -34,7 +35,7 @@ app = rx.App(
 )
 
 
-def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=None):
+def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=None, show_scope_selector=False):
     def wrapped():
         return AppShell(
             title=title,
@@ -42,6 +43,7 @@ def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=Non
             header_right=header_right_fn() if header_right_fn else None,
             subheader=subheader_fn() if subheader_fn else None,
             body=body_fn(),
+            show_scope_selector=show_scope_selector,
         )
 
     return wrapped
@@ -65,7 +67,7 @@ app.add_page(
 
 # Camera Configurator route
 app.add_page(
-    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
+    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator", show_scope_selector=True),
     route="/camera-configurator",
 )
 
