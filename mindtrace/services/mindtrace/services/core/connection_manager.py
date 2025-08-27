@@ -22,6 +22,7 @@ class ConnectionManager(Mindtrace):
         self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["Service"]))
         self._server_id = server_id
         self._server_pid_file = server_pid_file
+        self._mcp_client: Client | None = None
 
     def shutdown(self, block: bool = True):
         """Shutdown the server.
@@ -157,4 +158,6 @@ class ConnectionManager(Mindtrace):
         """
         # Construct the MCP endpoint URL
         mcp_url = f"{str(self.url).rstrip('/')}/mcp-server/mcp"
-        return Client(mcp_url)
+        if self._mcp_client is None:
+            self._mcp_client = Client(mcp_url)
+        return self._mcp_client
