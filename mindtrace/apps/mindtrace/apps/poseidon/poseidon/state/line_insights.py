@@ -42,9 +42,8 @@ class LineInsightsState(BaseFilterState):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     
-    # Individual chart filters
-    defect_rate_selected_defect: Optional[str] = None  # Filter defect rate chart by specific defect type
-    # Removed illogical filters for distribution charts
+    # Chart display options
+    # Note: Individual filters removed to show comprehensive trend data
     
     # Available filter options (populated dynamically)
     available_defect_types: List[str] = []
@@ -102,13 +101,7 @@ class LineInsightsState(BaseFilterState):
         # Refresh data when date range changes
         await self.load_dashboard_data()
     
-    async def set_defect_rate_filter(self, defect_type: Optional[str]):
-        """Set defect type filter for defect rate chart."""
-        self.defect_rate_selected_defect = defect_type if defect_type != "all" else None
-        await self.load_defect_rate_data()
-    
-    # Removed illogical filter methods for distribution charts
-    # Distribution charts should only respond to time changes, not individual filters
+    # Filter methods removed to maintain chart clarity and comprehensive data view
     
     async def set_custom_date_range(self, start: str, end: str):
         """Set custom date range."""
@@ -211,7 +204,7 @@ class LineInsightsState(BaseFilterState):
             # Calculate summary metrics
             await self.calculate_summary_metrics()
             
-            self.set_success("Dashboard data loaded successfully")
+            # Dashboard data loading completed
         except Exception as e:
             self.set_error(f"Failed to load dashboard data: {str(e)}")
         finally:
@@ -269,43 +262,40 @@ class LineInsightsState(BaseFilterState):
                 self.defect_rate_data = []
                 return
                 
-            # Get classifications for the project within date range, filtered by defect type if selected
-            classifications = await ScanClassificationRepository.get_by_project_date_and_defect_type(
+            # Get all scans for defect rate calculation
+            scans = await ScanRepository.get_by_project_and_date_range(
                 self.line_id,
-                self.defect_rate_selected_defect,  # Filter by selected defect type
                 self.start_date,
                 self.end_date
             )
             
-            # If no data found, show empty
-            if not classifications or len(classifications) == 0:
+            # Return empty if no scan data available
+            if not scans or len(scans) == 0:
                 self.defect_rate_data = []
                 return
             
-            # Aggregate by day
+            # Aggregate defect rates by day based on part-level results
             daily_rates = {}
-            for cls in classifications:
-                date_key = cls.created_at.strftime("%Y-%m-%d")
+            for scan in scans:
+                date_key = scan.created_at.strftime("%Y-%m-%d")
                 if date_key not in daily_rates:
                     daily_rates[date_key] = {
                         "date": date_key,
-                        "defect_count": 0,
-                        "total_scans": 0,
+                        "defective_parts": 0,
+                        "total_parts": 0,
                         "defect_rate": 0.0
                     }
                 
-                daily_rates[date_key]["defect_count"] += 1
+                daily_rates[date_key]["total_parts"] += 1
+                # Count part as defective if scan failed or classified as defective
+                if scan.status == ScanStatus.FAILED or (scan.cls_result and scan.cls_result.lower() == "defective"):
+                    daily_rates[date_key]["defective_parts"] += 1
             
-            # Calculate rates
+            # Calculate percentage of defective parts per day
             for date_data in daily_rates.values():
-                # Get total scans for that day
-                date_data["total_scans"] = len([
-                    s for s in self.parts_scanned_data
-                    if s["date"] == date_data["date"]
-                ])
-                if date_data["total_scans"] > 0:
+                if date_data["total_parts"] > 0:
                     date_data["defect_rate"] = (
-                        date_data["defect_count"] / date_data["total_scans"] * 100
+                        date_data["defective_parts"] / date_data["total_parts"] * 100
                     )
             
             self.defect_rate_data = sorted(
@@ -434,12 +424,12 @@ class LineInsightsState(BaseFilterState):
                 day["count"] for day in self.parts_scanned_data
             )
             
-            # Total defects found
+            # Defective parts (parts with at least one defect)
             self.total_defects_found = sum(
-                defect["count"] for defect in self.frequent_defects_data
+                day["defects"] for day in self.parts_scanned_data
             )
             
-            # Average defect rate
+            # Calculate average defect rate as percentage of defective parts
             if self.total_parts_scanned > 0:
                 self.average_defect_rate = (
                     self.total_defects_found / self.total_parts_scanned * 100

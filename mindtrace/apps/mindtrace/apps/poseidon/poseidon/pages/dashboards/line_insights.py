@@ -14,7 +14,7 @@ from poseidon.components_v2.graphs.bar_chart import bar_chart
 from poseidon.components_v2.graphs.pie_chart import pie_chart
 from poseidon.components_v2.containers.chart_card import chart_card
 from poseidon.components_v2.core.button import button
-# from poseidon.components_v2.forms.select_input import select_input
+from poseidon.components_v2.forms.select_input import select_input
 from poseidon.styles.global_styles import THEME as T
 
 
@@ -56,14 +56,20 @@ def metric_card(title: str, value: str, subtitle: Optional[str] = None) -> rx.Co
 
 
 def date_range_selector() -> rx.Component:
-    """Date range selector component."""
+    """Date range selector component using modern select input."""
+    date_options = [
+        {"id": "last_7_days", "name": "Last 7 Days"},
+        {"id": "last_30_days", "name": "Last 30 Days"},
+        {"id": "last_90_days", "name": "Last 90 Days"},
+    ]
+    
     return rx.hstack(
-        rx.select(
-            ["last_7_days", "last_30_days", "last_90_days"],
+        select_input(
+            placeholder="Select date range",
             value=LineInsightsState.date_range,
             on_change=LineInsightsState.set_date_range,
-            placeholder="Select date range",
-            width="200px",
+            items=date_options,
+            size="medium",
         ),
         button(
             "Refresh",
@@ -74,6 +80,7 @@ def date_range_selector() -> rx.Component:
         ),
         spacing="3",
         align="center",
+        width="300px",
     )
 
 
@@ -105,53 +112,25 @@ def parts_scanned_chart() -> rx.Component:
 
 
 def defect_rate_chart() -> rx.Component:
-    """Defect rate over time chart with defect type filter."""
-    # Chart filter
-    filter_component = rx.hstack(
-        rx.text(
-            "Defect Type:",
-            font_size=T.typography.fs_sm,
-            color=T.colors.fg_muted,
-            font_weight=T.typography.fw_500,
-        ),
-        rx.select(
-            LineInsightsState.defect_types_with_all,
-            value=rx.cond(LineInsightsState.defect_rate_selected_defect, LineInsightsState.defect_rate_selected_defect, "all"),
-            on_change=LineInsightsState.set_defect_rate_filter,
-            placeholder="All Types",
-            width="180px",
-            size="2",
-        ),
-        spacing="2",
-        align="center",
-        justify="end",
-        width="100%",
-        padding_bottom=T.spacing.space_2,
-    )
-    
+    """Defect rate over time chart showing overall trend."""
     chart = line_chart(
         data=LineInsightsState.defect_rate_data,
         x_key="date",
-        y_key="defect_rate",  # Use y_key instead of y_keys for single series
-        height=320,  # Slightly smaller to accommodate filter
+        y_key="defect_rate",
+        height=350,  # Full height without filter
         show_grid=True,
         show_legend=True,
         show_tooltip=True,
         smooth=True,
     )
     
-    chart_content = rx.vstack(
-        filter_component,
-        rx.cond(
-            LineInsightsState.loading_defect_chart,
-            rx.center(
-                rx.spinner(size="3"),
-                height="320px",
-            ),
-            chart,
+    chart_content = rx.cond(
+        LineInsightsState.loading_defect_chart,
+        rx.center(
+            rx.spinner(size="3"),
+            height="350px",
         ),
-        spacing="2",
-        width="100%",
+        chart,
     )
     
     return chart_card(
@@ -261,9 +240,9 @@ def line_insights_header() -> rx.Component:
                 "Parts processed",
             ),
             metric_card(
-                "Total Defects Found",
+                "Defective Parts",
                 f"{LineInsightsState.total_defects_found:,}",
-                "Defects detected",
+                "Parts with defects",
             ),
             metric_card(
                 "Average Defect Rate",
@@ -317,33 +296,16 @@ def line_insights_page() -> rx.Component:
         rx.vstack(
             line_insights_header(),
             
-            # Sample data notice
-            rx.callout(
-                "📊 Displaying sample data for demonstration. Connect your production line data to see real metrics.",
-                icon="info",
-                color_scheme="blue",
-                size="1",
-            ),
-            
             rx.divider(color=T.colors.border),
             line_insights_content(),
             
-            # Error/Success messages
+            # Error messages only
             rx.cond(
                 LineInsightsState.error,
                 rx.callout(
                     LineInsightsState.error,
                     icon="triangle-alert",
                     color_scheme="red",
-                ),
-                rx.fragment(),
-            ),
-            rx.cond(
-                LineInsightsState.success,
-                rx.callout(
-                    LineInsightsState.success,
-                    icon="check",
-                    color_scheme="green",
                 ),
                 rx.fragment(),
             ),
