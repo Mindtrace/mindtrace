@@ -18,6 +18,7 @@ NAV = [
         [
             {"label": "Organization Management", "icon": "alarm-clock", "href": "/organization-management"},
             {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
+            {"label": "License Management", "icon": "key", "href": "/license-management"},
             {"label": "Profile", "icon": "user", "href": "/profile"},
             {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
         ],

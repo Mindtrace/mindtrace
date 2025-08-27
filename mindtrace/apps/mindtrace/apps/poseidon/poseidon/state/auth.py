@@ -26,7 +26,7 @@ class AuthState(rx.State):
     current_username: str = ""
     user_organization_id: str = ""
     user_org_role: str = ""  # Changed from list to single string
-    user_project_assignments: List[ProjectAssignment] = []
+    user_project_assignments: List[Dict] = []
     is_authenticated: bool = False
 
     def check_auth(self):

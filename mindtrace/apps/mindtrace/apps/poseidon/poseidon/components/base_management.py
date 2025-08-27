@@ -2,7 +2,7 @@ from typing import Any, Callable, List, Optional
 
 import reflex as rx
 
-from poseidon.backend.database.models.enums import SubscriptionPlan
+from poseidon.backend.database.models.enums import SubscriptionPlan, OrgRole
 from poseidon.components_v2.alerts import Alert
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.core.button import button
@@ -20,7 +20,7 @@ def base_management_page(
     content_component: Callable,
     actions: Optional[List[rx.Component]] = None,
     filter_component: Optional[rx.Component] = None,
-    required_role: str = "admin",  # "admin", "super_admin", or "user"
+    required_role: str = OrgRole.ADMIN,  # Use OrgRole enum values
     on_mount: Optional[Callable] = None,
 ) -> rx.Component:
     """
@@ -33,7 +33,7 @@ def base_management_page(
         content_component: Main content component function
         actions: Optional list of action buttons for the header
         filter_component: Optional filter component
-        required_role: Required role for access ("admin", "super_admin", "user")
+        required_role: Required role for access (use OrgRole enum values)
         on_mount: Optional function to call on mount
     """
 
@@ -48,10 +48,10 @@ def base_management_page(
 
     # Build access control condition
     access_condition = None
-    if required_role == "super_admin":
+    if required_role == OrgRole.SUPER_ADMIN:
         access_condition = AuthState.is_super_admin
         access_denied_msg = "Super Admin privileges required to access this page."
-    elif required_role == "admin":
+    elif required_role == OrgRole.ADMIN:
         access_condition = AuthState.is_admin | AuthState.is_super_admin
         access_denied_msg = "Admin privileges required to access this page."
     else:  # user or no specific role
@@ -164,7 +164,7 @@ def standard_filter_bar(
     if show_role_filter:
         filters.append(
             rx.select(
-                ["all_roles", "user", "admin"],
+                ["all_roles", OrgRole.USER, OrgRole.ADMIN],
                 placeholder="Filter by role",
                 value=state_class.role_filter if hasattr(state_class, "role_filter") else "",
                 on_change=state_class.set_role_filter if hasattr(state_class, "set_role_filter") else lambda x: None,

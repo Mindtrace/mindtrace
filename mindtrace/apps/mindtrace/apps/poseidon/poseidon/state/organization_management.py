@@ -108,7 +108,7 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Super Admin privileges required")
                 return False
             
-            orgs = await OrganizationRepository.get_all()
+            orgs = await OrganizationManagementService.get_all_organizations(auth_state.user_id)
             
             self.organizations = [
                 OrganizationData(
@@ -175,6 +175,7 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
             
             # Call organization management service to add organization
             result = await OrganizationManagementService.create_organization(
+                admin_user_id=auth_state.user_id,
                 name=self.new_org_name.strip(),
                 description=self.new_org_description.strip(),
                 subscription_plan=backend_plan,
@@ -222,12 +223,15 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
             
             # Update organization
             result = await OrganizationManagementService.update_organization(
-                org_id=self.edit_org_id,
-                name=self.edit_org_name.strip(),
-                description=self.edit_org_description.strip(),
-                subscription_plan=backend_plan,
-                max_users=int(self.edit_org_max_users),
-                max_projects=int(self.edit_org_max_projects)
+                admin_user_id=auth_state.user_id,
+                organization_id=self.edit_org_id,
+                update_data={
+                    "name": self.edit_org_name.strip(),
+                    "description": self.edit_org_description.strip(),
+                    "subscription_plan": backend_plan,
+                    "max_users": int(self.edit_org_max_users),
+                    "max_projects": int(self.edit_org_max_projects)
+                }
             )
             
             if result.get("success"):
@@ -251,7 +255,7 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Super Admin privileges required")
                 return False
             
-            result = await OrganizationManagementService.delete_organization(org_id)
+            result = await OrganizationManagementService.delete_organization(auth_state.user_id, org_id)
             
             if result.get("success"):
                 await self.load_organizations()
@@ -273,7 +277,7 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Super Admin privileges required")
                 return False
             
-            result = await OrganizationManagementService.activate_organization(org_id)
+            result = await OrganizationManagementService.activate_organization(auth_state.user_id, org_id)
             
             if result.get("success"):
                 await self.load_organizations()
@@ -295,7 +299,7 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
                 self.set_error("Access denied: Super Admin privileges required")
                 return False
             
-            result = await OrganizationManagementService.deactivate_organization(org_id)
+            result = await OrganizationManagementService.deactivate_organization(auth_state.user_id, org_id)
             
             if result.get("success"):
                 await self.load_organizations()

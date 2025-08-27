@@ -8,6 +8,36 @@ from poseidon.components import (
 from poseidon.components.popups import add_project_popup, edit_project_popup
 from poseidon.components_v2.core.button import button
 from poseidon.state.project_management import ProjectData, ProjectManagementState
+from poseidon.backend.database.models.enums import OrgRole
+
+
+def project_license_indicator(project_id: str) -> rx.Component:
+    """License status indicator for projects"""
+    
+    # Check if this project has a valid license
+    has_license = ProjectManagementState.project_licenses.get(project_id, False)
+    
+    return rx.cond(
+        has_license,
+        rx.tooltip(
+            rx.badge(
+                "🟢",
+                color_scheme="green",
+                variant="soft",
+                size="1"
+            ),
+            content="Licensed - Full access enabled"
+        ),
+        rx.tooltip(
+            rx.badge(
+                "🔒",
+                color_scheme="red", 
+                variant="soft",
+                size="1"
+            ),
+            content="No license - Limited access"
+        )
+    )
 
 
 def project_management_table():
@@ -22,20 +52,34 @@ def project_management_table():
             rx.table.cell(project.description, cursor="pointer"),
             rx.table.cell(project.organization_name, cursor="pointer"),
             rx.table.cell(
-                rx.text(
-                    rx.cond(project.is_active, "Active", "Inactive"),
-                    color=rx.cond(project.is_active, "green", "red"),
-                    weight="bold",
-                    font_size="12px",
+                rx.hstack(
+                    rx.text(
+                        project.status.capitalize(),
+                        color=rx.cond(project.status == "active", "green", "red"),
+                        weight="bold",
+                        font_size="12px",
+                    ),
+                    # License status indicator
+                    project_license_indicator(project.id),
+                    spacing="2",
+                    align="center"
                 )
             ),
             rx.table.cell(
                 standard_table_actions(
                     item_id=project.id,
-                    is_active=project.is_active,
+                    is_active=(project.status == "active"),  # Direct comparison instead of property
                     edit_handler=lambda id: ProjectManagementState.set_edit_project_data(project),
                     activate_handler=ProjectManagementState.activate_project,
                     deactivate_handler=ProjectManagementState.deactivate_project,
+                    additional_actions=[
+                        button(
+                            text="Delete",
+                            variant="surface",
+                            size="sm",
+                            on_click=lambda: ProjectManagementState.delete_project(project.id),
+                        )
+                    ]
                 )
             ),
             _hover={"bg": rx.color(color="gray", shade=4)},
@@ -130,6 +174,6 @@ def project_management_page() -> rx.Component:
             ),
         ],
         filter_component=project_filter_bar(),
-        required_role="admin",
+        required_role=OrgRole.ADMIN,
         on_mount=ProjectManagementState.load_projects,
     )

@@ -21,7 +21,7 @@ from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.index import index
 from poseidon.pages.inference import inference_page
-from poseidon.pages.management import organization_management_page, project_management_page, user_management_page
+from poseidon.pages.management import organization_management_page, project_management_page, user_management_page, license_management_page
 from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
@@ -97,6 +97,10 @@ app.add_page(
 app.add_page(
     with_shell(project_management_page, title="Mindtrace - Project Management", active="Project Management"),
     route="/project-management",
+)
+app.add_page(
+    with_shell(license_management_page, title="Mindtrace - License Management", active="License Management"),
+    route="/license-management",
 )
 
 # User routes

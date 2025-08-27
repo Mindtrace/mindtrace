@@ -1,6 +1,7 @@
 import reflex as rx
 from typing import List, Dict, Optional, Union
 from datetime import datetime
+from poseidon.backend.database.models.enums import OrgRole, ProjectRole, LicenseStatus
 
 
 class BaseDataModel(rx.Base):
@@ -47,20 +48,20 @@ class UserData(BaseDataModel):
     @property
     def primary_role(self) -> str:
         """Get the primary role of the user"""
-        if "super_admin" in self.org_roles:
-            return "super_admin"
-        elif "admin" in self.org_roles:
-            return "admin"
+        if OrgRole.SUPER_ADMIN in self.org_roles:
+            return OrgRole.SUPER_ADMIN
+        elif OrgRole.ADMIN in self.org_roles:
+            return OrgRole.ADMIN
         else:
-            return "user"
+            return OrgRole.USER
     
     @property
     def role_display(self) -> str:
         """Get display-friendly role name"""
         role_map = {
-            "super_admin": "Super Admin",
-            "admin": "Admin",
-            "user": "User"
+            OrgRole.SUPER_ADMIN: "Super Admin",
+            OrgRole.ADMIN: "Admin",
+            OrgRole.USER: "User"
         }
         return role_map.get(self.primary_role, "User")
 
@@ -79,47 +80,45 @@ class ProjectAssignmentData(rx.Base):
         return ", ".join(self.roles)
 
 
-# Role and status constants
+# Legacy compatibility aliases for centralized enums
 class UserRoles:
-    USER = "user"
-    ADMIN = "admin"
-    SUPER_ADMIN = "super_admin"
+    """Legacy compatibility wrapper for OrgRole enum"""
+    USER = OrgRole.USER
+    ADMIN = OrgRole.ADMIN
+    SUPER_ADMIN = OrgRole.SUPER_ADMIN
     
     @classmethod
     def get_all(cls) -> List[str]:
-        return [cls.USER, cls.ADMIN, cls.SUPER_ADMIN]
+        return [OrgRole.USER, OrgRole.ADMIN, OrgRole.SUPER_ADMIN]
     
     @classmethod
     def get_assignable(cls) -> List[str]:
         """Roles that can be assigned by admins (no super_admin)"""
-        return [cls.USER, cls.ADMIN]
+        return OrgRole.get_manageable_roles()
     
     @classmethod
     def get_display_names(cls) -> Dict[str, str]:
         return {
-            cls.USER: "User",
-            cls.ADMIN: "Admin",
-            cls.SUPER_ADMIN: "Super Admin"
+            OrgRole.USER: "User",
+            OrgRole.ADMIN: "Admin",
+            OrgRole.SUPER_ADMIN: "Super Admin"
         }
 
 
 class ProjectRoles:
-    PROJECT_MANAGER = "project_manager"
-    INSPECTOR = "inspector"
-    ANALYST = "analyst"
-    VIEWER = "viewer"
+    """Legacy compatibility wrapper for ProjectRole enum"""
+    INSPECTOR = ProjectRole.INSPECTOR
+    VIEWER = ProjectRole.VIEWER
     
     @classmethod
     def get_all(cls) -> List[str]:
-        return [cls.PROJECT_MANAGER, cls.INSPECTOR, cls.ANALYST, cls.VIEWER]
+        return [ProjectRole.INSPECTOR, ProjectRole.VIEWER]
     
     @classmethod
     def get_display_names(cls) -> Dict[str, str]:
         return {
-            cls.PROJECT_MANAGER: "Project Manager",
-            cls.INSPECTOR: "Inspector",
-            cls.ANALYST: "Analyst",
-            cls.VIEWER: "Viewer"
+            ProjectRole.INSPECTOR: "Inspector",
+            ProjectRole.VIEWER: "Viewer"
         }
 
 
@@ -142,4 +141,22 @@ class StatusTypes:
             cls.ACTIVE: "Active",
             cls.INACTIVE: "Inactive",
             cls.ALL: "All"
-        } 
+        }
+
+
+class LicenseData(rx.Base):
+    """License data model for frontend"""
+    id: str
+    license_key: str
+    project_id: str = ""
+    project_name: str = ""
+    organization_id: str = ""
+    organization_name: str = ""
+    status: LicenseStatus
+    status_display: str = ""
+    issued_at: Union[str, datetime] = ""
+    expires_at: Union[str, datetime] = ""
+    days_until_expiry: int = 0
+    is_valid: bool = False
+    notes: str = ""
+    issued_by: str = "" 
