@@ -33,7 +33,11 @@ class SamArchiver(Archiver):
         num_params = model.info()[1]
         if num_params not in self.model_name:
             raise ValueError(f"Unknown model with {num_params} parameters.")
-        model.save(os.path.join(self.uri, f"{self.model_name[num_params]}.pt"))
+        # SAM.save() saves {"model": SAM2Model} and SAM.__init__() expects {"model": state_dict}
+        # We only save the state_dict so that init works normally
+        state_dict = {"model": model.model.state_dict()}
+        # We also save the model name so that the correct SAM model is built when loading
+        torch.save(state_dict, os.path.join(self.uri, f"{self.model_name[num_params]}.pt"))
 
     def load(self, data_type: Type[Any]) -> SAM:
         for file in os.listdir(self.uri):
