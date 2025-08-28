@@ -21,7 +21,6 @@ NAV = [
             {"label": "Profile", "icon": "user", "href": "/profile"},
             {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
             {"label": "Audit Trail with Modal", "href": "/filter-table-demo", "icon": "shield-check"},
-            # {"label": "Audit Trail with Accordions", "href": "/filter-table-accordian-demo", "icon": "shield-check"},
         ],
     ),
     (

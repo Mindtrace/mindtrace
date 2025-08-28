@@ -31,5 +31,6 @@ __all__ = [
     "SubscriptionPlans",
     "StatusTypes",
     "ModelDeploymentState",
-    "InferenceState"
+    "InferenceState",
+    "GridState",
 ]
