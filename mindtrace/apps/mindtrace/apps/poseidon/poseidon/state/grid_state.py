@@ -1,4 +1,3 @@
-# poseidon/components_v2/core/grid_state.py
 import reflex as rx
 from typing import List, Dict, Any, Optional
 from poseidon.backend.database.repositories.scan_repository import ScanRepository
