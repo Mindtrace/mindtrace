@@ -166,7 +166,14 @@ class ScanRepository:
         await scan.fetch_link(Scan.images)
 
         for idx, img in enumerate(scan.images, start=1):
-            part_key = f"part{idx}"
+            # Fetch camera info to get meaningful names
+            await img.fetch_link(ScanImage.camera)
+            
+            # Use camera name if available, fallback to generic name
+            if img.camera and hasattr(img.camera, 'name') and img.camera.name:
+                part_key = img.camera.name
+            else:
+                part_key = f"Camera_{idx}"  # More descriptive than "part{idx}"
 
             await img.fetch_link(ScanImage.classifications)
 
