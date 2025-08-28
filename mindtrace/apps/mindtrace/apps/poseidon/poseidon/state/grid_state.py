@@ -23,6 +23,9 @@ class GridState(rx.State):
     selected_part: str = ""
     selected_created_at: str = ""
     selected_result: str = ""
+    selected_operator: str = ""
+    selected_model_version: str = ""
+    selected_confidence: str = ""
 
     @rx.var
     def columns_norm(self) -> list[dict[str, str]]:
@@ -123,6 +126,9 @@ class GridState(rx.State):
         self.selected_part = str(row.get("part", "-"))
         self.selected_created_at = str(row.get("created_at", "-"))
         self.selected_result = str(row.get("result", "-"))
+        self.selected_operator = str(row.get("operator", "-"))
+        self.selected_model_version = str(row.get("model_version", "-"))
+        self.selected_confidence = str(row.get("confidence", "-"))
         self.modal_open = True
 
     def set_modal(self, is_open: bool):

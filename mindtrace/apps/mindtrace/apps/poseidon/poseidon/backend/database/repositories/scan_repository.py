@@ -230,6 +230,27 @@ class ScanRepository:
         for s in scans:
             await s.fetch_link(Scan.project)
             part_name = getattr(s.project, "name", "-") if getattr(s, "project", None) else "-"
+            
+            # Fetch operator (user) info
+            operator_name = "-"
+            if s.user:
+                await s.fetch_link(Scan.user)
+                operator_name = getattr(s.user, "username", "-")
+            
+            # Fetch model deployment and model info
+            model_version = "-"
+            if s.model_deployment:
+                await s.fetch_link(Scan.model_deployment)
+                if s.model_deployment.model:
+                    await s.model_deployment.fetch_link("model")
+                    model = s.model_deployment.model
+                    model_version = f"{getattr(model, 'name', 'Unknown')} v{getattr(model, 'version', '?')}"
+            
+            # Format confidence score
+            confidence_str = "-"
+            if s.cls_confidence is not None:
+                confidence_str = f"{s.cls_confidence:.1%}"  # Format as percentage
+            
             res = await ScanRepository._infer_result(s)
             parts = await ScanRepository._parts_for_scan(s)
 
@@ -240,6 +261,9 @@ class ScanRepository:
                     "created_at": ScanRepository._format_dt(s.created_at),
                     "result": res,
                     "parts": parts,
+                    "operator": operator_name,
+                    "model_version": model_version,
+                    "confidence": confidence_str,
                 }
             )
 
