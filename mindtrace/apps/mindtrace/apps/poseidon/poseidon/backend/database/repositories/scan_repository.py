@@ -159,9 +159,9 @@ class ScanRepository:
         return dt.strftime("%a %b %d %Y %H:%M:%S")
     
     @staticmethod
-    async def _parts_for_scan(scan: Scan) -> str:
-        """Build parts string from scan images and their classifications."""
-        parts_list = []
+    async def _parts_for_scan(scan: Scan) -> List[Dict[str, str]]:
+        """Build parts list from scan images and their classifications."""
+        parts_list: List[Dict[str, str]] = []
 
         await scan.fetch_link(Scan.images)
 
@@ -183,9 +183,9 @@ class ScanRepository:
                 defect_types = [cls.det_cls for cls in img.classifications if cls.det_cls and cls.det_cls != "Healthy"]
                 part_status = ", ".join(set(defect_types)) if defect_types else "Healthy"
             
-            parts_list.append(f"• {part_name}: {part_status}")
+            parts_list.append({"name": part_name, "status": part_status})
         
-        return "\n".join(parts_list) if parts_list else "No camera data"
+        return parts_list
 
     # ----------------- Grid search for 4 columns -----------------
     @staticmethod

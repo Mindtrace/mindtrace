@@ -8,6 +8,10 @@ class GridState(rx.State):
     total: int = 0
     loading: bool = False
     error: str = ""
+    
+    # Camera chips data management - properly typed for rx.foreach
+    current_row_cameras: List[Dict[str, str]] = []
+    expanded_row_serial: str = ""
 
     # Query
     search: str = ""
@@ -83,18 +87,18 @@ class GridState(rx.State):
     def set_search(self, v: str):
         self.search = v
         self.page = 1
-        return self.load
+        return GridState.load
 
     def set_result_filter(self, v: str):
         self.result_filter = (v or "All")
         self.page = 1
-        return self.load
+        return GridState.load
 
     def clear_filters(self):
         self.search = ""
         self.result_filter = "All"
         self.page = 1
-        return self.load
+        return GridState.load
 
     def set_sort(self, column_id: str):
         if self.sort_by == column_id:
@@ -103,22 +107,22 @@ class GridState(rx.State):
             self.sort_by = column_id
             self.sort_dir = "asc"
         self.page = 1
-        return self.load
+        return GridState.load
 
     def next_page(self):
         if self.page < self.total_pages:
             self.page += 1
-            return self.load
+            return GridState.load
 
     def prev_page(self):
         if self.page > 1:
             self.page -= 1
-            return self.load
+            return GridState.load
 
     def set_page_size(self, n: int):
         self.page_size = max(1, min(200, int(n or 10)))
         self.page = 1
-        return self.load
+        return GridState.load
 
     # -------- Modal helpers --------
     def open_inspection(self, row: dict[str, Any]):
@@ -133,3 +137,35 @@ class GridState(rx.State):
 
     def set_modal(self, is_open: bool):
         self.modal_open = is_open
+    
+    def set_expanded_row(self, serial_number: str):
+        """Set which row is expanded and load its camera data."""
+        self.expanded_row_serial = serial_number
+        
+        # Find the row data and extract camera parts
+        for row in self.rows:
+            if row.get("serial_number") == serial_number:
+                parts_data = row.get("parts", [])
+                if isinstance(parts_data, list):
+                    self.current_row_cameras = parts_data
+                else:
+                    self.current_row_cameras = []
+                break
+        else:
+            self.current_row_cameras = []
+    
+    def handle_accordion_change(self, value: str | list[str]):
+        """Handle accordion expansion/collapse."""
+        # Handle both single value (string) and multiple values (list)
+        if isinstance(value, list):
+            # For single accordion type, take the first (and only) value
+            actual_value = value[0] if value else ""
+        else:
+            actual_value = value or ""
+            
+        if actual_value and actual_value.startswith("item_"):
+            serial = actual_value.replace("item_", "")
+            self.set_expanded_row(serial)
+        else:
+            self.expanded_row_serial = ""
+            self.current_row_cameras = []

@@ -142,15 +142,60 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
 
     def _row_content(r):
         serial = r.get("serial_number", "Unknown")
-        parts_text = r.get("parts", "No camera data")
+        
+        def _camera_chip(camera):
+            """Individual camera status chip using STATE data."""
+            return rx.box(
+                # Camera name header
+                rx.box(
+                    rx.text(camera["name"], weight="bold", size="2"),
+                    background_color="white",
+                    border="1px solid var(--gray-4)",
+                    border_bottom="0",
+                    padding="6px 8px",
+                    border_top_left_radius="10px",
+                    border_top_right_radius="10px",
+                    text_align="center",
+                ),
+                # Status colored section
+                rx.box(
+                    rx.center(
+                        rx.text(
+                            camera["status"], 
+                            weight="medium", 
+                            size="3",
+                            color=rx.cond(camera["status"] == "Healthy", "black", "white")
+                        ),
+                        width="100%", 
+                        height="52px",
+                    ),
+                    background_color=rx.cond(camera["status"] == "Healthy", "#86efac", "#fca5a5"),
+                    border="1px solid var(--gray-4)",
+                    border_top="0",
+                    border_bottom_left_radius="10px",
+                    border_bottom_right_radius="10px",
+                ),
+                cursor="pointer",
+                _hover={"box_shadow": "0 0 0 2px var(--gray-6) inset"},
+                min_width="120px",
+            )
         
         return rx.box(
-            rx.text("Parts Status:", weight="bold", size="3", margin_bottom="8px"),
-            rx.text(f"Serial: {serial}", size="2", color="gray", margin_bottom="4px"),
-            rx.text(parts_text, size="2", color="navy", white_space="pre-line"),
-            width="100%",
+            rx.text("Camera Status:", weight="bold", size="3", margin_bottom="8px"),
+            rx.text(f"Serial: {serial}", size="2", color="gray", margin_bottom="8px"),
+            rx.cond(
+                state.expanded_row_serial == serial,
+                rx.grid(
+                    # THE KEY: Use state variable directly, like all other components!
+                    rx.foreach(state.current_row_cameras, _camera_chip),
+                    columns="repeat(auto-fit, minmax(120px, 1fr))",
+                    gap="12px",
+                    width="100%",
+                ),
+                rx.text("Click to expand and see camera data", size="2", color="gray")
+            ),
             padding="12px",
-            color="black"
+            width="100%",
         )
         # def _status_chip(item):
         #     name, status = item
@@ -230,6 +275,7 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
                     width="100%",
                     background_color="white !important",
                     class_name="acc-container",
+                    on_value_change=state.handle_accordion_change,
                 ),
                 rx.center(rx.text("No results"), padding_y="24px"),
             ),
