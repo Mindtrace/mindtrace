@@ -173,8 +173,8 @@ class ScanRepository:
             if not img.classifications:
                 parts[part_key] = "Healthy"
             else:
-                labels = [cls.name for cls in img.classifications if cls.name]
-                parts[part_key] = ", ".join(labels) if labels else "Defective"
+                defect_types = [cls.det_cls for cls in img.classifications if cls.det_cls and cls.det_cls != "Healthy"]
+                parts[part_key] = ", ".join(set(defect_types)) if defect_types else "Healthy"
         return parts
 
     # ----------------- Grid search for 4 columns -----------------
