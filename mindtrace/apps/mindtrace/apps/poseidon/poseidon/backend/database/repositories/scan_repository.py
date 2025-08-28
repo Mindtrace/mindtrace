@@ -159,9 +159,9 @@ class ScanRepository:
         return dt.strftime("%a %b %d %Y %H:%M:%S")
     
     @staticmethod
-    async def _parts_for_scan(scan: Scan) -> Dict[str, str]:
-        """Build parts dict from scan images and their classifications."""
-        parts: Dict[str, str] = {}
+    async def _parts_for_scan(scan: Scan) -> str:
+        """Build parts string from scan images and their classifications."""
+        parts_list = []
 
         await scan.fetch_link(Scan.images)
 
@@ -171,18 +171,21 @@ class ScanRepository:
             
             # Use camera name if available, fallback to generic name
             if img.camera and hasattr(img.camera, 'name') and img.camera.name:
-                part_key = img.camera.name
+                part_name = img.camera.name
             else:
-                part_key = f"Camera_{idx}"  # More descriptive than "part{idx}"
+                part_name = f"Camera_{idx}"  # More descriptive than "part{idx}"
 
             await img.fetch_link(ScanImage.classifications)
 
             if not img.classifications:
-                parts[part_key] = "Healthy"
+                part_status = "Healthy"
             else:
                 defect_types = [cls.det_cls for cls in img.classifications if cls.det_cls and cls.det_cls != "Healthy"]
-                parts[part_key] = ", ".join(set(defect_types)) if defect_types else "Healthy"
-        return parts
+                part_status = ", ".join(set(defect_types)) if defect_types else "Healthy"
+            
+            parts_list.append(f"• {part_name}: {part_status}")
+        
+        return "\n".join(parts_list) if parts_list else "No camera data"
 
     # ----------------- Grid search for 4 columns -----------------
     @staticmethod

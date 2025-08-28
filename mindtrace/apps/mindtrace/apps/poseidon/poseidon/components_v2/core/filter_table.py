@@ -138,17 +138,13 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
         )
 
     def _row_content(r):
-        parts = r.get("parts", {})
         serial = r.get("serial_number", "Unknown")
+        parts_text = r.get("parts", "No camera data")
         
         return rx.box(
             rx.text("Parts Status:", weight="bold", size="3", margin_bottom="8px"),
             rx.text(f"Serial: {serial}", size="2", color="gray", margin_bottom="4px"),
-            rx.cond(
-                parts,
-                rx.text(f"Camera data: {parts}", size="2", color="navy"),
-                rx.text("No camera data available", size="2", color="gray")
-            ),
+            rx.text(parts_text, size="2", color="navy", white_space="pre-line"),
             width="100%",
             padding="12px",
             color="black"
