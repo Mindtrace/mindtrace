@@ -10,6 +10,14 @@ from mindtrace.registry.core.archiver import Archiver
 from mindtrace.registry.core.exceptions import LockTimeoutError
 from mindtrace.registry.core.registry import Registry
 
+from mindtrace.core import check_libs
+if check_libs(["ultralytics", "torch"]) == []:
+    # Registers the Ultralytics archivers to the Registry class
+    import mindtrace.registry.archivers.ultralytics.yolo_archiver
+    import mindtrace.registry.archivers.ultralytics.yoloe_archiver
+    import mindtrace.registry.archivers.ultralytics.sam_archiver
+
+
 __all__ = [
     "Archiver",
     "ConfigArchiver",
