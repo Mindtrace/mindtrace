@@ -157,6 +157,25 @@ class ScanRepository:
     @staticmethod
     def _format_dt(dt: datetime) -> str:
         return dt.strftime("%a %b %d %Y %H:%M:%S")
+    
+    @staticmethod
+    async def _parts_for_scan(scan: Scan) -> Dict[str, str]:
+        """Build parts dict from scan images and their classifications."""
+        parts: Dict[str, str] = {}
+
+        await scan.fetch_link(Scan.images)
+
+        for idx, img in enumerate(scan.images, start=1):
+            part_key = f"part{idx}"
+
+            await img.fetch_link(ScanImage.classifications)
+
+            if not img.classifications:
+                parts[part_key] = "Healthy"
+            else:
+                labels = [cls.name for cls in img.classifications if cls.name]
+                parts[part_key] = ", ".join(labels) if labels else "Defective"
+        return parts
 
     # ----------------- Grid search for 4 columns -----------------
     @staticmethod
@@ -175,17 +194,16 @@ class ScanRepository:
         - part          (Scan.project.name)
         - created_at    (Scan.created_at -> formatted)
         - result        (Scan.cls_result or inferred via images/classifications)
+        - parts         (dict from images/classifications, already materialized)
         Returns (rows, total, columns).
         """
         await ScanRepository._ensure_init()
-
 
         filter_expr: Dict[str, Any] = {}
         if q:
             filter_expr["serial_number"] = {"$regex": q, "$options": "i"}
 
         cursor = Scan.find(filter_expr)
-
 
         sortable_db = {
             "serial_number": Scan.serial_number,
@@ -195,42 +213,35 @@ class ScanRepository:
             field = sortable_db[sort_by]
             cursor = cursor.sort(-field if sort_dir == "desc" else field)
 
-
         skip = max(0, (page - 1) * page_size)
         scans: List[Scan] = await cursor.skip(skip).limit(page_size).to_list()
 
-        for s in scans:
-            await s.fetch_link(Scan.project)
-
-        # Shape rows
         rows = []
         for s in scans:
+            await s.fetch_link(Scan.project)
             part_name = getattr(s.project, "name", "-") if getattr(s, "project", None) else "-"
             res = await ScanRepository._infer_result(s)
+            parts = await ScanRepository._parts_for_scan(s)
+
             rows.append(
                 {
                     "serial_number": s.serial_number,
                     "part": part_name,
                     "created_at": ScanRepository._format_dt(s.created_at),
                     "result": res,
+                    "parts": parts,
                 }
             )
 
-        # Post-filter by result if needed
         if result and result != "All":
             wanted = result.strip().lower()
             rows = [r for r in rows if r["result"].lower() == wanted]
 
-        # Post-sort if sorting by derived fields
         if sort_by in ("part", "result"):
             rows.sort(key=lambda r: r[sort_by].lower(), reverse=(sort_dir == "desc"))
 
-        # Total count
         if result and result != "All":
-            # Re-count precisely when result filter is applied (requires inferring result for all matches)
             all_scans = await Scan.find(filter_expr).to_list()
-            for s in all_scans:
-                await s.fetch_link(Scan.project)
             total = 0
             for s in all_scans:
                 res = await ScanRepository._infer_result(s)

@@ -94,57 +94,106 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
         cid = c["id"]
         val = r.get(cid, "")
 
+        def _truncated_text(v, max_px: int):
+            return rx.text(
+                v,
+                size="2",
+                no_of_lines=1,
+                max_width=f"{max_px}px",
+                title=v,
+                color="black",
+            )
+
+        serial_cell = rx.box(
+            rx.link(
+                _truncated_text(val, 240),
+                href="#",
+                on_click=lambda rr=r: state.open_inspection(rr),
+            ),
+            **CELL_STYLE,
+        )
+
+        default_cell = rx.box(
+            _truncated_text(val, 160),
+            **CELL_STYLE,
+        )
+
         return rx.cond(
             cid == "serial_number",
-            rx.box(
-                rx.tooltip(
-                    content=str(val),
-                    child=rx.text(
-                        str(val),
-                        size="2",
-                        no_of_lines=1,
-                        max_width="240px",
-                        white_space="nowrap",
-                        overflow="hidden",
-                        text_overflow="ellipsis",
-                        display="block",
-                    ),
-                ),
-                **CELL_STYLE,
-            ),
-            rx.box(
-                rx.text(
-                    str(val),
-                    size="2",
-                    no_of_lines=1,
-                    max_width="160px",
-                    white_space="nowrap",
-                    overflow="hidden",
-                    text_overflow="ellipsis",
-                    display="block",
-                ),
-                **CELL_STYLE,
-            ),
+            serial_cell,
+            default_cell,
         )
+
 
     # --- Accordion row header ---
     def _row_header(r):
         return rx.grid(
             rx.foreach(state.columns_norm, lambda c: _cell(c, r)),
-            columns=state.columns_css,   # <- uses our custom widths below
+            columns=state.columns_css,
             padding_y="10px",
             border_bottom="1px solid var(--gray-4)",
             align_items="center",
             width="100%",
+            color="black",
         )
 
-    # unchanged _row_content / _row etc...
+    def _row_content(r):
+        parts = r.get("parts", {})
+
+        return rx.box(
+            rx.text(f"DEBUG parts={parts} type={type(parts)}"),
+            width="100%",
+            padding="12px",
+            color="black"
+        )
+        # def _status_chip(item):
+        #     name, status = item
+        #     bg = rx.cond(status == "Healthy", "#86efac", "#fca5a5")
+        #     fg = rx.cond(status == "Healthy", "black", "white")
+
+        #     return rx.box(
+        #         rx.box(
+        #             rx.text(name, weight="bold", size="2"),
+        #             background_color="white",
+        #             border="1px solid var(--gray-4)",
+        #             border_bottom="0",
+        #             padding="6px 8px",
+        #             border_top_left_radius="10px",
+        #             border_top_right_radius="10px",
+        #         ),
+        #         rx.box(
+        #             rx.center(
+        #                 rx.text(status, weight="medium", size="3", color=fg),
+        #                 width="100%", height="52px",
+        #             ),
+        #             background_color=bg,
+        #             border="1px solid var(--gray-4)",
+        #             border_top="0",
+        #             border_bottom_left_radius="10px",
+        #             border_bottom_right_radius="10px",
+        #         ),
+        #         on_click=lambda rr=r: state.open_inspection(rr),
+        #         cursor="pointer",
+        #         _hover={"box_shadow": "0 0 0 2px var(--gray-6) inset"},
+        #     )
+
+        # return rx.box(
+        #     rx.grid(
+        #         rx.foreach(list(parts.items()), _status_chip),  # <-- FIXED
+        #         columns="repeat(10, 1fr)",
+        #         gap="12px",
+        #         width="100%",
+        #     ),
+        #     padding="12px 0",
+        #     width="100%",
+        # )
+
     def _row(r):
         return rx.accordion.item(
             header=_row_header(r),
-            content=rx.box(),  # you can keep your parts grid here
+            content=_row_content(r),
             value=f"item_{r['serial_number']}",
-            class_name="acc-container",
+            class_name="hover:[&>h3>button]:bg-white [&>h3>button]:text-black",
         )
 
     return rx.card(
@@ -173,7 +222,8 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
                     type="single",
                     collapsible=True,
                     width="100%",
-                    background_color="white",
+                    background_color="white !important",
+                    class_name="acc-container",
                 ),
                 rx.center(rx.text("No results"), padding_y="24px"),
             ),
