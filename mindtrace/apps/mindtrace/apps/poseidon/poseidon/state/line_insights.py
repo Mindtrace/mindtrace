@@ -61,6 +61,8 @@ class LineInsightsState(BaseFilterState):
     defect_rate_data: List[Dict[str, Any]] = []
     frequent_defects_data: List[Dict[str, Any]] = []
     camera_defect_matrix_data: List[Dict[str, Any]] = []
+    weld_defect_rate_data: List[Dict[str, Any]] = []  # New chart data for weld defect rates
+    healthy_vs_defective_data: List[Dict[str, Any]] = []  # Pie chart data for overall classification distribution
     
     # Summary metrics
     total_parts_scanned: int = 0
@@ -73,6 +75,8 @@ class LineInsightsState(BaseFilterState):
     loading_defect_chart: bool = False
     loading_frequent_chart: bool = False
     loading_matrix_chart: bool = False
+    loading_weld_chart: bool = False  # New loading state for weld defect rate chart
+    loading_healthy_vs_defective_chart: bool = False  # Loading state for healthy vs defective pie chart
     
     async def set_date_range(self, range_type: str):
         """Set the date range for filtering data."""
@@ -192,6 +196,8 @@ class LineInsightsState(BaseFilterState):
             await self.load_defect_rate_data()
             await self.load_frequent_defects_data()
             await self.load_camera_defect_matrix_data()
+            await self.load_weld_defect_rate_data()  # Load new weld defect rate data
+            await self.load_healthy_vs_defective_data()  # Load healthy vs defective pie chart data
             
             # Calculate summary metrics
             await self.calculate_summary_metrics()
@@ -320,11 +326,13 @@ class LineInsightsState(BaseFilterState):
                 self.frequent_defects_data = []
                 return
             
-            # Count defects by type
+            # Count defects by type (exclude "Healthy" as it's not a defect)
             defect_counts = {}
             for cls in classifications:
                 defect_type = cls.det_cls or "Unknown"
-                defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
+                # Skip "Healthy" classifications as they are not defects
+                if defect_type != "Healthy":
+                    defect_counts[defect_type] = defect_counts.get(defect_type, 0) + 1
             
             # Convert to list and sort by count
             self.frequent_defects_data = [
@@ -407,6 +415,119 @@ class LineInsightsState(BaseFilterState):
             self.camera_chart_defect_types = []
         finally:
             self.loading_matrix_chart = False
+    
+    async def load_weld_defect_rate_data(self):
+        """Load data for weld defect rate chart."""
+        self.loading_weld_chart = True
+        try:
+            # Skip if no project ID
+            if not self.line_id:
+                self.weld_defect_rate_data = []
+                return
+                
+            # Get all classifications for weld inspection points
+            classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+                self.line_id,
+                self.start_date,
+                self.end_date
+            )
+            
+            # If no data found, show empty
+            if not classifications or len(classifications) == 0:
+                self.weld_defect_rate_data = []
+                return
+            
+            # Group by weld_id (classification name) and calculate defect rates
+            weld_stats = {}
+            for cls in classifications:
+                weld_id = cls.name  # IB_WA1, OB_WA1, etc.
+                if weld_id not in weld_stats:
+                    weld_stats[weld_id] = {
+                        "weld_id": weld_id,
+                        "total_inspections": 0,
+                        "defective_inspections": 0,
+                        "defect_rate": 0.0
+                    }
+                
+                weld_stats[weld_id]["total_inspections"] += 1
+                # Count as defective if det_cls is not "Healthy"
+                if cls.det_cls and cls.det_cls != "Healthy":
+                    weld_stats[weld_id]["defective_inspections"] += 1
+            
+            # Calculate defect rates as percentages
+            for weld_data in weld_stats.values():
+                if weld_data["total_inspections"] > 0:
+                    weld_data["defect_rate"] = round(
+                        weld_data["defective_inspections"] / weld_data["total_inspections"] * 100, 2
+                    )
+            
+            # Convert to list and sort by weld_id
+            self.weld_defect_rate_data = sorted(
+                weld_stats.values(),
+                key=lambda x: x["weld_id"]
+            )
+            
+            
+            # If no data with defects, still show all weld points with 0% rates for visibility
+            if not self.weld_defect_rate_data:
+                # Create entries for all unique weld IDs found, even if all are 0%
+                all_weld_ids = set(cls.name for cls in classifications if cls.name)
+                self.weld_defect_rate_data = [
+                    {
+                        "weld_id": weld_id,
+                        "total_inspections": 1,
+                        "defective_inspections": 0,
+                        "defect_rate": 0.0
+                    }
+                    for weld_id in sorted(all_weld_ids)
+                ]
+        except Exception as e:
+            self.weld_defect_rate_data = []
+        finally:
+            self.loading_weld_chart = False
+            
+
+    async def load_healthy_vs_defective_data(self):
+        """Load data for healthy vs defective pie chart."""
+        self.loading_healthy_vs_defective_chart = True
+        try:
+            # Skip if no project ID
+            if not self.line_id:
+                self.healthy_vs_defective_data = []
+                return
+                
+            # Get all classifications for the time period
+            classifications = await ScanClassificationRepository.get_by_project_and_date_range(
+                self.line_id,
+                self.start_date,
+                self.end_date
+            )
+            
+            # If no data found, show empty
+            if not classifications or len(classifications) == 0:
+                self.healthy_vs_defective_data = []
+                return
+            
+            # Count healthy vs defective classifications
+            healthy_count = 0
+            defective_count = 0
+            
+            for cls in classifications:
+                if cls.det_cls == "Healthy":
+                    healthy_count += 1
+                else:
+                    defective_count += 1
+            
+            # Create pie chart data
+            self.healthy_vs_defective_data = [
+                {"status": "Healthy", "count": healthy_count},
+                {"status": "Defective", "count": defective_count}
+            ]
+            
+        except Exception as e:
+            self.healthy_vs_defective_data = []
+        finally:
+            self.loading_healthy_vs_defective_chart = False
     
     async def calculate_summary_metrics(self):
         """Calculate summary metrics for the dashboard header."""

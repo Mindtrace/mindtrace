@@ -166,6 +166,68 @@ def camera_defect_matrix_chart() -> rx.Component:
     )
 
 
+def weld_defect_rate_chart() -> rx.Component:
+    """Weld defect rate chart showing defect percentage per weld inspection point."""
+    chart = bar_chart(
+        data=LineInsightsState.weld_defect_rate_data,
+        x_key="weld_id",
+        y_key="defect_rate", 
+        height=350,
+        show_grid=True,
+        show_legend=False,
+        show_tooltip=True,
+        layout="horizontal",  # Changed to horizontal like camera chart
+        bar_size=20,
+        bar_gap=1,
+        bar_category_gap="5%",
+    )
+    
+    chart_content = rx.cond(
+        LineInsightsState.loading_weld_chart,
+        rx.center(
+            rx.spinner(size="3"),
+            height="350px",
+        ),
+        chart,
+    )
+    
+    return chart_card(
+        title="Defect Rate by Weld ID",
+        subtitle="Percentage of defective inspections per weld point (0% means all healthy)",
+        children=chart_content,
+    )
+
+
+def healthy_vs_defective_chart() -> rx.Component:
+    """Healthy vs defective classification distribution pie chart."""
+    chart = pie_chart(
+        data=LineInsightsState.healthy_vs_defective_data,
+        data_key="count",
+        name_key="status",
+        height=350,
+        show_labels=True,
+        show_legend=True,
+        show_tooltip=True,
+        inner_radius="40%",  # Creates a doughnut chart
+        outer_radius="80%",
+    )
+    
+    chart_content = rx.cond(
+        LineInsightsState.loading_healthy_vs_defective_chart,
+        rx.center(
+            rx.spinner(size="3"),
+            height="350px",
+        ),
+        chart,
+    )
+    
+    return chart_card(
+        title="Classification Distribution",
+        subtitle="Overall healthy vs defective classification breakdown",
+        children=chart_content,
+    )
+
+
 def line_insights_header() -> rx.Component:
     """Header section with title and metrics."""
     return rx.vstack(
@@ -242,7 +304,16 @@ def line_insights_content() -> rx.Component:
             width="100%",
         ),
         
-        # Second row: Frequent defects and camera matrix
+        # Second row: Weld defect rate and classification distribution
+        rx.grid(
+            healthy_vs_defective_chart(),
+            weld_defect_rate_chart(),
+            columns="2",
+            spacing="4",
+            width="100%",
+        ),
+        
+        # Third row: Frequent defects and camera matrix
         rx.grid(
             frequent_defects_chart(),
             camera_defect_matrix_chart(),
@@ -250,6 +321,7 @@ def line_insights_content() -> rx.Component:
             spacing="4",
             width="100%",
         ),
+        
         
         spacing="4",
         width="100%",
