@@ -9,13 +9,15 @@ The Mindtrace Hardware Component provides a unified interface for managing indus
 
 This component offers:
 - **Unified Configuration System**: Single configuration for all hardware components
-- **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with mock implementations
+- **Multiple Camera Backends**: Support for Daheng, Basler, OpenCV cameras with comprehensive mock implementations
+- **Cloud Storage Integration**: Automatic upload of captured images to Google Cloud Storage (GCS)
 - **Network Bandwidth Management**: Intelligent concurrent capture limiting for GigE cameras
 - **Multiple PLC Backends**: Support for Allen Bradley PLCs with LogixDriver, SLCDriver, and CIPDriver
 - **Async Operations**: Thread-safe asynchronous operations for both cameras and PLCs
 - **Graceful Error Handling**: Comprehensive exception system with detailed error messages
 - **Industrial-Grade Architecture**: Production-ready design for manufacturing environments
 - **Extensible Design**: Easy to add new hardware backends and components
+- **Professional Documentation**: Comprehensive docstrings and consistent code documentation
 
 ## 📁 Component Structure
 
@@ -30,7 +32,7 @@ mindtrace/hardware/
         ├── cameras/
         │   ├── camera_manager.py  # Main camera management interface
         │   ├── backends/
-        │   │   ├── base.py        # Abstract base camera class
+        │   │   ├── base.py        # Abstract base camera class with comprehensive async interface
         │   │   ├── daheng/        # Daheng camera implementation + mock
         │   │   │   ├── daheng_camera.py
         │   │   │   └── mock_daheng.py
@@ -39,6 +41,8 @@ mindtrace/hardware/
         │   │   │   └── mock_basler.py
         │   │   └── opencv/        # OpenCV camera implementation
         │   │       └── opencv_camera.py
+        ├── api/
+        │   └── app.py             # REST API service for camera management
         ├── plcs/
         │   ├── plc_manager.py     # Main PLC management interface
         │   ├── backends/
@@ -71,32 +75,145 @@ uv sync --extra cameras-all
 
 ### Camera Backend Setup
 
-The hardware component provides automated setup commands for camera backends. Use these commands to install the required SDKs and dependencies:
+The hardware component provides different setup approaches for camera backends:
 
-#### Setup All Camera Backends
+#### Automatic Setup (Recommended)
 ```bash
-# Interactive setup for all supported camera backends
-mindtrace-setup-cameras
+# Install all camera backends via Python packages
+uv sync --extra cameras-all
+
+# This installs:
+# - pypylon (Basler) - self-contained, no additional setup needed
+# - gxipy (Daheng) - requires system SDK configuration
 ```
 
-#### Individual Camera Backend Setup
+#### System SDK Configuration (Daheng Only)
 ```bash
 # Setup Daheng cameras (gxipy SDK needs to be installed separately)
 mindtrace-setup-daheng
 pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
 
-# Setup Basler cameras (installs pypylon SDK)
-mindtrace-setup-basler
+# Configure all backends including firewall setup
+uv run mindtrace-setup-cameras
 ```
 
 #### Camera Backend Removal
 ```bash
-# Remove Daheng camera support
-mindtrace-uninstall-daheng
+# Remove Daheng system SDK
+uv run mindtrace-uninstall-daheng
 
-# Remove Basler camera support
-mindtrace-uninstall-basler
+# Note: Basler (pypylon) removal not needed - uninstall Python package only
+uv pip uninstall pypylon
 ```
+
+### REST API Service
+
+The hardware component includes a comprehensive REST API service for camera management:
+
+```bash
+# Start the camera API service
+uv run python -m mindtrace.hardware.api.app
+
+# The service will be available at http://localhost:8000
+# API documentation available at http://localhost:8000/docs
+```
+
+## 🐳 Docker Containerization
+
+The hardware component provides Docker containerization for easy deployment and consistent runtime environments. The Docker setup is organized by hardware component type for scalability and maintainability.
+
+### Camera Service Container
+
+The camera service can be run in a Docker container with all required SDKs and dependencies pre-installed:
+
+**Files:**
+- `Dockerfile.camera` - Builds camera service container with all backends
+- `docker-compose.yml` - Orchestrates camera service with proper configuration
+
+**Features:**
+- **Complete SDK Installation**: Daheng Galaxy SDK automatically installed during build
+- **Self-Contained Basler Support**: pypylon included without additional setup
+- **USB Device Access**: Proper device mounting for USB cameras
+- **Network Camera Discovery**: Host networking for GigE camera detection
+- **Persistent Storage**: Volumes for captured images, logs, and configuration
+- **Health Monitoring**: Built-in health checks for service availability
+
+### Quick Docker Start
+
+```bash
+# Build and start camera service
+cd mindtrace/hardware/
+docker-compose up -d
+
+# Check service status
+docker-compose ps
+
+# View logs
+docker-compose logs camera-service
+
+# Test camera discovery
+curl http://localhost:8000/cameras/discover
+
+# Stop service
+docker-compose down
+```
+
+### Docker Configuration
+
+The `docker-compose.yml` provides production-ready configuration:
+
+```yaml
+services:
+  camera-service:
+    build:
+      context: ../..
+      dockerfile: mindtrace/hardware/Dockerfile.camera
+    network_mode: "host"  # Required for IP camera discovery
+    environment:
+      - PORT=8000
+      - MINDTRACE_HW_CAMERA_OPENCV_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MOCK_ENABLED=true
+      - MINDTRACE_HW_CAMERA_DAHENG_ENABLED=true
+      - MINDTRACE_HW_CAMERA_BASLER_ENABLED=true
+      - MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES=4
+    devices:
+      - /dev/video0:/dev/video0  # USB camera access
+      - /dev/bus/usb:/dev/bus/usb  # USB device access
+    volumes:
+      - ./data:/app/data  # Captured images
+      - ./logs:/app/logs  # Service logs
+      - ./config:/app/config  # Configuration files
+    privileged: true  # Required for USB device access
+```
+
+### Container Features
+
+**Pre-installed Components:**
+- **Python Dependencies**: All camera backends via `uv sync --extra cameras-all`
+- **Daheng SDK**: Galaxy Camera SDK with gxipy bindings
+- **Basler Support**: pypylon (self-contained, no additional setup needed)
+- **System Dependencies**: OpenCV, USB tools, network utilities
+- **API Service**: FastAPI-based REST API on port 8000
+
+**Runtime Configuration:**
+- **Non-root User**: Service runs as `mindtrace` user for security
+- **Environment Variables**: Configurable via docker-compose environment
+- **Health Checks**: Automatic service health monitoring
+- **Graceful Shutdown**: Proper container lifecycle management
+
+### Future Expansion
+
+The Docker configuration is designed for future expansion with additional hardware services:
+
+```yaml
+# Future services (placeholder - not yet implemented)
+# plc-service:          # PLC management service
+# sensors-service:      # Sensor management service
+```
+
+Each service will have its own Dockerfile and can be scaled independently:
+- `Dockerfile.plc` - PLC service container (future)
+- `Dockerfile.sensors` - Sensor service container (future)
 
 ### Camera Quick Start
 
@@ -120,13 +237,21 @@ async def camera_example():
             image = await camera_proxy.capture()
             print(f"Captured image: {image.shape}")
             
-            # Configure camera
+            # Configure camera with comprehensive settings
             success = await camera_proxy.configure(
                 exposure=15000,
                 gain=2.0,
-                trigger_mode="continuous"
+                trigger_mode="continuous",
+                roi=(100, 100, 800, 600),
+                pixel_format="BGR8",
+                white_balance="auto",
+                image_enhancement=True
             )
             print(f"Configuration success: {success}")
+            
+            # Get camera information
+            sensor_info = await camera_proxy.get_sensor_info()
+            print(f"Camera sensor info: {sensor_info}")
 
 asyncio.run(camera_example())
 ```
@@ -187,19 +312,30 @@ async def modern_camera_usage():
         await manager.initialize_camera(cameras[0])
         camera_proxy = manager.get_camera(cameras[0])
         
-        # Use camera through proxy
-        image = await camera_proxy.capture()
-        
-        # Configure through proxy
+        # Use camera through proxy with comprehensive configuration
         await camera_proxy.configure(
             exposure=20000,
             gain=1.5,
-            trigger_mode="continuous"
+            trigger_mode="continuous",
+            roi=(0, 0, 1920, 1080),
+            pixel_format="BGR8",
+            white_balance="auto",
+            image_enhancement=True
         )
         
-        # Get camera information
-        info = await camera_proxy.get_sensor_info()
-        print(f"Camera info: {info}")
+        # Capture image
+        image = await camera_proxy.capture()
+        
+        # Get comprehensive camera information
+        sensor_info = await camera_proxy.get_sensor_info()
+        current_exposure = await camera_proxy.get_exposure()
+        current_gain = await camera_proxy.get_gain()
+        current_roi = await camera_proxy.get_roi()
+        
+        print(f"Camera sensor info: {sensor_info}")
+        print(f"Current exposure: {current_exposure} μs")
+        print(f"Current gain: {current_gain}")
+        print(f"Current ROI: {current_roi}")
         
         # Check network bandwidth management info
         bandwidth_info = manager.get_network_bandwidth_info()
@@ -273,6 +409,12 @@ async def camera_setup():
 
 ### Image Capture and Configuration
 
+The camera system supports three output formats for captured images:
+
+1. **Binary Image Data**: Return image as numpy array for immediate processing
+2. **Local File Storage**: Save image to local filesystem
+3. **Google Cloud Storage**: Upload image directly to GCS bucket
+
 ```python
 async def image_operations():
     async with CameraManager() as manager:
@@ -280,13 +422,63 @@ async def image_operations():
         await manager.initialize_camera('Daheng:cam1')
         camera = manager.get_camera('Daheng:cam1')
         
-        # Basic capture
+        # Basic capture - returns binary image data
         image = await camera.capture()
+        print(f"Captured image shape: {image.shape}")
         
-        # Capture with save
+        # Capture with local file save
         image = await camera.capture(save_path='captured.jpg')
         
-        # Multiple configuration methods
+        # Capture with GCS upload
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/camera_001.jpg",
+            gcs_metadata={
+                "camera_id": "cam_001",
+                "capture_type": "quality_inspection"
+            }
+        )
+        
+        # Capture with both local save and GCS upload
+        image = await camera.capture(
+            save_path="local_captured.jpg",
+            gcs_bucket="my-camera-bucket", 
+            gcs_path="images/camera_001.jpg"
+        )
+        
+        # Auto-upload using default configuration
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        image = await camera.capture()  # Will auto-upload to configured bucket if enabled
+        
+        # HDR capture with multiple exposure levels
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )
+        
+        # HDR capture with GCS upload (explicit parameters)
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True,
+            gcs_bucket="my-camera-bucket",
+            gcs_path_pattern="hdr_images/exposure_{exposure}.jpg",
+            gcs_metadata={
+                "capture_type": "hdr",
+                "camera_id": "cam_001"
+            }
+        )
+        
+        # HDR capture with auto-upload (uses config defaults)
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )  # Will auto-upload to configured bucket if enabled
+        
+        # Comprehensive configuration
         await camera.configure(
             exposure=15000,
             gain=1.5,
@@ -297,13 +489,390 @@ async def image_operations():
             image_enhancement=True
         )
         
-        # Individual setting methods
+        # Individual setting methods with proper async/await
         await camera.set_exposure(20000)
-        camera.set_gain(2.0)
-        camera.set_roi(0, 0, 1920, 1080)
+        await camera.set_gain(2.0)
+        await camera.set_roi(0, 0, 1920, 1080)
         await camera.set_trigger_mode("trigger")
-        camera.set_pixel_format("RGB8")
+        await camera.set_pixel_format("RGB8")
+        await camera.set_white_balance("auto")
+        await camera.set_image_enhancement(True)
+        
+        # Get current settings
+        current_exposure = await camera.get_exposure()
+        current_gain = await camera.get_gain()
+        current_roi = await camera.get_roi()
+        current_trigger = await camera.get_trigger_mode()
+        current_format = await camera.get_pixel_format()
+        current_wb = await camera.get_white_balance()
+        enhancement_status = await camera.get_image_enhancement()
+        
+        # Get available options
+        exposure_range = await camera.get_exposure_range()
+        gain_range = await camera.get_gain_range()
+        pixel_formats = await camera.get_available_pixel_formats()
+        wb_modes = await camera.get_available_white_balance_modes()
 ```
+
+### Google Cloud Storage Integration
+
+The hardware component includes built-in GCS integration for automatic image uploads. This feature requires the `mindtrace-storage` dependency and proper GCS configuration.
+
+#### GCS Setup
+
+1. **Install Dependencies**: The `mindtrace-storage` dependency is automatically included
+2. **Configure Authentication**: Set up Google Cloud credentials
+3. **Create GCS Bucket**: Ensure your bucket exists and is accessible
+
+```bash
+# Set up GCS authentication
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account-key.json"
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+
+# Create GCS bucket (if needed)
+gsutil mb gs://my-camera-bucket
+```
+
+#### GCS Configuration
+
+The hardware component supports comprehensive GCS configuration through environment variables or configuration files:
+
+```bash
+# GCS Configuration Environment Variables
+export MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-camera-bucket"
+export MINDTRACE_HW_GCS_PROJECT_ID="my-project-id"
+export MINDTRACE_HW_GCS_CREDENTIALS_PATH="/path/to/service-account.json"
+export MINDTRACE_HW_GCS_CREATE_IF_MISSING="true"
+export MINDTRACE_HW_GCS_LOCATION="US"
+export MINDTRACE_HW_GCS_STORAGE_CLASS="STANDARD"
+export MINDTRACE_HW_GCS_DEFAULT_IMAGE_FORMAT="jpg"
+export MINDTRACE_HW_GCS_DEFAULT_IMAGE_QUALITY="95"
+export MINDTRACE_HW_GCS_AUTO_UPLOAD="false"
+export MINDTRACE_HW_GCS_UPLOAD_METADATA="true"
+export MINDTRACE_HW_GCS_RETRY_COUNT="3"
+export MINDTRACE_HW_GCS_TIMEOUT_SECONDS="30"
+```
+
+Or configure via JSON file (`hardware_config.json`):
+
+```json
+{
+  "gcs": {
+    "default_bucket": "my-camera-bucket",
+    "project_id": "my-project-id",
+    "credentials_path": "/path/to/service-account.json",
+    "create_if_missing": true,
+    "location": "US",
+    "storage_class": "STANDARD",
+    "default_image_format": "jpg",
+    "default_image_quality": 95,
+    "auto_upload": false,
+    "upload_metadata": true,
+    "retry_count": 3,
+    "timeout_seconds": 30.0
+  }
+}
+```
+
+#### GCS Usage Examples
+
+The system provides flexible options for image storage - you can choose to save locally, upload to GCS, or both:
+
+```python
+async def gcs_capture_examples():
+    async with CameraManager() as manager:
+        await manager.initialize_camera('OpenCV:0')
+        camera = manager.get_camera('OpenCV:0')
+        
+        # Option 1: Local storage only
+        image = await camera.capture(save_path="local_capture.jpg")
+        
+        # Option 2: GCS upload only (requires explicit bucket and path)
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/capture_001.jpg"
+        )
+        
+        # Option 3: Both local and GCS storage
+        image = await camera.capture(
+            save_path="local_capture.jpg",
+            gcs_bucket="my-camera-bucket",
+            gcs_path="images/capture_001.jpg"
+        )
+        
+        # Option 4: Auto-upload using configuration defaults
+        # Set MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+        image = await camera.capture()  # Will auto-upload if enabled in config
+        
+        # GCS upload with metadata
+        image = await camera.capture(
+            gcs_bucket="my-camera-bucket",
+            gcs_path="quality_inspection/batch_001/image_001.jpg",
+            gcs_metadata={
+                "camera_id": "cam_001",
+                "batch_id": "batch_20240115_001",
+                "inspection_type": "quality_check",
+                "operator": "user_123"
+            }
+        )
+        
+        # HDR capture with explicit GCS parameters
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True,
+            gcs_bucket="my-camera-bucket",
+            gcs_path_pattern="hdr_images/exposure_{exposure}.jpg",
+            gcs_metadata={
+                "capture_type": "hdr",
+                "camera_id": "cam_001"
+            }
+        )
+        
+        # HDR capture with auto-upload
+        hdr_images = await camera.capture_hdr(
+            exposure_levels=3,
+            exposure_multiplier=2.0,
+            return_images=True
+        )  # Will auto-upload if enabled in config
+```
+
+#### API Endpoints with GCS
+
+The REST API supports GCS upload for all capture operations:
+
+```bash
+# Single image capture with GCS upload (returns image data)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "save_path": "local_capture.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path": "images/capture_001.jpg",
+    "gcs_metadata": {
+      "camera_id": "cam_001",
+      "capture_type": "single",
+      "batch_id": "batch_20240115_001"
+    },
+    "return_image": true
+  }'
+
+# Single image capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path": "images/capture_001.jpg",
+    "gcs_metadata": {
+      "camera_id": "cam_001",
+      "capture_type": "single"
+    },
+    "return_image": false
+  }'
+
+# HDR capture with GCS upload (returns image data)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "save_path_pattern": "hdr_local/exposure_{exposure}.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "hdr_images/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "hdr",
+      "camera_id": "cam_001"
+    },
+    "return_images": true
+  }'
+
+# HDR capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/OpenCV:0/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "hdr_images/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "hdr",
+      "camera_id": "cam_001"
+    },
+    "return_images": false
+  }'
+
+# Batch HDR capture with GCS upload (returns image data)
+curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cameras": ["OpenCV:0", "OpenCV:1"],
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "save_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "batch_hdr",
+      "session_id": "session_20240115_001"
+    },
+    "return_images": true
+  }'
+
+# Batch HDR capture with GCS upload (no image data returned)
+curl -X POST "http://localhost:8000/cameras/batch/capture/hdr" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cameras": ["OpenCV:0", "OpenCV:1"],
+    "exposure_levels": 3,
+    "exposure_multiplier": 2.0,
+    "gcs_bucket": "my-camera-bucket",
+    "gcs_path_pattern": "batch_hdr/{camera}/exposure_{exposure}.jpg",
+    "gcs_metadata": {
+      "capture_type": "batch_hdr",
+      "session_id": "session_20240115_001"
+    },
+    "return_images": false
+  }'
+```
+
+#### API Response Examples
+
+**Single Capture Response (with image data):**
+```json
+{
+  "success": true,
+  "message": "Image captured from 'OpenCV:0' and saved to 'local_capture.jpg' and uploaded to GCS",
+  "image_data": "base64_encoded_image_data",
+  "save_path": "local_capture.jpg",
+  "gcs_uri": "gs://my-camera-bucket/images/capture_001.jpg",
+  "media_type": "image/jpeg",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Single Capture Response (without image data):**
+```json
+{
+  "success": true,
+  "message": "Image captured from 'OpenCV:0' uploaded to GCS (image data excluded)",
+  "image_data": null,
+  "save_path": null,
+  "gcs_uri": "gs://my-camera-bucket/images/capture_001.jpg",
+  "media_type": null,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**HDR Capture Response (with image data):**
+```json
+{
+  "success": true,
+  "message": "HDR capture completed for 'OpenCV:0' and saved locally and uploaded to GCS",
+  "images": ["base64_image_1", "base64_image_2", "base64_image_3"],
+  "exposure_levels": [1000, 2000, 4000],
+  "gcs_uris": [
+    "gs://my-camera-bucket/hdr_images/exposure_1000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_2000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_4000.jpg"
+  ],
+  "successful_captures": 3,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**HDR Capture Response (without image data):**
+```json
+{
+  "success": true,
+  "message": "HDR capture completed for 'OpenCV:0' uploaded to GCS (image data excluded)",
+  "images": null,
+  "exposure_levels": [1000, 2000, 4000],
+  "gcs_uris": [
+    "gs://my-camera-bucket/hdr_images/exposure_1000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_2000.jpg",
+    "gs://my-camera-bucket/hdr_images/exposure_4000.jpg"
+  ],
+  "successful_captures": 3,
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+#### GCS Parameter Decision Logic
+
+The system uses a clear decision-making process for GCS uploads:
+
+1. **Explicit Parameters**: If you provide `gcs_bucket` and `gcs_path`/`gcs_path_pattern`, the system uses those values
+2. **Auto-Upload**: If you don't provide explicit parameters but have `auto_upload=true` and `default_bucket` configured, the system uses config defaults
+3. **No Upload**: If neither explicit parameters nor auto-upload are configured, no GCS upload occurs
+
+**Examples:**
+```python
+# Explicit parameters (always used)
+image = await camera.capture(gcs_bucket="my-bucket", gcs_path="image.jpg")
+
+# Auto-upload (uses config defaults)
+# Requires: MINDTRACE_HW_GCS_AUTO_UPLOAD=true and MINDTRACE_HW_GCS_DEFAULT_BUCKET="my-bucket"
+image = await camera.capture()  # Auto-uploads to configured bucket
+
+# No upload (neither explicit nor auto-upload configured)
+image = await camera.capture()  # No GCS upload
+```
+
+#### Image Data Return Control
+
+The capture endpoints now support controlling whether image data is returned in the response:
+
+**Parameters:**
+- `return_image` (single capture): Controls whether to return base64-encoded image data
+- `return_images` (HDR/batch capture): Controls whether to return base64-encoded image data
+
+**Benefits:**
+- **Reduced Response Size**: When you only need GCS upload or local save, exclude image data to reduce bandwidth
+- **Performance**: Faster API responses when image data isn't needed
+- **Flexibility**: Choose what data you need based on your use case
+
+**Examples:**
+```python
+# Return image data (default behavior)
+image = await camera.capture(return_image=True)
+# Response includes: image_data, gcs_uri, save_path
+
+# Exclude image data (only metadata)
+result = await camera.capture(
+    gcs_bucket="my-bucket",
+    gcs_path="image.jpg",
+    return_image=False
+)
+# Response includes: gcs_uri, save_path (image_data is null)
+
+# HDR capture without image data
+hdr_result = await camera.capture_hdr(
+    exposure_levels=3,
+    gcs_bucket="my-bucket",
+    gcs_path_pattern="hdr_{exposure}.jpg",
+    return_images=False
+)
+# Response includes: gcs_uris, exposure_levels (images is null)
+```
+
+#### GCS Error Handling
+
+GCS upload failures are handled gracefully:
+- Local capture continues even if GCS upload fails
+- Upload errors are logged but don't stop the capture process
+- Temporary files are automatically cleaned up
+- System continues operating normally
+
+#### GCS Metadata
+
+The system automatically adds these metadata fields to uploaded images:
+- `camera_name`: Name of the camera
+- `camera_backend`: Camera backend type (OpenCV, Daheng, Basler, etc.)
+- `capture_timestamp`: ISO timestamp of capture
+- `upload_timestamp`: ISO timestamp of upload
+- `image_format`: Image format (jpg, png, etc.)
+- `image_shape`: Image dimensions (width x height)
+- `image_channels`: Number of color channels
 
 ### Batch Operations
 
@@ -391,34 +960,42 @@ async def advanced_control():
         await manager.initialize_camera('Basler:serial123')
         camera = manager.get_camera('Basler:serial123')
         
-        # Exposure control
+        # Exposure control with proper async/await
         exposure_range = await camera.get_exposure_range()
         current_exposure = await camera.get_exposure()
         await camera.set_exposure(15000.0)
         
-        # Gain control
-        gain_range = camera.get_gain_range()
-        current_gain = camera.get_gain()
-        camera.set_gain(2.0)
+        # Gain control with proper async/await
+        gain_range = await camera.get_gain_range()
+        current_gain = await camera.get_gain()
+        await camera.set_gain(2.0)
         
-        # ROI control
-        camera.set_roi(100, 100, 800, 600)
-        roi = camera.get_roi()
-        camera.reset_roi()
+        # ROI control with proper async/await
+        await camera.set_roi(100, 100, 800, 600)
+        roi = await camera.get_roi()
+        await camera.reset_roi()
         
-        # Pixel format control
-        formats = camera.get_available_pixel_formats()
-        current_format = camera.get_pixel_format()
-        camera.set_pixel_format("RGB8")
+        # Pixel format control with proper async/await
+        formats = await camera.get_available_pixel_formats()
+        current_format = await camera.get_pixel_format()
+        await camera.set_pixel_format("RGB8")
         
-        # White balance control
-        wb_modes = camera.get_available_white_balance_modes()
+        # White balance control with proper async/await
+        wb_modes = await camera.get_available_white_balance_modes()
         current_wb = await camera.get_white_balance()
         await camera.set_white_balance("auto")
         
-        # Configuration management
+        # Image enhancement control
+        enhancement_status = await camera.get_image_enhancement()
+        await camera.set_image_enhancement(True)
+        
+        # Configuration persistence
         await camera.save_config("camera_config.json")
         await camera.load_config("camera_config.json")
+        
+        # Connection status check
+        is_connected = await camera.check_connection()
+        print(f"Camera connected: {is_connected}")
 ```
 
 ## 📋 PLC Manager API
@@ -701,35 +1278,39 @@ Create a `hardware_config.json` file for persistent configuration:
 #### Daheng Cameras
 - **SDK**: gxipy
 - **Setup**: `mindtrace-setup-daheng` or `pip install mindtrace-hardware[cameras-daheng]`
-- **Features**: Industrial cameras with advanced controls
+- **Features**: Industrial cameras with advanced controls and comprehensive async interface
 - **Supported Models**: All Daheng USB3 and GigE cameras
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
 - **Image Enhancement**: Gamma correction, contrast adjustment, color correction
-- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format
-- **Mock Support**: Comprehensive mock implementation for testing
+- **Configuration**: Unified JSON format with exposure, gain, ROI, pixel format, white balance
+- **Mock Support**: Comprehensive mock implementation with realistic behavior simulation
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### Basler Cameras
 - **SDK**: pypylon
 - **Setup**: Install Basler pylon SDK + `mindtrace-setup-basler`
-- **Features**: High-performance industrial cameras
+- **Features**: High-performance industrial cameras with comprehensive async interface
 - **Supported Models**: All Basler USB3, GigE, and CameraLink cameras
-- **Advanced Features**: ROI selection, gain control, pixel format selection
+- **Advanced Features**: ROI selection, gain control, pixel format selection, white balance
 - **Trigger Modes**: Continuous, Software Trigger, Hardware Trigger
 - **Configuration**: Unified JSON format with graceful feature degradation
-- **Mock Support**: Full mock implementation with realistic behavior
+- **Mock Support**: Full mock implementation with realistic behavior simulation
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### OpenCV Cameras
 - **SDK**: opencv-python (included by default)
 - **Setup**: No additional setup required
-- **Features**: USB cameras, webcams, IP cameras
+- **Features**: USB cameras, webcams, IP cameras with software-based ROI
 - **Supported Devices**: Any device supported by OpenCV VideoCapture
 - **Platform Support**: Windows, Linux, macOS
 - **Configuration**: Unified JSON format adapted for OpenCV limitations
+- **Documentation**: Professional docstrings and consistent error handling
 
 #### Mock Cameras
 - **Purpose**: Testing and development without physical hardware
-- **Features**: Configurable test patterns, realistic behavior simulation
+- **Features**: Configurable test patterns, realistic behavior simulation, synthetic image generation
 - **Configuration**: Configurable number of mock cameras via `mock_camera_count`
+- **Documentation**: Professional docstrings and consistent error handling
 
 ### PLC Backends
 
@@ -1054,56 +1635,102 @@ asyncio.run(testing_setup())
 
 ## 🛠️ Development and Testing
 
+### Code Quality and Documentation
+
+The hardware component maintains high code quality standards:
+- **Comprehensive Documentation**: All functions have detailed docstrings with Args/Returns/Raises sections
+- **Consistent Error Handling**: Professional exception handling with meaningful error messages
+- **Clean Code**: No debugging artifacts or unnecessary comments
+- **Type Hints**: Proper type annotations throughout the codebase
+- **Async/Await Consistency**: Proper async/await usage across all camera operations
+
 ### Test Structure
 
 The hardware component uses a well-organized test structure:
 
 ```
-mindtrace/hardware/mindtrace/hardware/tests/
-├── __init__.py                 # Main test package
-└── unit/                       # Unit tests only
-    ├── cameras/               # Camera-specific tests
-    │   ├── __init__.py
-    │   └── test_cameras.py    # All camera unit tests
+tests/unit/mindtrace/hardware/          # Unit tests (from repo root)
+├── __init__.py                         # Main test package
+├── cameras/                           # Camera-specific tests
+│   ├── __init__.py
+│   ├── conftest.py                    # Camera test fixtures
+│   └── test_cameras.py                # All camera unit tests
+└── plcs/                              # PLC-specific tests
     ├── __init__.py
-    └── plcs/                  # PLC-specific tests
-        ├── __init__.py
-        └── test_plcs.py       # All PLC unit tests
+    ├── conftest.py                    # PLC test fixtures
+    └── test_plcs.py                   # All PLC unit tests
+```
+
+The component also includes comprehensive integration tests:
+
+```
+tests/integration/mindtrace/hardware/
+├── __init__.py                          # Integration test package
+├── conftest.py                          # Test fixtures and configuration
+└── test_camera_api_integration.py       # Comprehensive API integration tests
+```
+
+### Integration Tests
+
+The hardware component includes comprehensive integration tests that validate end-to-end camera workflows through the REST API with real hardware:
+
+**Key Features:**
+- **Real Hardware Testing**: Tests with actual Basler and OpenCV camera backends
+- **Complete API Validation**: Validates all major endpoints through HTTP requests
+- **Network Bandwidth Management**: Tests concurrent capture limiting with real cameras
+- **Hardware State Management**: Verifies proper camera lifecycle management
+- **Graceful Failure Handling**: Skips tests when real hardware unavailable
+
+**Test Coverage:**
+- Backend discovery and health monitoring
+- Camera discovery and connection testing  
+- Complete camera workflow (init → configure → capture → cleanup)
+- Image capture, HDR capture, and configuration persistence
+- Video streaming and batch operations
+- Error handling and edge cases
+
+```bash
+# Run integration tests (requires real hardware)
+cd /path/to/mindtrace/
+pytest tests/integration/mindtrace/hardware/ -v
+
+# Run specific integration test
+pytest tests/integration/mindtrace/hardware/test_camera_api_integration.py::test_complete_camera_workflow -v
+
+# Run with real hardware markers
+pytest tests/integration/mindtrace/hardware/ -m hardware -v
 ```
 
 ### Running Tests
 
 ```bash
-# Run all hardware unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/
+# Run all hardware unit tests (from repo root)
+pytest tests/unit/mindtrace/hardware/
 
-
-# Run all camera unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/cameras/
+# Run all camera unit tests  
+pytest tests/unit/mindtrace/hardware/cameras/
 
 # Run all PLC unit tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/plcs/
+pytest tests/unit/mindtrace/hardware/plcs/
 
 # Run specific camera tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py
+pytest tests/unit/mindtrace/hardware/cameras/test_cameras.py
 
 # Run specific PLC tests
-cd mindtrace/hardware/
-pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py
+pytest tests/unit/mindtrace/hardware/plcs/test_plcs.py
 
 # Run with coverage
-pytest --cov=mindtrace.hardware mindtrace/hardware/tests/unit/
+pytest --cov=mindtrace.hardware tests/unit/mindtrace/hardware/
 
 # Run with verbose output
-pytest mindtrace/hardware/tests/unit/ -v
+pytest tests/unit/mindtrace/hardware/ -v
 
 # Run specific test classes
-pytest mindtrace/hardware/tests/unit/cameras/test_cameras.py::TestMockDahengCamera
-pytest mindtrace/hardware/tests/unit/plcs/test_plcs.py::TestMockAllenBradleyPLC
+pytest tests/unit/mindtrace/hardware/cameras/test_cameras.py::TestMockDahengCamera
+pytest tests/unit/mindtrace/hardware/plcs/test_plcs.py::TestMockAllenBradleyPLC
+
+# Run integration tests
+pytest tests/integration/mindtrace/hardware/ -v --tb=short
 ```
 
 
@@ -1123,7 +1750,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 
 ### Test Categories
 
-#### Camera Unit Tests (`mindtrace/hardware/tests/unit/cameras/test_cameras.py`)
+#### Camera Unit Tests (`tests/unit/mindtrace/hardware/cameras/test_cameras.py`)
 - **MockDahengCamera Tests**: Initialization, connection, capture, configuration
 - **MockBaslerCamera Tests**: Basler-specific features and serial connections
 - **CameraManager Tests**: Backend registration, discovery, batch operations
@@ -1132,7 +1759,7 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 - **Performance Tests**: Concurrent capture, rapid sequences, resource cleanup
 - **Configuration Tests**: Persistence, validation, trigger modes
 
-#### PLC Unit Tests (`mindtrace/hardware/tests/unit/plcs/test_plcs.py`)
+#### PLC Unit Tests (`tests/unit/mindtrace/hardware/plcs/test_plcs.py`)
 - **MockAllenBradleyPLC Tests**: Initialization, connection, auto-detection
 - **LogixDriver Tests**: Tag operations, writing, discovery
 - **SLCDriver Tests**: Data files, timers, counters, I/O operations
@@ -1148,12 +1775,18 @@ export MINDTRACE_MOCK_AB_CAMERAS=25  # Number of mock Allen Bradley PLCs
 3. Add configuration options to `core/config.py`
 4. Add appropriate exceptions to `core/exceptions.py`
 5. Create both real and mock implementations
-6. Add comprehensive unit tests in `tests/unit/[component]/`
-7. Update this README with usage examples
+6. Add comprehensive unit tests in `tests/unit/mindtrace/hardware/[component]/`
+7. **Documentation Requirements**:
+   - Add detailed docstrings to all functions with Args/Returns/Raises sections
+   - Ensure consistent error handling and logging
+   - Remove any debugging artifacts or unnecessary comments
+   - Maintain proper async/await patterns
+8. Update this README with usage examples
 
 ## 📄 License
 
 This component is part of the Mindtrace project. See the main project LICENSE file for details.
+
 
 
 

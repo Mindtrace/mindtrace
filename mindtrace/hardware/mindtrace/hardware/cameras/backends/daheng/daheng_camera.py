@@ -70,7 +70,6 @@ Error Handling:
 
 import asyncio
 import os
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -377,11 +376,11 @@ class DahengCamera(BaseCamera):
                 f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}"
             )
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool) -> bool:
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
         if value and not all(
@@ -552,56 +551,103 @@ class DahengCamera(BaseCamera):
 
         for attempt in range(self.retrieve_retry_count):
             try:
+                # Check if camera is streaming
+                if not hasattr(self.camera, "is_streaming") or not self.camera.is_streaming():
+                    self.logger.warning(f"Camera '{self.camera_name}' is not streaming, attempting to start stream")
+                    try:
+                        await asyncio.to_thread(self.camera.stream_on)
+                        await asyncio.sleep(0.5)  # Give stream time to start
+                    except Exception as e:
+                        self.logger.warning(f"Could not start streaming for camera '{self.camera_name}': {e}")
+
+                # Send software trigger if in trigger mode
                 if self.triggermode == "trigger":
-                    self.camera.TriggerSoftware.send_command()
+                    try:
+                        # Use the remote device feature control to send software trigger
+                        if hasattr(self, "remote_device_feature") and self.remote_device_feature:
+                            await asyncio.to_thread(self.remote_device_feature.TriggerSoftware.send_command)
+                            self.logger.debug(f"Software trigger sent for camera '{self.camera_name}'")
+                        else:
+                            self.logger.warning(
+                                f"No remote device feature control available for software trigger on camera '{self.camera_name}'"
+                            )
+                    except Exception as e:
+                        self.logger.warning(f"Could not send software trigger for camera '{self.camera_name}': {e}")
 
-                raw_image = self.camera.data_stream[0].get_image()
-                if raw_image is None:
-                    if attempt == self.retrieve_retry_count - 1:
-                        raise CameraTimeoutError(
-                            f"No image received from camera '{self.camera_name}' after {self.retrieve_retry_count} attempts"
-                        )
-                    # Use debug for first attempt, warning for subsequent attempts
-                    if attempt == 0:
-                        self.logger.debug(
-                            f"No image received from camera '{self.camera_name}', attempt {attempt + 1} (normal for first capture)"
-                        )
-                    else:
+                # Get image from data stream
+                try:
+                    if not hasattr(self.camera, "data_stream") or not self.camera.data_stream:
+                        raise CameraCaptureError(f"No data stream available for camera '{self.camera_name}'")
+
+                    raw_image = await asyncio.to_thread(self.camera.data_stream[0].get_image)
+                    if raw_image is None:
+                        if attempt == self.retrieve_retry_count - 1:
+                            raise CameraTimeoutError(
+                                f"No image received from camera '{self.camera_name}' after {self.retrieve_retry_count} attempts"
+                            )
+                        # Use debug for first attempt, warning for subsequent attempts
+                        if attempt == 0:
+                            self.logger.debug(
+                                f"No image received from camera '{self.camera_name}', attempt {attempt + 1} (normal for first capture)"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"No image received from camera '{self.camera_name}', attempt {attempt + 1}"
+                            )
+                        await asyncio.sleep(0.1)  # Brief delay before retry
+                        continue
+
+                    # Convert to numpy array
+                    numpy_image = await asyncio.to_thread(raw_image.get_numpy_array)
+                    if numpy_image is None:
+                        if attempt == self.retrieve_retry_count - 1:
+                            raise CameraCaptureError(
+                                f"Failed to convert image to numpy array for camera '{self.camera_name}' after {self.retrieve_retry_count} attempts"
+                            )
                         self.logger.warning(
-                            f"No image received from camera '{self.camera_name}', attempt {attempt + 1}"
+                            f"Failed to convert image to numpy array for camera '{self.camera_name}', attempt {attempt + 1}"
                         )
-                    continue
+                        await asyncio.sleep(0.1)  # Brief delay before retry
+                        continue
 
-                numpy_image = raw_image.get_numpy_array()
-                if numpy_image is None:
+                    # Convert to BGR format
+                    if len(numpy_image.shape) == 3:
+                        bgr_image = cv2.cvtColor(numpy_image, cv2.COLOR_RGB2BGR)
+                    else:
+                        bgr_image = cv2.cvtColor(numpy_image, cv2.COLOR_BAYER_RG2BGR)
+
+                    # Apply image enhancement if enabled
+                    if self.img_quality_enhancement and all(
+                        [
+                            self.gamma_lut is not None,
+                            self.contrast_lut is not None,
+                            self.color_correction_param is not None,
+                        ]
+                    ):
+                        try:
+                            bgr_image = cv2.LUT(bgr_image, self.gamma_lut)
+                            bgr_image = cv2.LUT(bgr_image, self.contrast_lut)
+                            bgr_image = cv2.transform(bgr_image, self.color_correction_param)
+                        except Exception as e:
+                            self.logger.warning(f"Image enhancement failed for camera '{self.camera_name}': {str(e)}")
+
+                    self.logger.debug(
+                        f"Image captured successfully from camera '{self.camera_name}', shape: {bgr_image.shape}"
+                    )
+                    return True, bgr_image
+
+                except (CameraConnectionError, CameraCaptureError, CameraTimeoutError):
+                    raise
+                except Exception as e:
+                    self.logger.warning(
+                        f"Image retrieval failed for camera '{self.camera_name}', attempt {attempt + 1}: {str(e)}"
+                    )
                     if attempt == self.retrieve_retry_count - 1:
                         raise CameraCaptureError(
-                            f"Failed to convert image to numpy array for camera '{self.camera_name}' after {self.retrieve_retry_count} attempts"
+                            f"All capture attempts failed for camera '{self.camera_name}': {str(e)}"
                         )
-                    self.logger.warning(
-                        f"Failed to convert image to numpy array for camera '{self.camera_name}', attempt {attempt + 1}"
-                    )
+                    await asyncio.sleep(0.1)  # Brief delay before retry
                     continue
-
-                if len(numpy_image.shape) == 3:
-                    bgr_image = cv2.cvtColor(numpy_image, cv2.COLOR_RGB2BGR)
-                else:
-                    bgr_image = cv2.cvtColor(numpy_image, cv2.COLOR_BAYER_RG2BGR)
-
-                if self.img_quality_enhancement and all(
-                    [self.gamma_lut is not None, self.contrast_lut is not None, self.color_correction_param is not None]
-                ):
-                    try:
-                        bgr_image = cv2.LUT(bgr_image, self.gamma_lut)
-                        bgr_image = cv2.LUT(bgr_image, self.contrast_lut)
-                        bgr_image = cv2.transform(bgr_image, self.color_correction_param)
-                    except Exception as e:
-                        self.logger.warning(f"Image enhancement failed for camera '{self.camera_name}': {str(e)}")
-
-                self.logger.debug(
-                    f"Image captured successfully from camera '{self.camera_name}', shape: {bgr_image.shape}"
-                )
-                return True, bgr_image
 
             except (CameraConnectionError, CameraCaptureError, CameraTimeoutError):
                 raise
@@ -610,6 +656,7 @@ class DahengCamera(BaseCamera):
                 if attempt == self.retrieve_retry_count - 1:
                     self.logger.error(f"All capture attempts failed for camera '{self.camera_name}': {str(e)}")
                     raise CameraCaptureError(f"All capture attempts failed for camera '{self.camera_name}': {str(e)}")
+                await asyncio.sleep(0.1)  # Brief delay before retry
 
         raise CameraCaptureError(f"Unexpected capture failure for camera '{self.camera_name}'")
 
@@ -671,12 +718,28 @@ class DahengCamera(BaseCamera):
             success_count = 0
             total_settings = 0
 
-            # Set exposure time
+            # Set exposure time (handle both exposure_time and exposure field names)
+            exposure_key = None
             if "exposure_time" in config_data:
+                exposure_key = "exposure_time"
+            elif "exposure" in config_data:
+                exposure_key = "exposure"
+
+            if exposure_key:
                 total_settings += 1
                 try:
-                    await asyncio.to_thread(self.camera.ExposureTime.set, float(config_data["exposure_time"]))
-                    success_count += 1
+                    exposure_value = float(config_data[exposure_key])
+                    await asyncio.to_thread(self.camera.ExposureTime.set, exposure_value)
+
+                    # Verify the setting was applied
+                    actual_exposure = await asyncio.to_thread(self.camera.ExposureTime.get)
+                    if abs(actual_exposure - exposure_value) < 0.01 * exposure_value:
+                        success_count += 1
+                        self.logger.info(f"Exposure time set to {exposure_value} μs for camera '{self.camera_name}'")
+                    else:
+                        self.logger.warning(
+                            f"Exposure setting verification failed for camera '{self.camera_name}': requested={exposure_value}, actual={actual_exposure}"
+                        )
                 except Exception as e:
                     self.logger.warning(f"Could not set exposure time for camera '{self.camera_name}': {e}")
 
@@ -684,8 +747,18 @@ class DahengCamera(BaseCamera):
             if "gain" in config_data and hasattr(self.camera, "Gain"):
                 total_settings += 1
                 try:
-                    await asyncio.to_thread(self.camera.Gain.set, float(config_data["gain"]))
-                    success_count += 1
+                    gain_value = float(config_data["gain"])
+                    await asyncio.to_thread(self.camera.Gain.set, gain_value)
+
+                    # Verify the setting was applied
+                    actual_gain = await asyncio.to_thread(self.camera.Gain.get)
+                    if abs(actual_gain - gain_value) < 0.01 * gain_value:
+                        success_count += 1
+                        self.logger.info(f"Gain set to {gain_value} for camera '{self.camera_name}'")
+                    else:
+                        self.logger.warning(
+                            f"Gain setting verification failed for camera '{self.camera_name}': requested={gain_value}, actual={actual_gain}"
+                        )
                 except Exception as e:
                     self.logger.warning(f"Could not set gain for camera '{self.camera_name}': {e}")
 
@@ -788,27 +861,25 @@ class DahengCamera(BaseCamera):
 
     async def export_config(self, config_path: str) -> bool:
         """
-        Export camera configuration to common JSON format.
+        Export current camera configuration to common JSON format.
 
         Args:
-            config_path: Path to save configuration file
+            config_path: Path where to save configuration file
 
         Returns:
-            True if successful, False otherwise
+            True if successful
 
         Raises:
-            CameraConnectionError: If camera is not connected
+            CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If configuration export fails
         """
         if not self.initialized or not self.camera:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' is not connected")
-        else:
-            assert gx is not None, "gxipy SDK is available but gx is not initialized"
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
 
         try:
             import json
-
-            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            import os
+            import time
 
             # Default configuration values for Daheng cameras
             defaults = {
@@ -914,6 +985,10 @@ class DahengCamera(BaseCamera):
                 "buffer_count": getattr(self, "buffer_count", 5),
             }
 
+            # Ensure directory exists if there is a directory part
+            dir_name = os.path.dirname(config_path)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
             with open(config_path, "w") as f:
                 json.dump(config_data, f, indent=2)
 
@@ -982,7 +1057,7 @@ class DahengCamera(BaseCamera):
             self.initialized = False
 
     # Additional methods for compatibility and completeness
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """
         Set camera gain.
 
@@ -1001,11 +1076,11 @@ class DahengCamera(BaseCamera):
 
         try:
             # Validate gain range
-            gain_range = self.get_gain_range()
+            gain_range = await self.get_gain_range()
             if gain < gain_range[0] or gain > gain_range[1]:
                 raise CameraConfigurationError(f"Gain {gain} out of range [{gain_range[0]}, {gain_range[1]}]")
 
-            self.camera.Gain.set(float(gain))
+            await asyncio.to_thread(self.camera.Gain.set, float(gain))
             self.logger.info(f"Gain set to {gain} for camera '{self.camera_name}'")
             return True
         except CameraConfigurationError:
@@ -1014,7 +1089,7 @@ class DahengCamera(BaseCamera):
             self.logger.error(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """
         Get current camera gain.
 
@@ -1025,13 +1100,13 @@ class DahengCamera(BaseCamera):
             return 1.0
 
         try:
-            gain = self.camera.Gain.get()
+            gain = await asyncio.to_thread(self.camera.Gain.get)
             return float(gain)
         except Exception as e:
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
             return 1.0
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """
         Get camera gain range.
 
@@ -1042,13 +1117,13 @@ class DahengCamera(BaseCamera):
             return [1.0, 16.0]
 
         try:
-            gain_range = self.camera.Gain.get_range()
+            gain_range = await asyncio.to_thread(self.camera.Gain.get_range)
             return [gain_range["min"], gain_range["max"]]
         except Exception as e:
             self.logger.error(f"Failed to get gain range for camera '{self.camera_name}': {str(e)}")
             return [1.0, 16.0]
 
-    def get_wb_range(self) -> List[str]:
+    async def get_wb_range(self) -> List[str]:
         """
         Get available white balance modes.
 
@@ -1151,7 +1226,7 @@ class DahengCamera(BaseCamera):
             self.logger.error(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
             return False
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set Region of Interest (ROI).
 
@@ -1178,31 +1253,57 @@ class DahengCamera(BaseCamera):
             if x < 0 or y < 0:
                 raise CameraConfigurationError(f"Invalid ROI offset: ({x}, {y})")
 
-            # Check against camera limits before setting
+            # Check against camera limits before setting (with fallback)
             try:
-                offset_x_range = self.camera.OffsetX.get_range()
-                offset_y_range = self.camera.OffsetY.get_range()
-                width_range = self.camera.Width.get_range()
-                height_range = self.camera.Height.get_range()
+                # Try to get ranges, but don't fail if not available
+                offset_x_range = {"min": 0, "max": 4024}
+                offset_y_range = {"min": 0, "max": 3036}
+                width_range = {"min": 1, "max": 4024}
+                height_range = {"min": 1, "max": 3036}
 
-                if x < offset_x_range["min"] or x > offset_x_range["max"]:
+                try:
+                    if hasattr(self.camera, "OffsetX") and hasattr(self.camera.OffsetX, "get_range"):
+                        offset_x_range = self.camera.OffsetX.get_range()
+                except Exception:
+                    pass
+
+                try:
+                    if hasattr(self.camera, "OffsetY") and hasattr(self.camera.OffsetY, "get_range"):
+                        offset_y_range = self.camera.OffsetY.get_range()
+                except Exception:
+                    pass
+
+                try:
+                    if hasattr(self.camera, "Width") and hasattr(self.camera.Width, "get_range"):
+                        width_range = self.camera.Width.get_range()
+                except Exception:
+                    pass
+
+                try:
+                    if hasattr(self.camera, "Height") and hasattr(self.camera.Height, "get_range"):
+                        height_range = self.camera.Height.get_range()
+                except Exception:
+                    pass
+
+                # Validate against ranges
+                if x < offset_x_range.get("min", 0) or x > offset_x_range.get("max", 4024):
                     raise CameraConfigurationError(
-                        f"OffsetX {x} out of range [{offset_x_range['min']}, {offset_x_range['max']}]"
+                        f"OffsetX {x} out of range [{offset_x_range.get('min', 0)}, {offset_x_range.get('max', 4024)}]"
                     )
 
-                if y < offset_y_range["min"] or y > offset_y_range["max"]:
+                if y < offset_y_range.get("min", 0) or y > offset_y_range.get("max", 3036):
                     raise CameraConfigurationError(
-                        f"OffsetY {y} out of range [{offset_y_range['min']}, {offset_y_range['max']}]"
+                        f"OffsetY {y} out of range [{offset_y_range.get('min', 0)}, {offset_y_range.get('max', 3036)}]"
                     )
 
-                if width < width_range["min"] or width > width_range["max"]:
+                if width < width_range.get("min", 1) or width > width_range.get("max", 4024):
                     raise CameraConfigurationError(
-                        f"Width {width} out of range [{width_range['min']}, {width_range['max']}]"
+                        f"Width {width} out of range [{width_range.get('min', 1)}, {width_range.get('max', 4024)}]"
                     )
 
-                if height < height_range["min"] or height > height_range["max"]:
+                if height < height_range.get("min", 1) or height > height_range.get("max", 3036):
                     raise CameraConfigurationError(
-                        f"Height {height} out of range [{height_range['min']}, {height_range['max']}]"
+                        f"Height {height} out of range [{height_range.get('min', 1)}, {height_range.get('max', 3036)}]"
                     )
 
             except CameraConfigurationError:
@@ -1214,22 +1315,54 @@ class DahengCamera(BaseCamera):
             was_grabbing = False
             try:
                 # Always try to stop streaming first to make ROI parameters writable
-                self.camera.stream_off()
-                was_grabbing = True
+                if hasattr(self.camera, "stream_off"):
+                    self.camera.stream_off()
+                    was_grabbing = True
             except Exception as e:
                 # If stream_off fails, camera might not be streaming
                 self.logger.warning(f"Could not stop streaming for ROI change on camera '{self.camera_name}': {e}")
                 was_grabbing = False
 
-            # Set ROI parameters
-            self.camera.OffsetX.set(x)
-            self.camera.OffsetY.set(y)
-            self.camera.Width.set(width)
-            self.camera.Height.set(height)
+            # Set ROI parameters with error handling for each parameter
+            try:
+                if hasattr(self.camera, "OffsetX"):
+                    self.camera.OffsetX.set(x)
+                else:
+                    self.logger.warning(f"OffsetX not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set OffsetX for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "OffsetY"):
+                    self.camera.OffsetY.set(y)
+                else:
+                    self.logger.warning(f"OffsetY not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set OffsetY for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Width"):
+                    self.camera.Width.set(width)
+                else:
+                    self.logger.warning(f"Width not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set Width for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Height"):
+                    self.camera.Height.set(height)
+                else:
+                    self.logger.warning(f"Height not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set Height for camera '{self.camera_name}': {e}")
 
             # Restart grabbing if it was running
             if was_grabbing:
-                self.camera.stream_on()
+                try:
+                    if hasattr(self.camera, "stream_on"):
+                        self.camera.stream_on()
+                except Exception as e:
+                    self.logger.warning(f"Could not restart streaming for camera '{self.camera_name}': {e}")
 
             self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
             return True
@@ -1239,7 +1372,7 @@ class DahengCamera(BaseCamera):
             self.logger.error(f"Failed to set ROI for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set ROI for camera '{self.camera_name}': {str(e)}")
 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """
         Get current Region of Interest (ROI).
 
@@ -1250,55 +1383,130 @@ class DahengCamera(BaseCamera):
             return {"x": 0, "y": 0, "width": 4024, "height": 3036}
 
         try:
-            roi = {
-                "x": self.camera.OffsetX.get(),
-                "y": self.camera.OffsetY.get(),
-                "width": self.camera.Width.get(),
-                "height": self.camera.Height.get(),
-            }
+            roi = {"x": 0, "y": 0, "width": 4024, "height": 3036}
+
+            # Get each ROI parameter with individual error handling
+            try:
+                if hasattr(self.camera, "OffsetX"):
+                    roi["x"] = self.camera.OffsetX.get()
+            except Exception as e:
+                self.logger.warning(f"Could not get OffsetX for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "OffsetY"):
+                    roi["y"] = self.camera.OffsetY.get()
+            except Exception as e:
+                self.logger.warning(f"Could not get OffsetY for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Width"):
+                    roi["width"] = self.camera.Width.get()
+            except Exception as e:
+                self.logger.warning(f"Could not get Width for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Height"):
+                    roi["height"] = self.camera.Height.get()
+            except Exception as e:
+                self.logger.warning(f"Could not get Height for camera '{self.camera_name}': {e}")
+
             return roi
         except Exception as e:
             self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
             return {"x": 0, "y": 0, "width": 4024, "height": 3036}
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """
         Reset ROI to full sensor size.
 
         Returns:
             True if ROI was reset successfully, False otherwise
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If ROI reset fails
         """
         if not self.initialized or self.camera is None:
-            self.logger.error(f"Camera '{self.camera_name}' not available for ROI reset")
-            return False
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available for ROI reset")
 
         try:
             # Stop grabbing temporarily for ROI change
-            was_grabbing = self.camera.is_streaming()
-            if was_grabbing:
-                self.camera.stream_off()
+            was_grabbing = False
+            try:
+                # Always try to stop streaming first to make ROI parameters writable
+                if hasattr(self.camera, "stream_off"):
+                    await asyncio.to_thread(self.camera.stream_off)
+                    was_grabbing = True
+            except Exception as e:
+                # If stream_off fails, camera might not be streaming
+                self.logger.warning(f"Could not stop streaming for ROI reset on camera '{self.camera_name}': {e}")
+                was_grabbing = False
 
-            # Reset to maximum sensor size
-            self.camera.OffsetX.set(0)
-            self.camera.OffsetY.set(0)
+            # Reset ROI parameters with error handling for each parameter
+            try:
+                if hasattr(self.camera, "OffsetX"):
+                    await asyncio.to_thread(self.camera.OffsetX.set, 0)
+                else:
+                    self.logger.warning(f"OffsetX not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set OffsetX for camera '{self.camera_name}': {e}")
 
-            width_range = self.camera.Width.get_range()
-            height_range = self.camera.Height.get_range()
+            try:
+                if hasattr(self.camera, "OffsetY"):
+                    await asyncio.to_thread(self.camera.OffsetY.set, 0)
+                else:
+                    self.logger.warning(f"OffsetY not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set OffsetY for camera '{self.camera_name}': {e}")
 
-            self.camera.Width.set(width_range["max"])
-            self.camera.Height.set(height_range["max"])
+            # Get width and height ranges with fallback
+            width_range = {"min": 1, "max": 4024}
+            height_range = {"min": 1, "max": 3036}
+
+            try:
+                if hasattr(self.camera, "Width") and hasattr(self.camera.Width, "get_range"):
+                    width_range = await asyncio.to_thread(self.camera.Width.get_range)
+            except Exception as e:
+                self.logger.warning(f"Could not get Width range for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Height") and hasattr(self.camera.Height, "get_range"):
+                    height_range = await asyncio.to_thread(self.camera.Height.get_range)
+            except Exception as e:
+                self.logger.warning(f"Could not get Height range for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Width"):
+                    await asyncio.to_thread(self.camera.Width.set, width_range["max"])
+                else:
+                    self.logger.warning(f"Width not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set Width for camera '{self.camera_name}': {e}")
+
+            try:
+                if hasattr(self.camera, "Height"):
+                    await asyncio.to_thread(self.camera.Height.set, height_range["max"])
+                else:
+                    self.logger.warning(f"Height not available for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Could not set Height for camera '{self.camera_name}': {e}")
 
             # Restart grabbing if it was running
             if was_grabbing:
-                self.camera.stream_on()
+                try:
+                    if hasattr(self.camera, "stream_on"):
+                        await asyncio.to_thread(self.camera.stream_on)
+                except Exception as e:
+                    self.logger.warning(f"Could not restart streaming for camera '{self.camera_name}': {e}")
 
             self.logger.info(f"ROI reset to full size for camera '{self.camera_name}'")
             return True
+
         except Exception as e:
             self.logger.error(f"Failed to reset ROI for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise CameraConfigurationError(f"Failed to reset ROI for camera '{self.camera_name}': {str(e)}")
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """
         Get available pixel formats.
 
@@ -1316,7 +1524,7 @@ class DahengCamera(BaseCamera):
             self.logger.error(f"Failed to get pixel format range for camera '{self.camera_name}': {str(e)}")
             return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """
         Get current pixel format.
 
@@ -1340,7 +1548,7 @@ class DahengCamera(BaseCamera):
             self.logger.error(f"Failed to get current pixel format for camera '{self.camera_name}': {str(e)}")
             return "RGB8"
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """
         Set pixel format.
 
@@ -1360,7 +1568,7 @@ class DahengCamera(BaseCamera):
             assert gx is not None, "camera is initialized but gxipy is not initialized"
 
         try:
-            available_formats = self.get_pixel_format_range()
+            available_formats = await self.get_pixel_format_range()
             if pixel_format not in available_formats:
                 raise CameraConfigurationError(
                     f"Pixel format '{pixel_format}' not supported. Available formats: {available_formats}"

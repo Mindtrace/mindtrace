@@ -328,7 +328,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"set_auto_wb_once not implemented for {self.__class__.__name__}")
         return False
 
-    def get_wb_range(self) -> List[str]:
+    async def get_wb_range(self) -> List[str]:
         """
         Get available white balance modes.
 
@@ -367,7 +367,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"set_triggermode not implemented for {self.__class__.__name__}")
         return False
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """
         Get current image quality enhancement setting.
 
@@ -376,7 +376,7 @@ class BaseCamera(MindtraceABC):
         """
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
+    async def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
         """
         Set image quality enhancement setting.
 
@@ -415,7 +415,7 @@ class BaseCamera(MindtraceABC):
         return [480, 1080]
 
     # Additional standardized methods for camera control
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """
         Set camera gain.
 
@@ -430,7 +430,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"set_gain not implemented for {self.__class__.__name__}")
         return False
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """
         Get current camera gain.
 
@@ -442,7 +442,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"get_gain not implemented for {self.__class__.__name__}")
         return 1.0
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """
         Get camera gain range.
 
@@ -454,7 +454,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"get_gain_range not implemented for {self.__class__.__name__}")
         return [1.0, 16.0]
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """
         Set Region of Interest (ROI).
 
@@ -472,7 +472,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"set_ROI not implemented for {self.__class__.__name__}")
         return False
 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """
         Get current Region of Interest (ROI).
 
@@ -484,7 +484,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"get_ROI not implemented for {self.__class__.__name__}")
         return {"x": 0, "y": 0, "width": 1920, "height": 1080}
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """
         Reset ROI to full sensor size.
 
@@ -496,7 +496,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"reset_ROI not implemented for {self.__class__.__name__}")
         return False
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """
         Get available pixel formats.
 
@@ -508,7 +508,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"get_pixel_format_range not implemented for {self.__class__.__name__}")
         return ["BGR8", "RGB8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """
         Get current pixel format.
 
@@ -520,7 +520,7 @@ class BaseCamera(MindtraceABC):
         self.logger.warning(f"get_current_pixel_format not implemented for {self.__class__.__name__}")
         return "RGB8"
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """
         Set pixel format.
 

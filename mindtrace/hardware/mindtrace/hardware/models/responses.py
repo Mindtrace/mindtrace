@@ -5,7 +5,7 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all endpoints.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ class BaseResponse(BaseModel):
 
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class BoolResponse(BaseResponse):
@@ -82,6 +82,7 @@ class CaptureResponse(BaseResponse):
 
     image_data: Optional[str] = None  # Base64 encoded image
     save_path: Optional[str] = None
+    gcs_uri: Optional[str] = None  # GCS URI of uploaded image
     media_type: str = "image/jpeg"
 
 
@@ -90,6 +91,7 @@ class HDRCaptureResponse(BaseResponse):
 
     images: Optional[List[str]] = None  # Base64 encoded images
     exposure_levels: Optional[List[float]] = None
+    gcs_uris: Optional[List[str]] = None  # GCS URIs of uploaded images
     successful_captures: int
 
 
@@ -173,3 +175,21 @@ class StatusResponse(BaseResponse):
     """Response model for status checks."""
 
     data: Dict[str, Any]  # Status information
+
+
+class StreamResponse(BaseResponse):
+    """Response model for video stream endpoint."""
+
+    media_type: str = "multipart/x-mixed-replace; boundary=frame"
+
+
+class BatchHDRCaptureResponse(BaseResponse):
+    """Response model for batch HDR capture operations."""
+
+    data: Dict[str, HDRCaptureResponse]
+
+
+class BatchCaptureResponse(BaseResponse):
+    """Response model for batch capture operations."""
+
+    data: Dict[str, CaptureResponse]

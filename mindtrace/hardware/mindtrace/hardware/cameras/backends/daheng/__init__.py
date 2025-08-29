@@ -40,7 +40,8 @@ try:
     from .daheng_camera import GXIPY_AVAILABLE, DahengCamera
 
     DAHENG_AVAILABLE = GXIPY_AVAILABLE
-except ImportError:
+except (ImportError, NameError):
+    # NameError can occur when gxipy's dll variable is not defined
     DahengCamera = None
     DAHENG_AVAILABLE = False
 
