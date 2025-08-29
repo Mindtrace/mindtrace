@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.graph import MessagesState, END
 
 from mindtrace.services.agents.langraph.agent import MCPAgent
-from mindtrace.services.agents.langraph.config import AgentConfig
+from mindtrace.services.agents.langraph.config import OllamaAgentConfig as AgentConfig
 from mindtrace.services.agents.langraph.graph.types import GraphBuilder, GraphContext
 from mindtrace.services.sample.calculator_mcp import CalculatorService
 
@@ -83,9 +83,16 @@ def factory(ctx: GraphContext) -> Any:
 
 
 async def main():
-    agent = MCPAgent(CalculatorService, AgentConfig(), factory=factory)
+    mcp_client = CalculatorService.mcp.launch(
+                host="localhost",
+                port=8000,
+                wait_for_launch=True,
+                timeout=10,
+            )
+    agent = MCPAgent(AgentConfig(mcp_client=mcp_client), factory=factory)
     async for step in agent.run("thread-factory-llm", user_input="Please compute the result."):
         step["messages"][-1].pretty_print()
+    await agent.close()
 
 
 if __name__ == "__main__":

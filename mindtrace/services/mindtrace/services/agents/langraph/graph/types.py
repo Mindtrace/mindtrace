@@ -2,7 +2,7 @@ from typing import Any, Callable, Iterable
 
 from langgraph.graph import END, START, StateGraph
 
-from ..config import AgentConfig
+from ..config import OllamaAgentConfig as AgentConfig
 from ..llm import LLMProvider
 from ..tool_exec import ToolExecutor
 
