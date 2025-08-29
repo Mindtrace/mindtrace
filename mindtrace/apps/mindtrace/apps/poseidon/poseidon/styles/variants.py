@@ -285,4 +285,9 @@ COMPONENT_VARIANTS = {
             "box_shadow": SH.shadow_1,
         },
     },
+    "table_accordian": {
+        "border": "none",
+        "box_shadow": "none",
+        "background_color": "transparent",
+    }
 }

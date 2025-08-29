@@ -27,6 +27,7 @@ from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
 from poseidon.styles.theme import theme_config
+from poseidon.pages.filter_table_demo import filter_table_demo
 
 # Create app with comprehensive styling configuration
 app = rx.App(
@@ -114,4 +115,9 @@ app.add_page(with_shell(images_page, title="Mindtrace - Image Viewer", active="I
 app.add_page(
     with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
     route="/component-showcase",
+)
+
+app.add_page(
+    with_shell(filter_table_demo, title="Mindtrace - Audit Trail", active="Audit Trail"),
+    route="/filter-table-demo",
 )
