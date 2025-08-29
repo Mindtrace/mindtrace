@@ -23,6 +23,7 @@ from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
 from mindtrace.services.core.connection_manager import ConnectionManager
+from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
     EndpointsSchema,
     Heartbeat,
@@ -45,6 +46,7 @@ class Service(Mindtrace):
     _status = ServerStatus.DOWN
     _client_interface: Type[C] | None = None
     _active_servers: dict[UUID, psutil.Process] = {}
+    mcp: MCPClientManager = None
 
     def __init__(
         self,
@@ -98,7 +100,10 @@ class Service(Mindtrace):
             name=re.sub(r"server", "mcp server", description, flags=re.IGNORECASE),
             version=version_str,
         )
-        self.mcp_app = self.mcp.http_app(path="/mcp")
+        # Configure MCP paths from config (defaults preserve current behavior)
+        mcp_mount_path, mcp_http_app_path = self.get_mcp_paths()
+
+        self.mcp_app = self.mcp.http_app(path=mcp_http_app_path)
 
         @asynccontextmanager
         async def combined_lifespan(app: FastAPI):
@@ -121,8 +126,9 @@ class Service(Mindtrace):
             license_info=license_info,
             lifespan=combined_lifespan,
         )
+        # Mount MCP app at configured mount path
+        self.app.mount(mcp_mount_path, self.mcp_app)
 
-        self.app.mount("/mcp-server", self.mcp_app)
         self.add_endpoint(
             path="/endpoints",
             func=self.endpoints_func,
@@ -145,6 +151,11 @@ class Service(Mindtrace):
         self.add_endpoint(
             path="/shutdown", func=self.shutdown, schema=ShutdownSchema, autolog_kwargs={"log_level": logging.DEBUG}
         )
+
+    def __init_subclass__(cls, **kwargs):
+        """Set up MCP client manager for each service subclass."""
+        super().__init_subclass__(**kwargs)
+        cls.mcp = MCPClientManager(cls)
 
     def endpoints_func(self):
         """List all available endpoints for the service."""
@@ -210,6 +221,18 @@ class Service(Mindtrace):
 
         status = ServerStatus(response.json()["status"])
         return status
+
+    @classmethod
+    def _connect_with_interrupt_handling(cls, url, process, timeout):
+        """Connect while checking if the subprocess died."""
+        if process.poll() is not None:
+            if process.returncode == 0:
+                raise SystemExit("Service exited cleanly.")
+            elif process.returncode == -signal.SIGINT:
+                raise KeyboardInterrupt("Service terminated by SIGINT.")
+            else:
+                raise RuntimeError(f"Server exited with code {process.returncode}")
+        return cls.connect(url=url)
 
     @classmethod
     def connect(cls: Type[T], url: str | Url | None = None, timeout: int = 60) -> Any:
@@ -360,7 +383,17 @@ class Service(Mindtrace):
                 desc=f"Launching {cls.unique_name.split('.')[-1]} at {launch_url}",
             )
             try:
-                connection_manager = timeout_handler.run(cls.connect, url=launch_url)
+                connection_manager = timeout_handler.run(
+                    cls._connect_with_interrupt_handling, url=launch_url, process=process, timeout=timeout
+                )
+            except KeyboardInterrupt:
+                cls.logger.warning("User interrupted the launch (Ctrl+C).")
+                cls._cleanup_server(server_id)
+                raise
+            except SystemExit as e:
+                cls.logger.info(str(e))
+                cls._cleanup_server(server_id)
+                raise
             except Exception as e:
                 cls._cleanup_server(server_id)
                 raise e
@@ -484,6 +517,22 @@ class Service(Mindtrace):
             return parse_url(f"http://{final_host}:{final_port}/")
 
         return cls.default_url()
+
+    @classmethod
+    def get_mcp_paths(cls) -> tuple[str, str]:
+        """Return (mount_path, http_app_path) for MCP based on config defaults.
+
+        Defaults:
+        - mount_path: "/mcp-server"
+        - http_app_path: "/mcp"
+        """
+        mcp_http_app_path = str(cls.config.get("MINDTRACE_MCP_HTTP_APP_PATH", "/mcp"))
+        mcp_mount_path = str(cls.config.get("MINDTRACE_MCP_MOUNT_PATH", "/mcp-server"))
+        if not mcp_http_app_path.startswith("/"):
+            mcp_http_app_path = "/" + mcp_http_app_path
+        if not mcp_mount_path.startswith("/"):
+            mcp_mount_path = "/" + mcp_mount_path
+        return mcp_mount_path, mcp_http_app_path
 
     @classmethod
     def register_connection_manager(cls, connection_manager: Type[ConnectionManager]):

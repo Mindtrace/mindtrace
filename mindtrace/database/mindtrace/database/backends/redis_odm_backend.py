@@ -82,6 +82,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
             model_cls (Type[ModelType]): The document model class to use for operations.
             redis_url (str): Redis connection URL string.
         """
+        super().__init__()
         self.model_cls = model_cls
         self.redis = get_redis_connection(url=redis_url)
         self._is_initialized = False
@@ -113,7 +114,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
 
                 self._is_initialized = True
             except Exception as e:
-                print(f"Warning: Redis migration failed: {e}")
+                self.logger.warning(f"Redis migration failed: {e}")
                 self._is_initialized = True  # Continue anyway
 
     def is_async(self) -> bool:
@@ -181,7 +182,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
                     raise
                 except Exception:
                     # If all fails, continue without duplicate check but log warning
-                    print(f"Warning: Could not check for duplicates: {e}")
+                    self.logger.warning(f"Could not check for duplicates: {e}")
 
         doc = self.model_cls(**obj_data)
         doc.save()
@@ -302,7 +303,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
                 return self.model_cls.find().all()
         except Exception as e:
             # If query fails, log the error and return empty list
-            print(f"Warning: Redis query failed: {e}")
+            self.logger.warning(f"Redis query failed: {e}")
             # Try to return all documents if specific query fails
             try:
                 return self.model_cls.find().all()
