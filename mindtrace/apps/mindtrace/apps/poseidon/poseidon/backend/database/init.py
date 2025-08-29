@@ -33,7 +33,7 @@ def rebuild_all_models():
         scan_module = sys.modules['poseidon.backend.database.models.scan']
         scan_image_module = sys.modules['poseidon.backend.database.models.scan_image']
         scan_classification_module = sys.modules['poseidon.backend.database.models.scan_classification']
-        
+
         # Add all models to each module's global namespace for cross-references
         models_dict = {
             'Organization': Organization,
@@ -47,7 +47,7 @@ def rebuild_all_models():
             'ScanImage': ScanImage,
             'ScanClassification': ScanClassification,
         }
-        
+
         for module in [organization_module, project_module, user_module, camera_module, model_module, model_deployment_module, scan_module, scan_image_module, scan_classification_module, image_module]:
             for name, model_class in models_dict.items():
                 setattr(module, name, model_class)
