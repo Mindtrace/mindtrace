@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from fastmcp import Client
-
+from typing import Any
 
 @dataclass
 class LangraphAgentConfig:
@@ -19,6 +19,7 @@ class LangraphAgentConfig:
     request_timeout: int = 60
     mcp_url: str | None = None
     mcp_client: Client | None = None
+    checkpointer: Any | None = None
 
 
 @dataclass

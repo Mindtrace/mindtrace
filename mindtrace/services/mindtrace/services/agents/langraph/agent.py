@@ -102,7 +102,8 @@ class MCPAgent(Mindtrace):
             if self._session_acm is not None and self._thread_id == thread_id and self._compiled_agent is not None:
                 return
             if self._session_acm is not None and self._thread_id != thread_id:
-                await self.close()
+                # Avoid deadlock: close without re-acquiring the same lock
+                await self.close(_already_locked=True)
 
             self._thread_id = thread_id
             self._session_acm = self._session.open()
@@ -126,9 +127,12 @@ class MCPAgent(Mindtrace):
             agent.build(self._ctx)
             self._compiled_agent = agent
 
-    async def close(self):
-        """Close the persistent MCP session and clear compiled agent state."""
-        async with self._lifecycle_lock:
+    async def close(self, *, _already_locked: bool = False):
+        """Close the persistent MCP session and clear compiled agent state.
+
+        If `_already_locked` is True, assumes the lifecycle lock is already held.
+        """
+        if _already_locked:
             if self._session_acm is not None:
                 try:
                     await self._session_acm.__aexit__(None, None, None)
@@ -138,6 +142,9 @@ class MCPAgent(Mindtrace):
                     self._ctx = None
                     self._cfg = None
                     self._thread_id = None
+            return
+        async with self._lifecycle_lock:
+            await self.close(_already_locked=True)
 
     from contextlib import asynccontextmanager
 

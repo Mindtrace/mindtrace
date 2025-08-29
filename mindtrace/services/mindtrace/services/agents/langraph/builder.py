@@ -143,7 +143,9 @@ class MCPAgentGraph(MindtraceABC):
         for plugin in self._plugins:
             plugin(builder, ctx)
 
-        self._app = builder.compile()
+        # Pass optional checkpointer from config into the graph compilation
+        checkpointer = getattr(ctx.config, "checkpointer", None)
+        self._app = builder.compile(checkpointer=checkpointer)
         return self._app
 
     async def astream(self, messages, config, stream_mode="values"):

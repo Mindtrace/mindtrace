@@ -60,14 +60,14 @@ class GraphBuilder:
             self._g.add_edge(ordered[i], ordered[i + 1])
         return self
 
-    def compile(self, start: str | None = None, end: str | None = None) -> Any:
+    def compile(self, start: str | None = None, end: str | None = None, checkpointer: Any | None = None) -> Any:
         start_node = start if start is not None else self._start
         end_node = end if end is not None else self._end
         if start_node:
             self._g.add_edge(START, start_node)
         if end_node:
             self._g.add_edge(end_node, END)
-        return self._g.compile()
+        return self._g.compile(checkpointer=checkpointer)
 
     def set_entry(self, node_name: str) -> "GraphBuilder":
         self._start = node_name
