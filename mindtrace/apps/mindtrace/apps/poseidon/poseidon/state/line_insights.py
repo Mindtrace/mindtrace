@@ -25,8 +25,7 @@ class LineInsightsState(BaseFilterState):
     """State management for Line Insights dashboard."""
     
     # Default plant and line values (replacing dynamic routing)
-    plant_id: str = DEFAULT_PLANT_NAME  # Default plant
-    line_id: str = ""    # Will be set dynamically to project ID
+
     project_name: str = ""  # Will be set dynamically to project name
     
     # Global time filtering (affects all charts)

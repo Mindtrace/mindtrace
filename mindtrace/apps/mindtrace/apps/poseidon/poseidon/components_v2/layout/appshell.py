@@ -17,9 +17,6 @@ def AppShell(
     subheader: rx.Component | None = None,
     show_scope_selector: bool = False,
 ) -> rx.Component:
-
-
-
     main = rx.hstack(
         Sidebar(active=sidebar_active),
         rx.box(
@@ -45,5 +42,7 @@ def AppShell(
         bg=T.bg,
         min_h="100vh",
         overscroll_behavior="none",
-        on_mount=lambda: ScopeState.ensure_directory(AuthState.user_organization_id)
+        on_mount=lambda: ScopeState.ensure_directory(
+            AuthState.user_organization_id,  # org_id
+        ),
     )

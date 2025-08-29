@@ -67,7 +67,7 @@ app.add_page(
 
 # Camera Configurator route
 app.add_page(
-    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator", show_scope_selector=True),
+    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
     route="/camera-configurator",
 )
 
@@ -102,8 +102,8 @@ app.add_page(
 
 # Analytics routes
 app.add_page(
-    with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights"),
-    route="/line-insights",
+    with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
+    route="/plants/[plant_id]/lines/[line_id]/line-insights",
 )
 
 # User routes
