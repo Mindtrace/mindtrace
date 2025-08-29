@@ -2,6 +2,7 @@ import reflex as rx
 from typing import List, Dict, Any, Optional
 
 from poseidon.backend.database.repositories.scan_repository import ScanRepository
+from poseidon.backend.cloud.gcs import presign_url
 
 
 class GridState(rx.State):
@@ -21,7 +22,7 @@ class GridState(rx.State):
     sort_by: Optional[str] = "created_at"
     sort_dir: str = "desc"
     page: int = 1
-    page_size: int = 10
+    page_size: int = 20
 
     # Modal (row-level details)
     modal_open: bool = False
@@ -93,6 +94,33 @@ class GridState(rx.State):
         finally:
             self.loading = False
 
+    # ---------- Helpers ----------
+    def get_presigned_url(self, gcs_like_path: str) -> str:
+        """
+        Return a presigned URL for a GCS path, but pass through if it's already http(s).
+        """
+        if not gcs_like_path:
+            return ""
+        if gcs_like_path.startswith(("http://", "https://")):
+            return gcs_like_path
+        return presign_url(gcs_like_path)
+
+    def _with_presigned_part(self, part: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Ensure a part dict includes a presigned 'image_url'.
+        """
+        src = (
+            part.get("image_url")
+            or part.get("full_path")
+            or part.get("gcs_path")
+            or part.get("path")
+            or ""
+        )
+        return {
+            **part,
+            "image_url": self.get_presigned_url(str(src)),
+        }
+
     # ---------- Events (return handler reference) ----------
     def set_search(self, v: str):
         self.search = v
@@ -145,7 +173,7 @@ class GridState(rx.State):
         self.selected_model_version = str(row.get("model_version", "-"))
         self.selected_confidence = str(row.get("confidence", "-"))
 
-        # Clear any image preview (if the modal is reused)
+        # Clear any part preview fields
         self.selected_image_url = ""
         self.selected_part_status = ""
         self.selected_part_classes = []
@@ -159,14 +187,18 @@ class GridState(rx.State):
         """Populate modal with row + specific part (image-left/details-right use)."""
         # Row-level fields
         self.open_inspection(row)
-
-        # Part-level enrichments
+        part = self._with_presigned_part(part)
         self.selected_image_url = str(part.get("image_url", ""))
+
         self.selected_part_status = str(part.get("status", ""))
         classes = part.get("classes", []) or []
         self.selected_part_classes = [str(c) for c in classes]
+
         p_conf = part.get("confidence", None)
-        self.selected_part_confidence = f"{float(p_conf):.2f}" if isinstance(p_conf, (int, float)) else "-"
+        self.selected_part_confidence = (
+            f"{float(p_conf):.2f}" if isinstance(p_conf, (int, float)) else "-"
+        )
+
         bbox = part.get("bbox", None)
         self.selected_bbox = bbox if isinstance(bbox, dict) else None
         self.show_bbox = True
@@ -178,14 +210,15 @@ class GridState(rx.State):
 
     # ---------- Accordion control by ROW (Mongo) id ----------
     def set_expanded_row(self, row_id: str):
-        """Set which row is expanded and load its camera data by row id."""
+        """Set which row is expanded and load its camera data by row id, presigning images."""
         self.expanded_row_id = row_id
         self.current_row_cameras = []
 
         for row in self.rows:
             if str(row.get("id", "")) == row_id:
-                parts_data = row.get("parts", [])
-                self.current_row_cameras = parts_data if isinstance(parts_data, list) else []
+                parts_data = row.get("parts", []) or []
+                if isinstance(parts_data, list):
+                    self.current_row_cameras = [self._with_presigned_part(p) for p in parts_data]
                 break
 
     def handle_accordion_change(self, value: str | list[str]):
