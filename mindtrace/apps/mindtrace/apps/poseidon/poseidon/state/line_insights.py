@@ -83,7 +83,10 @@ class LineInsightsState(BaseFilterState):
         self.date_range = range_type
         now = datetime.now()
         
-        if range_type == "last_7_days":
+        if range_type == "last_1_day":
+            self.start_date = now - timedelta(days=1)
+            self.end_date = now
+        elif range_type == "last_7_days":
             self.start_date = now - timedelta(days=7)
             self.end_date = now
         elif range_type == "last_30_days":

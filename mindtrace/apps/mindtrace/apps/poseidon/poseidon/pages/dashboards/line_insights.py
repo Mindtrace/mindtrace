@@ -22,6 +22,7 @@ from poseidon.styles.global_styles import THEME as T
 def date_range_selector() -> rx.Component:
     """Date range selector component using modern select input."""
     date_options = [
+        {"id": "last_1_day", "name": "Last 1 Day"},
         {"id": "last_7_days", "name": "Last 7 Days"},
         {"id": "last_30_days", "name": "Last 30 Days"},
         {"id": "last_90_days", "name": "Last 90 Days"},
