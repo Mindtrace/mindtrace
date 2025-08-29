@@ -1,20 +1,28 @@
-from label_studio_sdk import Client
-import os
-from typing import Optional, Union, Any, Dict, List
-from pathlib import Path
-import re
 import json
+import os
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 import cv2
 import numpy as np
-from PIL import Image
-from dataclasses import dataclass
-from mindtrace.core import Mindtrace
-from urllib.parse import urlparse, parse_qs
-import base64
-from mindtrace.storage.gcs import GCSStorageHandler
-from tqdm import tqdm
-from .utils import create_dataset_structure, create_manifest, split_dataset, organize_files_into_splits
+from label_studio_sdk import Client
 from mtrix.datalake import Datalake
+from PIL import Image
+from tqdm import tqdm
+
+from mindtrace.core import Mindtrace
+from mindtrace.storage.gcs import GCSStorageHandler
+
+from .utils import (
+    create_dataset_structure,
+    create_manifest,
+    extract_gcs_path_from_label_studio_url,
+    extract_image_path_from_task,
+    organize_files_into_splits,
+    split_dataset,
+)
 
 
 @dataclass
@@ -115,7 +123,7 @@ class LabelStudio(Mindtrace):
             kwargs["description"] = description
         if label_config is not None:
             kwargs["label_config"] = label_config
-        
+
         return self.client.create_project(**kwargs)
 
     def delete_project(self, project_id: Optional[int] = None, project_name: Optional[str] = None) -> None:
@@ -160,7 +168,7 @@ class LabelStudio(Mindtrace):
 
     def list_tasks(self, project_id: int) -> list:
         """Get all tasks in a project.
-        
+
         Args:
             project_id: Project ID
         """
@@ -168,7 +176,7 @@ class LabelStudio(Mindtrace):
             project = self.get_project(project_id)
             tasks = project.get_tasks()
             return tasks
-            
+
         except Exception as e:
             self.logger.error(f"Error getting tasks for project {project_id}: {e}")
             return []
@@ -512,7 +520,6 @@ class LabelStudio(Mindtrace):
         output_dir: str = "./export_output",
         export_type: str = "YOLO",
         download_resources: bool = True,
-        show_progress: bool = True,
     ) -> list[str]:
         """Export all projects whose titles start with the specified prefix.
 
@@ -521,7 +528,6 @@ class LabelStudio(Mindtrace):
             output_dir: Base directory for exports
             export_type: Format to export in ('YOLO', 'JSON', 'CSV', etc.)
             download_resources: Whether to download images/resources
-            show_progress: Whether to show progress bar
 
         Returns:
             List of exported project titles
@@ -602,198 +608,123 @@ class LabelStudio(Mindtrace):
             task_types.append("classification")
 
         return task_types
-    
-    def _extract_gcs_path_from_label_studio_url(self, label_studio_url: str) -> Optional[str]:
-        """Extract GCS path from a Label Studio presign URL.
-        
-        Args:
-            label_studio_url: Label Studio presign URL
-            
-        Returns:
-            GCS path in gs://bucket/path format, or None if not a valid Label Studio URL
-        """
-        if not label_studio_url:
-            return None
-            
-        try:
-            parsed = urlparse(label_studio_url)
-            
-            if 'presign' not in parsed.path:
-                return None
-            
-            query_params = parse_qs(parsed.query)
-            fileuri = query_params.get('fileuri', [None])[0]
-            
-            if not fileuri:
-                return None
-            
-            try:
-                decoded_bytes = base64.b64decode(fileuri)
-                gcs_path = decoded_bytes.decode('utf-8')
-                
-                if gcs_path.startswith('gs://'):
-                    return gcs_path
-                else:
-                    self.logger.warning(f"Decoded path is not a GCS path: {gcs_path}")
-                    return None
-                    
-            except Exception as e:
-                self.logger.warning(f"Error decoding base64 fileuri '{fileuri}': {str(e)}")
-                return None
-            
-        except Exception as e:
-            self.logger.warning(f"Error extracting GCS path from Label Studio URL '{label_studio_url}': {str(e)}")
-            return None
-    
-    def _extract_image_path_from_task(self, task: dict) -> Optional[str]:
-        """Extract image path from a task dictionary.
-        
-        Args:
-            task: Label Studio task dictionary
-            
-        Returns:
-            GCS path if extractable, original URL otherwise, None if not found
-        """
-        if not task or not isinstance(task, dict):
-            return None
-            
-        if 'data' in task and isinstance(task['data'], dict):
-            data = task['data']
-            if 'image' in data:
-                image_url = data['image']
-                
-                gcs_path = self._extract_gcs_path_from_label_studio_url(image_url)
-                if gcs_path:
-                    return gcs_path
-                else:
-                    return image_url
-        
-        if 'image' in task:
-            image_url = task['image']
-            
-            gcs_path = self._extract_gcs_path_from_label_studio_url(image_url)
-            if gcs_path:
-                return gcs_path
-            else:
-                return image_url
-            
-        return None
-    
+
     def get_project_image_paths(self, project_id: int) -> set:
         """Get all image paths from a specific project.
-        
+
         Args:
             project_id: Label Studio project ID
-            
+
         Returns:
             Set of image paths/URLs used in the project
         """
         try:
             tasks = self.list_tasks(project_id)
             image_paths = set()
-            
+
             for task in tasks:
-                image_path = self._extract_image_path_from_task(task)
+                image_path = extract_image_path_from_task(task, logger=self.logger)
                 if image_path:
                     image_paths.add(image_path)
-            
+
             self.logger.info(f"Found {len(image_paths)} unique images in project {project_id}")
             return image_paths
-            
+
         except Exception as e:
             self.logger.error(f"Error getting image paths from project {project_id}: {str(e)}")
             return set()
-    
+
     def get_all_existing_image_paths(self, project_title_prefix: Optional[str] = None) -> set:
         """Get all image paths from existing Label Studio projects.
-        
+
         Args:
             project_title_prefix: Optional prefix to filter projects by title.
                                  If None, checks all projects.
-            
+
         Returns:
             Set of all image paths/URLs from matching projects
         """
         try:
             projects = self.list_projects()
             all_image_paths = set()
-            
+
             if project_title_prefix:
                 projects = [p for p in projects if p.title.startswith(project_title_prefix)]
                 self.logger.info(f"Checking {len(projects)} projects with prefix '{project_title_prefix}'")
             else:
                 self.logger.info(f"Checking all {len(projects)} projects")
-            
+
             for project in projects:
                 try:
                     project_paths = self.get_project_image_paths(project.id)
                     all_image_paths.update(project_paths)
                     self.logger.debug(f"Project '{project.title}' (ID: {project.id}): {len(project_paths)} images")
                 except Exception as e:
-                    self.logger.warning(f"Failed to get images from project '{project.title}' (ID: {project.id}): {str(e)}")
+                    self.logger.warning(
+                        f"Failed to get images from project '{project.title}' (ID: {project.id}): {str(e)}"
+                    )
                     continue
-            
+
             self.logger.info(f"Total unique images found across all projects: {len(all_image_paths)}")
             return all_image_paths
-            
+
         except Exception as e:
             self.logger.error(f"Error getting all existing image paths: {str(e)}")
             return set()
-    
-    
+
     def get_all_existing_gcs_paths(self, project_title_prefix: Optional[str] = None) -> set:
         """Get all GCS paths from existing Label Studio projects.
-        
+
         Args:
             project_title_prefix: Optional prefix to filter projects by title.
                                  If None, checks all projects.
-            
+
         Returns:
             Set of all GCS paths (gs://bucket/path format) from matching projects
         """
         image_paths = self.get_all_existing_image_paths(project_title_prefix)
         gcs_paths = set()
-        
+
         for image_path in image_paths:
-            if image_path.startswith('gs://'):
+            if image_path.startswith("gs://"):
                 gcs_paths.add(image_path)
-            elif 'presign' in image_path and 'fileuri=' in image_path:
-                gcs_path = self._extract_gcs_path_from_label_studio_url(image_path)
+            elif "presign" in image_path and "fileuri=" in image_path:
+                gcs_path = extract_gcs_path_from_label_studio_url(image_path, logger=self.logger)
                 if gcs_path:
                     gcs_paths.add(gcs_path)
-        
+
         self.logger.info(f"Total unique GCS paths found: {len(gcs_paths)}")
         return gcs_paths
 
     def _transform_annotation_to_datalake(self, data: list, output_dir: Path, all_masks: bool = False) -> dict:
         images = {}
         for task in data:
-            filename = task['data']['image'].split('/')[-1]
+            filename = task["data"]["image"].split("/")[-1]
             image_entry = {"file_name": filename, "bboxes": []}
 
             mask_labels = []
-            for ann in task.get('annotations', []):
-                for result in ann.get('result', []):
-                    if result['type'] == 'rectanglelabels':
+            for ann in task.get("annotations", []):
+                for result in ann.get("result", []):
+                    if result["type"] == "rectanglelabels":
                         bbox = {
-                            "x": int(result['value']['x']),
-                            "y": int(result['value']['y']),
-                            "width": int(result['value']['width']),
-                            "height": int(result['value']['height']),
-                            "label": result['value']['rectanglelabels'][0]
+                            "x": int(result["value"]["x"]),
+                            "y": int(result["value"]["y"]),
+                            "width": int(result["value"]["width"]),
+                            "height": int(result["value"]["height"]),
+                            "label": result["value"]["rectanglelabels"][0],
                         }
-                        image_entry['bboxes'].append(bbox)
-                    elif result['type'] == 'polygonlabels':
-                        label = result['value']['polygonlabels'][0]
+                        image_entry["bboxes"].append(bbox)
+                    elif result["type"] == "polygonlabels":
+                        label = result["value"]["polygonlabels"][0]
                         mask_labels.append(label)
 
-            mask_file = (output_dir / "masks" / f"{Path(filename).stem}_mask.png")
-            
+            mask_file = output_dir / "masks" / f"{Path(filename).stem}_mask.png"
+
             # Include mask if it exists and has labels, OR if all_masks is enabled and mask file exists
             if mask_file.exists() and (mask_labels or all_masks):
-                image_entry['masks'] = {
+                image_entry["masks"] = {
                     "file_name": str(mask_file.name),
-                    "labels": sorted(mask_labels) if mask_labels else []
+                    "labels": sorted(mask_labels) if mask_labels else [],
                 }
 
             images[filename] = image_entry
@@ -809,7 +740,7 @@ class LabelStudio(Mindtrace):
         all_masks: bool = False,
     ) -> Dict[str, any]:
         """Export project annotations to JSON format.
-        
+
         Args:
             project_id: Label Studio project ID
             output_dir: Output directory for export
@@ -819,13 +750,13 @@ class LabelStudio(Mindtrace):
             all_masks: Whether to generate mask files for all images (including empty ones)
             splits: Optional dictionary of split names to lists of image filenames
             version: Dataset version (default: "1.0.0")
-        
+
         Returns:
             Dict with export statistics
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Export JSON
         json_export_path = output_dir / "export.json"
         self.export_annotations(
@@ -833,16 +764,16 @@ class LabelStudio(Mindtrace):
             export_type="JSON",
             download_all_tasks=True,
             download_resources=False,
-            export_location=str(json_export_path)
+            export_location=str(json_export_path),
         )
-        
-        with open(json_export_path, 'r') as f:
+
+        with open(json_export_path, "r") as f:
             data = json.load(f)
-        
+
         gcs_paths = []
         local_image_paths = {}
-        
-        if download_images:  
+
+        if download_images:
             import_storages = self.list_import_storages(project_id)
             if not import_storages:
                 self.logger.warning("No import storages found, cannot download images")
@@ -850,7 +781,7 @@ class LabelStudio(Mindtrace):
                 generate_masks = False
             else:
                 storage_info = import_storages[0]
-                bucket_name = storage_info.get('bucket')
+                bucket_name = storage_info.get("bucket")
                 if not bucket_name:
                     self.logger.warning("No bucket name found in storage info, cannot download images")
                     download_images = False
@@ -860,22 +791,22 @@ class LabelStudio(Mindtrace):
                     temp_images_dir = Path(download_path)
                     temp_images_dir.mkdir(exist_ok=True)
                     self.logger.info(f"Downloading images from bucket '{bucket_name}' to {temp_images_dir}")
-        
+
         for task in data:
-            if 'data' in task and 'image' in task['data']:
-                image_path = task['data']['image']
-                if image_path.startswith('gs://'):
+            if "data" in task and "image" in task["data"]:
+                image_path = task["data"]["image"]
+                if image_path.startswith("gs://"):
                     gcs_paths.append(image_path)
-        
+
         if download_images or generate_masks:
             if gcs_paths:
                 self.logger.info(f"Starting batch download of {len(gcs_paths)} images...")
                 file_map = {}
                 for gcs_path in gcs_paths:
-                    filename = gcs_path.split('/')[-1]
+                    filename = gcs_path.split("/")[-1]
                     local_path = temp_images_dir / filename
                     file_map[gcs_path] = str(local_path)
-                
+
                 downloaded_paths, errors = gcs_handler.download_files(file_map, max_workers=8)
                 local_image_paths.update(downloaded_paths)
                 self.logger.info(f"✅ Successfully downloaded: {len(downloaded_paths)} images")
@@ -883,64 +814,61 @@ class LabelStudio(Mindtrace):
                     self.logger.warning(f"Failed to download: {len(errors)} images")
                     for path, error in errors.items():
                         self.logger.debug(f"  Failed {path}: {error}")
-        
+
         if generate_masks:
             # Create masks directory
             masks_dir = output_dir / "masks"
             masks_dir.mkdir(exist_ok=True)
-            
+
             # Get unique labels and create class mapping
             unique_labels = set()
             for task in data:
-                for ann in task.get('annotations', []):
-                    for result in ann.get('result', []):
-                        if result['type'] == 'polygonlabels':
-                            unique_labels.update(result['value']['polygonlabels'])
-            
-            class2idx = {label: idx + 1 for idx, label in enumerate(sorted(unique_labels))} 
-            
+                for ann in task.get("annotations", []):
+                    for result in ann.get("result", []):
+                        if result["type"] == "polygonlabels":
+                            unique_labels.update(result["value"]["polygonlabels"])
+
+            class2idx = {label: idx + 1 for idx, label in enumerate(sorted(unique_labels))}
+
             # Save class mapping
-            class_mapping = {
-                'idx2label': {str(idx): label for label, idx in class2idx.items()},
-                'label2idx': class2idx
-            }
-            with open(output_dir / 'class_mapping.json', 'w') as f:
+            class_mapping = {"idx2label": {str(idx): label for label, idx in class2idx.items()}, "label2idx": class2idx}
+            with open(output_dir / "class_mapping.json", "w") as f:
                 json.dump(class_mapping, f, indent=2)
-            
+
             self.logger.info(f"Generating masks for {len(data)} tasks...")
             for task in tqdm(data, desc="Generating masks"):
                 has_polygons = False
                 polygon_results = []
-                for ann in task.get('annotations', []):
-                    for result in ann.get('result', []):
-                        if result['type'] == 'polygonlabels':
+                for ann in task.get("annotations", []):
+                    for result in ann.get("result", []):
+                        if result["type"] == "polygonlabels":
                             has_polygons = True
                             polygon_results.append(result)
-                
-                image_path = task['data']['image']
+
+                image_path = task["data"]["image"]
                 local_path = local_image_paths.get(image_path)
                 if not local_path:
                     continue
-                
+
                 try:
                     image = Image.open(local_path)
                     w, h = image.size
-               
-                    mask = np.zeros((h, w), dtype=np.uint8) 
-                    
+
+                    mask = np.zeros((h, w), dtype=np.uint8)
+
                     # Only process polygons if they exist
                     if has_polygons:
-                        polygon_results.sort(key=lambda x: class2idx[x['value']['polygonlabels'][0]])
-                        
+                        polygon_results.sort(key=lambda x: class2idx[x["value"]["polygonlabels"][0]])
+
                         for result in polygon_results:
-                            label = result['value']['polygonlabels'][0]
+                            label = result["value"]["polygonlabels"][0]
                             class_id = class2idx[label]
-                            
-                            points = (np.array(result['value']['points']) * np.array([w, h]) / 100).astype(np.int32)
+
+                            points = (np.array(result["value"]["points"]) * np.array([w, h]) / 100).astype(np.int32)
                             points = points.reshape((-1, 1, 2))
-                            
+
                             cv2.fillPoly(mask, [points], color=class_id)
-                    
+
                     # Generate mask file if we have polygons
                     if has_polygons:
                         mask_filename = f"{Path(local_path).stem}_mask.png"
@@ -953,34 +881,34 @@ class LabelStudio(Mindtrace):
                         mask_path = masks_dir / mask_filename
                         cv2.imwrite(str(mask_path), mask)
                         self.logger.debug(f"Generated empty mask: {mask_filename}")
-                    
+
                 except Exception as e:
                     self.logger.error(f"Failed to generate mask for {image_path}: {e}")
-                
+
             self.logger.info("✅ Mask generation completed")
 
             data = self._transform_annotation_to_datalake(data, output_dir, class_mapping, all_masks)
-        
-        with open(output_dir / "annotations.json", 'w') as f:
+
+        with open(output_dir / "annotations.json", "w") as f:
             json.dump(data, f, indent=2)
-        
+
         json_export_path.unlink()
-        
+
         # Count generated masks
         generated_mask_count = 0
         if generate_masks:
             masks_dir = output_dir / "masks"
             if masks_dir.exists():
                 generated_mask_count = len(list(masks_dir.glob("*.png")))
-        
+
         stats = {
-            'total_tasks': len(data),
-            'downloaded_images': len(local_image_paths) if download_images or generate_masks else 0,
-            'generated_masks': generated_mask_count,
-            'class_mapping': class2idx if generate_masks else None,
-            'images': data['images']  # Include the transformed data
+            "total_tasks": len(data),
+            "downloaded_images": len(local_image_paths) if download_images or generate_masks else 0,
+            "generated_masks": generated_mask_count,
+            "class_mapping": class2idx if generate_masks else None,
+            "images": data["images"],  # Include the transformed data
         }
-        
+
         self.logger.info("Export completed successfully!")
         self.logger.info(f"Total tasks: {stats['total_tasks']}")
         if download_images:
@@ -991,7 +919,7 @@ class LabelStudio(Mindtrace):
             if all_masks:
                 self.logger.info("Generated masks for all images (including empty ones)")
             self.logger.info(f"Classes: {list(class2idx.keys())}")
-        
+
         return stats
 
     def convert_and_publish_to_datalake(
@@ -1013,79 +941,73 @@ class LabelStudio(Mindtrace):
         new_dataset: bool = True,
         detection_classes: Optional[List[str]] = None,
         segmentation_classes: Optional[List[str]] = None,
-        sam_config: Optional[Dict] = None  # Add SAM config parameter
+        sam_config: Optional[Dict] = None,  # Add SAM config parameter
     ) -> Dict[str, Any]:
         """Convert Label Studio project to datalake format with train/test splits."""
         # Validate splits
         if abs(train_split + test_split - 1.0) > 1e-6:
             raise ValueError("Train and test splits must sum to 1.0")
-            
+
         dataset_dir = output_dir / dataset_name
         temp_dir = Path(download_path)
         temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        create_dataset_structure(dataset_dir, splits=['train', 'test'])
-        
+
+        create_dataset_structure(dataset_dir, splits=["train", "test"])
+
         export_result = self.export_project_to_json(
             project_id=project_id,
             output_dir=temp_dir,
             download_path=download_path,
             download_images=download_images,
             generate_masks=generate_masks,
-            all_masks=all_masks
+            all_masks=all_masks,
         )
-        
-        if not export_result['images']:
+
+        if not export_result["images"]:
             raise ValueError(f"No data found for project {project_id}")
-        
+
         split_result = split_dataset(
-            data=list(export_result['images'].keys()),
+            data=list(export_result["images"].keys()),
             train_split=train_split,
             val_split=0.0,
             test_split=test_split,
-            seed=seed
+            seed=seed,
         )
-        
+
         moved_files = organize_files_into_splits(
             base_dir=dataset_dir,
-            split_assignments=split_result['splits'],
+            split_assignments=split_result["splits"],
             source_images_dir=temp_dir,
-            source_masks_dir=temp_dir / "masks" if generate_masks else None
+            source_masks_dir=temp_dir / "masks" if generate_masks else None,
         )
 
         sam = None
         sam_generate_all_masks = False
         if sam_config:
             from mtrix.models import SegmentAnything as SAM
-            sam = SAM(
-                model=sam_config.get('model_version', 'vit_l'),
-                device=sam_config.get('device', 'cuda')
-            )
-            sam_generate_all_masks = sam_config.get('generate_masks', False)
-        
-        for split_name, filenames in split_result['splits'].items():
+
+            sam = SAM(model=sam_config.get("model_version", "vit_l"), device=sam_config.get("device", "cuda"))
+            sam_generate_all_masks = sam_config.get("generate_masks", False)
+
+        for split_name, filenames in split_result["splits"].items():
             if not filenames:  # Skip empty splits
                 continue
 
-            split_dir = dataset_dir / 'splits' / split_name
-            split_annotations = {
-                "images": {
-                    img: export_result['images'][img]
-                    for img in filenames
-                }
-            }
+            split_dir = dataset_dir / "splits" / split_name
+            split_annotations = {"images": {img: export_result["images"][img] for img in filenames}}
 
             # Process SAM masks if enabled
             if sam:
                 self.logger.info(f"Processing SAM masks for {split_name} split...")
-                
+
                 # Create sam_masks directory for this split
-                sam_masks_dir = split_dir / 'spatter_masks'
+                sam_masks_dir = split_dir / "spatter_masks"
                 sam_masks_dir.mkdir(exist_ok=True)
 
-
-                for img_name, img_data in tqdm(split_annotations['images'].items(), desc=f"Processing SAM masks for {split_name}"):
-                    image_path = split_dir / 'images' / img_name
+                for img_name, img_data in tqdm(
+                    split_annotations["images"].items(), desc=f"Processing SAM masks for {split_name}"
+                ):
+                    image_path = split_dir / "images" / img_name
                     if not image_path.exists():
                         continue
 
@@ -1093,8 +1015,8 @@ class LabelStudio(Mindtrace):
                     img_width, img_height = image.size
 
                     # Check if we have bounding boxes
-                    has_bboxes = bool(img_data.get('bboxes'))
-                    
+                    has_bboxes = bool(img_data.get("bboxes"))
+
                     # Skip if no bboxes and we're not generating all masks
                     if not has_bboxes and not sam_generate_all_masks:
                         continue
@@ -1102,12 +1024,12 @@ class LabelStudio(Mindtrace):
                     # Convert bboxes to format SAM expects [x1, y1, x2, y2] (convert from percentage to pixels)
                     bboxes = []
                     if has_bboxes:
-                        for bbox in img_data['bboxes']:
+                        for bbox in img_data["bboxes"]:
                             # Convert percentage to pixels
-                            x1 = int(bbox['x'] * img_width / 100)
-                            y1 = int(bbox['y'] * img_height / 100)
-                            x2 = int((bbox['x'] + bbox['width']) * img_width / 100)
-                            y2 = int((bbox['y'] + bbox['height']) * img_height / 100)
+                            x1 = int(bbox["x"] * img_width / 100)
+                            y1 = int(bbox["y"] * img_height / 100)
+                            x2 = int((bbox["x"] + bbox["width"]) * img_width / 100)
+                            y2 = int((bbox["y"] + bbox["height"]) * img_height / 100)
                             bboxes.append([x1, y1, x2, y2])
                     sam.set_image(image)
 
@@ -1117,79 +1039,54 @@ class LabelStudio(Mindtrace):
 
                     # Process bounding boxes if they exist
                     if has_bboxes and bboxes:
-                        for idx, (bbox_coords, bbox) in enumerate(zip(bboxes, img_data['bboxes'])):
-                            
+                        for idx, (bbox_coords, bbox) in enumerate(zip(bboxes, img_data["bboxes"])):
                             mask = sam.compute_mask(bbox=np.array(bbox_coords), image=None)
-                            
+
                             if mask.shape != (img_height, img_width):
-                                self.logger.warning(f"Mask shape {mask.shape} doesn't match image shape ({img_height}, {img_width})")
+                                self.logger.warning(
+                                    f"Mask shape {mask.shape} doesn't match image shape ({img_height}, {img_width})"
+                                )
                                 continue
-                            
+
                             combined_mask[mask] = 255
-                            bbox_references.append({
-                                'bbox_id': str(idx + 1),
-                                'label': bbox['label']
-                            })
+                            bbox_references.append({"bbox_id": str(idx + 1), "label": bbox["label"]})
 
                     mask_filename = f"{Path(img_name).stem}_mask.png"
-                    cv2.imwrite(
-                        str(sam_masks_dir / mask_filename),
-                        combined_mask
-                    )
+                    cv2.imwrite(str(sam_masks_dir / mask_filename), combined_mask)
 
-                    img_data['spatter_masks'] = {
-                        'file_name': mask_filename,
-                        'bbox_references': bbox_references
-                    }
+                    img_data["spatter_masks"] = {"file_name": mask_filename, "bbox_references": bbox_references}
 
             annotations_file = split_dir / f"annotations_v{version}.json"
-            with open(annotations_file, 'w') as f:
+            with open(annotations_file, "w") as f:
                 json.dump(split_annotations, f, indent=2)
-        
-        # cropping 
+
+        # cropping
 
         create_manifest(
             base_dir=dataset_dir,
             name=dataset_name,
             version=version,
             splits=moved_files,
-            class_mapping=export_result['class_mapping'],
+            class_mapping=export_result["class_mapping"],
             description=description,
             detection_classes=detection_classes,
-            segmentation_classes=segmentation_classes
+            segmentation_classes=segmentation_classes,
         )
 
         # Create and publish dataset using Datalake
-        if hf_token and gcp_creds_path:            
+        if hf_token and gcp_creds_path:
             self.logger.info(f"{'Creating new' if new_dataset else 'Updating existing'} dataset: {dataset_name}")
-            datalake = Datalake(
-                    hf_token=hf_token,
-                    gcp_creds_path=gcp_creds_path
-                )
+            datalake = Datalake(hf_token=hf_token, gcp_creds_path=gcp_creds_path)
             if new_dataset:
-                datalake.create_dataset(
-                    source=str(dataset_dir),
-                    dataset_name=dataset_name,
-                    version=version
-                )
+                datalake.create_dataset(source=str(dataset_dir), dataset_name=dataset_name, version=version)
             else:
-                datalake.update_dataset(
-                    src=str(dataset_dir),
-                    dataset_name=dataset_name,
-                    version=version
-                )
-            
-            datalake.publish_dataset(
-                dataset_name=dataset_name,
-                version=version
-            )
-        
+                datalake.update_dataset(src=str(dataset_dir), dataset_name=dataset_name, version=version)
+
+            datalake.publish_dataset(dataset_name=dataset_name, version=version)
+
         return {
-            'dataset_dir': str(dataset_dir.absolute()),
-            'manifest': str(dataset_dir / f"manifest_v{version}.json"),
-            'splits': {
-                'train': len(split_result['splits']['train']),
-                'test': len(split_result['splits']['test'])
-            },
-            'class_mapping': export_result['class_mapping']
+            "dataset_dir": str(dataset_dir.absolute()),
+            "manifest": str(dataset_dir / f"manifest_v{version}.json"),
+            "splits": {"train": len(split_result["splits"]["train"]), "test": len(split_result["splits"]["test"])},
+            "class_mapping": export_result["class_mapping"],
         }
