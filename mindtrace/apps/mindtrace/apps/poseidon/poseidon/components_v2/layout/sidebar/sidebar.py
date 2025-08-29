@@ -17,8 +17,8 @@ NAV = [
         "Analytics",
         [
             {"label": "Line Insights", "icon": "chart-line", "scope": "line", "to": "line-insights"},
-            {"label": "Line View", "icon": "panel-top", "scope": "line", "to": "line-view"},
-        ],
+            #{"label": "Line View", "icon": "panel-top", "scope": "line", "to": "line-view"}, add when its in.
+        ], 
     ),
     (
         "Admin",
