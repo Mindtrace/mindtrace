@@ -109,8 +109,10 @@ class RedisConnection(BrokerConnectionBase):
     def _subscribe_to_events(self):
         pubsub = self.connection.pubsub()
         pubsub.subscribe(self.EVENTS_CHANNEL)
-        for message in pubsub.listen():
-            if message["type"] == "message":
+        try:
+            for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
                 try:
                     data = json.loads(message["data"].decode("utf-8"))
                     event = data.get("event")
@@ -147,6 +149,10 @@ class RedisConnection(BrokerConnectionBase):
                                 del self.queues[qname]
                 except Exception:
                     pass
+        except redis.exceptions.TimeoutError as e:
+            self.logger.error(
+                f"Redis pubsub timeout for channel: {self.EVENTS_CHANNEL} on {self.host}:{self.port}\nError: {str(e)}"
+            )
 
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
