@@ -67,7 +67,7 @@ app.add_page(
 
 # Camera Configurator route
 app.add_page(
-    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator", show_scope_selector=True),
+    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
     route="/camera-configurator",
 )
 

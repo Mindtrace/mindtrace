@@ -1,21 +1,21 @@
-# scope_state.py
 import time
 import reflex as rx
 
 
 class ScopeState(rx.State):
-    plants: list[tuple[str, str]] = []
-    lines_by_plant: dict[str, list[tuple[str, str]]] = {}
+    # Directory
+    plants: list[tuple[str, str]] = []  # [(plant_id, plant_name)]
+    lines_by_plant: dict[str, list[tuple[str, str]]] = {}  # {plant_id: [(line_id, line_name)]}
     loading: bool = False
     error: str = ""
     _last_loaded: float = 0.0
     TTL_SECS: int = 1000
 
-    # Optional persistence
+    # Optional persistence (used only when user manually picks; not required for links)
     last_plant: str = rx.LocalStorage(name="last_plant", sync=True)
     last_line: str = rx.LocalStorage(name="last_line", sync=True)
 
-    # ---------- fetch directory ----------
+    # -------- fetch directory ----------
     @rx.event(background=True)
     async def ensure_directory(self, org_id: str, force: bool = False):
         if not org_id:
@@ -32,15 +32,12 @@ class ScopeState(rx.State):
             projects = await ProjectRepository.get_by_organization(org_id)
 
             plant_id = org_id
-            plant_name = org_id
-
-            plants = [(plant_id, plant_name)]
-            lines = [(getattr(p, "id"), getattr(p, "name", str(getattr(p, "id")))) for p in projects]
-            lines_map = {plant_id: lines}
+            plants = [(plant_id, org_id)]
+            lines = [(str(getattr(p, "id")), getattr(p, "name", None) or str(getattr(p, "id"))) for p in projects]
 
             async with self:
                 self.plants = plants
-                self.lines_by_plant = lines_map
+                self.lines_by_plant = {plant_id: lines}
                 self._last_loaded = time.time()
                 self.loading = False
         except Exception as e:
@@ -48,7 +45,7 @@ class ScopeState(rx.State):
                 self.error = str(e)
                 self.loading = False
 
-    # ---------- current scope from URL ----------
+    # -------- current scope from URL ----------
     @rx.var
     def selected_plant(self) -> str:
         parts = (self.router.page.raw_path or "").split("?", 1)[0].strip("/").split("/")
@@ -63,79 +60,58 @@ class ScopeState(rx.State):
     def lines_for_selected(self) -> list[tuple[str, str]]:
         return self.lines_by_plant.get(self.selected_plant, [])
 
+    # -------- helpers to resolve sensible scope (used by sidebar hrefs) ----------
+    @rx.var
+    def first_plant(self) -> str:
+        return self.plants[0][0] if self.plants else ""
+
+    def _first_line(self, plant_id: str) -> str:
+        arr = self.lines_by_plant.get(plant_id, [])
+        return str(arr[0][0]) if arr else ""
+
+    @rx.var
+    def resolved_plant(self) -> str:
+        # use URL if present; otherwise first plant
+        return self.selected_plant if self.selected_plant != "all" else self.first_plant
+
+    @rx.var
+    def resolved_line(self) -> str:
+        # use URL if present; otherwise first line of resolved plant
+        if self.selected_line != "all":
+            return self.selected_line
+        p = self.resolved_plant
+        return self._first_line(p) if p else ""
+
+    @rx.var
+    def links_ready(self) -> bool:
+        # Sidebar enables links once at least a plant is known
+        return bool(self.resolved_plant)
+
+    # -------- navigation helpers (user-triggered) ----------
     def _with_qs(self, dest: str) -> str:
         raw = self.router.page.raw_path or ""
         return dest + ("?" + raw.split("?", 1)[1] if "?" in raw else "")
 
-    # ---------- changes (also persist) ----------
     def change_plant(self, plant_id: str):
-        if plant_id != "all":
-            self.last_plant = plant_id
-            self.last_line = ""
-        return (
-            rx.redirect("/overview")
-            if plant_id == "all"
-            else rx.redirect(self._with_qs(f"/plants/{plant_id}/overview"))
-        )
+        # when user picks a plant, immediately pick its first line
+        if plant_id == "all":
+            return rx.redirect("/overview") # todo: change to index page
+        self.last_plant, self.last_line = plant_id, ""
+        l0 = self._first_line(plant_id)
+        dest = f"/plants/{plant_id}/lines/{l0}/line-insights" if l0 else f"/plants/{plant_id}/overview"
+        return rx.redirect(self._with_qs(dest))
 
     def change_line(self, line_id: str):
-        plant = self.selected_plant
-        if plant == "all":
+        # when user picks a line, stay on the same subpage but switch the line
+        plant = self.selected_plant if self.selected_plant != "all" else self.resolved_plant
+        if not plant:
             return None
         if line_id == "all":
-            return rx.redirect(self._with_qs(f"/plants/{plant}/overview"))
+            l0 = self._first_line(plant)
+            dest = f"/plants/{plant}/lines/{l0}/line-insights" if l0 else f"/plants/{plant}/overview"
+            return rx.redirect(self._with_qs(dest))
+
         self.last_line = line_id
         parts = (self.router.page.raw_path or "").split("?", 1)[0].strip("/").split("/")
-        sub = "/".join(parts[4:]) or "predictions" if len(parts) >= 4 else "predictions"
+        sub = "/".join(parts[4:]) or "line-insights" if len(parts) >= 4 else "line-insights"
         return rx.redirect(self._with_qs(f"/plants/{plant}/lines/{line_id}/{sub}"))
-
-    # ---------- autoscope on mount ----------
-    @rx.event
-    def boot_autoscope(
-        self,
-        org_id: str | None,
-        enable_autoscope: bool = False,
-        prefer_last: bool = True,
-        auto_pick_first: bool = True,
-        default_subpage: str = "line-insights",
-    ):
-        print("boot_autoscope", org_id, enable_autoscope, prefer_last, auto_pick_first, default_subpage)
-        if not enable_autoscope or not org_id:
-            return
-
-        # IMPORTANT: yield the CLASS event, not self.ensure_directory(...)
-        yield ScopeState.ensure_directory(org_id)
-
-        if self.plant_id and self.line_id:
-            return
-
-        plants = self.plants
-        lines_by = self.lines_by_plant
-
-        # last used
-        lp = (self.last_plant or "").strip()
-        ll = (self.last_line or "").strip()
-        if prefer_last and lp and any(pid == lp for pid, _ in plants):
-            if ll and any(lid == ll for lid, _ in lines_by.get(lp, [])):
-                return rx.redirect(self._with_qs(f"/plants/{lp}/lines/{ll}/{default_subpage}"))
-            return rx.redirect(self._with_qs(f"/plants/{lp}/overview"))
-
-        # unique choice
-        if len(plants) == 1:
-            p = plants[0][0]
-            ls = lines_by.get(p, [])
-            if len(ls) == 1:
-                l = ls[0][0]
-                return rx.redirect(self._with_qs(f"/plants/{p}/lines/{l}/{default_subpage}"))
-            return rx.redirect(self._with_qs(f"/plants/{p}/overview"))
-
-        # optional first
-        if auto_pick_first and plants:
-            p0 = plants[0][0]
-            ls = lines_by.get(p0, [])
-            if ls:
-                l0 = ls[0][0]
-                return rx.redirect(self._with_qs(f"/plants/{p0}/lines/{l0}/{default_subpage}"))
-            return rx.redirect(self._with_qs(f"/plants/{p0}/overview"))
-
-        return

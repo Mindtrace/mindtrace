@@ -42,10 +42,7 @@ def AppShell(
         bg=T.bg,
         min_h="100vh",
         overscroll_behavior="none",
-        on_mount=lambda: ScopeState.boot_autoscope(
+        on_mount=lambda: ScopeState.ensure_directory(
             AuthState.user_organization_id,  # org_id
-            show_scope_selector,  # enable_autoscope
-            True,  # prefer_last
-            True,  # auto_pick_first
         ),
     )
