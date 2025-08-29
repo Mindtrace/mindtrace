@@ -207,18 +207,8 @@ class LabelStudio(Mindtrace):
                     annotations.extend(task_annotations)
                 return annotations
         except Exception as e:
-            self.logger.warning(f"Could not get annotations using get_annotations(): {e}")
-            # Fallback: try to get annotations from tasks
-            try:
-                tasks = project.get_tasks()
-                annotations = []
-                for task in tasks:
-                    if hasattr(task, 'annotations') and task.annotations:
-                        annotations.extend(task.annotations)
-                return annotations
-            except Exception as e2:
-                self.logger.error(f"Could not get annotations from tasks either: {e2}")
-                return []
+            self.logger.error(f"Could not get annotations using get_annotations(): {e}")
+            return []
 
     def list_import_storages(self, project_id: int) -> list:
         """Get all import storages for a project using the Label Studio SDK."""
