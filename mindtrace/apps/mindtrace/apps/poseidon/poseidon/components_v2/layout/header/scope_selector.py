@@ -1,4 +1,3 @@
-from re import T
 import reflex as rx
 from poseidon.styles.global_styles import C, Ty,T
 from poseidon.styles.variants import COMPONENT_VARIANTS
@@ -26,7 +25,7 @@ def ScopeSelector():
             rx.select.content(
                 rx.select.item("Plant: All", value="all",_hover={"background": T.ring, "color": T.accent}),
                 rx.foreach(
-                    ScopeState.plants,
+                    ScopeState.plants, 
                     lambda item: rx.select.item(f"Plant: {item[1]}", value=item[0],_hover={"background": T.ring, "color": T.accent}),
                 ),
             ),

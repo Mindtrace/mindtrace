@@ -67,12 +67,14 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
     # --- Dialog Management ---
     def open_add_org_dialog(self):
         """Open add organization dialog"""
-        self.open_dialog("add_org")
+        self.add_org_dialog_open = True
+        self.clear_messages()
         self.clear_new_org_form()
 
     def close_add_org_dialog(self):
         """Close add organization dialog"""
-        self.close_dialog("add_org")
+        self.add_org_dialog_open = False
+        self.clear_messages()
         self.clear_new_org_form()
 
     def open_edit_org_dialog(self, org_data: OrganizationData):
@@ -83,11 +85,13 @@ class OrganizationManagementState(BaseDialogState, RoleBasedAccessMixin):
         self.edit_org_plan = org_data.subscription_plan
         self.edit_org_max_users = str(org_data.max_users)
         self.edit_org_max_projects = str(org_data.max_projects)
-        self.open_dialog("edit_org")
+        self.edit_org_dialog_open = True
+        self.clear_messages()
 
     def close_edit_org_dialog(self):
         """Close edit organization dialog"""
-        self.close_dialog("edit_org")
+        self.edit_org_dialog_open = False
+        self.clear_messages()
         self.clear_edit_org_form()
 
     def set_edit_org_data(self, org_data):

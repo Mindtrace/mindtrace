@@ -118,7 +118,7 @@ uv sync
 ### 3. Start the Reflex app
 
 ```bash
-cd mindtrace/ui/mindtrace/ui/poseidon
+cd mindtrace/apps/mindtrace/apps/poseidon
 uv run reflex run
 ```
 

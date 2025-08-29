@@ -8,6 +8,7 @@ Supports both simple and advanced configurations with custom styling.
 from typing import Any, Dict, List, Optional, Union
 
 import reflex as rx
+from reflex.vars.base import Var
 
 from poseidon.styles.global_styles import THEME as T
 from poseidon.components_v2.containers import chart_card
@@ -46,11 +47,11 @@ def get_chart_colors(count: int) -> List[str]:
 
 
 def line_chart(
-    data: List[Dict[str, Any]],
+    data: Union[List[Dict[str, Any]], Var[List[Dict[str, Any]]]],
     x_key: str = "x",
     y_key: str = "y",
     series_key: Optional[str] = None,
-    y_keys: Optional[List[str]] = None,
+    y_keys: Optional[Union[List[str], Var[List[str]]]] = None,
     title: Optional[str] = None,
     subtitle: Optional[str] = None,
     width: Union[str, int] = "100%",
@@ -122,22 +123,44 @@ def line_chart(
     )
 
     # Handle single series vs multiple series
-    if y_keys and len(y_keys) > 1:
-        # Multiple y_keys - create a line for each key
-        colors = get_chart_colors(len(y_keys))
-        for i, key in enumerate(y_keys):
-            chart_components.append(
-                rx.recharts.line(
-                    type_="monotone",
-                    data_key=key,
-                    stroke=colors[i],
-                    stroke_width=2,
-                    dot=show_dots,
-                    active_dot={"r": 6, "stroke": colors[i], "stroke_width": 2, "fill": T.colors.bg},
-                    name=key.title(),
-                    smooth=smooth,
+    colors = get_chart_colors(12)  # Use generous amount for dynamic cases
+    
+    if y_keys is not None:
+        if isinstance(y_keys, Var):
+            # For Var y_keys, create multiple lines with different colors
+            # Since we can't use dynamic indexing, create fixed lines for each color
+            for i, color in enumerate(colors[:8]):  # Limit to 8 colors
+                chart_components.append(
+                    rx.cond(
+                        y_keys.length() > i,  # Only show if we have this many keys
+                        rx.recharts.line(
+                            type_="monotone",
+                            data_key=y_keys[i],  # Use indexed access
+                            stroke=color,
+                            stroke_width=2,
+                            dot=show_dots,
+                            active_dot={"r": 6, "stroke": color, "stroke_width": 2, "fill": T.colors.bg},
+                            name=y_keys[i],
+                            smooth=smooth,
+                        ),
+                        rx.fragment(),  # Empty if not enough keys
+                    )
                 )
-            )
+        else:
+            # For static y_keys (list), iterate normally
+            for i, key in enumerate(y_keys):
+                chart_components.append(
+                    rx.recharts.line(
+                        type_="monotone",
+                        data_key=key,
+                        stroke=colors[i % len(colors)],
+                        stroke_width=2,
+                        dot=show_dots,
+                        active_dot={"r": 6, "stroke": colors[i % len(colors)], "stroke_width": 2, "fill": T.colors.bg},
+                        name=key.title(),
+                        smooth=smooth,
+                    )
+                )
     elif series_key:
         # Multiple series - group data by series
         series_data = {}

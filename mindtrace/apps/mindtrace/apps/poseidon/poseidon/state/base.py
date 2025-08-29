@@ -161,17 +161,32 @@ class BaseDialogState(BaseFormState):
     """Base state with common dialog patterns."""
     
     def open_dialog(self, dialog_name: str):
-        """Generic dialog open method"""
+        """Generic dialog open method
+        
+        WARNING: This method uses setattr() which doesn't work with 
+        explicitly declared state variables. If you have declared 
+        dialog_open variables, set them directly instead.
+        """
         setattr(self, f"{dialog_name}_dialog_open", True)
         self.clear_messages()
     
     def close_dialog(self, dialog_name: str):
-        """Generic dialog close method"""
+        """Generic dialog close method
+        
+        WARNING: This method uses setattr() which doesn't work with 
+        explicitly declared state variables. If you have declared 
+        dialog_open variables, set them directly instead.
+        """
         setattr(self, f"{dialog_name}_dialog_open", False)
         self.clear_messages()
     
     def set_dialog_open(self, dialog_name: str, open: bool):
-        """Generic dialog state setter"""
+        """Generic dialog state setter
+        
+        WARNING: This method uses setattr() which doesn't work with 
+        explicitly declared state variables. If you have declared 
+        dialog_open variables, set them directly instead.
+        """
         setattr(self, f"{dialog_name}_dialog_open", open)
         if not open:
             self.clear_messages()

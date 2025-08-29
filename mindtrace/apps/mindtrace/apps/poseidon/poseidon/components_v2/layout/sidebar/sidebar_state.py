@@ -1,6 +1,5 @@
 import reflex as rx
 
-
 class SidebarState(rx.State):
     collapsed: bool = False
 
