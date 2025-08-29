@@ -132,20 +132,15 @@ class ScanRepository:
     # ----------------- Helpers for grid shaping -----------------
     @staticmethod
     async def _infer_result(scan: Scan) -> str:
-        """
-        Prefer scan.cls_result if present.
-        Otherwise: 'Defective' if any classification exists on any image of the scan, else 'Healthy'.
-        """
+        """Use scan.cls_result if provided, else infer from images/classifications."""
         if scan.cls_result:
             val = str(scan.cls_result).strip().lower()
             if val == "healthy":
                 return "Healthy"
             if val == "defective":
                 return "Defective"
-            # Any non-empty custom label -> normalize to 'Defective' (tweak if you track multiple classes)
             return "Defective"
 
-        # Fallback by existence of classifications
         try:
             any_img = await ScanImage.find(
                 (ScanImage.scan.id == scan.id) & (ScanImage.classifications != [])
@@ -157,37 +152,112 @@ class ScanRepository:
     @staticmethod
     def _format_dt(dt: datetime) -> str:
         return dt.strftime("%a %b %d %Y %H:%M:%S")
-    
+
     @staticmethod
-    async def _parts_for_scan(scan: Scan) -> List[Dict[str, str]]:
-        """Build parts list from scan images and their classifications."""
-        parts_list: List[Dict[str, str]] = []
+    def _format_date(date: datetime) -> str:
+        # Day + date only (e.g., "Thu Jun 26 2025")
+        return date.strftime("%a %b %d %Y")
 
-        await scan.fetch_link(Scan.images)
+    @staticmethod
+    def _to_image_url(img: ScanImage) -> str:
+        """Prefer full_path; else compose from bucket/path/file."""
+        if getattr(img, "full_path", None):
+            return img.full_path
+        bucket = getattr(img, "bucket_name", None)
+        path = getattr(img, "path", "") or ""
+        file_name = getattr(img, "file_name", "") or ""
+        if bucket:
+            # gs://bucket/path/file
+            prefix = f"gs://{bucket}"
+            if path:
+                return f"{prefix}/{path}/{file_name}".rstrip("/")
+            return f"{prefix}/{file_name}".rstrip("/")
+        # last fallback: just the file name
+        return file_name
 
-        for idx, img in enumerate(scan.images, start=1):
-            # Fetch camera info to get meaningful names
+    @staticmethod
+    async def _parts_for_scan(scan: Scan) -> List[Dict[str, Any]]:
+        """
+        Build a list of parts from this scan's images + classifications.
+
+        Each item:
+        {
+            "name": "...",                  # camera name or derived from path/file
+            "status": "Healthy" | "Porosity, Crack",
+            "image_url": "gs://.../scan_001.jpg",
+            "image_id": "<ObjectId>",
+            "classes": ["Healthy", "Porosity"],
+            "bbox": {"x": ..., "y": ..., "w": ..., "h": ..., "class": "..."} | None,
+            "confidence": 0.95 | None
+        }
+        """
+        parts: List[Dict[str, Any]] = []
+
+        # Get all images for this scan in one go.
+        images: List[ScanImage] = await ScanImage.find(ScanImage.scan.id == scan.id).to_list()
+
+        for idx, img in enumerate(images, start=1):
+            # Load camera + classifications
             await img.fetch_link(ScanImage.camera)
-            
-            # Use camera name if available, fallback to generic name
-            if img.camera and hasattr(img.camera, 'name') and img.camera.name:
-                part_name = img.camera.name
-            else:
-                part_name = f"Camera_{idx}"  # More descriptive than "part{idx}"
-
             await img.fetch_link(ScanImage.classifications)
 
-            if not img.classifications:
-                part_status = "Healthy"
+            # Name: prefer camera.name, else last path segment, else file_name, else fallback
+            if getattr(img, "camera", None) and getattr(img.camera, "name", None):
+                name = img.camera.name
             else:
-                defect_types = [cls.det_cls for cls in img.classifications if cls.det_cls and cls.det_cls != "Healthy"]
-                part_status = ", ".join(set(defect_types)) if defect_types else "Healthy"
-            
-            parts_list.append({"name": part_name, "status": part_status})
-        
-        return parts_list
+                path = getattr(img, "path", "") or ""
+                if path:
+                    name = path.split("/")[-1]
+                else:
+                    name = (getattr(img, "file_name", "") or "").split(".")[0] or f"Camera_{idx}"
 
-    # ----------------- Grid search for 4 columns -----------------
+            classes: List[str] = []
+            bbox_payload: Optional[Dict[str, Any]] = None
+            max_conf: Optional[float] = None
+
+            for cls in (img.classifications or []):
+                # Class label
+                label = cls.det_cls or cls.name
+                if label:
+                    if label not in classes:
+                        classes.append(label)
+                # Track max confidence
+                if cls.cls_confidence is not None:
+                    max_conf = max(max_conf or cls.cls_confidence, cls.cls_confidence)
+
+                # First bbox (for preview)
+                if (
+                    bbox_payload is None
+                    and cls.det_x is not None and cls.det_y is not None
+                    and cls.det_w is not None and cls.det_h is not None
+                ):
+                    bbox_payload = {
+                        "x": cls.det_x,
+                        "y": cls.det_y,
+                        "w": cls.det_w,
+                        "h": cls.det_h,
+                        "class": label or "",
+                    }
+
+            # Status: if any non-healthy classes, join them; else Healthy.
+            non_healthy = [c for c in classes if c.lower() != "healthy"]
+            status = ", ".join(non_healthy) if non_healthy else "Healthy"
+
+            parts.append(
+                {
+                    "name": name,
+                    "status": status,
+                    "image_url": ScanRepository._to_image_url(img),
+                    "image_id": str(img.id),
+                    "classes": classes,
+                    "bbox": bbox_payload,
+                    "confidence": max_conf,
+                }
+            )
+
+        return parts
+
+    # ----------------- Grid search -----------------
     @staticmethod
     async def search_grid(
         *,
@@ -198,15 +268,6 @@ class ScanRepository:
         page: int = 1,
         page_size: int = 10,
     ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, str]]]:
-        """
-        Shape scans into rows with exactly:
-        - serial_number (Scan.serial_number)
-        - part          (Scan.project.name)
-        - created_at    (Scan.created_at -> formatted)
-        - result        (Scan.cls_result or inferred via images/classifications)
-        - parts         (dict from images/classifications, already materialized)
-        Returns (rows, total, columns).
-        """
         await ScanRepository._ensure_init()
 
         filter_expr: Dict[str, Any] = {}
@@ -217,7 +278,7 @@ class ScanRepository:
 
         sortable_db = {
             "serial_number": Scan.serial_number,
-            "created_at": Scan.created_at,
+            "created_at":   Scan.created_at,
         }
         if sort_by in sortable_db:
             field = sortable_db[sort_by]
@@ -226,47 +287,57 @@ class ScanRepository:
         skip = max(0, (page - 1) * page_size)
         scans: List[Scan] = await cursor.skip(skip).limit(page_size).to_list()
 
-        rows = []
+        rows: List[Dict[str, Any]] = []
         for s in scans:
             await s.fetch_link(Scan.project)
+
             part_name = getattr(s.project, "name", "-") if getattr(s, "project", None) else "-"
-            
-            # Fetch operator (user) info
+
+            # Operator
             operator_name = "-"
-            if s.user:
+            if getattr(s, "user", None):
                 await s.fetch_link(Scan.user)
                 operator_name = getattr(s.user, "username", "-")
-            
-            # Fetch model deployment and model info
+
+            # Model version (ModelDeployment -> Model)
             model_version = "-"
-            if s.model_deployment:
+            if getattr(s, "model_deployment", None):
                 await s.fetch_link(Scan.model_deployment)
-                if s.model_deployment.model:
-                    await s.model_deployment.fetch_link("model")
-                    model = s.model_deployment.model
-                    model_version = f"{getattr(model, 'name', 'Unknown')} v{getattr(model, 'version', '?')}"
-            
-            # Format confidence score
+                md = s.model_deployment
+                # best-effort fetch of linked model
+                if getattr(md, "model", None):
+                    try:
+                        await md.fetch_link("model")
+                        model = md.model
+                        mname = getattr(model, "name", "Model")
+                        mver  = getattr(model, "version", None)
+                        model_version = f"{mname} v{mver}" if mver is not None else mname
+                    except Exception:
+                        pass
+
+            # Confidence (scan-level)
             confidence_str = "-"
             if s.cls_confidence is not None:
-                confidence_str = f"{s.cls_confidence:.1%}"  # Format as percentage
-            
+                confidence_str = f"{s.cls_confidence:.1%}"
+
             res = await ScanRepository._infer_result(s)
-            parts = await ScanRepository._parts_for_scan(s)
+            parts_list = await ScanRepository._parts_for_scan(s)
 
             rows.append(
                 {
+                    "id": str(s.id),
                     "serial_number": s.serial_number,
                     "part": part_name,
-                    "created_at": ScanRepository._format_dt(s.created_at),
+                    "created_at": ScanRepository._format_date(s.created_at),  # day + date
                     "result": res,
-                    "parts": parts,
+                    "parts": parts_list,
                     "operator": operator_name,
                     "model_version": model_version,
                     "confidence": confidence_str,
                 }
             )
 
+        # post filters/sort
         if result and result != "All":
             wanted = result.strip().lower()
             rows = [r for r in rows if r["result"].lower() == wanted]
@@ -274,6 +345,7 @@ class ScanRepository:
         if sort_by in ("part", "result"):
             rows.sort(key=lambda r: r[sort_by].lower(), reverse=(sort_dir == "desc"))
 
+        # totals
         if result and result != "All":
             all_scans = await Scan.find(filter_expr).to_list()
             total = 0

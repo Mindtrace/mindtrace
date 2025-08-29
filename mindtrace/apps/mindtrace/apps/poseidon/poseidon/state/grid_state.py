@@ -1,27 +1,29 @@
 import reflex as rx
 from typing import List, Dict, Any, Optional
+
 from poseidon.backend.database.repositories.scan_repository import ScanRepository
 
+
 class GridState(rx.State):
+    # Table data
     rows: List[Dict[str, Any]] = []
     columns: List[Dict[str, str]] = []
     total: int = 0
     loading: bool = False
     error: str = ""
-    
-    # Camera chips data management - properly typed for rx.foreach
-    current_row_cameras: List[Dict[str, str]] = []
-    expanded_row_serial: str = ""
+
+    current_row_cameras: List[Dict[str, Any]] = []
+    expanded_row_id: str = ""
 
     # Query
     search: str = ""
     result_filter: str = "All"
-    sort_by: Optional[str] = "created_at"  # "serial_number" | "part" | "created_at" | "result"
+    sort_by: Optional[str] = "created_at"
     sort_dir: str = "desc"
     page: int = 1
     page_size: int = 10
 
-    # Modal
+    # Modal (row-level details)
     modal_open: bool = False
     selected_serial_number: str = ""
     selected_part: str = ""
@@ -31,13 +33,21 @@ class GridState(rx.State):
     selected_model_version: str = ""
     selected_confidence: str = ""
 
+    # Modal (part/image preview extras)
+    selected_image_url: str = ""
+    selected_part_status: str = ""
+    selected_part_classes: List[str] = []
+    selected_part_confidence: str = ""
+    selected_bbox: Optional[Dict[str, float]] = None
+    show_bbox: bool = True  # checkbox in UI
+
+    # ---------- Derived ----------
     @rx.var
     def columns_norm(self) -> list[dict[str, str]]:
         return self.columns or []
 
     @rx.var
     def columns_css(self) -> str:
-        # Serial number gets more space
         return "2fr 1fr 1fr 1fr"
 
     @rx.var
@@ -60,7 +70,7 @@ class GridState(rx.State):
     def has_rows(self) -> bool:
         return len(self.rows) > 0
 
-    # -------- DB load (async) --------
+    # ---------- Load ----------
     async def load(self):
         self.loading = True
         self.error = ""
@@ -83,14 +93,14 @@ class GridState(rx.State):
         finally:
             self.loading = False
 
-    # -------- Events (return handler reference, not coroutine) --------
+    # ---------- Events (return handler reference) ----------
     def set_search(self, v: str):
         self.search = v
         self.page = 1
         return GridState.load
 
     def set_result_filter(self, v: str):
-        self.result_filter = (v or "All")
+        self.result_filter = v or "All"
         self.page = 1
         return GridState.load
 
@@ -124,8 +134,9 @@ class GridState(rx.State):
         self.page = 1
         return GridState.load
 
-    # -------- Modal helpers --------
+    # ---------- Modal helpers ----------
     def open_inspection(self, row: dict[str, Any]):
+        """Open the details modal for a scan row (not a specific part)."""
         self.selected_serial_number = str(row.get("serial_number", "-"))
         self.selected_part = str(row.get("part", "-"))
         self.selected_created_at = str(row.get("created_at", "-"))
@@ -133,39 +144,56 @@ class GridState(rx.State):
         self.selected_operator = str(row.get("operator", "-"))
         self.selected_model_version = str(row.get("model_version", "-"))
         self.selected_confidence = str(row.get("confidence", "-"))
+
+        # Clear any image preview (if the modal is reused)
+        self.selected_image_url = ""
+        self.selected_part_status = ""
+        self.selected_part_classes = []
+        self.selected_part_confidence = ""
+        self.selected_bbox = None
+        self.show_bbox = True
+
+        self.modal_open = True
+
+    def open_part_preview(self, row: dict[str, Any], part: dict[str, Any]):
+        """Populate modal with row + specific part (image-left/details-right use)."""
+        # Row-level fields
+        self.open_inspection(row)
+
+        # Part-level enrichments
+        self.selected_image_url = str(part.get("image_url", ""))
+        self.selected_part_status = str(part.get("status", ""))
+        classes = part.get("classes", []) or []
+        self.selected_part_classes = [str(c) for c in classes]
+        p_conf = part.get("confidence", None)
+        self.selected_part_confidence = f"{float(p_conf):.2f}" if isinstance(p_conf, (int, float)) else "-"
+        bbox = part.get("bbox", None)
+        self.selected_bbox = bbox if isinstance(bbox, dict) else None
+        self.show_bbox = True
+
         self.modal_open = True
 
     def set_modal(self, is_open: bool):
         self.modal_open = is_open
-    
-    def set_expanded_row(self, serial_number: str):
-        """Set which row is expanded and load its camera data."""
-        self.expanded_row_serial = serial_number
-        
-        # Find the row data and extract camera parts
+
+    # ---------- Accordion control by ROW (Mongo) id ----------
+    def set_expanded_row(self, row_id: str):
+        """Set which row is expanded and load its camera data by row id."""
+        self.expanded_row_id = row_id
+        self.current_row_cameras = []
+
         for row in self.rows:
-            if row.get("serial_number") == serial_number:
+            if str(row.get("id", "")) == row_id:
                 parts_data = row.get("parts", [])
-                if isinstance(parts_data, list):
-                    self.current_row_cameras = parts_data
-                else:
-                    self.current_row_cameras = []
+                self.current_row_cameras = parts_data if isinstance(parts_data, list) else []
                 break
-        else:
-            self.current_row_cameras = []
-    
+
     def handle_accordion_change(self, value: str | list[str]):
         """Handle accordion expansion/collapse."""
-        # Handle both single value (string) and multiple values (list)
-        if isinstance(value, list):
-            # For single accordion type, take the first (and only) value
-            actual_value = value[0] if value else ""
-        else:
-            actual_value = value or ""
-            
+        actual_value = value[0] if isinstance(value, list) else (value or "")
         if actual_value and actual_value.startswith("item_"):
-            serial = actual_value.replace("item_", "")
-            self.set_expanded_row(serial)
+            row_id = actual_value.replace("item_", "")
+            self.set_expanded_row(row_id)
         else:
-            self.expanded_row_serial = ""
+            self.expanded_row_id = ""
             self.current_row_cameras = []

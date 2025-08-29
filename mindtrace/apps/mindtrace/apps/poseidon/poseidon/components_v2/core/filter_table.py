@@ -1,5 +1,5 @@
 import reflex as rx
-from typing import Any
+from typing import Any, Dict
 
 def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
     def _kv(label: str, value: Any):
@@ -14,21 +14,119 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
             width="100%",
         )
 
+    # Left side: image (safe var handling).
+    def _image_panel() -> rx.Component:
+        return rx.box(
+            rx.box(
+                rx.image(
+                    src=rx.cond(
+                        state.selected_image_url != "",
+                        state.selected_image_url,
+                        "/placeholder.png",
+                    ),
+                    alt="inspection image",
+                    width="100%",
+                    height="65vh",
+                    object_fit="contain",
+                    border_radius="12px",
+                    background="black",
+                ),
+                position="relative",
+                width="100%",
+                height="65vh",
+                overflow="hidden",
+                border_radius="12px",
+            ),
+            # bbox overlay can be added later with more state vars
+            width="100%",
+        )
+
+    # Right side: details (all refs via rx.cond instead of `or`)
+    def _details_panel() -> rx.Component:
+        return rx.vstack(
+            rx.text(
+                rx.cond(state.selected_part != "", state.selected_part, "-"),
+                weight="bold",
+                size="5",
+            ),
+            rx.box(height="4px"),
+            rx.card(
+                rx.vstack(
+                    rx.text("Detected class", weight="medium", size="2", color="gray"),
+                    rx.text(
+                        rx.cond(
+                            state.selected_part_status != "",
+                            state.selected_part_status,
+                            rx.cond(state.selected_result != "", state.selected_result, "-"),
+                        ),
+                        weight="bold",
+                        size="4",
+                    ),
+                    spacing="2",
+                ),
+                padding="12px",
+                radius="large",
+                width="100%",
+            ),
+            rx.checkbox(
+                "Show Bounding Box",
+                checked=state.show_bbox,
+                on_change=state.set_show_bbox,
+            ),
+            rx.box(height="8px"),
+            rx.card(
+                rx.vstack(
+                    rx.text("Detected labels", weight="medium", size="2", color="gray"),
+                    rx.vstack(
+                        rx.foreach(
+                            state.selected_part_classes,  # assume this is a list var on state
+                            lambda cls: rx.text(f"- {cls}", size="3"),
+                        ),
+                        spacing="1",
+                        align="start",
+                        width="100%",
+                    ),
+                    spacing="2",
+                ),
+                padding="12px",
+                radius="large",
+                width="100%",
+            ),
+            rx.grid(
+                _kv("Serial Number", state.selected_serial_number),
+                _kv("Created At",    state.selected_created_at),
+                _kv(
+                    "Operator",
+                    rx.cond(state.selected_operator != "", state.selected_operator, "-"),
+                ),
+                _kv(
+                    "Model Version",
+                    rx.cond(state.selected_model_version != "", state.selected_model_version, "-"),
+                ),
+                _kv(
+                    "Confidence",
+                    rx.cond(state.selected_part_confidence != "", state.selected_part_confidence,
+                            rx.cond(state.selected_confidence != "", state.selected_confidence, "-")),
+                ),
+                columns="1",
+                gap="12px",
+                width="100%",
+            ),
+            spacing="4",
+            width="360px",
+        )
+
     return rx.dialog.root(
         rx.dialog.content(
             rx.vstack(
                 rx.text("Inspection Details", weight="bold", size="6"),
                 rx.grid(
-                    _kv("Serial Number", state.selected_serial_number),
-                    _kv("Part",          state.selected_part),
-                    _kv("Created At",    state.selected_created_at),
-                    _kv("Result",        state.selected_result),
-                    _kv("Operator",      state.selected_operator),
-                    _kv("Model Version", state.selected_model_version),
-                    _kv("Confidence",    state.selected_confidence),
+                    _image_panel(),
+                    _details_panel(),
                     columns="2",
-                    gap="12px",
+                    gap="16px",
                     width="100%",
+                    align_items="start",
                 ),
                 spacing="4",
                 width="100%",
@@ -36,7 +134,7 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
             close_button=True,
             size="4",
             border_radius="20px",
-            max_width="900px",
+            max_width="1200px",
             width="95vw",
             padding="18px",
         ),
@@ -45,7 +143,7 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
     )
 
 
-# ---------- Filter bar (search + result) ----------
+# ---------- Filter bar ----------
 def FilterBar(state: type[rx.State]) -> rx.Component:
     return rx.card(
         rx.vstack(
@@ -92,43 +190,13 @@ def FilterBar(state: type[rx.State]) -> rx.Component:
 CELL_STYLE = dict(padding="8px 12px", font_size="11px")
 
 def DataGrid(state: type[rx.State]) -> rx.Component:
-    # --- Cell renderer ---
     def _cell(c, r):
         cid = c["id"]
         val = r.get(cid, "")
-
         def _truncated_text(v, max_px: int):
-            return rx.text(
-                v,
-                size="2",
-                no_of_lines=1,
-                max_width=f"{max_px}px",
-                title=v,
-                color="black",
-            )
+            return rx.text(v, size="2", no_of_lines=1, max_width=f"{max_px}px", title=v, color="black")
+        return rx.box(_truncated_text(val, 160), **CELL_STYLE)
 
-        serial_cell = rx.box(
-            rx.link(
-                _truncated_text(val, 240),
-                href="#",
-                on_click=lambda rr=r: state.open_inspection(rr),
-            ),
-            **CELL_STYLE,
-        )
-
-        default_cell = rx.box(
-            _truncated_text(val, 160),
-            **CELL_STYLE,
-        )
-
-        return rx.cond(
-            cid == "serial_number",
-            serial_cell,
-            default_cell,
-        )
-
-
-    # --- Accordion row header ---
     def _row_header(r):
         return rx.grid(
             rx.foreach(state.columns_norm, lambda c: _cell(c, r)),
@@ -141,115 +209,68 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
         )
 
     def _row_content(r):
-        serial = r.get("serial_number", "Unknown")
-        
-        def _camera_chip(camera):
-            """Individual camera status chip using STATE data."""
+        def _camera_chip(camera: Dict[str, Any]):
             return rx.box(
-                # Camera name header
-                rx.box(
-                    rx.text(camera["name"], weight="bold", size="2"),
-                    background_color="white",
-                    border="1px solid var(--gray-4)",
-                    border_bottom="0",
-                    padding="6px 8px",
-                    border_top_left_radius="10px",
-                    border_top_right_radius="10px",
-                    text_align="center",
-                ),
-                # Status colored section
-                rx.box(
-                    rx.center(
-                        rx.text(
-                            camera["status"], 
-                            weight="medium", 
-                            size="3",
-                            color=rx.cond(camera["status"] == "Healthy", "black", "white")
+                rx.link(
+                    rx.box(
+                        rx.box(
+                            rx.text(camera.get("name", "-"), weight="bold", size="2"),
+                            background_color="white",
+                            border="1px solid var(--gray-4)",
+                            border_bottom="0",
+                            padding="6px 8px",
+                            border_top_left_radius="10px",
+                            border_top_right_radius="10px",
+                            text_align="center",
+                            color="black",
                         ),
-                        width="100%", 
-                        height="52px",
+                        rx.box(
+                            rx.center(
+                                rx.text(
+                                    camera.get("status", "-"),
+                                    weight="medium",
+                                    size="3",
+                                    color=rx.cond(camera.get("status", "") == "Healthy", "black", "white"),
+                                ),
+                                width="100%", height="52px",
+                            ),
+                            background_color=rx.cond(camera.get("status", "") == "Healthy", "#86efac", "#fca5a5"),
+                            border="1px solid var(--gray-4)",
+                            border_top="0",
+                            border_bottom_left_radius="10px",
+                            border_bottom_right_radius="10px",
+                        ),
+                        cursor="pointer",
+                        _hover={"box_shadow": "0 0 0 2px var(--gray-6) inset"},
+                        min_width="120px",
                     ),
-                    background_color=rx.cond(camera["status"] == "Healthy", "#86efac", "#fca5a5"),
-                    border="1px solid var(--gray-4)",
-                    border_top="0",
-                    border_bottom_left_radius="10px",
-                    border_bottom_right_radius="10px",
+                    href="#",
+                    on_click=lambda cam=camera, rr=r: state.open_part_preview(rr, cam),
                 ),
-                cursor="pointer",
-                _hover={"box_shadow": "0 0 0 2px var(--gray-6) inset"},
-                min_width="120px",
+                **CELL_STYLE,
             )
-        
+
         return rx.box(
-            rx.text("Camera Status:", weight="bold", size="3", margin_bottom="8px"),
-            rx.text(f"Serial: {serial}", size="2", color="gray", margin_bottom="8px"),
-            rx.cond(
-                state.expanded_row_serial == serial,
-                rx.grid(
-                    # THE KEY: Use state variable directly, like all other components!
-                    rx.foreach(state.current_row_cameras, _camera_chip),
-                    columns="repeat(auto-fit, minmax(120px, 1fr))",
-                    gap="12px",
-                    width="100%",
-                ),
-                rx.text("Click to expand and see camera data", size="2", color="gray")
+            rx.grid(
+                rx.foreach(state.current_row_cameras, _camera_chip),
+                columns="repeat(auto-fit, minmax(120px, 1fr))",
+                gap="12px",
+                width="100%",
             ),
             padding="12px",
             width="100%",
         )
-        # def _status_chip(item):
-        #     name, status = item
-        #     bg = rx.cond(status == "Healthy", "#86efac", "#fca5a5")
-        #     fg = rx.cond(status == "Healthy", "black", "white")
-
-        #     return rx.box(
-        #         rx.box(
-        #             rx.text(name, weight="bold", size="2"),
-        #             background_color="white",
-        #             border="1px solid var(--gray-4)",
-        #             border_bottom="0",
-        #             padding="6px 8px",
-        #             border_top_left_radius="10px",
-        #             border_top_right_radius="10px",
-        #         ),
-        #         rx.box(
-        #             rx.center(
-        #                 rx.text(status, weight="medium", size="3", color=fg),
-        #                 width="100%", height="52px",
-        #             ),
-        #             background_color=bg,
-        #             border="1px solid var(--gray-4)",
-        #             border_top="0",
-        #             border_bottom_left_radius="10px",
-        #             border_bottom_right_radius="10px",
-        #         ),
-        #         on_click=lambda rr=r: state.open_inspection(rr),
-        #         cursor="pointer",
-        #         _hover={"box_shadow": "0 0 0 2px var(--gray-6) inset"},
-        #     )
-
-        # return rx.box(
-        #     rx.grid(
-        #         rx.foreach(list(parts.items()), _status_chip),  # <-- FIXED
-        #         columns="repeat(10, 1fr)",
-        #         gap="12px",
-        #         width="100%",
-        #     ),
-        #     padding="12px 0",
-        #     width="100%",
-        # )
 
     def _row(r):
         return rx.accordion.item(
             header=_row_header(r),
             content=_row_content(r),
-            value=f"item_{r['serial_number']}",
-            class_name="hover:[&>h3>button]:bg-white [&>h3>button]:text-black",
+            value=f"item_{r['id']}",
+            class_name="hover:[&>h3>button]:bg-white [&>h3>button]:text-black [&>h3>button>svg]:fill-black",
         )
 
     return rx.card(
         rx.vstack(
-            # header row
             rx.grid(
                 rx.foreach(
                     state.columns_norm,
@@ -265,7 +286,6 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
                 padding_y="36px",
                 width="100%",
             ),
-            # rows
             rx.cond(
                 state.has_rows,
                 rx.accordion.root(
@@ -279,7 +299,6 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
                 ),
                 rx.center(rx.text("No results"), padding_y="24px"),
             ),
-            # pagination
             rx.hstack(
                 rx.text(state.pagination_label, color_scheme="gray"),
                 rx.spacer(),
@@ -297,7 +316,6 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
     )
 
 
-# ---------- Page wrapper ----------
 def FilterTable(state: type[rx.State]) -> rx.Component:
     return rx.vstack(
         FilterBar(state),
@@ -308,3 +326,4 @@ def FilterTable(state: type[rx.State]) -> rx.Component:
         spacing="3",
         on_mount=state.load,
     )
+    
