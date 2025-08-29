@@ -1,4 +1,3 @@
-from re import T
 import reflex as rx
 from poseidon.styles.global_styles import C, Ty,T
 from poseidon.styles.variants import COMPONENT_VARIANTS
