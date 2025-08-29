@@ -375,6 +375,7 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
             redis_url: Redis connection URL
             preferred_backend: Which backend to prefer when both are available
         """
+        super().__init__()
         self.mongo_backend = None
         self.redis_backend = None
         self.preferred_backend = preferred_backend
