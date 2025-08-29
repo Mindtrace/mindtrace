@@ -1,7 +1,6 @@
 ### MCPAgent usage
 ### Contents
 - **Agent Run modes**
-  - [Single turn with `run`](#single-turn-with-run)
   - [Persistent session with `open_agent`](#persistent-session-with-open_agent)
 - **Agent Graphs**
   - [Using AgentGraph in three ways](#using-agentgraph-in-three-ways)
@@ -9,39 +8,12 @@
     - [Factory example](#factory-example)
     - [Plugin example](#plugin-example)
 
-This guide shows how to use `run` and `open_agent` with the sample `CalculatorService` implemented in `mindtrace/services/mindtrace/services/sample/calculator_mcp.py`.
+This guide shows how to use `open_agent` with the sample `CalculatorService` implemented in `mindtrace/services/mindtrace/services/sample/calculator_mcp.py`.
 
 Prereqs:
 
  -  The below code samples can be run via sample scripts available in `mindtrace/samples/services/agents/calculator`
  -  Use `docker compose up -d` command to setup Ollama service at port: "11434" before running the scripts
-
----
-
-#### Single turn with `run`
-For stateless requests—where conversation history and tool state do not need to be preserved across turns—you can use the agent’s run method.
-```python
-import asyncio
-
-from mindtrace.services.agents.langraph.agent import MCPAgent
-from mindtrace.services.agents.langraph.config import AgentConfig
-from mindtrace.services.sample.calculator_mcp import CalculatorService
-
-
-async def main():
-    agent = MCPAgent(CalculatorService, AgentConfig())
-    async for step in agent.run("thread-1", user_input="Add 2 and 3, then multiply by 4"):
-        step["messages"][-1].pretty_print()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-
-What happens:
-- Opens an MCP session, loads calculator tools
-- Builds the agent graph
-- Streams results and closes the session
 
 ---
 

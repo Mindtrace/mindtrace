@@ -17,18 +17,6 @@ class MCPAgent(Mindtrace):
     - A pluggable LLM provider (LangChain Runnable via with_tools)
     - A pluggable LangGraph graph (factory/plugins/subclass hooks)
 
-    Usage (single-turn):
-        agent = MCPLangGraphAgent(AgentConfig(mcp_url="http://localhost:8000"))
-        async for step in agent.run("thread-1", user_input="hello"):
-            print(step)
-
-    Usage (multi-turn with history):
-        history = [
-            {"role": "user", "content": "hi"},
-        ]
-        async for step in agent.run("thread-1", messages=history):
-            ...
-
     Usage (persistent session for many turns):
         async with agent.open_agent("thread-1") as (compiled_agent, cfg):
             async for step in compiled_agent.astream(history, cfg):
@@ -68,29 +56,6 @@ class MCPAgent(Mindtrace):
         self._cfg = None
         self._session_acm = None
         self._lifecycle_lock = asyncio.Lock()
-
-    async def run(self, thread_id: str | int, user_input: str | None = None, messages: list | None = None):
-        """Stream a run of the agent.
-
-        Args:
-            thread_id: Unique id to keep separate sessions.
-            user_input: Single-turn user input (mutually exclusive with messages).
-            messages: Full message history for multi-turn (mutually exclusive with user_input).
-
-        Yields:
-            Streaming steps from the compiled graph; each step includes updated messages.
-
-        Notes:
-            - Provide exactly one of user_input or messages.
-            - `messages` can be LangChain Message objects or message dicts.
-        """
-        if (user_input is None and messages is None) or (user_input is not None and messages is not None):
-            raise ValueError("Provide exactly one of user_input or messages")
-
-        await self.start(thread_id)
-        initial_messages = messages if messages is not None else [{"role": "user", "content": user_input}]
-        async for step in self._compiled_agent.astream(initial_messages, self._cfg, stream_mode="values"):
-            yield step
 
     async def start(self, thread_id: str | int):
         """Open MCP session once and compile the agent for this thread.

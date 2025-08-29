@@ -90,8 +90,10 @@ async def main():
                 timeout=10,
             )
     agent = MCPAgent(AgentConfig(mcp_client=mcp_client), factory=factory)
-    async for step in agent.run("thread-factory-llm", user_input="Please compute the result."):
-        step["messages"][-1].pretty_print()
+    async with agent.open_agent("thread-factory-llm") as (compiled, cfg):
+        msgs = [{"role": "user", "content": "Please compute the result."}]
+        async for step in compiled.astream(msgs, cfg):
+            step["messages"][-1].pretty_print()
     await agent.close()
 
 
