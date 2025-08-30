@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph import MessagesState
 
 from mindtrace.services.agents.langraph.agent import MCPAgent
-from mindtrace.services.agents.langraph.config import AgentConfig
+from mindtrace.services.agents.langraph.config import OllamaAgentConfig as AgentConfig
 from mindtrace.services.agents.langraph.builder import MCPAgentGraph
 from mindtrace.services.agents.langraph.graph.types import GraphBuilder, GraphContext
 from mindtrace.services.sample.calculator_mcp import CalculatorService
@@ -46,10 +46,20 @@ class CalculatorOverrideLLM(MCPAgentGraph):
 
 
 async def main():
-    agent = MCPAgent(CalculatorService, AgentConfig(), agent_graph=CalculatorOverrideLLM)
-    async for step in agent.run("thread-override-llm", user_input="hello there"):
-        step["messages"][-1].pretty_print()
-
+    mcp_client = CalculatorService.mcp.launch(
+                host="localhost",
+                port=8000,
+                wait_for_launch=True,
+                timeout=10,
+            )
+    agent = MCPAgent(AgentConfig(mcp_client=mcp_client), agent_graph=CalculatorOverrideLLM)
+    await agent.start("thread-override-llm")
+    msgs = [{"role": "user", "content": "hello there"}]
+    async for event in agent.astream(msgs):
+        if event.get("event") == "message":
+            step = event["data"]
+            step["messages"][-1].pretty_print()
+    await agent.close() 
 
 if __name__ == "__main__":
     asyncio.run(main())
