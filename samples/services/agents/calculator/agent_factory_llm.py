@@ -90,9 +90,11 @@ async def main():
                 timeout=10,
             )
     agent = MCPAgent(AgentConfig(mcp_client=mcp_client), factory=factory)
-    async with agent.open_agent("thread-factory-llm") as (compiled, cfg):
-        msgs = [{"role": "user", "content": "Please compute the result."}]
-        async for step in compiled.astream(msgs, cfg):
+    await agent.start("thread-factory-llm")
+    msgs = [{"role": "user", "content": "Please compute the result."}]
+    async for event in agent.astream(msgs):
+        if event.get("event") == "message":
+            step = event["data"]
             step["messages"][-1].pretty_print()
     await agent.close()
 

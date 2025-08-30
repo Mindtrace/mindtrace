@@ -53,9 +53,11 @@ async def main():
                 timeout=10,
             )
     agent = MCPAgent(AgentConfig(mcp_client=mcp_client), agent_graph=CalculatorOverrideLLM)
-    async with agent.open_agent("thread-override-llm") as (compiled, cfg):
-        msgs = [{"role": "user", "content": "hello there"}]
-        async for step in compiled.astream(msgs, cfg):
+    await agent.start("thread-override-llm")
+    msgs = [{"role": "user", "content": "hello there"}]
+    async for event in agent.astream(msgs):
+        if event.get("event") == "message":
+            step = event["data"]
             step["messages"][-1].pretty_print()
     await agent.close() 
 

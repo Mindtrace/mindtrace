@@ -29,9 +29,11 @@ async def main():
                 timeout=10,
             )
     agent = MCPAgent(AgentConfig(mcp_client=mcp_client), plugins=plugins)
-    async with agent.open_agent("thread-plugin-llm") as (compiled, cfg):
-        msgs = [{"role": "user", "content": "Add 2 and 3, then multiply by 4"}]
-        async for step in compiled.astream(msgs, cfg):
+    await agent.start("thread-plugin-llm")
+    msgs = [{"role": "user", "content": "Add 2 and 3, then multiply by 4"}]
+    async for event in agent.astream(msgs):
+        if event.get("event") == "message":
+            step = event["data"]
             step["messages"][-1].pretty_print()
     await agent.close()
 

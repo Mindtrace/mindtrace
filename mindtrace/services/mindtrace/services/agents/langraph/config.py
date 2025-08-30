@@ -2,8 +2,10 @@ from dataclasses import dataclass
 from fastmcp import Client
 from typing import Any
 
+from ..base import AgentConfig as BaseAgentConfig
+
 @dataclass
-class LangraphAgentConfig:
+class LangraphAgentConfig(BaseAgentConfig):
     """Generic configuration for MCP-enabled, tool-augmented agents.
 
     Attributes:

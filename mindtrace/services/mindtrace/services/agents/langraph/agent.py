@@ -1,6 +1,8 @@
-from mindtrace.core import Mindtrace
 import asyncio
+from typing import Any, AsyncIterable, Dict, List, Optional
+import uuid
 
+from ..base import MindtraceAgent
 from .builder import MCPAgentGraph
 from .config import OllamaAgentConfig as AgentConfig
 from .graph.types import GraphContext, GraphFactory, GraphPlugin
@@ -9,51 +11,46 @@ from .mcp_tools import MCPToolSession
 from .tool_exec import ToolExecutor
 
 
-class MCPAgent(Mindtrace):
+class MCPAgent(MindtraceAgent):
     """High-level agent orchestrator for MCP-backed tool-augmented LLMs.
 
     This class wires together:
     - An MCP tool session
     - A pluggable LLM provider (LangChain Runnable via with_tools)
     - A pluggable LangGraph graph (factory/plugins/subclass hooks)
-
-    Usage (persistent session for many turns):
-        async with agent.open_agent("thread-1") as (compiled_agent, cfg):
-            async for step in compiled_agent.astream(history, cfg):
-                ...
     """
 
     def __init__(
         self,
-        config: AgentConfig | None = None,
+        agent_config: AgentConfig | None = None,
         *,
         factory: GraphFactory | None = None,
         plugins: list[GraphPlugin] | None = None,
         agent_graph: type[MCPAgentGraph] = MCPAgentGraph,
         llm_provider: LLMProvider | None = None,
     ):
-        super().__init__()
-        if config is None:
+        super().__init__(agent_config)
+        if agent_config is None:
             raise ValueError("config must be provided")
 
-        self.config = config
-        # Setup MCP tool session: prefer explicit client, then config.mcp_client, then config.mcp_url
-        if getattr(self.config, "mcp_client", None) is not None:
-            self._session = MCPToolSession(client=self.config.mcp_client)
-        elif self.config.mcp_url:
-            self._session = MCPToolSession(url=self.config.mcp_url)
+        self.agent_config = agent_config
+        # Setup MCP tool session: prefer explicit client, then agent_config.mcp_client, then agent_config.mcp_url
+        if getattr(self.agent_config, "mcp_client", None) is not None:
+            self._session = MCPToolSession(client=self.agent_config.mcp_client)
+        elif self.agent_config.mcp_url:
+            self._session = MCPToolSession(url=self.agent_config.mcp_url)
         else:
-            raise ValueError("Provide one of:`config.mcp_client`, or `config.mcp_url`.")
-        self._llm_provider = llm_provider or OllamaProvider(config.model, config.base_url)
+            raise ValueError("Provide one of:`agent_config.mcp_client`, or `agent_config.mcp_url`.")
+        self._llm_provider = llm_provider or OllamaProvider(agent_config.model, agent_config.base_url)
         self._executor = ToolExecutor()
         self._agent_graph = agent_graph
         self._factory = factory
         self._plugins = plugins or []
         # Persistent session state
-        self._thread_id = None
-        self._ctx = None
+        self._thread_id: Optional[str] = None
+        self._ctx: Optional[GraphContext] = None
         self._compiled_agent = None
-        self._cfg = None
+        self._cfg: Optional[Dict[str, Any]] = None
         self._session_acm = None
         self._lifecycle_lock = asyncio.Lock()
 
@@ -70,7 +67,7 @@ class MCPAgent(Mindtrace):
                 # Avoid deadlock: close without re-acquiring the same lock
                 await self.close(_already_locked=True)
 
-            self._thread_id = thread_id
+            self._thread_id = str(thread_id)
             self._session_acm = self._session.open()
             try:
                 await self._session_acm.__aenter__()
@@ -83,7 +80,7 @@ class MCPAgent(Mindtrace):
             self._ctx = GraphContext(
                 tools=self._session.tools,
                 tools_by_name=self._session.tools_by_name,
-                config=self.config,
+                config=self.agent_config,
                 llm_provider=self._llm_provider,
                 executor=self._executor,
             )
@@ -111,26 +108,30 @@ class MCPAgent(Mindtrace):
         async with self._lifecycle_lock:
             await self.close(_already_locked=True)
 
-    from contextlib import asynccontextmanager
+    async def astream(
+        self,
+        messages: List[Dict[str, Any]],
+        *,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> AsyncIterable[Dict[str, Any]]:
+        """Stream LangGraph values wrapped in a framework-agnostic event envelope.
 
-    @asynccontextmanager
-    async def open_agent(self, thread_id: str | int):
-        """Ensure the persistent MCP session is started and yield compiled agent/config.
-
-        Useful for interactive CLI loops where you want to access the compiled agent
-        and config; the session remains open until `close()` is called on the agent.
-
-        Example:
-            async with agent.open_agent("thread-1") as (compiled_agent, cfg):
-                async for step in compiled_agent.astream(messages, cfg):
-                    ...
+        Reads thread_id from self._cfg if present; otherwise generates a UUID and initializes.
         """
-        await self.start(thread_id)
-        try:
-            yield self._compiled_agent, self._cfg
-        finally:
-            # Session remains open for reuse; call `close()` when done globally
-            pass
+        thread_id: Optional[str] = None
+        if isinstance(self._cfg, dict):
+            cfg_conf = self._cfg.get("configurable") or {}
+            if isinstance(cfg_conf, dict):
+                thread_id = cfg_conf.get("thread_id")
+
+        if not thread_id:
+            thread_id = uuid.uuid4().hex
+            await self.start(thread_id)
+
+        yield {"event": "status", "data": {"stage": "started", "thread_id": thread_id}}
+        async for step in self._compiled_agent.astream(messages, self._cfg, stream_mode="values"):
+            yield {"event": "message", "data": step}
+        yield {"event": "status", "data": {"stage": "completed", "thread_id": thread_id}}
 
     def _build_agent(self, ctx: GraphContext):
         """Build the concrete `AgentGraphBase` for this session.
