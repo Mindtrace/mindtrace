@@ -112,23 +112,15 @@ class MCPAgentGraph(MindtraceABC):
         b.add_node("llm", self.default_llm_node)
         b.add_node("tools", self.default_tool_node)
 
-        # Terminal staging node for when the LLM emits no further tool calls
-        def done(_state: MessagesState):
-            return {"messages": []}
-
-        b.add_node("done", done)
-
         def llm_needs_tools(state: MessagesState):
             ai = state["messages"][-1]
             calls = getattr(ai, "tool_calls", None) or []
-            return "tools" if calls else "done"
+            return "tools" if calls else END
 
-        # Conditional edge: if LLM emits tool calls, continue to tools; else go to done
-        b.add_conditional_edges("llm", llm_needs_tools, {"tools": "tools", "done": "done"})
+        # If LLM emits tool calls, continue to tools; else end immediately
+        b.add_conditional_edges("llm", llm_needs_tools, {"tools": "tools", END: END})
         # After tools execute, route back to LLM to allow chaining further calls
         b.add_edge("tools", "llm")
-        # Default terminal is the done node; plugins can extend from done and change terminal
-        b.set_terminal("done")
         b.set_entry("llm")
         return b
 

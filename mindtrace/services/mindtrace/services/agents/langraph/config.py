@@ -10,7 +10,6 @@ class LangraphAgentConfig(BaseAgentConfig):
 
     Attributes:
         tool_choice: Tool selection policy passed to the LLM (e.g., "any").
-        request_timeout: Timeout used by clients where applicable.
         mcp_url: Base service URL to connect to MCP ("http://host:port"). The
                  mcp mount path is appended automatically from Service Config.
         mcp_client: Optional existing MCP client instance to use directly. If
@@ -18,7 +17,6 @@ class LangraphAgentConfig(BaseAgentConfig):
     """
 
     tool_choice: str = "any"
-    request_timeout: int = 60
     mcp_url: str | None = None
     mcp_client: Client | None = None
     checkpointer: Any | None = None

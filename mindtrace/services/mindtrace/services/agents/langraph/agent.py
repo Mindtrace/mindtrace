@@ -9,6 +9,7 @@ from .graph.types import GraphContext, GraphFactory, GraphPlugin
 from .llm import LLMProvider, OllamaProvider
 from .mcp_tools import MCPToolSession
 from .tool_exec import ToolExecutor
+from ..service import AgentService, StreamRequest
 
 
 class MCPAgent(MindtraceAgent):
@@ -148,6 +149,9 @@ class MCPAgent(MindtraceAgent):
         plugins = self._plugins
         agent_graph = self._agent_graph
 
+        # Cache a bound LLM runnable for this session to avoid re-binding tools each step
+        bound_llm = provider.with_tools(tools, tool_choice=config.tool_choice)
+
         class _Concrete(agent_graph):
             def __init__(self_inner):
                 super().__init__(factory=factory, plugins=plugins)
@@ -156,9 +160,58 @@ class MCPAgent(MindtraceAgent):
                 return getattr(config, "system_prompt", None) or ""
 
             def llm_with_tools(self_inner):
-                return provider.with_tools(tools, tool_choice=config.tool_choice)
+                return bound_llm
 
             async def run_tools(self_inner, calls):
                 return await executor.execute(calls, tools_by_name)
 
         return _Concrete()
+
+
+class MCPAgentService(AgentService):
+    """A ready-to-use astream service for MCPAgent.
+
+    Accepts only JSON-serializable primitives so Service.launch can pass them via JSON.
+    Lazily constructs the MCPAgent on first request so the class can be instantiated
+    without parameters (e.g., during connect() endpoint discovery).
+    """
+
+    def __init__(
+        self,
+        *,
+        model: str = "qwen2.5:7b",
+        base_url: str = "http://localhost:11434",
+        mcp_url: str | None = None,
+        system_prompt: str | None = None,
+        tool_choice: str = "any",
+        **service_kwargs,
+    ):
+        # Store params for lazy agent construction
+        self._agent_params = {
+            "model": model,
+            "base_url": base_url,
+            "mcp_url": mcp_url,
+            "system_prompt": system_prompt,
+            "tool_choice": tool_choice,
+        }
+        super().__init__(agent=None, **service_kwargs)
+
+    async def _astream_endpoint(self, req: StreamRequest):
+        # Ensure agent exists on first use
+        if self.agent is None:
+            cfg = AgentConfig(
+                model=self._agent_params["model"],
+                base_url=self._agent_params["base_url"],
+                mcp_url=self._agent_params.get("mcp_url"),
+                system_prompt=self._agent_params.get("system_prompt"),
+                tool_choice=self._agent_params.get("tool_choice", "any"),
+            )
+            self.agent = MCPAgent(agent_config=cfg)
+        return await super()._astream_endpoint(req)
+
+    async def shutdown_cleanup(self):
+        try:
+            if self.agent is not None:
+                await self.agent.close()
+        finally:
+            await super().shutdown_cleanup()
