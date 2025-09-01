@@ -338,7 +338,10 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"OpenCV camera initialization failed: {e}")
             if self.cap:
-                self.cap.release()
+                try:
+                    await self._sdk(self.cap.release, timeout=self._op_timeout_s)
+                except Exception:
+                    pass
                 self.cap = None
             self.initialized = False
             raise CameraInitializationError(f"Failed to initialize OpenCV camera '{self.camera_name}': {str(e)}")
@@ -868,7 +871,7 @@ class OpenCVCameraBackend(CameraBackend):
             getattr(self.camera_config.cameras, "opencv_height_range_max", 1080),
         ]
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """Get the supported gain range.
 
         Returns:
@@ -876,7 +879,7 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return [0.0, 100.0]
 
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """Set camera gain.
 
         Args:
@@ -889,19 +892,19 @@ class OpenCVCameraBackend(CameraBackend):
             CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If gain value is out of range or setting fails
         """
-        if not self.initialized or not self.cap or not self._sdk_sync(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not available for gain setting")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
 
         try:
-            gain_range = self.get_gain_range()
+            gain_range = await self.get_gain_range()
             if gain < gain_range[0] or gain > gain_range[1]:
                 raise CameraConfigurationError(f"Gain {gain} out of range {gain_range}")
 
-            success = self._sdk_sync(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
+            success = await self._sdk(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
             if success:
-                actual_gain = self._sdk_sync(self.cap.get, cv2.CAP_PROP_GAIN)
+                actual_gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
                 self.logger.info(f"Gain set to {gain} (actual: {actual_gain:.1f}) for camera '{self.camera_name}'")
                 return True
             else:
@@ -912,24 +915,24 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}")
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """Get current camera gain.
 
         Returns:
             Current gain value
         """
-        if not self.initialized or not self.cap or not self._sdk_sync(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
             return 0.0
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            gain = self._sdk_sync(self.cap.get, cv2.CAP_PROP_GAIN)
+            gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
             return float(gain)
         except Exception as e:
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
             return 0.0
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """Set Region of Interest (ROI).
 
         Note: OpenCV cameras typically don't support hardware ROI,
@@ -947,25 +950,25 @@ class OpenCVCameraBackend(CameraBackend):
         self.logger.warning(f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'")
         return False
 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest (ROI).
 
         Returns:
             Dictionary with full frame dimensions (ROI not supported)
         """
-        if not self.initialized or not self.cap or not self._sdk_sync(self.cap.isOpened):
+        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
             return {"x": 0, "y": 0, "width": 0, "height": 0}
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            width = int(self._sdk_sync(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(self._sdk_sync(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
+            width = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(await self._sdk(self.cap.get, cv2.CAP_PROP_FRAME_HEIGHT))
             return {"x": 0, "y": 0, "width": width, "height": height}
         except Exception as e:
             self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
             return {"x": 0, "y": 0, "width": 0, "height": 0}
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """Reset ROI to full sensor size.
 
         Returns:
@@ -987,7 +990,7 @@ class OpenCVCameraBackend(CameraBackend):
         try:
             # OpenCV doesn't have a direct white balance mode query
             # Check if auto white balance is enabled
-            auto_wb = self.cap.get(cv2.CAP_PROP_AUTO_WB)
+            auto_wb = await self._sdk(self.cap.get, cv2.CAP_PROP_AUTO_WB)
             return "auto" if auto_wb > 0 else "manual"
         except Exception as e:
             self.logger.debug(f"Could not get white balance mode for camera '{self.camera_name}': {str(e)}")
@@ -1002,7 +1005,7 @@ class OpenCVCameraBackend(CameraBackend):
         Returns:
             True if white balance was set successfully, otherwise False.
         """
-        if not self.initialized or not self.cap or not self.cap.isOpened():
+        if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
             return False
         else:
@@ -1031,7 +1034,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
             return False
 
-    def get_wb_range(self) -> List[str]:
+    async def get_wb_range(self) -> List[str]:
         """Get available white balance modes.
 
         Returns:
@@ -1039,7 +1042,7 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return ["auto", "manual", "off"]
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """Get available pixel formats.
 
         Returns:
@@ -1047,7 +1050,7 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return ["BGR8", "RGB8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """Get current pixel format.
 
         Returns:
@@ -1055,7 +1058,7 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return "RGB8"  # We convert BGR to RGB in capture method
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """Set pixel format.
 
         Args:
@@ -1067,7 +1070,7 @@ class OpenCVCameraBackend(CameraBackend):
         Raises:
             CameraConfigurationError: If pixel format is not supported
         """
-        available_formats = self.get_pixel_format_range()
+        available_formats = await self.get_pixel_format_range()
         if pixel_format in available_formats:
             self.logger.info(f"Pixel format '{pixel_format}' is supported for camera '{self.camera_name}'")
             return True
@@ -1109,11 +1112,11 @@ class OpenCVCameraBackend(CameraBackend):
             "USB cameras only support 'continuous' mode."
         )
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement status."""
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
+    async def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
         """Set image quality enhancement.
 
         Args:
@@ -1332,11 +1335,33 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Failed to import config from '{config_path}' for camera '{self.camera_name}': {str(e)}"
             )
 
+
+    # Network functions - not applicable for OpenCV (USB cameras)
+    async def get_bandwidth_limit(self) -> float:
+        """Bandwidth limiting not applicable for OpenCV cameras."""
+        raise NotImplementedError(f"Bandwidth limiting not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+
+    async def get_packet_size(self) -> int:
+        """Packet size not applicable for OpenCV cameras."""
+        raise NotImplementedError(f"Packet size not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+
+    async def get_inter_packet_delay(self) -> int:
+        """Inter-packet delay not applicable for OpenCV cameras."""
+        raise NotImplementedError(f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+
     def __del__(self) -> None:
         """Destructor to ensure proper cleanup."""
         try:
             if hasattr(self, "cap") and self.cap is not None:
-                self.cap.release()
+                # Direct call is OK in destructor since we can't await here
+                # and this is just cleanup
+                try:
+                    if self._sdk_executor:
+                        self._sdk_executor.submit(self.cap.release).result(timeout=0.5)
+                    else:
+                        self.cap.release()
+                except Exception:
+                    pass
                 self.cap = None
         except Exception as e:
             # Use print instead of logger since logger might not be available during destruction
