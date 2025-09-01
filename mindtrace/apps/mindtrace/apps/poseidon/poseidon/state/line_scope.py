@@ -33,7 +33,7 @@ class ScopeState(rx.State):
 
             plant_id = org_id
             plants = [(plant_id, org_id)]
-            lines = [(str(getattr(p, "id")), getattr(p, "name", None) or str(getattr(p, "id"))) for p in projects]
+            lines = [(str(getattr(p, "id")), getattr(p, "name", None)) for p in projects]
 
             async with self:
                 self.plants = plants
@@ -102,7 +102,6 @@ class ScopeState(rx.State):
         return rx.redirect(self._with_qs(dest))
 
     def change_line(self, line_id: str):
-        # when user picks a line, stay on the same subpage but switch the line
         plant = self.selected_plant if self.selected_plant != "all" else self.resolved_plant
         if not plant:
             return None
