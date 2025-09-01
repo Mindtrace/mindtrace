@@ -81,7 +81,6 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-
     def __init__(self, suppress: bool = False, **kwargs):
         """
         Initialize the Mindtrace object.
