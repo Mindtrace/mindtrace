@@ -53,21 +53,33 @@ async def test_async_camera_configure_all_settings(monkeypatch):
         async def _set_exp(v):
             return True
 
+        async def _set_gain(v):
+            return True
+        
+        async def _set_roi(x, y, w, h):
+            return True
+            
         backend.set_exposure = _set_exp  # type: ignore[attr-defined]
-        backend.set_gain = lambda v: True  # type: ignore[attr-defined]
-        backend.set_ROI = lambda x, y, w, h: True  # type: ignore[attr-defined]
+        backend.set_gain = _set_gain  # type: ignore[attr-defined]
+        backend.set_ROI = _set_roi  # type: ignore[attr-defined]
 
         async def _set_tm(v):
             return True
 
         backend.set_triggermode = _set_tm  # type: ignore[attr-defined]
-        backend.set_pixel_format = lambda v: True  # type: ignore[attr-defined]
+        async def _set_pf(v):
+            return True
+            
+        backend.set_pixel_format = _set_pf  # type: ignore[attr-defined]
 
         async def _set_wb(v):
             return True
 
+        async def _set_ie(v):
+            return True
+            
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
-        backend.set_image_quality_enhancement = lambda v: True  # type: ignore[attr-defined]
+        backend.set_image_quality_enhancement = _set_ie  # type: ignore[attr-defined]
 
         ok = await cam.configure(
             exposure=1234,

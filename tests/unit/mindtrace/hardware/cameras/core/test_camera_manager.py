@@ -64,8 +64,18 @@ def test_discover_details_records_sync():
 def test_open_default_without_mocks_raises():
     mgr = CameraManager(include_mocks=False)
     try:
-        with pytest.raises(CameraNotFoundError):
-            mgr.open(None)
+        # Check if real cameras are available
+        available_cameras = mgr.discover()
+        if not available_cameras:
+            # Only test for exception if no real cameras are present
+            with pytest.raises(CameraNotFoundError):
+                mgr.open(None)
+        else:
+            # If real cameras exist, verify that open(None) succeeds and returns a camera
+            cam = mgr.open(None)
+            assert cam is not None
+            assert cam.name in available_cameras
+            mgr.close(cam.name)
     finally:
         mgr.close()
 
