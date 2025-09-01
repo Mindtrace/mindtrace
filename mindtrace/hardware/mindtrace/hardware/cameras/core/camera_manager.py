@@ -97,6 +97,35 @@ class CameraManager(Mindtrace):
     def diagnostics(self) -> Dict[str, Any]:
         return self._manager.diagnostics()
 
+    def batch_configure(self, configurations: Dict[str, Dict[str, Any]]) -> Dict[str, bool]:
+        """Configure multiple cameras simultaneously."""
+        return self._submit_coro(self._manager.batch_configure(configurations))
+
+    def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False) -> Dict[str, Any]:
+        """Capture from multiple cameras with network bandwidth management."""
+        return self._submit_coro(self._manager.batch_capture(camera_names, upload_to_gcs=upload_to_gcs))
+
+    def batch_capture_hdr(
+        self,
+        camera_names: List[str],
+        save_path_pattern: Optional[str] = None,
+        exposure_levels: int = 3,
+        exposure_multiplier: float = 2.0,
+        return_images: bool = True,
+        upload_to_gcs: bool = False,
+    ) -> Dict[str, Union[List[Any], bool]]:
+        """Capture HDR images from multiple cameras simultaneously."""
+        return self._submit_coro(
+            self._manager.batch_capture_hdr(
+                camera_names=camera_names,
+                save_path_pattern=save_path_pattern,
+                exposure_levels=exposure_levels,
+                exposure_multiplier=exposure_multiplier,
+                return_images=return_images,
+                upload_to_gcs=upload_to_gcs,
+            )
+        )
+
     def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
         """Close cameras or shut down the manager.
 

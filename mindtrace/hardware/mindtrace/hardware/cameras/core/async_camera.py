@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -17,6 +18,13 @@ from mindtrace.hardware.core.exceptions import (
     CameraTimeoutError,
 )
 
+try:
+    from mindtrace.storage.gcs import GCSStorageHandler
+    STORAGE_AVAILABLE = True
+except ImportError:
+    GCSStorageHandler = None
+    STORAGE_AVAILABLE = False
+
 
 class AsyncCamera(Mindtrace):
     """Unified async camera interface that wraps backend-specific camera instances."""
@@ -30,8 +38,26 @@ class AsyncCamera(Mindtrace):
         parts = name.split(":", 1)
         self._backend_name = parts[0]
         self._device_name = parts[1] if len(parts) > 1 else name
+        
+        # Initialize GCS storage if enabled
+        self._storage_handler = None
+        if STORAGE_AVAILABLE:
+            try:
+                from mindtrace.hardware.core.config import get_hardware_config
+                config = get_hardware_config().get_config().gcs
+                if config.enabled:
+                    self._storage_handler = GCSStorageHandler(
+                        bucket_name=config.bucket_name,
+                        credentials_path=config.credentials_path if config.credentials_path else None
+                    )
+                    self.logger.debug(f"GCS storage enabled for camera '{self._full_name}'")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize GCS for camera '{self._full_name}': {e}")
+                self._storage_handler = None
+        
         self.logger.debug(
-            f"AsyncCamera created: name={self._full_name}, backend={self._backend}, device={self._device_name}"
+            f"AsyncCamera created: name={self._full_name}, backend={self._backend}, device={self._device_name}, "
+            f"gcs_enabled={self._storage_handler is not None}"
         )
 
     @classmethod
@@ -159,11 +185,12 @@ class AsyncCamera(Mindtrace):
                 return await parent_aexit(exc_type, exc, tb)  # type: ignore[misc]
             return False
 
-    async def capture(self, save_path: Optional[str] = None) -> Any:
+    async def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False) -> Any:
         """Capture an image from the camera with retry logic.
 
         Args:
             save_path: Optional path to save the captured image (written as-is, typically RGB uint8).
+            upload_to_gcs: Upload captured image to Google Cloud Storage.
 
         Returns:
             The captured image as a numpy array (RGB/BGR depending on backend) if successful.
@@ -189,6 +216,10 @@ class AsyncCamera(Mindtrace):
                                 os.makedirs(dirname, exist_ok=True)
                             cv2.imwrite(save_path, image)
                             self.logger.debug(f"Saved captured image to '{save_path}'")
+                        
+                        # Upload to GCS if requested
+                        if upload_to_gcs and self._should_upload_to_gcs():
+                            await self._upload_image_to_gcs(image)
                         self.logger.debug(
                             f"Capture successful for '{self._full_name}' on attempt {attempt + 1}/{retry_count}"
                         )
@@ -255,6 +286,96 @@ class AsyncCamera(Mindtrace):
                         )
             raise RuntimeError(f"Failed to capture image from camera '{self._full_name}' after {retry_count} attempts")
 
+    def _should_upload_to_gcs(self) -> bool:
+        """Check if GCS upload should be performed."""
+        if self._storage_handler is None:
+            return False
+        
+        try:
+            from mindtrace.hardware.core.config import get_hardware_config
+            return get_hardware_config().get_config().gcs.auto_upload
+        except Exception:
+            return False
+
+    async def _upload_image_to_gcs(self, image) -> bool:
+        """Upload captured image to GCS."""
+        if not self._should_upload_to_gcs() or image is None:
+            return False
+
+        try:
+            # Create temporary file
+            timestamp = str(int(time.time()))
+            safe_camera_name = self._full_name.replace(":", "_")
+            temp_filename = f"/tmp/{safe_camera_name}_{timestamp}.jpg"
+            
+            # Save image temporarily
+            cv2.imwrite(temp_filename, image)
+            
+            # Generate GCS path
+            gcs_path = f"images/{safe_camera_name}/{timestamp}.jpg"
+            
+            # Upload asynchronously
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None, 
+                self._storage_handler.upload, 
+                temp_filename, 
+                gcs_path
+            )
+            
+            # Clean up temp file
+            os.unlink(temp_filename)
+            
+            self.logger.debug(f"Successfully uploaded image to GCS: {gcs_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to upload image to GCS: {e}")
+            return False
+
+    async def _upload_hdr_to_gcs(self, captured_images: List[Any], exposures: List[float]) -> bool:
+        """Upload HDR image sequence to GCS."""
+        if not self._should_upload_to_gcs() or not captured_images:
+            return False
+
+        try:
+            timestamp = str(int(time.time()))
+            safe_camera_name = self._full_name.replace(":", "_")
+            upload_count = 0
+            
+            for i, (image, exposure) in enumerate(zip(captured_images, exposures)):
+                if image is None:
+                    continue
+                    
+                # Create temporary file for this HDR frame
+                temp_filename = f"/tmp/{safe_camera_name}_hdr_{timestamp}_{i}_exp{int(exposure)}.jpg"
+                
+                # Save image temporarily
+                cv2.imwrite(temp_filename, image)
+                
+                # Generate GCS path for HDR sequence
+                gcs_path = f"hdr/{safe_camera_name}/{timestamp}/frame_{i:02d}_exp{int(exposure)}.jpg"
+                
+                # Upload asynchronously
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None, 
+                    self._storage_handler.upload, 
+                    temp_filename, 
+                    gcs_path
+                )
+                
+                # Clean up temp file
+                os.unlink(temp_filename)
+                upload_count += 1
+            
+            self.logger.debug(f"Successfully uploaded {upload_count} HDR frames to GCS for camera '{self._full_name}'")
+            return upload_count > 0
+            
+        except Exception as e:
+            self.logger.error(f"Failed to upload HDR sequence to GCS: {e}")
+            return False
+
     async def configure(self, **settings) -> bool:
         """Configure multiple camera settings atomically.
 
@@ -275,18 +396,18 @@ class AsyncCamera(Mindtrace):
             if "exposure" in settings:
                 success &= await self._backend.set_exposure(settings["exposure"])
             if "gain" in settings:
-                success &= self._backend.set_gain(settings["gain"])
+                success &= await self._backend.set_gain(settings["gain"])
             if "roi" in settings:
                 x, y, w, h = settings["roi"]
-                success &= self._backend.set_ROI(x, y, w, h)
+                success &= await self._backend.set_ROI(x, y, w, h)
             if "trigger_mode" in settings:
                 success &= await self._backend.set_triggermode(settings["trigger_mode"])
             if "pixel_format" in settings:
-                success &= self._backend.set_pixel_format(settings["pixel_format"])
+                success &= await self._backend.set_pixel_format(settings["pixel_format"])
             if "white_balance" in settings:
                 success &= await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
-                success &= self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+                success &= await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             self.logger.debug(
                 f"Configuration {'succeeded' if success else 'had failures'} for camera '{self._full_name}'"
             )
@@ -321,7 +442,7 @@ class AsyncCamera(Mindtrace):
         range_list = await self._backend.get_exposure_range()
         return range_list[0], range_list[1]
 
-    def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]) -> bool:
         """Set the camera gain.
 
         Args:
@@ -330,26 +451,26 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._backend.set_gain(gain)
+        return await self._backend.set_gain(gain)
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """Get the current camera gain.
 
         Returns:
             The current gain as a float.
         """
-        return self._backend.get_gain()
+        return await self._backend.get_gain()
 
-    def get_gain_range(self) -> Tuple[float, float]:
+    async def get_gain_range(self) -> Tuple[float, float]:
         """Get the valid gain range.
 
         Returns:
             A tuple of (min_gain, max_gain).
         """
-        range_list = self._backend.get_gain_range()
+        range_list = await self._backend.get_gain_range()
         return range_list[0], range_list[1]
 
-    def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
         """Set the Region of Interest (ROI).
 
         Args:
@@ -361,23 +482,23 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._backend.set_ROI(x, y, width, height)
+        return await self._backend.set_ROI(x, y, width, height)
 
-    def get_roi(self) -> Dict[str, int]:
+    async def get_roi(self) -> Dict[str, int]:
         """Get the current ROI.
 
         Returns:
             A dict with keys x, y, width, height.
         """
-        return self._backend.get_ROI()
+        return await self._backend.get_ROI()
 
-    def reset_roi(self) -> bool:
+    async def reset_roi(self) -> bool:
         """Reset the ROI to full frame if supported.
 
         Returns:
             True on success, otherwise False.
         """
-        return self._backend.reset_ROI()
+        return await self._backend.reset_ROI()
 
     async def set_trigger_mode(self, mode: str) -> bool:
         """Set the trigger mode.
@@ -399,7 +520,7 @@ class AsyncCamera(Mindtrace):
         """
         return await self._backend.get_triggermode()
 
-    def set_pixel_format(self, format: str) -> bool:
+    async def set_pixel_format(self, format: str) -> bool:
         """Set the output pixel format if supported.
 
         Args:
@@ -408,23 +529,23 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._backend.set_pixel_format(format)
+        return await self._backend.set_pixel_format(format)
 
-    def get_pixel_format(self) -> str:
+    async def get_pixel_format(self) -> str:
         """Get the current output pixel format.
 
         Returns:
             Pixel format string.
         """
-        return self._backend.get_current_pixel_format()
+        return await self._backend.get_current_pixel_format()
 
-    def get_available_pixel_formats(self) -> List[str]:
+    async def get_available_pixel_formats(self) -> List[str]:
         """List supported pixel formats.
 
         Returns:
             A list of pixel format strings.
         """
-        return self._backend.get_pixel_format_range()
+        return await self._backend.get_pixel_format_range()
 
     async def set_white_balance(self, mode: str) -> bool:
         """Set white balance mode.
@@ -446,15 +567,15 @@ class AsyncCamera(Mindtrace):
         """
         return await self._backend.get_wb()
 
-    def get_available_white_balance_modes(self) -> List[str]:
+    async def get_available_white_balance_modes(self) -> List[str]:
         """List supported white balance modes.
 
         Returns:
             A list of mode strings.
         """
-        return self._backend.get_wb_range()
+        return await self._backend.get_wb_range()
 
-    def set_image_enhancement(self, enabled: bool) -> bool:
+    async def set_image_enhancement(self, enabled: bool) -> bool:
         """Enable or disable image enhancement pipeline.
 
         Args:
@@ -463,15 +584,15 @@ class AsyncCamera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._backend.set_image_quality_enhancement(enabled)
+        return await self._backend.set_image_quality_enhancement(enabled)
 
-    def get_image_enhancement(self) -> bool:
+    async def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
 
         Returns:
             True if enabled, otherwise False.
         """
-        return self._backend.get_image_quality_enhancement()
+        return await self._backend.get_image_quality_enhancement()
 
     async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
@@ -524,6 +645,7 @@ class AsyncCamera(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
+        upload_to_gcs: bool = False,
     ) -> Union[List[Any], bool]:
         """Capture a bracketed HDR sequence and optionally return images.
 
@@ -532,6 +654,7 @@ class AsyncCamera(Mindtrace):
             exposure_levels: Number of exposure steps to capture.
             exposure_multiplier: Multiplier between consecutive exposure steps.
             return_images: If True, returns list of captured images; otherwise returns success bool.
+            upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
 
         Returns:
             List of images if return_images is True, otherwise a boolean success flag.
@@ -608,6 +731,11 @@ class AsyncCamera(Mindtrace):
                 self.logger.info(
                     f"HDR capture completed for camera '{self._full_name}': {successful_captures}/{len(exposures)} successful"
                 )
+                
+                # Upload HDR sequence to GCS if requested
+                if upload_to_gcs and self._should_upload_to_gcs() and captured_images:
+                    await self._upload_hdr_to_gcs(captured_images, exposures)
+                
                 if return_images:
                     return captured_images
                 else:

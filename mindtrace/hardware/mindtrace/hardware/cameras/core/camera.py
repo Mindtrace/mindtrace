@@ -110,11 +110,12 @@ class Camera(Mindtrace):
         return self._backend.is_connected
 
     # Sync methods delegating to async
-    def capture(self, save_path: Optional[str] = None) -> Any:
+    def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False) -> Any:
         """Capture an image from the camera.
 
         Args:
             save_path: Optional path to save the captured image.
+            upload_to_gcs: Upload captured image to Google Cloud Storage.
 
         Returns:
             The captured image (typically a numpy array in RGB/BGR depending on backend).
@@ -124,7 +125,7 @@ class Camera(Mindtrace):
             CameraConnectionError: On connection issues during capture.
             CameraTimeoutError: If capture times out.
         """
-        return self._submit(self._backend.capture(save_path))
+        return self._submit(self._backend.capture(save_path, upload_to_gcs=upload_to_gcs))
 
     def configure(self, **settings) -> bool:
         """Configure multiple camera settings atomically.
@@ -179,7 +180,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._backend.set_gain, gain)
+        return self._submit(self._backend.set_gain(gain))
 
     def get_gain(self) -> float:
         """Get the current camera gain.
@@ -187,7 +188,7 @@ class Camera(Mindtrace):
         Returns:
             The current gain as a float.
         """
-        return self._call_in_loop(self._backend.get_gain)
+        return self._submit(self._backend.get_gain())
 
     def get_gain_range(self) -> Tuple[float, float]:
         """Get the valid gain range.
@@ -195,7 +196,7 @@ class Camera(Mindtrace):
         Returns:
             A tuple of (min_gain, max_gain).
         """
-        return self._call_in_loop(self._backend.get_gain_range)
+        return self._submit(self._backend.get_gain_range())
 
     def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
         """Set the Region of Interest (ROI).
@@ -209,7 +210,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._backend.set_roi, x, y, width, height)
+        return self._submit(self._backend.set_roi(x, y, width, height))
 
     def get_roi(self) -> Dict[str, int]:
         """Get the current ROI.
@@ -217,7 +218,7 @@ class Camera(Mindtrace):
         Returns:
             A dict with keys x, y, width, height.
         """
-        return self._call_in_loop(self._backend.get_roi)
+        return self._submit(self._backend.get_roi())
 
     def reset_roi(self) -> bool:
         """Reset the ROI to full frame if supported.
@@ -225,7 +226,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._backend.reset_roi)
+        return self._submit(self._backend.reset_roi())
 
     def set_trigger_mode(self, mode: str) -> bool:
         """Set the trigger mode.
@@ -255,7 +256,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._backend.set_pixel_format, format)
+        return self._submit(self._backend.set_pixel_format(format))
 
     def get_pixel_format(self) -> str:
         """Get the current output pixel format.
@@ -263,7 +264,7 @@ class Camera(Mindtrace):
         Returns:
             Pixel format string.
         """
-        return self._call_in_loop(self._backend.get_pixel_format)
+        return self._submit(self._backend.get_pixel_format())
 
     def get_available_pixel_formats(self) -> List[str]:
         """List supported pixel formats.
@@ -271,7 +272,7 @@ class Camera(Mindtrace):
         Returns:
             A list of pixel format strings.
         """
-        return self._call_in_loop(self._backend.get_available_pixel_formats)
+        return self._submit(self._backend.get_available_pixel_formats())
 
     def set_white_balance(self, mode: str) -> bool:
         """Set white balance mode.
@@ -298,7 +299,7 @@ class Camera(Mindtrace):
         Returns:
             A list of mode strings.
         """
-        return self._call_in_loop(self._backend.get_available_white_balance_modes)
+        return self._submit(self._backend.get_available_white_balance_modes())
 
     def set_image_enhancement(self, enabled: bool) -> bool:
         """Enable or disable image enhancement pipeline.
@@ -309,7 +310,7 @@ class Camera(Mindtrace):
         Returns:
             True on success, otherwise False.
         """
-        return self._call_in_loop(self._backend.set_image_enhancement, enabled)
+        return self._submit(self._backend.set_image_enhancement(enabled))
 
     def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
@@ -317,7 +318,7 @@ class Camera(Mindtrace):
         Returns:
             True if enabled, otherwise False.
         """
-        return self._call_in_loop(self._backend.get_image_enhancement)
+        return self._submit(self._backend.get_image_enhancement())
 
     def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
@@ -363,6 +364,7 @@ class Camera(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
+        upload_to_gcs: bool = False,
     ) -> Union[List[Any], bool]:
         """Capture a bracketed HDR sequence and optionally return images.
 
@@ -371,6 +373,7 @@ class Camera(Mindtrace):
             exposure_levels: Number of exposure steps to capture.
             exposure_multiplier: Multiplier between consecutive exposure steps.
             return_images: If True, returns list of captured images; otherwise returns success bool.
+            upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
 
         Returns:
             List of images if return_images is True, otherwise a boolean success flag.
@@ -384,6 +387,7 @@ class Camera(Mindtrace):
                 exposure_levels=exposure_levels,
                 exposure_multiplier=exposure_multiplier,
                 return_images=return_images,
+                upload_to_gcs=upload_to_gcs,
             )
         )
 
