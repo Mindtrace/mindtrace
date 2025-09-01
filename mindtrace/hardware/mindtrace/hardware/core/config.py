@@ -292,6 +292,24 @@ class PLCBackends:
 
 
 @dataclass
+class GCSSettings:
+    """
+    Configuration for Google Cloud Storage integration.
+
+    Attributes:
+        enabled: Enable GCS integration
+        bucket_name: GCS bucket name
+        credentials_path: Path to service account JSON
+        auto_upload: Auto-upload captured images
+    """
+
+    enabled: bool = False
+    bucket_name: str = "mindtrace-camera-data"
+    credentials_path: str = ""
+    auto_upload: bool = False
+
+
+@dataclass
 class HardwareConfig:
     """
     Main hardware configuration container.
@@ -305,6 +323,7 @@ class HardwareConfig:
         actuators: Actuator component configuration
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
+        gcs: Google Cloud Storage settings
     """
 
     cameras: CameraSettings = field(default_factory=CameraSettings)
@@ -315,6 +334,7 @@ class HardwareConfig:
     actuators: ActuatorSettings = field(default_factory=ActuatorSettings)
     plcs: PLCSettings = field(default_factory=PLCSettings)
     plc_backends: PLCBackends = field(default_factory=PLCBackends)
+    gcs: GCSSettings = field(default_factory=GCSSettings)
 
 
 class HardwareConfigManager(Mindtrace):
@@ -539,6 +559,19 @@ class HardwareConfigManager(Mindtrace):
         if env_val := os.getenv("MINDTRACE_HW_PLC_DEFAULT_SCAN_RATE"):
             self._config.plc_backends.default_scan_rate = int(env_val)
 
+        # GCS settings
+        if env_val := os.getenv("MINDTRACE_HW_GCS_ENABLED"):
+            self._config.gcs.enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_BUCKET_NAME"):
+            self._config.gcs.bucket_name = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_CREDENTIALS_PATH"):
+            self._config.gcs.credentials_path = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_AUTO_UPLOAD"):
+            self._config.gcs.auto_upload = env_val.lower() == "true"
+
     def _load_from_file(self, config_file: str):
         """
         Load configuration from JSON file.
@@ -560,6 +593,7 @@ class HardwareConfigManager(Mindtrace):
             ("actuators", self._config.actuators),
             ("plcs", self._config.plcs),
             ("plc_backends", self._config.plc_backends),
+            ("gcs", self._config.gcs),
         )
 
         for section_name, target in sections:
@@ -625,6 +659,8 @@ class HardwareConfigManager(Mindtrace):
             return asdict(self._config.plcs)
         elif key == "plc_backends":
             return asdict(self._config.plc_backends)
+        elif key == "gcs":
+            return asdict(self._config.gcs)
         else:
             return getattr(self._config, key, None)
 
