@@ -27,6 +27,7 @@ class Config(dict):
             "MINDTRACE_WORKER_REDIS_DEFAULT_URL": "redis://localhost:6379",
             "MINDTRACE_MCP_MOUNT_PATH": "/mcp-server",
             "MINDTRACE_MCP_HTTP_APP_PATH": "/mcp",
+            "MINDTRACE_TEST_PARAM": "",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
