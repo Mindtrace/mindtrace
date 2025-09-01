@@ -148,6 +148,9 @@ class MCPAgent(MindtraceAgent):
         plugins = self._plugins
         agent_graph = self._agent_graph
 
+        # Cache a bound LLM runnable for this session to avoid re-binding tools each step
+        bound_llm = provider.with_tools(tools, tool_choice=config.tool_choice)
+
         class _Concrete(agent_graph):
             def __init__(self_inner):
                 super().__init__(factory=factory, plugins=plugins)
@@ -156,7 +159,7 @@ class MCPAgent(MindtraceAgent):
                 return getattr(config, "system_prompt", None) or ""
 
             def llm_with_tools(self_inner):
-                return provider.with_tools(tools, tool_choice=config.tool_choice)
+                return bound_llm
 
             async def run_tools(self_inner, calls):
                 return await executor.execute(calls, tools_by_name)
