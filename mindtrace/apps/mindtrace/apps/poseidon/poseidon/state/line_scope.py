@@ -66,6 +66,8 @@ class ScopeState(rx.State):
         return self.plants[0][0] if self.plants else ""
 
     def _first_line(self, plant_id: str) -> str:
+        if self.last_line:
+            return self.last_line
         arr = self.lines_by_plant.get(plant_id, [])
         return str(arr[0][0]) if arr else ""
 
