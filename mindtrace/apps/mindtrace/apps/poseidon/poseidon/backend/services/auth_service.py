@@ -100,8 +100,8 @@ class AuthService:
             raise InvalidCredentialsError("Account is deactivated.")
         
         # Verify password against stored hash
-        # if not verify_password(password, user.password_hash):
-        #     raise InvalidCredentialsError("Invalid password.")
+        if not verify_password(password, user.password_hash):
+            raise InvalidCredentialsError("Invalid password.")
         
         # Fetch linked organization using fetch_all_links instead of fetch_link
         await user.fetch_all_links()
