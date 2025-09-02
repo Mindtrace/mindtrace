@@ -17,6 +17,8 @@ RUN_STRESS=false
 RUN_ALL=true
 MODULES=()
 
+export MINDTRACE_TEST_PARAM="test_1234"
+
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
     case $1 in
