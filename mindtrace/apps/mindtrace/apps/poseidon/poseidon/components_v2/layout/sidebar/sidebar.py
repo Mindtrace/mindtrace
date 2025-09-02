@@ -20,7 +20,7 @@ NAV = [
             {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
             {"label": "Profile", "icon": "user", "href": "/profile"},
             {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
-            {"label": "Line View with Modal", "href": "/filter-table-demo", "icon": "shield-check"},
+            {"label": "Line View with Modal", "href": "/line-view", "icon": "shield-check"},
         ],
     ),
     (

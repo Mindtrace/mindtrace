@@ -1,5 +1,5 @@
 import reflex as rx
-from poseidon.components_v2.core.filter_table import FilterTable
+from poseidon.pages.lineview.filter_table import FilterTable
 from poseidon.state.grid_state import GridState
 
 from poseidon.components_v2.containers.page_container import page_container
@@ -41,7 +41,7 @@ def _content() -> rx.Component:
 
 
 def filter_table_demo() -> rx.Component:
-    """Route component for /filter-table-demo."""
+    """Route component for /line-view."""
     return rx.cond(
         AuthState.is_authenticated,
         rx.box(

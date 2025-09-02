@@ -110,5 +110,5 @@ app.add_page(
 
 app.add_page(
     with_shell(filter_table_demo, title="Mindtrace - Line View", active="Line View"),
-    route="/filter-table-demo",
+    route="/line-view",
 )
