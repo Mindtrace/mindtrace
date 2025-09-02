@@ -308,10 +308,8 @@ class CameraManagerService(Service):
             manager = await self._get_camera_manager()
             
             self.logger.debug(f"Calling manager.close for camera '{request.camera}'")
-            # TEMPORARY WORKAROUND: Skip actual close call to test if this fixes the hang
-            # await manager.close(request.camera)
+            await manager.close(request.camera)
             self.logger.debug(f"Close completed for camera '{request.camera}'")
-            self.logger.warning("TEMPORARY: Skipping actual camera close due to hanging issue")
             
             return BoolResponse(
                 success=True,
@@ -524,11 +522,8 @@ class CameraManagerService(Service):
             camera_proxy = await manager.open(request.camera)
             
             self.logger.debug(f"Calling configure on camera proxy with properties: {request.properties}")
-            # TEMPORARY WORKAROUND: Skip actual configure call to test if this fixes the hang
-            # success = await camera_proxy.configure(**request.properties)
-            success = True  # Temporary - always return success
+            success = await camera_proxy.configure(**request.properties)
             self.logger.debug(f"Configure completed with success: {success}")
-            self.logger.warning("TEMPORARY: Skipping actual camera configuration due to hanging issue")
             
             return BoolResponse(
                 success=success,
