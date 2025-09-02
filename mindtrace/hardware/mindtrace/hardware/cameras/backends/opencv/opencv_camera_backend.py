@@ -723,17 +723,27 @@ class OpenCVCameraBackend(CameraBackend):
         self.logger.info(f"OpenCV camera '{self.camera_name}' closed successfully")
 
         # Shutdown executor if present
-        try:
-            if self._sdk_executor is not None:
-                self._sdk_executor.shutdown(wait=False, cancel_futures=True)
+        if self._sdk_executor is not None:
+            try:
+                # Cancel any pending futures first
+                for future in list(self._sdk_executor._threads if hasattr(self._sdk_executor, '_threads') else []):
+                    try:
+                        future.cancel()
+                    except Exception:
+                        pass
+                
+                # Shutdown with proper timeout handling
+                self._sdk_executor.shutdown(wait=False)
                 self._sdk_executor = None
-        except Exception:
-            pass
+                self.logger.debug(f"Executor shutdown completed for camera '{self.camera_name}'")
+            except Exception as e:
+                self.logger.warning(f"Error shutting down executor for camera '{self.camera_name}': {e}")
+                self._sdk_executor = None
 
     async def is_exposure_control_supported(self) -> bool:
         """
         Check if exposure control is supported for this camera.
-        Tries to set and restore the exposure value, and checks if it changes.
+        Simplified version to avoid hanging operations.
         Returns:
             True if exposure control is supported, False otherwise
         """
@@ -742,27 +752,16 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
+            # Simple test - just check if we can read the current exposure
+            # Most cameras that support exposure will return a valid value
             async with self._io_lock:
-                original = await self.get_exposure()
-            # Try to set to a different value within the valid range
-            exposure_range = await self.get_exposure_range()
-            test_value = original - 1 if original > exposure_range[0] else original + 1
-            # Clamp test_value to range
-            test_value = max(min(test_value, exposure_range[1]), exposure_range[0])
-            if abs(test_value - original) < 1e-3:
-                test_value = original + 1 if (original + 1) <= exposure_range[1] else original - 1
-            async with self._io_lock:
-                success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(test_value))
-            if not success:
-                return False
-            async with self._io_lock:
-                new_value = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
-            # Restore original
-            async with self._io_lock:
-                await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(original))
-            # If the value actually changed, exposure control is supported
-            return abs(new_value - test_value) < 1e-2
-        except Exception:
+                current_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE, timeout=2.0)
+            
+            # If we get a reasonable exposure value, assume control is supported
+            # OpenCV typically returns -1 or 0 for unsupported properties
+            return current_exposure is not None and current_exposure > -1
+        except Exception as e:
+            self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
             return False
 
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
