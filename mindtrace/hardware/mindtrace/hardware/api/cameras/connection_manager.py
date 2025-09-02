@@ -39,18 +39,18 @@ class CameraManagerConnectionManager(ConnectionManager):
     making it easy to use the service programmatically from other applications.
     """
     
-    async def get(self, endpoint: str) -> Dict[str, Any]:
+    async def get(self, endpoint: str, timeout: float = 60.0) -> Dict[str, Any]:
         """Make GET request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
             return response.json()
     
-    async def post(self, endpoint: str, data: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def post(self, endpoint: str, data: Dict[str, Any] = None, timeout: float = 60.0) -> Dict[str, Any]:
         """Make POST request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, json=data or {})
             response.raise_for_status()
             return response.json()
@@ -275,7 +275,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             Export operation result
         """
         request = ConfigFileExportRequest(camera=camera, config_path=config_path)
-        response = await self.post("/cameras/config/export", request.model_dump())
+        response = await self.post("/cameras/config/export", request.model_dump(), timeout=120.0)
         return response["data"]
     
     # Image Capture Operations
@@ -291,7 +291,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             Capture result
         """
         request = CaptureImageRequest(camera=camera, save_path=save_path, upload_to_gcs=upload_to_gcs)
-        response = await self.post("/cameras/capture", request.model_dump())
+        response = await self.post("/cameras/capture", request.model_dump(), timeout=120.0)
         return response["data"]
     
     async def capture_images_batch(self, cameras: List[str], upload_to_gcs: bool = False) -> Dict[str, Any]:
@@ -305,7 +305,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             Batch capture results
         """
         request = CaptureBatchRequest(cameras=cameras, upload_to_gcs=upload_to_gcs)
-        response = await self.post("/cameras/capture/batch", request.model_dump())
+        response = await self.post("/cameras/capture/batch", request.model_dump(), timeout=120.0)
         return response["data"]
     
     async def capture_hdr_image(self, camera: str, save_path_pattern: Optional[str] = None, 
@@ -329,7 +329,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels=exposure_levels, exposure_multiplier=exposure_multiplier,
             return_images=return_images, upload_to_gcs=upload_to_gcs
         )
-        response = await self.post("/cameras/capture/hdr", request.model_dump())
+        response = await self.post("/cameras/capture/hdr", request.model_dump(), timeout=180.0)
         return response["data"]
     
     async def capture_hdr_images_batch(self, cameras: List[str], save_path_pattern: Optional[str] = None,
@@ -353,7 +353,7 @@ class CameraManagerConnectionManager(ConnectionManager):
             exposure_levels=exposure_levels, exposure_multiplier=exposure_multiplier,
             return_images=return_images, upload_to_gcs=upload_to_gcs
         )
-        response = await self.post("/cameras/capture/hdr/batch", request.model_dump())
+        response = await self.post("/cameras/capture/hdr/batch", request.model_dump(), timeout=180.0)
         return response["data"]
     
     # Network & Bandwidth Operations
