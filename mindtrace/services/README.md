@@ -65,7 +65,7 @@ cm.status()  # now generated as a method
 
 ## Usage Example
 
-See [`sample/echo_service.py`](./sample/echo_service.py) for a full example. Basic usage:
+See [`mindtrace/services/sample/echo_service.py`](./mindtrace/services/sample/echo_service.py) for a full example. Basic usage:
 
 ```python
 from mindtrace.services import Service
@@ -177,7 +177,7 @@ The Model Context Protocol (MCP) is a protocol for exposing service functionalit
   This makes the `echo` function available both as a REST endpoint and as an MCP tool.
 
 ### Example: EchoService with MCP
-See [`sample/echo_mcp.py`](./sample/echo_mcp.py):
+See [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py):
 ```python
 from mindtrace.services.sample.echo_mcp import EchoService
 
@@ -282,9 +282,9 @@ asyncio.run(main())
 - The MCP client allows you to list and call tools programmatically.
 
 For trial purposes, see the sample files:
-- [`sample/echo_mcp.py`](./sample/echo_mcp.py)
-- [`samples/services/echo_mcp_service.py`](../../../../samples/services/echo_mcp_service.py)
-- [`samples/services/mcp/mcp_client.py`](../../../../samples/services/mcp/mcp_client.py)
+- [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py)
+- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
+- [`samples/services/mcp/mcp_client.py`](../../samples/services/mcp/mcp_client.py)
 
 
 ## Remote MCP Server Usage with Cursor
