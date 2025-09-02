@@ -12,13 +12,14 @@ class Config(dict):
             "MINDTRACE_DEFAULT_HOST_URLS": {
                 "Service": "http://localhost:8000",
                 "ClusterManager": "http://localhost:8090",
+                "LabelStudio": "http://localhost:8080",
             },
             "MINDTRACE_MINIO_REGISTRY_URI": "~/.cache/mindtrace/minio-registry",
             "MINDTRACE_MINIO_ENDPOINT": "localhost:9000",
             "MINDTRACE_MINIO_ACCESS_KEY": "minioadmin",
             "MINDTRACE_MINIO_SECRET_KEY": "minioadmin",
             "MINDTRACE_SERVER_PIDS_DIR_PATH": "~/.cache/mindtrace/pids",
-            "MINDTRACE_LOGGER_DIR": "~/.cache/mindtrace/logs",
+            "MINDTRACE_LOGGER_DIR": "/home/pankhuri/Documents/MINDTRACE/labelstudio/mindtrace/logs",
             "MINDTRACE_CLUSTER_DEFAULT_REDIS_URL": "redis://localhost:6379",
             "MINDTRACE_CLUSTER_MINIO_ENDPOINT": "localhost:9000",
             "MINDTRACE_CLUSTER_MINIO_ACCESS_KEY": "minioadmin",
@@ -27,6 +28,10 @@ class Config(dict):
             "MINDTRACE_WORKER_REDIS_DEFAULT_URL": "redis://localhost:6379",
             "MINDTRACE_MCP_MOUNT_PATH": "/mcp-server",
             "MINDTRACE_MCP_HTTP_APP_PATH": "/mcp",
+            "MINDTRACE_API_KEYS": {
+                "LabelStudio": "",
+            },
+            "MINDTRACE_GCP_CREDENTIALS_PATH": "",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
