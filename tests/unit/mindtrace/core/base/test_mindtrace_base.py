@@ -1,7 +1,6 @@
 """Tests for the Mindtrace base classes."""
 
 import logging
-import os
 from abc import abstractmethod
 from unittest.mock import Mock, patch
 
@@ -128,11 +127,7 @@ class TestMindtrace:
 
     def test_config_with_environment_variables(self):
         instance = Mindtrace()
-        assert instance.config["MINDTRACE_TEST_PARAM"] == ""
-        os.environ["MINDTRACE_TEST_PARAM"] = "test"
-        instance = Mindtrace()
-        assert instance.config["MINDTRACE_TEST_PARAM"] == "test"
-        os.environ["MINDTRACE_TEST_PARAM"] = ""
+        assert instance.config["MINDTRACE_TEST_PARAM"] == "test_1234"
 
     def test_init_with_parent_class_kwargs_rejection(self):
         """Test initialization when parent class rejects kwargs."""

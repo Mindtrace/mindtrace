@@ -81,6 +81,8 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
+    config = Config()
+
     def __init__(self, suppress: bool = False, **kwargs):
         """
         Initialize the Mindtrace object.
@@ -112,7 +114,6 @@ class Mindtrace(metaclass=MindtraceMeta):
             except TypeError:
                 # If that still fails, try with no kwargs
                 super().__init__()
-        self.config = Config()
 
         # Set Mindtrace-specific attributes
         self.suppress = suppress
