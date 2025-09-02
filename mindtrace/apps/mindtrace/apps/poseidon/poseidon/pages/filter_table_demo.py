@@ -13,7 +13,7 @@ def _login_gate() -> rx.Component:
         rx.vstack(
             rx.text("🔒", font_size="4rem", color="#9CA3AF"),
             rx.text("Access Denied", font_size="2rem", font_weight="600", color="#374151"),
-            rx.text("Please log in to view the audit trail", color="#6B7280", text_align="center"),
+            rx.text("Please log in to view the Line View", color="#6B7280", text_align="center"),
             rx.link(rx.button("Go to Login", color_scheme="blue", size="3"), href="/login"),
             spacing="4",
             align="center",
@@ -27,7 +27,7 @@ def _content() -> rx.Component:
     """Authenticated content wrapped in the shared page container."""
     return page_container(
         FilterTable(GridState),
-        title="Audit Trail",
+        title="Line View",
         sub_text="Inspection traceability and accountability",
         tools=[
             button(
