@@ -61,10 +61,10 @@ cd mindtrace
 uv sync --extra cameras-all
 
 # Setup camera backends (interactive)
-mindtrace-setup-cameras
+uv run mindtrace-setup-cameras
 
 # Or setup specific backends
-mindtrace-setup-basler
+uv run mindtrace-setup-basler
 ```
 
 ---
