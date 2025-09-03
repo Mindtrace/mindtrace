@@ -738,10 +738,13 @@ class CameraManagerService(Service):
             )
             
             result = HDRCaptureResult(
-                success=True,
-                exposure_levels=[],  # Would need to get from hdr_result
+                success=hdr_result["success"],
+                images=hdr_result["images"],
+                image_paths=hdr_result["image_paths"],
+                gcs_urls=hdr_result["gcs_urls"],
+                exposure_levels=hdr_result["exposure_levels"],
                 capture_time=datetime.utcnow(),
-                successful_captures=request.exposure_levels
+                successful_captures=hdr_result["successful_captures"]
             )
             
             return HDRCaptureResponse(
@@ -770,17 +773,23 @@ class CameraManagerService(Service):
             successful_count = 0
             
             for camera, hdr_data in results.items():
-                if hdr_data:
+                if hdr_data and isinstance(hdr_data, dict):
                     hdr_results[camera] = HDRCaptureResult(
-                        success=True,
-                        exposure_levels=[],
+                        success=hdr_data.get("success", True),
+                        images=hdr_data.get("images"),
+                        image_paths=hdr_data.get("image_paths"),
+                        gcs_urls=hdr_data.get("gcs_urls"),
+                        exposure_levels=hdr_data.get("exposure_levels", []),
                         capture_time=datetime.utcnow(),
-                        successful_captures=request.exposure_levels
+                        successful_captures=hdr_data.get("successful_captures", 0)
                     )
                     successful_count += 1
                 else:
                     hdr_results[camera] = HDRCaptureResult(
                         success=False,
+                        images=None,
+                        image_paths=None,
+                        gcs_urls=None,
                         exposure_levels=[],
                         capture_time=datetime.utcnow(),
                         successful_captures=0
