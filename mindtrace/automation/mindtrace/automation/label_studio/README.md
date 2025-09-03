@@ -1,10 +1,10 @@
 ## Label Studio API Usage
 
-This guide walks you through setting up a local Label Studio instance and includes a hands-on exercise using the Label Studio APIs available in the mindtrace-automation package.
+This guide walks you through setting up a local Label Studio instance and includes a hands-on exercise using the Label Studio APIs available in the mindtrace-automation package. The API usage code is also available in [sample usage file](./../../../../../samples/automation/labelstudio/sample_usage.py) for direct execution.
 
 ### Run Label Studio locally (sample setup)
 
-Use the docker compose file provided in this repo to spin up Label Studio with persistent data and sample images.
+Use the docker compose file provided in this repo to spin up Label Studio with persistent data.
 
 Compose file location: [docker compose](../../../../../samples/automation/labelstudio/docker-compose.yml)
 
@@ -74,7 +74,7 @@ In the Code section, you will see an XML configuration. This XML is the core def
 This configuration means:
 - An image (<Image>) will be displayed for annotation.
 - Annotators can draw bounding boxes (<RectangleLabels>) on the image.
-- Two possible classes are available: Airplane (green) and Car (blue).
+- Two possible classes are available: Cat (green) and Apple (blue).
 
 
 ### Sample Project Creation
