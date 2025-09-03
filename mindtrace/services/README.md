@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-services)](https://pypi.org/project/mindtrace-services/)
+[![License](https://img.shields.io/pypi/l/mindtrace-services)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/services/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-services)](https://pepy.tech/projects/mindtrace-services)
+
 # Mindtrace Services
 
 [Purpose](#purpose)<br>

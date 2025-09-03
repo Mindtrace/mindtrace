@@ -1,5 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-cluster)](https://pypi.org/project/mindtrace-cluster/)
 [![License](https://img.shields.io/pypi/l/mindtrace-cluster)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/cluster/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-cluster)](https://pepy.tech/projects/mindtrace-cluster)
 
 # Mindtrace Cluster Module
 
