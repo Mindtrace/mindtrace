@@ -563,11 +563,11 @@ class AsyncCameraManager(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
-    ) -> Dict[str, Union[List[Any], bool]]:
+    ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}
 
-        async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Union[List[Any], bool]]:
+        async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Dict[str, Any]]:
             try:
                 async with self._capture_semaphore:
                     if camera_name not in self._cameras:
@@ -592,7 +592,14 @@ class AsyncCameraManager(Mindtrace):
                     return camera_name, result
             except Exception as e:
                 self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
-                return camera_name, [] if return_images else False
+                return camera_name, {
+                    "success": False,
+                    "images": None,
+                    "image_paths": None,
+                    "gcs_urls": None,
+                    "exposure_levels": [],
+                    "successful_captures": 0
+                }
 
         tasks = [capture_hdr_from_camera(name) for name in camera_names]
         hdr_results = await asyncio.gather(*tasks, return_exceptions=True)

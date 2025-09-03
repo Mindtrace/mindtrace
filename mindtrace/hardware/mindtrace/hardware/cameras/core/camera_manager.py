@@ -113,7 +113,7 @@ class CameraManager(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
-    ) -> Dict[str, Union[List[Any], bool]]:
+    ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         return self._submit_coro(
             self._manager.batch_capture_hdr(
