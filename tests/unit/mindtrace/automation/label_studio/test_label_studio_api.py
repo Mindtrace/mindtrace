@@ -1,8 +1,7 @@
 import base64
-import os
+import logging
 from pathlib import Path
 from types import SimpleNamespace
-import logging
 
 import pytest
 
@@ -161,4 +160,3 @@ def test_extract_gcs_path_from_label_studio_url():
     encoded = base64.b64encode(gcs.encode()).decode()
     url = f"http://localhost:8080/data/storage/gcs/presign?fileuri={encoded}"
     assert ls._extract_gcs_path_from_label_studio_url(url) == gcs
-
