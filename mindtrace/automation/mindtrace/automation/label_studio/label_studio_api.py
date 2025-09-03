@@ -151,7 +151,10 @@ class LabelStudio(Mindtrace):
             ValueError: If a project with the same name already exists
         """
         # If a project with the same name exists, return it instead of creating a new one
-        existing = self.get_project(project_name=project_name)
+        try:
+            existing = self.get_project(project_name=project_name)
+        except ValueError:
+            existing = None
         if existing is not None:
             raise ValueError(f"Project with name '{project_name}' already exists (id={existing.id})")
 
@@ -221,6 +224,91 @@ class LabelStudio(Mindtrace):
         project = self.get_project(project_name=project_name, project_id=project_id)
         tasks = project.get_tasks()
         return tasks
+
+    def create_tasks_from_images(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[int] = None,
+        local_dir: Union[str, Path] = None,
+        recursive: bool = True,
+        batch_size: int = 10,
+    ) -> int:
+        """Replicate Label Studio UI "Import" by uploading files directly so tasks use /data/upload paths.
+
+        This sends file binaries to Label Studio (POST /api/projects/{id}/import with multipart file),
+        which stores them under its media upload directory and creates tasks like:
+        {"data": {"image": "/data/upload/..."}, ...}.
+
+        Args:
+            project_name: Project name in Label Studio.
+            project_id: Project ID in Label Studio.
+            local_dir: Absolute local directory containing files to upload.
+            recursive: Recurse into subdirectories.
+            batch_size: Number of files to process per log batch (uploads are per-file).
+
+        Returns:
+            int: Number of tasks created (sum of returned task IDs).
+        """
+        if local_dir is None:
+            raise ValueError("local_dir must be provided")
+        if batch_size <= 0:
+            raise ValueError("batch_size must be a positive integer")
+
+        project = self.get_project(project_name=project_name, project_id=project_id)
+
+        root_dir = Path(local_dir).resolve()
+        if not root_dir.exists() or not root_dir.is_dir():
+            raise ValueError(f"local_dir does not exist or is not a directory: {root_dir}")
+
+        # Accept common image types; extend as needed
+        image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"}
+        candidates = root_dir.rglob("*") if recursive else root_dir.iterdir()
+
+        def is_image_file(p: Path) -> bool:
+            return p.is_file() and p.suffix.lower() in image_extensions
+
+        batch: list[Path] = []
+        total_created = 0
+        batch_index = 0
+
+        def process_batch(paths: list[Path]) -> int:
+            created = 0
+            if not paths:
+                return 0
+            self.logger.info(
+                f"Uploading batch {batch_index + 1} (size={len(paths)}) to project {project.id}"
+            )
+            for path in paths:
+                try:
+                    created_ids = project.import_tasks(str(path))
+                    created += len(created_ids) if created_ids is not None else 0
+                except Exception as e:
+                    self.logger.warning(f"Failed to import file '{path}': {e}")
+            return created
+
+        for entry in candidates:
+            if not is_image_file(entry):
+                continue
+            batch.append(entry)
+            if len(batch) >= batch_size:
+                total_created += process_batch(batch)
+                batch_index += 1
+                batch = []
+
+        # process remaining
+        if batch:
+            total_created += process_batch(batch)
+
+        if total_created == 0:
+            self.logger.info(
+                f"No images found under: {root_dir}. Supported image extensions are: {image_extensions}"
+            )
+
+        self.logger.info(
+            f"Uploaded {total_created} tasks to project '{project.title}' (ID: {project.id})"
+        )
+        return total_created
 
     def get_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
