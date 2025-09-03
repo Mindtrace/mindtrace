@@ -86,7 +86,7 @@ This configuration means:
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 
 url="http://localhost:8080"
-api_key="2d7caff1d0f43e1cebe029083cac90ff4dc25e0e"
+api_key="XXXX"
 #Labeling Setup
 label_config = """
 <View>
@@ -113,3 +113,33 @@ print(f"Created {created} tasks in project '{project.title}' (ID: {project.id})"
 ```
 2. The UI should display two tasks with images which can be annotated.
 
+### Import Tasks: GCP Cloud Storage
+Imagine usecase where you would require to import images directly from GCP cloud storage below snippet demonstrates the usage.
+For the use case sample images are available at `mt-label-studio-bucket/samples` bucket
+```python
+google_application_credentials = "path/to/json"
+# 3.1 Create GCP storage
+try:
+  storage = ls.create_gcp_storage(project_name="test_project", 
+                                  bucket="mt-label-studio-bucket", 
+                                  prefix="samples", storage_type="import", 
+                                  use_blob_urls=True,presign=False,
+                                  google_application_credentials=google_application_credentials,regex_filter=".*jpg")
+  print(f"Created GCP storage id: {storage['id']} in project '{project.title}' (ID: {project.id})")
+except ValueError:
+  print(f"GCP storage already exists in project '{project.title}' (ID: {project.id})")
+
+# 3.2 Sync GCP storage
+sync_gcp_storage = ls.sync_gcp_storage(project_name="test_project",storage_prefix="samples")
+print(f"Synced GCP storage in project '{project.title}' (ID: {project.id})")
+```
+
+### Get Annotations
+The users can annotate or label the tasks in Label Studio GUI and use below snippet to get the annotations.
+```python
+annotations = ls.get_annotations(project_name="test_project")
+for annotation in annotations:
+  for key,value in annotation.items():
+    print(f"{key}:{value}")
+  print("--------------------------------")
+```

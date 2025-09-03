@@ -50,6 +50,36 @@ class LabelStudio(Mindtrace):
         self.client = Client(url=self.url, api_key=self.api_key)
         self.logger.info(f"Initialised LS at: {self.url}")
 
+    def create_project(self, project_name: str, description: str = None, label_config: str = None) -> LSProject:
+        """Use this method to create a new LSProject.
+
+        Args:
+            project_name: Project name
+            description: Project description (optional)
+            label_config: Label configuration in XML format (optional)
+
+        Returns:
+            LSProject: The created Label Studio project object.
+
+        Raises:
+            ValueError: If a project with the same name already exists
+        """
+        # If a project with the same name exists, return it instead of creating a new one
+        try:
+            existing = self.get_project(project_name=project_name)
+        except ValueError:
+            existing = None
+        if existing is not None:
+            raise ValueError(f"Project with name '{project_name}' already exists (id={existing.id})")
+
+        kwargs = {"title": project_name}
+        if description is not None:
+            kwargs["description"] = description
+        if label_config is not None:
+            kwargs["label_config"] = label_config
+
+        return self.client.start_project(**kwargs)
+
     def list_projects(self, page_size: int = 100, **query_params) -> list:
         """Use this method when you need the complete list of LSProject
         in Label Studio (e.g., to search, validate names, or iterate
@@ -130,64 +160,6 @@ class LabelStudio(Mindtrace):
                 raise ValueError(f"No project found with id: {project_id}") from e
         raise ValueError("Must provide either project_name or project_id")
 
-    def _get_project_by_name(self, project_name: str, page_size: int = 100, **query_params) -> LSProject:
-        for p in self.list_projects(page_size=page_size, **query_params):
-            if getattr(p, "title", None) == project_name:
-                return p
-        return None
-
-    def create_project(self, project_name: str, description: str = None, label_config: str = None) -> LSProject:
-        """Use this method to create a new LSProject.
-
-        Args:
-            project_name: Project name
-            description: Project description (optional)
-            label_config: Label configuration in XML format (optional)
-
-        Returns:
-            LSProject: The created Label Studio project object.
-
-        Raises:
-            ValueError: If a project with the same name already exists
-        """
-        # If a project with the same name exists, return it instead of creating a new one
-        try:
-            existing = self.get_project(project_name=project_name)
-        except ValueError:
-            existing = None
-        if existing is not None:
-            raise ValueError(f"Project with name '{project_name}' already exists (id={existing.id})")
-
-        kwargs = {"title": project_name}
-        if description is not None:
-            kwargs["description"] = description
-        if label_config is not None:
-            kwargs["label_config"] = label_config
-
-        return self.client.start_project(**kwargs)
-
-    def delete_project(self, *, project_id: Optional[int] = None, project_name: Optional[str] = None) -> None:
-        """Delete a project by ID or name.
-
-        Args:
-            project_id: Project ID to delete
-            project_name: Project name to delete
-
-        Raises:
-            ValueError: If neither project_id nor project_name is provided,
-                      or if project with given name is not found
-        """
-
-        if project_name:
-            project = self._get_project_by_name(project_name)
-            if not project:
-                raise ValueError(f"No project found with name: {project_name}")
-            project_id = project.id
-
-        self.logger.info(f"Deleting project with ID: {project_id}")
-        self.client.delete_project(project_id)
-        self.logger.info("Project deleted successfully")
-
     def get_latest_project_part(self, pattern: str) -> tuple[Optional[int], Optional[str]]:
         """Use this method to find the latest project part number matching a given pattern.
 
@@ -211,20 +183,69 @@ class LabelStudio(Mindtrace):
         self.logger.debug("No projects matched the given pattern")
         return None, None
 
-    def list_tasks(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all tasks in a project.
+    def _get_project_by_name(self, project_name: str, page_size: int = 100, **query_params) -> LSProject:
+        for p in self.list_projects(page_size=page_size, **query_params):
+            if getattr(p, "title", None) == project_name:
+                return p
+        return None
+
+    def delete_project(self, *, project_id: Optional[int] = None, project_name: Optional[str] = None) -> None:
+        """Delete a project by ID or name.
 
         Args:
-            project_name: Project name
-            project_id: Project ID
+            project_id: Project ID to delete
+            project_name: Project name to delete
+
+        Raises:
+            ValueError: If neither project_id nor project_name is provided,
+                      or if project with given name is not found
+        """
+
+        if project_name:
+            project = self._get_project_by_name(project_name)
+            if not project:
+                raise ValueError(f"No project found with name: {project_name}")
+            project_id = project.id
+
+        self.logger.info(f"Deleting project with ID: {project_id}")
+        self.client.delete_project(project_id)
+        self.logger.info("Project deleted successfully")
+
+    def delete_projects_by_prefix(self, title_prefix: str) -> list[str]:
+        """Delete all projects whose titles start with the specified prefix.
+
+        Args:
+            title_prefix: The prefix to match against project titles
 
         Returns:
-            list: A list of Label Studio Task objects
-        """
-        project = self.get_project(project_name=project_name, project_id=project_id)
-        tasks = project.get_tasks()
-        return tasks
+            List of deleted project titles
 
+        Raises:
+            ValueError: If title_prefix is empty
+        """
+        if not title_prefix:
+            raise ValueError("title_prefix cannot be empty")
+
+        self.logger.info(f"Finding projects with title prefix: {title_prefix}")
+        projects = self.list_projects()
+        matching_projects = [p for p in projects if p.title.startswith(title_prefix)]
+
+        if not matching_projects:
+            self.logger.info(f"No projects found with title prefix: {title_prefix}")
+            return []
+
+        deleted_titles = []
+        for project in matching_projects:
+            try:
+                self.logger.info(f"Deleting project: {project.title} (ID: {project.id})")
+                self.client.delete_project(project.id)
+                deleted_titles.append(project.title)
+            except Exception as e:
+                self.logger.error(f"Failed to delete project {project.title}: {str(e)}")
+
+        self.logger.info(f"Deleted {len(deleted_titles)} projects")
+        return deleted_titles
+    
     def create_tasks_from_images(
         self,
         *,
@@ -310,6 +331,22 @@ class LabelStudio(Mindtrace):
         )
         return total_created
 
+    def get_tasks(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
+        """Use this method to list all tasks in a project.
+
+        Args:
+            project_name: Project name
+            project_id: Project ID
+
+        Returns:
+            list: A list of Label Studio Task objects
+        """
+        project = self.get_project(project_name=project_name, project_id=project_id)
+        tasks = project.get_tasks()
+        return tasks
+
+    
+
     def get_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
     ) -> dict:
@@ -325,6 +362,42 @@ class LabelStudio(Mindtrace):
         """
         project = self.get_project(project_name=project_name, project_id=project_id)
         return project.get_task(task_id)
+
+    def get_task_types(
+            self, *, project_name: Optional[str] = None, project_id: Optional[int] = None
+        ) -> list[str]:
+            """Determine the task types in a project by analyzing its label configuration.
+            XML tags vs task types:
+            <RectangleLabels> -> object_detection
+            <PolygonLabels> or <BrushLabels> -> segmentation
+            <Choices> or <Labels> -> classification
+
+            Args:
+                project_name: Project name to analyze
+                project_id: Project ID to analyze
+
+            Returns:
+                List of task types found in the project (e.g., ['object_detection', 'classification', 'segmentation'])
+
+            Raises:
+                ValueError: If neither project_id nor project_name is provided,
+                        or if project with given name is not found
+            """
+            project = self.get_project(project_name=project_name, project_id=project_id)
+            label_config = project.label_config
+
+            task_types = []
+
+            if "<RectangleLabels" in label_config:
+                task_types.append("object_detection")
+
+            if "<PolygonLabels" in label_config or "<BrushLabels" in label_config:
+                task_types.append("segmentation")
+
+            if "<Choices" in label_config or "<Labels" in label_config:
+                task_types.append("classification")
+
+            return task_types
 
     def delete_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
@@ -342,70 +415,6 @@ class LabelStudio(Mindtrace):
         project = self.get_project(project_name=project_name, project_id=project_id)
         project.delete_task(task_id)
         self.logger.info(f"Task {task_id} deleted from project {project_id}")
-
-    def list_annotations(
-        self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
-    ) -> list:
-        """Use this method to get annotations for a task_id or all tasks.
-
-        Args:
-            project_name: Project name of Label Studio
-            project_id: Project ID of Label Studio
-            task_id: Task ID of Label Studio
-
-        Returns:
-            list: A list of Label Studio Annotation objects
-        """
-        project = self.get_project(project_name=project_name, project_id=project_id)
-        try:
-            if task_id:
-                return project.get_annotations(task_id)
-            else:
-                # Use the tasks API to get annotations
-                tasks = project.get_tasks()
-                annotations = []
-                for task in tasks:
-                    task_annotations = project.get_annotations(task.id)
-                    annotations.extend(task_annotations)
-                return annotations
-        except Exception as e:
-            self.logger.error(f"Could not get annotations using get_annotations(): {e}")
-            return []
-
-    def list_import_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all import storages for a project.
-
-        Args:
-            project_name: Project name of Label Studio
-            project_id: Project ID of Label Studio
-
-        Returns:
-            list: A list of Label Studio Storage objects
-        """
-        try:
-            project = self.get_project(project_name=project_name, project_id=project_id)
-            return project.get_import_storages()
-        except Exception as e:
-            self.logger.error(f"Failed to list import storages for project {project_name} or {project_id}: {e}")
-            raise
-
-    def list_export_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all export storages for a project.
-
-        Args:
-            project_name: Project name of Label Studio
-            project_id: Project ID of Label Studio
-
-        Returns:
-            list: A list of Label Studio Storage objects
-        """
-        self.logger.debug(f"Listing export storages for project {project_id}")
-        try:
-            project = self.get_project(project_name=project_name, project_id=project_id)
-            return project.get_export_storages()
-        except Exception as e:
-            self.logger.error(f"Failed to list export storages for project {project_name} or {project_id}: {e}")
-            raise
 
     def create_annotation(
         self, *, project_name: str = None, project_id: int = None, task_id: int = None, annotation: dict = None
@@ -432,6 +441,35 @@ class LabelStudio(Mindtrace):
             self.logger.error(f"Failed to create annotation for task {task_id} in project {project_id}: {e}")
             raise
 
+    def get_annotations(
+        self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
+    ) -> list:
+        """Use this method to get annotations for a task_id or all tasks.
+
+        Args:
+            project_name: Project name of Label Studio
+            project_id: Project ID of Label Studio
+            task_id: Task ID of Label Studio
+
+        Returns:
+            list: A list of Label Studio Annotation objects
+        """
+        project = self.get_project(project_name=project_name, project_id=project_id)
+        try:
+            if task_id:
+                return project.get_task(task_id).get('annotations',[])
+            else:
+                # Use the tasks API to get annotations
+                tasks = project.get_tasks()
+                annotations = []
+                for task in tasks:
+                    task_annotations = task.get('annotations',[])
+                    annotations.extend(task_annotations)
+                return annotations
+        except Exception as e:
+            self.logger.error(f"Could not get annotations using get_annotations(): {e}")
+            return []    
+    
     def export_annotations(
         self,
         *,
@@ -472,6 +510,108 @@ class LabelStudio(Mindtrace):
             return result
         except Exception as e:
             self.logger.error(f"Failed to export annotations for project {project_name} or {project_id}: {e}")
+            raise
+
+    def create_gcp_storage(
+        self,
+        *,
+        project_name: Optional[str] = None,
+        project_id: Optional[int] = None,
+        bucket: str = None,
+        prefix: Optional[str] = None,
+        storage_type: str = "import",
+        google_application_credentials: Optional[str] = None,
+        regex_filter: Optional[str] = None,
+        use_blob_urls: bool = False,
+        presign: Optional[bool] = None,
+        presign_ttl: Optional[int] = None,
+    ) -> dict:
+        """Use this method to create a Google Cloud Storage for import or export.
+
+        Args:
+            project_name: Project name of Label Studio
+            project_id: Project ID of Label Studio
+            bucket: GCS bucket name
+            prefix: Optional path prefix in bucket
+            storage_type: Either "import" or "export"
+            google_application_credentials: Path to credentials JSON file
+            regex_filter: Regex filter for matching object keys when importing
+            use_blob_urls: If True, don't copy objects; reference them via blob URLs
+            presign: If True and supported, generate presigned URLs (import storage)
+            presign_ttl: TTL (in minutes) for presigned URLs when presign=True
+
+        Returns:
+            dict: A dictionary containing the created storage details
+
+        Raises:
+            ValueError: If credentials file is missing or invalid
+            ValueError: If a storage with the same title already exists
+            requests.exceptions.RequestException: If API request fails
+            json.JSONDecodeError: If credentials file contains invalid JSON
+            OSError: If there are file system errors
+        """
+        project = self.get_project(project_name=project_name, project_id=project_id)
+        storage_name = (
+            f"GCS {storage_type.title()} {bucket}/{prefix}" if prefix else f"GCS {storage_type.title()} {bucket}"
+        )
+        # Prevent duplicate storages with same title
+        if storage_type == "import":
+            existing_storages = project.get_import_storages()
+        else:
+            existing_storages = project.get_export_storages()
+
+        for s in existing_storages:
+            s_title = s.get("title")
+            if s_title == storage_name:
+                raise ValueError(
+                    f"A {storage_type} storage for title '{storage_name}' already exists (id={s.get('id')})"
+                )
+
+        google_application_credentials = ifnone(
+            google_application_credentials, default=self.config["MINDTRACE_GCP_CREDENTIALS_PATH"]
+        )
+
+        if not google_application_credentials or not os.path.exists(google_application_credentials):
+            raise ValueError(f"GCP credentials file not found at: {google_application_credentials}")
+
+        try:
+            with open(google_application_credentials, "r") as f:
+                credentials_content = f.read()
+                json.loads(credentials_content)
+        except (json.JSONDecodeError, OSError) as e:
+            raise ValueError(f"Error reading credentials file: {str(e)}")
+
+        self.logger.info(f"Creating {storage_type} storage: {storage_name}")
+        self.logger.debug(f"Using bucket: {bucket}, prefix: {prefix}")
+
+        try:
+            if storage_type == "import":
+                use_blob_urls = bool(use_blob_urls)
+                effective_presign = True if presign is None else bool(presign)
+                effective_presign_ttl = 1 if presign_ttl is None else int(presign_ttl)
+
+                return project.connect_google_import_storage(
+                    bucket=bucket,
+                    prefix=prefix,
+                    regex_filter=regex_filter,
+                    use_blob_urls=use_blob_urls,
+                    presign=effective_presign,
+                    presign_ttl=effective_presign_ttl,
+                    title=storage_name,
+                    description="Imported via Label Studio SDK",
+                    google_application_credentials=credentials_content,
+                )
+            else:
+                return project.connect_google_export_storage(
+                    bucket=bucket,
+                    prefix=prefix,
+                    use_blob_urls=use_blob_urls,
+                    title=storage_name,
+                    description="Exported via Label Studio SDK",
+                    google_application_credentials=credentials_content,
+                )
+        except Exception as e:
+            self.logger.error(f"Failed to create storage: {str(e)}")
             raise
 
     def sync_gcp_storage(
@@ -559,120 +699,41 @@ class LabelStudio(Mindtrace):
             f"Failed to trigger {storage_type} storage sync for storage ID {storage_id} after {max_attempts} attempts"
         ) from last_error
 
-    def create_gcp_storage(
-        self,
-        *,
-        project_name: Optional[str] = None,
-        project_id: Optional[int] = None,
-        bucket: str = None,
-        prefix: Optional[str] = None,
-        storage_type: str = "import",
-        google_application_credentials: Optional[str] = None,
-        regex_filter: Optional[str] = None,
-    ) -> dict:
-        """Use this method to create a Google Cloud Storage for import or export.
+    def list_import_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
+        """Use this method to list all import storages for a project.
 
         Args:
             project_name: Project name of Label Studio
             project_id: Project ID of Label Studio
-            bucket: GCS bucket name
-            prefix: Optional path prefix in bucket
-            storage_type: Either "import" or "export"
-            google_application_credentials: Path to credentials JSON file
-            regex_filter: Regex filter for matching image types
 
         Returns:
-            dict: A dictionary containing the created storage details
-
-        Raises:
-            ValueError: If credentials file is missing or invalid
-            requests.exceptions.RequestException: If API request fails
-            json.JSONDecodeError: If credentials file contains invalid JSON
-            OSError: If there are file system errors
+            list: A list of Label Studio Storage objects
         """
-        project = self.get_project(project_name=project_name, project_id=project_id)
-        storage_name = (
-            f"GCS {storage_type.title()} {bucket}/{prefix}" if prefix else f"GCS {storage_type.title()} {bucket}"
-        )
-
-        google_application_credentials = ifnone(
-            google_application_credentials, default=self.config["MINDTRACE_GCP_CREDENTIALS_PATH"]
-        )
-
-        if not google_application_credentials or not os.path.exists(google_application_credentials):
-            raise ValueError(f"GCP credentials file not found at: {google_application_credentials}")
-
         try:
-            with open(google_application_credentials, "r") as f:
-                credentials_content = f.read()
-                json.loads(credentials_content)
-        except (json.JSONDecodeError, OSError) as e:
-            raise ValueError(f"Error reading credentials file: {str(e)}")
-
-        self.logger.info(f"Creating {storage_type} storage: {storage_name}")
-        self.logger.debug(f"Using bucket: {bucket}, prefix: {prefix}")
-
-        try:
-            if storage_type == "import":
-                return project.connect_google_import_storage(
-                    bucket=bucket,
-                    prefix=prefix,
-                    regex_filter=regex_filter,
-                    use_blob_urls=False,
-                    presign=True,
-                    presign_ttl=1,
-                    title=storage_name,
-                    description="Imported via Label Studio SDK",
-                    google_application_credentials=credentials_content,
-                )
-            else:
-                return project.connect_google_export_storage(
-                    bucket=bucket,
-                    prefix=prefix,
-                    use_blob_urls=False,
-                    title=storage_name,
-                    description="Exported via Label Studio SDK",
-                    google_application_credentials=credentials_content,
-                )
+            project = self.get_project(project_name=project_name, project_id=project_id)
+            return project.get_import_storages()
         except Exception as e:
-            self.logger.error(f"Failed to create storage: {str(e)}")
+            self.logger.error(f"Failed to list import storages for project {project_name} or {project_id}: {e}")
             raise
 
-    def delete_projects_by_prefix(self, title_prefix: str) -> list[str]:
-        """Delete all projects whose titles start with the specified prefix.
+    def list_export_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
+        """Use this method to list all export storages for a project.
 
         Args:
-            title_prefix: The prefix to match against project titles
+            project_name: Project name of Label Studio
+            project_id: Project ID of Label Studio
 
         Returns:
-            List of deleted project titles
-
-        Raises:
-            ValueError: If title_prefix is empty
+            list: A list of Label Studio Storage objects
         """
-        if not title_prefix:
-            raise ValueError("title_prefix cannot be empty")
-
-        self.logger.info(f"Finding projects with title prefix: {title_prefix}")
-        projects = self.list_projects()
-        matching_projects = [p for p in projects if p.title.startswith(title_prefix)]
-
-        if not matching_projects:
-            self.logger.info(f"No projects found with title prefix: {title_prefix}")
-            return []
-
-        deleted_titles = []
-        for project in matching_projects:
-            try:
-                self.logger.info(f"Deleting project: {project.title} (ID: {project.id})")
-                self.client.delete_project(project.id)
-                deleted_titles.append(project.title)
-            except Exception as e:
-                self.logger.error(f"Failed to delete project {project.title}: {str(e)}")
-
-        self.logger.info(f"Deleted {len(deleted_titles)} projects")
-        return deleted_titles
-
+        self.logger.debug(f"Listing export storages for project {project_id}")
+        try:
+            project = self.get_project(project_name=project_name, project_id=project_id)
+            return project.get_export_storages()
+        except Exception as e:
+            self.logger.error(f"Failed to list export storages for project {project_name} or {project_id}: {e}")
+            raise
+        
     def export_projects_by_prefix(
         self,
         title_prefix: str,
@@ -728,42 +789,6 @@ class LabelStudio(Mindtrace):
 
         self.logger.info(f"Exported {len(exported_titles)} projects")
         return exported_titles
-
-    def get_project_task_types(
-        self, *, project_name: Optional[str] = None, project_id: Optional[int] = None
-    ) -> list[str]:
-        """Determine the task types in a project by analyzing its label configuration.
-        XML tags vs task types:
-        <RectangleLabels> -> object_detection
-        <PolygonLabels> or <BrushLabels> -> segmentation
-        <Choices> or <Labels> -> classification
-
-        Args:
-            project_name: Project name to analyze
-            project_id: Project ID to analyze
-
-        Returns:
-            List of task types found in the project (e.g., ['object_detection', 'classification', 'segmentation'])
-
-        Raises:
-            ValueError: If neither project_id nor project_name is provided,
-                      or if project with given name is not found
-        """
-        project = self.get_project(project_name=project_name, project_id=project_id)
-        label_config = project.label_config
-
-        task_types = []
-
-        if "<RectangleLabels" in label_config:
-            task_types.append("object_detection")
-
-        if "<PolygonLabels" in label_config or "<BrushLabels" in label_config:
-            task_types.append("segmentation")
-
-        if "<Choices" in label_config or "<Labels" in label_config:
-            task_types.append("classification")
-
-        return task_types
 
     def _extract_gcs_path_from_label_studio_url(self, label_studio_url: str) -> Optional[str]:
         """Extract GCS path from a Label Studio presign URL.
