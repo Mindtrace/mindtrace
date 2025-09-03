@@ -365,7 +365,7 @@ class Camera(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
-    ) -> Union[List[Any], bool]:
+    ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 
         Args:
@@ -376,7 +376,13 @@ class Camera(Mindtrace):
             upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
 
         Returns:
-            List of images if return_images is True, otherwise a boolean success flag.
+            Dictionary containing HDR capture results with keys:
+            - success: bool - Whether capture succeeded
+            - images: List[Any] - Captured images if return_images is True
+            - image_paths: List[str] - Saved file paths if save_path_pattern provided
+            - exposure_levels: List[float] - Actual exposure values used
+            - successful_captures: int - Number of successful captures
+            - gcs_urls: List[str] - GCS URLs if uploaded
 
         Raises:
             CameraCaptureError: If no images could be captured successfully.

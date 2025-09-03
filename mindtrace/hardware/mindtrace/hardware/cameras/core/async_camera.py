@@ -646,7 +646,7 @@ class AsyncCamera(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
-    ) -> Union[List[Any], bool]:
+    ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 
         Args:
@@ -657,7 +657,13 @@ class AsyncCamera(Mindtrace):
             upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
 
         Returns:
-            List of images if return_images is True, otherwise a boolean success flag.
+            Dictionary containing HDR capture results with keys:
+            - success: bool - Whether capture succeeded
+            - images: List[Any] - Captured images if return_images is True
+            - image_paths: List[str] - Saved file paths if save_path_pattern provided
+            - exposure_levels: List[float] - Actual exposure values used
+            - successful_captures: int - Number of successful captures
+            - gcs_urls: List[str] - GCS URLs if uploaded
 
         Raises:
             CameraCaptureError: If no images could be captured successfully.
@@ -680,6 +686,7 @@ class AsyncCamera(Mindtrace):
                     f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}"
                 )
                 captured_images = []
+                image_paths = []
                 successful_captures = 0
                 for i, exposure in enumerate(exposures):
                     try:
@@ -700,6 +707,7 @@ class AsyncCamera(Mindtrace):
                                 if save_dir:
                                     os.makedirs(save_dir, exist_ok=True)
                                 cv2.imwrite(save_path, image)
+                                image_paths.append(save_path)
                             if return_images:
                                 captured_images.append(image)
                             successful_captures += 1
@@ -733,13 +741,19 @@ class AsyncCamera(Mindtrace):
                 )
                 
                 # Upload HDR sequence to GCS if requested
+                gcs_urls = []
                 if upload_to_gcs and self._should_upload_to_gcs() and captured_images:
-                    await self._upload_hdr_to_gcs(captured_images, exposures)
+                    gcs_urls = await self._upload_hdr_to_gcs(captured_images, exposures)
                 
-                if return_images:
-                    return captured_images
-                else:
-                    return successful_captures == len(exposures)
+                # Return structured HDR result
+                return {
+                    "success": successful_captures > 0,
+                    "images": captured_images if return_images else None,
+                    "image_paths": image_paths if image_paths else None,
+                    "gcs_urls": gcs_urls if gcs_urls else None,
+                    "exposure_levels": exposures,
+                    "successful_captures": successful_captures
+                }
             except (CameraCaptureError, CameraConnectionError, CameraConfigurationError):
                 raise
             except Exception as e:
