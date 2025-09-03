@@ -35,7 +35,12 @@ async def test_async_camera_configure_and_capture():
 
         # Simple HDR capture (2 levels, no images back)
         res = await cam.capture_hdr(exposure_levels=2, return_images=False)
-        assert isinstance(res, bool)
+        assert isinstance(res, dict)
+        assert "success" in res
+        assert "images" in res
+        assert "exposure_levels" in res
+        assert isinstance(res["success"], bool)
+        assert res["images"] is None  # Should be None when return_images=False
     finally:
         await manager.close(None)
 
@@ -232,9 +237,13 @@ async def test_async_camera_hdr_partial_success_and_failure(monkeypatch):
 
         monkeypatch.setattr(cam.backend, "capture", _cap_alt, raising=False)
 
-        imgs = await cam.capture_hdr(exposure_levels=3, return_images=True)
-        assert isinstance(imgs, list)
-        assert len(imgs) >= 1
+        result = await cam.capture_hdr(exposure_levels=3, return_images=True)
+        assert isinstance(result, dict)
+        assert "success" in result
+        assert "images" in result
+        assert result["success"] is True
+        assert isinstance(result["images"], list)
+        assert len(result["images"]) >= 1
 
         # All fail path -> raises CameraCaptureError
         async def _cap_all_fail():

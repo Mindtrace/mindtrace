@@ -215,8 +215,13 @@ async def test_batch_capture_hdr_return_images():
         await mgr.open(names)
         res = await mgr.batch_capture_hdr(camera_names=names, exposure_levels=2, return_images=True)
         assert set(res.keys()) == set(names)
-        for v in res.values():
-            assert isinstance(v, list)
+        for camera_name, hdr_result in res.items():
+            assert isinstance(hdr_result, dict)
+            assert "success" in hdr_result
+            assert "images" in hdr_result
+            assert "exposure_levels" in hdr_result
+            if hdr_result["success"]:
+                assert isinstance(hdr_result["images"], list)
     finally:
         await mgr.close(None)
 
