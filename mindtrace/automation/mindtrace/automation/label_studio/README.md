@@ -4,7 +4,7 @@ This guide walks you through setting up a local Label Studio instance and includ
 
 ### Run Label Studio locally (sample setup)
 
-Use the docker compose file provided in this repo to spin up Label Studio with persistent data and sample images mounted.
+Use the docker compose file provided in this repo to spin up Label Studio with persistent data and sample images.
 
 Compose file location: [docker compose](../../../../../samples/automation/labelstudio/docker-compose.yml)
 
@@ -25,7 +25,6 @@ http://localhost:8080
 
 Notes:
 - The volume `./data` persists Label Studio database and media under the compose directory.
-- The folder `./sample_images` is mounted inside the container at `/label-studio/data/sample_images` for quick imports.
 - If you see a permission error on `/label-studio/data/media`, the compose file already sets `user: "0:0"` to resolve it.
 - To stop and remove the container: `docker compose down` (add `-v` to remove volumes if you want a clean state).
 
