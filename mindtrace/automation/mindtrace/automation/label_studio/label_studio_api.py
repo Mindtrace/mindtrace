@@ -245,7 +245,7 @@ class LabelStudio(Mindtrace):
 
         self.logger.info(f"Deleted {len(deleted_titles)} projects")
         return deleted_titles
-    
+
     def create_tasks_from_images(
         self,
         *,
@@ -297,9 +297,7 @@ class LabelStudio(Mindtrace):
             created = 0
             if not paths:
                 return 0
-            self.logger.info(
-                f"Uploading batch {batch_index + 1} (size={len(paths)}) to project {project.id}"
-            )
+            self.logger.info(f"Uploading batch {batch_index + 1} (size={len(paths)}) to project {project.id}")
             for path in paths:
                 try:
                     created_ids = project.import_tasks(str(path))
@@ -322,13 +320,9 @@ class LabelStudio(Mindtrace):
             total_created += process_batch(batch)
 
         if total_created == 0:
-            self.logger.info(
-                f"No images found under: {root_dir}. Supported image extensions are: {image_extensions}"
-            )
+            self.logger.info(f"No images found under: {root_dir}. Supported image extensions are: {image_extensions}")
 
-        self.logger.info(
-            f"Uploaded {total_created} tasks to project '{project.title}' (ID: {project.id})"
-        )
+        self.logger.info(f"Uploaded {total_created} tasks to project '{project.title}' (ID: {project.id})")
         return total_created
 
     def get_tasks(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
@@ -344,8 +338,6 @@ class LabelStudio(Mindtrace):
         project = self.get_project(project_name=project_name, project_id=project_id)
         tasks = project.get_tasks()
         return tasks
-
-    
 
     def get_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
@@ -363,41 +355,39 @@ class LabelStudio(Mindtrace):
         project = self.get_project(project_name=project_name, project_id=project_id)
         return project.get_task(task_id)
 
-    def get_task_types(
-            self, *, project_name: Optional[str] = None, project_id: Optional[int] = None
-        ) -> list[str]:
-            """Determine the task types in a project by analyzing its label configuration.
-            XML tags vs task types:
-            <RectangleLabels> -> object_detection
-            <PolygonLabels> or <BrushLabels> -> segmentation
-            <Choices> or <Labels> -> classification
+    def get_task_types(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list[str]:
+        """Determine the task types in a project by analyzing its label configuration.
+        XML tags vs task types:
+        <RectangleLabels> -> object_detection
+        <PolygonLabels> or <BrushLabels> -> segmentation
+        <Choices> or <Labels> -> classification
 
-            Args:
-                project_name: Project name to analyze
-                project_id: Project ID to analyze
+        Args:
+            project_name: Project name to analyze
+            project_id: Project ID to analyze
 
-            Returns:
-                List of task types found in the project (e.g., ['object_detection', 'classification', 'segmentation'])
+        Returns:
+            List of task types found in the project (e.g., ['object_detection', 'classification', 'segmentation'])
 
-            Raises:
-                ValueError: If neither project_id nor project_name is provided,
-                        or if project with given name is not found
-            """
-            project = self.get_project(project_name=project_name, project_id=project_id)
-            label_config = project.label_config
+        Raises:
+            ValueError: If neither project_id nor project_name is provided,
+                    or if project with given name is not found
+        """
+        project = self.get_project(project_name=project_name, project_id=project_id)
+        label_config = project.label_config
 
-            task_types = []
+        task_types = []
 
-            if "<RectangleLabels" in label_config:
-                task_types.append("object_detection")
+        if "<RectangleLabels" in label_config:
+            task_types.append("object_detection")
 
-            if "<PolygonLabels" in label_config or "<BrushLabels" in label_config:
-                task_types.append("segmentation")
+        if "<PolygonLabels" in label_config or "<BrushLabels" in label_config:
+            task_types.append("segmentation")
 
-            if "<Choices" in label_config or "<Labels" in label_config:
-                task_types.append("classification")
+        if "<Choices" in label_config or "<Labels" in label_config:
+            task_types.append("classification")
 
-            return task_types
+        return task_types
 
     def delete_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
@@ -457,19 +447,19 @@ class LabelStudio(Mindtrace):
         project = self.get_project(project_name=project_name, project_id=project_id)
         try:
             if task_id:
-                return project.get_task(task_id).get('annotations',[])
+                return project.get_task(task_id).get("annotations", [])
             else:
                 # Use the tasks API to get annotations
                 tasks = project.get_tasks()
                 annotations = []
                 for task in tasks:
-                    task_annotations = task.get('annotations',[])
+                    task_annotations = task.get("annotations", [])
                     annotations.extend(task_annotations)
                 return annotations
         except Exception as e:
             self.logger.error(f"Could not get annotations using get_annotations(): {e}")
-            return []    
-    
+            return []
+
     def export_annotations(
         self,
         *,
@@ -733,7 +723,7 @@ class LabelStudio(Mindtrace):
         except Exception as e:
             self.logger.error(f"Failed to list export storages for project {project_name} or {project_id}: {e}")
             raise
-        
+
     def export_projects_by_prefix(
         self,
         title_prefix: str,
