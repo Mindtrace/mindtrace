@@ -142,7 +142,7 @@ def main():
     )
     args = parser.parse_args()
 
-    registry = init_registry(args)
+    registry = init_registry(args, parser)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         if args.cache_models:
@@ -154,7 +154,7 @@ def main():
         register_sam_models(registry, temp_dir)
 
 
-def init_registry(args: argparse.Namespace) -> Registry:
+def init_registry(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Registry:
     if args.backend == "local":
         if not args.registry_path:
             parser.error("--registry-path is required for local backend")
