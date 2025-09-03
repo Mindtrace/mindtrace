@@ -32,6 +32,7 @@ class Config(dict):
                 "LabelStudio": "",
             },
             "MINDTRACE_GCP_CREDENTIALS_PATH": "",
+            "MINDTRACE_TEST_PARAM": "",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
@@ -39,4 +40,9 @@ class Config(dict):
         for k, v in default_config.items():
             if isinstance(v, str) and v.startswith("~/"):
                 default_config[k] = os.path.expanduser(v)
+
+        for k, v in default_config.items():
+            if k.startswith("MINDTRACE_"):
+                default_config[k] = os.getenv(k, v)
+
         super().__init__(default_config)
