@@ -1,5 +1,5 @@
 import os
-from typing import Any, ClassVar, Tuple, Type, TYPE_CHECKING
+from typing import Any, ClassVar, Tuple, Type
 
 from ultralytics import YOLOE
 from zenml.enums import ArtifactType
@@ -8,7 +8,7 @@ from mindtrace.registry import Archiver, Registry
 
 
 class YoloEArchiver(Archiver):
-    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (YOLOE, )
+    ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (YOLOE,)
     ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
 
     def __init__(self, uri: str, **kwargs):

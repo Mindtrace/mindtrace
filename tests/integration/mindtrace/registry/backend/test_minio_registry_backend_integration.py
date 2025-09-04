@@ -1,11 +1,7 @@
-import shutil
-import tempfile
 import uuid
 from pathlib import Path
-from typing import Generator
 
 import pytest
-from minio import Minio
 from minio.error import S3Error
 
 from mindtrace.core import Config

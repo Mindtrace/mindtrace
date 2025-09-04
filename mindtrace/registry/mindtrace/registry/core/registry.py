@@ -76,7 +76,7 @@ class Registry(Mindtrace):
 
         # Register the default materializers if there are none
         self._register_default_materializers()
-        
+
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
 
@@ -792,7 +792,7 @@ class Registry(Mindtrace):
 
     def _register_default_materializers(self, override_preexisting_materializers: bool = False):
         """Register default materializers from the class-level registry.
-        
+
         By default, the registry will only register materializers that are not already registered.
         """
         self.logger.info("Registering default materializers...")

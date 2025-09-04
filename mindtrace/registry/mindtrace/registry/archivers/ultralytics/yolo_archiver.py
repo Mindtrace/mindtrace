@@ -1,5 +1,5 @@
 import os
-from typing import Any, ClassVar, Tuple, Type, TYPE_CHECKING
+from typing import Any, ClassVar, Tuple, Type
 
 from ultralytics import YOLO, YOLOWorld
 from zenml.enums import ArtifactType
