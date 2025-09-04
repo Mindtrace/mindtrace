@@ -103,61 +103,62 @@ def defect_rate_chart() -> rx.Component:
     )
 
 
-def frequent_defects_chart() -> rx.Component:
+def defect_histogram_chart() -> rx.Component:
     """Most frequent defects pie chart - no filter needed as it shows distribution."""
 
     return chart_card(
         title="Most Frequent Defects",
         subtitle="Distribution of defect types in selected time range",
         children=rx.cond(
-        LineInsightsState.loading_frequent_chart,
-        rx.center(
-            rx.spinner(size="3"),
-            height="350px",
-        ),
-        pie_chart(
-            data=LineInsightsState.frequent_defects_data,
-            data_key="count",
-            name_key="defect_type",
-            height=350,  # Full height since no filter
-            show_labels=True,
-            show_legend=True,
-            show_tooltip=True,
-            inner_radius="30%",  # Creates a doughnut chart
-            outer_radius="80%",
-        ),
-    ),
-    )
-
-
-def camera_defect_matrix_chart() -> rx.Component:
-    """Camera defect matrix chart - shows distribution across cameras, no filter needed."""
-
-
-    return chart_card(
-        title="Defect Distribution by Camera",
-        subtitle="Defect counts per camera position in selected time range",
-        children=rx.cond(
-        LineInsightsState.loading_matrix_chart,
+        LineInsightsState.loading_defect_histogram_chart,
         rx.center(
             rx.spinner(size="3"),
             height="350px",
         ),
         bar_chart(
-            data=LineInsightsState.camera_defect_matrix_data,
-            x_key="camera",
-            y_keys=LineInsightsState.camera_chart_defect_types,
-            height=400,
+            data=LineInsightsState.defect_histogram_data,
+            x_key="defect_type",
+            y_key="count",
+            height=350,  # Full height since no filter
             show_grid=True,
             show_legend=True,
             show_tooltip=True,
             layout="horizontal",
-            bar_size=30,
-            bar_gap=4,
-            bar_category_gap="20%",
+            bar_size=20,
+            bar_gap=1,
+            bar_category_gap="5%",
         ),
     ),
     )
+
+# def camera_defect_matrix_chart() -> rx.Component:
+#     """Camera defect matrix chart - shows distribution across cameras, no filter needed."""
+
+
+#     return chart_card(
+#         title="Defect Distribution by Camera",
+#         subtitle="Defect counts per camera position in selected time range",
+#         children=rx.cond(
+#         LineInsightsState.loading_matrix_chart,
+#         rx.center(
+#             rx.spinner(size="3"),
+#             height="350px",
+#         ),
+#         bar_chart(
+#             data=LineInsightsState.camera_defect_matrix_data,
+#             x_key="camera",
+#             y_keys=LineInsightsState.camera_chart_defect_types,
+#             height=400,
+#             show_grid=True,
+#             show_legend=True,
+#             show_tooltip=True,
+#             layout="horizontal",
+#             bar_size=30,
+#             bar_gap=4,
+#             bar_category_gap="20%",
+#         ),
+#     ),
+#     )
 
 
 def weld_defect_rate_chart() -> rx.Component:
@@ -181,7 +182,7 @@ def weld_defect_rate_chart() -> rx.Component:
             show_grid=True,
             show_legend=False,
             show_tooltip=True,
-            layout="horizontal",  # Changed to horizontal like camera chart
+            layout="horizontal",  
             bar_size=20,
             bar_gap=1,
             bar_category_gap="5%",
@@ -274,8 +275,7 @@ def line_insights_content() -> rx.Component:
         ),
         # Third row: Frequent defects and camera matrix
         rx.grid(
-            frequent_defects_chart(),
-            camera_defect_matrix_chart(),
+            defect_histogram_chart(),
             columns="2",
             spacing="4",
             width="100%",

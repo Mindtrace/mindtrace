@@ -3,6 +3,7 @@ from poseidon.backend.database.models.enums import ScanStatus
 from poseidon.backend.database.init import initialize_database
 from typing import Optional, List, Dict
 from datetime import datetime
+from beanie import PydanticObjectId
 
 class ScanRepository:
     @staticmethod
@@ -81,13 +82,9 @@ class ScanRepository:
         try:
             # Follow existing pattern: get the linked object first
             from poseidon.backend.database.models.project import Project
+                
             
-            # Get the project object first
-            project = await Project.get(project_id)
-            if not project:
-                return []
-            
-            return await Scan.find(Scan.project.id == project.id).to_list()
+            return await Scan.find(Scan.project.id == PydanticObjectId(project_id)).to_list()
         except Exception as e:
             print(f"Error in get_by_project: {e}")
             return []
@@ -142,21 +139,16 @@ class ScanRepository:
         """Get scans for a project within a date range"""
         await ScanRepository._ensure_init()
         try:
-            # Follow existing pattern: get the linked object first
-            from poseidon.backend.database.models.project import Project
-            
-            # Get the project object first
-            project = await Project.get(project_id)
-            if not project:
-                return []
+
             
             # Build query conditions
-            conditions = [Scan.project.id == project.id]
+            conditions = [Scan.project.id == PydanticObjectId(project_id)]
             
-            if start_date:
+            if start_date is not None:
                 conditions.append(Scan.created_at >= start_date)
             if end_date:
                 conditions.append(Scan.created_at <= end_date)
+            
             
             return await Scan.find(*conditions).to_list()
         except Exception as e:
