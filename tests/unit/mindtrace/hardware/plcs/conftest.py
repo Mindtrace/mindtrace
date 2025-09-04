@@ -67,3 +67,63 @@ def fast_plc_sleep(monkeypatch):
     )
 
     yield 
+
+
+# Shared async test utilities and fixtures
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest.fixture
+def sample_plc_tags():
+    """Sample PLC tag data for testing."""
+    return {
+        "Motor1_Speed": 1500.0,
+        "Motor1_Command": False,
+        "Conveyor_Status": True,
+        "Production_Count": 12567,
+        "N7:0": 1500,
+        "B3:0": True,
+        "T4:0.PRE": 10000,
+        "C5:0.ACC": 250,
+        "Assembly:20": [1500, 0, 255, 0],
+        "Parameter:1": 1500.0,
+        "Identity": {"vendor_id": 1, "device_type": 14},
+    }
+
+
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture
+async def mock_plc_manager():
+    """Create a PLC manager instance with mock backends."""
+    from mindtrace.hardware.plcs.plc_manager import PLCManager
+
+    manager = PLCManager()
+    yield manager
+
+    try:
+        await manager.disconnect_all_plcs()
+    except Exception:
+        pass
+
+
+@pytest_asyncio.fixture
+async def mock_allen_bradley_plc():
+    """Create a mock Allen Bradley PLC instance."""
+    from mindtrace.hardware.plcs.backends.allen_bradley.mock_allen_bradley import MockAllenBradleyPLC
+
+    plc = MockAllenBradleyPLC(plc_name="TestPLC", ip_address="192.168.1.100", plc_type="logix")
+    yield plc
+
+    try:
+        await plc.disconnect()
+    except Exception:
+        pass
