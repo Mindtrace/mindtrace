@@ -1,15 +1,16 @@
 import os
-from pathlib import Path
 import shutil
 import tempfile
-from typing import Generator
 import uuid
+from pathlib import Path
+from typing import Generator
 
 import pytest
 from minio import Minio
+from minio.error import S3Error
 
 from mindtrace.core import Config
-from mindtrace.registry import Registry, MinioRegistryBackend
+from mindtrace.registry import MinioRegistryBackend, Registry
 
 
 @pytest.fixture(scope="session")
@@ -25,7 +26,7 @@ def minio_client():
         secret_key=secret_key,
         secure=secure,
     )
-    yield client 
+    yield client
 
 
 @pytest.fixture
@@ -63,6 +64,7 @@ def backend(temp_dir, test_bucket):
         bucket=test_bucket,
         secure=False,
     )
+
 
 @pytest.fixture
 def minio_registry(backend):
