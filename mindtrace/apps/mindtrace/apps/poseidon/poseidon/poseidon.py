@@ -117,3 +117,5 @@ app.add_page(
     with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
     route="/component-showcase",
 )
+from poseidon.backend.database.init import rebuild_all_models
+rebuild_all_models()
