@@ -29,6 +29,9 @@ class Config(dict):
             "MINDTRACE_CLUSTER_RABBITMQ_PORT": 5672,
             "MINDTRACE_CLUSTER_RABBITMQ_USERNAME": "user",
             "MINDTRACE_CLUSTER_RABBITMQ_PASSWORD": "password",
+            "MINDTRACE_MCP_MOUNT_PATH": "/mcp-server",
+            "MINDTRACE_MCP_HTTP_APP_PATH": "/mcp",
+            "MINDTRACE_TEST_PARAM": "",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
