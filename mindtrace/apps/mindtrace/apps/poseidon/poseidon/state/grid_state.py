@@ -3,15 +3,13 @@ from typing import List, Dict, Any, Optional
 
 import reflex as rx
 from poseidon.backend.database.repositories.scan_repository import ScanRepository
-from poseidon.backend.cloud.gcs import presign_url
-
 
 # ---- Constants ---------------------------------------------------------------
 DEFAULT_SORT_BY = "created_at"
 DEFAULT_SORT_DIR = "desc"  # "asc" | "desc"
 DEFAULT_PAGE = 1
-DEFAULT_PAGE_SIZE = 20
-MAX_PAGE_SIZE = 200
+DEFAULT_PAGE_SIZE = 10
+MAX_PAGE_SIZE = 20
 MIN_PAGE_SIZE = 1
 
 
@@ -40,8 +38,8 @@ class GridState(rx.State):
     selected_part: str = ""
     selected_created_at: str = ""
     selected_result: str = ""
-    selected_operator: str = ""
-    selected_model_version: str = ""
+    selected_operator: str = ""       # kept for UI compatibility
+    selected_model_version: str = ""  # kept for UI compatibility
     selected_confidence: str = ""
 
     # Modal (part/image preview extras)
@@ -63,12 +61,8 @@ class GridState(rx.State):
         return self.columns or []
 
     @rx.var
-    def columns_css(self) -> str:
-        # If you want dynamic widths later, derive from self.columns here.
-        return "2fr 1fr 1fr 1fr"
-
-    @rx.var
     def total_pages(self) -> int:
+        # Note: total is server-reported (pre client-side result filter)
         return max(1, math.ceil(self.total / max(MIN_PAGE_SIZE, self.page_size)))
 
     @rx.var
@@ -89,7 +83,7 @@ class GridState(rx.State):
 
     # ---------- Load ----------
     async def load(self):
-        # Normalize & dedupe query
+        # Normalize query params
         q_tuple = (
             (self.search or "").strip() or None,
             self.result_filter or "All",
@@ -98,7 +92,11 @@ class GridState(rx.State):
             int(self.page),
             int(self.page_size),
         )
-        if self._last_query == q_tuple and self.rows:  # nothing changed
+
+        # Dedupe only if we actually have rows and nothing changed
+        if self._last_query == q_tuple and self.rows:
+            # debug: useful if you’re not seeing backend logs
+            print("[GridState.load] skipped (deduped)", flush=True)
             return
 
         # Prevent concurrent loads; handle out-of-order completions
@@ -106,37 +104,59 @@ class GridState(rx.State):
         token = self._loading_token
         self.loading = True
         self.error = ""
+        print(f"[GridState.load] start q={q_tuple}", flush=True)
 
         try:
             rows, total, columns = await ScanRepository.search_grid(
                 q=q_tuple[0],
-                result=q_tuple[1],
-                sort_by=q_tuple[2],
+                result=q_tuple[1],   # repo may ignore; we filter client-side below
+                sort_by=q_tuple[2],  # server sorts native fields (created_at, serial_number)
                 sort_dir=q_tuple[3],
                 page=q_tuple[4],
                 page_size=q_tuple[5],
             )
+
             # If another load started after us, drop these results
             if token != self._loading_token:
+                print("[GridState.load] stale result dropped", flush=True)
                 return
 
-            self.rows = rows or []
-            self.total = int(total or 0)
+            # --- client-side filter by result (computed on the row) ---
+            filtered_rows = rows or []
+            if self.result_filter and self.result_filter != "All":
+                wanted = (self.result_filter or "").strip().lower()
+                before = len(filtered_rows)
+                filtered_rows = [r for r in filtered_rows if str(r.get("result", "")).lower() == wanted]
+                print(f"[GridState.load] client result filter={self.result_filter} kept {len(filtered_rows)}/{before}", flush=True)
+
+            # --- client-side sort for computed fields only ---
+            # Server sorts DB fields already; for 'part' or 'result' we sort here.
+            if self.sort_by in ("part", "result"):
+                reverse = (self.sort_dir == "desc")
+                key_id = self.sort_by
+                filtered_rows.sort(
+                    key=lambda r: str(r.get(key_id, "") or "").lower(),
+                    reverse=reverse,
+                )
+                print(f"[GridState.load] client sort by {key_id} {self.sort_dir}", flush=True)
+
+            # Assign to state
+            self.rows = filtered_rows
+            self.total = int(total or 0)      # server total (pre client filter)
             self.columns = columns or []
             self._last_query = q_tuple
 
             # Rebuild id->index map once per load
-            self._row_index = {
-                str(r.get("id", "")): i for i, r in enumerate(self.rows)
-            }
+            self._row_index = {str(r.get("id", "")): i for i, r in enumerate(self.rows)}
 
             # If the expanded row disappeared, tidy up
             if self.expanded_row_id and self.expanded_row_id not in self._row_index:
                 self.expanded_row_id = ""
                 self.current_row_cameras = []
 
+            print(f"[GridState.load] done rows={len(self.rows)} total={self.total}", flush=True)
+
         except Exception as e:
-            # Only apply the error if we're still the latest load
             if token == self._loading_token:
                 self.error = str(e)
                 self.rows = []
@@ -144,38 +164,10 @@ class GridState(rx.State):
                 self.columns = []
                 self._row_index = {}
                 self._last_query = None
+            print(f"[GridState.load] ERROR: {e}", flush=True)
         finally:
             if token == self._loading_token:
                 self.loading = False
-
-    # ---------- Helpers ----------
-    @staticmethod
-    def _is_http(s: str) -> bool:
-        return s.startswith(("http://", "https://"))
-
-    def get_presigned_url(self, gcs_like_path: str) -> str:
-        """
-        Return a presigned URL for a GCS path, but pass through if it's already http(s).
-        """
-        if not gcs_like_path:
-            return ""
-        return gcs_like_path if self._is_http(gcs_like_path) else presign_url(gcs_like_path)
-
-    def _with_presigned_part(self, part: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Ensure a part dict includes a presigned 'image_url'.
-        """
-        src = (
-            part.get("image_url")
-            or part.get("full_path")
-            or part.get("gcs_path")
-            or part.get("path")
-            or ""
-        )
-        img = self.get_presigned_url(str(src))
-        if part.get("image_url") == img:
-            return part  # no new dict if unchanged
-        return {**part, "image_url": img}
 
     def _clamp_page_size(self, n: int) -> int:
         try:
@@ -191,6 +183,7 @@ class GridState(rx.State):
             return  # no-op
         self.search = v
         self.page = 1
+        self._last_query = None  # force re-load
         return GridState.load
 
     def set_result_filter(self, v: str):
@@ -199,10 +192,10 @@ class GridState(rx.State):
             return
         self.result_filter = v
         self.page = 1
+        self._last_query = None
         return GridState.load
 
     def clear_filters(self):
-        # Only invalidate if something actually changes
         changed = False
         if self.search:
             self.search = ""
@@ -214,6 +207,7 @@ class GridState(rx.State):
             self.page = 1
             changed = True
         if changed:
+            self._last_query = None
             return GridState.load
 
     def set_sort(self, column_id: str):
@@ -226,16 +220,19 @@ class GridState(rx.State):
             self.sort_by = column_id
             self.sort_dir = "asc"
         self.page = 1
+        self._last_query = None
         return GridState.load
 
     def next_page(self):
         if self.page < self.total_pages:
             self.page += 1
+            self._last_query = None
             return GridState.load
 
     def prev_page(self):
         if self.page > 1:
             self.page -= 1
+            self._last_query = None
             return GridState.load
 
     def set_page_size(self, n: int):
@@ -244,6 +241,7 @@ class GridState(rx.State):
             return
         self.page_size = new_size
         self.page = 1
+        self._last_query = None
         return GridState.load
 
     # ---------- Modal helpers ----------
@@ -261,15 +259,19 @@ class GridState(rx.State):
         self.selected_part = str(row.get("part", "-"))
         self.selected_created_at = str(row.get("created_at", "-"))
         self.selected_result = str(row.get("result", "-"))
+        self.selected_confidence = str(row.get("confidence", "-"))
+        # compatibility placeholders
         self.selected_operator = str(row.get("operator", "-"))
         self.selected_model_version = str(row.get("model_version", "-"))
-        self.selected_confidence = str(row.get("confidence", "-"))
         self._reset_part_preview()
         self.modal_open = True
 
+    # Repo already returns presigned image_url; keep for backwards compat
+    def _with_presigned_part(self, part: Dict[str, Any]) -> Dict[str, Any]:
+        return part or {}
+
     def open_part_preview(self, row: Dict[str, Any], part: Dict[str, Any]):
         """Populate modal with row + specific part (image-left / details-right use)."""
-        # Fill row-level first (includes modal_open True)
         self.open_inspection(row)
 
         part = self._with_presigned_part(part or {})
@@ -280,9 +282,7 @@ class GridState(rx.State):
         self.selected_part_classes = [str(c) for c in classes] if isinstance(classes, list) else []
 
         p_conf = part.get("confidence", None)
-        self.selected_part_confidence = (
-            f"{float(p_conf):.2f}" if isinstance(p_conf, (int, float)) else "-"
-        )
+        self.selected_part_confidence = (f"{float(p_conf):.2f}" if isinstance(p_conf, (int, float)) else "-")
 
         bbox = part.get("bbox", None)
         self.selected_bbox = bbox if isinstance(bbox, dict) else None
@@ -296,15 +296,11 @@ class GridState(rx.State):
         parts_data = row.get("parts") or []
         if not isinstance(parts_data, list):
             return []
-        # Presign in one pass; avoid reallocation if already presigned
-        out: List[Dict[str, Any]] = []
-        append = out.append
-        for p in parts_data:
-            append(self._with_presigned_part(p))
-        return out
+        # No presign needed; already presigned by repo
+        return [self._with_presigned_part(p) for p in parts_data]
 
     def set_expanded_row(self, row_id: str):
-        """Set which row is expanded and load its camera data by row id, presigning images."""
+        """Set which row is expanded and load its camera data by row id."""
         row_id = str(row_id or "")
         self.expanded_row_id = row_id
         self.current_row_cameras = []

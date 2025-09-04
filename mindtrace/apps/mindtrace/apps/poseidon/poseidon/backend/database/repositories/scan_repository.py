@@ -9,7 +9,28 @@ from poseidon.backend.database.models.scan import Scan
 from poseidon.backend.database.models.scan_image import ScanImage
 from poseidon.backend.database.models.scan_classification import ScanClassification
 from poseidon.backend.database.models.enums import ScanStatus
+from poseidon.backend.cloud.gcs import presign_url
 
+import logging, sys
+
+logger = logging.getLogger("scan_repo")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    _h = logging.StreamHandler(stream=sys.stdout)
+    _h.setLevel(logging.INFO)
+    _h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
+    logger.addHandler(_h)
+
+def _dbg(msg: str):
+    # Always try both logging and a flushed print so you see it in any env
+    try:
+        logger.info(msg)
+    except Exception:
+        pass
+    try:
+        print(msg, flush=True)
+    except Exception:
+        pass
 
 class ScanRepository:
     # ----------------- init -----------------
@@ -123,13 +144,6 @@ class ScanRepository:
         await ScanRepository._ensure_init()
         return await Scan.find(Scan.status == ScanStatus.FAILED).to_list()
 
-    @staticmethod
-    async def list_paginated(page: int = 1, page_size: int = 10) -> List[Scan]:
-        """Generic pagination without extra filters."""
-        await ScanRepository._ensure_init()
-        skip = max(0, (page - 1) * page_size)
-        return await Scan.find_all().skip(skip).limit(page_size).to_list()
-
     # ----------------- Helpers for grid shaping -----------------
     @staticmethod
     async def _infer_result(scan: Scan) -> str:
@@ -162,149 +176,19 @@ class ScanRepository:
     @staticmethod
     def _to_image_url(img: Any) -> str:
         """
-        Prefer a fully-qualified URL if present; else construct canonical GCS path.
-
-        Priority:
-        1) image_url if http(s)/gs://                  -> passthrough
-        2) full_path if http(s)/gs://                  -> passthrough
-        3) bucket_name + full_path (relative)          -> gs://bucket/<full_path>
-        4) bucket_name + path (+ file_name if needed)  -> gs://bucket/<path>/<file_name?>
-        5) bucket_name + file_name                     -> gs://bucket/<file_name>
-        6) fallback: file_name                         -> <file_name>
+        Always build a presigned GCS URL from full_path.
         """
         if img is None:
             return ""
 
         get = img.get if isinstance(img, dict) else (lambda k, d=None: getattr(img, k, d))
 
-        HTTP_PREFIXES = ("http://", "https://")
-        GS_PREFIX = "gs://"
-
-        def as_str(x: Any) -> str:
-            return x if isinstance(x, str) else ("" if x is None else str(x))
-
-        def is_http(s: Any) -> bool:
-            return as_str(s).startswith(HTTP_PREFIXES)
-
-        def is_gs(s: Any) -> bool:
-            return as_str(s).startswith(GS_PREFIX)
-
-        def norm(s: Any) -> str:
-            return as_str(s).replace("\\", "/").strip().strip("/")
-
-        def join(path: Any, fname: Any) -> str:
-            p, f = norm(path), norm(fname)
-            if not p:
-                return f
-            if not f:
-                return p
-            return p if p.endswith(f) else f"{p}/{f}"
-
-        # ---- logic ----
-        image_url = get("image_url")
-        if is_http(image_url) or is_gs(image_url):
-            return as_str(image_url)
-
         full_path = get("full_path")
-        if is_http(full_path) or is_gs(full_path):
-            return as_str(full_path)
+        if not full_path:
+            return ""
 
-        bucket = norm(get("bucket_name"))
-        path = get("path", "") or ""
-        file_name = get("file_name", "") or ""
+        return presign_url(full_path)
 
-        if bucket and full_path:
-            fp = norm(full_path)
-            return f"{GS_PREFIX}{bucket}/{fp}" if fp else f"{GS_PREFIX}{bucket}"
-
-        if bucket and (path or file_name):
-            joined = join(path, file_name)
-            return f"{GS_PREFIX}{bucket}/{joined}" if joined else f"{GS_PREFIX}{bucket}"
-
-        return as_str(file_name)
-
-
-    @staticmethod
-    async def _parts_for_scan(scan: Scan) -> List[Dict[str, Any]]:
-        """
-        Build a list of parts from this scan's images + classifications.
-        """
-        parts: List[Dict[str, Any]] = []
-
-        images: List[ScanImage] = await ScanImage.find(ScanImage.scan.id == scan.id).to_list()
-        if not images:
-            return parts
-
-        sem = asyncio.Semaphore(20)
-
-        async def _fetch_links(img: ScanImage):
-            async with sem:
-                await asyncio.gather(
-                    img.fetch_link(ScanImage.camera),
-                    img.fetch_link(ScanImage.classifications),
-                    return_exceptions=True,
-                )
-            return img
-
-        images = await asyncio.gather(*(_fetch_links(img) for img in images))
-
-        for idx, img in enumerate(images, start=1):
-            cam = getattr(img, "camera", None)
-            if cam is not None and getattr(cam, "name", None):
-                name = cam.name
-            else:
-                path = (getattr(img, "path", "") or "").replace("\\", "/").strip().strip("/")
-                if path:
-                    name = path.split("/")[-1]
-                else:
-                    stem = (getattr(img, "file_name", "") or "").rsplit(".", 1)[0]
-                    name = stem or f"Camera_{idx}"
-
-            classes: List[str] = []
-            seen_lower = set()
-            bbox_payload: Optional[Dict[str, Any]] = None
-            max_conf: Optional[float] = None
-
-            for cls in (getattr(img, "classifications", None) or []):
-                label = getattr(cls, "det_cls", None) or getattr(cls, "name", None)
-                if label:
-                    lkey = str(label).strip().lower()
-                    if lkey and lkey not in seen_lower:
-                        classes.append(str(label))
-                        seen_lower.add(lkey)
-
-                # max confidence
-                c = getattr(cls, "cls_confidence", None)
-                if c is not None and (max_conf is None or c > max_conf):
-                    max_conf = c
-
-                # first valid bbox
-                if bbox_payload is None:
-                    x = getattr(cls, "det_x", None)
-                    y = getattr(cls, "det_y", None)
-                    w = getattr(cls, "det_w", None)
-                    h = getattr(cls, "det_h", None)
-                    if None not in (x, y, w, h):
-                        bbox_payload = {"x": x, "y": y, "w": w, "h": h, "class": (label or "")}
-
-            non_healthy = [c for c in classes if c.lower() != "healthy"]
-            status = ", ".join(non_healthy) if non_healthy else "Healthy"
-
-            parts.append(
-                {
-                    "name": name,
-                    "status": status,
-                    "image_url": ScanRepository._to_image_url(img),
-                    "image_id": str(getattr(img, "id", "")),
-                    "classes": classes,
-                    "bbox": bbox_payload,
-                    "confidence": max_conf,
-                }
-            )
-
-        return parts
-
-    # ----------------- Grid search -----------------
     @staticmethod
     async def search_grid(
         *,
@@ -317,114 +201,122 @@ class ScanRepository:
     ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, str]]]:
         await ScanRepository._ensure_init()
 
-        expr = Scan.serial_number.regex(q, "i") if q else None
-        cursor = Scan.find(expr) if expr is not None else Scan.find_all()
+        pipeline = [
+            # Optional filter by serial_number
+            {"$match": {"serial_number": {"$regex": q, "$options": "i"}}} if q else {"$match": {}},
 
-        sortable_db = {"serial_number": Scan.serial_number, "created_at": Scan.created_at}
-        if sort_by in sortable_db:
-            field = sortable_db[sort_by]
-            cursor = cursor.sort(-field if sort_dir == "desc" else field)
+            # Compute 'result' from cls_result (fallback Healthy)
+            {"$set": {"result": {"$ifNull": ["$cls_result", "Healthy"]}}},
 
-        skip = max(0, (page - 1) * page_size)
-        scans: List[Scan] = await cursor.skip(skip).limit(page_size).to_list()
+            # Optional filter by result
+            {"$match": {"result": result}} if result and result != "All" else {"$match": {}},
 
-        if not scans:
-            total = await (Scan.find(expr) if expr is not None else Scan.find_all()).count()
-            columns = [
-                {"id": "serial_number", "header": "Serial Number"},
-                {"id": "part",          "header": "Part"},
-                {"id": "created_at",    "header": "Created At"},
-                {"id": "result",        "header": "Result"},
-            ]
-            return [], total, columns
+            # ---- Project -> project_name ----
+            {"$addFields": {"project_id": "$project.$id"}},               # extract ObjectId from DBRef
+            {"$lookup": {
+                "from": "Project",
+                "localField": "project_id",
+                "foreignField": "_id",
+                "as": "project_doc",
+            }},
+            {"$set": {"project_name": {"$ifNull": [{"$first": "$project_doc.name"}, "-"]}}},
+            {"$unset": ["project_id", "project_doc"]},
 
-        sem = asyncio.Semaphore(20)
+            # ---- Images (from DBRef array 'images') ----
+            {"$addFields": {
+                "image_ids": {
+                    "$map": {
+                        "input": {"$ifNull": ["$images", []]},
+                        "as": "ref",
+                        "in": "$$ref.$id"                 # take the ObjectId from each DBRef
+                    }
+                }
+            }},
+            {"$lookup": {
+                "from": "ScanImage",
+                "localField": "image_ids",
+                "foreignField": "_id",
+                "as": "images",                           # replaces with full image docs array
+            }},
 
-        async def _fetch_scan_links(s: Scan):
-            async with sem:
-                tasks = []
-                if getattr(s, "project", None) is not None:
-                    tasks.append(s.fetch_link(Scan.project))
-                if getattr(s, "user", None) is not None:
-                    tasks.append(s.fetch_link(Scan.user))
-                if getattr(s, "model_deployment", None) is not None:
-                    tasks.append(s.fetch_link(Scan.model_deployment))
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+            # ---- Classifications (by scan id) ----
+            {"$lookup": {
+                "from": "ScanClassification",
+                "let": {"imgIds": "$image_ids"},
+                "pipeline": [
+                    {"$match": {"$expr": {"$in": ["$image.$id", "$$imgIds"]}}},
+                ],
+                "as": "classifications",
+            }},
 
-            md = getattr(s, "model_deployment", None)
-            if md is not None and getattr(md, "model", None) is not None:
-                try:
-                    await md.fetch_link("model")
-                except Exception:
-                    pass
-            return s
+            # ---- Sort & paginate ----
+            {"$sort": {"created_at": -1 if sort_dir == "desc" else 1, "_id": -1}},
+            {"$skip": max(0, (page - 1) * page_size)},
+            {"$limit": page_size},
+        ]
 
-        scans = await asyncio.gather(*(_fetch_scan_links(s) for s in scans))
+        docs: List[Dict[str, Any]] = await Scan.aggregate(pipeline).to_list()
 
-        async def _row_for_scan(s: Scan) -> Dict[str, Any]:
-            part_name = "-"
-            proj = getattr(s, "project", None)
-            if proj is not None:
-                part_name = getattr(proj, "name", "-")
+        rows: List[Dict[str, Any]] = []
 
-            operator_name = "-"
-            user = getattr(s, "user", None)
-            if user is not None:
-                operator_name = getattr(user, "username", "-")
+        for d in docs:
+            # group classifications by image id so each part can list its classes
+            # clses = d.get("classifications", []) or []
+            # print(clses)
+            # cls_by_img = defaultdict(list)
+            for c in clses:
+                img_ref = c.get("image", {})
+                iid = img_ref.get("$id") if isinstance(img_ref, dict) else None
+                if iid is not None:
+                    cls_by_img[str(iid)].append(c)
 
-            model_version = "-"
-            md = getattr(s, "model_deployment", None)
-            if md:
-                model = getattr(md, "model", None)
-                mname = getattr(model, "name", "Model") if model else "Model"
-                mver = getattr(model, "version", None) if model else None
-                model_version = f"{mname} v{mver}" if mver is not None else mname
+            parts = []
+            # for img in (d.get("images", []) or []):
+            #     img_id = str(img.get("_id"))
+            #     name = (img.get("file_name") or "Camera").rsplit(".", 1)[0]
 
-            confidence_str = "-"
-            if getattr(s, "cls_confidence", None) is not None:
-                confidence_str = f"{s.cls_confidence:.1%}"
+            #     classes, seen_lower = [], set()
+            #     bbox_payload, max_conf = None, None
+            #     for c in cls_by_img.get(img_id, []):
+            #         label = c.get("det_cls") or c.get("name")
+            #         if label:
+            #             lkey = str(label).strip().lower()
+            #             if lkey and lkey not in seen_lower:
+            #                 classes.append(str(label))
+            #                 seen_lower.add(lkey)
+            #         conf = c.get("cls_confidence")
+            #         if conf is not None and (max_conf is None or conf > max_conf):
+            #             max_conf = conf
+            #         if bbox_payload is None:
+            #             x, y, w, h = c.get("det_x"), c.get("det_y"), c.get("det_w"), c.get("det_h")
+            #             if None not in (x, y, w, h):
+            #                 bbox_payload = {"x": x, "y": y, "w": w, "h": h, "class": (label or "")}
 
-            parts_list = await ScanRepository._parts_for_scan(s)
-            res = await ScanRepository._infer_result(s)
+            #     # you’re already presigning server-side elsewhere; keep it here minimal
+            # for p in 
+            #     parts.append({
+            #         "name": name,
+            #         "status": ", ".join([c for c in classes if c.lower() != "healthy"]) or "Healthy",
+            #         "image_url": "",  # fill with presign_url(img["full_path"]) if desired
+            #         "image_id": img_id,
+            #         "classes": classes,
+            #         "bbox": bbox_payload,
+            #         "confidence": max_conf,
+            #     })
+            rows.append({
+                "created_at": d.get("created_at"),
+                "id": str(d.get("_id")),
+                "part": d.get("project_name", "-"),
+                "parts": parts,
+                "result": d.get("result"),
+                "serial_number": d.get("serial_number"),
+            })
 
-            return {
-                "id": str(s.id),
-                "serial_number": s.serial_number,
-                "part": part_name,
-                "created_at": ScanRepository._format_date(s.created_at),
-                "result": res,
-                "parts": parts_list,
-                "operator": operator_name,
-                "model_version": model_version,
-                "confidence": confidence_str,
-            }
-
-        rows = await asyncio.gather(*(_row_for_scan(s) for s in scans))
-
-        if result and result != "All":
-            wanted = result.strip().lower()
-            rows = [r for r in rows if r["result"].lower() == wanted]
-
-        if sort_by in ("part", "result"):
-            rows.sort(key=lambda r: r[sort_by].lower(), reverse=(sort_dir == "desc"))
-
-        if result and result != "All":
-            wanted = result.strip().lower()
-            all_scans = await (Scan.find(expr) if expr is not None else Scan.find_all()).to_list()
-            total = 0
-            for s in all_scans:
-                res = await ScanRepository._infer_result(s)
-                if res.lower() == wanted:
-                    total += 1
-        else:
-            total = await (Scan.find(expr) if expr is not None else Scan.find_all()).count()
+        total = await Scan.find({} if not q else {"serial_number": {"$regex": q, "$options": "i"}}).count()
 
         columns = [
             {"id": "serial_number", "header": "Serial Number"},
-            {"id": "part",          "header": "Part"},
-            {"id": "created_at",    "header": "Created At"},
-            {"id": "result",        "header": "Result"},
+            {"id": "created_at", "header": "Created At"},
         ]
 
         return rows, total, columns
