@@ -307,6 +307,5 @@ def line_insights_page() -> rx.Component:
             padding_y=T.spacing.space_6,
         ),
         title="Line Insights",
-        on_mount=LineInsightsState.on_mount,
         tools=[date_range_selector()],
     )
