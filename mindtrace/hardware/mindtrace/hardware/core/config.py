@@ -30,6 +30,8 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
     - MINDTRACE_HW_CAMERA_OPENCV_HEIGHT: OpenCV default frame height
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
+    - MINDTRACE_HW_CAMERA_PIXEL_FORMAT: Default pixel format (BGR8, RGB8, etc.)
+    - MINDTRACE_HW_CAMERA_BUFFER_COUNT: Number of frame buffers for cameras
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
@@ -102,6 +104,10 @@ class CameraSettings:
         # Image enhancement settings (for quality enhancement)
         enhancement_gamma: Gamma correction value for image enhancement
         enhancement_contrast: Contrast factor for image enhancement
+        
+        # Basler-specific settings
+        pixel_format: Default pixel format (BGR8, RGB8, etc.)
+        buffer_count: Number of frame buffers for cameras
     """
 
     # Core camera settings
@@ -135,6 +141,10 @@ class CameraSettings:
     # Image enhancement settings
     enhancement_gamma: float = 2.2
     enhancement_contrast: float = 1.2
+    
+    # Basler-specific settings
+    pixel_format: str = "BGR8"
+    buffer_count: int = 25
 
 
 @dataclass
@@ -384,47 +394,96 @@ class HardwareConfigManager(Mindtrace):
             self._config.cameras.image_quality_enhancement = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_RETRY_COUNT"):
-            self._config.cameras.retrieve_retry_count = int(env_val)
+            try:
+                self._config.cameras.retrieve_retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE"):
-            self._config.cameras.exposure_time = float(env_val)
+            try:
+                self._config.cameras.exposure_time = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_WHITE_BALANCE"):
             self._config.cameras.white_balance = env_val
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT"):
-            self._config.cameras.timeout_ms = int(env_val)
+            try:
+                self._config.cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_WIDTH"):
-            self._config.cameras.opencv_default_width = int(env_val)
+            try:
+                self._config.cameras.opencv_default_width = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_HEIGHT"):
-            self._config.cameras.opencv_default_height = int(env_val)
+            try:
+                self._config.cameras.opencv_default_height = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_FPS"):
-            self._config.cameras.opencv_default_fps = int(env_val)
+            try:
+                self._config.cameras.opencv_default_fps = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_EXPOSURE"):
-            self._config.cameras.opencv_default_exposure = float(env_val)
+            try:
+                self._config.cameras.opencv_default_exposure = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT_MS"):
-            self._config.cameras.timeout_ms = int(env_val)
+            try:
+                self._config.cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_INDEX"):
-            self._config.cameras.max_camera_index = int(env_val)
+            try:
+                self._config.cameras.max_camera_index = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_COUNT"):
-            self._config.cameras.mock_camera_count = int(env_val)
+            try:
+                self._config.cameras.mock_camera_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_GAMMA"):
-            self._config.cameras.enhancement_gamma = float(env_val)
+            try:
+                self._config.cameras.enhancement_gamma = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_CONTRAST"):
-            self._config.cameras.enhancement_contrast = float(env_val)
+            try:
+                self._config.cameras.enhancement_contrast = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Basler-specific settings
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_PIXEL_FORMAT"):
+            self._config.cameras.pixel_format = str(env_val)
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BUFFER_COUNT"):
+            try:
+                self._config.cameras.buffer_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Network bandwidth management
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
-            self._config.cameras.max_concurrent_captures = int(env_val)
+            try:
+                self._config.cameras.max_concurrent_captures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Camera backends
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_ENABLED"):
@@ -437,7 +496,10 @@ class HardwareConfigManager(Mindtrace):
             self._config.backends.mock_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DISCOVERY_TIMEOUT"):
-            self._config.backends.discovery_timeout = float(env_val)
+            try:
+                self._config.backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Path settings
         if env_val := os.getenv("MINDTRACE_HW_PATHS_LIB_DIR"):
@@ -469,13 +531,22 @@ class HardwareConfigManager(Mindtrace):
             self._config.network.firewall_rule_name = env_val
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
-            self._config.network.timeout_seconds = float(env_val)
+            try:
+                self._config.network.timeout_seconds = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
-            self._config.network.firewall_timeout = float(env_val)
+            try:
+                self._config.network.firewall_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
-            self._config.network.retry_count = int(env_val)
+            try:
+                self._config.network.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
             self._config.network.network_interface = env_val
@@ -491,42 +562,72 @@ class HardwareConfigManager(Mindtrace):
             self._config.sensors.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_POLLING_INTERVAL"):
-            self._config.sensors.polling_interval = float(env_val)
+            try:
+                self._config.sensors.polling_interval = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_TIMEOUT"):
-            self._config.sensors.timeout = float(env_val)
+            try:
+                self._config.sensors.timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_RETRY_COUNT"):
-            self._config.sensors.retry_count = int(env_val)
+            try:
+                self._config.sensors.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Actuator settings
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_AUTO_DISCOVERY"):
             self._config.actuators.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_DEFAULT_SPEED"):
-            self._config.actuators.default_speed = float(env_val)
+            try:
+                self._config.actuators.default_speed = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_TIMEOUT"):
-            self._config.actuators.timeout = float(env_val)
+            try:
+                self._config.actuators.timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_RETRY_COUNT"):
-            self._config.actuators.retry_count = int(env_val)
+            try:
+                self._config.actuators.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # PLC settings
         if env_val := os.getenv("MINDTRACE_HW_PLC_AUTO_DISCOVERY"):
             self._config.plcs.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_CONNECTION_TIMEOUT"):
-            self._config.plcs.connection_timeout = float(env_val)
+            try:
+                self._config.plcs.connection_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_READ_TIMEOUT"):
-            self._config.plcs.read_timeout = float(env_val)
+            try:
+                self._config.plcs.read_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_WRITE_TIMEOUT"):
-            self._config.plcs.write_timeout = float(env_val)
+            try:
+                self._config.plcs.write_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_COUNT"):
-            self._config.plcs.retry_count = int(env_val)
+            try:
+                self._config.plcs.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # PLC backends
         if env_val := os.getenv("MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED"):
@@ -542,22 +643,40 @@ class HardwareConfigManager(Mindtrace):
             self._config.plc_backends.mock_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_DISCOVERY_TIMEOUT"):
-            self._config.plc_backends.discovery_timeout = float(env_val)
+            try:
+                self._config.plc_backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_DELAY"):
-            self._config.plcs.retry_delay = float(env_val)
+            try:
+                self._config.plcs.retry_delay = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS"):
-            self._config.plc_backends.max_concurrent_connections = int(env_val)
+            try:
+                self._config.plc_backends.max_concurrent_connections = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_KEEP_ALIVE_INTERVAL"):
-            self._config.plc_backends.keep_alive_interval = float(env_val)
+            try:
+                self._config.plc_backends.keep_alive_interval = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RECONNECT_ATTEMPTS"):
-            self._config.plc_backends.reconnect_attempts = int(env_val)
+            try:
+                self._config.plc_backends.reconnect_attempts = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_DEFAULT_SCAN_RATE"):
-            self._config.plc_backends.default_scan_rate = int(env_val)
+            try:
+                self._config.plc_backends.default_scan_rate = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # GCS settings
         if env_val := os.getenv("MINDTRACE_HW_GCS_ENABLED"):
