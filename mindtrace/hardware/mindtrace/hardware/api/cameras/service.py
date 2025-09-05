@@ -5,74 +5,65 @@ This service wraps AsyncCameraManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
-import asyncio
-import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Optional
 
 from mindtrace.services import Service
 
 from ...cameras.core.async_camera_manager import AsyncCameraManager
 from ...core.exceptions import (
-    CameraCaptureError,
-    CameraConfigurationError,
-    CameraConnectionError,
-    CameraInitializationError,
     CameraNotFoundError,
-    CameraTimeoutError,
 )
 from .models import (
-    # Requests
-    BackendFilterRequest,
-    BandwidthLimitRequest,
-    CaptureBatchRequest,
-    CaptureHDRBatchRequest,
-    CaptureHDRRequest,
-    CaptureImageRequest,
-    CameraCloseBatchRequest,
-    CameraCloseRequest,
-    CameraConfigureBatchRequest,
-    CameraConfigureRequest,
-    CameraOpenBatchRequest,
-    CameraOpenRequest,
-    CameraQueryRequest,
-    ConfigFileExportRequest,
-    ConfigFileImportRequest,
-    
     # Response models
     ActiveCamerasResponse,
+    # Requests
+    BackendFilterRequest,
+    # Data models
+    BackendInfo,
     BackendInfoResponse,
     BackendsResponse,
+    BandwidthLimitRequest,
+    BandwidthSettings,
     BandwidthSettingsResponse,
     BatchCaptureResponse,
     BatchHDRCaptureResponse,
     BatchOperationResponse,
+    BatchOperationResult,
     BoolResponse,
+    CameraCapabilities,
     CameraCapabilitiesResponse,
+    CameraCloseBatchRequest,
+    CameraCloseRequest,
+    CameraConfiguration,
     CameraConfigurationResponse,
+    CameraConfigureBatchRequest,
+    CameraConfigureRequest,
+    CameraInfo,
     CameraInfoResponse,
+    CameraOpenBatchRequest,
+    CameraOpenRequest,
+    CameraQueryRequest,
+    CameraStatus,
     CameraStatusResponse,
+    CaptureBatchRequest,
+    CaptureHDRBatchRequest,
+    CaptureHDRRequest,
+    CaptureImageRequest,
     CaptureResponse,
+    CaptureResult,
+    ConfigFileExportRequest,
+    ConfigFileImportRequest,
+    ConfigFileOperationResult,
     ConfigFileResponse,
     HDRCaptureResponse,
-    ListResponse,
-    NetworkDiagnosticsResponse,
-    SystemDiagnosticsResponse,
-    
-    # Data models
-    BackendInfo,
-    BatchOperationResult,
-    CameraCapabilities,
-    CameraConfiguration,
-    CameraInfo,
-    CameraStatus,
-    CaptureResult,
-    ConfigFileOperationResult,
     HDRCaptureResult,
+    ListResponse,
     NetworkDiagnostics,
+    NetworkDiagnosticsResponse,
     SystemDiagnostics,
-    BandwidthSettings,
+    SystemDiagnosticsResponse,
 )
 from .schemas import ALL_SCHEMAS
 
@@ -474,17 +465,17 @@ class CameraManagerService(Service):
             # Get capabilities from camera backend
             try:
                 exposure_range = await camera_proxy.get_exposure_range()
-            except:
+            except Exception:
                 exposure_range = None
             
             try:
                 gain_range = await camera_proxy.get_gain_range()
-            except:
+            except Exception:
                 gain_range = None
             
             try:
                 pixel_formats = await camera_proxy.get_available_pixel_formats()
-            except:
+            except Exception:
                 pixel_formats = None
             
             capabilities = CameraCapabilities(
@@ -576,7 +567,7 @@ class CameraManagerService(Service):
                 roi_data = await camera_proxy.get_roi()
                 roi_tuple = (roi_data.get('x', 0), roi_data.get('y', 0), 
                            roi_data.get('width', 0), roi_data.get('height', 0))
-            except:
+            except Exception:
                 roi_tuple = None
                 
             config = CameraConfiguration(
@@ -663,7 +654,7 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
             
             camera_proxy = await manager.open(request.camera)
-            image = await camera_proxy.capture(
+            await camera_proxy.capture(
                 save_path=request.save_path,
                 upload_to_gcs=request.upload_to_gcs,
                 output_format=request.output_format
