@@ -2,140 +2,14 @@ import types
 import sys
 import pytest
 
+# Import our comprehensive pycomm3 mock
+from tests.unit.mindtrace.hardware.mocks.mock_pycomm3 import create_fake_pycomm3
+
 
 def _install_fake_pycomm3(monkeypatch):
-    """Install a minimal fake pycomm3 module into sys.modules before importing the backend."""
-    fake = types.ModuleType("pycomm3")
-
-    class FakeLogixDriver:
-        def __init__(self, ip):
-            self.ip = ip
-            self.connected = False
-            # Minimal tags dictionary for discovery/info
-            self.tags = {
-                "Production_Count": types.SimpleNamespace(data_type="DINT", description="", size=4),
-                "Motor1_Speed": types.SimpleNamespace(data_type="REAL", description="", size=4),
-            }
-
-        def open(self):
-            self.connected = True
-            return True
-
-        def close(self):
-            self.connected = False
-            return True
-
-        def read(self, *tags):
-            # Return simple values or list of values
-            values = []
-            for t in tags:
-                if isinstance(t, (list, tuple)) and len(t) == 2:
-                    t = t[0]
-                values.append(123 if t == "Production_Count" else 1.0)
-            return values if len(values) > 1 else values[0]
-
-        def write(self, *items):
-            # items may be (name, value) or list of tuples
-            return True
-
-        # PLC info helpers
-        def get_plc_info(self):
-            return types.SimpleNamespace(
-                product_name="Fake ControlLogix", product_type="PLC", vendor="Allen Bradley",
-                revision="1.0", serial="ABCD"
-            )
-
-        def get_plc_name(self):
-            return "FakeProgram"
-
-    class FakeSLCDriver:
-        def __init__(self, ip):
-            self.ip = ip
-            self.connected = False
-
-        def open(self):
-            self.connected = True
-            return True
-
-        def close(self):
-            self.connected = False
-            return True
-
-        def read(self, tag):
-            return 42
-
-        def write(self, item):
-            return True
-
-    class FakeCIPDriver:
-        def __init__(self, ip):
-            self.ip = ip
-            self.connected = False
-
-        @classmethod
-        def list_identity(cls, ip):
-            # Return different device identities by IP to drive different CIP branches
-            if str(ip).endswith(".50"):
-                return {
-                    "product_name": "Fake PowerFlex 755",
-                    "product_type": "AC Drive",
-                    "vendor": "Allen Bradley",
-                    "product_code": 55,
-                    "revision": {"major": 1, "minor": 1},
-                    "serial": "XYZ",
-                    "status": b"\x00\x00",
-                    "encap_protocol_version": 1,
-                }
-            if str(ip).endswith(".51"):
-                return {
-                    "product_name": "POINT I/O Adapter",
-                    "product_type": "Generic Device",
-                    "vendor": "Allen Bradley",
-                }
-            if str(ip).endswith(".52"):
-                return {
-                    "product_name": "ControlLogix",
-                    "product_type": "Programmable Logic Controller",
-                    "vendor": "Allen Bradley",
-                }
-            return {
-                "product_name": "Generic CIP",
-                "product_type": "Communications Adapter",
-                "vendor": "Allen Bradley",
-            }
-
-        @classmethod
-        def discover(cls):
-            # Include duplicate to test de-duplication
-            return [
-                {"ip_address": "192.168.1.10", "product_name": "ControlLogix", "product_type": "PLC"},
-                {"ip_address": "192.168.1.10", "product_name": "ControlLogix", "product_type": "PLC"},
-            ]
-
-        def open(self):
-            self.connected = True
-            return True
-
-        def close(self):
-            self.connected = False
-            return True
-
-        def generic_message(self, **kwargs):
-            # Return a successful response with value
-            return types.SimpleNamespace(value=bytes([0, 1, 2]), error=None)
-
-        def read(self, tag):
-            return 7
-
-        def get_module_info(self, slot):
-            return {"slot": slot, "type": "Module"}
-
-    fake.LogixDriver = FakeLogixDriver
-    fake.SLCDriver = FakeSLCDriver
-    fake.CIPDriver = FakeCIPDriver
-    fake.Tag = object
-
-    monkeypatch.setitem(sys.modules, "pycomm3", fake)
+    """Install our comprehensive fake pycomm3 module into sys.modules."""
+    fake_pycomm3 = create_fake_pycomm3()
+    monkeypatch.setitem(sys.modules, "pycomm3", fake_pycomm3)
 
 
 def _import_ab_backend(monkeypatch):
