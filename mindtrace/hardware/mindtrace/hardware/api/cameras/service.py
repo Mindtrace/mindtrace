@@ -665,7 +665,8 @@ class CameraManagerService(Service):
             camera_proxy = await manager.open(request.camera)
             image = await camera_proxy.capture(
                 save_path=request.save_path,
-                upload_to_gcs=request.upload_to_gcs
+                upload_to_gcs=request.upload_to_gcs,
+                output_format=request.output_format
             )
             
             result = CaptureResult(
@@ -689,7 +690,8 @@ class CameraManagerService(Service):
             manager = await self._get_camera_manager()
             results = await manager.batch_capture(
                 request.cameras, 
-                upload_to_gcs=request.upload_to_gcs
+                upload_to_gcs=request.upload_to_gcs,
+                output_format=request.output_format
             )
             
             capture_results = {}
@@ -734,7 +736,8 @@ class CameraManagerService(Service):
                 exposure_levels=request.exposure_levels,
                 exposure_multiplier=request.exposure_multiplier,
                 return_images=request.return_images,
-                upload_to_gcs=request.upload_to_gcs
+                upload_to_gcs=request.upload_to_gcs,
+                output_format=request.output_format
             )
             
             result = HDRCaptureResult(
@@ -766,7 +769,8 @@ class CameraManagerService(Service):
                 exposure_levels=request.exposure_levels,
                 exposure_multiplier=request.exposure_multiplier,
                 return_images=request.return_images,
-                upload_to_gcs=request.upload_to_gcs
+                upload_to_gcs=request.upload_to_gcs,
+                output_format=request.output_format
             )
             
             hdr_results = {}

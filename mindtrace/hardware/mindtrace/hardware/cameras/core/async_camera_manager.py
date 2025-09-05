@@ -527,7 +527,7 @@ class AsyncCameraManager(Mindtrace):
 
         return results
 
-    async def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False) -> Dict[str, Any]:
+    async def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy") -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management."""
         results = {}
 
@@ -537,7 +537,7 @@ class AsyncCameraManager(Mindtrace):
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
-                    image = await camera.capture(upload_to_gcs=upload_to_gcs)
+                    image = await camera.capture(upload_to_gcs=upload_to_gcs, output_format=output_format)
                     return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
@@ -563,6 +563,7 @@ class AsyncCameraManager(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
+        output_format: str = "numpy",
     ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}
@@ -585,6 +586,7 @@ class AsyncCameraManager(Mindtrace):
                         exposure_multiplier=exposure_multiplier,
                         return_images=return_images,
                         upload_to_gcs=upload_to_gcs,
+                        output_format=output_format,
                     )
                     
                     # HDR upload will be handled by individual camera capture_hdr method

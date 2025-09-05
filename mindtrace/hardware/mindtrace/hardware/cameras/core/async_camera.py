@@ -17,6 +17,7 @@ from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
     CameraTimeoutError,
 )
+from mindtrace.hardware.core.utils import convert_image_format, validate_output_format
 
 try:
     from mindtrace.storage.gcs import GCSStorageHandler
@@ -185,26 +186,32 @@ class AsyncCamera(Mindtrace):
                 return await parent_aexit(exc_type, exc, tb)  # type: ignore[misc]
             return False
 
-    async def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False) -> Any:
+    async def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy") -> Any:
         """Capture an image from the camera with retry logic.
 
         Args:
             save_path: Optional path to save the captured image (written as-is, typically RGB uint8).
             upload_to_gcs: Upload captured image to Google Cloud Storage.
+            output_format: Output format for the returned image ("numpy" or "pil").
 
         Returns:
-            The captured image as a numpy array (RGB/BGR depending on backend) if successful.
+            The captured image as numpy array or PIL.Image depending on output_format.
 
         Raises:
             CameraCaptureError: If image capture ultimately fails after retries.
             CameraConnectionError: If the camera connection fails during capture.
             CameraTimeoutError: If the capture exceeds the configured timeout.
             RuntimeError: For unexpected errors after exhausting retries.
+            ValueError: If output_format is not supported.
+            ImportError: If PIL is required but not available.
         """
+        # Validate output format early
+        output_format = validate_output_format(output_format)
+        
         async with self._lock:
             retry_count = self._backend.retrieve_retry_count
             self.logger.debug(
-                f"Starting capture for '{self._full_name}' with up to {retry_count} attempts, save_path={save_path!r}"
+                f"Starting capture for '{self._full_name}' with up to {retry_count} attempts, save_path={save_path!r}, output_format={output_format!r}"
             )
             for attempt in range(retry_count):
                 try:
@@ -223,7 +230,8 @@ class AsyncCamera(Mindtrace):
                         self.logger.debug(
                             f"Capture successful for '{self._full_name}' on attempt {attempt + 1}/{retry_count}"
                         )
-                        return image
+                        # Convert image to requested format before returning
+                        return convert_image_format(image, output_format)
                     raise CameraCaptureError(f"Capture returned failure for camera '{self._full_name}'")
                 except CameraCaptureError as e:
                     delay = 0.1 * (2**attempt)
@@ -646,6 +654,7 @@ class AsyncCamera(Mindtrace):
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
+        output_format: str = "numpy",
     ) -> Dict[str, Any]:
         """Capture a bracketed HDR sequence and optionally return images.
 
@@ -655,11 +664,12 @@ class AsyncCamera(Mindtrace):
             exposure_multiplier: Multiplier between consecutive exposure steps.
             return_images: If True, returns list of captured images; otherwise returns success bool.
             upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
+            output_format: Output format for returned images ("numpy" or "pil").
 
         Returns:
             Dictionary containing HDR capture results with keys:
             - success: bool - Whether capture succeeded
-            - images: List[Any] - Captured images if return_images is True
+            - images: List[Any] - Captured images if return_images is True (format depends on output_format)
             - image_paths: List[str] - Saved file paths if save_path_pattern provided
             - exposure_levels: List[float] - Actual exposure values used
             - successful_captures: int - Number of successful captures
@@ -667,7 +677,12 @@ class AsyncCamera(Mindtrace):
 
         Raises:
             CameraCaptureError: If no images could be captured successfully.
+            ValueError: If output_format is not supported.
+            ImportError: If PIL is required but not available.
         """
+        # Validate output format early
+        output_format = validate_output_format(output_format)
+        
         async with self._lock:
             try:
                 original_exposure = await self._backend.get_exposure()
@@ -683,7 +698,7 @@ class AsyncCamera(Mindtrace):
                     exposures.append(exposure)
                 exposures = sorted(list(set(exposures)))
                 self.logger.info(
-                    f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}"
+                    f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}, output_format={output_format!r}"
                 )
                 captured_images = []
                 image_paths = []
@@ -709,7 +724,9 @@ class AsyncCamera(Mindtrace):
                                 cv2.imwrite(save_path, image)
                                 image_paths.append(save_path)
                             if return_images:
-                                captured_images.append(image)
+                                # Convert image to requested format before adding to results
+                                converted_image = convert_image_format(image, output_format)
+                                captured_images.append(converted_image)
                             successful_captures += 1
                             self.logger.debug(
                                 f"HDR capture {i + 1}/{len(exposures)} successful at exposure {exposure}μs"

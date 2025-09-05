@@ -7,7 +7,7 @@ input validation and documentation for all camera operations.
 
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Backend & Discovery Operations
@@ -87,6 +87,15 @@ class CaptureImageRequest(BaseModel):
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
     save_path: Optional[str] = Field(None, description="Optional path to save the captured image")
     upload_to_gcs: bool = Field(False, description="Upload captured image to Google Cloud Storage")
+    output_format: str = Field("numpy", description="Output format for returned image ('numpy' or 'pil')")
+    
+    @field_validator('output_format')
+    @classmethod
+    def validate_output_format(cls, v: str) -> str:
+        """Validate output format is supported."""
+        if v.lower() not in ("numpy", "pil"):
+            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
+        return v.lower()
 
 
 class CaptureBatchRequest(BaseModel):
@@ -94,6 +103,15 @@ class CaptureBatchRequest(BaseModel):
     
     cameras: List[str] = Field(..., description="List of camera names to capture from")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
+    output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
+    
+    @field_validator('output_format')
+    @classmethod
+    def validate_output_format(cls, v: str) -> str:
+        """Validate output format is supported."""
+        if v.lower() not in ("numpy", "pil"):
+            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
+        return v.lower()
 
 
 class CaptureHDRRequest(BaseModel):
@@ -107,6 +125,15 @@ class CaptureHDRRequest(BaseModel):
     exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels")
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
+    output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
+    
+    @field_validator('output_format')
+    @classmethod
+    def validate_output_format(cls, v: str) -> str:
+        """Validate output format is supported."""
+        if v.lower() not in ("numpy", "pil"):
+            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
+        return v.lower()
 
 
 class CaptureHDRBatchRequest(BaseModel):
@@ -120,6 +147,15 @@ class CaptureHDRBatchRequest(BaseModel):
     exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels")
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
+    output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
+    
+    @field_validator('output_format')
+    @classmethod
+    def validate_output_format(cls, v: str) -> str:
+        """Validate output format is supported."""
+        if v.lower() not in ("numpy", "pil"):
+            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
+        return v.lower()
 
 
 # Network & Bandwidth Operations
