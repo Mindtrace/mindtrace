@@ -1,9 +1,10 @@
 import os
 import configparser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable, Tuple, get_origin, get_args
+from copy import deepcopy
 
-from pydantic import  Field, HttpUrl, SecretStr
+from pydantic import  Field, HttpUrl, SecretStr, AnyUrl
 from pydantic_settings import BaseSettings
 from pydantic import BaseModel
 
@@ -168,9 +169,16 @@ class CoreSettings(BaseSettings):
         )
 
 
-        
-        
-    
+# Union alias used across core for configuration overrides and settings
+SettingsLike = Union[
+    Dict[str, Any],
+    List[Union[Dict[str, Any], BaseSettings, BaseModel]],
+    CoreSettings,
+    BaseSettings,
+    BaseModel,
+    None,
+]
+
 
 class Config(dict):
     """
@@ -180,44 +188,112 @@ class Config(dict):
     derived from `CoreSettings`, and optionally updates them with user-provided overrides.
 
     It accepts:
-    - A list of `dict`s that override parts of the config.
-    - Or a `CoreSettings` instance directly.
+    - A list of `dict`s/BaseSettings/BaseModel that override parts of the config.
+    - Or a `CoreSettings`/BaseSettings/BaseModel instance directly.
 
     Args:
-        extra_settings (Union[List[Dict], CoreSettings], optional): 
-            Either a list of dictionaries to override values, or a CoreSettings instance.
-
-    Example:
-        .. code-block:: python
-
-            # Override via dict
-            config = Config(extra_settings=[{"LOGGER": {"LOG_DIR": "/tmp"}}])
-
-            # Override via full settings object
-            custom_settings = CoreSettings(RABBITMQ={"PASSWORD": "env_secret"})
-            config = Config(extra_settings=custom_settings)
-        
-        print(config["LOGGER"]["LOG_DIR"])  # /tmp or from env
-
-    See also:
-        - `CoreSettings` for the definition of default configuration schema.
+        extra_settings (SettingsLike, optional): Override values or full settings object.
     """
 
-    def __init__(self, extra_settings: Union[List[Dict], CoreSettings, None] = None):
+    def __init__(self, extra_settings: SettingsLike = None):
+        # Track secret field paths and store real secret values
+        self._secret_paths: set[Tuple[str, ...]] = set()
+        self._secrets: Dict[Tuple[str, ...], str] = {}
+
+        # Base defaults
         if isinstance(extra_settings, CoreSettings):
             default_config = extra_settings.model_dump()
+            self._secret_paths.update(self._collect_secret_paths_from_model(type(extra_settings)))
+            extra_list: List[Dict[str, Any]] = []
         else:
-            default_config = CoreSettings().model_dump()
-            extra_settings = extra_settings or []
+            default_config = CoreSettings().model_dump() #loads values in resolution order , dumps a dictionary representation of the CoreSettings object
+            self._secret_paths.update(self._collect_secret_paths_from_model(CoreSettings))
+            # Normalize overrides into a list of dicts
+            if extra_settings is None:
+                extra_list = []
+            elif isinstance(extra_settings, list):
+                extra_list = []
+                for item in extra_settings:
+                    if isinstance(item, (BaseSettings, BaseModel)):
+                        self._secret_paths.update(self._collect_secret_paths_from_model(type(item)))
+                        extra_list.append(item.model_dump())
+                    elif isinstance(item, dict):
+                        extra_list.append(item)
+            elif isinstance(extra_settings, (BaseSettings, BaseModel)):
+                self._secret_paths.update(self._collect_secret_paths_from_model(type(extra_settings)))
+                extra_list = [extra_settings.model_dump()]
+            elif isinstance(extra_settings, dict):
+                extra_list = [extra_settings]
+            else:
+                extra_list = []
 
-            for override in extra_settings:
-                if isinstance(override, (BaseSettings, BaseModel)):
-                    override_dict = override.model_dump()
-                    default_config = self._deep_update(default_config, override_dict)
-                elif isinstance(override, dict):
-                    default_config = self._deep_update(default_config, override)
+        for override in extra_list:
+            default_config = self._deep_update(default_config, override)
+
+        # Overlay environment variables last so they can override dict/BaseModel overrides
+        default_config = self._apply_env_overrides(default_config)
+
+        # Coerce everything to string and mask secrets by default
+        default_config = self._stringify_and_mask(default_config)
 
         super().__init__(default_config)
+
+    @classmethod
+    def load(
+        cls,
+        *,
+        defaults: Optional[CoreSettings] = None,
+        overrides: Optional[Union[Dict[str, Any], List[Union[Dict[str, Any], BaseSettings, BaseModel]], BaseSettings, BaseModel]] = None,
+        file_loader: Optional[Callable[[], Dict[str, Any]]] = None,
+    ) -> "Config":
+        """Create a Config from defaults, optional file loader, and runtime overrides."""
+        base = (defaults or CoreSettings()).model_dump()
+        if file_loader is not None:
+            loaded = file_loader() or {}
+            base = cls._deep_update_dict(base, loaded)
+        if overrides is not None:
+            items: List[Dict[str, Any]] = []
+            if isinstance(overrides, (BaseSettings, BaseModel)):
+                items = [overrides.model_dump()]
+            elif isinstance(overrides, dict):
+                items = [overrides]
+            elif isinstance(overrides, list):
+                for o in overrides:
+                    if isinstance(o, (BaseSettings, BaseModel)):
+                        items.append(o.model_dump())
+                    elif isinstance(o, dict):
+                        items.append(o)
+            for o in items:
+                base = cls._deep_update_dict(base, o)
+        # Overlay env and return through __init__ pipeline (which masks)
+        base = cls._apply_env_overrides_static(base)
+        return cls([base])
+
+    def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
+        """Return a new Config clone with overrides applied (original remains unchanged)."""
+        items: List[Dict[str, Any]] = [deepcopy(dict(self))]
+        def push(x):
+            if isinstance(x, (BaseSettings, BaseModel)):
+                items.append(x.model_dump())
+            elif isinstance(x, CoreSettings):
+                items.append(x.model_dump())
+            elif isinstance(x, dict):
+                items.append(x)
+            elif isinstance(x, list):
+                for y in x: push(y)
+            elif x is None:
+                pass
+        for o in overrides:
+            push(o)
+        return Config(items)
+
+    def get_secret(self, *path: str) -> Optional[str]:
+        """Retrieve a secret by dotted path components, e.g., get_secret("API_KEYS", "OPENAI")."""
+        return self._secrets.get(tuple(path))
+
+    def secret_paths(self) -> List[str]:
+        """Return dotted paths of fields considered secrets."""
+        return sorted([".".join(p) for p in self._secret_paths])
 
     def _deep_update(self, base: dict, override: dict) -> dict:
         """
@@ -229,3 +305,127 @@ class Config(dict):
             else:
                 base[k] = v
         return base
+
+    @staticmethod
+    def _deep_update_dict(base: dict, override: dict) -> dict:
+        for k, v in (override or {}).items():
+            if isinstance(v, dict) and isinstance(base.get(k), dict):
+                base[k] = Config._deep_update_dict(base.get(k, {}), v)
+            else:
+                base[k] = v
+        return base
+
+    @staticmethod
+    def _apply_env_overrides_static(base: dict, delimiter: str = "__") -> dict:
+        result = deepcopy(base)
+
+        def set_nested(target: dict, path: List[str], value: Any):
+            node = target
+            for key in path[:-1]:
+                if key not in node or not isinstance(node[key], dict):
+                    node[key] = {}
+                node = node[key]
+            node[path[-1]] = Config._coerce_env_value(value)
+
+        for env_key, env_value in os.environ.items():
+            if delimiter not in env_key:
+                continue
+            parts = [p.strip().upper() for p in env_key.split(delimiter) if p.strip()]
+            if not parts:
+                continue
+            set_nested(result, parts, env_value)
+
+        return result
+
+    def _apply_env_overrides(self, base: dict, delimiter: str = "__") -> dict:
+        return Config._apply_env_overrides_static(base, delimiter)
+
+    @staticmethod
+    def _coerce_env_value(value: str) -> Any:
+        lower = value.lower()
+        if lower in {"true", "false"}:
+            return lower == "true"
+        try:
+            if value.isdigit() or (value.startswith("-") and value[1:].isdigit()):
+                return int(value)
+        except Exception:
+            pass
+        try:
+            return float(value)
+        except Exception:
+            return value
+
+    def _stringify_and_mask(self, data: Dict[str, Any], mask: str = "********") -> Dict[str, Any]:
+        def convert(v: Any, path: Tuple[str, ...]) -> str | Dict[str, Any] | List[Any]:
+            if isinstance(v, SecretStr):
+                val = v.get_secret_value()
+                self._secrets[path] = val
+                return mask
+            if isinstance(v, AnyUrl):
+                val = str(v)
+                return mask if path in self._secret_paths else val
+            if isinstance(v, dict):
+                return {k: convert(x, path + (k,)) for k, x in v.items()}
+            if isinstance(v, (list, tuple, set)):
+                return [convert(x, path) for x in v]
+            # Convert to string and mask if marked secret path
+            sval = str(v)
+            if path in self._secret_paths:
+                self._secrets[path] = sval
+                return mask
+            return sval
+        return convert(data, ())  # type: ignore
+
+    @staticmethod
+    def _stringify_dict_static(data: Dict[str, Any]) -> Dict[str, Any]:
+        def convert(v: Any) -> str | Dict[str, Any] | List[Any]:
+            if isinstance(v, SecretStr):
+                return v.get_secret_value()
+            if isinstance(v, AnyUrl):
+                return str(v)
+            if isinstance(v, dict):
+                return {k: convert(x) for k, x in v.items()}
+            if isinstance(v, (list, tuple, set)):
+                return [convert(x) for x in v]
+            return str(v)
+        return convert(data)  # type: ignore
+
+    def _collect_secret_paths_from_model(self, model_cls: type[BaseModel] | type[BaseSettings], prefix: Tuple[str, ...] = ()) -> set[Tuple[str, ...]]:
+        paths: set[Tuple[str, ...]] = set()
+        fields = getattr(model_cls, "__pydantic_fields__", {})
+        for name, field in fields.items():
+            ann = getattr(field, "annotation", None)
+            if self._is_secret_annotation(ann):
+                paths.add(prefix + (name,))
+                continue
+            # Recurse into nested models
+            nested_cls = self._extract_model_class(ann)
+            if nested_cls is not None:
+                paths.update(self._collect_secret_paths_from_model(nested_cls, prefix + (name,)))
+        return paths
+
+    def _is_secret_annotation(self, ann: Any) -> bool:
+        if ann is None:
+            return False
+        if ann is SecretStr:
+            return True
+        origin = get_origin(ann)
+        if origin is Union:
+            return any(a is SecretStr for a in get_args(ann))
+        return False
+
+    def _extract_model_class(self, ann: Any) -> Optional[type]:
+        try:
+            if isinstance(ann, type) and (issubclass(ann, BaseModel) or issubclass(ann, BaseSettings)):
+                return ann
+        except TypeError:
+            pass
+        origin = get_origin(ann)
+        if origin is Union:
+            for a in get_args(ann):
+                try:
+                    if isinstance(a, type) and (issubclass(a, BaseModel) or issubclass(a, BaseSettings)):
+                        return a
+                except TypeError:
+                    continue
+        return None

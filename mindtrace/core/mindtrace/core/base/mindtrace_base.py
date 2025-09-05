@@ -4,10 +4,10 @@ from functools import wraps
 import logging
 import traceback
 import inspect
-from typing import Callable, Optional, Union
+from typing import Callable, Optional
 
 
-from mindtrace.core.config import Config, CoreSettings
+from mindtrace.core.config import Config, CoreSettings, SettingsLike
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
@@ -84,7 +84,7 @@ class Mindtrace(metaclass=MindtraceMeta):
     def __init__(
         self,
         suppress: bool = False,
-        extra_settings: Union[dict, list[dict], CoreSettings, None] = None,
+        extra_settings: SettingsLike = None,
         **logger_kwargs
     ):
         """
@@ -92,27 +92,21 @@ class Mindtrace(metaclass=MindtraceMeta):
 
         Args:
             suppress (bool): Whether to suppress exceptions in context manager use.
-            extra_settings (Union[dict, list[dict], CoreSettings], optional):
-                - Dictionary or list of dictionaries to override configuration.
-                - Or a full CoreSettings instance.
+            extra_settings (SettingsLike, optional):
+                - Dictionary, list of dicts, BaseModel/BaseSettings list or instance, or CoreSettings.
             **logger_kwargs: Keyword arguments passed to `get_logger`.
                 e.g., propagate=True, file_level=logging.INFO
         """
         self.suppress = suppress
 
-        # Normalize extra_settings and initialize config
-        if isinstance(extra_settings, dict):
-            # Wrap single dict in a list
-            self.config = Config(extra_settings=[extra_settings])
-        elif isinstance(extra_settings, CoreSettings):
-            # Use CoreSettings instance directly
+        # Normalize and initialize config from extra_settings
+        if isinstance(extra_settings, CoreSettings):
             self.config = Config(extra_settings=extra_settings)
-        elif isinstance(extra_settings, list):
-            # Assume list of dicts or settings
-            self.config = Config(extra_settings=extra_settings)
-        else:
-            # Fallback to default config
+        elif extra_settings is None:
             self.config = Config()
+        else:
+            overrides = extra_settings if isinstance(extra_settings, list) else [extra_settings]
+            self.config = Config(extra_settings=overrides)
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)
@@ -231,7 +225,6 @@ class Mindtrace(metaclass=MindtraceMeta):
                         return {"status": "Available"}
 
                     return app_
-
         """
         prefix_formatter = ifnone(
             prefix_formatter,
