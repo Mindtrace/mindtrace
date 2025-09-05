@@ -39,18 +39,22 @@ async def test_open_idempotent_and_close():
 
 
 @pytest.mark.asyncio
-async def test_batch_capture_with_mock_backend():
+async def test_batch_capture_with_mock_backend(monkeypatch):
+    """Test batch capture with controlled mock cameras instead of discovery-dependent."""
     manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
+    
+    # Create controlled mock cameras
+    mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2", "MockBasler:TestCam3"]
+    def mock_discover(include_mocks=True, backends=None):
+        return mock_cameras if include_mocks else []
+    monkeypatch.setattr(manager, "discover", mock_discover)
+    
     try:
-        names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][:3]
-        if len(names) < 2:
-            pytest.skip("Not enough mock cameras discovered")
-
-        await manager.open(names)
+        await manager.open(mock_cameras)
 
         # Ensure captures complete and produce ndarray images
-        results = await manager.batch_capture(names)
-        assert set(results.keys()) == set(names)
+        results = await manager.batch_capture(mock_cameras)
+        assert set(results.keys()) == set(mock_cameras)
         for img in results.values():
             assert isinstance(img, np.ndarray)
             assert img.ndim == 3
@@ -206,15 +210,20 @@ async def test_close_unknown_name_noop():
 
 
 @pytest.mark.asyncio
-async def test_batch_capture_hdr_return_images():
+async def test_batch_capture_hdr_return_images(monkeypatch):
+    """Test HDR capture with controlled mock cameras."""
     mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
+    
+    # Create controlled mock cameras
+    mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+    def mock_discover(include_mocks=True, backends=None):
+        return mock_cameras if include_mocks else []
+    monkeypatch.setattr(mgr, "discover", mock_discover)
+    
     try:
-        names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][:2]
-        if len(names) < 2:
-            pytest.skip("Not enough mock cameras for HDR test")
-        await mgr.open(names)
-        res = await mgr.batch_capture_hdr(camera_names=names, exposure_levels=2, return_images=True)
-        assert set(res.keys()) == set(names)
+        await mgr.open(mock_cameras)
+        res = await mgr.batch_capture_hdr(camera_names=mock_cameras, exposure_levels=2, return_images=True)
+        assert set(res.keys()) == set(mock_cameras)
         for camera_name, hdr_result in res.items():
             assert isinstance(hdr_result, dict)
             assert "success" in hdr_result
@@ -222,6 +231,7 @@ async def test_batch_capture_hdr_return_images():
             assert "exposure_levels" in hdr_result
             if hdr_result["success"]:
                 assert isinstance(hdr_result["images"], list)
+                assert len(hdr_result["exposure_levels"]) == 2  # Should have 2 exposure levels
     finally:
         await mgr.close(None)
 
@@ -537,16 +547,27 @@ async def test_open_setup_failure_raises(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_close_subset_only():
+async def test_close_subset_only(monkeypatch):
+    """Test closing a subset of cameras with controlled mocks."""
     mgr = AsyncCameraManager(include_mocks=True)
+    
+    # Create controlled mock cameras
+    mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+    def mock_discover(include_mocks=True, backends=None):
+        return mock_cameras if include_mocks else []
+    monkeypatch.setattr(mgr, "discover", mock_discover)
+    
     try:
-        names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][:2]
-        if len(names) < 2:
-            pytest.skip("Need at least two mocks")
-        await mgr.open(names)
-        assert set(mgr.active_cameras) == set(names)
-        await mgr.close(names[0])
-        assert set(mgr.active_cameras) == {names[1]}
+        await mgr.open(mock_cameras)
+        assert set(mgr.active_cameras) == set(mock_cameras)
+        
+        # Close only the first camera
+        await mgr.close(mock_cameras[0])
+        assert set(mgr.active_cameras) == {mock_cameras[1]}
+        
+        # Verify the remaining camera is still functional
+        remaining_cam = await mgr.open(mock_cameras[1])
+        assert remaining_cam.is_connected
     finally:
         await mgr.close(None)
 
