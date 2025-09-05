@@ -1,9 +1,9 @@
 """Basler Camera Backend Module"""
 
 import asyncio
-from contextlib import asynccontextmanager
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2

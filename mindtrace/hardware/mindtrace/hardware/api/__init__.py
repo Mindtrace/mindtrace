@@ -1,6 +1,6 @@
 """Hardware API modules."""
 
-from .cameras import CameraManagerService, CameraManagerConnectionManager
+from .cameras import CameraManagerConnectionManager, CameraManagerService
 
 __all__ = [
     "CameraManagerService", 

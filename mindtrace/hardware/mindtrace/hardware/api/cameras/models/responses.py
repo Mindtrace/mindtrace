@@ -6,7 +6,7 @@ response formatting across all camera management endpoints.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 

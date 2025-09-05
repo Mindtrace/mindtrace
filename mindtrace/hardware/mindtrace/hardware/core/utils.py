@@ -5,9 +5,10 @@ This module provides common utilities used across the hardware subsystem,
 including image format conversions and validation functions.
 """
 
-from typing import Union, Any
-import numpy as np
+from typing import Any, Union
+
 import cv2
+import numpy as np
 
 
 def convert_image_format(image: np.ndarray, output_format: str) -> Union[np.ndarray, Any]:

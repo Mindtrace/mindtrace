@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
-import uuid
 
 import numpy as np
 

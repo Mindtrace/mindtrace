@@ -72,10 +72,10 @@ def __getattr__(name):
         return PLCManager
     elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
         from mindtrace.hardware.homography import (
-            HomographyCalibrator,
             CalibrationData,
-            PlanarHomographyMeasurer,
+            HomographyCalibrator,
             MeasuredBox,
+            PlanarHomographyMeasurer,
         )
 
         mapping = {

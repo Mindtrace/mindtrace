@@ -17,7 +17,6 @@ from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uni
 from mindtrace.hardware.cameras.setup.setup_cameras import configure_firewall
 from mindtrace.hardware.cameras.setup.setup_cameras import main as setup_all_cameras
 
-
 __all__ = [
     # Basler SDK setup
     "install_pylon_sdk",

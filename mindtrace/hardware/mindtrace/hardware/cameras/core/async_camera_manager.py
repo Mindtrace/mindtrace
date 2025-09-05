@@ -1,22 +1,16 @@
 """Async camera manager for Mindtrace hardware cameras."""
 
 import asyncio
-import os
-import time
 from typing import Any, Dict, List, Optional, Tuple, Union
-
-import cv2
 
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
-    CameraTimeoutError,
 )
 
 try:
@@ -740,7 +734,9 @@ class AsyncCameraManager(Mindtrace):
         """Get mock camera class for backend (class method for consistent logging)."""
         try:
             if backend_name.lower() == "basler":
-                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
+                    MockBaslerCameraBackend,
+                )
 
                 return MockBaslerCameraBackend
             else:

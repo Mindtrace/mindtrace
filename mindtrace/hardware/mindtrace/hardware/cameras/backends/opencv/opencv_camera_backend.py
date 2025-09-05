@@ -424,7 +424,7 @@ class OpenCVCameraBackend(CameraBackend):
             return {} if include_details else []
         assert cv2 is not None
 
-        import sys, os, glob
+        import os
         from typing import Iterable, Optional
 
         @contextlib.contextmanager
