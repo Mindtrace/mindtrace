@@ -10,9 +10,12 @@ import numpy as np
 
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.core.exceptions import (
+    CameraCaptureError,
+    CameraConfigurationError, 
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
+    CameraTimeoutError,
 )
 
 
@@ -36,111 +39,92 @@ def restore_log_settings(backend, original_levels, original_propagate):
     backend.logger.propagate = original_propagate
 
 
-class ConcreteCameraBackend(CameraBackend):
-    """Concrete implementation of CameraBackend for testing."""
+# pypylon is already mocked by conftest.py mock_hardware_sdks fixture
+
+
+class MinimalConcreteBackend(CameraBackend):
+    """Minimal concrete implementation for testing abstract class contracts only."""
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.mock_initialized = False
-        self.mock_camera = None
-        self.mock_remote = None
+        self._test_behaviors = {}
+    
+    def set_test_behavior(self, method_name: str, behavior: Any):
+        """Set specific behavior for testing error conditions."""
+        self._test_behaviors[method_name] = behavior
     
     async def initialize(self) -> Tuple[bool, Any, Any]:
-        """Mock implementation for testing."""
-        if hasattr(self, '_force_init_failure'):
-            if self._force_init_failure == 'not_found':
-                raise CameraNotFoundError("Camera not found")
-            elif self._force_init_failure == 'connection':
-                raise CameraConnectionError("Connection failed")
-            elif self._force_init_failure == 'generic':
-                raise RuntimeError("Generic error")
-            elif self._force_init_failure == 'return_false':
-                return False, None, None
+        """Test-only initialization that can simulate various conditions."""
+        behavior = self._test_behaviors.get('initialize')
+        if behavior == 'not_found':
+            raise CameraNotFoundError("Camera not found")
+        elif behavior == 'connection_error':
+            raise CameraConnectionError("Connection failed")
+        elif behavior == 'generic_error':
+            raise RuntimeError("Generic error")
+        elif behavior == 'return_false':
+            return False, None, None
         
         self.mock_initialized = True
-        self.mock_camera = "mock_camera_object"
-        self.mock_remote = "mock_remote_object"
-        return True, self.mock_camera, self.mock_remote
+        return True, "test_camera", "test_remote"
     
     async def set_exposure(self, exposure: Union[int, float]) -> bool:
-        return True
+        return self._test_behaviors.get('set_exposure', True)
     
     async def get_exposure(self) -> float:
-        return 1000.0
+        return self._test_behaviors.get('get_exposure', 1000.0)
     
     async def get_exposure_range(self) -> List[Union[int, float]]:
-        return [100.0, 10000.0]
+        return self._test_behaviors.get('get_exposure_range', [100.0, 10000.0])
     
     async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
-        return True, np.zeros((480, 640, 3), dtype=np.uint8)
+        behavior = self._test_behaviors.get('capture')
+        if behavior == 'fail':
+            return False, None
+        return True, np.zeros((100, 100, 3), dtype=np.uint8)  # Minimal test image
     
     async def check_connection(self) -> bool:
-        return self.mock_initialized
+        return self._test_behaviors.get('check_connection', self.mock_initialized)
     
     async def close(self) -> None:
         self.mock_initialized = False
-        self.mock_camera = None
-        self.mock_remote = None
-        # Also reset the parent class initialized flag
         self.initialized = False
         self.camera = None
     
+    # Implement methods that are expected to exist but can use default base class behavior
     async def set_gain(self, gain: Union[int, float]) -> bool:
-        return True
+        return self._test_behaviors.get('set_gain', True)
         
     async def get_gain(self) -> float:
-        return 1.0
+        return self._test_behaviors.get('get_gain', 1.0)
         
     async def get_gain_range(self) -> List[Union[int, float]]:
-        return [1.0, 16.0]
+        return self._test_behaviors.get('get_gain_range', [1.0, 16.0])
         
     async def set_roi(self, x: int, y: int, width: int, height: int) -> bool:
-        return True
+        return self._test_behaviors.get('set_roi', True)
         
     async def get_roi(self) -> Dict[str, int]:
-        return {"x": 0, "y": 0, "width": 1920, "height": 1080}
+        return self._test_behaviors.get('get_roi', {"x": 0, "y": 0, "width": 1920, "height": 1080})
         
     async def reset_roi(self) -> bool:
-        return True
+        return self._test_behaviors.get('reset_roi', True)
         
     async def set_pixel_format(self, format: str) -> bool:
-        return True
+        return self._test_behaviors.get('set_pixel_format', True)
         
     async def get_current_pixel_format(self) -> str:
-        return "RGB8"
+        return self._test_behaviors.get('get_current_pixel_format', "RGB8")
         
     async def get_pixel_format_range(self) -> List[str]:
-        return ["BGR8", "RGB8"]
-        
-    async def set_triggermode(self, mode: str) -> bool:
-        return True
-        
-    async def get_triggermode(self) -> str:
-        return "continuous"
-        
-    async def get_wb(self) -> str:
-        return "auto"
-        
-    async def set_auto_wb_once(self, mode: str) -> bool:
-        return True
-        
-    async def get_wb_range(self) -> List[str]:
-        return ["auto", "manual", "off"]
+        return self._test_behaviors.get('get_pixel_format_range', ["BGR8", "RGB8"])
         
     async def get_width_range(self) -> List[int]:
-        return [640, 1920]
+        return self._test_behaviors.get('get_width_range', [640, 1920])
         
     async def get_height_range(self) -> List[int]:
-        return [480, 1080]
-        
-    async def set_config(self, config: str) -> bool:
-        return False
-        
-    async def import_config(self, path: str) -> bool:
-        return False
-        
-    async def export_config(self, path: str) -> bool:
-        return False
+        return self._test_behaviors.get('get_height_range', [480, 1080])
     
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
@@ -161,7 +145,7 @@ class TestCameraBackendConstructor:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Should auto-generate camera_name
         assert isinstance(backend.camera_name, str)
@@ -184,7 +168,7 @@ class TestCameraBackendConstructor:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend(
+        backend = MinimalConcreteBackend(
             camera_name="test_camera",
             camera_config="/path/to/config.json",
             img_quality_enhancement=False,
@@ -205,7 +189,7 @@ class TestCameraBackendConstructor:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Should be a valid UUID string
         try:
@@ -221,7 +205,7 @@ class TestCameraBackendConstructor:
         mock_config_obj.cameras.retrieve_retry_count = 7
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Should call config system
         mock_get_config.assert_called_once()
@@ -243,7 +227,7 @@ class TestCameraBackendLogging:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Logger should be configured
         assert hasattr(backend, 'logger')
@@ -265,7 +249,7 @@ class TestCameraBackendLogging:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         handler = backend.logger.handlers[0]
         formatter = handler.formatter
@@ -285,7 +269,7 @@ class TestCameraBackendLogging:
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
         # Create backend and note handler count
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         initial_handler_count = len(backend.logger.handlers)
         
         # Call setup again
@@ -307,13 +291,13 @@ class TestCameraBackendSetup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         await backend.setup_camera()
         
         # Should set initialized flag and camera object
         assert backend.initialized is True
-        assert backend.camera == "mock_camera_object"
+        assert backend.camera == "test_camera"
     
     @pytest.mark.asyncio
     @patch('mindtrace.hardware.cameras.backends.camera_backend.get_camera_config')
@@ -324,8 +308,8 @@ class TestCameraBackendSetup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
-        backend._force_init_failure = 'return_false'
+        backend = MinimalConcreteBackend()
+        backend.set_test_behavior('initialize', 'return_false')
         
         with pytest.raises(CameraInitializationError, match="initialization returned False"):
             await backend.setup_camera()
@@ -339,8 +323,8 @@ class TestCameraBackendSetup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
-        backend._force_init_failure = 'not_found'
+        backend = MinimalConcreteBackend()
+        backend.set_test_behavior('initialize', 'not_found')
         
         # Should re-raise specific exceptions
         with pytest.raises(CameraNotFoundError):
@@ -355,8 +339,8 @@ class TestCameraBackendSetup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
-        backend._force_init_failure = 'connection'
+        backend = MinimalConcreteBackend()
+        backend.set_test_behavior('initialize', 'connection_error')
         
         # Should re-raise specific exceptions
         with pytest.raises(CameraConnectionError):
@@ -371,8 +355,8 @@ class TestCameraBackendSetup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
-        backend._force_init_failure = 'generic'
+        backend = MinimalConcreteBackend()
+        backend.set_test_behavior('initialize', 'generic_error')
         
         # Should wrap generic exceptions in CameraInitializationError
         with pytest.raises(CameraInitializationError, match="Failed to initialize camera"):
@@ -394,7 +378,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -428,7 +412,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -467,7 +451,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -500,7 +484,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -524,7 +508,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -550,7 +534,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -576,7 +560,7 @@ class TestCameraBackendDefaultImplementations:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture warnings
         original_levels, original_propagate = enable_log_capture(backend)
@@ -606,7 +590,7 @@ class TestCameraBackendImageQualityEnhancement:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         result = await backend.get_image_quality_enhancement()
         assert result is True
@@ -620,7 +604,7 @@ class TestCameraBackendImageQualityEnhancement:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Temporarily lower handler levels to capture info logs
         original_levels, original_propagate = enable_log_capture(backend, logging.INFO)
@@ -655,14 +639,14 @@ class TestCameraBackendAsyncContext:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         assert backend.initialized is False
         
         async with backend as ctx_backend:
             assert ctx_backend is backend
             assert backend.initialized is True
-            assert backend.camera == "mock_camera_object"
+            assert backend.camera == "test_camera"
         
         # Should be cleaned up after context exit
         assert backend.initialized is False
@@ -677,8 +661,8 @@ class TestCameraBackendAsyncContext:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
-        backend._force_init_failure = 'not_found'
+        backend = MinimalConcreteBackend()
+        backend.set_test_behavior('initialize', 'not_found')
         
         with pytest.raises(CameraNotFoundError):
             async with backend:
@@ -696,7 +680,7 @@ class TestCameraBackendAsyncContext:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         with pytest.raises(RuntimeError, match="test exception"):
             async with backend:
@@ -719,7 +703,7 @@ class TestCameraBackendCleanup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         backend.camera = "mock_camera"  # Simulate uncleaned camera
         
         # Temporarily lower handler levels to capture warnings
@@ -745,7 +729,7 @@ class TestCameraBackendCleanup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         backend.camera = None  # Properly cleaned up
         
         with caplog.at_level(logging.WARNING):
@@ -762,7 +746,7 @@ class TestCameraBackendCleanup:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         backend.camera = "mock_camera"
         
         # Remove logger to trigger exception
@@ -827,7 +811,7 @@ class TestCameraBackendInheritance:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Should be instance of MindtraceABC
         assert isinstance(backend, MindtraceABC)
@@ -848,11 +832,11 @@ class TestCameraBackendInheritance:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Check MRO
-        mro = ConcreteCameraBackend.__mro__
-        assert ConcreteCameraBackend in mro
+        mro = MinimalConcreteBackend.__mro__
+        assert MinimalConcreteBackend in mro
         assert CameraBackend in mro
         assert MindtraceABC in mro
         
@@ -874,7 +858,7 @@ class TestCameraBackendConfiguration:
         # Should still be able to create backend (graceful degradation)
         # or should raise appropriate exception
         with pytest.raises(RuntimeError):
-            ConcreteCameraBackend()
+            MinimalConcreteBackend()
     
     @patch('mindtrace.hardware.cameras.backends.camera_backend.get_camera_config')
     def test_config_none_values(self, mock_get_config):
@@ -884,7 +868,7 @@ class TestCameraBackendConfiguration:
         mock_config_obj.cameras.retrieve_retry_count = None
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
-        backend = ConcreteCameraBackend()
+        backend = MinimalConcreteBackend()
         
         # Should handle None values gracefully
         # (actual behavior depends on implementation)
@@ -900,10 +884,13 @@ class TestCameraBackendConfiguration:
         mock_get_config.return_value.get_config.return_value = mock_config_obj
         
         # Explicit parameters should override config
-        backend = ConcreteCameraBackend(
+        backend = MinimalConcreteBackend(
             img_quality_enhancement=False,
             retrieve_retry_count=5
         )
         
         assert backend.img_quality_enhancement is False  # Explicit override
-        assert backend.retrieve_retry_count == 5  # Explicit override 
+        assert backend.retrieve_retry_count == 5  # Explicit override
+
+
+ 

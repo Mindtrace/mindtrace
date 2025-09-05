@@ -1821,7 +1821,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
     """Test specific uncovered error paths in BaslerCameraBackend."""
 
     @pytest.mark.asyncio
-    async def test_initialization_config_parsing_error(self, monkeypatch):
+    async def test_initialization_config_parsing_error(self, mock_pypylon, monkeypatch):
         """Test error handling during config parsing in initialization."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -1941,7 +1941,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             await basler_camera._sdk(lambda: None)
 
     @pytest.mark.asyncio
-    async def test_config_timeout_edge_cases(self, monkeypatch):
+    async def test_config_timeout_edge_cases(self, mock_pypylon, monkeypatch):
         """Test various edge cases in config timeout parsing."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -1995,7 +1995,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             await basler_camera._sdk(slow_operation, timeout=0.001)  # Very short timeout
 
     @pytest.mark.asyncio
-    async def test_discovery_exception_during_device_enumeration(self, monkeypatch):
+    async def test_discovery_exception_during_device_enumeration(self, mock_pypylon, monkeypatch):
         """Test exception handling during device enumeration in discovery."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -2019,7 +2019,7 @@ class TestBaslerCameraBackendInitializePylonCheck:
     """Test initialize() method when pypylon is not available."""
     
     @pytest.mark.asyncio
-    async def test_initialize_pypylon_not_available(self, monkeypatch):
+    async def test_initialize_pypylon_not_available(self, mock_pypylon, monkeypatch):
         """Test that initialize() raises SDKNotAvailableError when PYPYLON_AVAILABLE is False."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import SDKNotAvailableError
