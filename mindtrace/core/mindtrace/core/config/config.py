@@ -5,90 +5,33 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable, Tuple, get_origin, get_args
 from copy import deepcopy
 
-from pydantic import  Field, HttpUrl, SecretStr, AnyUrl
+from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from pydantic import BaseModel
+from pydantic import HttpUrl, AnyUrl
 
 
 
 
 
-class API_KEYS(BaseModel):
+class MINDTRACE_API_KEYS(BaseModel):
     OPENAI: Optional[SecretStr]
     DISCORD: Optional[SecretStr]
     ROBOFLOW: Optional[SecretStr]
 
 
-class DIR_PATHS(BaseModel):
-    ROOT: str 
-    DATA: str
-    MODELS: str
-    MODEL_REGISTRY: str
-    MINIO_DATA: str
-    FILES: str
-    LIB: str
-    LOGS: str
-    TEMP: str
-    TESTS: str
-    CHECKPOINTS: str
-    SERVER_PIDS: str
-    RESULTS: str
-
-
-class DATALAKE(BaseModel):
+class MINDTRACE_DIR_PATHS(BaseModel):
     ROOT: str
-    GCP_CREDS_PATH: str
-    GCP_BUCKET_NAME: str
-    HF_TOKEN: str
-    HF_DEFAULT_ORG: str
-    CHECK_LEGACY_VERSIONS: bool
+    TEMP_DIR: str
+    REGISTRY_DIR: str
+    LOGGER_DIR: str
+    CLUSTER_REGISTRY_DIR: str
+    SERVER_PIDS_DIR: str
 
 
-class DIR_MODELS(BaseModel):
-    SAM: str
-    YOLO8: str
-    YOLO10: str
-    DINOV2: str
-
-
-class FILE_PATHS(BaseModel):
-    LOGS: str
-    UNITTEST_LOGS: str
-
-
-class DEFAULT_HOST_URLS(BaseModel):
-    SERVERBASE: HttpUrl
-    NODE_MANAGER: HttpUrl
+class MINDTRACE_DEFAULT_HOST_URLS(BaseModel):
+    SERVICE: HttpUrl
     CLUSTER_MANAGER: HttpUrl
-    RESERVED_TEST_URL: HttpUrl
 
-
-class REDIS(BaseModel):
-    HOST: str
-    PORT: int
-    DB: int
-    USERNAME: str
-    PASSWORD: Optional[SecretStr]
-
-
-
-class RABBITMQ(BaseModel):
-    HOST: str
-    PORT: int
-    USER: str
-    PASSWORD: Optional[SecretStr]
-    DEFAULT_EXCHANGE: str
-    DEFAULT_QUEUE: str
-    DEFAULT_ROUTING_KEY: str
-
-
-class LOGGER(BaseModel):
-    LOKI_URL: HttpUrl
-    LOG_DIR: str
-
-
-class DIR_SOURCE(BaseModel):
-    ROOT: str
 
 
 
@@ -137,16 +80,10 @@ def load_ini_settings() -> Dict[str, Any]:
     return load_ini_as_dict(ini_path)
 
 class CoreSettings(BaseSettings):
-    API_KEYS: API_KEYS
-    DIR_PATHS: DIR_PATHS
-    DATALAKE: DATALAKE
-    DIR_MODELS: DIR_MODELS
-    FILE_PATHS: FILE_PATHS
-    DEFAULT_HOST_URLS: DEFAULT_HOST_URLS
-    REDIS: REDIS
-    RABBITMQ: RABBITMQ
-    LOGGER: LOGGER
-    DIR_SOURCE: DIR_SOURCE
+    MINDTRACE_API_KEYS: MINDTRACE_API_KEYS
+    MINDTRACE_DIR_PATHS: MINDTRACE_DIR_PATHS
+    MINDTRACE_DEFAULT_HOST_URLS: MINDTRACE_DEFAULT_HOST_URLS
+    
 
     model_config = {
         "env_nested_delimiter": "__",

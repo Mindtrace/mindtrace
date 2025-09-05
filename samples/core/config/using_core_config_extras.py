@@ -22,8 +22,8 @@ class Service(Mindtrace):
         super().__init__(extra_settings=ServiceSettings(),
         )
     def instance_method(self):
-        print(self.config['RABBITMQ']['PASSWORD']) # Accessing a config value from config_dict
-        print(self.config['SERVICE']['MLFLOWPORT'])
+        print(self.config['MINDTRACE_API_KEYS']['OPENAI']) # Accessing a config value from config_dict
+        print(self.config['MINDTRACE_DIR_PATHS']['LOGGER_DIR'])
 
     def save_config(self, path: str | Path = "config_snapshot.json", reveal_secrets: bool = False) -> None:
         data = _config_to_json_dict(self.config, reveal_secrets=reveal_secrets)
