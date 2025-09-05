@@ -1,5 +1,6 @@
 import os
 import configparser
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable, Tuple, get_origin, get_args
 from copy import deepcopy
@@ -268,6 +269,20 @@ class Config(dict):
         # Overlay env and return through __init__ pipeline (which masks)
         base = cls._apply_env_overrides_static(base)
         return cls([base])
+
+    @classmethod
+    def load_json(cls, path: str | Path) -> "Config":
+        """Load from a JSON file (acts as file_loader layer) and apply env + masking."""
+        def _loader() -> Dict[str, Any]:
+            with open(path, "r") as f:
+                return json.load(f)
+        return cls.load(file_loader=_loader)
+
+    def save_json(self, path: str | Path, *, reveal_secrets: bool = False, indent: int = 4) -> None:
+        """Save to JSON; masked by default. Set reveal_secrets=True to write real secrets."""
+        data = self.to_revealed_strings() if reveal_secrets else deepcopy(dict(self))
+        with open(path, "w") as f:
+            json.dump(data, f, indent=indent)
 
     def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
         """Return a new Config clone with overrides applied (original remains unchanged)."""
