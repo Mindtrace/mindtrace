@@ -107,7 +107,7 @@ class GridState(rx.State):
         print(f"[GridState.load] start q={q_tuple}", flush=True)
 
         try:
-            rows, total, columns = await ScanRepository.search_grid(
+            rows, total, columns = await TableRepository.search_grid(
                 q=q_tuple[0],
                 result=q_tuple[1],   # repo may ignore; we filter client-side below
                 sort_by=q_tuple[2],  # server sorts native fields (created_at, serial_number)

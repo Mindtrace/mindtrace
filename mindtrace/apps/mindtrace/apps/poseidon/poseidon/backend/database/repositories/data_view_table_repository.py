@@ -49,7 +49,7 @@ class TableRepository:
         page: int = 1,
         page_size: int = 10,
     ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, str]]]:
-        await ScanRepository._ensure_init()
+        await TableRepository._ensure_init()
 
         pipeline = [
             {"$match": {"serial_number": {"$regex": q, "$options": "i"}}} if q else {"$match": {}},
