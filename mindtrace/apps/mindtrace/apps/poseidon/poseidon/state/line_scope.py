@@ -48,13 +48,11 @@ class ScopeState(rx.State):
     # -------- current scope from URL ----------
     @rx.var
     def selected_plant(self) -> str:
-        parts = (self.router.page.raw_path or "").split("?", 1)[0].strip("/").split("/")
-        return parts[1] if len(parts) >= 2 and parts[0] == "plants" else "all"
+        return self.plant_id if self.plant_id else "all"
 
     @rx.var
     def selected_line(self) -> str:
-        parts = (self.router.page.raw_path or "").split("?", 1)[0].strip("/").split("/")
-        return parts[3] if len(parts) >= 4 and parts[0] == "plants" and parts[2] == "lines" else "all"
+        return self.line_id if self.line_id else "all"
 
     @rx.var
     def lines_for_selected(self) -> list[tuple[str, str]]:
@@ -66,53 +64,63 @@ class ScopeState(rx.State):
         return self.plants[0][0] if self.plants else ""
 
     def _first_line(self, plant_id: str) -> str:
-        if self.last_line:
-            return self.last_line
         arr = self.lines_by_plant.get(plant_id, [])
         return str(arr[0][0]) if arr else ""
 
     @rx.var
     def resolved_plant(self) -> str:
-        # use URL if present; otherwise first plant
-        return self.selected_plant if self.selected_plant != "all" else self.first_plant
+        if self.plant_id:
+            return self.plant_id
+
+        if self.last_plant and any(self.last_plant == p[0] for p in self.plants):
+            return self.last_plant
+
+        return self.first_plant
 
     @rx.var
     def resolved_line(self) -> str:
-        # use URL if present; otherwise first line of resolved plant
-        if self.selected_line != "all":
-            return self.selected_line
-        p = self.resolved_plant
-        return self._first_line(p) if p else ""
+        # use URL if present; otherwise last line or first line of resolved plant
+        if self.line_id:
+            return self.line_id
+        plant = self.resolved_plant
+        valid_ids = {lid for lid, _ in self.lines_by_plant.get(plant, [])}
+
+        if self.last_line and self.last_line in valid_ids:
+            return self.last_line
+        return self._first_line(plant)
 
     @rx.var
     def links_ready(self) -> bool:
         # Sidebar enables links once at least a plant is known
-        return bool(self.resolved_plant)
+        return bool(self.resolved_plant and self.resolved_line)
 
     # -------- navigation helpers (user-triggered) ----------
-    def _with_qs(self, dest: str) -> str:
-        raw = self.router.page.raw_path or ""
-        return dest + ("?" + raw.split("?", 1)[1] if "?" in raw else "")
+    def _current_subroute(self) -> str:
+        raw = (self.router.page.raw_path or "").split("?", 1)[0].strip("/")
+        parts = raw.split("/")
+        if len(parts) >= 5 and parts[0] == "plants" and parts[2] == "lines":
+            return "/".join(parts[4:])
+        return ""
+
+    def _goto(self, plant_id: str, line_id: str):
+        sub = self._current_subroute() or "line-insights"
+        return rx.redirect(f"/plants/{plant_id}/lines/{line_id}/{sub}")
 
     def change_plant(self, plant_id: str):
-        # when user picks a plant, immediately pick its first line
-        if plant_id == "all":
-            return rx.redirect("/overview") # todo: change to index page
-        self.last_plant, self.last_line = plant_id, ""
-        l0 = self._first_line(plant_id)
-        dest = f"/plants/{plant_id}/lines/{l0}/line-insights" if l0 else f"/plants/{plant_id}/overview"
-        return rx.redirect(self._with_qs(dest))
+        if not plant_id:
+            return None
+        lines = self.lines_by_plant.get(plant_id, [])
+        if not lines:
+            return rx.redirect(f"/plants/{plant_id}/overview")
+        self.last_plant = plant_id
+        target_line = self.last_line if any(lid == self.last_line for lid, _ in lines) else lines[0][0]
+        return self._goto(plant_id, target_line)
 
     def change_line(self, line_id: str):
-        plant = self.selected_plant if self.selected_plant != "all" else self.resolved_plant
+        if not line_id:
+            return None
+        plant = self.resolved_plant
         if not plant:
             return None
-        if line_id == "all":
-            l0 = self._first_line(plant)
-            dest = f"/plants/{plant}/lines/{l0}/line-insights" if l0 else f"/plants/{plant}/overview"
-            return rx.redirect(self._with_qs(dest))
-
         self.last_line = line_id
-        parts = (self.router.page.raw_path or "").split("?", 1)[0].strip("/").split("/")
-        sub = "/".join(parts[4:]) or "line-insights" if len(parts) >= 4 else "line-insights"
-        return rx.redirect(self._with_qs(f"/plants/{plant}/lines/{line_id}/{sub}"))
+        return self._goto(plant, line_id)
