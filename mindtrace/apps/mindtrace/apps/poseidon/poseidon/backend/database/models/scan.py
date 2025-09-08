@@ -4,6 +4,8 @@ from datetime import datetime, UTC
 from beanie import Link, before_event, Insert, Replace, SaveChanges
 from pydantic import Field
 from .enums import ScanStatus
+from pymongo import IndexModel, ASCENDING, DESCENDING
+
 
 if TYPE_CHECKING:
     from .organization import Organization
@@ -35,6 +37,12 @@ class Scan(MindtraceDocument):
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    class Settings:
+        name = "Scan"
+        indexes = [
+            IndexModel([("project.$id", ASCENDING), ("created_at", DESCENDING)], name="scan_project_created_at"),
+        ]
+
 
     @before_event(Insert)
     def set_creation_timestamps(self):

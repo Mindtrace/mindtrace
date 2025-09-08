@@ -77,6 +77,14 @@ COMPONENT_VARIANTS = {
             "color": T.colors.fg,
             "cursor": "pointer",
         },
+        "compact": {
+            "border": f"1px solid {T.colors.border}",
+            "background": T.colors.surface,
+            "backdrop_filter": "none",
+            "border_radius": R.r_sm,
+            "padding": "0.35rem 0.6rem",
+            "font_size": Ty.fs_sm,
+        },
         "focus": {
             "border_color": C.ring,
             "background": T.colors.surface_2,

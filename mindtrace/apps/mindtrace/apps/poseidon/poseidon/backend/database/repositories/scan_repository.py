@@ -9,7 +9,10 @@ from poseidon.backend.database.models.scan import Scan
 from poseidon.backend.database.models.scan_image import ScanImage
 from poseidon.backend.database.models.scan_classification import ScanClassification
 from poseidon.backend.database.models.enums import ScanStatus
-from poseidon.backend.cloud.gcs import presign_url
+from poseidon.backend.database.init import initialize_database
+from typing import Optional, List, Dict
+from datetime import datetime
+from beanie import PydanticObjectId
 
 class ScanRepository:
     # ----------------- init -----------------
@@ -78,7 +81,15 @@ class ScanRepository:
     @staticmethod
     async def get_by_project(project_id: str) -> List[Scan]:
         await ScanRepository._ensure_init()
-        return await Scan.find(Scan.project.id == project_id).to_list()
+        try:
+            # Follow existing pattern: get the linked object first
+            from poseidon.backend.database.models.project import Project
+                
+            
+            return await Scan.find(Scan.project.id == PydanticObjectId(project_id)).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project: {e}")
+            return []
 
     @staticmethod
     async def get_by_status(status: ScanStatus) -> List[Scan]:
@@ -122,50 +133,47 @@ class ScanRepository:
     async def get_failed_scans() -> List[Scan]:
         await ScanRepository._ensure_init()
         return await Scan.find(Scan.status == ScanStatus.FAILED).to_list()
-
-    # ----------------- Helpers for grid shaping -----------------
-    @staticmethod
-    async def _infer_result(scan: Scan) -> str:
-        """Use scan.cls_result if provided, else infer from images/classifications."""
-        if scan.cls_result:
-            val = str(scan.cls_result).strip().lower()
-            if val == "healthy":
-                return "Healthy"
-            if val == "defective":
-                return "Defective"
-            return "Defective"
-
-        try:
-            any_img = await ScanImage.find(
-                (ScanImage.scan.id == scan.id) & (ScanImage.classifications != [])
-            ).first_or_none()
-            return "Defective" if any_img else "Healthy"
-        except Exception:
-            return "Healthy"
-
-    @staticmethod
-    def _format_dt(dt: datetime) -> str:
-        return dt.strftime("%a %b %d %Y %H:%M:%S")
-
-    @staticmethod
-    def _format_date(date: datetime) -> str:
-        # Day + date only (e.g., "Thu Jun 26 2025")
-        return date.strftime("%a %b %d %Y")
-
-    @staticmethod
-    def _to_image_url(img: Any) -> str:
-        """
-        Always build a presigned GCS URL from full_path.
-        """
-        if img is None:
-            return ""
-
-        get = img.get if isinstance(img, dict) else (lambda k, d=None: getattr(img, k, d))
-
-        full_path = get("full_path")
-        if not full_path:
-            return ""
-
-        return presign_url(full_path)
-
     
+    @staticmethod
+    async def get_by_project_and_date_range(
+        project_id: str, 
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[Scan]:
+        """Get scans for a project within a date range"""
+        await ScanRepository._ensure_init()
+        try:
+
+            
+            # Build query conditions
+            conditions = [Scan.project.id == PydanticObjectId(project_id)]
+            
+            if start_date is not None:
+                conditions.append(Scan.created_at >= start_date)
+            if end_date:
+                conditions.append(Scan.created_at <= end_date)
+            
+            
+            return await Scan.find(*conditions).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project_and_date_range: {e}")
+            return []
+    
+    @staticmethod
+    async def get_scan_count_by_date(
+        project_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, int]:
+        """Get scan counts grouped by date for a project"""
+        await ScanRepository._ensure_init()
+        scans = await ScanRepository.get_by_project_and_date_range(
+            project_id, start_date, end_date
+        )
+        
+        counts = {}
+        for scan in scans:
+            date_key = scan.created_at.strftime("%Y-%m-%d")
+            counts[date_key] = counts.get(date_key, 0) + 1
+        
+        return counts 

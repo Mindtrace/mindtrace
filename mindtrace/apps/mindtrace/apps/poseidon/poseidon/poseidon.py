@@ -12,11 +12,13 @@ and implements role-based authentication for secure access control.
 
 import reflex as rx
 
+from poseidon.components_v2.layout.header.scope_selector import ScopeSelector
 from poseidon.components_v2.layout.appshell import AppShell
 from poseidon.pages.auth import login_page, register_admin_page, register_page, register_super_admin_page
 from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.component_showcase import component_showcase_page
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
+from poseidon.pages.dashboards.line_insights import line_insights_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.index import index
 from poseidon.pages.inference import inference_page
@@ -25,6 +27,7 @@ from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
 from poseidon.styles.theme import theme_config
+from poseidon.state.line_insights import LineInsightsState
 from poseidon.pages.filter_table_demo import filter_table_demo
 
 # Create app with comprehensive styling configuration
@@ -34,7 +37,7 @@ app = rx.App(
 )
 
 
-def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=None):
+def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=None, show_scope_selector=False):
     def wrapped():
         return AppShell(
             title=title,
@@ -42,6 +45,7 @@ def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=Non
             header_right=header_right_fn() if header_right_fn else None,
             subheader=subheader_fn() if subheader_fn else None,
             body=body_fn(),
+            show_scope_selector=show_scope_selector,
         )
 
     return wrapped
@@ -98,6 +102,13 @@ app.add_page(
     route="/project-management",
 )
 
+# Analytics routes
+app.add_page(
+    with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
+    route="/plants/[plant_id]/lines/[line_id]/line-insights",
+    on_load=LineInsightsState.on_mount,
+)
+
 # User routes
 app.add_page(with_shell(profile_page, title="Mindtrace - Profile", active="Profile"), route="/profile")
 app.add_page(with_shell(images_page, title="Mindtrace - Image Viewer", active="Image Viewer"), route="/image-viewer")
@@ -112,3 +123,6 @@ app.add_page(
     with_shell(filter_table_demo, title="Mindtrace - Line View", active="Line View"),
     route="/line-view",
 )
+
+from poseidon.backend.database.init import rebuild_all_models
+rebuild_all_models()
