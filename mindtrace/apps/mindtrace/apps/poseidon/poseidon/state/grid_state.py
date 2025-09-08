@@ -2,7 +2,7 @@ import math
 from typing import List, Dict, Any, Optional
 
 import reflex as rx
-from poseidon.backend.database.repositories.scan_repository import ScanRepository
+from poseidon.backend.database.repositories.data_view_table_repository import TableRepository
 
 # ---- Constants ---------------------------------------------------------------
 DEFAULT_SORT_BY = "created_at"
