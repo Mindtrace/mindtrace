@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-automation"
-version = "0.3.0"
+version = "0.2.0"
 description = "Automation for Mindtrace"
 license = "Apache-2.0"
 authors = [

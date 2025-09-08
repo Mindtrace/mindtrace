@@ -14,10 +14,9 @@ NEEDS_DOCKER=false
 RUN_UNIT=false
 RUN_INTEGRATION=false
 RUN_STRESS=false
+RUN_UTILS=false
 RUN_ALL=true
 MODULES=()
-
-export MINDTRACE_TEST_PARAM="test_1234"
 
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
@@ -37,6 +36,11 @@ while [[ $# -gt 0 ]]; do
             RUN_ALL=false
             shift
             ;;
+        --utils)
+            RUN_UTILS=true
+            RUN_ALL=false
+            shift
+            ;;
         apps | automation | cluster | core | database | datalake | hardware | jobs | models | registry | services | storage | ui)
             # Specific modules provided
             MODULES+=("$1")
@@ -47,8 +51,9 @@ while [[ $# -gt 0 ]]; do
             SPECIFIC_PATHS+=("$1")
             echo "Detected specific test path: $1"
             # Check if any path requires docker containers
-            if [[ "$1" == tests/integration/* ]]; then
+            if [[ "$1" == tests/integration/* ]] || [[ "$1" == tests/integration ]] || [[ "$1" == tests/utils/* ]] || [[ "$1" == tests/utils ]]; then
                 NEEDS_DOCKER=true
+                echo "Docker containers required for path: $1"
             fi
             shift
             ;;
@@ -91,21 +96,21 @@ fi
 # If we get here, no specific paths were provided, so use suite-based logic
 echo "No specific test paths provided, using suite-based logic"
 
-# If no specific flags were provided, run unit and integration tests (but not stress)
+# If no specific flags were provided, run unit and integration tests (but not stress or utils)
 if [ "$RUN_ALL" = true ]; then
     RUN_UNIT=true
     RUN_INTEGRATION=true
-    # RUN_STRESS remains false - only runs when explicitly requested
+    # RUN_STRESS and RUN_UTILS remain false - only run when explicitly requested
 fi
 
-# Start MinIO container if running integration tests
-if [ "$RUN_INTEGRATION" = true ]; then
+# Start Docker containers if running integration, utils tests, or specific docker-requiring paths
+if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Starting docker containers..."
     . scripts/docker_up.sh
 fi
 
 # Clear any existing coverage data when running with coverage
-if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ]; then
+if [ "$RUN_UNIT" = true ] || [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ]; then
     coverage erase
 fi
 
@@ -139,7 +144,7 @@ if [ "$RUN_UNIT" = true ]; then
         echo "Unit tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
         # Stop docker containers if they were started
-        if [ "$RUN_INTEGRATION" = true ]; then
+        if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
             $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         fi
@@ -172,12 +177,33 @@ if [ "$RUN_INTEGRATION" = true ]; then
     if [ $OVERALL_EXIT_CODE -ne 0 ]; then
         echo "Integration tests failed. Stopping test execution."
         # Stop docker containers if they were started
-        echo "Stopping docker containers..."
-        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
+            echo "Stopping docker containers..."
+            $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+        fi
         exit $OVERALL_EXIT_CODE
     fi
 fi
 
+# Run tests/utils directory tests if --utils flag was used
+if [ "$RUN_UTILS" = true ]; then
+    echo "Running tests/utils directory tests..."
+    if [ -d "tests/utils" ]; then
+        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/utils
+        if [ $? -ne 0 ]; then
+            echo "tests/utils directory tests failed. Stopping test execution."
+            OVERALL_EXIT_CODE=1
+            # Stop docker containers if they were started
+            if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
+                echo "Stopping docker containers..."
+                $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
+            fi
+            exit $OVERALL_EXIT_CODE
+        fi
+    else
+        echo "No tests/utils directory found"
+    fi
+fi
 
 # Run stress tests if requested
 if [ "$RUN_STRESS" = true ]; then
@@ -217,7 +243,7 @@ if [ "$RUN_STRESS" = true ]; then
         echo "Stress tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
         # Stop docker containers if they were started
-        if [ "$RUN_INTEGRATION" = true ]; then
+        if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
             echo "Stopping docker containers..."
             $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         fi
@@ -226,7 +252,7 @@ if [ "$RUN_STRESS" = true ]; then
 fi
 
 # Stop docker containers if they were started
-if [ "$RUN_INTEGRATION" = true ]; then
+if [ "$RUN_INTEGRATION" = true ] || [ "$RUN_UTILS" = true ] || [ "$NEEDS_DOCKER" = true ]; then
     echo "Stopping docker containers..."
     $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
 fi

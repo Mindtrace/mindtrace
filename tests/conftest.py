@@ -1,9 +1,9 @@
 import logging
 
 import pytest
-from _pytest.mark import Mark
 
-empty_mark = Mark("", (), {})
+
+empty_mark = pytest.mark.empty
 
 
 def by_slow_marker(item):
@@ -67,6 +67,14 @@ class MockAssets:
     image_background_path = "tests/resources/office_in_a_small_city.png"
 
     @property
+    def image(self):
+        return Image.open(self.image_path).convert("RGB")
+
+    @property
+    def image_background_path(self):
+        return "tests/resources/office_in_a_small_city.png"
+
+    @property
     def prompt(self):
         return "An astronaut riding a horse"
 
@@ -74,7 +82,6 @@ class MockAssets:
     def image(self):
         if not hasattr(self, "_image"):
             from PIL import Image
-
             self._image = Image.open(self.image_path).convert("RGB")
         return self._image
 
@@ -82,7 +89,6 @@ class MockAssets:
     def image_mask(self):
         if not hasattr(self, "_image_mask"):
             from PIL import Image
-
             self._image_mask = Image.open(self.mask_path).convert("L")
         return self._image_mask
 
@@ -90,7 +96,6 @@ class MockAssets:
     def image_large(self):
         if not hasattr(self, "_image_large"):
             from PIL import Image
-
             self._image_large = Image.open(self.image_large_path).convert("RGB")
         return self._image_large
 
@@ -98,7 +103,6 @@ class MockAssets:
     def image_small(self):
         if not hasattr(self, "_image_small"):
             from PIL import Image
-
             self._image_small = Image.open(self.image_small_path).convert("RGB")
         return self._image_small
 
@@ -106,7 +110,6 @@ class MockAssets:
     def image_tiny(self):
         if not hasattr(self, "_image_tiny"):
             from PIL import Image
-
             self._image_tiny = Image.open(self.image_tiny_path).convert("RGB")
         return self._image_tiny
 
@@ -114,7 +117,6 @@ class MockAssets:
     def image_square(self):
         if not hasattr(self, "_image_square"):
             from PIL import Image
-
             self._image_square = Image.open(self.image_square_path).convert("RGB")
         return self._image_square
 
@@ -122,7 +124,6 @@ class MockAssets:
     def image_background(self):
         if not hasattr(self, "_image_background"):
             from PIL import Image
-
             self._image_background = Image.open(self.image_background_path).convert("RGB")
         return self._image_background
 
@@ -193,7 +194,6 @@ class MockAssets:
 
     def _get_pil(self):
         from PIL import Image
-
         return Image
 
 
@@ -201,3 +201,4 @@ class MockAssets:
 def mock_assets():
     """Fixture providing the MockAssets instance for all tests."""
     return MockAssets()
+

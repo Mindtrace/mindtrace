@@ -1,18 +1,15 @@
 """
 PLC Unit Tests
 
-Unit tests for PLC backends and PLC manager functionality.
+Unit tests for PLC backends and PLC manager functionality, mirroring the cameras test structure.
 
-Test Files:
-- test_plcs.py: Comprehensive PLC system unit tests
-  - MockAllenBradleyPLC tests
-  - LogixDriver functionality tests
-  - SLCDriver functionality tests
-  - CIPDriver functionality tests
-  - PLCManager tests
-  - Error handling tests
-  - Performance tests
-  - Configuration tests
+Structure:
+- backends/
+  - allen_bradley/
+    - test_mock_allen_bradley.py: tests for MockAllenBradleyPLC and driver behaviors
+- core/
+  - test_plc_manager.py: tests for PLCManager
 
-All tests use mock implementations to avoid hardware dependencies.
+All tests use mock implementations to avoid hardware dependencies. Integration/performance
+scenarios live within the relevant backend or manager tests.
 """

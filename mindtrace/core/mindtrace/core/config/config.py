@@ -25,9 +25,6 @@ class Config(dict):
             "MINDTRACE_CLUSTER_MINIO_SECRET_KEY": "minioadmin",
             "MINDTRACE_CLUSTER_MINIO_BUCKET": "minio-registry",
             "MINDTRACE_WORKER_REDIS_DEFAULT_URL": "redis://localhost:6379",
-            "MINDTRACE_MCP_MOUNT_PATH": "/mcp-server",
-            "MINDTRACE_MCP_HTTP_APP_PATH": "/mcp",
-            "MINDTRACE_TEST_PARAM": "",
         }
         # Update defaults with any provided kwargs
         default_config.update(kwargs)
@@ -35,9 +32,4 @@ class Config(dict):
         for k, v in default_config.items():
             if isinstance(v, str) and v.startswith("~/"):
                 default_config[k] = os.path.expanduser(v)
-
-        for k, v in default_config.items():
-            if k.startswith("MINDTRACE_"):
-                default_config[k] = os.getenv(k, v)
-
         super().__init__(default_config)

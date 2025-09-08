@@ -1,6 +1,5 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace)](https://pypi.org/project/mindtrace/)
 [![License](https://img.shields.io/pypi/l/mindtrace)](https://github.com/mindtrace/mindtrace/blob/main/LICENSE)
-[![Downloads](https://static.pepy.tech/badge/mindtrace)](https://pepy.tech/projects/mindtrace)
 
 # Mindtrace Module Dependency Structure
 

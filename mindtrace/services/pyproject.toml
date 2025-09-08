@@ -1,8 +1,7 @@
 [project]
 name = "mindtrace-services"
-version = "0.3.0"
+version = "0.2.0"
 description = "Service layer for Mindtrace"
-readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}

@@ -56,16 +56,6 @@ def test_check_libs():
         assert check_libs(["missing_lib1", "missing_lib2"]) == ["missing_lib1", "missing_lib2"]
 
 
-def test_check_libs_single_string():
-    # Should handle a single string as input
-    with patch("builtins.__import__") as mock_import:
-        mock_import.return_value = None
-        assert check_libs("numpy") == []
-    with patch("builtins.__import__") as mock_import:
-        mock_import.side_effect = ImportError("No module named 'missing_lib'")
-        assert check_libs("missing_lib") == ["missing_lib"]
-
-
 def test_ifnone_url():
     """Test ifnone_url function with various URL inputs."""
     # Test with string URL and string default

@@ -1,9 +1,8 @@
-"""
-API module for Camera API.
+"""Hardware API modules."""
 
-This module contains the FastAPI application and all related components.
-"""
+from .cameras import CameraManagerConnectionManager, CameraManagerService
 
-from .app import app
-
-__all__ = ["app"]
+__all__ = [
+    "CameraManagerService", 
+    "CameraManagerConnectionManager",
+]

@@ -1,14 +1,13 @@
-import re
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import re
 from tempfile import TemporaryDirectory
+import time
 from unittest.mock import patch
 
-import pytest
 from minio import S3Error
 from pydantic import BaseModel
+import pytest
 
 from mindtrace.core import Config
 from mindtrace.registry import LocalRegistryBackend, Registry
@@ -16,7 +15,6 @@ from mindtrace.registry import LocalRegistryBackend, Registry
 
 class SampleModel(BaseModel):
     """Sample Pydantic model for testing."""
-
     name: str
     value: int
 
@@ -1852,129 +1850,3 @@ def test_materializer_cache_warming_error(registry):
 
         loaded_obj = registry.load("test:str", version="1.0.0")
         assert loaded_obj == "hello"
-
-
-def test_class_level_materializer_registration():
-    from mindtrace.registry.core.registry import Registry
-
-    # Save original state
-    orig = Registry.get_default_materializers().copy()
-    try:
-        Registry.register_default_materializer("test.module.MyClass", "test.module.MyMaterializer")
-        defaults = Registry.get_default_materializers()
-        assert "test.module.MyClass" in defaults
-        assert defaults["test.module.MyClass"] == "test.module.MyMaterializer"
-    finally:
-        # Restore original state
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_class_level_materializer_registration_with_type():
-    from mindtrace.registry.core.registry import Registry
-
-    class Dummy:
-        pass
-
-    # Save original state
-    orig = Registry.get_default_materializers().copy()
-    try:
-        Registry.register_default_materializer(Dummy, "test.module.DummyMaterializer")
-        key = f"{Dummy.__module__}.{Dummy.__name__}"
-        defaults = Registry.get_default_materializers()
-        assert key in defaults
-        assert defaults[key] == "test.module.DummyMaterializer"
-    finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
-    from mindtrace.registry.core.registry import Registry
-
-    # Save original state
-    orig = Registry.get_default_materializers().copy()
-    try:
-        Registry.register_default_materializer("test.module.MyClass", "test.module.MyMaterializer")
-        reg = Registry(registry_dir=temp_registry_dir)
-        materializers = reg.registered_materializers()
-        assert "test.module.MyClass" in materializers
-        assert materializers["test.module.MyClass"] == "test.module.MyMaterializer"
-    finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_materializer_registration_thread_safety():
-    from mindtrace.registry.core.registry import Registry
-
-    orig = Registry.get_default_materializers().copy()
-    try:
-
-        def register(i):
-            Registry.register_default_materializer(f"test.thread.Class{i}", f"test.thread.Materializer{i}")
-
-        threads = [threading.Thread(target=register, args=(i,)) for i in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        defaults = Registry.get_default_materializers()
-        for i in range(10):
-            assert f"test.thread.Class{i}" in defaults
-            assert defaults[f"test.thread.Class{i}"] == f"test.thread.Materializer{i}"
-    finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_materializer_registration_idempotency():
-    from mindtrace.registry.core.registry import Registry
-
-    orig = Registry.get_default_materializers().copy()
-    try:
-        Registry.register_default_materializer("test.module.IdemClass", "test.module.IdemMaterializer")
-        Registry.register_default_materializer("test.module.IdemClass", "test.module.IdemMaterializer")
-        defaults = Registry.get_default_materializers()
-        assert list(defaults.keys()).count("test.module.IdemClass") == 1
-        assert defaults["test.module.IdemClass"] == "test.module.IdemMaterializer"
-    finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_instance_materializer_override_class_level(temp_registry_dir):
-    from mindtrace.registry.core.registry import Registry
-
-    orig = Registry.get_default_materializers().copy()
-    try:
-        Registry.register_default_materializer("test.module.OverrideClass", "test.module.ClassLevelMaterializer")
-        reg = Registry(registry_dir=temp_registry_dir)
-        reg.register_materializer("test.module.OverrideClass", "test.module.InstanceLevelMaterializer")
-        materializers = reg.registered_materializers()
-        assert materializers["test.module.OverrideClass"] == "test.module.InstanceLevelMaterializer"
-    finally:
-        with Registry._materializer_lock:
-            Registry._default_materializers = orig
-
-
-def test_register_materializer_type_assigns_fully_qualified_name(registry):
-    class CoverageDummy2:
-        pass
-
-    registry.register_materializer(CoverageDummy2, "coverage.DummyMaterializer2")
-    expected_key = f"{CoverageDummy2.__module__}.{CoverageDummy2.__name__}"
-    assert registry.registered_materializer(expected_key) == "coverage.DummyMaterializer2"
-
-
-def test_register_materializer_accepts_materializer_class_type(registry):
-    class DummyClass:
-        pass
-
-    class DummyMaterializer:
-        pass
-
-    registry.register_materializer(DummyClass, DummyMaterializer)
-    expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
-    expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"
-    assert registry.registered_materializer(expected_key) == expected_value
