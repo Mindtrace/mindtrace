@@ -202,17 +202,10 @@ class ScanRepository:
         await ScanRepository._ensure_init()
 
         pipeline = [
-            # Optional filter by serial_number
             {"$match": {"serial_number": {"$regex": q, "$options": "i"}}} if q else {"$match": {}},
-
-            # Compute 'result' from cls_result (fallback Healthy)
             {"$set": {"result": {"$ifNull": ["$cls_result", "Healthy"]}}},
-
-            # Optional filter by result
             {"$match": {"result": result}} if result and result != "All" else {"$match": {}},
-
-            # ---- Project -> project_name ----
-            {"$addFields": {"project_id": "$project.$id"}},               # extract ObjectId from DBRef
+            {"$addFields": {"project_id": "$project.$id"}},
             {"$lookup": {
                 "from": "Project",
                 "localField": "project_id",
@@ -221,14 +214,12 @@ class ScanRepository:
             }},
             {"$set": {"project_name": {"$ifNull": [{"$first": "$project_doc.name"}, "-"]}}},
             {"$unset": ["project_id", "project_doc"]},
-
-            # ---- Images (from DBRef array 'images') ----
             {"$addFields": {
                 "image_ids": {
                     "$map": {
                         "input": {"$ifNull": ["$images", []]},
                         "as": "ref",
-                        "in": "$$ref.$id"                 # take the ObjectId from each DBRef
+                        "in": "$$ref.$id"
                     }
                 }
             }},
@@ -236,10 +227,8 @@ class ScanRepository:
                 "from": "ScanImage",
                 "localField": "image_ids",
                 "foreignField": "_id",
-                "as": "images",                           # replaces with full image docs array
+                "as": "images",
             }},
-
-            # ---- Classifications (by scan id) ----
             {"$lookup": {
                 "from": "ScanClassification",
                 "let": {"imgIds": "$image_ids"},
@@ -248,8 +237,6 @@ class ScanRepository:
                 ],
                 "as": "classifications",
             }},
-
-            # ---- Sort & paginate ----
             {"$sort": {"created_at": -1 if sort_dir == "desc" else 1, "_id": -1}},
             {"$skip": max(0, (page - 1) * page_size)},
             {"$limit": page_size},
@@ -259,41 +246,31 @@ class ScanRepository:
 
         rows: List[Dict[str, Any]] = []
 
+        print(f"Docs fetched: {len(docs)}")
         for d in docs:
-            # group classifications by image id so each part can list its classes
-            # clses = d.get("classifications", []) or []
-            # print(clses)
-            # cls_by_img = defaultdict(list)
-            for c in clses:
-                img_ref = c.get("image", {})
-                iid = img_ref.get("$id") if isinstance(img_ref, dict) else None
-                if iid is not None:
-                    cls_by_img[str(iid)].append(c)
-
             parts = []
-            # for img in (d.get("images", []) or []):
-            #     img_id = str(img.get("_id"))
-            #     name = (img.get("file_name") or "Camera").rsplit(".", 1)[0]
-
-            #     classes, seen_lower = [], set()
-            #     bbox_payload, max_conf = None, None
-            #     for c in cls_by_img.get(img_id, []):
-            #         label = c.get("det_cls") or c.get("name")
-            #         if label:
-            #             lkey = str(label).strip().lower()
-            #             if lkey and lkey not in seen_lower:
-            #                 classes.append(str(label))
-            #                 seen_lower.add(lkey)
-            #         conf = c.get("cls_confidence")
-            #         if conf is not None and (max_conf is None or conf > max_conf):
-            #             max_conf = conf
-            #         if bbox_payload is None:
-            #             x, y, w, h = c.get("det_x"), c.get("det_y"), c.get("det_w"), c.get("det_h")
-            #             if None not in (x, y, w, h):
-            #                 bbox_payload = {"x": x, "y": y, "w": w, "h": h, "class": (label or "")}
-
-            #     # you’re already presigning server-side elsewhere; keep it here minimal
-            # for p in 
+            for classification in d.get("classifications", []) or []:
+                image_ref = classification.get("image", {})
+                part_status = classification.get("det_cls") or "Healthy"
+                name = classification.get("name") or "Camera"
+                
+                if part_status.lower() != "healthy":
+                    print(f"  - Found defect: {part_status} on {name}")
+                parts.append({
+                    "name": name,
+                    "status": part_status,
+                })
+            
+            for img in (d.get("images", []) or []):
+                full_path = img.get("full_path")
+                if full_path:
+                    img_url = presign_url(full_path)
+                else:
+                    img_url = ""
+            
+                parts.append({
+                    "image_url": img_url,
+                })
             #     parts.append({
             #         "name": name,
             #         "status": ", ".join([c for c in classes if c.lower() != "healthy"]) or "Healthy",
