@@ -316,6 +316,16 @@ class LineViewState(rx.State):
         if not row_id:
             return
         return LineViewState.load_row_parts
+    
+    def toggle_row(self, row_id: str):
+        row_id = str(row_id or "")
+        if self.expanded_row_id == row_id:
+            self.expanded_row_id = ""
+            self.current_row_cameras = []
+            return
+        self.expanded_row_id = row_id
+        self.current_row_cameras = []
+        return LineViewState.load_row_parts
 
     def handle_accordion_change(self, value: str | List[str]):
         actual_value = value[0] if isinstance(value, list) and value else (value or "")
