@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-from mindtrace.core.config import Config, load_ini_as_dict
+from mindtrace.core.config import Config
+from mindtrace.core.utils import load_ini_as_dict
 
 # Step 1: Define your custom loader (e.g., from INI file)
 def my_loader():
