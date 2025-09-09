@@ -29,14 +29,6 @@ def _content() -> rx.Component:
         FilterTable(LineViewState),
         title="Line View",
         sub_text="Inspection traceability and accountability",
-        tools=[
-            button(
-                "Refresh",
-                icon=rx.icon("refresh-cw"),
-                on_click=LineViewState.load,
-                variant="secondary",
-            ),
-        ],
     )
 
 

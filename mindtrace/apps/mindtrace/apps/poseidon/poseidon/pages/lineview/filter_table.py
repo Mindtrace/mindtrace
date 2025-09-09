@@ -36,6 +36,45 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
         )
 
     def _image_panel() -> rx.Component:
+        label_text = rx.cond(
+            state.selected_part_status != "",
+            state.selected_part_status,
+            rx.cond(state.selected_result != "", state.selected_result, "—"),
+        )
+
+        bg_color = rx.cond(label_text == "Healthy", "#86efac", "#ef4444")
+        fg_color = rx.cond(label_text == "Healthy", "black", "white")
+        border_color = bg_color
+
+        bbox_overlay = rx.cond(
+            state.show_bbox,
+            rx.box(
+                rx.box(
+                    rx.text(label_text, weight="bold", size="2"),
+                    position="absolute",
+                    top="-22px",
+                    left="0",
+                    padding="2px 8px",
+                    background=bg_color,
+                    color=fg_color,
+                    border_radius="6px",
+                    line_height="18px",
+                    box_shadow="0 1px 2px rgba(0,0,0,0.25)",
+                    white_space="nowrap",
+                ),
+                position="absolute",
+                top="22%",
+                left="15%",
+                width="50%",
+                height="34%",
+                border=f"3px solid {border_color}",
+                border_radius="4px",
+                box_shadow="0 0 0 1px rgba(0,0,0,0.15) inset",
+                pointer_events="none",
+            ),
+            rx.fragment(),
+        )
+
         return rx.box(
             rx.box(
                 rx.image(
@@ -47,6 +86,7 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
                     border_radius="12px",
                     background="black",
                 ),
+                bbox_overlay,
                 position="relative",
                 width="100%",
                 height="65vh",
@@ -162,7 +202,17 @@ def _text_cell(value, key: str) -> rx.Component:
     safe_value = rx.cond(value != "", value, "-")
     pad_x = "8px" if key == "serial_number" else "12px"
     return rx.table.cell(
-        rx.text(safe_value, size="2", weight="regular", style={"display": "block", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+        rx.text(
+            safe_value,
+            size="2",
+            weight="regular",
+            style={
+                "display": "block",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+                "whiteSpace": "nowrap",
+            },
+        ),
         width=COL_WIDTHS.get(key, "auto"),
         padding=f"10px {pad_x}",
         text_align="left",
@@ -175,9 +225,12 @@ def _serial_cell(serial) -> rx.Component:
             rx.text(
                 safe_label,
                 underline="always",
-                cursor="pointer",
-                on_click=rx.set_clipboard("Hello World"),
-                style={"display": "block", "overflow": "hidden", "textOverflow": "ellipsis", "whiteSpace": "nowrap"},
+                style={
+                    "display": "block",
+                    "overflow": "hidden",
+                    "textOverflow": "ellipsis",
+                    "whiteSpace": "nowrap",
+                },
             ),
             content=safe_label,
             side="top",
@@ -208,12 +261,16 @@ def _camera_chip(camera: Dict[str, Any], state: type[rx.State], row: Dict[str, A
                             camera.get("status", "-"),
                             weight="medium",
                             size="3",
-                            color=rx.cond(camera.get("status", "") == "Healthy", "black", "white"),
+                            color=rx.cond(
+                                camera.get("status", "") == "Healthy", "black", "white"
+                            ),
                         ),
                         width="100%",
                         height="52px",
                     ),
-                    background_color=rx.cond(camera.get("status", "") == "Healthy", "#86efac", "#fca5a5"),
+                    background_color=rx.cond(
+                        camera.get("status", "") == "Healthy", "#86efac", "#fca5a5"
+                    ),
                     border="1px solid var(--gray-4)",
                     border_top="0",
                     border_bottom_left_radius="10px",
@@ -238,7 +295,9 @@ def _expand_cell(state: type[rx.State], row_id: str) -> rx.Component:
             on_click=lambda rid=row_id: state.toggle_row(rid),
             style={
                 "transition": "transform 150ms ease",
-                "transform": rx.cond(state.expanded_row_id == row_id, "rotate(180deg)", "rotate(0deg)"),
+                "transform": rx.cond(
+                    state.expanded_row_id == row_id, "rotate(180deg)", "rotate(0deg)"
+                ),
                 "margin-top": "3px",
                 "color": "black",
             },
@@ -288,7 +347,11 @@ def _details_row(state: type[rx.State], r: Dict[str, Any]) -> rx.Component:
             col_span=len(COLUMNS_SCHEMA) + 1,
             style={"background": "white", "borderTop": "1px solid var(--gray-4)"},
         ),
-        style={"display": rx.cond(state.expanded_row_id == r["id"], "table-row", "none")},
+        style={
+            "display": rx.cond(
+                state.expanded_row_id == r["id"], "table-row", "none"
+            )
+        },
         class_name="border-b border-[var(--gray-4)]",
     )
 
@@ -304,7 +367,9 @@ def _table_header(state: type[rx.State]) -> rx.Component:
                     rx.text(title, weight="medium"),
                     rx.cond(
                         state.sort_by == "created_at",
-                        rx.text(rx.cond(state.sort_dir == "asc", "▲", "▼"), size="1"),
+                        rx.text(
+                            rx.cond(state.sort_dir == "asc", "▲", "▼"), size="1"
+                        ),
                         rx.box(),
                     ),
                     spacing="2",
@@ -323,7 +388,9 @@ def _table_header(state: type[rx.State]) -> rx.Component:
                 text_align="left",
             )
         header_cells.append(cell)
-    header_cells.append(rx.table.column_header_cell("", width=COL_WIDTHS["_chevron"], text_align="center"))
+    header_cells.append(
+        rx.table.column_header_cell("", width=COL_WIDTHS["_chevron"], text_align="center")
+    )
 
     return rx.table.header(
         rx.table.row(*header_cells, class_name="border-b border-[var(--gray-4)]"),
@@ -340,7 +407,7 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
                         lambda r: rx.fragment(
                             _summary_row(state, r),
                             _details_row(state, r),
-                        )
+                        ),
                     )
                 ),
                 width="100%",
@@ -350,8 +417,12 @@ def DataGrid(state: type[rx.State]) -> rx.Component:
             rx.hstack(
                 rx.text(state.pagination_label, color_scheme="gray"),
                 rx.spacer(),
-                rx.icon_button("chevron-left", on_click=state.prev_page, disabled=state.prev_disabled),
-                rx.icon_button("chevron-right", on_click=state.next_page, disabled=state.next_disabled),
+                rx.icon_button(
+                    "chevron-left", on_click=state.prev_page, disabled=state.prev_disabled
+                ),
+                rx.icon_button(
+                    "chevron-right", on_click=state.next_page, disabled=state.next_disabled
+                ),
                 align="center",
                 width="100%",
                 padding_top="8px",
