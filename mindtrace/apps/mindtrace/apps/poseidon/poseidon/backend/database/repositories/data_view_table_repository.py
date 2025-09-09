@@ -163,7 +163,6 @@ class TableRepository:
             {"$skip": skip_n},
             {"$limit": page_size},
 
-            # Minimal lookup AFTER pagination
             {"$addFields": {"project_id": "$project.$id"}},
             {
                 "$lookup": {
@@ -177,7 +176,6 @@ class TableRepository:
             {"$set": {"project_name": {"$ifNull": [{"$first": "$project_doc.name"}, "-"]}}},
             {"$unset": ["project_id", "project_doc"]},
 
-            # Only return what the FE needs
             {
                 "$project": {
                     "_id": 1,
@@ -205,9 +203,9 @@ class TableRepository:
                 "id": str(d.get("_id")),
                 "serial_number": d.get("serial_number", ""),
                 "created_at": d.get("created_at", ""),
-                "part": d.get("project_name", "-"),  # human name
+                "part": d.get("project_name", "-"),
                 "result": (d.get("cls_result") if d.get("cls_result") is not None else "Healthy"),
-                "parts": [],  # lazy-loaded via fetch_row_parts
+                "parts": [],
             })
 
         columns = [

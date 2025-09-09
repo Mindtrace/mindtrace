@@ -38,22 +38,21 @@ class LineViewState(rx.State):
     selected_part: str = ""
     selected_created_at: str = ""
     selected_result: str = ""
-    selected_operator: str = ""       # kept for UI compatibility
-    selected_model_version: str = ""  # kept for UI compatibility
+    selected_operator: str = ""
+    selected_model_version: str = ""
     selected_confidence: str = ""
 
-    # Modal (part/image preview extras)
     selected_image_url: str = ""
     selected_part_status: str = ""
     selected_part_classes: List[str] = []
     selected_part_confidence: str = ""
     selected_bbox: Optional[Dict[str, float]] = None
-    show_bbox: bool = True  # checkbox in UI
+    show_bbox: bool = True
 
     # ---- Internal (not exposed in UI) ----------------------------------------
-    _row_index: Dict[str, int] = {}         # Mongo row id -> index into self.rows
-    _last_query: Optional[tuple] = None     # Used to skip redundant loads
-    _loading_token: int = 0                 # Guards against out-of-order responses
+    _row_index: Dict[str, int] = {}
+    _last_query: Optional[tuple] = None
+    _loading_token: int = 0
     parts_loading: bool = False
 
     # ---------- Derived ----------
