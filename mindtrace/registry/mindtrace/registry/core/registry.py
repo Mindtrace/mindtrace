@@ -51,7 +51,7 @@ class Registry(Mindtrace):
 
         if backend is None:
             if registry_dir is None:
-                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+                registry_dir = self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
@@ -61,7 +61,7 @@ class Registry(Mindtrace):
             name="local_artifact_store",
             id=None,  # Will be auto-generated
             config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve() / "artifact_store")
+                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
             ),
             flavor="local",
             type="artifact-store",

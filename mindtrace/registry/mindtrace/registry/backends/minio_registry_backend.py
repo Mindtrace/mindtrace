@@ -105,7 +105,7 @@ class MinioRegistryBackend(RegistryBackend):
         if uri is not None:
             self._uri = Path(uri).expanduser().resolve()
         else:
-            self._uri = Path(self.config["MINDTRACE_MINIO_REGISTRY_URI"]).expanduser().resolve()
+            self._uri = Path(self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
         super().__init__(uri=self._uri, **kwargs)
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = "registry_metadata.json"
