@@ -19,9 +19,9 @@ BACKENDS = {
     "minio": {
         "class": MinioRegistryBackend,
         "params": {
-            "endpoint": os.getenv("MINDTRACE_MINIO_ENDPOINT", "localhost:9000"),
-            "access_key": os.getenv("MINDTRACE_MINIO_ACCESS_KEY", "minioadmin"),
-            "secret_key": os.getenv("MINDTRACE_MINIO_SECRET_KEY", "minioadmin"),
+            "endpoint": os.getenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000"),
+            "access_key": os.getenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin"),
+            "secret_key": os.getenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin"),
             "bucket": None,  # Will be set in fixture
             "secure": False,
         },
@@ -65,8 +65,7 @@ def registry(backend_type, temp_dir):
 def test_config():
     """Create a test Config object."""
     return Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
+        MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
         CUSTOM_KEY="custom_value",
     )
 
@@ -172,8 +171,7 @@ def test_concurrent_operations(registry, test_config):
     def save_object():
         time.sleep(0.1)
         new_config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir2",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
+            MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir2", "REGISTRY_DIR": "/custom/registry/dir2"},
             CUSTOM_KEY="new_value",
         )
         registry.save("test:concurrent", new_config)
@@ -218,8 +216,7 @@ def test_concurrent_save_operations(registry, test_config):
     def save_with_delay(i):
         time.sleep(0.1)  # Add delay to increase chance of race condition
         new_config = Config(
-            MINDTRACE_TEMP_DIR=f"/custom/temp/dir{i}",
-            MINDTRACE_DEFAULT_REGISTRY_DIR=f"/custom/registry/dir{i}",
+            MINDTRACE_DIR_PATHS={"TEMP_DIR": f"/custom/temp/dir{i}", "REGISTRY_DIR": f"/custom/registry/dir{i}"},
             CUSTOM_KEY=f"value{i}",
         )
         registry.save("test:concurrent-save", new_config, version=f"1.0.{i}")
@@ -271,8 +268,7 @@ def test_concurrent_save_load_race(registry, test_config):
     def save_new_version():
         time.sleep(0.1)
         new_config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir2",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir2",
+            MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir2", "REGISTRY_DIR": "/custom/registry/dir2"},
             CUSTOM_KEY="new_value",
         )
         registry.save("test:race", new_config, version="1.0.1")

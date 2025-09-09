@@ -13,18 +13,22 @@ from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.types import ServerStatus, ShutdownOutput, StatusOutput
 
 
+@pytest.fixture(autouse=True)
+def _cm_env(monkeypatch):
+    """Set minimal env and reload class config per test to avoid config patching."""
+    monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+    from mindtrace.core import CoreConfig
+    ConnectionManager.config = CoreConfig()
+
 class TestConnectionManagerInitialization:
     """Test ConnectionManager initialization and configuration."""
 
     def test_init_with_default_url(self):
-        """Test initialization with default URL from config."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            cm = ConnectionManager()
-            assert str(cm.url) == "http://localhost:8000"
-            assert cm._server_id is None
-            assert cm._server_pid_file is None
+        """Test initialization with default URL from env-backed config."""
+        cm = ConnectionManager()
+        assert str(cm.url) == "http://localhost:8000"
+        assert cm._server_id is None
+        assert cm._server_pid_file is None
 
     def test_init_with_custom_url(self):
         """Test initialization with custom URL."""
@@ -38,22 +42,16 @@ class TestConnectionManagerInitialization:
         server_id = uuid4()
         pid_file = "/tmp/server.pid"
 
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            cm = ConnectionManager(server_id=server_id, server_pid_file=pid_file)
-            assert cm._server_id == server_id
-            assert cm._server_pid_file == pid_file
+        cm = ConnectionManager(server_id=server_id, server_pid_file=pid_file)
+        assert cm._server_id == server_id
+        assert cm._server_pid_file == pid_file
 
     def test_init_inherits_from_mindtrace(self):
         """Test that ConnectionManager properly inherits from Mindtrace."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            cm = ConnectionManager()
-            assert hasattr(cm, "logger")
-            assert hasattr(cm, "config")
-            assert hasattr(cm, "name")
+        cm = ConnectionManager()
+        assert hasattr(cm, "logger")
+        assert hasattr(cm, "config")
+        assert hasattr(cm, "name")
 
 
 class TestConnectionManagerShutdown:
@@ -61,10 +59,7 @@ class TestConnectionManagerShutdown:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     @patch("mindtrace.services.core.connection_manager.requests.request")
     def test_shutdown_non_blocking_success(self, mock_request):
@@ -247,10 +242,7 @@ class TestConnectionManagerAsyncShutdown:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     @pytest.mark.asyncio
     async def test_ashutdown_calls_sync_shutdown(self):
@@ -281,10 +273,7 @@ class TestConnectionManagerStatus:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     @patch("mindtrace.services.core.connection_manager.requests.post")
     def test_status_success(self, mock_post):
@@ -354,10 +343,7 @@ class TestConnectionManagerAsyncStatus:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     @pytest.mark.asyncio
     async def test_astatus_success(self):
@@ -442,10 +428,7 @@ class TestConnectionManagerContextManager:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     def test_exit_calls_shutdown(self):
         """Test that __exit__ calls shutdown method."""
@@ -504,10 +487,7 @@ class TestConnectionManagerIntegration:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            self.cm = ConnectionManager()
+        self.cm = ConnectionManager()
 
     @patch("mindtrace.services.core.connection_manager.requests.post")
     @patch("mindtrace.services.core.connection_manager.requests.request")
@@ -538,18 +518,15 @@ class TestConnectionManagerIntegration:
 
     def test_context_manager_usage(self):
         """Test using ConnectionManager as a context manager."""
-        with patch.object(
-            ConnectionManager, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://localhost:8000"}}
-        ):
-            with patch("mindtrace.services.core.connection_manager.requests.request") as mock_request:
-                mock_response = Mock()
-                mock_response.status_code = 200
-                mock_request.return_value = mock_response
+        with patch("mindtrace.services.core.connection_manager.requests.request") as mock_request:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_request.return_value = mock_response
 
-                with ConnectionManager() as cm:
-                    assert isinstance(cm, ConnectionManager)
-                    # Context manager should work normally
-                    pass
+            with ConnectionManager() as cm:
+                assert isinstance(cm, ConnectionManager)
+                # Context manager should work normally
+                pass
 
-                # Shutdown should be called on exit
-                mock_request.assert_called_once_with("POST", "http://localhost:8000/shutdown", timeout=60)
+            # Shutdown should be called on exit
+            mock_request.assert_called_once_with("POST", "http://localhost:8000/shutdown", timeout=60)
