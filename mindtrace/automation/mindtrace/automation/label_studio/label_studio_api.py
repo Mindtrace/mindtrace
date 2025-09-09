@@ -15,8 +15,7 @@ from mindtrace.jobs.utils.checks import ifnone
 
 
 class LabelStudio(Mindtrace):
-    """
-    Wrapper class around the Label Studio SDK client with Mindtrace integration.
+    """Wrapper class around the Label Studio SDK client with Mindtrace integration.
 
     This class provides a higher-level interface for interacting with
     Label Studio projects while leveraging Mindtrace configuration and
@@ -471,8 +470,7 @@ class LabelStudio(Mindtrace):
         ids: list = None,
         export_location: str = None,
     ) -> Union[list, Path]:
-        """
-        Export project annotations in various formats.
+        """Export project annotations in various formats.
 
         Args:
             project_id: ID of the project
