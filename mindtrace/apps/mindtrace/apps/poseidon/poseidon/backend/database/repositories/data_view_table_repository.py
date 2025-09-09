@@ -35,14 +35,6 @@ class TableRepository:
         except Exception:
             return None
 
-    @staticmethod
-    def _name_sort_key(name: str) -> tuple[int, int, str]:
-        s = (name or "").upper()
-        grp = 0 if s.startswith("OB") else (1 if s.startswith("IB") else 2)
-        m = re.search(r"(\d+)$", s)
-        num = int(m.group(1)) if m else 0
-        return (grp, num, s)
-
     # ---------------------------- parts loader --------------------------------
     @staticmethod
     async def fetch_row_parts(scan_id: str) -> List[Dict[str, Any]]:
@@ -50,6 +42,15 @@ class TableRepository:
         {"name": str, "status": str, "image_url": str}
         Sorted: OB_* (1..n), then IB_* (1..n), then others.
         """
+
+        def _name_sort_key(name: str) -> tuple[int, int, str]:
+            s = (name or "").upper()
+            grp = 0 if s.startswith("OB") else (1 if s.startswith("IB") else 2)
+            m = re.search(r"(\d+)$", s)
+            num = int(m.group(1)) if m else 0
+            return (grp, num, s)
+        
+
         try:
             oid = ObjectId(str(scan_id))
         except Exception:
