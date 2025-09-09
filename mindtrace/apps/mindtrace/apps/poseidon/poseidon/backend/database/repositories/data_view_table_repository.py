@@ -99,17 +99,15 @@ class TableRepository:
         sort_dir: str = "desc",
         page: int = 1,
         page_size: int = 10,
-        org_id: Optional[str] = None,
-        project_id: Optional[str] = None,
+        line_id: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int, List[Dict[str, str]]]:
         """
         Returns (rows, total, columns).
 
         - Exact match on serial_number (uses scan_sn_asc index).
-        - Optional org/project filters (by DBRef id).
-        - Result filter without computing fields (Healthy = cls_result is None or "Healthy").
-        - Stable sort on (created_at, _id), paginate, then minimal $lookup to get project.name
-          so "part" shows the human name.
+        - Optional line filter via project.$id (uses scan_project_created_at index).
+        - 'Healthy' means cls_result is None or 'Healthy'.
+        - Stable sort on (created_at, _id), paginate, then minimal $lookup to get project.name.
         """
         await TableRepository._ensure_init()
 
@@ -122,26 +120,23 @@ class TableRepository:
         # ------------------- index-friendly $match ----------------------------
         match: Dict[str, Any] = {}
 
-        # Exact serial match (fast equality on scan_sn_asc)
+        # Filter by line (project)
+        pid = to_oid(line_id)
+        if pid:
+            match["project.$id"] = pid
+
+        # Exact serial match
         if q:
             sn = str(q).strip()
             if sn:
                 match["serial_number"] = sn
 
-        # Result filter; Healthy means cls_result is None OR "Healthy"
+        # Result filter
         if result and result != "All":
             if result.lower() == "healthy":
                 match["$or"] = [{"cls_result": None}, {"cls_result": "Healthy"}]
             else:
                 match["cls_result"] = result
-
-        pid = to_oid(project_id)
-        if pid:
-            match["project.$id"] = pid
-
-        oid = to_oid(org_id)
-        if oid:
-            match["organization.$id"] = oid
 
         # ------------------------- sort / paging ------------------------------
         dir_num = -1 if str(sort_dir).lower() == "desc" else 1
@@ -168,7 +163,7 @@ class TableRepository:
             {"$skip": skip_n},
             {"$limit": page_size},
 
-            # Minimal lookup to get project.name AFTER pagination (cheap)
+            # Minimal lookup AFTER pagination
             {"$addFields": {"project_id": "$project.$id"}},
             {
                 "$lookup": {
@@ -186,10 +181,15 @@ class TableRepository:
             {
                 "$project": {
                     "_id": 1,
-                    "created_at": 1,
                     "serial_number": 1,
-                    "project_name": 1,
                     "cls_result": 1,
+                    "project_name": 1,
+                    "created_at": {
+                        "$dateToString": {
+                            "format": "%Y-%m-%d %H:%M:%S",
+                            "date": "$created_at",
+                        }
+                    },
                 }
             },
         ]
@@ -202,17 +202,19 @@ class TableRepository:
         rows: List[Dict[str, Any]] = []
         for d in docs or []:
             rows.append({
-                "created_at": d.get("created_at"),
                 "id": str(d.get("_id")),
+                "serial_number": d.get("serial_number", ""),
+                "created_at": d.get("created_at", ""),
                 "part": d.get("project_name", "-"),  # human name
-                "parts": [],                          # loaded lazily via fetch_row_parts
                 "result": (d.get("cls_result") if d.get("cls_result") is not None else "Healthy"),
-                "serial_number": d.get("serial_number"),
+                "parts": [],  # lazy-loaded via fetch_row_parts
             })
 
         columns = [
             {"id": "serial_number", "header": "Serial Number"},
+            {"id": "part", "header": "Part"},
             {"id": "created_at", "header": "Created At"},
+            {"id": "result", "header": "Result"},
         ]
 
         return rows, total, columns

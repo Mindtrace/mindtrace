@@ -112,6 +112,7 @@ class LineViewState(rx.State):
             (self.sort_dir or DEFAULT_SORT_DIR),
             int(self.page),
             int(self.page_size),
+            self.line_id or None,
         )
 
         if self._last_query == q_tuple and self.rows:
@@ -132,6 +133,7 @@ class LineViewState(rx.State):
                 sort_dir=q_tuple[3],
                 page=q_tuple[4],
                 page_size=q_tuple[5],
+                line_id=self.line_id,
             )
 
             if token != self._loading_token:
