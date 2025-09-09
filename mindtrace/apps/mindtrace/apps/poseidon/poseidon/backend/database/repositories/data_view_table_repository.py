@@ -35,67 +35,74 @@ class TableRepository:
         except Exception:
             return None
 
+    @staticmethod
+    def _name_sort_key(name: str) -> tuple[int, int, str]:
+        s = (name or "").upper()
+        grp = 0 if s.startswith("OB") else (1 if s.startswith("IB") else 2)
+        m = re.search(r"(\d+)$", s)
+        num = int(m.group(1)) if m else 0
+        return (grp, num, s)
+
     # ---------------------------- parts loader --------------------------------
     @staticmethod
     async def fetch_row_parts(scan_id: str) -> List[Dict[str, Any]]:
-        """Return ONE chip per classification for a scan, sorted as:
-        OB_* (1..n) first, then IB_* (1..n), then anything else.
-        Each chip: {"name": str, "status": str, "image_url": str}
+        """Return ONE chip per classification for a scan:
+        {"name": str, "status": str, "image_url": str}
+        Sorted: OB_* (1..n), then IB_* (1..n), then others.
         """
-        def _name_sort_key(name: str) -> tuple[int, int, str]:
-            s = (name or "").upper()
-            grp = 0 if s.startswith("OB") else (1 if s.startswith("IB") else 2)
-            m = re.search(r"(\d+)$", s)
-            num = int(m.group(1)) if m else 0
-            return (grp, num, s)
-
         try:
             oid = ObjectId(str(scan_id))
         except Exception:
             return []
 
-        # ---- Images by scan.$id (only id + full_path) ----
+        # --- images for this scan ---
         img_pipeline = [
-            {"$match": {"scan.$id": oid}},
+            {"$match": {"$or": [{"scan.$id": oid}, {"scan": oid}]}},
             {"$project": {"_id": 1, "full_path": 1}},
         ]
         images = await ScanImage.aggregate(img_pipeline).to_list()
 
-        # Build image_id -> presigned_url
-        img_url_by_id: Dict[ObjectId, str] = {}
+        img_url_by_id = {}
         for img in images or []:
             img_id = img.get("_id")
             fp = img.get("full_path") or ""
             if img_id:
-                img_url_by_id[img_id] = presign_url(fp) if fp else ""
+                try:
+                    img_url_by_id[img_id] = presign_url(fp) if fp else ""
+                except Exception:
+                    img_url_by_id[img_id] = ""
 
-        # ---- Classifications by scan.$id (only name/det_cls/image) ----
+        # --- classifications ---
         cls_pipeline = [
-            {"$match": {"scan.$id": oid}},
-            {"$project": {"name": 1, "det_cls": 1, "image": 1}},
+            {"$match": {"$or": [{"scan.$id": oid}, {"scan": oid}]}},
+            {
+                "$project": {
+                    "name": 1,
+                    "det_cls": 1,
+                    "image_id": {"$ifNull": ["$image.$id", "$image"]},
+                }
+            },
         ]
         clss = await ScanClassification.aggregate(cls_pipeline).to_list()
 
         parts: List[Dict[str, Any]] = []
         for c in clss or []:
             name = (c.get("name") or "Camera")
-            det  = (c.get("det_cls") or "Healthy")
+            det = (c.get("det_cls") or "Healthy")
+            image_id = c.get("image_id")
+            image_url = img_url_by_id.get(image_id, "")
+            parts.append(
+                {
+                    "name": name,
+                    "status": det,
+                    "image_url": image_url,
+                }
+            )
 
-            image_link = c.get("image")
-            image_id = None
-            if isinstance(image_link, dict):
-                image_id = image_link.get("$id") or image_link.get("id")
-
-            parts.append({
-                "name": name,
-                "status": det,
-                "image_url": img_url_by_id.get(image_id, ""),
-            })
-
-        # ---- Order chips: OB_* 1..n, IB_* 1..n, then others ----
+        # --- pure reordering of the final list; no ID changes ---
         parts.sort(key=lambda p: _name_sort_key(p.get("name", "")))
-
         return parts
+
 
     # ------------------------------ grid search ------------------------------
     @staticmethod
