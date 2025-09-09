@@ -300,6 +300,7 @@ def _expand_cell(state: type[rx.State], row_id: str) -> rx.Component:
                 ),
                 "margin-top": "3px",
                 "color": "black",
+                "cursor": "pointer",
             },
         ),
         width=COL_WIDTHS["_chevron"],

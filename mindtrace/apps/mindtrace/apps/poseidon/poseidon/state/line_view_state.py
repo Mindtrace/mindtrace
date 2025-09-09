@@ -112,6 +112,7 @@ class LineViewState(rx.State):
             int(self.page),
             int(self.page_size),
             self.line_id or None,
+            self.parts_loading or None,
         )
 
         if self._last_query == q_tuple and self.rows:
