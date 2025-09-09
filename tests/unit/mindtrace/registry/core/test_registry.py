@@ -99,7 +99,7 @@ def test_registry_default_directory():
     registry = Registry()
 
     # Verify that it uses the default from config
-    expected_dir = Path(registry.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]).expanduser().resolve()
+    expected_dir = Path(registry.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]).expanduser().resolve()
     assert registry.backend.uri == expected_dir
     assert registry.backend.uri.is_absolute()
     assert registry.backend.uri.exists()
@@ -227,7 +227,7 @@ def test_save_and_load_path(registry, test_path):
     assert registry.has_object("test:path", "1.0.0")
 
     # Load the path
-    with TemporaryDirectory(dir=Path(registry.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve()) as temp_dir:
+    with TemporaryDirectory(dir=Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()) as temp_dir:
         loaded_path = registry.load("test:path", version="1.0.0", output_dir=temp_dir)
 
         # Verify the loaded path is a Path object
@@ -1424,10 +1424,9 @@ def test_download_with_materializer(registry):
 
         # Create a test config
         config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-            CUSTOM_KEY="custom_value",
-        )
+            {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+            })
 
         # Save object with ConfigArchiver materializer
         source_reg.save("test:config", config, version="1.0.0")
@@ -1438,8 +1437,8 @@ def test_download_with_materializer(registry):
         # Verify object content
         loaded_config = registry.load("test:config", version="1.0.0")
         assert isinstance(loaded_config, Config)
-        assert loaded_config["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_config["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_config["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1497,10 +1496,9 @@ def test_download_vs_dict_assignment(registry):
 
         # Create a test config
         config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-            CUSTOM_KEY="custom_value",
-        )
+            {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+            })
 
         # Save object to source registry
         source_reg.save("test:config", config, version="1.0.0")
@@ -1541,8 +1539,8 @@ def test_update_with_registry(registry):
         source_reg = Registry(registry_dir=source_dir)
 
         # Create and save multiple objects to source registry
-        config1 = Config(MINDTRACE_TEMP_DIR="/dir1")
-        config2 = Config(MINDTRACE_TEMP_DIR="/dir2")
+        config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
+        config2 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir2"}})
         source_reg.save("config1", config1, version="1.0.0")
         source_reg.save("config2", config2, version="1.0.0")
         source_reg.save("config2", config2, version="2.0.0")  # Multiple versions
@@ -1591,10 +1589,9 @@ def test_distributed_lock_save_concurrent(registry):
 
     # Create a test object
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
-    )
+        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+        "CUSTOM_KEY": "custom_value",
+        })
 
     # Function to perform save with delay
     def save_with_delay(i):
@@ -1610,8 +1607,8 @@ def test_distributed_lock_save_concurrent(registry):
     # Verify that all saves completed successfully
     for i in range(5):
         loaded_obj = registry.load(f"testobj:{i}")
-        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_obj["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1621,10 +1618,10 @@ def test_distributed_lock_save_conflict(registry):
     from mindtrace.registry.core.exceptions import LockTimeoutError
 
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
-    )
+        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+        "CUSTOM_KEY": "custom_value",
+        })
+    
 
     # First save should succeed
     registry.save("test:conflict", test_obj, version="1.0.0")
@@ -1647,8 +1644,8 @@ def test_distributed_lock_save_conflict(registry):
 
     # Original object should still be intact
     loaded_obj = registry.load("test:conflict", version="1.0.0")
-    assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-    assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+    assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+    assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
     assert loaded_obj["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1657,17 +1654,16 @@ def test_distributed_lock_load_concurrent(registry):
 
     # Create and save a test object
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
-    )
+        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+        "CUSTOM_KEY": "custom_value",
+        })
     registry.save("test:concurrent:load", test_obj)
 
     # Function to perform load
     def load_object():
         loaded_obj = registry.load("test:concurrent:load")
-        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_obj["CUSTOM_KEY"] == "custom_value"
         return True
 
