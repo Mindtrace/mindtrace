@@ -22,11 +22,7 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
         return rx.box(
             rx.box(
                 rx.image(
-                    src=rx.cond(
-                        state.selected_image_url != "",
-                        state.selected_image_url,
-                        "/placeholder.png",
-                    ),
+                    src=state.selected_image_url,
                     alt="inspection image",
                     width="100%",
                     height="65vh",
@@ -75,49 +71,14 @@ def InspectionDetailsModal(state: type[rx.State]) -> rx.Component:
                 on_change=state.set_show_bbox,
             ),
             rx.box(height="8px"),
-            rx.card(
-                rx.vstack(
-                    rx.text("Detected labels", weight="medium", size="2", color="gray"),
-                    rx.vstack(
-                        rx.foreach(
-                            state.selected_part_classes,
-                            lambda cls: rx.text(f"- {cls}", size="3"),
-                        ),
-                        spacing="1",
-                        align="start",
-                        width="100%",
-                    ),
-                    spacing="2",
-                ),
-                padding="12px",
-                radius="large",
-                width="100%",
-            ),
             rx.grid(
                 _kv("Serial Number", state.selected_serial_number),
-                _kv("Created At",    state.selected_created_at),
-                _kv(
-                    "Operator",
-                    rx.cond(state.selected_operator != "", state.selected_operator, "-"),
-                ),
-                _kv(
-                    "Model Version",
-                    rx.cond(state.selected_model_version != "", state.selected_model_version, "-"),
-                ),
-                _kv(
-                    "Confidence",
-                    rx.cond(
-                        state.selected_part_confidence != "",
-                        state.selected_part_confidence,
-                        rx.cond(state.selected_confidence != "", state.selected_confidence, "-"),
-                    ),
-                ),
                 columns="1",
                 gap="12px",
                 width="100%",
             ),
             spacing="4",
-            width="360px",
+            width="420px",
         )
 
     return rx.dialog.root(
@@ -251,18 +212,9 @@ def _row_header_grid(state: type[rx.State], r: Dict[str, Any]) -> rx.Component:
         rx.box(rx.text(r.get("part", "-")), **CELL_STYLE),
         rx.box(rx.text(r.get("created_at", "-")), **CELL_STYLE),
         rx.box(rx.text(r.get("result", "-")), **CELL_STYLE),
-        rx.box(
-            rx.icon("chevron-down", size=16),
-            display="flex",
-            align_items="center",
-            justify_content="center",
-            padding_right="8px",
-            color="var(--gray-9)",
-        ),
         columns=COLUMNS_CSS,
         align_items="center",
         width="100%",
-        border_bottom="1px solid var(--gray-4)",
     )
 
 
@@ -270,14 +222,15 @@ def _accordion_row(state: type[rx.State], r: Dict[str, Any]) -> rx.Component:
     return rx.accordion.item(
         header=_row_header_grid(state, r),
         content=rx.box(
-            rx.grid(
-                rx.foreach(
-                    state.current_row_cameras,
-                    lambda cam: _camera_chip(cam, state, r),
+            rx.cond(
+                state.parts_loading,
+                rx.center(rx.spinner(size="3"), padding="12px"),
+                rx.grid(
+                    rx.foreach(state.current_row_cameras, lambda cam: _camera_chip(cam, state, r)),
+                    columns="repeat(auto-fit, minmax(120px, 1fr))",
+                    gap="12px",
+                    width="100%",
                 ),
-                columns="repeat(auto-fit, minmax(120px, 1fr))",
-                gap="12px",
-                width="100%",
             ),
             padding="12px",
             width="100%",

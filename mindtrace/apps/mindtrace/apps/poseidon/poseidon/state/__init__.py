@@ -10,6 +10,7 @@ from .models import (
     UserRoles, SubscriptionPlans, StatusTypes
 )
 from .inference import InferenceState
+from .line_view_state import LineViewState
 
 __all__ = [
     # State Classes
@@ -32,5 +33,5 @@ __all__ = [
     "StatusTypes",
     "ModelDeploymentState",
     "InferenceState",
-    "GridState",
+    "LineViewState",
 ]

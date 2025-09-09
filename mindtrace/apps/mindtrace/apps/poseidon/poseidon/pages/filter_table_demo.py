@@ -1,6 +1,6 @@
 import reflex as rx
 from poseidon.pages.lineview.filter_table import FilterTable
-from poseidon.state.grid_state import GridState
+from poseidon.state.line_view_state import LineViewState
 
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.core.button import button
@@ -26,14 +26,14 @@ def _login_gate() -> rx.Component:
 def _content() -> rx.Component:
     """Authenticated content wrapped in the shared page container."""
     return page_container(
-        FilterTable(GridState),
+        FilterTable(LineViewState),
         title="Line View",
         sub_text="Inspection traceability and accountability",
         tools=[
             button(
                 "Refresh",
                 icon=rx.icon("refresh-cw"),
-                on_click=GridState.load,
+                on_click=LineViewState.load,
                 variant="secondary",
             ),
         ],

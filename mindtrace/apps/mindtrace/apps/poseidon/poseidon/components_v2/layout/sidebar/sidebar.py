@@ -11,6 +11,7 @@ NAV = [
             {"label": "Model Deployment", "icon": "layout-panel-left", "href": "/model-deployment"},
             {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
             {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
+            {"label": "Line View", "icon": "shield-check", "href": "/line-view"},
         ],
     ),
     (
@@ -27,7 +28,6 @@ NAV = [
             {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
             {"label": "Profile", "icon": "user", "href": "/profile"},
             {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
-            {"label": "Line View with Modal", "href": "/line-view", "icon": "shield-check"},
         ],
     ),
     (

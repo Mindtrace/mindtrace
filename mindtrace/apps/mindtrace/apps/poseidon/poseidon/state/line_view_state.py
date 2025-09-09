@@ -13,7 +13,7 @@ MAX_PAGE_SIZE = 20
 MIN_PAGE_SIZE = 1
 
 
-class GridState(rx.State):
+class LineViewState(rx.State):
     # Table data
     rows: List[Dict[str, Any]] = []
     columns: List[Dict[str, str]] = []
@@ -54,6 +54,7 @@ class GridState(rx.State):
     _row_index: Dict[str, int] = {}         # Mongo row id -> index into self.rows
     _last_query: Optional[tuple] = None     # Used to skip redundant loads
     _loading_token: int = 0                 # Guards against out-of-order responses
+    parts_loading: bool = False
 
     # ---------- Derived ----------
     @rx.var
@@ -62,7 +63,6 @@ class GridState(rx.State):
 
     @rx.var
     def total_pages(self) -> int:
-        # Note: total is server-reported (pre client-side result filter)
         return max(1, math.ceil(self.total / max(MIN_PAGE_SIZE, self.page_size)))
 
     @rx.var
@@ -81,9 +81,30 @@ class GridState(rx.State):
     def has_rows(self) -> bool:
         return bool(self.rows)
 
-    # ---------- Load ----------
+    @rx.event
+    def on_mount(self):
+        return LineViewState.load
+
+    # ---------- Lazy load parts for expanded row ----------
+    async def load_row_parts(self):
+        """Arg-less handler (required by Reflex). Reads self.expanded_row_id."""
+        rid = (self.expanded_row_id or "").strip()
+        if not rid:
+            self.current_row_cameras = []
+            return
+        self.parts_loading = True
+        try:
+            parts = await TableRepository.fetch_row_parts(rid)
+        except Exception as e:
+            print(f"[LineViewState.load_row_parts] ERROR for {rid}: {e}", flush=True)
+            parts = []
+        finally:
+            if self.expanded_row_id == rid:
+                self.current_row_cameras = parts
+            self.parts_loading = False
+
+    # ---------- Load grid ----------
     async def load(self):
-        # Normalize query params
         q_tuple = (
             (self.search or "").strip() or None,
             self.result_filter or "All",
@@ -93,44 +114,40 @@ class GridState(rx.State):
             int(self.page_size),
         )
 
-        # Dedupe only if we actually have rows and nothing changed
         if self._last_query == q_tuple and self.rows:
-            # debug: useful if you’re not seeing backend logs
-            print("[GridState.load] skipped (deduped)", flush=True)
+            print("[LineViewState.load] skipped (deduped)", flush=True)
             return
 
-        # Prevent concurrent loads; handle out-of-order completions
         self._loading_token += 1
         token = self._loading_token
         self.loading = True
         self.error = ""
-        print(f"[GridState.load] start q={q_tuple}", flush=True)
+        print(f"[LineViewState.load] start q={q_tuple}", flush=True)
 
         try:
             rows, total, columns = await TableRepository.search_grid(
                 q=q_tuple[0],
-                result=q_tuple[1],   # repo may ignore; we filter client-side below
-                sort_by=q_tuple[2],  # server sorts native fields (created_at, serial_number)
+                result=q_tuple[1],
+                sort_by=q_tuple[2],
                 sort_dir=q_tuple[3],
                 page=q_tuple[4],
                 page_size=q_tuple[5],
             )
 
-            # If another load started after us, drop these results
             if token != self._loading_token:
-                print("[GridState.load] stale result dropped", flush=True)
+                print("[LineViewState.load] stale result dropped", flush=True)
                 return
 
-            # --- client-side filter by result (computed on the row) ---
             filtered_rows = rows or []
             if self.result_filter and self.result_filter != "All":
                 wanted = (self.result_filter or "").strip().lower()
                 before = len(filtered_rows)
                 filtered_rows = [r for r in filtered_rows if str(r.get("result", "")).lower() == wanted]
-                print(f"[GridState.load] client result filter={self.result_filter} kept {len(filtered_rows)}/{before}", flush=True)
+                print(
+                    f"[LineViewState.load] client result filter={self.result_filter} kept {len(filtered_rows)}/{before}",
+                    flush=True,
+                )
 
-            # --- client-side sort for computed fields only ---
-            # Server sorts DB fields already; for 'part' or 'result' we sort here.
             if self.sort_by in ("part", "result"):
                 reverse = (self.sort_dir == "desc")
                 key_id = self.sort_by
@@ -138,23 +155,20 @@ class GridState(rx.State):
                     key=lambda r: str(r.get(key_id, "") or "").lower(),
                     reverse=reverse,
                 )
-                print(f"[GridState.load] client sort by {key_id} {self.sort_dir}", flush=True)
+                print(f"[LineViewState.load] client sort by {key_id} {self.sort_dir}", flush=True)
 
-            # Assign to state
             self.rows = filtered_rows
-            self.total = int(total or 0)      # server total (pre client filter)
+            self.total = int(total or 0)
             self.columns = columns or []
             self._last_query = q_tuple
 
-            # Rebuild id->index map once per load
             self._row_index = {str(r.get("id", "")): i for i, r in enumerate(self.rows)}
 
-            # If the expanded row disappeared, tidy up
             if self.expanded_row_id and self.expanded_row_id not in self._row_index:
                 self.expanded_row_id = ""
                 self.current_row_cameras = []
 
-            print(f"[GridState.load] done rows={len(self.rows)} total={self.total}", flush=True)
+            print(f"[LineViewState.load] done rows={len(self.rows)} total={self.total}", flush=True)
 
         except Exception as e:
             if token == self._loading_token:
@@ -164,7 +178,7 @@ class GridState(rx.State):
                 self.columns = []
                 self._row_index = {}
                 self._last_query = None
-            print(f"[GridState.load] ERROR: {e}", flush=True)
+            print(f"[LineViewState.load] ERROR: {e}", flush=True)
         finally:
             if token == self._loading_token:
                 self.loading = False
@@ -180,11 +194,11 @@ class GridState(rx.State):
     def set_search(self, v: str):
         v = (v or "").strip()
         if v == self.search and self.page == 1:
-            return  # no-op
+            return
         self.search = v
         self.page = 1
-        self._last_query = None  # force re-load
-        return GridState.load
+        self._last_query = None
+        return LineViewState.load
 
     def set_result_filter(self, v: str):
         v = (v or "All").strip() or "All"
@@ -193,7 +207,7 @@ class GridState(rx.State):
         self.result_filter = v
         self.page = 1
         self._last_query = None
-        return GridState.load
+        return LineViewState.load
 
     def clear_filters(self):
         changed = False
@@ -208,7 +222,7 @@ class GridState(rx.State):
             changed = True
         if changed:
             self._last_query = None
-            return GridState.load
+            return LineViewState.load
 
     def set_sort(self, column_id: str):
         column_id = (column_id or "").strip()
@@ -221,19 +235,19 @@ class GridState(rx.State):
             self.sort_dir = "asc"
         self.page = 1
         self._last_query = None
-        return GridState.load
+        return LineViewState.load
 
     def next_page(self):
         if self.page < self.total_pages:
             self.page += 1
             self._last_query = None
-            return GridState.load
+            return LineViewState.load
 
     def prev_page(self):
         if self.page > 1:
             self.page -= 1
             self._last_query = None
-            return GridState.load
+            return LineViewState.load
 
     def set_page_size(self, n: int):
         new_size = self._clamp_page_size(n)
@@ -242,7 +256,7 @@ class GridState(rx.State):
         self.page_size = new_size
         self.page = 1
         self._last_query = None
-        return GridState.load
+        return LineViewState.load
 
     # ---------- Modal helpers ----------
     def _reset_part_preview(self):
@@ -254,24 +268,20 @@ class GridState(rx.State):
         self.show_bbox = True
 
     def open_inspection(self, row: Dict[str, Any]):
-        """Open the details modal for a scan row (not a specific part)."""
         self.selected_serial_number = str(row.get("serial_number", "-"))
         self.selected_part = str(row.get("part", "-"))
         self.selected_created_at = str(row.get("created_at", "-"))
         self.selected_result = str(row.get("result", "-"))
         self.selected_confidence = str(row.get("confidence", "-"))
-        # compatibility placeholders
         self.selected_operator = str(row.get("operator", "-"))
         self.selected_model_version = str(row.get("model_version", "-"))
         self._reset_part_preview()
         self.modal_open = True
 
-    # Repo already returns presigned image_url; keep for backwards compat
     def _with_presigned_part(self, part: Dict[str, Any]) -> Dict[str, Any]:
         return part or {}
 
     def open_part_preview(self, row: Dict[str, Any], part: Dict[str, Any]):
-        """Populate modal with row + specific part (image-left / details-right use)."""
         self.open_inspection(row)
 
         part = self._with_presigned_part(part or {})
@@ -286,7 +296,7 @@ class GridState(rx.State):
 
         bbox = part.get("bbox", None)
         self.selected_bbox = bbox if isinstance(bbox, dict) else None
-        self.show_bbox = True  # default checked
+        self.show_bbox = True
 
     def set_modal(self, is_open: bool):
         self.modal_open = bool(is_open)
@@ -296,30 +306,22 @@ class GridState(rx.State):
         parts_data = row.get("parts") or []
         if not isinstance(parts_data, list):
             return []
-        # No presign needed; already presigned by repo
         return [self._with_presigned_part(p) for p in parts_data]
 
     def set_expanded_row(self, row_id: str):
-        """Set which row is expanded and load its camera data by row id."""
+        """Set which row is expanded and lazy-load its parts."""
         row_id = str(row_id or "")
         self.expanded_row_id = row_id
         self.current_row_cameras = []
-
         if not row_id:
             return
-
-        idx = self._row_index.get(row_id, -1)
-        if idx < 0 or idx >= len(self.rows):
-            return
-
-        row = self.rows[idx]
-        self.current_row_cameras = self._load_row_parts(row)
+        return LineViewState.load_row_parts
 
     def handle_accordion_change(self, value: str | List[str]):
-        """Handle accordion expansion/collapse."""
         actual_value = value[0] if isinstance(value, list) and value else (value or "")
         if isinstance(actual_value, str) and actual_value.startswith("item_"):
-            self.set_expanded_row(actual_value.replace("item_", "", 1))
+            row_id = actual_value.replace("item_", "", 1)
+            return self.set_expanded_row(row_id)
         else:
             self.expanded_row_id = ""
             self.current_row_cameras = []
