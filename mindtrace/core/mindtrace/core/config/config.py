@@ -8,6 +8,7 @@ from copy import deepcopy
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
 from pydantic import AnyUrl
+from mindtrace.core.utils import expand_tilde, expand_tilde_str, load_ini_as_dict
 
 
 
@@ -57,46 +58,6 @@ class MINDTRACE_WORKER(BaseModel):
 
 
 
-def load_ini_as_dict(ini_path: Path) -> Dict[str, Any]:
-    """
-    Load and parse an INI file into a nested dictionary with normalized keys.
-
-    Sections and keys are converted to uppercase for uniform access. Tilde (`~`)
-    in values is expanded to the user home directory.
-
-    Args:
-        ini_path (Path): Path to the `.ini` configuration file.
-
-    Returns:
-        Dict[str, Any]: A dictionary where each section is a key mapped to another
-        dictionary of key-value pairs from that section.
-
-    Example:
-        .. code-block:: ini
-
-            [logging]
-            log_dir = ~/logs
-
-        .. code-block:: python
-
-            config = load_ini_as_dict(Path("config.ini"))
-            print(config["LOGGING"]["LOG_DIR"])
-    """
-    if not ini_path.exists():
-        return {}
-
-    config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
-    config.optionxform = str
-    config.read(ini_path)
-
-    result = {}
-    for section in config.sections():
-        result[section.upper()] = {
-            key.upper(): value.replace("~", os.path.expanduser("~")) if value.startswith("~") else value for key, value in config[section].items()
-        }
-    return result
-
-
 def load_ini_settings() -> Dict[str, Any]:
     ini_path = Path(__file__).parent / "config.ini"
     return load_ini_as_dict(ini_path)
@@ -124,19 +85,9 @@ class CoreSettings(BaseSettings):
         env_settings,
         file_secret_settings,
     ):
-        def _expand_tilde(obj):
-            if isinstance(obj, str):
-                return os.path.expanduser(obj) if obj.startswith("~") else obj
-            if isinstance(obj, dict):
-                return {k: _expand_tilde(v) for k, v in obj.items()}
-            if isinstance(obj, (list, tuple, set)):
-                t = type(obj)
-                return t(_expand_tilde(v) for v in obj)
-            return obj
-
         def env_settings_expanded():
             data = env_settings()
-            return _expand_tilde(data)
+            return expand_tilde(data)
 
         return (
             init_settings,           # constructor kwargs
@@ -208,6 +159,9 @@ class Config(dict):
     Args:
         extra_settings: Configuration overrides or full config objects.
             Can be a `dict`, `BaseSettings`, `BaseModel`, or list of any of these.
+        apply_env_overrides: Whether to apply environment variable overrides.
+            If True, environment variables will be applied over the default configs.
+            If False, environment variables will not be applied.
 
     Example:
         >>> from mindtrace.core.config import Config, CoreSettings
@@ -216,7 +170,7 @@ class Config(dict):
         >>> config.get_secret("MINDTRACE_API_KEYS", "OPENAI")  # Real secret value
     """
 
-    def __init__(self, extra_settings: SettingsLike = None, *, apply_env: bool = True):
+    def __init__(self, extra_settings: SettingsLike = None, *, apply_env_overrides: bool = True):
         # Track secret field paths and store real secret values
         self._secret_paths: set[Tuple[str, ...]] = set()
         self._secrets: Dict[Tuple[str, ...], str] = {}
@@ -247,7 +201,7 @@ class Config(dict):
             default_config = self._deep_update(default_config, override)
 
         # Overlay environment variables last so they can override provided settings
-        if apply_env:
+        if apply_env_overrides:
             default_config = self._apply_env_overrides(default_config)
 
         # Coerce everything to string and mask secrets by default
@@ -302,7 +256,7 @@ class Config(dict):
             for o in items:
                 base = cls._deep_update_dict(base, o)
         # Prevent __init__ from re-applying env so overrides remain highest
-        return cls([base], apply_env=False)
+        return cls([base], apply_env_overrides=False)
 
     @classmethod
     def load_json(cls, path: str | Path) -> "Config":
@@ -313,10 +267,24 @@ class Config(dict):
         return cls.load(file_loader=_loader)
 
     def save_json(self, path: str | Path, *, reveal_secrets: bool = False, indent: int = 4) -> None:
-        """Save to JSON; masked by default. Set reveal_secrets=True to write real secrets."""
-        data = self.to_revealed_strings() if reveal_secrets else deepcopy(dict(self))
-        with open(path, "w") as f:
-            json.dump(data, f, indent=indent)
+        """Save to JSON; masked by default. Set reveal_secrets=True to write real secrets.
+
+        Creates parent directories if they do not exist and raises a RuntimeError
+        with context if serialization or I/O fails.
+        """
+        try:
+            p = Path(path)
+            # Ensure parent directory exists
+            if p.parent and not p.parent.exists():
+                p.parent.mkdir(parents=True, exist_ok=True)
+
+            data = self.to_revealed_strings() if reveal_secrets else deepcopy(dict(self))
+            # Attempt to serialize to validate JSON-compatibility before writing file
+            payload = json.dumps(data, indent=indent)
+            with p.open("w") as f:
+                f.write(payload)
+        except (TypeError, OSError) as e:
+            raise RuntimeError(f"Failed to save config to '{path}': {e}") from e
 
     def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
         """Return a new Config clone with overrides applied (original remains unchanged)."""
@@ -326,13 +294,21 @@ class Config(dict):
                 items.append(x.model_dump())
             elif isinstance(x, dict):
                 items.append(x)
-            elif isinstance(x, list):
-                for y in x: push(y)
+            elif isinstance(x, (list, tuple)):
+                # Flatten nested lists/tuples safely
+                for y in x:
+                    push(y)
             elif x is None:
+                # Explicitly ignore Nones
                 pass
+            else:
+                raise TypeError(
+                    f"Unsupported override type: {type(x).__name__}. "
+                    "Expected dict, BaseSettings, BaseModel, or list/tuple of these."
+                )
         for o in overrides:
             push(o)
-        return Config(items, apply_env=False)
+        return Config(items, apply_env_overrides=False)
 
     def get_secret(self, *path: str) -> Optional[str]:
         """Retrieve a secret by dotted path components, e.g., get_secret("API_KEYS", "OPENAI")."""
@@ -420,9 +396,9 @@ class Config(dict):
             if path in self._secret_paths:
                 self._secrets[path] = original_sval
                 return mask
-            expanded = os.path.expanduser(original_sval) if original_sval.startswith("~") else original_sval
+            expanded = expand_tilde_str(original_sval)
             return expanded
-        return convert(data, ())  # type: ignore
+        return convert(data, ())
 
     @staticmethod
     def _stringify_dict_static(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -436,8 +412,8 @@ class Config(dict):
             if isinstance(v, (list, tuple, set)):
                 return [convert(x) for x in v]
             s = str(v)
-            return os.path.expanduser(s) if s.startswith("~") else s
-        return convert(data)  # type: ignore
+            return expand_tilde_str(s)
+        return convert(data)
 
     def _collect_secret_paths_from_model(self, model_cls: type[BaseModel] | type[BaseSettings], prefix: Tuple[str, ...] = ()) -> set[Tuple[str, ...]]:
         paths: set[Tuple[str, ...]] = set()
@@ -447,7 +423,7 @@ class Config(dict):
             if self._is_secret_annotation(ann):
                 paths.add(prefix + (name,))
                 continue
-            # Recurse into nested models
+            
             nested_cls = self._extract_model_class(ann)
             if nested_cls is not None:
                 paths.update(self._collect_secret_paths_from_model(nested_cls, prefix + (name,)))
@@ -502,4 +478,4 @@ class CoreConfig(Config):
             extras = [CoreSettings(), extra_settings]
         # Do not re-apply env here; CoreSettings already applied env and
         # we want provided overrides to remain highest precedence
-        super().__init__(extra_settings=extras, apply_env=False)
+        super().__init__(extra_settings=extras, apply_env_overrides=False)
