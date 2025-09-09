@@ -7,7 +7,7 @@ from abc import ABC, ABCMeta
 from functools import wraps
 from typing import Callable, Optional
 
-from mindtrace.core.config import Config
+from mindtrace.core.config import CoreConfig, SettingsLike
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
@@ -37,6 +37,7 @@ class MindtraceMeta(type):
     def __init__(cls, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
         cls._logger = None
+        cls._config = None
 
     @property
     def logger(cls):
@@ -51,6 +52,16 @@ class MindtraceMeta(type):
     @property
     def unique_name(self) -> str:
         return self.__module__ + "." + self.__name__
+
+    @property
+    def config(cls):
+        if cls._config is None:
+            cls._config = CoreConfig()
+        return cls._config
+
+    @config.setter
+    def config(cls, new_config):
+        cls._config = new_config
 
 
 class Mindtrace(metaclass=MindtraceMeta):
@@ -80,20 +91,19 @@ class Mindtrace(metaclass=MindtraceMeta):
     The logging functionality is automatically provided through the MindtraceMeta metaclass,
     which ensures consistent logging behavior across all method types.
     """
-
-    config = Config()
-
-    def __init__(self, suppress: bool = False, **kwargs):
+    def __init__(self, suppress: bool = False, *, config_overrides: SettingsLike | None = None, **kwargs):
         """
         Initialize the Mindtrace object.
 
         Args:
-            suppress (bool): Whether to suppress exceptions in context manager use.
+            suppress: Whether to suppress exceptions in context manager use.
+            config_overrides: Additional settings to override the default config.
             **kwargs: Additional keyword arguments. Logger-related kwargs are passed to `get_logger`.
                 Valid logger kwargs: log_dir, logger_level, stream_level, file_level,
                 file_mode, propagate, max_bytes, backup_count
         """
         # Initialize parent classes first (cooperative inheritance)
+        self.config = CoreConfig(config_overrides)
         try:
             super().__init__(**kwargs)
         except TypeError:

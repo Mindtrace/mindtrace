@@ -64,14 +64,24 @@ class MyProcessor(Mindtrace):
 ```
 
 #### `Config`
-Configuration management with validation and defaults.
+The Config class in Mindtrace provides a configuration layer designed to unify various sources of configuration—environment variables, Pydantic models, Settings, Dict objects in a single, easy-to-use object with secrets masking, attribute access, and dynamic overrides.
 
 ```python
-config = Config({
-    "param1": "value1",
-    "param2": 42
-})
+from mindtrace.core.config import Config, CoreSettings
+
+# Load from BaseSettings or BaseModel
+config = Config(CoreSettings())
+
+# Access config values
+print(config["MINDTRACE_API_KEYS"]["OPENAI"])       # Masked value
+print(config.get_secret("MINDTRACE_API_KEYS", "OPENAI"))  # Real secret
+
+# Attribute-style access
+print(config.MINDTRACE_API_KEYS.OPENAI)
 ```
+Note: `CoreSettings` is a Pydantic settings class that loads default values from `config.ini` for core module.
+
+For detailed usage of the Config class—including how it’s used within the Mindtrace class—refer to the [Usage documentation](../../samples/core/config/README.md)
 
 ### Observables
 

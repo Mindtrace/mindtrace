@@ -7,7 +7,7 @@ from copy import deepcopy
 
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from pydantic import HttpUrl, AnyUrl
+from pydantic import AnyUrl
 
 
 
@@ -29,8 +29,8 @@ class MINDTRACE_DIR_PATHS(BaseModel):
 
 
 class MINDTRACE_DEFAULT_HOST_URLS(BaseModel):
-    SERVICE: HttpUrl
-    CLUSTER_MANAGER: HttpUrl
+    SERVICE: str
+    CLUSTER_MANAGER: str
 
 
 class MINDTRACE_MINIO(BaseModel):
