@@ -16,8 +16,8 @@ The following guide explains Config usage provided in the `mindtrace-core` modul
 
 ### Integration with Mindtrace Base Class
 
-The `Mindtrace` base class automatically provides a Config object, initialized with CoreSettings.
-- By default, CoreSettings loads values from  config.ini file.
+The `Mindtrace` base class automatically provides a `CoreConfig` object, initialized with CoreSettings.
+- CoreSettings  is `Pydantic Setting` which loads default values from config.ini file.
 - Any value can be overridden with environment variables using the ENV_VAR__NESTED_KEY format (e.g., MINDTRACE_API_KEYS__OPENAI=value).
 - At inheritance or composition, these core settings can be overridden or extended using the config_overrides argument.
 
@@ -63,7 +63,7 @@ class ClusterModule(Mindtrace):
 # Usage
 cluster = ClusterModule()
 
-print(cluster.config.CLUSTER_REGISTRY)      
+print(cluster.config.CLUSTER_REGISTRY)
 print(cluster.config.MINIO_BUCKET)   
 ```
 
@@ -179,7 +179,7 @@ print("Cloned:", cloned.MINDTRACE_DIR_PATHS.TEMP_DIR)
 
 #### Masking Sensitive Fields
 
-The Config class makes use of secret masking using Pydantic’s SecretStr field type. If you’re looking to add configuration values that should be hidden from logs, JSON output, or saved files (like API keys, passwords, etc.), you can define those fields using pydantic.SecretStr. 
+The Config class preserves secret masking feature of Pydantic’s SecretStr field type. If you’re looking to add configuration values that should be hidden from logs, JSON output, or saved files (like API keys, passwords, etc.), you can define those fields using pydantic.SecretStr. 
 
 When passed into the Config object, these fields will be masked as ********, but the real value is still safely stored and can be accessed when needed.
 

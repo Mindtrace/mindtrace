@@ -193,17 +193,16 @@ class Config(dict):
     """
     Unified configuration manager for Mindtrace components.
 
-    The `Config` class consolidates configuration from various sources including
-    dictionaries, Pydantic `BaseSettings` or `BaseModel` objects, and environment
-    variables (using nested key notation like `SECTION__KEY`). It supports secret
-    value masking, environment variable overrides, deep merging of nested configs,
-    and dynamic reloading with runtime overrides.
+    The `Config` class consolidates configuration from sources including
+    dictionaries, Pydantic `BaseSettings` or `BaseModel` objects. 
+    It supports user provided arguments and environment variable overrides, path normalization by expanding the `~` character.
 
     Key Features:
     -------------
     - Accepts multiple configuration formats: `dict`, `BaseModel`, `BaseSettings`, or lists of these.
-    - Supports secret fields using `pydantic.SecretStr`, masking them by default.
-    - Overlays environment variables (`ENV_VAR__NESTED_KEY`) over provided configs.
+    - Attr-style and dict-style access to nested keys.
+    - Supports secret fields using `pydantic.SecretStr`, preserving masking them by default.
+    - Overlays environment variables (`ENV_VAR__NESTED_KEY`) over default configs.
     - Provides cloning, JSON export, and dynamic override capabilities.
 
     Args:
