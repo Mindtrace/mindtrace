@@ -241,12 +241,12 @@ def _expand_cell(state: type[rx.State], row_id: str) -> rx.Component:
                 "transform": rx.cond(state.expanded_row_id == row_id, "rotate(180deg)", "rotate(0deg)"),
                 "margin-top": "3px",
                 "color": "black",
-                "cursor": "pointer",
             },
         ),
         width=COL_WIDTHS["_chevron"],
         padding="0 4px",
         text_align="center",
+        cursor="pointer",
     )
 
 def _summary_row(state: type[rx.State], r: Dict[str, Any]) -> rx.Component:
