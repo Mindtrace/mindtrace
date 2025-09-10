@@ -43,7 +43,7 @@ class DockerEnvironment(Mindtrace):
                 environment=self.environment,
                 volumes=self.volumes,
                 working_dir=self.working_dir,
-                # device_requests=[docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])],
+                device_requests=[docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])],
                 detach=True,
                 tty=True,
                 command="sh",
