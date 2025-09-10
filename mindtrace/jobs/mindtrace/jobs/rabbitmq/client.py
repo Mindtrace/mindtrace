@@ -38,6 +38,11 @@ class RabbitMQClient(OrchestratorBackend):
         self._password = self.connection.password
         self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
 
+    def create_connection(self):
+        connection = RabbitMQConnection(host=self._host, port=self._port, username=self._username, password=self._password)
+        connection.connect()
+        return connection.get_channel()
+
     @property
     def consumer_backend_args(self):
         return {
@@ -202,6 +207,7 @@ class RabbitMQClient(OrchestratorBackend):
         Returns:
             str: The generated job ID for the message.
         """
+        channel = self.create_connection()
         job_id = str(uuid.uuid1())
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
@@ -212,7 +218,7 @@ class RabbitMQClient(OrchestratorBackend):
         self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
             message_dict = message.model_dump()
-            self.channel.basic_publish(
+            channel.basic_publish(
                 exchange=exchange,
                 routing_key=routing_key,
                 body=json.dumps(message_dict).encode("utf-8"),
