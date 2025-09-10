@@ -34,45 +34,46 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
-        self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
-        self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.JobSchemaTargeting,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.job_schema_targeting_database.initialize_sync()
-        self.job_status_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
-        )
-        self.job_status_database.initialize_sync()
-        self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerAutoConnect,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.worker_auto_connect_database.initialize_sync()
-        self.worker_status_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
-        )
-        self.worker_status_database.initialize_sync()
-        self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
-        self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
-        self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
-        self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
-        self.nodes = []
-        minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry_cluster",
-            endpoint=self.worker_registry_endpoint,
-            access_key=self.worker_registry_access_key,
-            secret_key=self.worker_registry_secret_key,
-            bucket=self.worker_registry_bucket,
-            secure=False,
-        )
-        self.worker_registry = Registry(backend=minio_backend)
-        self.worker_registry.register_materializer(
-            cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
-        )
+        if kwargs.get("live_service", True):
+            self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
+            self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
+            self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.JobSchemaTargeting,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
+            )
+            self.job_schema_targeting_database.initialize_sync()
+            self.job_status_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+            )
+            self.job_status_database.initialize_sync()
+            self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerAutoConnect,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
+            )
+            self.worker_auto_connect_database.initialize_sync()
+            self.worker_status_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+            )
+            self.worker_status_database.initialize_sync()
+            self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
+            self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
+            self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
+            self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
+            self.nodes = []
+            minio_backend = MinioRegistryBackend(
+                uri="~/.cache/mindtrace/minio_registry_cluster",
+                endpoint=self.worker_registry_endpoint,
+                access_key=self.worker_registry_access_key,
+                secret_key=self.worker_registry_secret_key,
+                bucket=self.worker_registry_bucket,
+                secure=False,
+            )
+            self.worker_registry = Registry(backend=minio_backend)
+            self.worker_registry.register_materializer(
+                cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
+            )
         self.add_endpoint(
             "/submit_job",
             func=self.submit_job,
