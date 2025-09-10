@@ -50,7 +50,7 @@ def profile_content() -> rx.Component:
                     profile_info_card(
                         title="Account Information",
                         content_items=[
-                            {"label": "Username", "value": AuthState.current_username},
+                            {"label": "Name", "value": AuthState.current_first_name + " " + AuthState.current_last_name},
                             {"label": "User ID", "value": AuthState.user_id},
                             {"label": "Organization ID", "value": AuthState.user_organization_id},
                             {

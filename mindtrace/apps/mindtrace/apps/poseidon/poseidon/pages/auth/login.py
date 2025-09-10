@@ -39,7 +39,7 @@ def login_content() -> rx.Component:
                         "Sign in to your account", "Welcome back! Enter your credentials to access your workspace"
                     ),
                     rx.box(
-                        login_form(title="", subtitle=""),
+                        login_form(title="Sign in to your account", subtitle="Enter your credentials"),
                         style={
                             "width": "100%",
                         },
@@ -47,7 +47,6 @@ def login_content() -> rx.Component:
                     rx.box(
                         rx.vstack(
                             link("Don't have an account? ", "Sign up", "/register"),
-                            link("Need admin access? ", "Admin Registration", "/register-admin"),
                             spacing="2",
                             width="100%",
                         ),
