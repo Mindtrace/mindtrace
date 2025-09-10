@@ -34,7 +34,7 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 class ClusterManager(Gateway):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.orchestrator = Orchestrator(backend=RabbitMQClient())
+        self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
         self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
         self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
             unified_model_cls=cluster_types.JobSchemaTargeting,
