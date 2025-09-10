@@ -58,6 +58,7 @@ class Service(Mindtrace):
         description: str | None = None,
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
+        live_service: bool = True,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
