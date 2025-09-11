@@ -49,7 +49,7 @@ class LabelStudio(Mindtrace):
         self.client = Client(url=self.url, api_key=self.api_key)
         self.logger.info(f"Initialised LS at: {self.url}")
 
-    def create_project(self, project_name: str, description: str = None, label_config: str = None) -> LSProject:
+    def create_project(self, project_name: str, description: Optional[str] = None, label_config: Optional[str] = None) -> LSProject:
         """Create a new LSProject.
 
         Args:
