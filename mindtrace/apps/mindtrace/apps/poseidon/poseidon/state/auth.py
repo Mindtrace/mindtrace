@@ -2,14 +2,18 @@ import reflex as rx
 from typing import List, Dict
 from poseidon.backend.services.auth_service import AuthService
 from poseidon.backend.core.exceptions import (
-    UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
+    UserAlreadyExistsError,
+    UserNotFoundError,
+    InvalidCredentialsError,
 )
 from poseidon.backend.utils.security import decode_jwt
 from poseidon.backend.database.models.enums import OrgRole
 
+
 class ProjectAssignment:
     project_id: str
     roles: List[str]
+
 
 class AuthState(rx.State):
     # --- form fields ---
@@ -21,8 +25,16 @@ class AuthState(rx.State):
     is_register_super_admin: bool = False
 
     # --- session / ui ---
+    # Cookie-backed token
+    auth_token: str = rx.Cookie(
+        name="auth_token",
+        path="/",
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        same_site="lax",
+        secure=False,
+    )
     error: str = ""
-    token: str = ""
+    token: str = ""  # optional in-memory mirror of the cookie
     available_organizations: List[Dict[str, str]] = []
     organizations_loaded: bool = False
 
@@ -31,7 +43,7 @@ class AuthState(rx.State):
     current_first_name: str = ""
     current_last_name: str = ""
     user_organization_id: str = ""
-    user_org_role: str = ""  # string in JWT
+    user_org_role: str = ""  # stored as string in JWT
     user_project_assignments: List[ProjectAssignment] = []
     is_authenticated: bool = False
 
@@ -42,18 +54,37 @@ class AuthState(rx.State):
         return str(av) == str(bv)
 
     def check_auth(self):
-        if self.token:
-            try:
-                payload = decode_jwt(self.token)
-                self.user_id = payload.get("user_id", "")
-                self.current_first_name = payload.get("first_name", "")
-                self.current_last_name = payload.get("last_name", "")
-                self.user_organization_id = payload.get("organization_id", "")
-                self.user_org_role = payload.get("org_role", "")
-                self.user_project_assignments = payload.get("project_assignments", [])
-                self.is_authenticated = True
-            except Exception:
-                self.logout()
+        """Hydrate auth state from cookie (preferred) or in-memory token."""
+        tok = self.auth_token or self.token
+        if not tok:
+            # No token at all.
+            self.is_authenticated = False
+            return
+        try:
+            payload = decode_jwt(tok)
+            self.token = tok
+            self.user_id = payload.get("user_id", "")
+            self.current_first_name = payload.get("first_name", "")
+            self.current_last_name = payload.get("last_name", "")
+            self.user_organization_id = payload.get("organization_id", "")
+            self.user_org_role = payload.get("org_role", "")
+            self.user_project_assignments = payload.get("project_assignments", [])
+            self.is_authenticated = True
+        except Exception:
+            # Invalid/expired token -> clear and deauth.
+            self._clear_session()
+
+    def _clear_session(self):
+        """Clear all session-related fields (without returning any events)."""
+        self.token = ""
+        self.user_id = ""
+        self.current_first_name = ""
+        self.current_last_name = ""
+        self.user_organization_id = ""
+        self.user_org_role = ""
+        self.user_project_assignments = []
+        self.is_authenticated = False
+        self.error = ""
 
     def has_org_role(self, required_role: str) -> bool:
         return self.is_authenticated and self._role_eq(self.user_org_role, required_role)
@@ -66,6 +97,7 @@ class AuthState(rx.State):
                 return required_role in a.get("roles", [])
         return False
 
+    # -------- derived vars --------
     @rx.var
     def is_admin(self) -> bool:
         return self.has_org_role(OrgRole.ADMIN.value)
@@ -82,9 +114,9 @@ class AuthState(rx.State):
     def role_display(self) -> str:
         if self.is_super_admin:
             return "Super Admin"
-        elif self.is_admin:
+        if self.is_admin:
             return "Admin"
-        elif self.is_user:
+        if self.is_user:
             return "User"
         return "Unknown"
 
@@ -114,8 +146,8 @@ class AuthState(rx.State):
 
     @rx.var
     def initials(self) -> str:
-        # Prefer first/last; fall back to email local-part
-        fn, ln = (self.current_first_name or "").strip(), (self.current_last_name or "").strip()
+        fn = (self.current_first_name or "").strip()
+        ln = (self.current_last_name or "").strip()
         if fn and ln:
             return (fn[0] + ln[0]).upper()
         if fn:
@@ -128,6 +160,7 @@ class AuthState(rx.State):
             return clean[:2].upper()
         return (clean[:1].upper() or "U")
 
+    # -------- data loading --------
     async def load_available_organizations(self):
         try:
             from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
@@ -145,48 +178,66 @@ class AuthState(rx.State):
         except Exception as e:
             self.error = f"Failed to load organizations: {str(e)}"
 
+    # -------- session actions --------
     def logout(self):
-        self.token = ""
-        self.user_id = ""
-        self.current_first_name = ""
-        self.current_last_name = ""
-        self.user_organization_id = ""
-        self.user_org_role = ""
-        self.user_project_assignments = []
-        self.is_authenticated = False
-        self.error = ""
-        return rx.redirect("/")
+        """Clear session + cookie and go to login."""
+        self._clear_session()
+        return [rx.remove_cookie("auth_token"), rx.redirect("/login")]
 
+    # -------- route guards (use these in app.add_page on_load) --------
     def redirect_if_authenticated(self):
-        if self.is_authenticated:
-            return rx.redirect("/")
+        """On auth pages: if a cookie already exists, hydrate and go home."""
+        if self.auth_token:
+            if not self.is_authenticated:
+                self.check_auth()
+            if self.is_authenticated:
+                return rx.redirect("/")
 
     def redirect_if_not_authenticated(self):
-        if not self.is_authenticated:
+        """On protected pages: bounce to /login as fast as possible."""
+        if not self.auth_token:
             return rx.redirect("/login")
+        if not self.is_authenticated:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
 
     def redirect_if_not_admin(self):
-        if not self.is_authenticated:
+        if not self.auth_token:
             return rx.redirect("/login")
-        elif not self.is_admin:
+        if not self.is_authenticated:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
+        if not self.is_admin:
             return rx.redirect("/")
 
     def redirect_if_not_super_admin(self):
-        if not self.is_authenticated:
+        if not self.auth_token:
             return rx.redirect("/login")
-        elif not self.is_super_admin:
+        if not self.is_authenticated:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
+        if not self.is_super_admin:
             return rx.redirect("/")
 
+    # -------- auth flows --------
     async def login(self, form_data):
         try:
-            if not form_data.get("email") or not form_data.get("password"):
+            email = (form_data.get("email") or "").strip()
+            password = form_data.get("password", "")
+            if not email or not password:
                 self.error = "Email and password are required."
                 return
-            result = await AuthService.authenticate_user(form_data["email"], form_data["password"])
-            self.token = result["token"]
+
+            result = await AuthService.authenticate_user(email, password)
+
+            self.auth_token = result["token"]
             self.check_auth()
+
             self.error = ""
-            return rx.redirect("/profile")
+            return rx.redirect("/")
         except (UserNotFoundError, InvalidCredentialsError) as e:
             self.error = str(e)
         except Exception as e:
@@ -228,7 +279,7 @@ class AuthState(rx.State):
                     last_name=last_name,
                     email=email,
                     password=password,
-                    organization_id="",                 # ignored for SA; service will ensure SYSTEM
+                    organization_id="",  # ignored for SA; service ensures SYSTEM
                     org_role=OrgRole.SUPER_ADMIN,
                     super_admin_key=super_key,
                 )
@@ -243,6 +294,7 @@ class AuthState(rx.State):
             if org_input == "fallback-id":
                 self.error = "Please select a valid organization."
                 return
+
             organization_id = org_input
             if not any(org.get("id") == org_input for org in self.available_organizations):
                 organization_id = self.get_organization_id_by_name(org_input)

@@ -28,27 +28,30 @@ from poseidon.utils.app_loaders import (
 
 app = rx.App(theme=theme_config, style=styles)
 
-# Home – protected
-add_protected_page(app,
+# Home – protected dashboard (inside AppShell)
+add_protected_page(
+    app,
     route="/",
     body_fn=index,
     title="Mindtrace",
     active="Home",
 )
 
-# Auth pages
+# Auth pages – public (outside AppShell)
 add_public_page(app, route="/login",    body_fn=login_page,    title="Mindtrace - Login")
 add_public_page(app, route="/register", body_fn=register_page, title="Mindtrace - Register")
 
 # Dashboards
-add_admin_page(app,
+add_admin_page(
+    app,
     route="/admin",
     body_fn=admin_page,
     title="Mindtrace",
     active="Admin",
 )
 
-add_super_admin_page(app,
+add_super_admin_page(
+    app,
     route="/super-admin-dashboard",
     body_fn=super_admin_dashboard_page,
     title="Mindtrace",
@@ -56,39 +59,45 @@ add_super_admin_page(app,
 )
 
 # Feature pages (protected)
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/camera-configurator",
     body_fn=camera_configurator_page,
     title="Mindtrace",
     active="Camera Configurator",
 )
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/model-deployment",
     body_fn=model_deployment_page,
     title="Mindtrace",
     active="Model Deployment",
 )
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/inference",
     body_fn=inference_page,
     title="Mindtrace",
     active="Inference Scanner",
 )
 
-# Management (protected)
-add_protected_page(app,
-    route="/user-management",
-    body_fn=user_management_page,
-    title="Mindtrace",
-    active="User Management",
-)
-add_protected_page(app,
+# Management (choose admin/protected according to your RBAC)
+add_admin_page(
+    app,
     route="/organization-management",
     body_fn=organization_management_page,
     title="Mindtrace",
     active="Organization Management",
 )
-add_protected_page(app,
+add_protected_page(
+    app,
+    route="/user-management",
+    body_fn=user_management_page,
+    title="Mindtrace",
+    active="User Management",
+)
+add_protected_page(
+    app,
     route="/project-management",
     body_fn=project_management_page,
     title="Mindtrace",
@@ -96,7 +105,8 @@ add_protected_page(app,
 )
 
 # Analytics (protected + page-specific loaders)
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/plants/[plant_id]/lines/[line_id]/line-insights",
     body_fn=line_insights_page,
     title="Mindtrace",
@@ -104,7 +114,8 @@ add_protected_page(app,
     show_scope_selector=True,
     extra_on_load=[LineInsightsState.on_mount],
 )
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/plants/[plant_id]/lines/[line_id]/line-view",
     body_fn=filter_table_demo,
     title="Mindtrace",
@@ -114,14 +125,15 @@ add_protected_page(app,
 )
 
 # User (protected)
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/profile",
     body_fn=profile_page,
     title="Mindtrace",
     active="Profile",
 )
-
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/image-viewer",
     body_fn=images_page,
     title="Mindtrace",
@@ -129,7 +141,8 @@ add_protected_page(app,
 )
 
 # Dev (protect or not as you wish)
-add_protected_page(app,
+add_protected_page(
+    app,
     route="/component-showcase",
     body_fn=component_showcase_page,
     title="Mindtrace",

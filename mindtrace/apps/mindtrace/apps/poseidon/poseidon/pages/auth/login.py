@@ -39,7 +39,7 @@ def login_content() -> rx.Component:
                         "Sign in to your account", "Welcome back! Enter your credentials to access your workspace"
                     ),
                     rx.box(
-                        login_form(title="Sign in to your account", subtitle="Enter your credentials"),
+                        login_form(title="", subtitle=""),
                         style={
                             "width": "100%",
                         },
