@@ -21,7 +21,6 @@ __all__ = [
     # Basler SDK setup
     "install_pylon_sdk",
     "uninstall_pylon_sdk",
-    
     # Combined camera setup
     "setup_all_cameras",
     "configure_firewall",

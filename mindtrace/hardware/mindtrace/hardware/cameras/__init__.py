@@ -1,6 +1,6 @@
 """Camera module for mindtrace hardware.
 
-Provides unified camera management across different camera manufacturers with graceful SDK handling and comprehensive 
+Provides unified camera management across different camera manufacturers with graceful SDK handling and comprehensive
 error management.
 """
 

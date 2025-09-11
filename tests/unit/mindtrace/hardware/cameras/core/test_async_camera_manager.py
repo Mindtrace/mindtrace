@@ -1,4 +1,5 @@
 import asyncio
+
 import numpy as np
 import pytest
 
@@ -42,13 +43,15 @@ async def test_open_idempotent_and_close():
 async def test_batch_capture_with_mock_backend(monkeypatch):
     """Test batch capture with controlled mock cameras instead of discovery-dependent."""
     manager = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
-    
+
     # Create controlled mock cameras
     mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2", "MockBasler:TestCam3"]
+
     def mock_discover(include_mocks=True, backends=None):
         return mock_cameras if include_mocks else []
+
     monkeypatch.setattr(manager, "discover", mock_discover)
-    
+
     try:
         await manager.open(mock_cameras)
 
@@ -213,13 +216,15 @@ async def test_close_unknown_name_noop():
 async def test_batch_capture_hdr_return_images(monkeypatch):
     """Test HDR capture with controlled mock cameras."""
     mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=2)
-    
+
     # Create controlled mock cameras
     mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
     def mock_discover(include_mocks=True, backends=None):
         return mock_cameras if include_mocks else []
+
     monkeypatch.setattr(mgr, "discover", mock_discover)
-    
+
     try:
         await mgr.open(mock_cameras)
         res = await mgr.batch_capture_hdr(camera_names=mock_cameras, exposure_levels=2, return_images=True)
@@ -258,9 +263,7 @@ async def test_discover_opencv_details_with_device_dict(monkeypatch):
         OpenCVCameraBackend,
         "get_available_cameras",
         staticmethod(
-            lambda include_details=False: {
-                "opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}
-            }
+            lambda include_details=False: {"opencv_camera_0": {"index": 0, "width": 640, "height": 480, "fps": 30.0}}
             if include_details
             else ["opencv_camera_0"]
         ),
@@ -274,7 +277,8 @@ def test_discover_opencv_list_mode(monkeypatch):
     from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
 
     monkeypatch.setattr(
-        OpenCVCameraBackend, "get_available_cameras", staticmethod(lambda include_details=False: ["opencv_camera_0"]))
+        OpenCVCameraBackend, "get_available_cameras", staticmethod(lambda include_details=False: ["opencv_camera_0"])
+    )
     names = AsyncCameraManager.discover(backends=["OpenCV"], details=False)
     assert names == ["OpenCV:opencv_camera_0"]
 
@@ -365,6 +369,7 @@ async def test_batch_methods_baseexception_branch(monkeypatch):
         async def _fake_gather(*args, **kwargs):  # noqa: ARG001
             # Consume/close incoming coroutine objects to avoid warnings, then return BaseException-like results
             import asyncio as aio
+
             coros = []
             if args:
                 if isinstance(args[0], (list, tuple)) and all(hasattr(x, "__await__") for x in args[0]):
@@ -445,21 +450,21 @@ async def test_backend_specific_discovery_consistency(camera_manager):
     """Test that backend-specific discovery is consistent with full discovery."""
     manager = camera_manager
     all_cameras = manager.__class__.discover(include_mocks=True)
-    
+
     # Filter out real hardware cameras for consistent testing
     mock_only_cameras = [cam for cam in all_cameras if "MockBasler" in cam or "OpenCV" not in cam]
-    
+
     basler_cameras = manager.__class__.discover(backends="MockBasler", include_mocks=True)
     opencv_cameras = manager.__class__.discover(backends="OpenCV", include_mocks=True)
-    
+
     # For testing consistency, only compare mock cameras
     mock_basler_from_all = [cam for cam in all_cameras if "MockBasler" in cam]
     mock_opencv_from_all = [cam for cam in all_cameras if cam.startswith("OpenCV:")]
-    
+
     # Sort for comparison
     mock_basler_from_all_sorted = sorted(mock_basler_from_all)
     basler_cameras_sorted = sorted(basler_cameras)
-    
+
     # Assert that backend-specific discovery finds the same mock cameras as full discovery
     assert mock_basler_from_all_sorted == basler_cameras_sorted
 
@@ -484,11 +489,13 @@ async def test_convenience_function_with_backend_filtering():
 
 # removed problematic default-open behavior test; default-open without include_mocks is expected to raise
 
+
 @pytest.mark.asyncio
 async def test_open_connection_fallback_to_capture(monkeypatch):
     # Force check_connection False -> capture path
-    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
     import numpy as np
+
+    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
     async def _false_check(self):
         return False
@@ -550,21 +557,23 @@ async def test_open_setup_failure_raises(monkeypatch):
 async def test_close_subset_only(monkeypatch):
     """Test closing a subset of cameras with controlled mocks."""
     mgr = AsyncCameraManager(include_mocks=True)
-    
+
     # Create controlled mock cameras
     mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
     def mock_discover(include_mocks=True, backends=None):
         return mock_cameras if include_mocks else []
+
     monkeypatch.setattr(mgr, "discover", mock_discover)
-    
+
     try:
         await mgr.open(mock_cameras)
         assert set(mgr.active_cameras) == set(mock_cameras)
-        
+
         # Close only the first camera
         await mgr.close(mock_cameras[0])
         assert set(mgr.active_cameras) == {mock_cameras[1]}
-        
+
         # Verify the remaining camera is still functional
         remaining_cam = await mgr.open(mock_cameras[1])
         assert remaining_cam.is_connected
@@ -689,7 +698,9 @@ def test_discover_mixed_backends_filters(monkeypatch):
     try:
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
 
-        monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(lambda include_details=False: []))
+        monkeypatch.setattr(
+            OpenCVCameraBackend, "get_available_cameras", staticmethod(lambda include_details=False: [])
+        )
     except Exception:
         pass
     lst = AsyncCameraManager.discover(backends=["MockBasler", "NonExistent"], include_mocks=True)

@@ -15,6 +15,7 @@ from mindtrace.hardware.core.exceptions import (
 
 try:
     from mindtrace.storage.gcs import GCSStorageHandler
+
     STORAGE_AVAILABLE = True
 except ImportError:
     GCSStorageHandler = None
@@ -80,6 +81,7 @@ class AsyncCameraManager(Mindtrace):
 
         # Get config
         from mindtrace.hardware.core.config import get_hardware_config
+
         self._hardware_config = get_hardware_config().get_config()
 
         # Get max_concurrent_captures from config if not provided
@@ -321,7 +323,9 @@ class AsyncCameraManager(Mindtrace):
             return all_details
         return all_cameras
 
-    async def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
+    async def open(
+        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+    ) -> Union[AsyncCamera, Dict[str, AsyncCamera]]:
         """Open one or more cameras with optional connection testing.
 
         Args:
@@ -521,7 +525,9 @@ class AsyncCameraManager(Mindtrace):
 
         return results
 
-    async def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy") -> Dict[str, Any]:
+    async def batch_capture(
+        self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
+    ) -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management."""
         results = {}
 
@@ -582,9 +588,9 @@ class AsyncCameraManager(Mindtrace):
                         upload_to_gcs=upload_to_gcs,
                         output_format=output_format,
                     )
-                    
+
                     # HDR upload will be handled by individual camera capture_hdr method
-                    
+
                     return camera_name, result
             except Exception as e:
                 self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
@@ -594,7 +600,7 @@ class AsyncCameraManager(Mindtrace):
                     "image_paths": None,
                     "gcs_urls": None,
                     "exposure_levels": [],
-                    "successful_captures": 0
+                    "successful_captures": 0,
                 }
 
         tasks = [capture_hdr_from_camera(name) for name in camera_names]
@@ -648,9 +654,7 @@ class AsyncCameraManager(Mindtrace):
     def _parse_camera_name(self, camera_name: str) -> Tuple[str, str]:
         """Parse full camera name into backend and device name."""
         if ":" not in camera_name:
-            self.logger.error(
-                f"Invalid camera name format received: '{camera_name}'. Expected 'Backend:device_name'"
-            )
+            self.logger.error(f"Invalid camera name format received: '{camera_name}'. Expected 'Backend:device_name'")
             raise CameraConfigurationError(
                 f"Invalid camera name format: '{camera_name}'. Expected 'Backend:device_name'"
             )
@@ -742,4 +746,4 @@ class AsyncCameraManager(Mindtrace):
             else:
                 raise CameraInitializationError(f"Mock backend not available for {backend_name}")
         except ImportError as e:
-            raise CameraInitializationError(f"Mock {backend_name} backend not available: {e}") 
+            raise CameraInitializationError(f"Mock {backend_name} backend not available: {e}")

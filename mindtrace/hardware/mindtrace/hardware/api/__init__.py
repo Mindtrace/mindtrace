@@ -3,6 +3,6 @@
 from mindtrace.hardware.api.cameras import CameraManagerConnectionManager, CameraManagerService
 
 __all__ = [
-    "CameraManagerService", 
+    "CameraManagerService",
     "CameraManagerConnectionManager",
 ]

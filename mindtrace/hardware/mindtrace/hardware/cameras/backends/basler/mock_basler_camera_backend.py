@@ -146,11 +146,11 @@ class MockBaslerCameraBackend(CameraBackend):
         # Optionally override image size via constructor
         syn_w = backend_kwargs.get("synthetic_width")
         syn_h = backend_kwargs.get("synthetic_height")
-        
+
         # Store synthetic dimensions as attributes (needed by reset_ROI)
         self.synthetic_width = self.roi["width"]  # Default from ROI
         self.synthetic_height = self.roi["height"]  # Default from ROI
-        
+
         try:
             if syn_w is not None:
                 self.roi["width"] = int(syn_w)
@@ -558,7 +558,7 @@ class MockBaslerCameraBackend(CameraBackend):
         try:
             # Simulate async operation delay
             await asyncio.sleep(0.001)
-            
+
             if width <= 0 or height <= 0:
                 raise CameraConfigurationError(f"Invalid ROI dimensions: {width}x{height}")
 
@@ -615,7 +615,7 @@ class MockBaslerCameraBackend(CameraBackend):
         try:
             # Simulate async operation
             await asyncio.sleep(0.001)
-            
+
             if gain < 1.0 or gain > 16.0:
                 raise CameraConfigurationError(f"Gain {gain} out of range [1.0, 16.0]")
 
@@ -776,7 +776,9 @@ class MockBaslerCameraBackend(CameraBackend):
     async def set_inter_packet_delay(self, delay_ticks: int) -> bool:
         """Set inter-packet delay for network traffic control (simulated)."""
         await asyncio.sleep(0.001)
-        self.logger.info(f"Inter-packet delay set to {delay_ticks} ticks for mock camera '{self.camera_name}' (simulated)")
+        self.logger.info(
+            f"Inter-packet delay set to {delay_ticks} ticks for mock camera '{self.camera_name}' (simulated)"
+        )
         return True
 
     async def get_inter_packet_delay(self) -> int:
@@ -802,9 +804,7 @@ class MockBaslerCameraBackend(CameraBackend):
             self._enhancement_initialized = True
             self.logger.debug(f"Image enhancement initialized for mock camera '{self.camera_name}'")
         except Exception as e:
-            self.logger.error(
-                f"Failed to initialize image enhancement for mock camera '{self.camera_name}': {str(e)}"
-            )
+            self.logger.error(f"Failed to initialize image enhancement for mock camera '{self.camera_name}': {str(e)}")
 
     def _generate_synthetic_image(self) -> np.ndarray:
         """Generate synthetic test image using vectorized operations for performance.
@@ -947,7 +947,7 @@ class MockBaslerCameraBackend(CameraBackend):
             # Merge channels and convert back to BGR
             enhanced_lab = cv2.merge((cl, a, b))
             enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
-            
+
             # Additional enhancement: gamma correction
             gamma = 1.2
             enhanced_img = np.power(enhanced_img / 255.0, gamma) * 255.0

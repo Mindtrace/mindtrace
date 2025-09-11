@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Tuple, Optional
 import math
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -73,7 +73,7 @@ class RotatedRect:
                 x = self.cx + lx * cos_a - ly * sin_a
                 y = self.cy + lx * sin_a + ly * cos_a
                 corners.append((x, y))
-        
+
         # Ensure CCW orientation for downstream polygon operations
         if _HAS_NUMPY:
             arr = np.array(corners, dtype=float)
@@ -108,15 +108,11 @@ class RotatedRect:
         sin_a = math.sin(angle_rad)
         lx = dx * cos_a - dy * sin_a
         ly = dx * sin_a + dy * cos_a
-        return (-self.width / 2.0) <= lx <= (self.width / 2.0) and (-self.height / 2.0) <= ly <= (
-            self.height / 2.0
-        )
+        return (-self.width / 2.0) <= lx <= (self.width / 2.0) and (-self.height / 2.0) <= ly <= (self.height / 2.0)
 
     def iou(self, other: "RotatedRect") -> float:
         if not _HAS_NUMPY:
-            raise ImportError(
-                "iou needs numpy, but it was not installed. Install it with `pip install numpy`"
-            )
+            raise ImportError("iou needs numpy, but it was not installed. Install it with `pip install numpy`")
         a = self.to_corners_np()
         b = other.to_corners_np()
         # Normalize orientation to CCW for robust clipping
@@ -181,6 +177,7 @@ class RotatedRect:
 
 # --- Helpers (NumPy-based polygon clipping via Sutherland–Hodgman)
 
+
 def _clip_polygon(subject: "np.ndarray", clipper: "np.ndarray") -> "np.ndarray":  # type: ignore[name-defined]
     output = subject
     for i in range(len(clipper)):
@@ -236,4 +233,4 @@ def _polygon_area(poly: "np.ndarray") -> float:  # type: ignore[name-defined]
 
 def _polygon_intersection_area(a: "np.ndarray", b: "np.ndarray") -> float:  # type: ignore[name-defined]
     inter = _clip_polygon(a, b)
-    return _polygon_area(inter) 
+    return _polygon_area(inter)

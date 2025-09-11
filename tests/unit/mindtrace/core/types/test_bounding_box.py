@@ -1,5 +1,4 @@
 import pytest
-
 from PIL import Image
 
 from mindtrace.core import check_libs
@@ -194,6 +193,7 @@ def test_draw_on_pil_label_font_default_dims(monkeypatch):
     bb = BoundingBox(5, 5, 10, 10)
 
     import PIL.ImageDraw as ID
+
     if hasattr(ID.ImageDraw, "textbbox"):
         monkeypatch.delattr(ID.ImageDraw, "textbbox", raising=False)
 
@@ -227,4 +227,4 @@ def test_from_corners_np_raises_without_numpy(monkeypatch):
 def test_to_int():
     bb = BoundingBox(1.9, 2.1, 3.6, 4.4)
     bb2 = bb.to_int()
-    assert bb2.as_tuple() == (2, 2, 4, 4) 
+    assert bb2.as_tuple() == (2, 2, 4, 4)

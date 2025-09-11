@@ -1,1 +1,1 @@
-"""Test services for providing external dependencies through Docker.""" 
+"""Test services for providing external dependencies through Docker."""

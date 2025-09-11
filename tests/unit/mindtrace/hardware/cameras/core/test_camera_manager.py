@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
@@ -103,23 +102,24 @@ def test_max_concurrent_captures_property_passthrough():
 def test_diagnostics_after_open(monkeypatch):
     """Test diagnostics with controlled mock cameras."""
     mgr = CameraManager(include_mocks=True)
-    
+
     # Create controlled mock cameras
     mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
     def mock_discover(include_mocks=True, backends=None, details=False):
         return mock_cameras if include_mocks else []
-    
+
     # Patch both class method and instance method
     monkeypatch.setattr(CameraManager, "discover", classmethod(lambda cls, **kwargs: mock_discover(**kwargs)))
     monkeypatch.setattr(mgr, "discover", mock_discover)
-    
+
     try:
         res = mgr.open(mock_cameras)
         assert set(res.keys()) == set(mock_cameras)
         d = mgr.diagnostics()
         assert isinstance(d, dict)
         assert d["active_cameras"] == len(mock_cameras)
-        
+
         # Test other diagnostic fields
         assert "max_concurrent_captures" in d
         assert "gige_cameras" in d
@@ -135,7 +135,9 @@ def test_shutdown_bound_timeout(monkeypatch):
         # Monkeypatch async manager's close to a slow coroutine to trigger bound timeout
         async def _slow_close(names=None):  # noqa: ARG001
             import asyncio as aio
+
             await aio.sleep(2.0)
+
         monkeypatch.setattr(mgr._manager, "close", _slow_close, raising=False)
     finally:
         # Should not hang despite slow close

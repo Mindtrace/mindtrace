@@ -1,6 +1,6 @@
 """Mindtrace Hardware Module
 
-A comprehensive hardware abstraction layer providing unified access to cameras, PLCs, sensors, and other industrial 
+A comprehensive hardware abstraction layer providing unified access to cameras, PLCs, sensors, and other industrial
 hardware components with lazy imports to prevent cross-contamination between different backends.
 
 Key Features:

@@ -60,10 +60,10 @@ async def test_async_camera_configure_all_settings(monkeypatch):
 
         async def _set_gain(v):
             return True
-        
+
         async def _set_roi(x, y, w, h):
             return True
-            
+
         backend.set_exposure = _set_exp  # type: ignore[attr-defined]
         backend.set_gain = _set_gain  # type: ignore[attr-defined]
         backend.set_ROI = _set_roi  # type: ignore[attr-defined]
@@ -72,9 +72,10 @@ async def test_async_camera_configure_all_settings(monkeypatch):
             return True
 
         backend.set_triggermode = _set_tm  # type: ignore[attr-defined]
+
         async def _set_pf(v):
             return True
-            
+
         backend.set_pixel_format = _set_pf  # type: ignore[attr-defined]
 
         async def _set_wb(v):
@@ -82,7 +83,7 @@ async def test_async_camera_configure_all_settings(monkeypatch):
 
         async def _set_ie(v):
             return True
-            
+
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
         backend.set_image_quality_enhancement = _set_ie  # type: ignore[attr-defined]
 
@@ -285,33 +286,33 @@ async def test_async_performance_concurrent_capture(camera_manager):
 async def test_async_bandwidth_limit_and_adjustment(monkeypatch):
     """Test bandwidth limiting and adjustment with controlled mock cameras."""
     mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=1)
-    
+
     # Create controlled mock cameras instead of relying on discovery
     mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2", "MockBasler:TestCam3"]
-    
+
     # Mock the discovery to return our test cameras
     def mock_discover(include_mocks=True, backends=None):
         return mock_cameras if include_mocks else []
-    
+
     monkeypatch.setattr(mgr, "discover", mock_discover)
-    
+
     try:
         # Test bandwidth limiting
         await mgr.open(mock_cameras[:2])  # Open 2 cameras
         assert mgr.max_concurrent_captures == 1
-        
+
         # Test bandwidth adjustment
         mgr.max_concurrent_captures = 3
         assert mgr.max_concurrent_captures == 3
-        
+
         # Test batch capture with adjusted limit
         results = await mgr.batch_capture(mock_cameras[:2])
         assert len(results) == 2
-        
+
         # Verify all captures succeeded
         for camera, result in results.items():
             assert result is not None  # Mock should return valid image data
-            
+
     finally:
         await mgr.close(None)
 
@@ -323,41 +324,44 @@ class TestAsyncCameraConcurrentOperations:
     async def test_concurrent_captures_with_failures(self, monkeypatch):
         """Test concurrent captures when some operations fail."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         # Create controlled mock cameras instead of relying on discovery
         mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             # Open cameras
             cameras = []
             for name in mock_cameras:
                 cam = await manager.open(name)
                 cameras.append(cam)
-            
+
             # Set one camera to fail captures
             async def failing_capture():
                 raise CameraCaptureError("Simulated failure")
+
             cameras[1].backend.capture = failing_capture
-            
+
             # Try concurrent captures
             tasks = []
             for cam in cameras:
                 tasks.append(asyncio.create_task(cam.capture()))
-            
+
             # Wait for all tasks - some should succeed, some fail
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # Should have mix of success and failures
             successes = [r for r in results if isinstance(r, np.ndarray)]
             failures = [r for r in results if isinstance(r, Exception)]
-            
+
             assert len(successes) >= 1  # At least one should succeed
-            assert len(failures) >= 1   # At least one should fail
+            assert len(failures) >= 1  # At least one should fail
             assert any(isinstance(f, CameraCaptureError) for f in failures)
-            
+
         finally:
             await manager.close(None)
 
@@ -365,39 +369,36 @@ class TestAsyncCameraConcurrentOperations:
     async def test_concurrent_configuration_operations(self, monkeypatch):
         """Test concurrent configuration operations on same camera."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         # Use controlled mock camera
         mock_cameras = ["MockBasler:TestCam1"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             cam = await manager.open(mock_cameras[0])
-            
+
             # Launch concurrent configuration operations
             async def set_exposure_task():
                 return await cam.set_exposure(1000)
-            
+
             async def set_gain_task():
                 return await cam.set_gain(10.0)
-            
+
             async def set_roi_task():
                 return await cam.set_roi(0, 0, 640, 480)
-            
+
             # Run concurrently
-            results = await asyncio.gather(
-                set_exposure_task(),
-                set_gain_task(), 
-                set_roi_task(),
-                return_exceptions=True
-            )
-            
+            results = await asyncio.gather(set_exposure_task(), set_gain_task(), set_roi_task(), return_exceptions=True)
+
             # All should complete without deadlock
             assert len(results) == 3
             # Mock backend should return True for successful operations
             assert all(r is True or isinstance(r, Exception) for r in results)
-            
+
         finally:
             await manager.close(None)
 
@@ -405,25 +406,27 @@ class TestAsyncCameraConcurrentOperations:
     async def test_concurrent_capture_and_config(self, monkeypatch):
         """Test concurrent capture and configuration operations."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             cam = await manager.open(mock_cameras[0])
-            
+
             # Launch capture and config operations concurrently
             capture_task = asyncio.create_task(cam.capture())
             config_task = asyncio.create_task(cam.set_exposure(2000))
-            
+
             # Both should complete
             image, config_result = await asyncio.gather(capture_task, config_task)
-            
+
             assert isinstance(image, np.ndarray)
             assert config_result is True
-            
+
         finally:
             await manager.close(None)
 
@@ -431,54 +434,58 @@ class TestAsyncCameraConcurrentOperations:
     async def test_concurrent_connection_operations(self, monkeypatch):
         """Test concurrent connection/disconnection operations."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             # Open camera
             cam = await manager.open(mock_cameras[0])
-            
+
             # Try concurrent check_connection operations
             tasks = []
             for _ in range(3):
                 tasks.append(asyncio.create_task(cam.check_connection()))
-            
+
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             # All should succeed (camera already connected)
             for result in results:
                 assert result is True or isinstance(result, Exception)
-            
+
         finally:
             await manager.close(None)
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_timeout_during_concurrent_operations(self, monkeypatch):
         """Test timeout behavior during concurrent operations."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             cam = await manager.open(mock_cameras[0])
-            
+
             # Mock a slow operation
             async def slow_capture():
                 await asyncio.sleep(2.0)  # Simulate slow operation
                 return True, np.zeros((8, 8, 3), dtype=np.uint8)
-            
+
             cam.backend.capture = slow_capture
-            
+
             # Launch operation with short timeout
             with pytest.raises((CameraTimeoutError, asyncio.TimeoutError)):
                 await asyncio.wait_for(cam.capture(), timeout=0.1)
-            
+
         finally:
             await manager.close(None)
 
@@ -486,66 +493,70 @@ class TestAsyncCameraConcurrentOperations:
     async def test_resource_cleanup_on_concurrent_failures(self, monkeypatch):
         """Test resource cleanup when concurrent operations fail."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             cam = await manager.open(mock_cameras[0])
-            
+
             # Mock operation that fails partway through
             async def failing_operation():
                 await asyncio.sleep(0.1)  # Start operation
                 raise CameraConnectionError("Simulated failure")
-            
+
             # Launch multiple failing operations
             tasks = []
             for _ in range(5):
                 tasks.append(asyncio.create_task(failing_operation()))
-            
+
             # All should fail
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             for result in results:
                 assert isinstance(result, CameraConnectionError)
-            
+
             # Camera should still be functional after failures
             assert cam.is_connected
-            
+
         finally:
             await manager.close(None)
 
     @pytest.mark.asyncio
     async def test_concurrent_manager_operations(self, monkeypatch):
-        """Test concurrent manager-level operations.""" 
+        """Test concurrent manager-level operations."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             # Open cameras concurrently
             open_tasks = []
             for name in mock_cameras:
                 open_tasks.append(asyncio.create_task(manager.open(name)))
-            
+
             cameras = await asyncio.gather(*open_tasks)
-            
+
             # All should be opened
             for cam in cameras:
                 assert cam.is_connected
-            
+
             # Close concurrently
             close_tasks = []
             for cam in cameras:
                 close_tasks.append(asyncio.create_task(manager.close(cam.name)))
-            
+
             await asyncio.gather(*close_tasks)
-            
+
         finally:
             await manager.close(None)
 
@@ -553,26 +564,28 @@ class TestAsyncCameraConcurrentOperations:
     async def test_concurrent_batch_operations(self, monkeypatch):
         """Test concurrent batch capture operations."""
         manager = AsyncCameraManager(include_mocks=True)
-        
+
         mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+
         def mock_discover(include_mocks=True, backends=None):
             return mock_cameras if include_mocks else []
+
         monkeypatch.setattr(manager, "discover", mock_discover)
-        
+
         try:
             # Open cameras
             await manager.open(mock_cameras)
-            
+
             # Set high concurrency limit
             manager.max_concurrent_captures = 10
-            
+
             # Run multiple batch captures concurrently
             batch_tasks = []
             for _ in range(3):
                 batch_tasks.append(asyncio.create_task(manager.batch_capture(mock_cameras)))
-            
+
             batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
-            
+
             # All batch operations should complete
             for result in batch_results:
                 if isinstance(result, Exception):
@@ -580,6 +593,6 @@ class TestAsyncCameraConcurrentOperations:
                 else:
                     assert isinstance(result, dict)
                     assert len(result) == 2  # Should have results for both cameras
-            
+
         finally:
             await manager.close(None)

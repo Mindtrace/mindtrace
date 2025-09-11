@@ -1,7 +1,6 @@
 """Backend and Discovery TaskSchemas."""
 
 from mindtrace.core import TaskSchema
-
 from mindtrace.hardware.api.cameras.models import (
     BackendFilterRequest,
     BackendInfoResponse,
@@ -10,22 +9,12 @@ from mindtrace.hardware.api.cameras.models import (
 )
 
 # Backend & Discovery Schemas
-DiscoverBackendsSchema = TaskSchema(
-    name="discover_backends",
-    input_schema=None,
-    output_schema=BackendsResponse
-)
+DiscoverBackendsSchema = TaskSchema(name="discover_backends", input_schema=None, output_schema=BackendsResponse)
 
-GetBackendInfoSchema = TaskSchema(
-    name="get_backend_info", 
-    input_schema=None,
-    output_schema=BackendInfoResponse
-)
+GetBackendInfoSchema = TaskSchema(name="get_backend_info", input_schema=None, output_schema=BackendInfoResponse)
 
 DiscoverCamerasSchema = TaskSchema(
-    name="discover_cameras",
-    input_schema=BackendFilterRequest,
-    output_schema=ListResponse
+    name="discover_cameras", input_schema=BackendFilterRequest, output_schema=ListResponse
 )
 
 __all__ = [

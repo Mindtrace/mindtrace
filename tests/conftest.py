@@ -2,7 +2,6 @@ import logging
 
 import pytest
 
-
 empty_mark = pytest.mark.empty
 
 
