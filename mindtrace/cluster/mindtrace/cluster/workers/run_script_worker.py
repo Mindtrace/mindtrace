@@ -8,9 +8,10 @@ from mindtrace.cluster.workers.environments.git_env import GitEnvironment
 
 
 class RunScriptWorker(Worker):
-    def __init__(self, *, devices = None, **kwargs):
+    def __init__(self, *, devices=None, **kwargs):
         super().__init__(**kwargs)
         self.devices = devices if devices else []
+
     """Worker that creates a fresh environment for each job.
 
     Each job gets its own isolated environment based on the job message configuration. The environment is cleaned up

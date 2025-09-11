@@ -193,4 +193,3 @@ class QueryWorkerStatusByUrlInput(BaseModel):
 
 class ClearJobSchemaQueueInput(BaseModel):
     job_schema_name: str
-

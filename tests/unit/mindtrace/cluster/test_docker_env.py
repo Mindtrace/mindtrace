@@ -70,7 +70,6 @@ class TestDockerEnvironment:
         assert env.working_dir is None
         assert env.container is None
 
-
     @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/test/cred/file.json"})
     def test_initialization_with_gcp(self):
         env = DockerEnvironment(image="test-image:latest")
@@ -79,9 +78,9 @@ class TestDockerEnvironment:
         assert env.environment == {"GOOGLE_APPLICATION_CREDENTIALS": "/tmp/keys/gcp_service_acc_key.json"}
         assert env.volumes == {
             "/test/cred/file.json": {
-                    "bind": "/tmp/keys/gcp_service_acc_key.json",
-                    "mode": "ro",
-                }
+                "bind": "/tmp/keys/gcp_service_acc_key.json",
+                "mode": "ro",
+            }
         }
         assert env.devices == []
         assert env.working_dir is None
@@ -116,7 +115,7 @@ class TestDockerEnvironment:
         # so asserting that it's not there to force me to fix this test at the same time
         call_args = mock_docker_client.return_value.containers.run.call_args
         # assert "device_requests" not in call_args[1]
-        device_requests = call_args[1]['device_requests']
+        device_requests = call_args[1]["device_requests"]
         assert len(device_requests) == 1
         assert device_requests[0].device_ids == ["0", "1"]
         assert device_requests[0].capabilities == [["gpu"]]

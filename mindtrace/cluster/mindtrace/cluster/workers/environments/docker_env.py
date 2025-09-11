@@ -25,10 +25,10 @@ class DockerEnvironment(Mindtrace):
         self.volumes = volumes or {}
         if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
             self.volumes[os.environ["GOOGLE_APPLICATION_CREDENTIALS"]] = {
-                    "bind": "/tmp/keys/gcp_service_acc_key.json",
-                    "mode": "ro",
-                }
-            self.environment["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/keys/gcp_service_acc_key.json" 
+                "bind": "/tmp/keys/gcp_service_acc_key.json",
+                "mode": "ro",
+            }
+            self.environment["GOOGLE_APPLICATION_CREDENTIALS"] = "/tmp/keys/gcp_service_acc_key.json"
         self.devices = devices if devices else []
         self.working_dir = working_dir
         self.container = None
@@ -68,7 +68,6 @@ class DockerEnvironment(Mindtrace):
                     command="sh",
                     stdin_open=True,
                 )
-
 
             return str(self.container.id)
 
