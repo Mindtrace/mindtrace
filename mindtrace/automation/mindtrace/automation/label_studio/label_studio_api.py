@@ -185,12 +185,12 @@ class LabelStudio(Mindtrace):
                 return p
         return None
 
-    def delete_project(self, *, project_id: Optional[int] = None, project_name: Optional[str] = None) -> None:
+    def delete_project(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> None:
         """Delete a project by ID or name.
 
         Args:
-            project_id: Project ID to delete
             project_name: Project name to delete
+            project_id: Project ID to delete
 
         Raises:
             ValueError: If neither project_id nor project_name is provided,
