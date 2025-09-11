@@ -1,9 +1,9 @@
 """Basler Camera Backend Module"""
 
 import asyncio
-from contextlib import asynccontextmanager
 import os
 import time
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
@@ -443,11 +443,11 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Failed to configure Basler camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
 
-    def get_image_quality_enhancement(self) -> bool:
+    async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool) -> bool:
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
         self.logger.info(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
@@ -1047,7 +1047,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error exporting configuration for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
 
-    def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """Set the Region of Interest (ROI) for image acquisition.
 
         Args:
@@ -1073,40 +1073,34 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConfigurationError(f"Invalid ROI offsets: ({x}, {y})")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            async with self._grabbing_suspended():
+                # Check bounds against camera capabilities before setting
+                max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
+                max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
+                max_offset_x = await self._sdk(self.camera.OffsetX.GetMax, timeout=self._op_timeout_s)
+                max_offset_y = await self._sdk(self.camera.OffsetY.GetMax, timeout=self._op_timeout_s)
+                
+                if width > max_width or height > max_height:
+                    raise CameraConfigurationError(f"ROI dimensions {width}x{height} out of range (max {max_width}x{max_height})")
+                if x > max_offset_x or y > max_offset_y:
+                    raise CameraConfigurationError(f"ROI offsets ({x}, {y}) out of range (max {max_offset_x}, {max_offset_y})")
 
-            # Check bounds against camera capabilities before setting
-            max_width = self.camera.Width.GetMax()
-            max_height = self.camera.Height.GetMax()
-            max_offset_x = self.camera.OffsetX.GetMax()
-            max_offset_y = self.camera.OffsetY.GetMax()
-            
-            if width > max_width or height > max_height:
-                raise CameraConfigurationError(f"ROI dimensions {width}x{height} out of range (max {max_width}x{max_height})")
-            if x > max_offset_x or y > max_offset_y:
-                raise CameraConfigurationError(f"ROI offsets ({x}, {y}) out of range (max {max_offset_x}, {max_offset_y})")
+                x_inc = await self._sdk(self.camera.OffsetX.GetInc, timeout=self._op_timeout_s)
+                y_inc = await self._sdk(self.camera.OffsetY.GetInc, timeout=self._op_timeout_s)
+                width_inc = await self._sdk(self.camera.Width.GetInc, timeout=self._op_timeout_s)
+                height_inc = await self._sdk(self.camera.Height.GetInc, timeout=self._op_timeout_s)
 
-            x_inc = self.camera.OffsetX.GetInc()
-            y_inc = self.camera.OffsetY.GetInc()
-            width_inc = self.camera.Width.GetInc()
-            height_inc = self.camera.Height.GetInc()
+                x = (x // x_inc) * x_inc
+                y = (y // y_inc) * y_inc
+                width = (width // width_inc) * width_inc
+                height = (height // height_inc) * height_inc
 
-            x = (x // x_inc) * x_inc
-            y = (y // y_inc) * y_inc
-            width = (width // width_inc) * width_inc
-            height = (height // height_inc) * height_inc
-
-            self.camera.Width.SetValue(width)
-            self.camera.Height.SetValue(height)
-            self.camera.OffsetX.SetValue(x)
-            self.camera.OffsetY.SetValue(y)
-
-            self.camera.StartGrabbing(self.grabbing_mode)
+                await self._sdk(self.camera.Width.SetValue, width, timeout=self._op_timeout_s)
+                await self._sdk(self.camera.Height.SetValue, height, timeout=self._op_timeout_s)
+                await self._sdk(self.camera.OffsetX.SetValue, x, timeout=self._op_timeout_s)
+                await self._sdk(self.camera.OffsetY.SetValue, y, timeout=self._op_timeout_s)
 
             self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
             return True
@@ -1117,7 +1111,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error setting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set ROI: {str(e)}")
 
-    def get_ROI(self) -> Dict[str, int]:
+    async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest settings.
 
         Returns:
@@ -1131,15 +1125,13 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
             roi = {
-                "x": self.camera.OffsetX.GetValue(),
-                "y": self.camera.OffsetY.GetValue(),
-                "width": self.camera.Width.GetValue(),
-                "height": self.camera.Height.GetValue(),
+                "x": await self._sdk(self.camera.OffsetX.GetValue, timeout=self._op_timeout_s),
+                "y": await self._sdk(self.camera.OffsetY.GetValue, timeout=self._op_timeout_s),
+                "width": await self._sdk(self.camera.Width.GetValue, timeout=self._op_timeout_s),
+                "height": await self._sdk(self.camera.Height.GetValue, timeout=self._op_timeout_s),
             }
 
             return roi
@@ -1148,7 +1140,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get ROI: {str(e)}")
 
-    def reset_ROI(self) -> bool:
+    async def reset_ROI(self) -> bool:
         """Reset ROI to maximum sensor area.
 
         Returns:
@@ -1162,27 +1154,22 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            if not self.camera.IsOpen():
-                self.camera.Open()
+            await self._ensure_open()
 
-            if self.camera.IsGrabbing():
-                self.camera.StopGrabbing()
+            async with self._grabbing_suspended():
+                await self._sdk(self.camera.OffsetX.SetValue, 0, timeout=self._op_timeout_s)
+                await self._sdk(self.camera.OffsetY.SetValue, 0, timeout=self._op_timeout_s)
 
-            self.camera.OffsetX.SetValue(0)
-            self.camera.OffsetY.SetValue(0)
+                max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
+                max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
 
-            max_width = self.camera.Width.GetMax()
-            max_height = self.camera.Height.GetMax()
+                width_inc = await self._sdk(self.camera.Width.GetInc, timeout=self._op_timeout_s)
+                height_inc = await self._sdk(self.camera.Height.GetInc, timeout=self._op_timeout_s)
+                max_width = (max_width // width_inc) * width_inc
+                max_height = (max_height // height_inc) * height_inc
 
-            width_inc = self.camera.Width.GetInc()
-            height_inc = self.camera.Height.GetInc()
-            max_width = (max_width // width_inc) * width_inc
-            max_height = (max_height // height_inc) * height_inc
-
-            self.camera.Width.SetValue(max_width)
-            self.camera.Height.SetValue(max_height)
-
-            self.camera.StartGrabbing(self.grabbing_mode)
+                await self._sdk(self.camera.Width.SetValue, max_width, timeout=self._op_timeout_s)
+                await self._sdk(self.camera.Height.SetValue, max_height, timeout=self._op_timeout_s)
 
             self.logger.info(f"ROI reset to maximum for camera '{self.camera_name}'")
             return True
@@ -1191,7 +1178,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error resetting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to reset ROI: {str(e)}")
 
-    def set_gain(self, gain: float) -> bool:
+    async def set_gain(self, gain: float) -> bool:
         """Set the camera's gain value.
 
         Args:
@@ -1209,18 +1196,16 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            min_gain, max_gain = self.get_gain_range()
+            min_gain, max_gain = await self.get_gain_range()
             
             if gain < min_gain or gain > max_gain:
                 raise CameraConfigurationError(
                     f"Gain {gain} outside valid range [{min_gain}, {max_gain}] for camera '{self.camera_name}'"
                 )
             
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            self.camera.Gain.SetValue(gain)
+            await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
             self.logger.info(f"Gain set to {gain} for camera '{self.camera_name}'")
             return True
 
@@ -1229,7 +1214,7 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to set gain for camera '{self.camera_name}': {str(e)}") from e
 
-    def get_gain(self) -> float:
+    async def get_gain(self) -> float:
         """Get current camera gain.
 
         Returns:
@@ -1243,11 +1228,9 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            gain = self.camera.Gain.GetValue()
+            gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
             return gain
 
         except Exception as e:
@@ -1255,7 +1238,7 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable default if gain feature is not available
             return 1.0  # Unity gain default
 
-    def get_gain_range(self) -> List[Union[int, float]]:
+    async def get_gain_range(self) -> List[Union[int, float]]:
         """Get camera gain range.
 
         Returns:
@@ -1269,12 +1252,10 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            min_gain = self.camera.Gain.GetMin()
-            max_gain = self.camera.Gain.GetMax()
+            min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
+            max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
             return [min_gain, max_gain]
 
         except Exception as e:
@@ -1282,7 +1263,145 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable defaults if gain feature is not available
             return [1.0, 16.0]  # Common gain range
 
-    def get_wb_range(self) -> List[str]:
+    # Network-related functionality for GigE cameras
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]) -> bool:
+        """Set GigE camera bandwidth limit in Mbps."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            return False
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'DeviceLinkThroughputLimitMode'):
+                if limit_mbps is not None and hasattr(self.camera, 'DeviceLinkThroughputLimit'):
+                    # Enable bandwidth limiting and set limit
+                    await self._sdk(self.camera.DeviceLinkThroughputLimitMode.SetValue, 'On', timeout=self._op_timeout_s)
+                    # Convert Mbps to bytes per second
+                    limit_bps = int(limit_mbps * 1024 * 1024 / 8)
+                    await self._sdk(self.camera.DeviceLinkThroughputLimit.SetValue, limit_bps, timeout=self._op_timeout_s)
+                    self.logger.info(f"Set bandwidth limit to {limit_mbps} Mbps for camera '{self.camera_name}'")
+                    return True
+                elif limit_mbps is None:
+                    # Disable bandwidth limiting
+                    await self._sdk(self.camera.DeviceLinkThroughputLimitMode.SetValue, 'Off', timeout=self._op_timeout_s)
+                    self.logger.info(f"Disabled bandwidth limit for camera '{self.camera_name}'")
+                    return True
+            else:
+                self.logger.warning(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error setting bandwidth limit for camera '{self.camera_name}': {str(e)}")
+            return False
+
+    async def get_bandwidth_limit(self) -> float:
+        """Get current bandwidth limit in Mbps."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            raise RuntimeError("Camera not initialized")
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'DeviceLinkThroughputLimitMode'):
+                mode = await self._sdk(self.camera.DeviceLinkThroughputLimitMode.GetValue, timeout=self._op_timeout_s)
+                if mode == 'Off':
+                    return 0.0  # No limit
+                
+                if hasattr(self.camera, 'DeviceLinkThroughputLimit'):
+                    limit_bps = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetValue, timeout=self._op_timeout_s)
+                    # Convert bytes per second to Mbps
+                    limit_mbps = (limit_bps * 8) / (1024 * 1024)
+                    return float(limit_mbps)
+            
+            return 0.0  # No limit or not supported
+            
+        except Exception as e:
+            self.logger.error(f"Error getting bandwidth limit for camera '{self.camera_name}': {str(e)}")
+            raise RuntimeError(f"Failed to get bandwidth limit: {str(e)}")
+
+    async def set_packet_size(self, size: int) -> bool:
+        """Set GigE packet size for network optimization."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            return False
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'GevSCPSPacketSize'):
+                await self._sdk(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
+                self.logger.info(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
+                return True
+            else:
+                self.logger.warning(f"Packet size control not supported for camera '{self.camera_name}'")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error setting packet size for camera '{self.camera_name}': {str(e)}")
+            return False
+
+    async def get_packet_size(self) -> int:
+        """Get current packet size."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            raise RuntimeError("Camera not initialized")
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'GevSCPSPacketSize'):
+                size = await self._sdk(self.camera.GevSCPSPacketSize.GetValue, timeout=self._op_timeout_s)
+                return int(size)
+            else:
+                raise NotImplementedError(f"Packet size query not supported for camera '{self.camera_name}'")
+
+        except Exception as e:
+            self.logger.error(f"Error getting packet size for camera '{self.camera_name}': {str(e)}")
+            raise RuntimeError(f"Failed to get packet size: {str(e)}")
+
+    async def set_inter_packet_delay(self, delay_ticks: int) -> bool:
+        """Set inter-packet delay for network traffic control."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            return False
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'GevSCPD'):
+                await self._sdk(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
+                self.logger.info(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
+                return True
+            else:
+                self.logger.warning(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Error setting inter-packet delay for camera '{self.camera_name}': {str(e)}")
+            return False
+
+    async def get_inter_packet_delay(self) -> int:
+        """Get current inter-packet delay."""
+        if not self.initialized or not self.camera:
+            self.logger.error(f"Camera '{self.camera_name}' not initialized")
+            raise RuntimeError("Camera not initialized")
+
+        try:
+            await self._ensure_open()
+            
+            if hasattr(self.camera, 'GevSCPD'):
+                delay = await self._sdk(self.camera.GevSCPD.GetValue, timeout=self._op_timeout_s)
+                return int(delay)
+            else:
+                raise NotImplementedError(f"Inter-packet delay query not supported for camera '{self.camera_name}'")
+
+        except Exception as e:
+            self.logger.error(f"Error getting inter-packet delay for camera '{self.camera_name}': {str(e)}")
+            raise RuntimeError(f"Failed to get inter-packet delay: {str(e)}")
+
+    async def get_wb_range(self) -> List[str]:
         """Get available white balance modes.
 
         Returns:
@@ -1304,12 +1423,10 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            min_width = self.camera.Width.GetMin()
-            max_width = self.camera.Width.GetMax()
+            min_width = await self._sdk(self.camera.Width.GetMin, timeout=self._op_timeout_s)
+            max_width = await self._sdk(self.camera.Width.GetMax, timeout=self._op_timeout_s)
             return [min_width, max_width]
 
         except Exception as e:
@@ -1330,19 +1447,17 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            min_height = self.camera.Height.GetMin()
-            max_height = self.camera.Height.GetMax()
+            min_height = await self._sdk(self.camera.Height.GetMin, timeout=self._op_timeout_s)
+            max_height = await self._sdk(self.camera.Height.GetMax, timeout=self._op_timeout_s)
             return [min_height, max_height]
 
         except Exception as e:
             self.logger.error(f"Error getting height range for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get height range: {str(e)}")
 
-    def get_pixel_format_range(self) -> List[str]:
+    async def get_pixel_format_range(self) -> List[str]:
         """Get available pixel formats.
 
         Returns:
@@ -1358,16 +1473,16 @@ class BaslerCameraBackend(CameraBackend):
             assert genicam is not None, "camera is initialized but genicam is not available"
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
             # Get available pixel formats from camera
             available_formats = []
-            pixel_format_entries = self.camera.PixelFormat.GetEntries()
+            pixel_format_entries = await self._sdk(self.camera.PixelFormat.GetEntries, timeout=self._op_timeout_s)
             for entry in pixel_format_entries:
-                if entry.GetAccessMode() == genicam.RW or entry.GetAccessMode() == genicam.RO:
-                    available_formats.append(entry.GetSymbolic())
+                access_mode = await self._sdk(entry.GetAccessMode, timeout=self._op_timeout_s)
+                if access_mode == genicam.RW or access_mode == genicam.RO:
+                    symbolic_name = await self._sdk(entry.GetSymbolic, timeout=self._op_timeout_s)
+                    available_formats.append(symbolic_name)
 
             return available_formats if available_formats else ["BGR8", "RGB8", "Mono8"]
 
@@ -1375,7 +1490,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting pixel format range for camera '{self.camera_name}': {str(e)}")
             return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
 
-    def get_current_pixel_format(self) -> str:
+    async def get_current_pixel_format(self) -> str:
         """Get current pixel format.
 
         Returns:
@@ -1389,18 +1504,16 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
-            pixel_format = self.camera.PixelFormat.GetValue()
+            pixel_format = await self._sdk(self.camera.PixelFormat.GetValue, timeout=self._op_timeout_s)
             return pixel_format
 
         except Exception as e:
             self.logger.error(f"Error getting current pixel format for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get current pixel format: {str(e)}")
 
-    def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str) -> bool:
         """Set pixel format.
 
         Args:
@@ -1418,27 +1531,18 @@ class BaslerCameraBackend(CameraBackend):
             raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
-            was_open = self.camera.IsOpen()
-            if not was_open:
-                self.camera.Open()
+            await self._ensure_open()
 
             # Check if pixel format is available
-            available_formats = self.get_pixel_format_range()
+            available_formats = await self.get_pixel_format_range()
             if pixel_format not in available_formats:
                 raise CameraConfigurationError(
                     f"Pixel format '{pixel_format}' not supported. Available formats: {available_formats}"
                 )
 
-            # Stop grabbing temporarily for pixel format change
-            was_grabbing = self.camera.IsGrabbing()
-            if was_grabbing:
-                self.camera.StopGrabbing()
-
-            self.camera.PixelFormat.SetValue(pixel_format)
-
-            # Restart grabbing if it was running
-            if was_grabbing:
-                self.camera.StartGrabbing(self.grabbing_mode)
+            # Use the grabbing suspension context manager for thread-safe pixel format change
+            async with self._grabbing_suspended():
+                await self._sdk(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
 
             self.logger.info(f"Pixel format set to '{pixel_format}' for camera '{self.camera_name}'")
             return True
