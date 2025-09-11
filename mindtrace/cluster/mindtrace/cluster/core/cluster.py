@@ -660,20 +660,21 @@ class Node(Service):
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
-        self.worker_status_local_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerStatusLocal,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.worker_status_local_database.initialize_sync()
-        self.worker_status_local_database.insert(
-            cluster_types.WorkerStatusLocal(
-                worker_id=str(self.id),
-                status=cluster_types.WorkerStatusEnum.IDLE,
-                job_id=None,
+        if kwargs.get("live_service", True):
+            self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
+            self.worker_status_local_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerStatusLocal,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
             )
-        )
+            self.worker_status_local_database.initialize_sync()
+            self.worker_status_local_database.insert(
+                cluster_types.WorkerStatusLocal(
+                    worker_id=str(self.id),
+                    status=cluster_types.WorkerStatusEnum.IDLE,
+                    job_id=None,
+                )
+            )
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint(
             "/run",
