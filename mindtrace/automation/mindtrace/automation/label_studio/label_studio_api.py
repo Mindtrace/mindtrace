@@ -97,7 +97,7 @@ class LabelStudio(Mindtrace):
         .. code-block:: python
 
             ls = LabelStudio(api_key="my-api-key")
-            projects = ls.list_projects()
+            projects = ls.get_projects()
             for p in projects:
                 print(p["id"], p["title"])
         """
@@ -166,7 +166,7 @@ class LabelStudio(Mindtrace):
             tuple[Optional[int], Optional[str]]: Latest project part number and title
         """
         self.logger.debug(f"Searching for latest project matching pattern: {pattern}")
-        projects = self.list_projects()
+        projects = self.get_projects()
         part_numbers = []
         for project in projects:
             match = re.search(pattern, project.title)
@@ -180,7 +180,7 @@ class LabelStudio(Mindtrace):
         return None, None
 
     def _get_project_by_name(self, project_name: str, page_size: int = 100, **query_params) -> LSProject:
-        for p in self.list_projects(page_size=page_size, **query_params):
+        for p in self.get_projects(page_size=page_size, **query_params):
             if getattr(p, "title", None) == project_name:
                 return p
         return None
@@ -208,27 +208,27 @@ class LabelStudio(Mindtrace):
         self.client.delete_project(project_id)
         self.logger.info("Project deleted successfully")
 
-    def delete_projects_by_prefix(self, title_prefix: str) -> list[str]:
-        """Delete all projects whose titles start with the specified prefix.
+    def delete_projects_by_prefix(self, project_name_prefix: str) -> list[str]:
+        """Delete all projects whose project_name start with the specified prefix.
 
         Args:
-            title_prefix: The prefix to match against project titles
+            project_name_prefix: The prefix to match against project project_names
 
         Returns:
-            List of deleted project titles
+            List of deleted project project_names
 
         Raises:
-            ValueError: If title_prefix is empty
+            ValueError: If project_name_prefix is empty
         """
-        if not title_prefix:
-            raise ValueError("title_prefix cannot be empty")
+        if not project_name_prefix:
+            raise ValueError("project_name_prefix cannot be empty")
 
-        self.logger.info(f"Finding projects with title prefix: {title_prefix}")
-        projects = self.list_projects()
-        matching_projects = [p for p in projects if p.title.startswith(title_prefix)]
+        self.logger.info(f"Finding projects with project_name prefix: {project_name_prefix}")
+        projects = self.get_projects()
+        matching_projects = [p for p in projects if p.title.startswith(project_name_prefix)]
 
         if not matching_projects:
-            self.logger.info(f"No projects found with title prefix: {title_prefix}")
+            self.logger.info(f"No projects found with project_name prefix: {project_name_prefix}")
             return []
 
         deleted_titles = []
@@ -722,34 +722,34 @@ class LabelStudio(Mindtrace):
 
     def export_projects_by_prefix(
         self,
-        title_prefix: str,
+        project_name_prefix: str,
         output_dir: str = "./export_output",
         export_type: str = "YOLO",
         download_resources: bool = True,
     ) -> list[str]:
-        """Export all projects whose titles start with the specified prefix.
+        """Export all projects whose project_names start with the specified prefix.
 
         Args:
-            title_prefix: The prefix to match against project titles
+            project_name_prefix: The prefix to match against project project_names
             output_dir: Base directory for exports
             export_type: Format to export in ('YOLO', 'JSON', 'CSV', etc.)
             download_resources: Whether to download images/resources
 
         Returns:
-            List of exported project titles
+            List of exported project project_names
 
         Raises:
-            ValueError: If title_prefix is empty
+            ValueError: If project_name_prefix is empty
         """
-        if not title_prefix:
-            raise ValueError("title_prefix cannot be empty")
+        if not project_name_prefix:
+            raise ValueError("project_name_prefix cannot be empty")
 
-        self.logger.info(f"Finding projects with title prefix: {title_prefix}")
-        projects = self.list_projects()
-        matching_projects = [p for p in projects if p.title.startswith(title_prefix)]
+        self.logger.info(f"Finding projects with project_name prefix: {project_name_prefix}")
+        projects = self.get_projects()
+        matching_projects = [p for p in projects if p.title.startswith(project_name_prefix)]
 
         if not matching_projects:
-            self.logger.info(f"No projects found with title prefix: {title_prefix}")
+            self.logger.info(f"No projects found with project_name prefix: {project_name_prefix}")
             return []
 
         exported_titles = []
