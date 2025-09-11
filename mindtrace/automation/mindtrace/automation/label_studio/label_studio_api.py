@@ -196,7 +196,8 @@ class LabelStudio(Mindtrace):
             ValueError: If neither project_id nor project_name is provided,
                       or if project with given name is not found
         """
-
+        if not project_name and not project_id:
+            raise ValueError("Must provide either project_name or project_id")
         if project_name:
             project = self._get_project_by_name(project_name)
             if not project:
