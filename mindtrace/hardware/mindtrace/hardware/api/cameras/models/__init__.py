@@ -1,6 +1,6 @@
 """Models for CameraManagerService API."""
 
-from .requests import (
+from mindtrace.hardware.api.cameras.models.requests import (
     # Backend & Discovery
     BackendFilterRequest,
     BandwidthLimitCameraRequest,
@@ -33,7 +33,7 @@ from .requests import (
     TriggerModeRequest,
     WhiteBalanceRequest,
 )
-from .responses import (
+from mindtrace.hardware.api.cameras.models.responses import (
     ActiveCamerasResponse,
     # Backend & Discovery
     BackendInfo,
