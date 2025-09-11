@@ -32,7 +32,7 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 
 
 class ClusterManager(Gateway):
-    def __init__(self, minio_endpoint = None, **kwargs):
+    def __init__(self, minio_endpoint=None, **kwargs):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
@@ -54,7 +54,9 @@ class ClusterManager(Gateway):
             )
             self.worker_auto_connect_database.initialize_sync()
             self.worker_status_database = UnifiedMindtraceODMBackend(
-                unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+                unified_model_cls=cluster_types.WorkerStatus,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
             )
             self.worker_status_database.initialize_sync()
             self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"])

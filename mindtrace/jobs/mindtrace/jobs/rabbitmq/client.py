@@ -39,7 +39,9 @@ class RabbitMQClient(OrchestratorBackend):
         self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
 
     def create_connection(self):
-        connection = RabbitMQConnection(host=self._host, port=self._port, username=self._username, password=self._password)
+        connection = RabbitMQConnection(
+            host=self._host, port=self._port, username=self._username, password=self._password
+        )
         connection.connect()
         return connection.get_channel()
 
