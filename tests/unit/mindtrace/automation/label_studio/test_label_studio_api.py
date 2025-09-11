@@ -6,6 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
+from mindtrace.automation.label_studio.exceptions import (
+    ProjectAlreadyExistsError,
+    ProjectNotFoundError,
+    StorageAlreadyExistsError,
+)
 
 
 class FakeProject:
@@ -63,7 +68,7 @@ class FakeLS(LabelStudio):
         if project_name is not None:
             proj = getattr(self, "_project_by_name", None)
             if proj is None:
-                raise ValueError(f"No project found with name: {project_name}")
+                raise ProjectNotFoundError(f"No project found with name: {project_name}")
             return proj
         if project_id is not None:
             return getattr(self, "_project", FakeProject())
@@ -80,7 +85,7 @@ class FakeLS(LabelStudio):
 def test_create_project_raises_if_exists():
     ls = FakeLS()
     ls._project_by_name = FakeProject(project_id=5, title="exists")
-    with pytest.raises(ValueError):
+    with pytest.raises(ProjectAlreadyExistsError):
         ls.create_project(project_name="exists", description="d")
 
 
@@ -91,7 +96,7 @@ def test_get_project_by_name_success_and_not_found():
     assert ls.get_project(project_name="foo").id == 10
 
     ls._project_by_name = None
-    with pytest.raises(ValueError):
+    with pytest.raises(ProjectNotFoundError):
         ls.get_project(project_name="foo")
 
 
@@ -133,7 +138,7 @@ def test_create_gcp_storage_duplicate_title_raises(tmp_path: Path, monkeypatch):
     creds_path.write_text("{}")
     ls.config["MINDTRACE_GCP_CREDENTIALS_PATH"] = str(creds_path)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(StorageAlreadyExistsError):
         ls.create_gcp_storage(project_id=2, bucket="bucket", prefix="prefix", storage_type="import")
 
 
