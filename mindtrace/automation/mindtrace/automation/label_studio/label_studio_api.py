@@ -198,14 +198,10 @@ class LabelStudio(Mindtrace):
         """
         if not project_name and not project_id:
             raise ValueError("Must provide either project_name or project_id")
-        if project_name:
-            project = self._get_project_by_name(project_name)
-            if not project:
-                raise ValueError(f"No project found with name: {project_name}")
-            project_id = project.id
 
-        self.logger.info(f"Deleting project with ID: {project_id}")
-        self.client.delete_project(project_id)
+        project = self.get_project(project_name=project_name, project_id=project_id)
+        self.logger.info(f"Deleting project with ID: {project.id}")
+        self.client.delete_project(project.id)
         self.logger.info("Project deleted successfully")
 
     def delete_projects_by_prefix(self, project_name_prefix: str) -> list[str]:
