@@ -64,8 +64,18 @@ def test_discover_details_records_sync():
 def test_open_default_without_mocks_raises():
     mgr = CameraManager(include_mocks=False)
     try:
-        with pytest.raises(CameraNotFoundError):
-            mgr.open(None)
+        # Check if real cameras are available
+        available_cameras = mgr.discover()
+        if not available_cameras:
+            # Only test for exception if no real cameras are present
+            with pytest.raises(CameraNotFoundError):
+                mgr.open(None)
+        else:
+            # If real cameras exist, verify that open(None) succeeds and returns a camera
+            cam = mgr.open(None)
+            assert cam is not None
+            assert cam.name in available_cameras
+            mgr.close(cam.name)
     finally:
         mgr.close()
 
@@ -90,17 +100,31 @@ def test_max_concurrent_captures_property_passthrough():
         mgr.close()
 
 
-def test_diagnostics_after_open():
+def test_diagnostics_after_open(monkeypatch):
+    """Test diagnostics with controlled mock cameras."""
     mgr = CameraManager(include_mocks=True)
+    
+    # Create controlled mock cameras
+    mock_cameras = ["MockBasler:TestCam1", "MockBasler:TestCam2"]
+    def mock_discover(include_mocks=True, backends=None, details=False):
+        return mock_cameras if include_mocks else []
+    
+    # Patch both class method and instance method
+    monkeypatch.setattr(CameraManager, "discover", classmethod(lambda cls, **kwargs: mock_discover(**kwargs)))
+    monkeypatch.setattr(mgr, "discover", mock_discover)
+    
     try:
-        names = [n for n in CameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")][:2]
-        if not names:
-            pytest.skip("no mocks discovered")
-        res = mgr.open(names)
-        assert set(res.keys()) == set(names)
+        res = mgr.open(mock_cameras)
+        assert set(res.keys()) == set(mock_cameras)
         d = mgr.diagnostics()
         assert isinstance(d, dict)
-        assert d["active_cameras"] == len(names)
+        assert d["active_cameras"] == len(mock_cameras)
+        
+        # Test other diagnostic fields
+        assert "max_concurrent_captures" in d
+        assert "gige_cameras" in d
+        assert "bandwidth_management_enabled" in d
+        assert "recommended_settings" in d
     finally:
         mgr.close()
 

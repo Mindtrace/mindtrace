@@ -703,7 +703,7 @@ class TestBaslerCameraBackendConfiguration:
         """Test setting gain."""
         await basler_camera.initialize()
         
-        result = basler_camera.set_gain(5.0)
+        result = await basler_camera.set_gain(5.0)
         assert result is True
         assert basler_camera.camera.gain == 5.0
     
@@ -713,23 +713,25 @@ class TestBaslerCameraBackendConfiguration:
         await basler_camera.initialize()
         
         with pytest.raises(CameraConfigurationError, match="Gain.*outside valid range"):
-            basler_camera.set_gain(1000)  # Way too high
+            await basler_camera.set_gain(1000)  # Way too high
     
-    def test_get_gain(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_gain(self, basler_camera):
         """Test getting gain."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         basler_camera.camera.gain = 3.5
         
-        gain = basler_camera.get_gain()
+        gain = await basler_camera.get_gain()
         assert gain == 3.5
     
-    def test_get_gain_range(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_gain_range(self, basler_camera):
         """Test getting gain range."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
-        gain_range = basler_camera.get_gain_range()
+        gain_range = await basler_camera.get_gain_range()
         assert gain_range == [0.0, 20.0]  # Range from our mock
 
 
@@ -776,25 +778,28 @@ class TestBaslerCameraBackendTriggerMode:
 class TestBaslerCameraBackendROI:
     """Test ROI (Region of Interest) functionality."""
     
-    def test_set_roi_success(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_set_roi_success(self, basler_camera):
         """Test setting ROI."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
-        result = basler_camera.set_ROI(100, 100, 800, 600)
+        result = await basler_camera.set_ROI(100, 100, 800, 600)
         assert result is True
         assert basler_camera.camera.width == 800
         assert basler_camera.camera.height == 600
     
-    def test_set_roi_invalid_dimensions(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_set_roi_invalid_dimensions(self, basler_camera):
         """Test setting ROI with invalid dimensions."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
         with pytest.raises(CameraConfigurationError, match="ROI dimensions.*out of range"):
-            basler_camera.set_ROI(0, 0, 3000, 2000)  # Too large
+            await basler_camera.set_ROI(0, 0, 3000, 2000)  # Too large
     
-    def test_get_roi(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_roi(self, basler_camera):
         """Test getting ROI."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
@@ -804,15 +809,16 @@ class TestBaslerCameraBackendROI:
         basler_camera.camera.width = 640
         basler_camera.camera.height = 480
         
-        roi = basler_camera.get_ROI()
+        roi = await basler_camera.get_ROI()
         assert roi == {"x": 50, "y": 50, "width": 640, "height": 480}
     
-    def test_reset_roi(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_reset_roi(self, basler_camera):
         """Test resetting ROI."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
-        result = basler_camera.reset_ROI()
+        result = await basler_camera.reset_ROI()
         assert result is True
         assert basler_camera.camera.width == 1920
         assert basler_camera.camera.height == 1080
@@ -821,38 +827,42 @@ class TestBaslerCameraBackendROI:
 class TestBaslerCameraBackendPixelFormat:
     """Test pixel format functionality."""
     
-    def test_set_pixel_format_success(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_set_pixel_format_success(self, basler_camera):
         """Test setting pixel format."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
-        result = basler_camera.set_pixel_format("RGB8")
+        result = await basler_camera.set_pixel_format("RGB8")
         assert result is True
         assert basler_camera.camera.pixel_format == "RGB8"
     
-    def test_set_pixel_format_invalid(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_set_pixel_format_invalid(self, basler_camera):
         """Test setting invalid pixel format."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
         with pytest.raises(CameraConfigurationError, match="Pixel format.*not supported"):
-            basler_camera.set_pixel_format("INVALID_FORMAT")
+            await basler_camera.set_pixel_format("INVALID_FORMAT")
     
-    def test_get_pixel_format(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_pixel_format(self, basler_camera):
         """Test getting pixel format."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         basler_camera.camera.pixel_format = "Mono8"
         
-        format = basler_camera.get_current_pixel_format()
+        format = await basler_camera.get_current_pixel_format()
         assert format == "Mono8"
     
-    def test_get_pixel_format_range(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_pixel_format_range(self, basler_camera):
         """Test getting available pixel formats."""
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
         
-        formats = basler_camera.get_pixel_format_range()
+        formats = await basler_camera.get_pixel_format_range()
         assert isinstance(formats, list)
         assert "BGR8" in formats
         assert "RGB8" in formats
@@ -905,9 +915,10 @@ class TestBaslerCameraBackendWhiteBalance:
         with pytest.raises(CameraConnectionError, match="not initialized"):
             await basler_camera.set_auto_wb_once("off")
     
-    def test_get_wb_range(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_wb_range(self, basler_camera):
         """Test getting available white balance modes."""
-        wb_range = basler_camera.get_wb_range()
+        wb_range = await basler_camera.get_wb_range()
         assert isinstance(wb_range, list)
         assert "off" in wb_range
         assert "once" in wb_range
@@ -1115,23 +1126,25 @@ class TestBaslerCameraBackendAdvancedSDKOperations:
 class TestBaslerCameraBackendImageEnhancement:
     """Test image enhancement functionality."""
     
-    def test_set_image_quality_enhancement(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_set_image_quality_enhancement(self, basler_camera):
         """Test enabling/disabling image enhancement."""
         basler_camera.initialized = True
         
-        result = basler_camera.set_image_quality_enhancement(True)
+        result = await basler_camera.set_image_quality_enhancement(True)
         assert result is True
-        assert basler_camera.get_image_quality_enhancement() is True
+        assert await basler_camera.get_image_quality_enhancement() is True
         
-        result = basler_camera.set_image_quality_enhancement(False)
+        result = await basler_camera.set_image_quality_enhancement(False)
         assert result is True
-        assert basler_camera.get_image_quality_enhancement() is False
+        assert await basler_camera.get_image_quality_enhancement() is False
     
-    def test_get_image_quality_enhancement(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_get_image_quality_enhancement(self, basler_camera):
         """Test getting image enhancement status."""
-        basler_camera.set_image_quality_enhancement(True)
+        await basler_camera.set_image_quality_enhancement(True)
         
-        result = basler_camera.get_image_quality_enhancement()
+        result = await basler_camera.get_image_quality_enhancement()
         assert result is True
     
     @pytest.mark.asyncio
@@ -1143,7 +1156,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         
         # Enable enhancement
-        basler_camera.set_image_quality_enhancement(True)
+        await basler_camera.set_image_quality_enhancement(True)
         
         # Enhance image
         enhanced_image = await basler_camera._enhance_image(test_image)
@@ -1158,7 +1171,7 @@ class TestBaslerCameraBackendImageEnhancement:
         await basler_camera.initialize()
         
         # Disable enhancement
-        basler_camera.set_image_quality_enhancement(False)
+        await basler_camera.set_image_quality_enhancement(False)
         
         # Test that capture works when enhancement is disabled
         success, image = await basler_camera.capture()
@@ -1175,7 +1188,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8)
         
         # Enable enhancement
-        basler_camera.set_image_quality_enhancement(True)
+        await basler_camera.set_image_quality_enhancement(True)
         
         # Mock cv2.createCLAHE to raise error
         import cv2
@@ -1194,7 +1207,7 @@ class TestBaslerCameraBackendImageEnhancement:
         test_image = np.random.randint(0, 255, (100, 100), dtype=np.uint8)
         
         # Enable enhancement
-        basler_camera.set_image_quality_enhancement(True)
+        await basler_camera.set_image_quality_enhancement(True)
         
         # Mock cv2.cvtColor to handle grayscale properly  
         import cv2
@@ -1421,7 +1434,7 @@ class TestBaslerCameraBackendAdvancedErrorScenarios:
         # Mock pixel format to return empty entries
         monkeypatch.setattr(basler_camera.camera.PixelFormat, "GetEntries", lambda: [])
         
-        formats = basler_camera.get_pixel_format_range()
+        formats = await basler_camera.get_pixel_format_range()
         # Should return default formats when entries are empty
         assert "BGR8" in formats
         assert "RGB8" in formats
@@ -1508,7 +1521,7 @@ class TestBaslerCameraBackendConcurrentOperations:
         assert results[3] is True  # exposure setting
         
         # Test sync method separately
-        gain_result = basler_camera.set_gain(2.0)
+        gain_result = await basler_camera.set_gain(2.0)
         assert gain_result is True
     
     @pytest.mark.asyncio
@@ -1662,7 +1675,7 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         assert result is True
         
         # Verify successful settings were applied
-        assert basler_camera.get_gain() == 2.0
+        assert await basler_camera.get_gain() == 2.0
     
     @pytest.mark.asyncio
     async def test_config_version_compatibility(self, basler_camera, tmp_path):
@@ -1768,7 +1781,8 @@ class TestBaslerCameraBackendMissingCoverageLines:
             with pytest.raises(CameraCaptureError):
                 await basler_camera._enhance_image(test_image)
     
-    def test_roi_error_branches(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_roi_error_branches(self, basler_camera):
         """Test ROI setting error branches."""
         basler_camera.initialized = True
         basler_camera.camera = Mock()
@@ -1776,9 +1790,10 @@ class TestBaslerCameraBackendMissingCoverageLines:
         # Test when Width feature is None
         basler_camera.camera.Width = None
         with pytest.raises(HardwareOperationError):
-            basler_camera.set_ROI(0, 0, 100, 100)
+            await basler_camera.set_ROI(0, 0, 100, 100)
     
-    def test_gain_error_branches(self, basler_camera):
+    @pytest.mark.asyncio
+    async def test_gain_error_branches(self, basler_camera):
         """Test gain setting error branches."""
         basler_camera.initialized = True
         basler_camera.camera = Mock()
@@ -1786,7 +1801,7 @@ class TestBaslerCameraBackendMissingCoverageLines:
         # Test when Gain feature is None  
         basler_camera.camera.Gain = None
         with pytest.raises(HardwareOperationError):
-            basler_camera.set_gain(2.0)
+            await basler_camera.set_gain(2.0)
     
     @pytest.mark.asyncio  
     async def test_close_error_branches(self, basler_camera):
@@ -1806,7 +1821,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
     """Test specific uncovered error paths in BaslerCameraBackend."""
 
     @pytest.mark.asyncio
-    async def test_initialization_config_parsing_error(self, monkeypatch):
+    async def test_initialization_config_parsing_error(self, mock_pypylon, monkeypatch):
         """Test error handling during config parsing in initialization."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -1926,7 +1941,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             await basler_camera._sdk(lambda: None)
 
     @pytest.mark.asyncio
-    async def test_config_timeout_edge_cases(self, monkeypatch):
+    async def test_config_timeout_edge_cases(self, mock_pypylon, monkeypatch):
         """Test various edge cases in config timeout parsing."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -1980,7 +1995,7 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
             await basler_camera._sdk(slow_operation, timeout=0.001)  # Very short timeout
 
     @pytest.mark.asyncio
-    async def test_discovery_exception_during_device_enumeration(self, monkeypatch):
+    async def test_discovery_exception_during_device_enumeration(self, mock_pypylon, monkeypatch):
         """Test exception handling during device enumeration in discovery."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -2004,7 +2019,7 @@ class TestBaslerCameraBackendInitializePylonCheck:
     """Test initialize() method when pypylon is not available."""
     
     @pytest.mark.asyncio
-    async def test_initialize_pypylon_not_available(self, monkeypatch):
+    async def test_initialize_pypylon_not_available(self, mock_pypylon, monkeypatch):
         """Test that initialize() raises SDKNotAvailableError when PYPYLON_AVAILABLE is False."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import SDKNotAvailableError
@@ -3809,7 +3824,8 @@ class TestBaslerCameraBackendROIOperations:
         warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
         assert any("Could not get ROI offsets" in msg for msg in warning_calls)
 
-    def test_set_roi_parameter_validation(self, mock_pypylon):
+    @pytest.mark.asyncio
+    async def test_set_roi_parameter_validation(self, mock_pypylon):
         """Test set_ROI method parameter validation and bounds checking."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import CameraConfigurationError
@@ -3828,7 +3844,7 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test invalid ROI dimensions (width <= 0)
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(0, 0, 0, 100)
+            await camera.set_ROI(0, 0, 0, 100)
         
         error_msg = str(exc_info.value)
         assert "Invalid ROI dimensions" in error_msg
@@ -3836,7 +3852,7 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test invalid ROI dimensions (height <= 0)
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(0, 0, 100, 0)
+            await camera.set_ROI(0, 0, 100, 0)
         
         error_msg = str(exc_info.value)
         assert "Invalid ROI dimensions" in error_msg
@@ -3844,7 +3860,7 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test invalid ROI offsets (x < 0)
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(-1, 0, 100, 100)
+            await camera.set_ROI(-1, 0, 100, 100)
         
         error_msg = str(exc_info.value)
         assert "Invalid ROI offsets" in error_msg
@@ -3852,13 +3868,14 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test invalid ROI offsets (y < 0)
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(0, -1, 100, 100)
+            await camera.set_ROI(0, -1, 100, 100)
         
         error_msg = str(exc_info.value)
         assert "Invalid ROI offsets" in error_msg
         assert "(0, -1)" in error_msg
 
-    def test_set_roi_bounds_checking(self, mock_pypylon):
+    @pytest.mark.asyncio
+    async def test_set_roi_bounds_checking(self, mock_pypylon):
         """Test set_ROI method bounds checking against camera capabilities."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         from mindtrace.hardware.core.exceptions import CameraConfigurationError
@@ -3899,7 +3916,7 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test ROI dimensions out of range
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(0, 0, 2000, 1000)  # Width > max_width
+            await camera.set_ROI(0, 0, 2000, 1000)  # Width > max_width
         
         error_msg = str(exc_info.value)
         assert "ROI dimensions" in error_msg
@@ -3907,13 +3924,14 @@ class TestBaslerCameraBackendROIOperations:
         
         # Test ROI offsets out of range
         with pytest.raises(CameraConfigurationError) as exc_info:
-            camera.set_ROI(1200, 0, 100, 100)  # x > max_offset_x
+            await camera.set_ROI(1200, 0, 100, 100)  # x > max_offset_x
         
         error_msg = str(exc_info.value)
         assert "ROI offsets" in error_msg
         assert "out of range" in error_msg
 
-    def test_get_roi_method(self, mock_pypylon):
+    @pytest.mark.asyncio
+    async def test_get_roi_method(self, mock_pypylon):
         """Test get_ROI method for retrieving current ROI settings."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -3947,7 +3965,7 @@ class TestBaslerCameraBackendROIOperations:
         mock_camera.Height = mock_height
         
         # Get ROI settings
-        roi = camera.get_ROI()
+        roi = await camera.get_ROI()
         
         # Verify ROI values
         assert roi["x"] == 100
@@ -3955,7 +3973,8 @@ class TestBaslerCameraBackendROIOperations:
         assert roi["width"] == 1280
         assert roi["height"] == 720
 
-    def test_reset_roi_method(self, mock_pypylon):
+    @pytest.mark.asyncio
+    async def test_reset_roi_method(self, mock_pypylon):
         """Test reset_ROI method for resetting to maximum sensor area."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -3996,7 +4015,7 @@ class TestBaslerCameraBackendROIOperations:
         camera.logger = mock_logger
         
         # Reset ROI
-        result = camera.reset_ROI()
+        result = await camera.reset_ROI()
         
         # Verify result
         assert result is True
@@ -4012,7 +4031,8 @@ class TestBaslerCameraBackendROIOperations:
         info_msg = mock_logger.info.call_args[0][0]
         assert "ROI reset to maximum" in info_msg
 
-    def test_set_roi_increment_adjustment(self, mock_pypylon):
+    @pytest.mark.asyncio
+    async def test_set_roi_increment_adjustment(self, mock_pypylon):
         """Test that set_ROI adjusts values according to camera increment requirements."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         
@@ -4055,7 +4075,7 @@ class TestBaslerCameraBackendROIOperations:
         mock_camera.OffsetY = mock_offset_y
         
         # Set ROI with values that need adjustment
-        result = camera.set_ROI(105, 203, 1283, 721)  # Values not aligned with increments
+        result = await camera.set_ROI(105, 203, 1283, 721)  # Values not aligned with increments
         
         # Verify result
         assert result is True
@@ -4364,7 +4384,7 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
     async def test_set_pixel_format_exception_handling(self, mock_pypylon):
         """Test pixel format setting exception handling."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import HardwareOperationError
+        from mindtrace.hardware.core.exceptions import HardwareOperationError, CameraConnectionError
         
         # Unpack the mock tuple
         mock_pylon, mock_genicam = mock_pypylon
@@ -4373,23 +4393,21 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
         
-        # Mock the camera to raise exception during pixel format setting
-        # We need to mock the actual camera methods that are called
-        original_is_open = camera.camera.IsOpen
-        original_open = camera.camera.Open
-        
+        # Mock the camera to be open but fail during pixel format setting
         def mock_is_open():
-            return False
-        
-        def mock_open():
-            raise Exception("Open failed")
-        
+            return True
+            
         camera.camera.IsOpen = mock_is_open
-        camera.camera.Open = mock_open
         
-        # Set pixel format should raise HardwareOperationError
+        # Mock pixel format setting to raise exception
+        def mock_pixel_format_setter(value):
+            raise Exception("Pixel format setting failed")
+        
+        camera.camera.PixelFormat.SetValue = mock_pixel_format_setter
+        
+        # Set pixel format should raise HardwareOperationError when pixel format setting fails
         with pytest.raises(HardwareOperationError) as exc_info:
-            camera.set_pixel_format("BGR8")
+            await camera.set_pixel_format("BGR8")
         
         assert "Failed to set pixel format" in str(exc_info.value)
         
@@ -4424,7 +4442,7 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         
         # Get current pixel format should raise HardwareOperationError
         with pytest.raises(HardwareOperationError) as exc_info:
-            camera.get_current_pixel_format()
+            await camera.get_current_pixel_format()
         
         assert "Failed to get current pixel format" in str(exc_info.value)
         
@@ -4452,7 +4470,7 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera._sdk = mock_sdk
         
         # Get pixel format range should return default formats when camera operations fail
-        result = camera.get_pixel_format_range()
+        result = await camera.get_pixel_format_range()
         expected_defaults = ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
         assert result == expected_defaults
         
@@ -4471,23 +4489,21 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
         camera = BaslerCameraBackend("12345670")
         await camera.initialize()
         
-        # Mock the camera to raise exception during pixel format setting
-        # We need to mock the actual camera methods that are called
-        original_is_open = camera.camera.IsOpen
-        original_open = camera.camera.Open
-        
+        # Mock the camera to be open but fail during pixel format setting
         def mock_is_open():
-            return False
-        
-        def mock_open():
-            raise Exception("Open failed")
-        
+            return True
+            
         camera.camera.IsOpen = mock_is_open
-        camera.camera.Open = mock_open
         
-        # Set pixel format should raise HardwareOperationError when camera operations fail
+        # Mock pixel format setting to raise exception
+        def mock_pixel_format_setter(value):
+            raise Exception("Pixel format setting failed")
+        
+        camera.camera.PixelFormat.SetValue = mock_pixel_format_setter
+        
+        # Set pixel format should raise HardwareOperationError when pixel format setting fails
         with pytest.raises(HardwareOperationError) as exc_info:
-            camera.set_pixel_format("BGR8")
+            await camera.set_pixel_format("BGR8")
         
         assert "Failed to set pixel format" in str(exc_info.value)
         
