@@ -442,20 +442,15 @@ class LabelStudio(Mindtrace):
             list: A list of Label Studio Annotation objects
         """
         project = self.get_project(project_name=project_name, project_id=project_id)
-        try:
-            if task_id:
-                return project.get_task(task_id).get("annotations", [])
-            else:
-                # Use the tasks API to get annotations
-                tasks = project.get_tasks()
-                annotations = []
-                for task in tasks:
-                    task_annotations = task.get("annotations", [])
-                    annotations.extend(task_annotations)
-                return annotations
-        except Exception as e:
-            self.logger.error(f"Could not get annotations using get_annotations(): {e}")
-            return []
+        if task_id:
+            return project.get_task(task_id).get("annotations", [])
+        # Use the tasks API to get annotations
+        tasks = project.get_tasks()
+        annotations = []
+        for task in tasks:
+            task_annotations = task.get("annotations", [])
+            annotations.extend(task_annotations)
+        return annotations
 
     def export_annotations(
         self,
