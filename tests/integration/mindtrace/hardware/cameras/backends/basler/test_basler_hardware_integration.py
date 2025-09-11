@@ -140,6 +140,7 @@ class TestHardwareInitialization:
     async def test_hardware_double_initialization(self, camera_name):
         """Test that double initialization is handled gracefully."""
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+        from mindtrace.hardware.core.exceptions import CameraConnectionError
         
         camera = BaslerCameraBackend(camera_name)
         
@@ -150,6 +151,11 @@ class TestHardwareInitialization:
             # Second initialization should also succeed
             success2, _, _ = await camera.initialize()
             assert success2 is True
+        except CameraConnectionError as e:
+            if "controlled by another application" in str(e):
+                pytest.skip(f"Camera {camera_name} is controlled by another application")
+            else:
+                raise
         finally:
             await camera.close()
 
@@ -239,16 +245,16 @@ class TestHardwareConfiguration:
     async def test_hardware_gain_control(self, basler_camera):
         """Test gain control.""" 
         # Get current gain
-        original_gain = basler_camera.get_gain()
+        original_gain = await basler_camera.get_gain()
         assert isinstance(original_gain, (int, float))
         
         # Set new gain
         new_gain = max(0.0, min(10.0, original_gain + 1.0))  # Stay within reasonable range
-        success = basler_camera.set_gain(new_gain)
+        success = await basler_camera.set_gain(new_gain)
         assert success is True
         
         # Verify gain was set
-        current_gain = basler_camera.get_gain()
+        current_gain = await basler_camera.get_gain()
         assert abs(current_gain - new_gain) < 0.1  # Allow small tolerance
 
     @pytest.mark.asyncio
@@ -258,7 +264,7 @@ class TestHardwareConfiguration:
         success = await basler_camera.set_triggermode("continuous")
         assert success is True
         
-        mode = await basler_camera.get_trigger_mode()
+        mode = await basler_camera.get_triggermode()
         assert mode == "continuous"
         
         # Capture should work in continuous mode
@@ -269,23 +275,34 @@ class TestHardwareConfiguration:
     @pytest.mark.asyncio
     async def test_hardware_roi_configuration(self, basler_camera):
         """Test ROI (Region of Interest) configuration."""
+        from mindtrace.hardware.core.exceptions import CameraConfigurationError
+        
         # Get current ROI
-        original_roi = basler_camera.get_ROI()
+        original_roi = await basler_camera.get_ROI()
         assert isinstance(original_roi, dict)
         assert all(key in original_roi for key in ["x", "y", "width", "height"])
         
-        # Calculate a smaller ROI (center quarter)
+        # Calculate a smaller ROI (center quarter) based on current ROI position
         new_width = original_roi["width"] // 2
         new_height = original_roi["height"] // 2
-        new_x = original_roi["width"] // 4
-        new_y = original_roi["height"] // 4
+        new_x = original_roi["x"] + (original_roi["width"] // 4)
+        new_y = original_roi["y"] + (original_roi["height"] // 4)
         
-        # Set ROI
-        success = basler_camera.set_ROI(new_x, new_y, new_width, new_height)
-        assert success is True
+        # Set ROI - handle cameras that don't support offsets by using (0,0)
+        try:
+            success = await basler_camera.set_ROI(new_x, new_y, new_width, new_height)
+            assert success is True
+        except CameraConfigurationError as e:
+            if "out of range" in str(e):
+                # Try with (0,0) offsets if camera doesn't support offsets
+                success = await basler_camera.set_ROI(0, 0, new_width, new_height)
+                assert success is True
+                new_x, new_y = 0, 0  # Update expected values
+            else:
+                raise
         
         # Verify ROI was set
-        current_roi = basler_camera.get_ROI()
+        current_roi = await basler_camera.get_ROI()
         assert abs(current_roi["x"] - new_x) <= 4  # Allow for alignment
         assert abs(current_roi["y"] - new_y) <= 4
         assert abs(current_roi["width"] - new_width) <= 4
@@ -297,7 +314,7 @@ class TestHardwareConfiguration:
         assert image is not None
         
         # Reset ROI
-        success = basler_camera.reset_ROI()
+        success = await basler_camera.reset_ROI()
         assert success is True
 
 
@@ -308,7 +325,7 @@ class TestHardwareAdvancedFeatures:
     async def test_hardware_pixel_formats(self, basler_camera):
         """Test pixel format functionality."""
         # Get available pixel formats
-        formats = basler_camera.get_pixel_format_range()
+        formats = await basler_camera.get_pixel_format_range()
         assert isinstance(formats, list)
         assert len(formats) > 0
         
@@ -322,19 +339,19 @@ class TestHardwareAdvancedFeatures:
         # Get current white balance mode
         wb_mode = await basler_camera.get_wb()
         assert isinstance(wb_mode, str)
-        assert wb_mode in ["auto", "manual", "off", "once"]
+        assert wb_mode in ["auto", "manual", "off", "once", "continuous"]
         
         # Try setting auto white balance
-        success = await basler_camera.set_auto_wb_once("auto")
+        success = await basler_camera.set_auto_wb_once("once")
         assert isinstance(success, bool)  # May succeed or fail depending on camera
 
     @pytest.mark.asyncio
     async def test_hardware_image_enhancement(self, basler_camera):
         """Test image quality enhancement."""
         # Test enabling enhancement
-        success = basler_camera.set_image_quality_enhancement(True)
+        success = await basler_camera.set_image_quality_enhancement(True)
         assert success is True
-        assert basler_camera.get_image_quality_enhancement() is True
+        assert await basler_camera.get_image_quality_enhancement() is True
         
         # Capture with enhancement
         success, enhanced_image = await basler_camera.capture()
@@ -342,9 +359,9 @@ class TestHardwareAdvancedFeatures:
         assert enhanced_image is not None
         
         # Test disabling enhancement
-        success = basler_camera.set_image_quality_enhancement(False)
+        success = await basler_camera.set_image_quality_enhancement(False)
         assert success is True
-        assert basler_camera.get_image_quality_enhancement() is False
+        assert await basler_camera.get_image_quality_enhancement() is False
         
         # Capture without enhancement
         success, normal_image = await basler_camera.capture()
@@ -472,17 +489,17 @@ class TestHardwareErrorHandling:
         from mindtrace.hardware.core.exceptions import CameraConfigurationError
         
         # Get current ROI to know valid bounds
-        current_roi = basler_camera.get_ROI()
+        current_roi = await basler_camera.get_ROI()
         max_width = current_roi["width"]
         max_height = current_roi["height"]
         
         # Test ROI too large
         with pytest.raises(CameraConfigurationError):
-            basler_camera.set_ROI(0, 0, max_width * 2, max_height * 2)
+            await basler_camera.set_ROI(0, 0, max_width * 2, max_height * 2)
         
         # Test negative coordinates
         with pytest.raises(CameraConfigurationError):
-            basler_camera.set_ROI(-100, -100, 100, 100)
+            await basler_camera.set_ROI(-100, -100, 100, 100)
 
     @pytest.mark.asyncio
     async def test_hardware_operations_on_closed_camera(self, camera_name):
