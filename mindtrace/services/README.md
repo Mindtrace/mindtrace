@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-services)](https://pypi.org/project/mindtrace-services/)
+[![License](https://img.shields.io/pypi/l/mindtrace-services)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/services/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-services)](https://pepy.tech/projects/mindtrace-services)
+
 # Mindtrace Services
 
 [Purpose](#purpose)<br>
@@ -65,7 +69,7 @@ cm.status()  # now generated as a method
 
 ## Usage Example
 
-See [`sample/echo_service.py`](./sample/echo_service.py) for a full example. Basic usage:
+See [`mindtrace/services/sample/echo_service.py`](./mindtrace/services/sample/echo_service.py) for a full example. Basic usage:
 
 ```python
 from mindtrace.services import Service
@@ -168,7 +172,7 @@ The Model Context Protocol (MCP) is a protocol for exposing service functionalit
     - Description: It uses the function’s docstring as the tool’s description for the LLM.
     - Schema: It inspects the type hints (a: int, b: int) to generate a JSON schema for the inputs.
 - **Mounting MCP on FastAPI:**
-  Each `Service` instance mounts an MCP server on the FastAPI app at `/mcp-server/mcp/`. This allows the same service to be accessed both via REST endpoints and as MCP tools.
+  Each `Service` instance mounts an MCP server on the FastAPI app. This allows the same service to be accessed both via REST endpoints and as MCP tools.
 - **Exposing Endpoints as Tools:**
   When adding an endpoint using `add_endpoint`, you can set `as_tool=True` to expose that endpoint as an MCP tool:
   ```python
@@ -177,13 +181,12 @@ The Model Context Protocol (MCP) is a protocol for exposing service functionalit
   This makes the `echo` function available both as a REST endpoint and as an MCP tool.
 
 ### Example: EchoService with MCP
-See [`sample/echo_mcp.py`](./sample/echo_mcp.py):
+See [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py):
 ```python
 from mindtrace.services.sample.echo_mcp import EchoService
 
 # Launch the service
 connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
-mcp_url = str(connection_manager.url) + 'mcp-server/mcp/'
 
 # Synchronous call via connection manager
 result = connection_manager.echo(message="Hello, World!")
@@ -211,28 +214,70 @@ class EchoService(Service):
 
 Now, both `echo` and `reverse_message` are available as MCP tools.
 
-#### Using the MCP Client (with custom tool)
-You can call both the standard and custom tools from the client:
+### MCP Client Manager (Service.mcp)
+
+Each `Service` subclass automatically receives a class-level `mcp` helper (MCPClientManager) for creating FastMCP clients:
+
+- Connect to an existing service instance
+- Launch a new service instance and return a connected client
+- Access a cached client from a running connection manager instance
+
+Connect to a running service:
 
 ```python
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mindtrace.services.sample.echo_mcp import EchoService
 import asyncio
 
-async def mcp_example():
-    async with streamablehttp_client(mcp_url) as (read, write, session_id):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            tools = await session.list_tools()
-            print("Available tools:", [tool.name for tool in tools.tools])
-            # Call the 'echo' tool
-            result = await session.call_tool("echo", {"payload": {"message": "Alice"}})
-            print("Echo tool response:", result)
-            # Call the 'reverse_message' tool
-            result = await session.call_tool("reverse_message", {"payload": {"message": "Alice"}})
-            print("Reverse tool response:", result)
+async def main():
+    # Explicit URL (trailing slash optional)
+    client = EchoService.mcp.connect("http://localhost:8080/")
+    async with client:
+        tools = await client.list_tools()
+        print([t.name for t in tools])
+        result = await client.call_tool("echo", {"payload": {"message": "Hello"}})
+        print(result)
 
-asyncio.run(mcp_example())
+asyncio.run(main())
+```
+
+Launch a new service and get a connected client:
+
+```python
+from mindtrace.services.sample.echo_mcp import EchoService
+import asyncio
+
+async def main():
+    client = EchoService.mcp.launch(
+        host="localhost",
+        port=8080,
+        wait_for_launch=True,
+        timeout=30,
+    )
+    async with client:
+        tools = await client.list_tools()
+        print([t.name for t in tools])
+        result = await client.call_tool("echo", {"payload": {"message": "Launched"}})
+        print(result)
+
+asyncio.run(main())
+```
+
+Get the MCP client from a connection manager instance:
+
+```python
+from mindtrace.services.sample.echo_mcp import EchoService
+import asyncio
+
+async def main():
+    cm = EchoService.launch(host="localhost", port=8081, wait_for_launch=True, timeout=30)
+    client = cm.mcp_client  # lazily created and cached per manager instance
+    async with client:
+        tools = await client.list_tools()
+        print([t.name for t in tools])
+        result = await client.call_tool("echo", {"payload": {"message": "From manager"}})
+        print(result)
+
+asyncio.run(main())
 ```
 
 ### Key Points
@@ -241,8 +286,9 @@ asyncio.run(mcp_example())
 - The MCP client allows you to list and call tools programmatically.
 
 For trial purposes, see the sample files:
-- [`sample/echo_mcp.py`](./sample/echo_mcp.py)
-- [`samples/services/echo_mcp_service.py`](../../../../samples/services/echo_mcp_service.py)
+- [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py)
+- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
+- [`samples/services/mcp/mcp_client.py`](../../samples/services/mcp/mcp_client.py)
 
 
 ## Remote MCP Server Usage with Cursor
@@ -261,7 +307,6 @@ Follow these steps to set up and use a remote MCP server with Cursor:
    from mindtrace.services.sample.echo_mcp import EchoService
    connection_manager = EchoService.launch(port=8080, host="localhost")
    ```
-   This will start the service and host the MCP server at `http://localhost:8080/mcp-server/mcp/`.
 
 2. **Configure Cursor to Use the MCP Server**
    

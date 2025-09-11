@@ -1,5 +1,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/mindtrace-storage)](https://pypi.org/project/mindtrace-storage/)
 [![License](https://img.shields.io/pypi/l/mindtrace-storage)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/storage/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-storage)](https://pepy.tech/projects/mindtrace-storage)
 
 # Storage Module
 

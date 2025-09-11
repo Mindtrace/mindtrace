@@ -1,5 +1,5 @@
-import asyncio
 import os
+
 import pytest
 
 
@@ -42,6 +42,7 @@ def enable_mock_plc_backend():
 @pytest.fixture(autouse=True)
 def fast_plc_sleep(monkeypatch):
     """Patch asyncio.sleep in PLC modules to return immediately (no real waiting)."""
+
     async def _fast_sleep(_delay, *args, **kwargs):
         return None
 
@@ -66,4 +67,4 @@ def fast_plc_sleep(monkeypatch):
         raising=False,
     )
 
-    yield 
+    yield
