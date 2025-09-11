@@ -12,6 +12,16 @@ from label_studio_sdk._legacy.project import Project as LSProject
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.utils.checks import ifnone
+from .exceptions import (
+    ProjectNotFoundError,
+    ProjectFetchError,
+    ProjectAlreadyExistsError,
+    StorageAlreadyExistsError,
+    StorageNotFoundError,
+    StorageCreationError,
+    CredentialsNotFoundError,
+    CredentialsReadError,
+)
 
 
 class LabelStudio(Mindtrace):
@@ -61,14 +71,14 @@ class LabelStudio(Mindtrace):
             LSProject: The created Label Studio project object.
 
         Raises:
-            ValueError: If a project with the same name already exists
+            ProjectAlreadyExistsError: If a project with the same name already exists
         """
         try:
             existing = self.get_project(project_name=project_name)
-        except ValueError:
+        except ProjectNotFoundError:
             existing = None
         if existing is not None:
-            raise ValueError(f"Project with name '{project_name}' already exists (id={existing.id})")
+            raise ProjectAlreadyExistsError(f"Project with name '{project_name}' already exists (id={existing.id})")
 
         kwargs = {"title": project_name}
         if description is not None:
@@ -144,16 +154,19 @@ class LabelStudio(Mindtrace):
             print(project.id, project.title)"""
         if project_name:
             self.logger.debug(f"Retrieving project with name: {project_name}")
-            project = self._get_project_by_name(project_name)
+            try:
+                project = self._get_project_by_name(project_name)
+            except Exception as e:
+                raise ProjectFetchError(f"Failed to fetch project by name '{project_name}'") from e
             if project is None:
-                raise ValueError(f"No project found with name: {project_name}")
+                raise ProjectNotFoundError(f"No project found with name: {project_name}")
             return project
         if project_id:
             self.logger.debug(f"Retrieving project with ID: {project_id}")
             try:
                 return self.client.get_project(project_id)
             except Exception as e:
-                raise ValueError(f"No project found with id: {project_id}") from e
+                raise ProjectFetchError(f"Failed to fetch project id '{project_id}'") from e
         raise ValueError("Must provide either project_name or project_id")
 
     def get_latest_project_part(self, pattern: str) -> tuple[Optional[int], Optional[str]]:
@@ -521,8 +534,9 @@ class LabelStudio(Mindtrace):
             dict: A dictionary containing the created storage details
 
         Raises:
-            ValueError: If credentials file is missing or invalid
-            ValueError: If a storage with the same title already exists
+            StorageCreationError: If storage creation fails
+            CredentialsNotFoundError: If credentials file is missing or invalid
+            StorageAlreadyExistsError: If a storage with the same title already exists
             requests.exceptions.RequestException: If API request fails
             json.JSONDecodeError: If credentials file contains invalid JSON
             OSError: If there are file system errors
@@ -540,7 +554,7 @@ class LabelStudio(Mindtrace):
         for s in existing_storages:
             s_title = s.get("title")
             if s_title == storage_name:
-                raise ValueError(
+                raise StorageAlreadyExistsError(
                     f"A {storage_type} storage for title '{storage_name}' already exists (id={s.get('id')})"
                 )
 
@@ -549,14 +563,16 @@ class LabelStudio(Mindtrace):
         )
 
         if not google_application_credentials or not os.path.exists(google_application_credentials):
-            raise ValueError(f"GCP credentials file not found at: {google_application_credentials}")
+            raise CredentialsNotFoundError(
+                f"GCP credentials file not found ({google_application_credentials})"
+            )
 
         try:
             with open(google_application_credentials, "r") as f:
                 credentials_content = f.read()
                 json.loads(credentials_content)
         except (json.JSONDecodeError, OSError) as e:
-            raise ValueError(f"Error reading credentials file: {str(e)}")
+            raise CredentialsReadError(f"Error reading credentials file: {str(e)}")
 
         self.logger.info(f"Creating {storage_type} storage: {storage_name}")
         self.logger.debug(f"Using bucket: {bucket}, prefix: {prefix}")
@@ -589,7 +605,7 @@ class LabelStudio(Mindtrace):
                 )
         except Exception as e:
             self.logger.error(f"Failed to create storage: {str(e)}")
-            raise
+            raise StorageCreationError(f"Failed to create {storage_type} storage '{storage_name}'") from e
 
     def sync_gcp_storage(
         self,
@@ -599,7 +615,7 @@ class LabelStudio(Mindtrace):
         storage_id: Optional[int] = None,
         storage_prefix: Optional[str] = None,
         storage_type: str = "import",
-        max_attempts: int = 100,
+        max_attempts: int = 3,
         retry_delay: int = 1,
     ) -> bool:
         """Synchronise Google Cloud Storage. The function will trigger the sync of the storage and return True if the sync is successful
@@ -622,6 +638,7 @@ class LabelStudio(Mindtrace):
 
         Raises:
             ValueError: If storage_type invalid
+            StorageNotFoundError: Storage not found
             TimeoutError: If sync times out
         """
         project = self.get_project(project_name=project_name, project_id=project_id)
@@ -648,6 +665,8 @@ class LabelStudio(Mindtrace):
                 elif storage_prefix:
                     if storage_type == "import":
                         storages = project.get_import_storages()
+                        if not storages:
+                            raise StorageNotFoundError(f"No import storages found for project {project_name}")
                         for storage in storages:
                             if storage["prefix"] == storage_prefix:
                                 self.logger.info(f"Found existing storage with prefix {storage_prefix}")
@@ -655,6 +674,8 @@ class LabelStudio(Mindtrace):
                                 return True
                     else:
                         storages = project.get_export_storages()
+                        if not storages:
+                            raise StorageNotFoundError(f"No export storages found for project {project_name}")
                         for storage in storages:
                             if storage["prefix"] == storage_prefix:
                                 self.logger.info(f"Found existing storage with prefix {storage_prefix}")
@@ -662,7 +683,8 @@ class LabelStudio(Mindtrace):
                                 return True
                 else:
                     raise ValueError("Either storage_id or storage_prefix must be provided")
-
+            except (StorageNotFoundError, ValueError) as e:
+                raise e
             except Exception as e:
                 last_error = e
                 attempt += 1

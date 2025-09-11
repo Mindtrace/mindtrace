@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
+from mindtrace.automation.label_studio.exceptions import ProjectAlreadyExistsError, StorageAlreadyExistsError
 from mindtrace.core.config import Config
 
 url = "http://localhost:8080"
@@ -22,7 +23,7 @@ ls = LabelStudio(url=url, api_key=api_key)
 # 1. Create project (raises if it already exists)
 try:
     project = ls.create_project(project_name="test_project", description="Test project", label_config=label_config)
-except ValueError:
+except ProjectAlreadyExistsError:
     pass
 
 # 2. Import tasks from local directory
@@ -46,7 +47,7 @@ try:
         regex_filter=".*jpg",
     )
     print(f"Created GCP storage id: {storage['id']} in project '{project.title}' (ID: {project.id})")
-except ValueError:
+except StorageAlreadyExistsError:
     print(f"GCP storage already exists in project '{project.title}' (ID: {project.id})")
 
 # 3.2 Sync GCP storage
