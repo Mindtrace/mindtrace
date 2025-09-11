@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.core import TaskSchema, Timeout, get_class
+from mindtrace.core import TaskSchema, Timeout, get_class, ifnone
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
@@ -32,7 +32,7 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 
 
 class ClusterManager(Gateway):
-    def __init__(self, **kwargs):
+    def __init__(self, minio_endpoint = None, **kwargs):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
@@ -57,7 +57,7 @@ class ClusterManager(Gateway):
                 unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
             )
             self.worker_status_database.initialize_sync()
-            self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
+            self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"])
             self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
             self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
             self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
