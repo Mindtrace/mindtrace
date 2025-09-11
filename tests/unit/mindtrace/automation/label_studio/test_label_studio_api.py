@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 from mindtrace.automation.label_studio.exceptions import (
     ProjectAlreadyExistsError,
     ProjectNotFoundError,
     StorageAlreadyExistsError,
 )
+from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 
 
 class FakeProject:
