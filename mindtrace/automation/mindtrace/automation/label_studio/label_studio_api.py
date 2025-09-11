@@ -12,15 +12,16 @@ from label_studio_sdk._legacy.project import Project as LSProject
 
 from mindtrace.core import Mindtrace
 from mindtrace.jobs.utils.checks import ifnone
+
 from .exceptions import (
-    ProjectNotFoundError,
-    ProjectFetchError,
-    ProjectAlreadyExistsError,
-    StorageAlreadyExistsError,
-    StorageNotFoundError,
-    StorageCreationError,
     CredentialsNotFoundError,
     CredentialsReadError,
+    ProjectAlreadyExistsError,
+    ProjectFetchError,
+    ProjectNotFoundError,
+    StorageAlreadyExistsError,
+    StorageCreationError,
+    StorageNotFoundError,
 )
 
 
@@ -59,7 +60,9 @@ class LabelStudio(Mindtrace):
         self.client = Client(url=self.url, api_key=self.api_key)
         self.logger.info(f"Initialised LS at: {self.url}")
 
-    def create_project(self, project_name: str, description: Optional[str] = None, label_config: Optional[str] = None) -> LSProject:
+    def create_project(
+        self, project_name: str, description: Optional[str] = None, label_config: Optional[str] = None
+    ) -> LSProject:
         """Create a new LSProject.
 
         Args:
@@ -563,9 +566,7 @@ class LabelStudio(Mindtrace):
         )
 
         if not google_application_credentials or not os.path.exists(google_application_credentials):
-            raise CredentialsNotFoundError(
-                f"GCP credentials file not found ({google_application_credentials})"
-            )
+            raise CredentialsNotFoundError(f"GCP credentials file not found ({google_application_credentials})")
 
         try:
             with open(google_application_credentials, "r") as f:
