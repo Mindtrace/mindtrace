@@ -155,21 +155,23 @@ async def test_set_exposure_supported_and_range(fake_cv, monkeypatch):
     await cam.close()
 
 
-def test_gain_set_get(fake_cv):
+@pytest.mark.asyncio
+async def test_gain_set_get(fake_cv):
     cam = OpenCVCameraBackend("0")
     # Manually set initialized and cap for sync paths to work without async init
     import cv2
 
     cam.initialized = True
     cam.cap = cv2.VideoCapture(0)
-    assert cam.set_gain(15.0) is True
-    val = cam.get_gain()
+    assert await cam.set_gain(15.0) is True
+    val = await cam.get_gain()
     assert isinstance(val, float)
     with pytest.raises(CameraConfigurationError):
-        cam.set_gain(1000.0)
+        await cam.set_gain(1000.0)
 
 
-def test_roi_and_pixel_format_and_enhancement(fake_cv):
+@pytest.mark.asyncio
+async def test_roi_and_pixel_format_and_enhancement(fake_cv):
     cam = OpenCVCameraBackend("0")
     import cv2
 
@@ -177,21 +179,21 @@ def test_roi_and_pixel_format_and_enhancement(fake_cv):
     cam.cap = cv2.VideoCapture(0)
 
     # ROI methods
-    assert cam.set_ROI(0, 0, 10, 10) is False
-    roi = cam.get_ROI()
+    assert await cam.set_ROI(0, 0, 10, 10) is False
+    roi = await cam.get_ROI()
     assert set(roi.keys()) == {"x", "y", "width", "height"}
-    assert cam.reset_ROI() is False
+    assert await cam.reset_ROI() is False
 
     # Pixel format
-    fmts = cam.get_pixel_format_range()
+    fmts = await cam.get_pixel_format_range()
     assert "RGB8" in fmts
-    assert cam.set_pixel_format("RGB8") is True
+    assert await cam.set_pixel_format("RGB8") is True
     with pytest.raises(CameraConfigurationError):
-        cam.set_pixel_format("XYZ")
+        await cam.set_pixel_format("XYZ")
 
     # Enhancement toggle
-    assert cam.set_image_quality_enhancement(True) is True
-    assert cam.get_image_quality_enhancement() is True
+    assert await cam.set_image_quality_enhancement(True) is True
+    assert await cam.get_image_quality_enhancement() is True
 
 
 @pytest.mark.asyncio
