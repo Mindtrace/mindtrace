@@ -63,7 +63,6 @@ class LabelStudio(Mindtrace):
         Raises:
             ValueError: If a project with the same name already exists
         """
-        # If a project with the same name exists, return it instead of creating a new one
         try:
             existing = self.get_project(project_name=project_name)
         except ValueError:
