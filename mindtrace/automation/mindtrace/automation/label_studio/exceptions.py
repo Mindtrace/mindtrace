@@ -27,8 +27,10 @@ class ProjectNotFoundError(LabelStudioError):
 
     pass
 
+
 class ProjectAlreadyExistsError(LabelStudioError):
     """Raised when a Label Studio project already exists by id or name."""
+
     pass
 
 
@@ -59,7 +61,7 @@ class StorageCreationError(StorageError):
 class StorageNotFoundError(StorageError):
     """Raised when a storage is not found."""
 
-    pass    
+    pass
 
 
 class CredentialsNotFoundError(StorageError):
@@ -72,4 +74,3 @@ class CredentialsReadError(StorageError):
     """Raised when credentials file can't be read or parsed."""
 
     pass
-
