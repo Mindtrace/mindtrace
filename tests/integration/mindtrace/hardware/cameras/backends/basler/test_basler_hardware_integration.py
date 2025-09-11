@@ -22,7 +22,9 @@ def get_connected_cameras():
     try:
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
         return BaslerCameraBackend.get_available_cameras()
-    except Exception:
+    except Exception as e:
+        if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+            pytest.skip(f"Pypylon SDK not available: {e}", allow_module_level=True)
         return []
 
 
