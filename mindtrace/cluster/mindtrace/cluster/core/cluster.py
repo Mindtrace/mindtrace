@@ -196,6 +196,15 @@ class ClusterManager(Gateway):
             ),
             methods=["POST"],
         )
+        self.add_endpoint(
+            "/clear_job_schema_queue",
+            func=self.clear_job_schema_queue,
+            schema=TaskSchema(
+                name="clear_job_schema_queue",
+                input_schema=cluster_types.ClearJobSchemaQueueInput,
+            ),
+            methods=["POST"],
+        )
 
     def register_job_to_endpoint(self, payload: cluster_types.RegisterJobToEndpointInput):
         """
@@ -594,6 +603,10 @@ class ClusterManager(Gateway):
             for entry in db.all():
                 db.delete(entry.pk)
         self.logger.info("Cleared all cluster manager databases")
+
+    def clear_job_schema_queue(self, payload: dict):
+        queue_name = payload["job_schema_name"]
+        self.orchestrator.clean_queue(queue_name)
 
 
 class Node(Service):
