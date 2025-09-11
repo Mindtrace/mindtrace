@@ -1,7 +1,6 @@
 """Camera Lifecycle TaskSchemas."""
 
 from mindtrace.core import TaskSchema
-
 from mindtrace.hardware.api.cameras.models import (
     ActiveCamerasResponse,
     BatchOperationResponse,
@@ -13,41 +12,21 @@ from mindtrace.hardware.api.cameras.models import (
 )
 
 # Camera Lifecycle Schemas
-OpenCameraSchema = TaskSchema(
-    name="open_camera",
-    input_schema=CameraOpenRequest,
-    output_schema=BoolResponse
-)
+OpenCameraSchema = TaskSchema(name="open_camera", input_schema=CameraOpenRequest, output_schema=BoolResponse)
 
 OpenCamerasBatchSchema = TaskSchema(
-    name="open_cameras_batch",
-    input_schema=CameraOpenBatchRequest,
-    output_schema=BatchOperationResponse
+    name="open_cameras_batch", input_schema=CameraOpenBatchRequest, output_schema=BatchOperationResponse
 )
 
-CloseCameraSchema = TaskSchema(
-    name="close_camera",
-    input_schema=CameraCloseRequest,
-    output_schema=BoolResponse
-)
+CloseCameraSchema = TaskSchema(name="close_camera", input_schema=CameraCloseRequest, output_schema=BoolResponse)
 
 CloseCamerasBatchSchema = TaskSchema(
-    name="close_cameras_batch",
-    input_schema=CameraCloseBatchRequest,
-    output_schema=BatchOperationResponse
+    name="close_cameras_batch", input_schema=CameraCloseBatchRequest, output_schema=BatchOperationResponse
 )
 
-CloseAllCamerasSchema = TaskSchema(
-    name="close_all_cameras",
-    input_schema=None,
-    output_schema=BoolResponse
-)
+CloseAllCamerasSchema = TaskSchema(name="close_all_cameras", input_schema=None, output_schema=BoolResponse)
 
-GetActiveCamerasSchema = TaskSchema(
-    name="get_active_cameras",
-    input_schema=None,
-    output_schema=ActiveCamerasResponse
-)
+GetActiveCamerasSchema = TaskSchema(name="get_active_cameras", input_schema=None, output_schema=ActiveCamerasResponse)
 
 __all__ = [
     "OpenCameraSchema",

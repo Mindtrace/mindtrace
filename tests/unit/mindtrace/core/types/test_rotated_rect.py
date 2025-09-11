@@ -1,10 +1,8 @@
-import math
 import pytest
 from PIL import Image
 
 from mindtrace.core import check_libs
 from mindtrace.core.types.rotated_rect import RotatedRect
-from mindtrace.core.types.bounding_box import BoundingBox
 
 
 def approx_tuple(t, p=1e-5):
@@ -30,7 +28,7 @@ def test_to_corners_and_to_bounding_box_order_invariant():
     assert len(corners) == 4
     # bounding box should enclose all corners
     bb = rr.to_bounding_box()
-    for (x, y) in corners:
+    for x, y in corners:
         assert bb.x <= x <= bb.x2
         assert bb.y <= y <= bb.y2
 
@@ -71,6 +69,7 @@ def test_draw_on_pil_label_font_metrics_branches_rotated(monkeypatch):
     rr = RotatedRect(40.0, 40.0, 20.0, 10.0, 10.0)
 
     import PIL.ImageDraw as ID
+
     if hasattr(ID.ImageDraw, "textbbox"):
         monkeypatch.delattr(ID.ImageDraw, "textbbox", raising=False)
 
@@ -91,6 +90,7 @@ def test_draw_on_pil_label_font_metrics_branches_rotated(monkeypatch):
     # getsize branch
     img_b = rr.draw_on_pil(img.copy(), label="cd", font=FontSize())
     assert isinstance(img_b, Image.Image)
+
     # default dims branch (no getbbox or getsize)
     class DummyFont:
         pass
@@ -198,6 +198,7 @@ def test_intersection_parallel_fallback():
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
     import numpy as np
+
     from mindtrace.core.types.rotated_rect import _intersection
 
     # Parallel lines: a-b and s-e both horizontal
@@ -215,6 +216,7 @@ def test_polygon_area_small_polygon_returns_zero():
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
     import numpy as np
+
     from mindtrace.core.types.rotated_rect import _polygon_area
 
     poly = np.array([[0.0, 0.0], [1.0, 0.0]])  # 2 points only
@@ -227,9 +229,10 @@ def test_polygon_signed_area_small_polygon_returns_zero():
         pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
     import numpy as np
+
     from mindtrace.core.types.rotated_rect import _polygon_signed_area
 
     # Less than 3 points -> should return 0.0
     assert _polygon_signed_area(np.array([], dtype=float).reshape(0, 2)) == 0.0
     assert _polygon_signed_area(np.array([[0.0, 0.0]], dtype=float)) == 0.0
-    assert _polygon_signed_area(np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)) == 0.0 
+    assert _polygon_signed_area(np.array([[0.0, 0.0], [1.0, 0.0]], dtype=float)) == 0.0

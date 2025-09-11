@@ -17,16 +17,19 @@ def fast_camera_sleep_and_imwrite(monkeypatch, request):
     This avoids affecting retry timing assertions elsewhere.
     """
     # Check if this is a test that needs real image generation
-    test_name = getattr(request.node, 'name', '')
-    needs_real_image_generation = any(pattern in test_name for pattern in [
-        'test_different_image_patterns',
-        'test_auto_pattern_rotation', 
-        'test_exposure_and_gain_effects_on_image',
-        'test_roi_get_set_cycle',
-        'test_extreme_roi_values',
-        'test_checkerboard_size_parameter'
-    ])
-    
+    test_name = getattr(request.node, "name", "")
+    needs_real_image_generation = any(
+        pattern in test_name
+        for pattern in [
+            "test_different_image_patterns",
+            "test_auto_pattern_rotation",
+            "test_exposure_and_gain_effects_on_image",
+            "test_roi_get_set_cycle",
+            "test_extreme_roi_values",
+            "test_checkerboard_size_parameter",
+        ]
+    )
+
     # Patch camera_manager asyncio.sleep: skip only the 0.1s settle used in HDR
     try:
         import mindtrace.hardware.cameras.core.camera_manager as cm
@@ -62,6 +65,7 @@ def fast_camera_sleep_and_imwrite(monkeypatch, request):
     if not needs_real_image_generation:
         try:
             import numpy as np  # noqa: F401
+
             from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
 
             def _fast_generate_basler(self):  # type: ignore[no-redef]
@@ -70,7 +74,9 @@ def fast_camera_sleep_and_imwrite(monkeypatch, request):
             def _no_enhance_b(self, img):  # type: ignore[no-redef]
                 return img
 
-            monkeypatch.setattr(MockBaslerCameraBackend, "_generate_synthetic_image", _fast_generate_basler, raising=False)
+            monkeypatch.setattr(
+                MockBaslerCameraBackend, "_generate_synthetic_image", _fast_generate_basler, raising=False
+            )
             monkeypatch.setattr(MockBaslerCameraBackend, "_enhance_image", _no_enhance_b, raising=False)
         except Exception:
             pass
@@ -81,14 +87,14 @@ def fast_camera_sleep_and_imwrite(monkeypatch, request):
 @pytest.fixture(autouse=True)
 def enforce_timing_for_concurrency_test(monkeypatch, request):
     """Enforce timing for the sequential concurrency timing test.
-    
-    Only for the sequential concurrency timing test, ensure each capture has a small delay so the measured time 
+
+    Only for the sequential concurrency timing test, ensure each capture has a small delay so the measured time
     reflects sequential execution without significantly slowing the suite.
     """
     if request.node and request.node.name == "test_concurrent_capture_limiting":
         try:
             from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
- 
+
             original_capture = MockBaslerCameraBackend.capture
 
             async def _slightly_slow_capture(self, *args, **kwargs):  # type: ignore[no-redef]
@@ -99,7 +105,7 @@ def enforce_timing_for_concurrency_test(monkeypatch, request):
             monkeypatch.setattr(MockBaslerCameraBackend, "capture", _slightly_slow_capture, raising=False)
         except Exception:
             pass
-    yield 
+    yield
 
 
 # ===== Moved fixtures from test_cameras.py =====
@@ -182,4 +188,4 @@ def _disable_real_opencv_camera_discovery(monkeypatch):
 
         monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_get_available_cameras))
     except Exception:
-        pass 
+        pass

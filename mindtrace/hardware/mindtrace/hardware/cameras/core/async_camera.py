@@ -21,6 +21,7 @@ from mindtrace.hardware.core.utils import convert_image_format, validate_output_
 
 try:
     from mindtrace.storage.gcs import GCSStorageHandler
+
     STORAGE_AVAILABLE = True
 except ImportError:
     GCSStorageHandler = None
@@ -39,23 +40,24 @@ class AsyncCamera(Mindtrace):
         parts = name.split(":", 1)
         self._backend_name = parts[0]
         self._device_name = parts[1] if len(parts) > 1 else name
-        
+
         # Initialize GCS storage if enabled
         self._storage_handler = None
         if STORAGE_AVAILABLE:
             try:
                 from mindtrace.hardware.core.config import get_hardware_config
+
                 config = get_hardware_config().get_config().gcs
                 if config.enabled:
                     self._storage_handler = GCSStorageHandler(
                         bucket_name=config.bucket_name,
-                        credentials_path=config.credentials_path if config.credentials_path else None
+                        credentials_path=config.credentials_path if config.credentials_path else None,
                     )
                     self.logger.debug(f"GCS storage enabled for camera '{self._full_name}'")
             except Exception as e:
                 self.logger.warning(f"Failed to initialize GCS for camera '{self._full_name}': {e}")
                 self._storage_handler = None
-        
+
         self.logger.debug(
             f"AsyncCamera created: name={self._full_name}, backend={self._backend}, device={self._device_name}, "
             f"gcs_enabled={self._storage_handler is not None}"
@@ -65,7 +67,7 @@ class AsyncCamera(Mindtrace):
     async def open(cls, name: Optional[str] = None, **kwargs) -> "AsyncCamera":
         """Create and initialize an AsyncCamera with sensible defaults.
 
-        If no name is provided, probes OpenCV and uses the first available device (e.g., ``OpenCV:opencv_camera_0``), 
+        If no name is provided, probes OpenCV and uses the first available device (e.g., ``OpenCV:opencv_camera_0``),
         rather than assuming index 0 is present.
 
         Args:
@@ -84,6 +86,7 @@ class AsyncCamera(Mindtrace):
                 from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import (
                     OpenCVCameraBackend,
                 )
+
                 names = OpenCVCameraBackend.get_available_cameras(include_details=False)
                 if not names:
                     raise CameraNotFoundError("No OpenCV cameras available for default open")
@@ -186,7 +189,9 @@ class AsyncCamera(Mindtrace):
                 return await parent_aexit(exc_type, exc, tb)  # type: ignore[misc]
             return False
 
-    async def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy") -> Any:
+    async def capture(
+        self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy"
+    ) -> Any:
         """Capture an image from the camera with retry logic.
 
         Args:
@@ -207,7 +212,7 @@ class AsyncCamera(Mindtrace):
         """
         # Validate output format early
         output_format = validate_output_format(output_format)
-        
+
         async with self._lock:
             retry_count = self._backend.retrieve_retry_count
             self.logger.debug(
@@ -223,7 +228,7 @@ class AsyncCamera(Mindtrace):
                                 os.makedirs(dirname, exist_ok=True)
                             cv2.imwrite(save_path, image)
                             self.logger.debug(f"Saved captured image to '{save_path}'")
-                        
+
                         # Upload to GCS if requested
                         if upload_to_gcs and self._should_upload_to_gcs():
                             await self._upload_image_to_gcs(image)
@@ -298,9 +303,10 @@ class AsyncCamera(Mindtrace):
         """Check if GCS upload should be performed."""
         if self._storage_handler is None:
             return False
-        
+
         try:
             from mindtrace.hardware.core.config import get_hardware_config
+
             return get_hardware_config().get_config().gcs.auto_upload
         except Exception:
             return False
@@ -315,28 +321,23 @@ class AsyncCamera(Mindtrace):
             timestamp = str(int(time.time()))
             safe_camera_name = self._full_name.replace(":", "_")
             temp_filename = f"/tmp/{safe_camera_name}_{timestamp}.jpg"
-            
+
             # Save image temporarily
             cv2.imwrite(temp_filename, image)
-            
+
             # Generate GCS path
             gcs_path = f"images/{safe_camera_name}/{timestamp}.jpg"
-            
+
             # Upload asynchronously
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None, 
-                self._storage_handler.upload, 
-                temp_filename, 
-                gcs_path
-            )
-            
+            await loop.run_in_executor(None, self._storage_handler.upload, temp_filename, gcs_path)
+
             # Clean up temp file
             os.unlink(temp_filename)
-            
+
             self.logger.debug(f"Successfully uploaded image to GCS: {gcs_path}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to upload image to GCS: {e}")
             return False
@@ -350,36 +351,31 @@ class AsyncCamera(Mindtrace):
             timestamp = str(int(time.time()))
             safe_camera_name = self._full_name.replace(":", "_")
             upload_count = 0
-            
+
             for i, (image, exposure) in enumerate(zip(captured_images, exposures)):
                 if image is None:
                     continue
-                    
+
                 # Create temporary file for this HDR frame
                 temp_filename = f"/tmp/{safe_camera_name}_hdr_{timestamp}_{i}_exp{int(exposure)}.jpg"
-                
+
                 # Save image temporarily
                 cv2.imwrite(temp_filename, image)
-                
+
                 # Generate GCS path for HDR sequence
                 gcs_path = f"hdr/{safe_camera_name}/{timestamp}/frame_{i:02d}_exp{int(exposure)}.jpg"
-                
+
                 # Upload asynchronously
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None, 
-                    self._storage_handler.upload, 
-                    temp_filename, 
-                    gcs_path
-                )
-                
+                await loop.run_in_executor(None, self._storage_handler.upload, temp_filename, gcs_path)
+
                 # Clean up temp file
                 os.unlink(temp_filename)
                 upload_count += 1
-            
+
             self.logger.debug(f"Successfully uploaded {upload_count} HDR frames to GCS for camera '{self._full_name}'")
             return upload_count > 0
-            
+
         except Exception as e:
             self.logger.error(f"Failed to upload HDR sequence to GCS: {e}")
             return False
@@ -682,7 +678,7 @@ class AsyncCamera(Mindtrace):
         """
         # Validate output format early
         output_format = validate_output_format(output_format)
-        
+
         async with self._lock:
             try:
                 original_exposure = await self._backend.get_exposure()
@@ -732,9 +728,7 @@ class AsyncCamera(Mindtrace):
                                 f"HDR capture {i + 1}/{len(exposures)} successful at exposure {exposure}μs"
                             )
                         else:
-                            self.logger.warning(
-                                f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs"
-                            )
+                            self.logger.warning(f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs")
                     except Exception as e:
                         self.logger.warning(
                             f"HDR capture {i + 1}/{len(exposures)} failed at exposure {exposure}μs: {e}"
@@ -756,12 +750,12 @@ class AsyncCamera(Mindtrace):
                 self.logger.info(
                     f"HDR capture completed for camera '{self._full_name}': {successful_captures}/{len(exposures)} successful"
                 )
-                
+
                 # Upload HDR sequence to GCS if requested
                 gcs_urls = []
                 if upload_to_gcs and self._should_upload_to_gcs() and captured_images:
                     gcs_urls = await self._upload_hdr_to_gcs(captured_images, exposures)
-                
+
                 # Return structured HDR result
                 return {
                     "success": successful_captures > 0,
@@ -769,7 +763,7 @@ class AsyncCamera(Mindtrace):
                     "image_paths": image_paths if image_paths else None,
                     "gcs_urls": gcs_urls if gcs_urls else None,
                     "exposure_levels": exposures,
-                    "successful_captures": successful_captures
+                    "successful_captures": successful_captures,
                 }
             except (CameraCaptureError, CameraConnectionError, CameraConfigurationError):
                 raise
@@ -782,4 +776,4 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             self.logger.info(f"Closing camera '{self._full_name}'")
             await self._backend.close()
-            self.logger.debug(f"Camera '{self._full_name}' closed") 
+            self.logger.debug(f"Camera '{self._full_name}' closed")

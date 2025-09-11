@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import tempfile
 
 import numpy as np
 import pytest
@@ -10,7 +9,6 @@ from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import Ope
 from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
-    CameraConnectionError,
     CameraNotFoundError,
     CameraTimeoutError,
 )
@@ -268,7 +266,7 @@ def test_discovery_with_fake_cv(monkeypatch):
     assert isinstance(recs, dict)
     if recs:
         sample_key = next(iter(recs))
-        assert set(["index", "backend", "width", "height", "fps"]).issubset(recs[sample_key].keys()) 
+        assert set(["index", "backend", "width", "height", "fps"]).issubset(recs[sample_key].keys())
 
 
 @pytest.mark.asyncio
@@ -329,6 +327,7 @@ async def test_check_connection_failure_branches(monkeypatch):
     class ZeroWidthCap(FakeCap):
         def get(self, prop):
             import cv2 as _cv
+
             if prop == _cv.CAP_PROP_FRAME_WIDTH:
                 return 0
             return super().get(prop)
@@ -383,16 +382,21 @@ async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monke
 
     async def _sdk_maybe_fail(func, *args, **kwargs):
         # If setting optional properties, return False; otherwise call through
-        if func == cam.cap.set and args and args[0] in {
-            getattr(__import__("cv2"), "CAP_PROP_BRIGHTNESS"),
-            getattr(__import__("cv2"), "CAP_PROP_CONTRAST"),
-            getattr(__import__("cv2"), "CAP_PROP_SATURATION"),
-            getattr(__import__("cv2"), "CAP_PROP_HUE"),
-            getattr(__import__("cv2"), "CAP_PROP_GAIN"),
-            getattr(__import__("cv2"), "CAP_PROP_AUTO_EXPOSURE"),
-            getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_BLUE_U"),
-            getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_RED_V"),
-        }:
+        if (
+            func == cam.cap.set
+            and args
+            and args[0]
+            in {
+                getattr(__import__("cv2"), "CAP_PROP_BRIGHTNESS"),
+                getattr(__import__("cv2"), "CAP_PROP_CONTRAST"),
+                getattr(__import__("cv2"), "CAP_PROP_SATURATION"),
+                getattr(__import__("cv2"), "CAP_PROP_HUE"),
+                getattr(__import__("cv2"), "CAP_PROP_GAIN"),
+                getattr(__import__("cv2"), "CAP_PROP_AUTO_EXPOSURE"),
+                getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_BLUE_U"),
+                getattr(__import__("cv2"), "CAP_PROP_WHITE_BALANCE_RED_V"),
+            }
+        ):
             return False
         return await original_sdk(func, *args, **kwargs)
 
@@ -420,7 +424,7 @@ class TestOpenCVInitializationErrors:
         """Test discovery when OpenCV is not available."""
         # Simulate OPENCV_AVAILABLE being False
         monkeypatch.setattr("mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend.OPENCV_AVAILABLE", False)
-        
+
         # Should return empty results without errors
         assert OpenCVCameraBackend.get_available_cameras(include_details=False) == []
         assert OpenCVCameraBackend.get_available_cameras(include_details=True) == {}
@@ -441,10 +445,10 @@ class TestOpenCVFormatConversionErrors:
         """Test basic image enhancement scenarios."""
         cam = OpenCVCameraBackend("opencv_camera_0")
         await cam.initialize()
-        
+
         # Test with simple numpy array
         test_image = np.zeros((240, 320, 3), dtype=np.uint8)
-        
+
         # Should handle the image without crashing
         try:
             result = await cam._enhance_image_quality(test_image)
@@ -453,22 +457,22 @@ class TestOpenCVFormatConversionErrors:
         except Exception:
             # If enhancement fails, that's also acceptable
             pass
-        
+
         await cam.close()
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_enhance_image_quality_various_image_formats(self, fake_cv):
         """Test image enhancement with different image sizes."""
         cam = OpenCVCameraBackend("opencv_camera_0")
         await cam.initialize()
-        
+
         # Test different image sizes
         test_images = [
             np.zeros((100, 100, 3), dtype=np.uint8),  # Small square
             np.zeros((480, 640, 3), dtype=np.uint8),  # Standard size
             np.zeros((1080, 1920, 3), dtype=np.uint8),  # Large size
         ]
-        
+
         for img in test_images:
             try:
                 result = await cam._enhance_image_quality(img)
@@ -477,7 +481,7 @@ class TestOpenCVFormatConversionErrors:
             except Exception:
                 # Enhancement failure is acceptable
                 pass
-        
+
         await cam.close()
 
     @pytest.mark.asyncio
@@ -485,14 +489,14 @@ class TestOpenCVFormatConversionErrors:
         """Test image enhancement with edge case pixel values."""
         cam = OpenCVCameraBackend("opencv_camera_0")
         await cam.initialize()
-        
+
         # Test with all black, all white, and mixed images
         edge_images = [
             np.zeros((240, 320, 3), dtype=np.uint8),  # All black
-            np.full((240, 320, 3), 255, dtype=np.uint8),  # All white  
+            np.full((240, 320, 3), 255, dtype=np.uint8),  # All white
             np.random.randint(0, 256, (240, 320, 3), dtype=np.uint8),  # Random
         ]
-        
+
         for img in edge_images:
             try:
                 result = await cam._enhance_image_quality(img)
@@ -500,7 +504,7 @@ class TestOpenCVFormatConversionErrors:
             except Exception:
                 # Enhancement failure is acceptable for edge cases
                 pass
-        
+
         await cam.close()
 
 
@@ -511,7 +515,7 @@ class TestOpenCVAdvancedFeatures:
     async def test_is_exposure_control_supported_uninitialized(self, fake_cv):
         """Test exposure control support check when camera is not initialized."""
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
-        
+
         cam = OpenCVCameraBackend("opencv_camera_0")
         # Camera not initialized - should return False
         result = await cam.is_exposure_control_supported()
@@ -521,11 +525,11 @@ class TestOpenCVAdvancedFeatures:
     async def test_is_exposure_control_supported_no_cap(self, fake_cv):
         """Test exposure control support check when cap is None."""
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
-        
+
         cam = OpenCVCameraBackend("opencv_camera_0")
         cam.initialized = True
         cam.cap = None
-        
+
         # No cap - should return False
         result = await cam.is_exposure_control_supported()
-        assert result is False 
+        assert result is False

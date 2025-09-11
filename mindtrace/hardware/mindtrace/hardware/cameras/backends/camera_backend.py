@@ -29,27 +29,27 @@ class CameraBackend(MindtraceABC):
 
     Implementation Guide:
         - Offload blocking SDK calls from async methods:
-          Use ``asyncio.to_thread`` for simple cases or ``loop.run_in_executor`` with a per-instance single-thread 
+          Use ``asyncio.to_thread`` for simple cases or ``loop.run_in_executor`` with a per-instance single-thread
           executor when the SDK requires thread affinity.
         - Thread affinity:
-          Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread 
-          executor created during ``initialize()`` and shut down in ``close()`` to serialize SDK access without 
+          Many vendor SDKs are safest when all calls originate from one OS thread. Prefer a dedicated single-thread
+          executor created during ``initialize()`` and shut down in ``close()`` to serialize SDK access without
           blocking the event loop.
         - Timeouts and cancellation:
-          Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with ``asyncio.wait_for`` to 
-          bound runtime. Note that cancelling an await does not stop the underlying thread function; design 
+          Prefer SDK-native timeouts where available. Otherwise, wrap awaited futures with ``asyncio.wait_for`` to
+          bound runtime. Note that cancelling an await does not stop the underlying thread function; design
           idempotent/short tasks when possible.
         - Event loop hygiene:
-          Never call blocking functions (e.g., long SDK calls, ``time.sleep``) directly in async methods. Replace 
+          Never call blocking functions (e.g., long SDK calls, ``time.sleep``) directly in async methods. Replace
           sleeps with ``await asyncio.sleep`` or run blocking work in the executor.
         - Sync helpers:
-          Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the 
+          Lightweight getters/setters that do not touch hardware may remain synchronous. If a "getter" calls into the
           SDK, route it through the executor to avoid blocking.
         - Errors:
-          Map SDK-specific exceptions to the domain exceptions in ``mindtrace.hardware.core.exceptions`` with clear, 
+          Map SDK-specific exceptions to the domain exceptions in ``mindtrace.hardware.core.exceptions`` with clear,
           contextual messages.
         - Cleanup:
-          Ensure resources (device handles, executors, buffers) are released in ``close()``. ``__aenter__/__aexit__`` 
+          Ensure resources (device handles, executors, buffers) are released in ``close()``. ``__aenter__/__aexit__``
           already call ``setup_camera``/``close`` for async contexts.
     """
 
@@ -310,4 +310,4 @@ class CameraBackend(MindtraceABC):
                         f"Use 'async with camera' or call 'await camera.close()' for proper cleanup."
                     )
         except Exception:
-            pass 
+            pass

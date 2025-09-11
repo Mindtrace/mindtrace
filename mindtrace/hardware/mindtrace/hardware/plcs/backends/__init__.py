@@ -1,7 +1,7 @@
 """
 PLC backends for different manufacturers and protocols.
 
-This module contains implementations for various PLC types including Allen Bradley, Siemens, Modbus, and other 
+This module contains implementations for various PLC types including Allen Bradley, Siemens, Modbus, and other
 industrial protocols.
 """
 

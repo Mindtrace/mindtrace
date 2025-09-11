@@ -15,7 +15,13 @@ class Camera(Mindtrace):
     All operations are executed on a background event loop (owned by the sync CameraManager).
     """
 
-    def __init__(self, async_camera: Optional[AsyncCamera] = None, loop: Optional[asyncio.AbstractEventLoop] = None, name: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        async_camera: Optional[AsyncCamera] = None,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+        name: Optional[str] = None,
+        **kwargs,
+    ):
         """Create a sync Camera facade.
 
         If no async_camera/loop is supplied, a default OpenCV camera is created under the hood
@@ -110,7 +116,9 @@ class Camera(Mindtrace):
         return self._backend.is_connected
 
     # Sync methods delegating to async
-    def capture(self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy") -> Any:
+    def capture(
+        self, save_path: Optional[str] = None, upload_to_gcs: bool = False, output_format: str = "numpy"
+    ) -> Any:
         """Capture an image from the camera.
 
         Args:
@@ -134,7 +142,7 @@ class Camera(Mindtrace):
         """Configure multiple camera settings atomically.
 
         Args:
-            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format, 
+            **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode, pixel_format,
                 white_balance, image_enhancement.
 
         Returns:
@@ -424,7 +432,7 @@ class Camera(Mindtrace):
                 try:
                     self._loop.close()
                 except Exception:
-                    pass 
+                    pass
 
     # Context manager support
     def __enter__(self) -> "Camera":
@@ -441,4 +449,4 @@ class Camera(Mindtrace):
             parent_exit = getattr(super(), "__exit__", None)
             if callable(parent_exit):
                 return parent_exit(exc_type, exc, tb)
-            return False 
+            return False

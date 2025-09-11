@@ -34,8 +34,8 @@ from mindtrace.hardware.core.exceptions import (
 class OpenCVCameraBackend(CameraBackend):
     """OpenCV camera implementation for USB cameras and webcams.
 
-    This backend provides a comprehensive interface to USB cameras, webcams, and other video capture devices using 
-    OpenCV's ``VideoCapture`` with robust error handling and resource management. It works across Windows, Linux, and 
+    This backend provides a comprehensive interface to USB cameras, webcams, and other video capture devices using
+    OpenCV's ``VideoCapture`` with robust error handling and resource management. It works across Windows, Linux, and
     macOS with platform-aware discovery.
 
     Features:
@@ -63,7 +63,7 @@ class OpenCVCameraBackend(CameraBackend):
     - All OpenCV SDK calls are executed on a per-instance single-thread executor to maintain thread affinity.
     - A per-instance asyncio.Lock (_io_lock) serializes mutating operations to prevent concurrent set/read races.
     - Unlike Basler, OpenCV cameras do not have an explicit "grabbing" state; all operations use continuous mode.
-    
+
     Attributes:
         camera_index: Camera device index or path
         cap: OpenCV VideoCapture object
@@ -215,8 +215,10 @@ class OpenCVCameraBackend(CameraBackend):
             self._sdk_executor = concurrent.futures.ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix=f"opencv-{self.camera_name}"
             )
+
         def _call():
             return func(*args, **kwargs)
+
         future = self._sdk_executor.submit(_call)
         return future.result(timeout or self._op_timeout_s)
 
@@ -530,10 +532,18 @@ class OpenCVCameraBackend(CameraBackend):
                             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) if cap.isOpened() else 0
                             fps = cap.get(cv2.CAP_PROP_FPS) if cap.isOpened() else 0.0
                             backend_str = (
-                                cap.getBackendName() if hasattr(cap, "getBackendName") and cap.isOpened() else _backend_name(chosen)
+                                cap.getBackendName()
+                                if hasattr(cap, "getBackendName") and cap.isOpened()
+                                else _backend_name(chosen)
                             )
                             cap.release()
-                            details[name] = {"index": str(i), "backend": backend_str, "width": str(w), "height": str(h), "fps": f"{fps:.2f}"}
+                            details[name] = {
+                                "index": str(i),
+                                "backend": backend_str,
+                                "width": str(w),
+                                "height": str(h),
+                                "fps": f"{fps:.2f}",
+                            }
                     else:
                         # On macOS and in simple list mode, stop after first successful device
                         if sys.platform.startswith("darwin"):
@@ -726,12 +736,12 @@ class OpenCVCameraBackend(CameraBackend):
         if self._sdk_executor is not None:
             try:
                 # Cancel any pending futures first
-                for future in list(self._sdk_executor._threads if hasattr(self._sdk_executor, '_threads') else []):
+                for future in list(self._sdk_executor._threads if hasattr(self._sdk_executor, "_threads") else []):
                     try:
                         future.cancel()
                     except Exception:
                         pass
-                
+
                 # Shutdown with proper timeout handling
                 self._sdk_executor.shutdown(wait=False)
                 self._sdk_executor = None
@@ -756,7 +766,7 @@ class OpenCVCameraBackend(CameraBackend):
             # Most cameras that support exposure will return a valid value
             async with self._io_lock:
                 current_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE, timeout=2.0)
-            
+
             # If we get a reasonable exposure value, assume control is supported
             # OpenCV typically returns -1 or 0 for unsupported properties
             return current_exposure is not None and current_exposure > -1
@@ -1334,19 +1344,24 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Failed to import config from '{config_path}' for camera '{self.camera_name}': {str(e)}"
             )
 
-
     # Network functions - not applicable for OpenCV (USB cameras)
     async def get_bandwidth_limit(self) -> float:
         """Bandwidth limiting not applicable for OpenCV cameras."""
-        raise NotImplementedError(f"Bandwidth limiting not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+        raise NotImplementedError(
+            f"Bandwidth limiting not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
+        )
 
     async def get_packet_size(self) -> int:
         """Packet size not applicable for OpenCV cameras."""
-        raise NotImplementedError(f"Packet size not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+        raise NotImplementedError(
+            f"Packet size not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
+        )
 
     async def get_inter_packet_delay(self) -> int:
         """Inter-packet delay not applicable for OpenCV cameras."""
-        raise NotImplementedError(f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)")
+        raise NotImplementedError(
+            f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
+        )
 
     def __del__(self) -> None:
         """Destructor to ensure proper cleanup."""

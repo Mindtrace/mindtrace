@@ -1,1 +1,1 @@
-"""Integration tests for Basler camera backends.""" 
+"""Integration tests for Basler camera backends."""

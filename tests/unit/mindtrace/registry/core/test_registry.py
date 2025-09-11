@@ -3,14 +3,12 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import re
 from tempfile import TemporaryDirectory
-import time
 from unittest.mock import patch
 
+import pytest
 from minio import S3Error
 from pydantic import BaseModel
-import pytest
 
 from mindtrace.core import Config
 from mindtrace.registry import LocalRegistryBackend, Registry
@@ -18,6 +16,7 @@ from mindtrace.registry import LocalRegistryBackend, Registry
 
 class SampleModel(BaseModel):
     """Sample Pydantic model for testing."""
+
     name: str
     value: int
 

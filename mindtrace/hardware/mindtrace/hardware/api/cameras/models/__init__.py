@@ -111,7 +111,6 @@ __all__ = [
     "BandwidthLimitCameraRequest",
     "PacketSizeRequest",
     "InterPacketDelayRequest",
-    
     # Responses
     "BaseResponse",
     "BoolResponse",

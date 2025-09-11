@@ -104,7 +104,7 @@ class CameraSettings:
         # Image enhancement settings (for quality enhancement)
         enhancement_gamma: Gamma correction value for image enhancement
         enhancement_contrast: Contrast factor for image enhancement
-        
+
         # Basler-specific settings
         pixel_format: Default pixel format (BGR8, RGB8, etc.)
         buffer_count: Number of frame buffers for cameras
@@ -141,7 +141,7 @@ class CameraSettings:
     # Image enhancement settings
     enhancement_gamma: float = 2.2
     enhancement_contrast: float = 1.2
-    
+
     # Basler-specific settings
     pixel_format: str = "BGR8"
     buffer_count: int = 25

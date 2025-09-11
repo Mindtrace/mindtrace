@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -172,9 +171,7 @@ class BoundingBox:
         return (self.x <= px <= self.x2) and (self.y <= py <= self.y2)
 
     def intersects(self, other: "BoundingBox") -> bool:
-        return not (
-            self.x2 <= other.x or other.x2 <= self.x or self.y2 <= other.y or other.y2 <= self.y
-        )
+        return not (self.x2 <= other.x or other.x2 <= self.x or self.y2 <= other.y or other.y2 <= self.y)
 
     def intersection(self, other: "BoundingBox") -> Optional["BoundingBox"]:
         x1 = max(self.x, other.x)
@@ -240,4 +237,4 @@ class BoundingBox:
             raise ValueError("corners_np must be of shape (N,2) or (N,1,2)")
         x1, y1 = float(np.min(corners_np[:, 0])), float(np.min(corners_np[:, 1]))
         x2, y2 = float(np.max(corners_np[:, 0])), float(np.max(corners_np[:, 1]))
-        return BoundingBox(x1, y1, x2 - x1, y2 - y1) 
+        return BoundingBox(x1, y1, x2 - x1, y2 - y1)

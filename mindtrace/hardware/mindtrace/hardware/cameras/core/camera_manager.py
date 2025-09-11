@@ -52,13 +52,16 @@ class CameraManager(Mindtrace):
         include_mocks: bool = False,
     ):
         from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+
         return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
 
-    def open(self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs) -> Union["Camera", Dict[str, "Camera"]]:
+    def open(
+        self, names: Optional[Union[str, List[str]]] = None, test_connection: bool = True, **kwargs
+    ) -> Union["Camera", Dict[str, "Camera"]]:
         """Open one or more cameras.
 
         Args:
-            names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera 
+            names: Camera name (e.g., "Backend:device") or a list of names. If None, opens the first available camera
                 (prefers OpenCV).
             test_connection: If True, perform a lightweight connection test after opening.
             **kwargs: Optional backend-specific configuration to apply during open.
@@ -101,9 +104,13 @@ class CameraManager(Mindtrace):
         """Configure multiple cameras simultaneously."""
         return self._submit_coro(self._manager.batch_configure(configurations))
 
-    def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy") -> Dict[str, Any]:
+    def batch_capture(
+        self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
+    ) -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management."""
-        return self._submit_coro(self._manager.batch_capture(camera_names, upload_to_gcs=upload_to_gcs, output_format=output_format))
+        return self._submit_coro(
+            self._manager.batch_capture(camera_names, upload_to_gcs=upload_to_gcs, output_format=output_format)
+        )
 
     def batch_capture_hdr(
         self,
@@ -176,7 +183,7 @@ class CameraManager(Mindtrace):
                 except Exception:
                     pass
         except Exception:
-            pass 
+            pass
 
     # ===== Loop helpers =====
     def _run_loop(self):
