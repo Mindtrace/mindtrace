@@ -44,18 +44,31 @@ class DockerEnvironment(Mindtrace):
             # Pull image if not exists
             self.client.images.pull(self.image)
 
-            # Create and start container
-            self.container = self.client.containers.run(
-                image=self.image,
-                environment=self.environment,
-                volumes=self.volumes,
-                working_dir=self.working_dir,
-                device_requests=[docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])],
-                detach=True,
-                tty=True,
-                command="sh",
-                stdin_open=True,
-            )
+            if self.devices:
+                # Create and start container
+                self.container = self.client.containers.run(
+                    image=self.image,
+                    environment=self.environment,
+                    volumes=self.volumes,
+                    working_dir=self.working_dir,
+                    device_requests=[docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])],
+                    detach=True,
+                    tty=True,
+                    command="sh",
+                    stdin_open=True,
+                )
+            else:
+                self.container = self.client.containers.run(
+                    image=self.image,
+                    environment=self.environment,
+                    volumes=self.volumes,
+                    working_dir=self.working_dir,
+                    detach=True,
+                    tty=True,
+                    command="sh",
+                    stdin_open=True,
+                )
+
 
             return str(self.container.id)
 
