@@ -310,7 +310,6 @@ async def test_open_default_prefers_opencv_with_mocked_backend(monkeypatch):
     mgr = AsyncCameraManager(include_mocks=True)
     try:
         # Make discover(["OpenCV"]) return a device
-        orig_discover = mgr.discover
 
         def _disc(backends=None, details=False, include_mocks=False):  # noqa: ARG001
             if backends == ["OpenCV"]:
@@ -452,14 +451,14 @@ async def test_backend_specific_discovery_consistency(camera_manager):
     all_cameras = manager.__class__.discover(include_mocks=True)
 
     # Filter out real hardware cameras for consistent testing
-    mock_only_cameras = [cam for cam in all_cameras if "MockBasler" in cam or "OpenCV" not in cam]
+    [cam for cam in all_cameras if "MockBasler" in cam or "OpenCV" not in cam]
 
     basler_cameras = manager.__class__.discover(backends="MockBasler", include_mocks=True)
-    opencv_cameras = manager.__class__.discover(backends="OpenCV", include_mocks=True)
+    manager.__class__.discover(backends="OpenCV", include_mocks=True)
 
     # For testing consistency, only compare mock cameras
     mock_basler_from_all = [cam for cam in all_cameras if "MockBasler" in cam]
-    mock_opencv_from_all = [cam for cam in all_cameras if cam.startswith("OpenCV:")]
+    [cam for cam in all_cameras if cam.startswith("OpenCV:")]
 
     # Sort for comparison
     mock_basler_from_all_sorted = sorted(mock_basler_from_all)
@@ -472,7 +471,7 @@ async def test_backend_specific_discovery_consistency(camera_manager):
 @pytest.mark.asyncio
 async def test_convenience_function_with_backend_filtering():
     """Test convenience function with backend filtering."""
-    mgr = AsyncCameraManager(include_mocks=True)
+    AsyncCameraManager(include_mocks=True)
     all_cameras = AsyncCameraManager.discover(include_mocks=True)
     assert isinstance(all_cameras, list)
     assert len(all_cameras) > 0
@@ -675,7 +674,7 @@ async def test_bandwidth_management_persistence():
 @pytest.mark.asyncio
 async def test_bandwidth_management_with_convenience_functions():
     """Test bandwidth management with convenience functions."""
-    mgr = AsyncCameraManager(include_mocks=True, max_concurrent_captures=5)
+    AsyncCameraManager(include_mocks=True, max_concurrent_captures=5)
     cameras = AsyncCameraManager.discover(include_mocks=True)
     assert isinstance(cameras, list)
     assert len(cameras) > 0

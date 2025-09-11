@@ -320,7 +320,7 @@ class TestMockBaslerROIOperations:
 
         # Get initial ROI
         initial_roi = await camera.get_ROI()
-        initial_width, initial_height = initial_roi["width"], initial_roi["height"]
+        _initial_width, _initial_height = initial_roi["width"], initial_roi["height"]
 
         # Set custom ROI
         roi_params = (100, 50, 800, 600)

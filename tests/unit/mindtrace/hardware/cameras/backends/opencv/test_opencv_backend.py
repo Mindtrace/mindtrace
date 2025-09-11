@@ -342,7 +342,7 @@ async def test_check_connection_failure_branches(monkeypatch):
     cam4 = OpenCVCameraBackend("0")
     cam4.initialized = True
     cam4.cap = cv2.VideoCapture(0)
-    original = cam4._sdk
+    _original = cam4._sdk
 
     async def _boom(func, *a, **k):  # noqa: ARG001
         raise RuntimeError("boom")

@@ -280,10 +280,8 @@ def create_fake_pypylon():
 
             if pixel_format == "Mono8":
                 shape = (height, width)
-                channels = 1
             else:
                 shape = (height, width, 3)
-                channels = 3
 
             image = np.random.randint(0, 255, shape, dtype=np.uint8)
             return GrabResult(success=True, image_array=image)

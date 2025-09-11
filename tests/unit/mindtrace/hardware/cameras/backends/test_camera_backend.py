@@ -827,7 +827,7 @@ class TestCameraBackendInheritance:
         mock_config_obj.cameras.retrieve_retry_count = 3
         mock_get_config.return_value.get_config.return_value = mock_config_obj
 
-        backend = MinimalConcreteBackend()
+        _backend = MinimalConcreteBackend()
 
         # Check MRO
         mro = MinimalConcreteBackend.__mro__

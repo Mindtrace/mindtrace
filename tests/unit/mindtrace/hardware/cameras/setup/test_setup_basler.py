@@ -27,7 +27,7 @@ class TestPylonSDKInstaller:
 
     def test_installer_has_sdk_urls(self):
         """Test that installer has SDK URLs defined."""
-        installer = PylonSDKInstaller()
+        PylonSDKInstaller()
 
         # Should have class-level URL constants
         assert hasattr(PylonSDKInstaller, "LINUX_SDK_URL")
