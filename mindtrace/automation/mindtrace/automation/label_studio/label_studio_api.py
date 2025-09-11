@@ -10,8 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from label_studio_sdk import Client
 from label_studio_sdk._legacy.project import Project as LSProject
 
-from mindtrace.core import Mindtrace
-from mindtrace.jobs.utils.checks import ifnone
+from mindtrace.core import Mindtrace, ifnone
 
 from .exceptions import (
     CredentialsNotFoundError,
