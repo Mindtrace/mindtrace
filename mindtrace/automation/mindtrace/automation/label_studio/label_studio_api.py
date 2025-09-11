@@ -50,7 +50,7 @@ class LabelStudio(Mindtrace):
         self.logger.info(f"Initialised LS at: {self.url}")
 
     def create_project(self, project_name: str, description: str = None, label_config: str = None) -> LSProject:
-        """Use this method to create a new LSProject.
+        """Create a new LSProject.
 
         Args:
             project_name: Project name
@@ -79,9 +79,7 @@ class LabelStudio(Mindtrace):
         return self.client.start_project(**kwargs)
 
     def list_projects(self, page_size: int = 100, **query_params) -> list:
-        """Use this method when you need the complete list of LSProject
-        in Label Studio (e.g., to search, validate names, or iterate
-        through all projects)
+        """List of LSProject in Label Studio (e.g., to search, validate names, or iterate through all projects)
 
         Args:
             page_size: Number of projects per page. Defaults to ``100``.
@@ -121,7 +119,7 @@ class LabelStudio(Mindtrace):
         return projects
 
     def get_project(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> LSProject:
-        """Use this method to retrieve a specific LSProject by name or ID.
+        """Retrieve a specific LSProject by name or ID.
 
         Args:
             project_name: The name of the project to retrieve.
@@ -159,7 +157,7 @@ class LabelStudio(Mindtrace):
         raise ValueError("Must provide either project_name or project_id")
 
     def get_latest_project_part(self, pattern: str) -> tuple[Optional[int], Optional[str]]:
-        """Use this method to find the latest project part number matching a given pattern.
+        """Find the latest project part number matching a given pattern.
 
         Args:
             pattern: Pattern to match project titles
@@ -324,7 +322,7 @@ class LabelStudio(Mindtrace):
         return total_created
 
     def get_tasks(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all tasks in a project.
+        """List all tasks in a project.
 
         Args:
             project_name: Project name
@@ -340,7 +338,7 @@ class LabelStudio(Mindtrace):
     def get_task(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
     ) -> dict:
-        """Use this method to get a specific task.
+        """Get a specific task.
 
         Args:
             project_name: Project name of Label Studio
@@ -407,7 +405,7 @@ class LabelStudio(Mindtrace):
     def create_annotation(
         self, *, project_name: str = None, project_id: int = None, task_id: int = None, annotation: dict = None
     ) -> dict:
-        """Use this method to create an annotation for a task.
+        """Create an annotation for a task.
 
         Args:
             project_name: Project name of Label Studio
@@ -432,7 +430,7 @@ class LabelStudio(Mindtrace):
     def get_annotations(
         self, *, project_name: Optional[str] = None, project_id: Optional[int] = None, task_id: Optional[int] = None
     ) -> list:
-        """Use this method to get annotations for a task_id or all tasks.
+        """Get annotations for a task_id or all tasks.
 
         Args:
             project_name: Project name of Label Studio
@@ -513,7 +511,7 @@ class LabelStudio(Mindtrace):
         presign: Optional[bool] = None,
         presign_ttl: Optional[int] = None,
     ) -> dict:
-        """Use this method to create a Google Cloud Storage for import or export.
+        """Create a Google Cloud Storage for import or export.
 
         Args:
             project_name: Project name of Label Studio
@@ -612,7 +610,7 @@ class LabelStudio(Mindtrace):
         max_attempts: int = 100,
         retry_delay: int = 1,
     ) -> bool:
-        """Use this method to synchronise Google Cloud Storage. The function will trigger the sync of the storage and return True if the sync is successful
+        """Synchronise Google Cloud Storage. The function will trigger the sync of the storage and return True if the sync is successful
         The function will import or export the tasks to the storage from the project respectively as specified by the storage_type.
         If storage_id is provided, the function will sync the storage with the given id.
         If storage_prefix is provided, the function will sync the storage with the given prefix.
@@ -687,7 +685,7 @@ class LabelStudio(Mindtrace):
         ) from last_error
 
     def list_import_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all import storages for a project.
+        """List all import storages for a project.
 
         Args:
             project_name: Project name of Label Studio
@@ -704,7 +702,7 @@ class LabelStudio(Mindtrace):
             raise
 
     def list_export_storages(self, *, project_name: Optional[str] = None, project_id: Optional[int] = None) -> list:
-        """Use this method to list all export storages for a project.
+        """List all export storages for a project.
 
         Args:
             project_name: Project name of Label Studio
