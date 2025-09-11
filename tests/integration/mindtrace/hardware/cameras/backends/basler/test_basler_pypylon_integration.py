@@ -80,32 +80,42 @@ class TestPylonSDKIntegration:
 
     def test_real_basler_backend_constructor(self):
         """Test BaslerCameraBackend constructor with real pypylon SDK."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        
-        # Should not raise SDKNotAvailableError when pypylon is available
-        camera = BaslerCameraBackend("test_camera")
-        assert camera.camera_name == "test_camera"
-        assert hasattr(camera, 'default_pixel_format')
-        assert hasattr(camera, 'buffer_count')
-        assert hasattr(camera, 'timeout_ms')
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            
+            # Should not raise SDKNotAvailableError when pypylon is available
+            camera = BaslerCameraBackend("test_camera")
+            assert camera.camera_name == "test_camera"
+            assert hasattr(camera, 'default_pixel_format')
+            assert hasattr(camera, 'buffer_count')
+            assert hasattr(camera, 'timeout_ms')
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     def test_real_basler_backend_configuration(self):
         """Test BaslerCameraBackend constructor with various configurations."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        
-        camera = BaslerCameraBackend(
-            "test_camera",
-            img_quality_enhancement=True,
-            retrieve_retry_count=3,
-            pixel_format="RGB8",
-            buffer_count=10,
-            timeout_ms=3000
-        )
-        assert camera.img_quality_enhancement is True
-        assert camera.retrieve_retry_count == 3
-        assert camera.default_pixel_format == "RGB8"
-        assert camera.buffer_count == 10
-        assert camera.timeout_ms == 3000
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            
+            camera = BaslerCameraBackend(
+                "test_camera",
+                img_quality_enhancement=True,
+                retrieve_retry_count=3,
+                pixel_format="RGB8",
+                buffer_count=10,
+                timeout_ms=3000
+            )
+            assert camera.img_quality_enhancement is True
+            assert camera.retrieve_retry_count == 3
+            assert camera.default_pixel_format == "RGB8"
+            assert camera.buffer_count == 10
+            assert camera.timeout_ms == 3000
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
 
 class TestPylonAPIAvailability:
@@ -221,16 +231,21 @@ class TestCameraDiscoveryNoHardware:
 
     def test_discovery_error_handling_with_real_sdk(self):
         """Test that discovery properly handles errors with real SDK."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import HardwareOperationError
-        
-        # This should work normally and return empty list
         try:
-            cameras = BaslerCameraBackend.get_available_cameras()
-            assert isinstance(cameras, list)
-        except HardwareOperationError:
-            # If discovery fails due to SDK issues, that's also valid behavior
-            pytest.skip("Discovery failed due to SDK configuration - this is expected in some environments")
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from mindtrace.hardware.core.exceptions import HardwareOperationError
+            
+            # This should work normally and return empty list
+            try:
+                cameras = BaslerCameraBackend.get_available_cameras()
+                assert isinstance(cameras, list)
+            except HardwareOperationError:
+                # If discovery fails due to SDK issues, that's also valid behavior
+                pytest.skip("Discovery failed due to SDK configuration - this is expected in some environments")
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
 
 class TestInitializationFailureModesNoHardware:
@@ -239,35 +254,50 @@ class TestInitializationFailureModesNoHardware:
     @pytest.mark.asyncio
     async def test_real_initialization_camera_not_found(self):
         """Test initialization fails gracefully with CameraNotFoundError when camera doesn't exist."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraNotFoundError
-        
-        camera = BaslerCameraBackend("nonexistent_camera_12345")
-        
-        with pytest.raises(CameraNotFoundError):
-            await camera.initialize()
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from mindtrace.hardware.core.exceptions import CameraNotFoundError
+            
+            camera = BaslerCameraBackend("nonexistent_camera_12345")
+            
+            with pytest.raises(CameraNotFoundError):
+                await camera.initialize()
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     @pytest.mark.asyncio 
     async def test_real_initialization_serial_not_found(self):
         """Test initialization fails with invalid serial number."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraNotFoundError
-        
-        camera = BaslerCameraBackend("999999999")  # Invalid serial
-        
-        with pytest.raises(CameraNotFoundError):
-            await camera.initialize()
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from mindtrace.hardware.core.exceptions import CameraNotFoundError
+            
+            camera = BaslerCameraBackend("999999999")  # Invalid serial
+            
+            with pytest.raises(CameraNotFoundError):
+                await camera.initialize()
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     @pytest.mark.asyncio
     async def test_real_initialization_empty_name(self):
         """Test initialization fails with empty camera name."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from mindtrace.hardware.core.exceptions import CameraNotFoundError
-        
-        camera = BaslerCameraBackend("")
-        
-        with pytest.raises(CameraNotFoundError):
-            await camera.initialize()
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from mindtrace.hardware.core.exceptions import CameraNotFoundError
+            
+            camera = BaslerCameraBackend("")
+            
+            with pytest.raises(CameraNotFoundError):
+                await camera.initialize()
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
 
 class TestManagerIntegration:
@@ -276,22 +306,27 @@ class TestManagerIntegration:
     @pytest.mark.asyncio
     async def test_real_basler_in_camera_manager(self):
         """Test that real BaslerCameraBackend integrates with camera manager."""
-        from mindtrace.hardware.cameras.core.camera_manager import CameraManager
-        
-        # Test that Basler backend is discovered
-        manager = CameraManager(include_mocks=False)
         try:
-            backends = manager.backends()
-            assert "Basler" in backends
+            from mindtrace.hardware.cameras.core.camera_manager import CameraManager
             
-            # Test backend info includes real Basler
-            info = manager.backend_info()
-            assert "Basler" in info
-            assert info["Basler"]["available"] is True
-            # sdk_required changed from list to boolean
-            assert info["Basler"]["sdk_required"] is True
-        finally:
-            manager.close()
+            # Test that Basler backend is discovered
+            manager = CameraManager(include_mocks=False)
+            try:
+                backends = manager.backends()
+                assert "Basler" in backends
+                
+                # Test backend info includes real Basler
+                info = manager.backend_info()
+                assert "Basler" in info
+                assert info["Basler"]["available"] is True
+                # sdk_required changed from list to boolean
+                assert info["Basler"]["sdk_required"] is True
+            finally:
+                manager.close()
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     def test_real_basler_discovery_integration(self):
         """Test discovery integration between BaslerCameraBackend and manager."""
@@ -317,31 +352,41 @@ class TestErrorHandlingIntegration:
     
     def test_sdk_method_with_real_exceptions(self):
         """Test that _sdk method properly handles real pypylon exceptions."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from pypylon import pylon
-        
-        camera = BaslerCameraBackend("test_camera")
-        
-        # Test that real exception types are available for testing
-        assert hasattr(pylon, 'TimeoutException')
-        assert hasattr(pylon, 'RuntimeException')
-        
-        # The actual error handling is tested in unit tests with mocks,
-        # but this verifies the exception types exist for integration
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from pypylon import pylon
+            
+            camera = BaslerCameraBackend("test_camera")
+            
+            # Test that real exception types are available for testing
+            assert hasattr(pylon, 'TimeoutException')
+            assert hasattr(pylon, 'RuntimeException')
+            
+            # The actual error handling is tested in unit tests with mocks,
+            # but this verifies the exception types exist for integration
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     def test_real_exception_inheritance(self):
         """Test that real pypylon exceptions have expected inheritance."""
-        from pypylon import pylon, genicam
-        
-        # Test exception hierarchy
-        timeout_ex = pylon.TimeoutException("test")
-        runtime_ex = pylon.RuntimeException("test")
-        generic_ex = genicam.GenericException("test", "file.cpp", 42)
-        
-        # These should be proper exception types
-        assert isinstance(timeout_ex, Exception)
-        assert isinstance(runtime_ex, Exception) 
-        assert isinstance(generic_ex, Exception)
+        try:
+            from pypylon import pylon, genicam
+            
+            # Test exception hierarchy
+            timeout_ex = pylon.TimeoutException("test")
+            runtime_ex = pylon.RuntimeException("test")
+            generic_ex = genicam.GenericException("test", "file.cpp", 42)
+            
+            # These should be proper exception types
+            assert isinstance(timeout_ex, Exception)
+            assert isinstance(runtime_ex, Exception) 
+            assert isinstance(generic_ex, Exception)
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
 
 class TestConfigurationWithRealSDK:
@@ -349,42 +394,57 @@ class TestConfigurationWithRealSDK:
     
     def test_real_pixel_format_validation(self):
         """Test that pixel format constants work with real SDK."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from pypylon import pylon
-        
-        # Test common pixel formats are accepted
-        camera1 = BaslerCameraBackend("test", pixel_format="BGR8")
-        assert camera1.default_pixel_format == "BGR8"
-        
-        camera2 = BaslerCameraBackend("test", pixel_format="RGB8")
-        assert camera2.default_pixel_format == "RGB8"
-        
-        camera3 = BaslerCameraBackend("test", pixel_format="Mono8")
-        assert camera3.default_pixel_format == "Mono8"
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from pypylon import pylon
+            
+            # Test common pixel formats are accepted
+            camera1 = BaslerCameraBackend("test", pixel_format="BGR8")
+            assert camera1.default_pixel_format == "BGR8"
+            
+            camera2 = BaslerCameraBackend("test", pixel_format="RGB8")
+            assert camera2.default_pixel_format == "RGB8"
+            
+            camera3 = BaslerCameraBackend("test", pixel_format="Mono8")
+            assert camera3.default_pixel_format == "Mono8"
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     def test_real_grabbing_mode_constants(self):
         """Test that grabbing mode constants are available."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        from pypylon import pylon
-        
-        camera = BaslerCameraBackend("test")
-        
-        # Test that grabbing strategy constants exist
-        assert hasattr(pylon, 'GrabStrategy_LatestImageOnly')
-        
-        # The backend should have a default grabbing mode
-        assert hasattr(camera, 'grabbing_mode')
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            from pypylon import pylon
+            
+            camera = BaslerCameraBackend("test")
+            
+            # Test that grabbing strategy constants exist
+            assert hasattr(pylon, 'GrabStrategy_LatestImageOnly')
+            
+            # The backend should have a default grabbing mode
+            assert hasattr(camera, 'grabbing_mode')
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise
 
     def test_buffer_count_configuration(self):
         """Test buffer count configuration with reasonable values."""
-        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
-        
-        # Test various buffer counts
-        camera1 = BaslerCameraBackend("test", buffer_count=5)
-        assert camera1.buffer_count == 5
-        
-        camera2 = BaslerCameraBackend("test", buffer_count=25)
-        assert camera2.buffer_count == 25
-        
-        camera3 = BaslerCameraBackend("test", buffer_count=50)
-        assert camera3.buffer_count == 50 
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+            
+            # Test various buffer counts
+            camera1 = BaslerCameraBackend("test", buffer_count=5)
+            assert camera1.buffer_count == 5
+            
+            camera2 = BaslerCameraBackend("test", buffer_count=25)
+            assert camera2.buffer_count == 25
+            
+            camera3 = BaslerCameraBackend("test", buffer_count=50)
+            assert camera3.buffer_count == 50
+        except Exception as e:
+            if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
+                pytest.skip(f"Pypylon SDK not available: {e}")
+            raise 
