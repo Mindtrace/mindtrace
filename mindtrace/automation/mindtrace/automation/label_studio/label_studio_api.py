@@ -850,7 +850,7 @@ class LabelStudio(Mindtrace):
             Set of image paths/URLs used in the project
         """
         try:
-            tasks = self.list_tasks(project_name=project_name, project_id=project_id)
+            tasks = self.get_tasks(project_name=project_name, project_id=project_id)
             image_paths = set()
 
             for task in tasks:
