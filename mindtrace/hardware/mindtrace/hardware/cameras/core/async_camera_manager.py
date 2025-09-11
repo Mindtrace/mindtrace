@@ -3,19 +3,22 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import cv2
-
 from mindtrace.core.base.mindtrace_base import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.core.exceptions import (
-    CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
     CameraInitializationError,
     CameraNotFoundError,
-    CameraTimeoutError,
 )
+
+try:
+    from mindtrace.storage.gcs import GCSStorageHandler
+    STORAGE_AVAILABLE = True
+except ImportError:
+    GCSStorageHandler = None
+    STORAGE_AVAILABLE = False
 
 
 class AsyncCameraManager(Mindtrace):
@@ -75,12 +78,13 @@ class AsyncCameraManager(Mindtrace):
         self.logger.debug(f"Initializing AsyncCameraManager (include_mocks={include_mocks})")
         self._discovered_backends = self._discover_all_backends()
 
+        # Get config
+        from mindtrace.hardware.core.config import get_hardware_config
+        self._hardware_config = get_hardware_config().get_config()
+
         # Get max_concurrent_captures from config if not provided
         if max_concurrent_captures is None:
-            from mindtrace.hardware.core.config import get_hardware_config
-
-            config = get_hardware_config()
-            max_concurrent_captures = config.get_config().cameras.max_concurrent_captures
+            max_concurrent_captures = self._hardware_config.cameras.max_concurrent_captures
 
         # Network bandwidth management - global semaphore to limit concurrent captures
         self._capture_semaphore = asyncio.Semaphore(max_concurrent_captures)
@@ -517,7 +521,7 @@ class AsyncCameraManager(Mindtrace):
 
         return results
 
-    async def batch_capture(self, camera_names: List[str]) -> Dict[str, Any]:
+    async def batch_capture(self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy") -> Dict[str, Any]:
         """Capture from multiple cameras with network bandwidth management."""
         results = {}
 
@@ -527,7 +531,7 @@ class AsyncCameraManager(Mindtrace):
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
-                    image = await camera.capture()
+                    image = await camera.capture(upload_to_gcs=upload_to_gcs, output_format=output_format)
                     return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
@@ -552,11 +556,13 @@ class AsyncCameraManager(Mindtrace):
         exposure_levels: int = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
-    ) -> Dict[str, Union[List[Any], bool]]:
+        upload_to_gcs: bool = False,
+        output_format: str = "numpy",
+    ) -> Dict[str, Dict[str, Any]]:
         """Capture HDR images from multiple cameras simultaneously."""
         results = {}
 
-        async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Union[List[Any], bool]]:
+        async def capture_hdr_from_camera(camera_name: str) -> Tuple[str, Dict[str, Any]]:
             try:
                 async with self._capture_semaphore:
                     if camera_name not in self._cameras:
@@ -573,11 +579,23 @@ class AsyncCameraManager(Mindtrace):
                         exposure_levels=exposure_levels,
                         exposure_multiplier=exposure_multiplier,
                         return_images=return_images,
+                        upload_to_gcs=upload_to_gcs,
+                        output_format=output_format,
                     )
+                    
+                    # HDR upload will be handled by individual camera capture_hdr method
+                    
                     return camera_name, result
             except Exception as e:
                 self.logger.error(f"HDR capture failed for '{camera_name}': {e}")
-                return camera_name, [] if return_images else False
+                return camera_name, {
+                    "success": False,
+                    "images": None,
+                    "image_paths": None,
+                    "gcs_urls": None,
+                    "exposure_levels": [],
+                    "successful_captures": 0
+                }
 
         tasks = [capture_hdr_from_camera(name) for name in camera_names]
         hdr_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -716,7 +734,9 @@ class AsyncCameraManager(Mindtrace):
         """Get mock camera class for backend (class method for consistent logging)."""
         try:
             if backend_name.lower() == "basler":
-                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import MockBaslerCameraBackend
+                from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
+                    MockBaslerCameraBackend,
+                )
 
                 return MockBaslerCameraBackend
             else:
