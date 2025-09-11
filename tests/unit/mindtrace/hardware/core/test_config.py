@@ -138,7 +138,7 @@ class TestHardwareConfigManagerCoverage:
             config = config_mgr.get_config()
 
             # Verify loaded values
-            assert config.cameras.image_quality_enhancement == True
+            assert config.cameras.image_quality_enhancement
             assert config.cameras.retrieve_retry_count == 5
             assert config.cameras.exposure_time == 10000.0
             assert config.cameras.white_balance == "auto"
@@ -159,7 +159,7 @@ class TestHardwareConfigManagerCoverage:
             config = config_mgr.get_config()
 
             # Should fall back to defaults
-            assert config.cameras.image_quality_enhancement == False  # default
+            assert not config.cameras.image_quality_enhancement  # default
 
         finally:
             os.unlink(config_file)
@@ -187,7 +187,7 @@ class TestHardwareConfigManagerCoverage:
             config = config_mgr.get_config()
 
             # Verify env values loaded
-            assert config.cameras.image_quality_enhancement == True
+            assert config.cameras.image_quality_enhancement
             assert config.cameras.retrieve_retry_count == 10
             assert config.cameras.exposure_time == 20000.0
             assert config.cameras.white_balance == "manual"
@@ -240,7 +240,7 @@ class TestHardwareConfigManagerCoverage:
             # Verify content
             with open(config_file, "r") as f:
                 saved_data = json.load(f)
-                assert saved_data["cameras"]["image_quality_enhancement"] == True
+                assert saved_data["cameras"]["image_quality_enhancement"]
                 assert saved_data["cameras"]["retrieve_retry_count"] == 15
 
         finally:

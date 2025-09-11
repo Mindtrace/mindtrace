@@ -221,7 +221,7 @@ class PyPylonProxy:
 def is_pypylon_available() -> bool:
     """Check if pypylon is available (via Docker service only)."""
     try:
-        proxy = PyPylonProxy()
+        PyPylonProxy()
         return True
     except PyPylonClientError:
         return False

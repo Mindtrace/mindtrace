@@ -69,7 +69,7 @@ def test_sync_camera_capture_and_config():
         assert len(fmts) > 0, "Should have at least one available pixel format"
 
         # Test setting a valid format
-        original_fmt = cam.get_pixel_format()
+        cam.get_pixel_format()
         test_format = fmts[0] if fmts else "BGR8"
 
         ok = cam.set_pixel_format(test_format)

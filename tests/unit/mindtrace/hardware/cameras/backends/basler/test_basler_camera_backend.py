@@ -1862,8 +1862,6 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
         await basler_camera.initialize()
 
         # Mock asyncio.wait_for to raise TimeoutError
-        original_wait_for = asyncio.wait_for
-
         async def failing_wait_for(fut, timeout):
             raise asyncio.TimeoutError("Operation timed out")
 
@@ -1910,8 +1908,6 @@ class TestBaslerCameraBackendUncoveredErrorPaths:
 
         # Mock ThreadPoolExecutor to fail
         import concurrent.futures
-
-        original_executor = concurrent.futures.ThreadPoolExecutor
 
         def failing_executor(*args, **kwargs):
             raise RuntimeError("Cannot create thread pool")
@@ -4434,9 +4430,6 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
 
         # Mock the camera to raise exception during pixel format retrieval
         # We need to mock the actual camera methods that are called
-        original_is_open = camera.camera.IsOpen
-        original_open = camera.camera.Open
-
         def mock_is_open():
             return False
 

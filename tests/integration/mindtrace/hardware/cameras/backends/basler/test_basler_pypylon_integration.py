@@ -362,7 +362,7 @@ class TestErrorHandlingIntegration:
 
             from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
 
-            camera = BaslerCameraBackend("test_camera")
+            _ = BaslerCameraBackend("test_camera")
 
             # Test that real exception types are available for testing
             assert hasattr(pylon, "TimeoutException")
