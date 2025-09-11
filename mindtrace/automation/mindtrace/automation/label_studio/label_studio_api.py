@@ -78,7 +78,7 @@ class LabelStudio(Mindtrace):
 
         return self.client.start_project(**kwargs)
 
-    def list_projects(self, page_size: int = 100, **query_params) -> list:
+    def get_projects(self, page_size: int = 100, **query_params) -> list[LSProject]:
         """List of LSProject in Label Studio (e.g., to search, validate names, or iterate through all projects)
 
         Args:
