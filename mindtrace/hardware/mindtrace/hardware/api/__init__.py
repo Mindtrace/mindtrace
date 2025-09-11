@@ -1,6 +1,6 @@
 """Hardware API modules."""
 
-from .cameras import CameraManagerConnectionManager, CameraManagerService
+from mindtrace.hardware.api.cameras import CameraManagerConnectionManager, CameraManagerService
 
 __all__ = [
     "CameraManagerService", 

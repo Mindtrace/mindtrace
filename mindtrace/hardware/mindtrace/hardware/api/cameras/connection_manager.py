@@ -12,7 +12,7 @@ import httpx
 
 from mindtrace.services.core.connection_manager import ConnectionManager
 
-from .models import (
+from mindtrace.hardware.api.cameras.models import (
     # Request models
     BackendFilterRequest,
     BandwidthLimitRequest,

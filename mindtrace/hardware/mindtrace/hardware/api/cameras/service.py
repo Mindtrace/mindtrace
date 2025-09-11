@@ -11,11 +11,11 @@ from typing import Optional
 
 from mindtrace.services import Service
 
-from ...cameras.core.async_camera_manager import AsyncCameraManager
-from ...core.exceptions import (
+from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
+from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
-from .models import (
+from mindtrace.hardware.api.cameras.models import (
     # Response models
     ActiveCamerasResponse,
     # Requests
@@ -65,7 +65,7 @@ from .models import (
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
-from .schemas import ALL_SCHEMAS
+from mindtrace.hardware.api.cameras.schemas import ALL_SCHEMAS
 
 
 class CameraManagerService(Service):
