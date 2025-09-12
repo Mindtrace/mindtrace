@@ -36,13 +36,6 @@ def date_range_selector() -> rx.Component:
             items=date_options,
             size="medium",
         ),
-        button(
-            "Refresh",
-            on_click=LineInsightsState.load_dashboard_data,
-            variant="ghost",
-            size="2",
-            loading=LineInsightsState.loading,
-        ),
         spacing="3",
         align="center",
         width="300px",
