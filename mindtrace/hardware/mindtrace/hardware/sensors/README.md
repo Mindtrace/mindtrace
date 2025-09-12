@@ -16,7 +16,7 @@ async with AsyncSensor("temp001", backend, "sensors/temperature") as sensor:
 
 ## 🏗️ System Architecture
 
-The system provides two complementary interfaces for complete sensor ecosystem management:
+The system provides three layers for complete sensor ecosystem management:
 
 ### Data Reading (AsyncSensor)
 ```mermaid
@@ -40,6 +40,19 @@ graph TD
     C --> F[MQTT Broker]
     D --> G[REST API]
     E --> H[Serial Device]
+```
+
+### Service Layer (SensorManagerService)
+```mermaid
+graph TD
+    A[SensorManagerService] --> B[MCP Endpoints]
+    B --> C[connect_sensor]
+    B --> D[disconnect_sensor]
+    B --> E[read_sensor_data]
+    B --> F[get_sensor_status]
+    B --> G[list_sensors]
+    A --> H[SensorManager]
+    H --> I[AsyncSensor Instances]
 ```
 
 ### Communication Patterns
@@ -282,6 +295,107 @@ async def smart_building_monitor():
 asyncio.run(smart_building_monitor())
 ```
 
+## 🎮 Service Layer & MCP Integration
+
+The sensor system includes a service layer that exposes sensor management capabilities as MCP (Model Context Protocol) tools, enabling LLMs and external systems to interact with sensors programmatically.
+
+### SensorManagerService
+
+The service provides a RESTful API and MCP tool registration for sensor operations:
+
+```python
+from mindtrace.hardware.api.sensors import SensorManagerService
+
+# Launch service on port 8007
+service = SensorManagerService.launch(port=8007)
+
+# Service automatically registers MCP endpoints for:
+# - connect_sensor: Connect to MQTT/HTTP/Serial sensors
+# - disconnect_sensor: Disconnect sensors
+# - read_sensor_data: Read sensor data
+# - get_sensor_status: Get sensor status
+# - list_sensors: List all registered sensors
+```
+
+### MCP Endpoints
+
+| Endpoint | Method | Description | Request Body |
+|----------|--------|-------------|--------------|
+| `/connect_sensor` | POST | Connect to a sensor | `{"sensor_id": "temp1", "backend_type": "mqtt", "config": {...}, "address": "topic"}` |
+| `/disconnect_sensor` | POST | Disconnect sensor | `{"sensor_id": "temp1"}` |
+| `/read_sensor_data` | POST | Read sensor data | `{"sensor_id": "temp1", "timeout": 5.0}` |
+| `/get_sensor_status` | POST | Get sensor status | `{"sensor_id": "temp1"}` |
+| `/list_sensors` | POST | List all sensors | `{"include_status": true}` |
+
+### Typed Client Access
+
+Use the `SensorConnectionManager` for strongly-typed access:
+
+```python
+from mindtrace.hardware.api.sensors import SensorConnectionManager
+
+# Create connection manager
+manager = SensorConnectionManager("sensor_manager")
+
+# Connect to MQTT sensor with convenience method
+response = await manager.connect_mqtt_sensor(
+    sensor_id="office_temp",
+    broker_url="mqtt://localhost:1883",
+    identifier="client1",
+    address="sensors/office/temperature"
+)
+
+# Read sensor data
+data_response = await manager.read_sensor_data("office_temp", timeout=5.0)
+print(f"Data: {data_response.data}")
+
+# List all sensors with status
+list_response = await manager.list_sensors(include_status=True)
+for sensor in list_response.sensors:
+    print(f"{sensor.sensor_id}: {sensor.status}")
+```
+
+### Example: Complete Service Usage
+
+```python
+# 1. Launch the service
+uv run launch_sensor_service.py  # Runs on port 8007
+
+# 2. Connect sensor via curl
+curl -X POST http://localhost:8007/connect_sensor \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sensor_id": "temp_sensor",
+    "backend_type": "mqtt",
+    "config": {
+      "broker_url": "mqtt://localhost:1883",
+      "identifier": "reader_001"
+    },
+    "address": "sensors/temperature"
+  }'
+
+# 3. Read data
+curl -X POST http://localhost:8007/read_sensor_data \
+  -H "Content-Type: application/json" \
+  -d '{"sensor_id": "temp_sensor", "timeout": 5.0}'
+
+# 4. Check status
+curl -X POST http://localhost:8007/get_sensor_status \
+  -H "Content-Type: application/json" \
+  -d '{"sensor_id": "temp_sensor"}'
+```
+
+### LLM/MCP Integration
+
+When the service is running, LLMs with MCP support can:
+- Discover available sensors
+- Connect to new sensors dynamically
+- Monitor sensor data in real-time
+- Manage sensor lifecycle (connect/disconnect)
+- Query sensor status and health
+
+The MCP tools are automatically registered when the service starts, making them available to any MCP-compatible client.
+
 ## 🧪 Testing & Examples
 
 ### Live Integration Example
@@ -357,6 +471,27 @@ async with AsyncSensor("test", backend, "test/topic") as sensor:
 | `async disconnect_all()` | Disconnect all sensors |
 | `async read_all()` | Read from all sensors |
 | `sensor_count` | Number of sensors property |
+
+### SensorManagerService
+
+| Method | Description |
+|--------|-------------|
+| `connect_sensor(request)` | Connect to sensor with backend config |
+| `disconnect_sensor(request)` | Disconnect from sensor |
+| `read_sensor_data(request)` | Read data from connected sensor |
+| `get_sensor_status(request)` | Get sensor connection status |
+| `list_sensors(request)` | List all registered sensors |
+
+### SensorConnectionManager
+
+| Method | Description |
+|--------|-------------|
+| `connect_mqtt_sensor(...)` | Connect to MQTT sensor (convenience) |
+| `connect_http_sensor(...)` | Connect to HTTP sensor (convenience) |
+| `connect_serial_sensor(...)` | Connect to Serial sensor (convenience) |
+| `read_sensor_data(sensor_id, timeout)` | Read sensor data |
+| `get_sensor_status(sensor_id)` | Get sensor status |
+| `list_sensors(include_status)` | List all sensors |
 
 ### Backend Factories
 
