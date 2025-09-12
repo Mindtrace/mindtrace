@@ -656,7 +656,6 @@ def test_export_annotations_calls_sdk(monkeypatch, tmp_path: Path):
 
 
 def test_prod_get_projects_pagination_and_latest_part(monkeypatch):
-
     ls = FakeLS()
     # Provide projects directly via FakeLS surface
     ls._projects = [
@@ -670,7 +669,6 @@ def test_prod_get_projects_pagination_and_latest_part(monkeypatch):
 
 
 def test_prod_delete_projects_by_prefix(monkeypatch, tmp_path: Path):
-
     ls = FakeLS()
     ls._projects = [
         SimpleNamespace(id=1, title="pref-A"),
@@ -693,7 +691,6 @@ def test_prod_delete_projects_by_prefix(monkeypatch, tmp_path: Path):
 
 
 def test_prod_list_import_export_storages(monkeypatch):
-
     class Proj:
         def get_import_storages(self):
             return [{"id": 1}]
@@ -709,7 +706,6 @@ def test_prod_list_import_export_storages(monkeypatch):
 
 
 def test_prod_create_cloud_storage_import_valid_and_invalid(tmp_path: Path):
-
     class Proj:
         def connect_google_import_storage(self, **kwargs):
             return {"id": 11, "title": kwargs.get("title")}
@@ -735,7 +731,6 @@ def test_prod_create_cloud_storage_import_valid_and_invalid(tmp_path: Path):
 
 
 def test_prod_sync_and_create_and_sync_storage(tmp_path: Path):
-
     class Proj:
         def __init__(self):
             self._import_storages = [{"id": 5, "prefix": "px"}]
@@ -829,7 +824,6 @@ def test_prod_get_project_task_types_and_image_paths_and_gcs():
 
 
 def test_prod_export_annotations(tmp_path: Path):
-
     class Proj:
         def export_tasks(self, **kwargs):
             out = kwargs.get("export_location")
@@ -1397,7 +1391,6 @@ def test_get_project_fetch_errors(monkeypatch):
 
 
 def test_delete_projects_by_prefix_no_matches_and_delete_error(monkeypatch, tmp_path):
-
     ls = LabelStudio(url="http://localhost", api_key="k")
     # empty raises
     with pytest.raises(ValueError):
@@ -1424,7 +1417,6 @@ def test_delete_projects_by_prefix_no_matches_and_delete_error(monkeypatch, tmp_
 
 
 def test_create_tasks_from_images_error_paths(tmp_path):
-
     ls = LabelStudio(url="http://localhost", api_key="k")
     with pytest.raises(ValueError):
         ls.create_tasks_from_images(project_id=1, local_dir=None)
@@ -1435,7 +1427,6 @@ def test_create_tasks_from_images_error_paths(tmp_path):
 
 
 def test_create_tasks_from_images_import_failure_warning(tmp_path):
-
     p = tmp_path / "imgs"
     p.mkdir()
     f = p / "a.jpg"
@@ -1456,7 +1447,6 @@ def test_create_tasks_from_images_import_failure_warning(tmp_path):
 
 
 def test_create_annotation_error_branch(monkeypatch):
-
     class Proj:
         def create_annotation(self, tid, ann):
             raise RuntimeError("x")
@@ -1468,7 +1458,6 @@ def test_create_annotation_error_branch(monkeypatch):
 
 
 def test_create_gcp_storage_export_branch(tmp_path):
-
     class Proj:
         def get_export_storages(self):
             return []
@@ -1510,7 +1499,6 @@ def test_sync_gcp_storage_not_found_import_and_export():
 
 
 def test_export_projects_by_prefix_yolo_and_error_branch(tmp_path):
-
     ls = LabelStudio(url="http://localhost", api_key="k")
     projs = [SimpleNamespace(id=1, title="pref-A"), SimpleNamespace(id=2, title="pref-B")]
     ls.get_projects = lambda **kw: projs  # type: ignore
@@ -1529,7 +1517,6 @@ def test_export_projects_by_prefix_yolo_and_error_branch(tmp_path):
 
 
 def test_extract_gcs_decode_non_gcs_and_errors():
-
     ls = LabelStudio(url="http://localhost", api_key="k")
     import base64
 
@@ -1542,7 +1529,6 @@ def test_extract_gcs_decode_non_gcs_and_errors():
 
 
 def test_extract_image_path_from_task_variants():
-
     ls = LabelStudio(url="http://localhost", api_key="k")
     assert ls._extract_image_path_from_task(None) is None
     assert ls._extract_image_path_from_task({}) is None
