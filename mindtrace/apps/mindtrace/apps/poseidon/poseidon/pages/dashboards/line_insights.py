@@ -48,6 +48,8 @@ def parts_scanned_chart() -> rx.Component:
         title="Parts Scanned Over Time",
         subtitle="Daily scan counts and defect detection",
         loading=LineInsightsState.loading_charts,
+        empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_parts_scanned == 0),
+        empty_message="No scans in selected range",
         children=line_chart(
             data=LineInsightsState.parts_scanned_data,
             x_key="date",
@@ -68,6 +70,8 @@ def defect_rate_chart() -> rx.Component:
         title="Defect Rate Over Time",
         subtitle="Percentage of parts with defects",
         loading=LineInsightsState.loading_charts,
+        empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_parts_scanned == 0),
+        empty_message="No defect rate data",
         children=line_chart(
             data=LineInsightsState.defect_rate_data,
             x_key="date",
@@ -88,6 +92,8 @@ def defect_histogram_chart() -> rx.Component:
         title="Most Frequent Defects",
         subtitle="Distribution of defect types in selected time range",
         loading=LineInsightsState.loading_charts,
+        empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_defects_found == 0),
+        empty_message="No defects found",
         children=bar_chart(
             data=LineInsightsState.defect_histogram_data,
             x_key="defect_type",
@@ -111,6 +117,8 @@ def weld_defect_rate_chart() -> rx.Component:
         title="Defect Rate by Weld ID",
         subtitle="Percentage of defective inspections per weld point (0% means all healthy)",
         loading=LineInsightsState.loading_charts,
+        empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_parts_scanned == 0),
+        empty_message="No weld metrics",
         children=bar_chart(
             data=LineInsightsState.weld_defect_rate_data,
             x_key="weld_id",
@@ -134,6 +142,8 @@ def healthy_vs_defective_chart() -> rx.Component:
         title="Classification Distribution",
         subtitle="Overall healthy vs defective classification breakdown",
         loading=LineInsightsState.loading_charts,
+        empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_parts_scanned == 0),
+        empty_message="No classifications",
         children=pie_chart(
             data=LineInsightsState.healthy_vs_defective_data,
             data_key="count",
@@ -171,6 +181,7 @@ def line_insights_header() -> rx.Component:
                 f"{LineInsightsState.average_defect_rate:.1f}%",
                 "Overall defect percentage",
                 loading=LineInsightsState.loading_charts,
+                empty=(~LineInsightsState.loading_charts) & (LineInsightsState.total_parts_scanned == 0),
             ),
             metric_card(
                 "Active Cameras",
@@ -219,26 +230,29 @@ def line_insights_content() -> rx.Component:
 
 
 def line_insights_page() -> rx.Component:
-    """Main Line Insights dashboard page."""
-    return page_container(
-        rx.vstack(
-            line_insights_header(),
-            rx.divider(color=T.colors.border),
-            line_insights_content(),
-            # Error messages only
-            rx.cond(
-                LineInsightsState.error,
-                rx.callout(
+    """Main Line Insights dashboard page (auth-protected)."""
+    return (
+        page_container(
+            rx.vstack(
+                line_insights_header(),
+                rx.divider(color=T.colors.border),
+                line_insights_content(),
+                # Error messages only
+                rx.cond(
                     LineInsightsState.error,
-                    icon="triangle-alert",
-                    color_scheme="red",
+                    rx.callout(
+                        LineInsightsState.error,
+                        icon="triangle-alert",
+                        color_scheme="red",
+                    ),
+                    rx.fragment(),
                 ),
-                rx.fragment(),
+                spacing="6",
+                width="100%",
+                padding_y=T.spacing.space_6,
             ),
-            spacing="6",
-            width="100%",
-            padding_y=T.spacing.space_6,
+            title="Line Insights",
+            tools=[date_range_selector()],
+            on_mount=LineInsightsState.on_mount,
         ),
-        title="Line Insights",
-        tools=[date_range_selector()],
     )

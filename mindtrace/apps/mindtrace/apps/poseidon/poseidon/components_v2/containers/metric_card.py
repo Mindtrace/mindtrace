@@ -9,32 +9,60 @@ from typing import Optional
 from poseidon.styles.global_styles import THEME as T
 
 
-def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading: bool = False) -> rx.Component:
+def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading: bool = False, empty: bool = False, empty_message: str = "No data") -> rx.Component:
     """Create a metric card for displaying key metrics."""
+
+    loading_overlay = rx.box(
+        rx.center(
+            rx.spinner(size="2"),
+            width="100%",
+            height="100%",
+        ),
+        style={
+            "position": "absolute",
+            "top": 0,
+            "left": 0,
+            "right": 0,
+            "bottom": 0,
+            "display": "flex",
+            "align_items": "center",
+            "justify_content": "center",
+            "background_color": "rgba(0,0,0,0.05)",
+            "backdrop_filter": T.effects.backdrop_filter_light,
+            "z_index": 5,
+        },
+    )
+
+    empty_overlay = rx.box(
+        rx.center(
+            rx.hstack(
+                rx.icon("circle-off", size=14),
+                rx.text(empty_message, color=T.colors.fg_muted, font_size=T.typography.fs_sm),
+                spacing="2",
+                align="center",
+            ),
+            width="100%",
+            height="100%",
+        ),
+        style={
+            "position": "absolute",
+            "top": 0,
+            "left": 0,
+            "right": 0,
+            "bottom": 0,
+            "display": "flex",
+            "align_items": "center",
+            "justify_content": "center",
+            "background_color": "rgba(0,0,0,0.03)",
+            "backdrop_filter": T.effects.backdrop_filter_light,
+            "z_index": 4,
+        },
+    )
 
     overlay = rx.cond(
         loading,
-        rx.box(
-            rx.center(
-                rx.spinner(size="2"),
-                width="100%",
-                height="100%",
-            ),
-            style={
-                "position": "absolute",
-                "top": 0,
-                "left": 0,
-                "right": 0,
-                "bottom": 0,
-                "display": "flex",
-                "align_items": "center",
-                "justify_content": "center",
-                "background_color": "rgba(0,0,0,0.05)",
-                "backdrop_filter": T.effects.backdrop_filter_light,
-                "z_index": 5,
-            },
-        ),
-        None,
+        loading_overlay,
+        rx.cond(empty, empty_overlay, None),
     )
 
     return rx.card(

@@ -12,6 +12,8 @@ def chart_card(
     children: Optional[rx.Component] = None,
     card_variant: str = "default",
     loading: bool = False,
+    empty: bool = False,
+    empty_message: str = "No data",
 ) -> rx.Component:
     """
     Create a card container for charts or other components.
@@ -25,6 +27,8 @@ def chart_card(
         children: The component to be wrapped in the card (e.g., a chart)
         card_variant: Card styling variant ("default" or "interactive")
         loading: Show a full-card overlay with a spinner
+        empty: Show a full-card overlay with an empty state
+        empty_message: Message to show in the empty overlay
 
     Returns:
         A Reflex component containing the children in a card
@@ -56,30 +60,58 @@ def chart_card(
             }
         )
 
-    # Full-card loading overlay
+    # Full-card overlays
+    loading_overlay = rx.box(
+        rx.center(
+            rx.spinner(size="3"),
+            width="100%",
+            height="100%",
+        ),
+        style={
+            "position": "absolute",
+            "top": 0,
+            "left": 0,
+            "right": 0,
+            "bottom": 0,
+            "display": "flex",
+            "align_items": "center",
+            "justify_content": "center",
+            "background_color": "rgba(0,0,0,0.05)",
+            "backdrop_filter": T.effects.backdrop_filter_light,
+            "z_index": 5,
+        },
+    )
+
+    empty_overlay = rx.box(
+        rx.center(
+            rx.vstack(
+                rx.icon("circle-off"),
+                rx.text(empty_message, color=T.colors.fg_muted),
+                spacing="2",
+                align="center",
+            ),
+            width="100%",
+            height="100%",
+        ),
+        style={
+            "position": "absolute",
+            "top": 0,
+            "left": 0,
+            "right": 0,
+            "bottom": 0,
+            "display": "flex",
+            "align_items": "center",
+            "justify_content": "center",
+            "background_color": "rgba(0,0,0,0.03)",
+            "backdrop_filter": T.effects.backdrop_filter_light,
+            "z_index": 4,
+        },
+    )
+
     overlay = rx.cond(
         loading,
-        rx.box(
-            rx.center(
-                rx.spinner(size="3"),
-                width="100%",
-                height="100%",
-            ),
-            style={
-                "position": "absolute",
-                "top": 0,
-                "left": 0,
-                "right": 0,
-                "bottom": 0,
-                "display": "flex",
-                "align_items": "center",
-                "justify_content": "center",
-                "background_color": "rgba(0,0,0,0.05)",
-                "backdrop_filter": T.effects.backdrop_filter_light,
-                "z_index": 5,
-            },
-        ),
-        None,
+        loading_overlay,
+        rx.cond(empty, empty_overlay, None),
     )
 
     # Create the card container

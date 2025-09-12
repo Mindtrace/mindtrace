@@ -28,6 +28,7 @@ from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
 from poseidon.styles.theme import theme_config
 from poseidon.state.line_insights import LineInsightsState
+from poseidon.state.auth import AuthState
 
 # Create app with comprehensive styling configuration
 app = rx.App(
@@ -105,7 +106,7 @@ app.add_page(
 app.add_page(
     with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
     route="/plants/[plant_id]/lines/[line_id]/line-insights",
-    on_load=LineInsightsState.on_mount,
+    on_load=AuthState.redirect_if_not_authenticated,
 )
 
 # User routes
