@@ -3,13 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 from beanie import PydanticObjectId
-import time
 from poseidon.backend.database.init import initialize_database
 from poseidon.backend.database.models.scan import Scan
 from poseidon.backend.database.models.scan_classification import ScanClassification
-
-SCANS = "Scan"
-SCAN_CLASSIFICATIONS = "ScanClassification"
 
 
 def _day_bounds(start: datetime, end: datetime):
@@ -33,7 +29,6 @@ class MetricsRepository:
         pid = PydanticObjectId(project_id)
         s, e = _day_bounds(start, end)
 
-        start_time = time.time()
         pipeline = [
             {"$match": {"project.$id": pid, "created_at": {"$gte": s, "$lt": e}}},
             {
@@ -76,10 +71,7 @@ class MetricsRepository:
             },
             {"$sort": {"date": 1}},
         ]
-        print(f"pipeline: {pipeline}")
         res = await Scan.aggregate(pipeline).to_list()
-        end_time = time.time()
-        print(f"Time series took: {end_time - start_time} seconds")
         return res
 
     @staticmethod
@@ -145,8 +137,5 @@ class MetricsRepository:
                 }
             },
         ]
-        start_time = time.time()
         res = await ScanClassification.aggregate(pipeline).to_list()
-        end_time = time.time()
-        print(f"Classification facets took: {end_time - start_time} seconds")
         return res[0] if res else {"defect_histogram": [], "weld_defect_rate": []}
