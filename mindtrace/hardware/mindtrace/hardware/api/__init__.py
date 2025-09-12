@@ -1,9 +1,10 @@
 """
-API module for Camera API.
+Hardware API modules.
 
-This module contains the FastAPI application and all related components.
+This module contains camera and sensor API components.
 """
 
 from .app import app
+from . import cameras, sensors
 
-__all__ = ["app"]
+__all__ = ["app", "cameras", "sensors"]
