@@ -1,0 +1,50 @@
+services:
+  ollama:
+    container_name: ollama
+    image: ollama/ollama:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - LOG_LEVEL=debug
+    volumes:
+      - ollama:/root/.ollama
+      - models:/models
+      - ./entrypoint.sh:/entrypoint.sh
+    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
+    pull_policy: always
+    tty: true
+    ports:
+      - "11434:11434"
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - ollama-net
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secret123
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-seed:/docker-entrypoint-initdb.d
+    ports:
+      - "27017:27017"
+    networks:
+      - ollama-net
+
+volumes:
+  models:
+  ollama:
+  mongo_data:
+
+networks:
+  ollama-net:
+    driver: bridge
