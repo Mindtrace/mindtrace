@@ -6,16 +6,14 @@ Uses chart components to visualize parts scanned, defect rates, and more.
 """
 
 import reflex as rx
-from typing import Optional
 from poseidon.state.line_insights import LineInsightsState
 from poseidon.components_v2.containers.page_container import page_container
 from poseidon.components_v2.graphs.line_chart import line_chart
 from poseidon.components_v2.graphs.bar_chart import bar_chart
 from poseidon.components_v2.graphs.pie_chart import pie_chart
 from poseidon.components_v2.containers.chart_card import chart_card
-from poseidon.components_v2.core.button import button
 from poseidon.components_v2.forms.select_input import select_input
-from poseidon.components_v2.core.metric_card import metric_card
+from poseidon.components_v2.containers.metric_card import metric_card
 from poseidon.styles.global_styles import THEME as T
 
 

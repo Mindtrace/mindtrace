@@ -9,8 +9,34 @@ from typing import Optional
 from poseidon.styles.global_styles import THEME as T
 
 
-def metric_card(title: str, value: str, subtitle: Optional[str] = None) -> rx.Component:
+def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading: bool = False) -> rx.Component:
     """Create a metric card for displaying key metrics."""
+
+    overlay = rx.cond(
+        loading,
+        rx.box(
+            rx.center(
+                rx.spinner(size="2"),
+                width="100%",
+                height="100%",
+            ),
+            style={
+                "position": "absolute",
+                "top": 0,
+                "left": 0,
+                "right": 0,
+                "bottom": 0,
+                "display": "flex",
+                "align_items": "center",
+                "justify_content": "center",
+                "background_color": "rgba(0,0,0,0.05)",
+                "backdrop_filter": T.effects.backdrop_filter_light,
+                "z_index": 5,
+            },
+        ),
+        None,
+    )
+
     return rx.card(
         rx.vstack(
             rx.text(
@@ -37,10 +63,15 @@ def metric_card(title: str, value: str, subtitle: Optional[str] = None) -> rx.Co
             spacing="2",
             align="start",
         ),
+        overlay,
         padding=T.spacing.space_4,
         background=T.colors.surface,
         border=f"1px solid {T.colors.border}",
         border_radius=T.radius.r_lg,
         box_shadow=T.shadows.shadow_1,
         width="100%",
+        style={
+            "position": "relative",
+            "overflow": "hidden",
+        },
     )

@@ -11,6 +11,7 @@ def chart_card(
     subtitle: Optional[str] = None,
     children: Optional[rx.Component] = None,
     card_variant: str = "default",
+    loading: bool = False,
 ) -> rx.Component:
     """
     Create a card container for charts or other components.
@@ -23,6 +24,7 @@ def chart_card(
         subtitle: Card subtitle
         children: The component to be wrapped in the card (e.g., a chart)
         card_variant: Card styling variant ("default" or "interactive")
+        loading: Show a full-card overlay with a spinner
 
     Returns:
         A Reflex component containing the children in a card
@@ -54,6 +56,32 @@ def chart_card(
             }
         )
 
+    # Full-card loading overlay
+    overlay = rx.cond(
+        loading,
+        rx.box(
+            rx.center(
+                rx.spinner(size="3"),
+                width="100%",
+                height="100%",
+            ),
+            style={
+                "position": "absolute",
+                "top": 0,
+                "left": 0,
+                "right": 0,
+                "bottom": 0,
+                "display": "flex",
+                "align_items": "center",
+                "justify_content": "center",
+                "background_color": "rgba(0,0,0,0.05)",
+                "backdrop_filter": T.effects.backdrop_filter_light,
+                "z_index": 5,
+            },
+        ),
+        None,
+    )
+
     # Create the card container
     return rx.box(
         rx.vstack(
@@ -79,6 +107,7 @@ def chart_card(
             spacing="1",
             width="100%",
         ),
+        overlay,
         style=card_styles,
         width="100%",
     ) 
