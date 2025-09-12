@@ -103,112 +103,81 @@ def defect_histogram_chart() -> rx.Component:
         title="Most Frequent Defects",
         subtitle="Distribution of defect types in selected time range",
         children=rx.cond(
-        LineInsightsState.loading_defect_histogram_chart,
-        rx.center(
-            rx.spinner(size="3"),
-            height="350px",
+            LineInsightsState.loading_defect_histogram_chart,
+            rx.center(
+                rx.spinner(size="3"),
+                height="350px",
+            ),
+            bar_chart(
+                data=LineInsightsState.defect_histogram_data,
+                x_key="defect_type",
+                y_key="count",
+                height=350,  # Full height since no filter
+                show_grid=True,
+                show_legend=True,
+                show_tooltip=True,
+                layout="horizontal",
+                bar_size=20,
+                bar_gap=1,
+                bar_category_gap="5%",
+            ),
         ),
-        bar_chart(
-            data=LineInsightsState.defect_histogram_data,
-            x_key="defect_type",
-            y_key="count",
-            height=350,  # Full height since no filter
-            show_grid=True,
-            show_legend=True,
-            show_tooltip=True,
-            layout="horizontal",
-            bar_size=20,
-            bar_gap=1,
-            bar_category_gap="5%",
-        ),
-    ),
     )
-
-# def camera_defect_matrix_chart() -> rx.Component:
-#     """Camera defect matrix chart - shows distribution across cameras, no filter needed."""
-
-
-#     return chart_card(
-#         title="Defect Distribution by Camera",
-#         subtitle="Defect counts per camera position in selected time range",
-#         children=rx.cond(
-#         LineInsightsState.loading_matrix_chart,
-#         rx.center(
-#             rx.spinner(size="3"),
-#             height="350px",
-#         ),
-#         bar_chart(
-#             data=LineInsightsState.camera_defect_matrix_data,
-#             x_key="camera",
-#             y_keys=LineInsightsState.camera_chart_defect_types,
-#             height=400,
-#             show_grid=True,
-#             show_legend=True,
-#             show_tooltip=True,
-#             layout="horizontal",
-#             bar_size=30,
-#             bar_gap=4,
-#             bar_category_gap="20%",
-#         ),
-#     ),
-#     )
 
 
 def weld_defect_rate_chart() -> rx.Component:
     """Weld defect rate chart showing defect percentage per weld inspection point."""
 
-
     return chart_card(
         title="Defect Rate by Weld ID",
         subtitle="Percentage of defective inspections per weld point (0% means all healthy)",
         children=rx.cond(
-        LineInsightsState.loading_weld_chart,
-        rx.center(
-            rx.spinner(size="3"),
-            height="350px",
+            LineInsightsState.loading_weld_chart,
+            rx.center(
+                rx.spinner(size="3"),
+                height="350px",
+            ),
+            bar_chart(
+                data=LineInsightsState.weld_defect_rate_data,
+                x_key="weld_id",
+                y_key="defect_rate",
+                height=350,
+                show_grid=True,
+                show_legend=False,
+                show_tooltip=True,
+                layout="horizontal",
+                bar_size=20,
+                bar_gap=1,
+                bar_category_gap="5%",
+            ),
         ),
-        bar_chart(
-            data=LineInsightsState.weld_defect_rate_data,
-            x_key="weld_id",
-            y_key="defect_rate",
-            height=350,
-            show_grid=True,
-            show_legend=False,
-            show_tooltip=True,
-            layout="horizontal",  
-            bar_size=20,
-            bar_gap=1,
-            bar_category_gap="5%",
-        ),
-    ),
     )
 
 
 def healthy_vs_defective_chart() -> rx.Component:
     """Healthy vs defective classification distribution pie chart."""
 
-
     return chart_card(
         title="Classification Distribution",
         subtitle="Overall healthy vs defective classification breakdown",
         children=rx.cond(
-        LineInsightsState.loading_healthy_vs_defective_chart,
-        rx.center(
-            rx.spinner(size="3"),
-            height="350px",
+            LineInsightsState.loading_healthy_vs_defective_chart,
+            rx.center(
+                rx.spinner(size="3"),
+                height="350px",
+            ),
+            pie_chart(
+                data=LineInsightsState.healthy_vs_defective_data,
+                data_key="count",
+                name_key="status",
+                height=350,
+                show_labels=True,
+                show_legend=True,
+                show_tooltip=True,
+                inner_radius="40%",  # Creates a doughnut chart
+                outer_radius="80%",
+            ),
         ),
-        pie_chart(
-            data=LineInsightsState.healthy_vs_defective_data,
-            data_key="count",
-            name_key="status",
-            height=350,
-            show_labels=True,
-            show_legend=True,
-            show_tooltip=True,
-            inner_radius="40%",  # Creates a doughnut chart
-            outer_radius="80%",
-        ),
-    ),
     )
 
 
