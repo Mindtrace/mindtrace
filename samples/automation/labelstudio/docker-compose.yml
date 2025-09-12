@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  labelstudio:
+    image: heartexlabs/label-studio:latest
+    container_name: label-studio
+    user: "0:0"
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - LABEL_STUDIO_USERNAME=admin@example.com
+      - LABEL_STUDIO_PASSWORD=admin
+      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/data
+    volumes:
+      - ./data:/label-studio/data
+      - ./sample_images:/label-studio/data/sample_images
+    command: label-studio start --host 0.0.0.0 --port 8080
+
