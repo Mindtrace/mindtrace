@@ -106,7 +106,7 @@ app.add_page(
 app.add_page(
     with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
     route="/plants/[plant_id]/lines/[line_id]/line-insights",
-    on_load=AuthState.redirect_if_not_authenticated,
+    on_load=[AuthState.redirect_if_not_authenticated, LineInsightsState.on_mount],
 )
 
 # User routes

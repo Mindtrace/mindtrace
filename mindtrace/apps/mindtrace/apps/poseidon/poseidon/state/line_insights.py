@@ -41,7 +41,7 @@ class LineInsightsState(BaseFilterState):
 
     # Loading flags
 
-    loading_charts: bool = False
+    loading_charts: bool = True
 
     @rx.event
     async def set_date_range(self, range_type: str):
@@ -78,6 +78,7 @@ class LineInsightsState(BaseFilterState):
         """One fast pass to fetch everything needed for the dashboard."""
         self.loading_charts = True
         self.clear_messages()
+        print("CALLED LOAD_DASHBOARD_DATA")
         yield
 
         try:

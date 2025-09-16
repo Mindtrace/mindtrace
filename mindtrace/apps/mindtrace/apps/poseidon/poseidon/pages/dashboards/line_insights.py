@@ -253,6 +253,5 @@ def line_insights_page() -> rx.Component:
             ),
             title="Line Insights",
             tools=[date_range_selector()],
-            on_mount=LineInsightsState.on_mount,
         ),
     )
