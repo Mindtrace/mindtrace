@@ -20,6 +20,7 @@ class GCSStorageHandler(StorageHandler):
         *,
         project_id: Optional[str] = None,
         credentials_path: Optional[str] = None,
+        ensure_bucket: bool = True,
         create_if_missing: bool = False,
         location: str = "US",
         storage_class: str = "STANDARD",
@@ -29,12 +30,13 @@ class GCSStorageHandler(StorageHandler):
             bucket_name: Name of the GCS bucket.
             project_id: Optional GCP project ID.
             credentials_path: Optional path to a service account JSON file.
+            ensure_bucket: If True, raise NotFound if bucket does not exist and create_if_missing is False.
             create_if_missing: If True, create the bucket if it does not exist.
             location: Location for bucket creation (if needed).
             storage_class: Storage class for bucket creation (if needed).
         Raises:
             FileNotFoundError: If credentials_path is provided but does not exist.
-            google.api_core.exceptions.NotFound: If the bucket does not exist and create_if_missing is False.
+            google.api_core.exceptions.NotFound: If ensure_bucket is True and the bucket does not exist and create_if_missing is False.
         """
         # Credentials -------------------------------------------------------
         creds = None
@@ -46,7 +48,8 @@ class GCSStorageHandler(StorageHandler):
         # Client ------------------------------------------------------------
         self.client: storage.Client = storage.Client(project=project_id, credentials=creds)
         self.bucket_name = bucket_name
-        self._ensure_bucket(create_if_missing, location, storage_class)
+        if ensure_bucket:
+            self._ensure_bucket(create_if_missing, location, storage_class)
 
     # ------------------------------------------------------------------
     # Internal helpers
