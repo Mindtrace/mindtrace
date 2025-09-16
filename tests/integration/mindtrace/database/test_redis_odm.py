@@ -3,7 +3,6 @@ from typing import List
 import pytest
 from pydantic import BaseModel
 from redis_om import Field
-from redis_om.connections import get_redis_connection
 
 from mindtrace.database import (
     DocumentNotFoundError,

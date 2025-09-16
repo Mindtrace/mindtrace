@@ -37,3 +37,5 @@ export MINDTRACE_WORKER_REDIS_DEFAULT_URL=redis://localhost:6380
 export MINDTRACE_CLUSTER_DEFAULT_REDIS_URL=redis://localhost:6380
 
 export MINDTRACE_CLUSTER_RABBITMQ_PORT=5673
+
+export REDIS_OM_URL=redis://localhost:6380
