@@ -98,7 +98,7 @@ class TestStackEquivalence:
         assert local_results[2].name == "equiv_0"
 
         try:
-            redis_stack = RedisStack(f"equiv_test_{int(time.time())}")
+            redis_stack = RedisStack(f"equiv_test_{int(time.time())}", host="localhost", port=6380, db=0)
 
             for job in jobs:
                 redis_stack.push(job)
