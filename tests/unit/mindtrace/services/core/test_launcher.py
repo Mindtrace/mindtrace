@@ -28,6 +28,7 @@ class TestLauncher:
         """Create mock server object."""
         server = Mock()
         server.unique_name = "test_server"
+        server.name = "test_server"
         server.config = {"MINDTRACE_LOGGER_DIR": "/tmp/logs"}
         server.app = Mock()  # Mock WSGI/ASGI app
         return server
@@ -61,7 +62,11 @@ class TestLauncher:
 
         # Verify logger setup
         mock_setup_logger.assert_called_once_with(
-            name="test_server", stream_level=logging.INFO, file_level=logging.DEBUG, log_dir=Path("/tmp/logs")
+            name="test_server",
+            stream_level=logging.INFO,
+            file_level=logging.DEBUG,
+            log_dir=Path("/tmp/logs"),
+            structlog_bind={"service": "test_server"},
         )
 
         # Verify server configuration

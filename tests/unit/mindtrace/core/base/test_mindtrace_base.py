@@ -20,14 +20,25 @@ class TestMindtraceMeta:
 
         assert TestClass.unique_name == "test_mindtrace_base.TestClass"
 
-    def test_logger_property(self):
-        """Test that logger property returns a logger instance."""
+    @pytest.mark.parametrize("use_structlog", [False, True])
+    def test_logger_property(self, monkeypatch, use_structlog):
+        """Test that logger property returns a logger or structlog logger based on config."""
+
+        if use_structlog:
+            monkeypatch.setenv("MINDTRACE_LOGGER_USE_STRUCTLOG", "1")
+        else:
+            monkeypatch.setenv("MINDTRACE_LOGGER_USE_STRUCTLOG", "")
 
         class TestClass(metaclass=MindtraceMeta):
             pass
 
-        assert isinstance(TestClass.logger, logging.Logger)
-        assert TestClass.logger.name == f"mindtrace.{TestClass.unique_name}"
+        logger_obj = TestClass.logger
+        if use_structlog:
+            assert not isinstance(logger_obj, logging.Logger)
+            assert hasattr(logger_obj, "bind")
+        else:
+            assert isinstance(logger_obj, logging.Logger)
+            assert TestClass.logger.name == f"mindtrace.{TestClass.unique_name}"
 
     def test_logger_setter(self):
         """Test that logger setter works correctly."""
@@ -40,15 +51,24 @@ class TestMindtraceMeta:
         TestClass.logger = new_logger
         assert TestClass.logger == new_logger
 
-    def test_logger_setter_functionality(self):
-        """Test the logger setter functionality."""
+    @pytest.mark.parametrize("use_structlog", [False, True])
+    def test_logger_setter_functionality(self, monkeypatch, use_structlog):
+        """Test the logger setter functionality for both stdlib and structlog backends."""
+
+        if use_structlog:
+            monkeypatch.setenv("MINDTRACE_LOGGER_USE_STRUCTLOG", "1")
+        else:
+            monkeypatch.setenv("MINDTRACE_LOGGER_USE_STRUCTLOG", "")
 
         class TestClass(metaclass=MindtraceMeta):
             pass
 
         # Get the original logger
         original_logger = TestClass.logger
-        assert isinstance(original_logger, logging.Logger)
+        if use_structlog:
+            assert hasattr(original_logger, "bind") and not isinstance(original_logger, logging.Logger)
+        else:
+            assert isinstance(original_logger, logging.Logger)
 
         # Create a new mock logger
         new_logger = Mock(spec=logging.Logger)
@@ -71,7 +91,10 @@ class TestMindtraceMeta:
         # When we access the logger property, it should auto-regenerate
         regenerated_logger = TestClass.logger
         assert regenerated_logger is not None
-        assert isinstance(regenerated_logger, logging.Logger)
+        if use_structlog:
+            assert hasattr(regenerated_logger, "bind") and not isinstance(regenerated_logger, logging.Logger)
+        else:
+            assert isinstance(regenerated_logger, logging.Logger)
         assert TestClass._logger is regenerated_logger  # Should be set by the getter
 
         # Test setting back to a real logger

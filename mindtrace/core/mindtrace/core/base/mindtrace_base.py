@@ -91,7 +91,8 @@ class Mindtrace(metaclass=MindtraceMeta):
             suppress (bool): Whether to suppress exceptions in context manager use.
             **kwargs: Additional keyword arguments. Logger-related kwargs are passed to `get_logger`.
                 Valid logger kwargs: log_dir, logger_level, stream_level, file_level,
-                file_mode, propagate, max_bytes, backup_count
+                file_mode, propagate, max_bytes, backup_count, use_structlog, structlog_json,
+                structlog_pre_chain, structlog_processors, structlog_renderer, structlog_bind
         """
         # Initialize parent classes first (cooperative inheritance)
         try:
@@ -107,6 +108,12 @@ class Mindtrace(metaclass=MindtraceMeta):
                 "propagate",
                 "max_bytes",
                 "backup_count",
+                "use_structlog",
+                "structlog_json",
+                "structlog_pre_chain",
+                "structlog_processors",
+                "structlog_renderer",
+                "structlog_bind",
             }
             remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
             try:
@@ -128,6 +135,12 @@ class Mindtrace(metaclass=MindtraceMeta):
             "propagate",
             "max_bytes",
             "backup_count",
+            "use_structlog",
+            "structlog_json",
+            "structlog_pre_chain",
+            "structlog_processors",
+            "structlog_renderer",
+            "structlog_bind",
         }
         logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
 

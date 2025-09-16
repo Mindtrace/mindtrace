@@ -19,6 +19,8 @@ class Config(dict):
             "MINDTRACE_MINIO_SECRET_KEY": "minioadmin",
             "MINDTRACE_SERVER_PIDS_DIR_PATH": "~/.cache/mindtrace/pids",
             "MINDTRACE_LOGGER_DIR": "~/.cache/mindtrace/logs",
+            "MINDTRACE_LOGGER_STRUCTLOG_DIR": "~/.cache/mindtrace/structlogs",
+            "MINDTRACE_LOGGER_USE_STRUCTLOG": False,
             "MINDTRACE_CLUSTER_DEFAULT_REDIS_URL": "redis://localhost:6379",
             "MINDTRACE_CLUSTER_MINIO_ENDPOINT": "localhost:9000",
             "MINDTRACE_CLUSTER_MINIO_ACCESS_KEY": "minioadmin",
