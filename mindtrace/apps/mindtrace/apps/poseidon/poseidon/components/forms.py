@@ -46,7 +46,7 @@ def form_input_with_label_and_hint(
     )
 
 
-def login_form(title: str = "Sign in to your account", subtitle: str = "Enter your credentials"):
+def login_form(title: str = "", subtitle: str = ""):
     """Login form - keeps Buridan UI styling."""
     return rx.vstack(
         rx.vstack(

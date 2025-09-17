@@ -1,20 +1,6 @@
-"""Main Reflex application configuration.
-
-This module configures the complete web application with:
-- Theme and styling system integration
-- Route definitions for all pages
-- Authentication-aware navigation
-- Consistent design system implementation
-
-The app uses a black and orange theme with clean, modern styling
-and implements role-based authentication for secure access control.
-"""
-
 import reflex as rx
 
-from poseidon.components_v2.layout.header.scope_selector import ScopeSelector
-from poseidon.components_v2.layout.appshell import AppShell
-from poseidon.pages.auth import login_page, register_admin_page, register_page, register_super_admin_page
+from poseidon.pages.auth import login_page, register_page
 from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.component_showcase import component_showcase_page
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
@@ -22,7 +8,9 @@ from poseidon.pages.dashboards.line_insights import line_insights_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.index import index
 from poseidon.pages.inference import inference_page
-from poseidon.pages.management import organization_management_page, project_management_page, user_management_page
+from poseidon.pages.management import (
+    organization_management_page, project_management_page, user_management_page
+)
 from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
@@ -31,99 +19,134 @@ from poseidon.state.line_insights import LineInsightsState
 from poseidon.pages.filter_table_demo import filter_table_demo
 from poseidon.state.line_view_state import LineViewState
 
-# Create app with comprehensive styling configuration
-app = rx.App(
-    theme=theme_config,
-    style=styles,
+from poseidon.utils.app_loaders import (
+    add_public_page,
+    add_protected_page,
+    add_admin_page,
+    add_super_admin_page,
 )
 
+app = rx.App(theme=theme_config, style=styles)
 
-def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=None, show_scope_selector=False):
-    def wrapped():
-        return AppShell(
-            title=title,
-            sidebar_active=active,
-            header_right=header_right_fn() if header_right_fn else None,
-            subheader=subheader_fn() if subheader_fn else None,
-            body=body_fn(),
-            show_scope_selector=show_scope_selector,
-        )
+# Home – protected dashboard (inside AppShell)
+add_protected_page(
+    app,
+    route="/",
+    body_fn=index,
+    title="Mindtrace",
+    active="Home",
+)
 
-    return wrapped
+# Auth pages – public (outside AppShell)
+add_public_page(app, route="/login",    body_fn=login_page,    title="Mindtrace - Login")
+add_public_page(app, route="/register", body_fn=register_page, title="Mindtrace - Register")
 
+# Dashboards
+add_admin_page(
+    app,
+    route="/admin",
+    body_fn=admin_page,
+    title="Mindtrace",
+    active="Admin",
+)
 
-# Route definitions with descriptive titles
-app.add_page(index, title="Mindtrace - Home", route="/")
-
-# Auth routes
-app.add_page(login_page, route="/login", title="Mindtrace - Login")
-app.add_page(register_page, route="/register", title="Mindtrace - Register")
-app.add_page(register_admin_page, route="/register-admin", title="Mindtrace - Admin Registration")
-app.add_page(register_super_admin_page, route="/register-super-admin", title="Mindtrace - Super Admin Setup")
-
-# Dashboard routes
-app.add_page(with_shell(admin_page, title="Mindtrace - Admin", active="Admin"), route="/admin")
-app.add_page(
-    with_shell(super_admin_dashboard_page, title="Mindtrace - Super Admin Dashboard", active="Super Admin Dashboard"),
+add_super_admin_page(
+    app,
     route="/super-admin-dashboard",
+    body_fn=super_admin_dashboard_page,
+    title="Mindtrace",
+    active="Super Admin Dashboard",
 )
 
-# Camera Configurator route
-app.add_page(
-    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
+# Feature pages (protected)
+add_protected_page(
+    app,
     route="/camera-configurator",
+    body_fn=camera_configurator_page,
+    title="Mindtrace",
+    active="Camera Configurator",
 )
-
-
-# Model Deployment route
-app.add_page(
-    with_shell(model_deployment_page, title="Mindtrace - Model Deployment", active="Model Deployment"),
+add_protected_page(
+    app,
     route="/model-deployment",
+    body_fn=model_deployment_page,
+    title="Mindtrace",
+    active="Model Deployment",
+)
+add_protected_page(
+    app,
+    route="/inference",
+    body_fn=inference_page,
+    title="Mindtrace",
+    active="Inference Scanner",
 )
 
-
-# Inference route
-app.add_page(
-    with_shell(inference_page, title="Mindtrace - Inference Scanner", active="Inference Scanner"), route="/inference"
-)
-
-# Management routes
-app.add_page(
-    with_shell(user_management_page, title="Mindtrace - User Management", active="User Management"),
-    route="/user-management",
-)
-app.add_page(
-    with_shell(
-        organization_management_page, title="Mindtrace - Organization Management", active="Organization Management"
-    ),
+# Management (choose admin/protected according to your RBAC)
+add_admin_page(
+    app,
     route="/organization-management",
+    body_fn=organization_management_page,
+    title="Mindtrace",
+    active="Organization Management",
 )
-app.add_page(
-    with_shell(project_management_page, title="Mindtrace - Project Management", active="Project Management"),
+add_protected_page(
+    app,
+    route="/user-management",
+    body_fn=user_management_page,
+    title="Mindtrace",
+    active="User Management",
+)
+add_protected_page(
+    app,
     route="/project-management",
+    body_fn=project_management_page,
+    title="Mindtrace",
+    active="Project Management",
 )
 
-# Analytics routes
-app.add_page(
-    with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
+# Analytics (protected + page-specific loaders)
+add_protected_page(
+    app,
     route="/plants/[plant_id]/lines/[line_id]/line-insights",
-    on_load=LineInsightsState.on_mount,
+    body_fn=line_insights_page,
+    title="Mindtrace",
+    active="Line Insights",
+    show_scope_selector=True,
+    extra_on_load=[LineInsightsState.on_mount],
 )
-
-# User routes
-app.add_page(with_shell(profile_page, title="Mindtrace - Profile", active="Profile"), route="/profile")
-app.add_page(with_shell(images_page, title="Mindtrace - Image Viewer", active="Image Viewer"), route="/image-viewer")
-
-#DEV
-app.add_page(
-    with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
-    route="/component-showcase",
-)
-
-app.add_page(
-    with_shell(filter_table_demo, title="Mindtrace - Line View", active="Line View", show_scope_selector=True),
+add_protected_page(
+    app,
     route="/plants/[plant_id]/lines/[line_id]/line-view",
-    on_load=LineViewState.load,
+    body_fn=filter_table_demo,
+    title="Mindtrace",
+    active="Line View",
+    show_scope_selector=True,
+    extra_on_load=[LineViewState.load],
+)
+
+# User (protected)
+add_protected_page(
+    app,
+    route="/profile",
+    body_fn=profile_page,
+    title="Mindtrace",
+    active="Profile",
+)
+add_protected_page(
+    app,
+    route="/image-viewer",
+    body_fn=images_page,
+    title="Mindtrace",
+    active="Image Viewer",
+)
+
+# Dev (protect or not as you wish)
+add_protected_page(
+    app,
+    route="/component-showcase",
+    body_fn=component_showcase_page,
+    title="Mindtrace",
+    active="Component Showcase",
 )
 
 from poseidon.backend.database.init import rebuild_all_models

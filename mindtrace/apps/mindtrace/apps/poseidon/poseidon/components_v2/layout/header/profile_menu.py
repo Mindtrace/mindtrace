@@ -21,7 +21,7 @@ def ProfileMenu() -> rx.Component:
     )
 
     name_text = rx.text(
-        rx.cond(AuthState.current_username, AuthState.current_username, "User"),
+        rx.cond(AuthState.current_first_name, AuthState.current_first_name + " " + AuthState.current_last_name, "User"),
         font_weight=T.fw_400,
         color=T.fg,
         line_height="1",

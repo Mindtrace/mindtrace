@@ -47,7 +47,6 @@ def login_content() -> rx.Component:
                     rx.box(
                         rx.vstack(
                             link("Don't have an account? ", "Sign up", "/register"),
-                            link("Need admin access? ", "Admin Registration", "/register-admin"),
                             spacing="2",
                             width="100%",
                         ),

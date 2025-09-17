@@ -1,205 +1,241 @@
 import reflex as rx
-from typing import List, Dict, Optional
+from typing import List, Dict
 from poseidon.backend.services.auth_service import AuthService
-from poseidon.backend.core.exceptions import UserAlreadyExistsError, UserNotFoundError, InvalidCredentialsError
+from poseidon.backend.core.exceptions import (
+    UserAlreadyExistsError,
+    UserNotFoundError,
+    InvalidCredentialsError,
+)
 from poseidon.backend.utils.security import decode_jwt
 from poseidon.backend.database.models.enums import OrgRole
 
-# Define project assignment structure for type hints
+
 class ProjectAssignment:
     project_id: str
     roles: List[str]
 
+
 class AuthState(rx.State):
+    # --- form fields ---
+    first_name: str = ""
+    last_name: str = ""
     email: str = ""
-    username: str = ""
     password: str = ""
     organization_id: str = ""
+    is_register_super_admin: bool = False
+
+    # --- session / ui ---
+    # Cookie-backed token
+    auth_token: str = rx.Cookie(
+        name="auth_token",
+        path="/",
+        max_age=60 * 60 * 24 * 7,  # 7 days
+        same_site="lax",
+        secure=False,
+    )
     error: str = ""
-    token: str = ""
-    
-    # Organization discovery
+    token: str = ""  # optional in-memory mirror of the cookie
     available_organizations: List[Dict[str, str]] = []
     organizations_loaded: bool = False
-    
+
+    # --- decoded token/user ---
     user_id: str = ""
-    current_username: str = ""
+    current_first_name: str = ""
+    current_last_name: str = ""
     user_organization_id: str = ""
-    user_org_role: str = ""  # Changed from list to single string
+    user_org_role: str = ""  # stored as string in JWT
     user_project_assignments: List[ProjectAssignment] = []
     is_authenticated: bool = False
 
+    # -------- helpers --------
+    def _role_eq(self, a, b) -> bool:
+        av = getattr(a, "value", a)
+        bv = getattr(b, "value", b)
+        return str(av) == str(bv)
+
     def check_auth(self):
-        """Check if user is authenticated and decode token"""
-        if self.token:
-            try:
-                payload = decode_jwt(self.token)
-                self.user_id = payload.get("user_id", "")
-                self.current_username = payload.get("username", "")
-                self.user_organization_id = payload.get("organization_id", "")
-                self.user_org_role = payload.get("org_role", "")  # Single role
-                self.user_project_assignments = payload.get("project_assignments", [])
-                self.is_authenticated = True
-            except Exception:
-                self.logout()
-
-    def has_org_role(self, required_role: str) -> bool:
-        """Check if user has a specific organization role"""
-        return self.is_authenticated and self.user_org_role == required_role
-
-    def has_project_role(self, project_id: str, required_role: str) -> bool:
-        """Check if user has a specific project role"""
-        if not self.is_authenticated:
-            return False
-        for assignment in self.user_project_assignments:
-            if assignment.get("project_id") == project_id:
-                return required_role in assignment.get("roles", [])
-        return False
-
-    @rx.var
-    def is_admin(self) -> bool:
-        """Check if user is organization admin"""
-        return self.has_org_role(OrgRole.ADMIN)
-
-    @rx.var
-    def is_super_admin(self) -> bool:
-        """Check if user is super admin"""
-        return self.has_org_role(OrgRole.SUPER_ADMIN)
-
-    @rx.var
-    def is_user(self) -> bool:
-        """Check if user is regular user"""
-        return self.has_org_role(OrgRole.USER)
-
-    @rx.var
-    def role_display(self) -> str:
-        """Get display name for user's role"""
-        if self.is_super_admin:
-            return "Super Admin"
-        elif self.is_admin:
-            return "Admin"
-        elif self.is_user:
-            return "User"
-        else:
-            return "Unknown"
-
-    @rx.var
-    def has_project_assignments(self) -> bool:
-        """Check if user has any project assignments"""
-        return self.is_authenticated and len(self.user_project_assignments) > 0
-
-    @rx.var
-    def project_assignments_display(self) -> List[str]:
-        """Get formatted project assignments for display"""
-        if not self.is_authenticated:
-            return []
-        
-        assignments = []
-        for assignment in self.user_project_assignments:
-            project_name = assignment.get("project_name", "Unknown Project")
-            roles = assignment.get("roles", [])
-            assignments.append(f"{project_name} ({', '.join(roles)})")
-        return assignments
-
-    @rx.var
-    def current_project_display(self) -> str:
-        """Get current project for display"""
-        if not self.has_project_assignments:
-            return "No projects assigned"
-        
-        for assignment in self.user_project_assignments:
-            project_name = assignment.get("project_name", "Unknown Project")
-            return project_name
-        
-        return "No projects assigned"
-
-    def is_assigned_to_project(self, project_id: str) -> bool:
-        """Check if user is assigned to a specific project"""
-        return any(assignment.get("project_id") == project_id for assignment in self.user_project_assignments)
-
-    @rx.var
-    def initials(self) -> str:
-        """Derive user initials for avatar display."""
-        source = self.current_username or self.email or self.username
-        if not source:
-            return "U"
-        if "@" in source:
-            source = source.split("@")[0]
-        parts = [p for p in source.replace("-", " ").replace("_", " ").split() if p]
-        if len(parts) >= 2:
-            return (parts[0][0] + parts[1][0]).upper()
-        clean = "".join(ch for ch in source if ch.isalnum())
-        if len(clean) >= 2:
-            return clean[:2].upper()
-        return (clean[:1].upper() or "U")
-
-    async def load_available_organizations(self):
-        """Load available organizations for registration."""
+        """Hydrate auth state from cookie (preferred) or in-memory token."""
+        tok = self.auth_token or self.token
+        if not tok:
+            # No token at all.
+            self.is_authenticated = False
+            return
         try:
-            from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
-            orgs = await OrganizationRepository.get_all_active()
-            
-            self.available_organizations = [
-                {
-                    "id": str(org.id) if org.id else "no-id",
-                    "name": org.name or "No name",
-                    "description": org.description or "No description"
-                }
-                for org in orgs
-                if org.name != "SYSTEM"  # Hide system organization from regular registration
-            ]
-            
-            self.organizations_loaded = True
-            
-        except Exception as e:
-            self.error = f"Failed to load organizations: {str(e)}"
+            payload = decode_jwt(tok)
+            self.token = tok
+            self.user_id = payload.get("user_id", "")
+            self.current_first_name = payload.get("first_name", "")
+            self.current_last_name = payload.get("last_name", "")
+            self.user_organization_id = payload.get("organization_id", "")
+            self.user_org_role = payload.get("org_role", "")
+            self.user_project_assignments = payload.get("project_assignments", [])
+            self.is_authenticated = True
+        except Exception:
+            # Invalid/expired token -> clear and deauth.
+            self._clear_session()
 
-    def logout(self):
-        """Clear all session data"""
+    def _clear_session(self):
+        """Clear all session-related fields (without returning any events)."""
         self.token = ""
         self.user_id = ""
-        self.current_username = ""
+        self.current_first_name = ""
+        self.current_last_name = ""
         self.user_organization_id = ""
         self.user_org_role = ""
         self.user_project_assignments = []
         self.is_authenticated = False
         self.error = ""
-        return rx.redirect("/")
-    
+
+    def has_org_role(self, required_role: str) -> bool:
+        return self.is_authenticated and self._role_eq(self.user_org_role, required_role)
+
+    def has_project_role(self, project_id: str, required_role: str) -> bool:
+        if not self.is_authenticated:
+            return False
+        for a in self.user_project_assignments:
+            if a.get("project_id") == project_id:
+                return required_role in a.get("roles", [])
+        return False
+
+    # -------- derived vars --------
+    @rx.var
+    def is_admin(self) -> bool:
+        return self.has_org_role(OrgRole.ADMIN.value)
+
+    @rx.var
+    def is_super_admin(self) -> bool:
+        return self.has_org_role(OrgRole.SUPER_ADMIN.value)
+
+    @rx.var
+    def is_user(self) -> bool:
+        return self.has_org_role(OrgRole.USER.value)
+
+    @rx.var
+    def role_display(self) -> str:
+        if self.is_super_admin:
+            return "Super Admin"
+        if self.is_admin:
+            return "Admin"
+        if self.is_user:
+            return "User"
+        return "Unknown"
+
+    @rx.var
+    def has_project_assignments(self) -> bool:
+        return self.is_authenticated and len(self.user_project_assignments) > 0
+
+    @rx.var
+    def project_assignments_display(self) -> List[str]:
+        if not self.is_authenticated:
+            return []
+        return [
+            f"{a.get('project_name','Unknown Project')} ({', '.join(a.get('roles', []))})"
+            for a in self.user_project_assignments
+        ]
+
+    @rx.var
+    def current_project_display(self) -> str:
+        if not self.has_project_assignments:
+            return "No projects assigned"
+        for a in self.user_project_assignments:
+            return a.get("project_name", "Unknown Project")
+        return "No projects assigned"
+
+    def is_assigned_to_project(self, project_id: str) -> bool:
+        return any(a.get("project_id") == project_id for a in self.user_project_assignments)
+
+    @rx.var
+    def initials(self) -> str:
+        fn = (self.current_first_name or "").strip()
+        ln = (self.current_last_name or "").strip()
+        if fn and ln:
+            return (fn[0] + ln[0]).upper()
+        if fn:
+            return fn[:2].upper()
+        if ln:
+            return ln[:2].upper()
+        source = self.email.split("@")[0] if "@" in self.email else self.email
+        clean = "".join(ch for ch in source if ch.isalnum())
+        if len(clean) >= 2:
+            return clean[:2].upper()
+        return (clean[:1].upper() or "U")
+
+    # -------- data loading --------
+    async def load_available_organizations(self):
+        try:
+            from poseidon.backend.database.repositories.organization_repository import OrganizationRepository
+            orgs = await OrganizationRepository.get_all_active()
+            self.available_organizations = [
+                {
+                    "id": str(org.id) if org.id else "no-id",
+                    "name": org.name or "No name",
+                    "description": org.description or "No description",
+                }
+                for org in orgs
+                if org.name != "SYSTEM"
+            ]
+            self.organizations_loaded = True
+        except Exception as e:
+            self.error = f"Failed to load organizations: {str(e)}"
+
+    # -------- session actions --------
+    def logout(self):
+        """Clear session + cookie and go to login."""
+        self._clear_session()
+        return [rx.remove_cookie("auth_token"), rx.redirect("/login")]
+
+    # -------- route guards (use these in app.add_page on_load) --------
     def redirect_if_authenticated(self):
-        """Redirect authenticated users to home"""
-        if self.is_authenticated:
-            return rx.redirect("/")
-    
+        """On auth pages: if a cookie already exists, hydrate and go home."""
+        if self.auth_token:
+            if not self.is_authenticated:
+                self.check_auth()
+            if self.is_authenticated:
+                return rx.redirect("/")
+
     def redirect_if_not_authenticated(self):
-        """Redirect unauthenticated users to login"""
-        if not self.is_authenticated:
+        """On protected pages: bounce to /login as fast as possible."""
+        if not self.auth_token:
             return rx.redirect("/login")
-    
+        if not self.is_authenticated:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
+
     def redirect_if_not_admin(self):
-        """Redirect non-admin users"""
-        if not self.is_authenticated:
+        if not self.auth_token:
             return rx.redirect("/login")
-        elif not self.is_admin:
-            return rx.redirect("/")
-    
-    def redirect_if_not_super_admin(self):
-        """Redirect non-super-admin users"""
         if not self.is_authenticated:
-            return rx.redirect("/login")
-        elif not self.is_super_admin:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
+        if not self.is_admin:
             return rx.redirect("/")
 
+    def redirect_if_not_super_admin(self):
+        if not self.auth_token:
+            return rx.redirect("/login")
+        if not self.is_authenticated:
+            self.check_auth()
+            if not self.is_authenticated:
+                return rx.redirect("/login")
+        if not self.is_super_admin:
+            return rx.redirect("/")
+
+    # -------- auth flows --------
     async def login(self, form_data):
         try:
-            # Validate required fields
-            if not form_data.get("email") or not form_data.get("password"):
+            email = (form_data.get("email") or "").strip()
+            password = form_data.get("password", "")
+            if not email or not password:
                 self.error = "Email and password are required."
                 return
-                
-            result = await AuthService.authenticate_user(form_data["email"], form_data["password"])
-            self.token = result["token"]
-            self.check_auth()  # Decode token and set user data
+
+            result = await AuthService.authenticate_user(email, password)
+
+            self.auth_token = result["token"]
+            self.check_auth()
+
             self.error = ""
             return rx.redirect("/")
         except (UserNotFoundError, InvalidCredentialsError) as e:
@@ -208,132 +244,78 @@ class AuthState(rx.State):
             self.error = f"Login failed: {str(e)}"
 
     def get_organization_id_by_name(self, org_name: str) -> str:
-        """Get organization ID by name"""
         for org in self.available_organizations:
             if org.get("name") == org_name:
                 return org.get("id", "")
         return ""
 
     async def register(self, form_data):
+        """Unified registration: normal user or super admin based on checkbox."""
         try:
-            # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
+            first_name = (form_data.get("first_name") or "").strip()
+            last_name = (form_data.get("last_name") or "").strip()
+            email = (form_data.get("email") or "").strip()
+            password = form_data.get("password", "")
+            confirm = form_data.get("confirm_password", "")
+
+            if not first_name or not last_name:
+                self.error = "First name and last name are required."
                 return
-            
-            # Convert organization name to ID if needed
+            if not email or not password or not confirm:
+                self.error = "Email, password, and confirm password are required."
+                return
+            if password != confirm:
+                self.error = "Passwords do not match."
+                return
+
+            if self.is_register_super_admin:
+                super_key = form_data.get("super_admin_key", "")
+                if not super_key:
+                    self.error = "Super admin key is required."
+                    return
+
+                await AuthService.register_user(
+                    first_name=first_name,
+                    last_name=last_name,
+                    email=email,
+                    password=password,
+                    organization_id="",  # ignored for SA; service ensures SYSTEM
+                    org_role=OrgRole.SUPER_ADMIN,
+                    super_admin_key=super_key,
+                )
+                self.error = ""
+                return rx.redirect("/login")
+
+            # Normal user path
             org_input = form_data.get("organization_id", "")
             if not org_input:
                 self.error = "Organization is required."
                 return
-            
-            # Check if it's already an ID or if we need to convert from name
-            organization_id = org_input
-            if organization_id == "fallback-id":
+            if org_input == "fallback-id":
                 self.error = "Please select a valid organization."
                 return
+
+            organization_id = org_input
             if not any(org.get("id") == org_input for org in self.available_organizations):
-                # It's probably a name, convert to ID
                 organization_id = self.get_organization_id_by_name(org_input)
                 if not organization_id:
                     self.error = "Invalid organization selected."
                     return
-                
-            # Normal registration can only create regular users (security measure)
-            # Organization admins must be created through register_admin method
-            result = await AuthService.register_user(
-                form_data["username"],
-                form_data["email"],
-                form_data["password"],
-                organization_id,
-                org_role=OrgRole.USER  # Single role
+
+            await AuthService.register_user(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                password=password,
+                organization_id=organization_id,
+                org_role=OrgRole.USER,
             )
             self.error = ""
             return rx.redirect("/login")
+
         except UserAlreadyExistsError as e:
+            self.error = str(e)
+        except ValueError as e:
             self.error = str(e)
         except Exception as e:
             self.error = f"Registration failed: {str(e)}"
-    
-    async def register_admin(self, form_data):
-        try:
-            # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
-                return
-            
-            # Convert organization name to ID if needed
-            org_input = form_data.get("organization_id", "")
-            if not org_input:
-                self.error = "Organization is required."
-                return
-            
-            # Check if it's already an ID or if we need to convert from name
-            organization_id = org_input
-            if organization_id == "fallback-id":
-                self.error = "Please select a valid organization."
-                return
-            if not any(org.get("id") == org_input for org in self.available_organizations):
-                # It's probably a name, convert to ID
-                organization_id = self.get_organization_id_by_name(org_input)
-                if not organization_id:
-                    self.error = "Invalid organization selected."
-                    return
-            
-            if not form_data.get("admin_key"):
-                self.error = "Admin registration key is required."
-                return
-            
-            # Validate organization-specific admin registration key
-            is_valid_key = await AuthService.validate_organization_admin_key(
-                organization_id, 
-                form_data["admin_key"]
-            )
-            if not is_valid_key:
-                self.error = "Invalid admin registration key for this organization."
-                return
-                
-            result = await AuthService.register_organization_admin(
-                form_data["username"],
-                form_data["email"],
-                form_data["password"],
-                organization_id
-            )
-            self.error = ""
-            return rx.redirect("/login")
-        except UserAlreadyExistsError as e:
-            self.error = str(e)
-        except Exception as e:
-            self.error = f"Admin registration failed: {str(e)}"
-    
-    async def register_super_admin(self, form_data):
-        """Register the first super admin user."""
-        try:
-            # Validate required fields
-            if not form_data.get("username") or not form_data.get("email") or not form_data.get("password"):
-                self.error = "Username, email, and password are required."
-                return
-            
-            if not form_data.get("super_admin_key"):
-                self.error = "Super admin key is required."
-                return
-            
-            # Validate super admin key (master key for initial setup)
-            SUPER_ADMIN_KEY = "POSEIDON_SUPER_2024"  # Change this in production!
-            if form_data.get("super_admin_key") != SUPER_ADMIN_KEY:
-                self.error = "Invalid super admin key."
-                return
-                
-            result = await AuthService.register_super_admin(
-                form_data["username"],
-                form_data["email"],
-                form_data["password"]
-            )
-            self.error = ""
-            return rx.redirect("/login")
-        except ValueError as e:
-            self.error = str(e)
-        except UserAlreadyExistsError as e:
-            self.error = str(e)
-        except Exception as e:
-            self.error = f"Super admin registration failed: {str(e)}"

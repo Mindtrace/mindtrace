@@ -7,39 +7,10 @@ from poseidon.components_v2.core.button import button
 from poseidon.state.auth import AuthState
 
 
-def _login_gate() -> rx.Component:
-    """Shown when the user is not authenticated."""
-    return rx.center(
-        rx.vstack(
-            rx.text("🔒", font_size="4rem", color="#9CA3AF"),
-            rx.text("Access Denied", font_size="2rem", font_weight="600", color="#374151"),
-            rx.text("Please log in to view the Line View", color="#6B7280", text_align="center"),
-            rx.link(rx.button("Go to Login", color_scheme="blue", size="3"), href="/login"),
-            spacing="4",
-            align="center",
-        ),
-        height="100vh",
-        width="100%",
-    )
-
-
-def _content() -> rx.Component:
+def filter_table_demo() -> rx.Component:
     """Authenticated content wrapped in the shared page container."""
     return page_container(
         FilterTable(LineViewState),
         title="Line View",
         sub_text="Inspection traceability and accountability",
-    )
-
-
-def filter_table_demo() -> rx.Component:
-    """Route component for /line-view."""
-    return rx.cond(
-        AuthState.is_authenticated,
-        rx.box(
-            _content(),
-            width="100%",
-            min_height="100vh",
-        ),
-        _login_gate(),
     )

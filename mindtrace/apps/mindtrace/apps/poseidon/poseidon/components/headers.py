@@ -31,7 +31,7 @@ def app_header() -> rx.Component:
                 AuthState.is_authenticated,
                 rx.hstack(
                     rx.text(
-                        AuthState.current_username,
+                        AuthState.current_first_name + " " + AuthState.current_last_name,
                         weight="medium",
                         color=rx.color("slate", 12),
                         size="2",
