@@ -56,24 +56,21 @@ No IoU thresholds are applied unless you add such a param and a corresponding fi
 det = FeatureDetector("/path/to/config.json")
 ```
 
-2) Call a single function with your inputs (auto-detects type):
-- Boxes (NumPy arrays per image):
+2) Call a single function with your inputs (auto-detects type). Provide a dict keyed by camera:
+- Boxes (NumPy arrays per camera):
 ```
-results = det.detect(
-  inputs=boxes_by_image,            # List[np.ndarray], each shaped (N,4) or (4,)
-  image_keys=["c1","c2"],
-  mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"}
-)
+results = det.detect(inputs={
+  "cam1": cam1_boxes,              # np.ndarray shaped (N,4) or (4,)
+  "cam2": cam2_boxes
+})
 ```
 
 - Masks (list of np.ndarray per image):
 ```
-results = det.detect(
-  inputs=masks,                     # List[np.ndarray]
-  image_keys=["c1","c2"],
-  mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"},
-  class_id=1                        # used when feature.params.class_id is not set
-)
+results = det.detect(inputs={
+  "cam1": cam1_mask,               # np.ndarray HxW
+  "cam2": cam2_mask
+}, class_id=1)                      # used when feature.params.class_id is not set
 ```
 
 3) Output format (per image key):
