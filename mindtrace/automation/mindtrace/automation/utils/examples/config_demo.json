@@ -1,0 +1,29 @@
+{
+  "Basler:laser_cam1": {
+    "features": {
+      "W1": {
+        "type": "weld",
+        "bbox": [100, 50, 180, 70],
+        "num_expected": 1,
+        "params": { "min_length_px": 50 }
+      },
+      "H1": {
+        "type": "hole",
+        "bbox": [200, 50, 230, 80],
+        "num_expected": 1,
+        "params": { "class_id": 2 }
+      }
+    }
+  },
+  "Basler:laser_cam2": {
+    "features": {
+      "W2": {
+        "type": "weld",
+        "bbox": [50, 50, 100, 60],
+        "num_expected": 1,
+        "params": { "min_length_px": 60 }
+      }
+    }
+  }
+}
+

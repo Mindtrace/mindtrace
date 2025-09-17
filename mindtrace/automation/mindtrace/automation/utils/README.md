@@ -1,0 +1,129 @@
+# Feature detection utilities (boxes and masks)
+
+This module assigns configured feature IDs to model predictions (either detection boxes or segmentation masks) and reports presence ("Present"/"Missing"). For welds, it can also mark "Short" when the measured length is below a configured threshold. No "Correct" label is emitted.
+
+## Files
+
+- `feature_models.py`
+  - `FeatureConfig`: per-feature config (`bbox`, `num_expected`, `type`, `params`)
+  - `Feature`: detection result (`id`, `type`, `bbox`, `expected`, `found`, optional `classification`)
+
+- `feature_extractors.py`
+  - `BoxFeatureExtractor`: assigns features from detection boxes
+  - `MaskFeatureExtractor`: assigns features from segmentation masks
+  - Shared behavior:
+    - Inside each feature ROI, candidates are filtered (strict, opt-in params only), then sorted by size (boxes: ROI-overlap area; masks: contour area), then up to `num_expected` are selected. If `minimum_distance_*` is provided, selection uses a greedy distance constraint.
+
+- `feature_detector.py`
+  - `FeatureDetector`: public API with a single entrypoint `detect` that auto-detects boxes vs masks
+  - Adds weld-only classification: "Short" if below `min_length_*`; presence is reported via `found == expected`.
+
+- `examples/`
+  - `config_demo.json`: minimal example config
+  - `demo_assign_features.py`: runnable demo for both boxes and masks
+
+## Configuration schema (per camera)
+
+```
+{
+  "<camera_key>": {
+    "features": {
+      "<feature_id>": {
+        "type": "weld" | "hole" | "<future_type>",
+        "bbox": [x1, y1, x2, y2],
+        "num_expected": 1,
+        "params": { ...strict, opt-in keys... }
+      }
+    }
+  }
+}
+```
+
+Strict, opt-in params (pixels only):
+- Common selection constraint (both boxes and masks selection support distance)
+  - `minimum_distance_px`
+- Masks (holes or other classes):
+  - `class_id` (REQUIRED for non-weld types when using masks; welds can inherit from `weld_class_id` at call-time)
+  - `min_contour_area_px` (optional noise filter)
+- Weld classification:
+  - `min_length_px` → sets `classification: "Short"` only when present and below length
+
+No IoU thresholds are applied unless you add such a param and a corresponding filter (see Extensibility).
+
+## Public API and flow
+
+1) Create the detector with a path to your config file:
+```
+det = FeatureDetector("/path/to/config.json")
+```
+
+2) Call a single function with your inputs (auto-detects type):
+- Boxes (list of boxes per image):
+```
+results = det.detect(
+  inputs=boxes_by_image,            # List[List[[x1,y1,x2,y2] | {bbox: [...]} | {x1,y1,x2,y2}]]
+  image_keys=["c1","c2"],
+  mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"}
+)
+```
+
+- Masks (list of np.ndarray per image):
+```
+results = det.detect(
+  inputs=masks,                     # List[np.ndarray]
+  image_keys=["c1","c2"],
+  mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"},
+  weld_class_id=1                   # default class for weld in mask
+)
+```
+
+3) Output format (per image key):
+```
+{
+  "<key>": {
+    "features": [
+      { "id", "type", "bbox": [x1,y1,x2,y2], "expected": int, "found": int, "classification"?: "Short" }
+    ],
+    "present": { "<feature_id>": "Present" | "Missing" },
+    "config_key": "<camera_key>"
+  }
+}
+```
+
+Notes:
+- `present` is derived from `found == expected` and returns "Present"/"Missing".
+- `classification` is added only for welds that are shorter than `min_length_*`.
+
+## Selection logic
+
+- Boxes:
+  - Consider boxes that overlap the ROI (overlap area > 0).
+  - Sort by overlap area (largest first).
+  - Take up to `num_expected` boxes. If `minimum_distance_*` is set, selection becomes greedy to enforce spacing.
+
+- Masks:
+  - Extract contours for each required class (`class_id` per feature; welds can use `weld_class_id`).
+  - Keep contours whose bounding rectangle intersects the ROI.
+  - Sort by contour area (largest first).
+  - Take up to `num_expected`. If `minimum_distance_*` is set, selection becomes greedy to enforce spacing.
+
+- Union bbox: The final `bbox` reported for each feature is the union of the selected items.
+
+## Extensibility (add new features or params)
+
+- To add a new feature type, use a new `type` value in config and (optionally) add type-specific selection constraints:
+  - Boxes: add a few lines in `BoxFeatureExtractor._select_boxes_in_roi` to reject candidates based on new strict params (e.g., size filters). Sorting remains by ROI-overlap area.
+  - Masks: add a few lines in `MaskFeatureExtractor._select_contours_in_roi` to reject contours based on strict params (e.g., `min_contour_area_px`). Sorting remains by contour area.
+
+- To add new classification rules for a type, extend `FeatureDetector._classify_feature` for that `type` and strict param names. Keep classification minimal and opt-in.
+
+## Example
+
+See `examples/demo_assign_features.py`. Run:
+```
+python /home/joshua/josh/mindtrace/mindtrace/automation/mindtrace/automation/utils/examples/demo_assign_features.py
+```
+
+You’ll see per-image results for both boxes and masks, with `present` and weld `Short` where applicable.
+
+
