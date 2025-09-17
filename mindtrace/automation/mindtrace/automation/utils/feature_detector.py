@@ -10,7 +10,13 @@ from .feature_extractors import BoxFeatureExtractor, MaskFeatureExtractor
 
 
 class FeatureDetector:
-    """Main class for feature detection and classification."""
+    """Assign expected features to predictions and report presence.
+
+    Cross-compares configured ROIs/types/counts (expected) with model outputs
+    (boxes or masks). Presence is derived from counts. Optionally, welds can
+    be annotated as "Short" when `min_length_px` is configured and the
+    measured length (max of bbox width/height) falls below that threshold.
+    """
 
     def __init__(self, config_path: str):
         self.logger = logging.getLogger(__name__)
