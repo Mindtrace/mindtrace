@@ -97,7 +97,7 @@ Notes:
 
 - Boxes:
   - Consider boxes that overlap the ROI (overlap area > 0).
-  - Sort by overlap area (largest first).
+  - Sort by overlap area with the ROI (largest first). This is not IoU.
   - Take up to `num_expected` boxes.
 
  - Masks:
