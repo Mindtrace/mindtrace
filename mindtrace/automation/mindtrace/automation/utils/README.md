@@ -1,6 +1,6 @@
 # Feature detection utilities (boxes and masks)
 
-This module assigns configured feature IDs to model predictions (either detection boxes or segmentation masks) and reports presence ("Present"/"Missing"). For welds, it can also mark "Short" when the measured length is below a configured threshold. No "Correct" label is emitted.
+This module cross-compares configured expected features (ROIs, types, counts) against model predictions (detection boxes or segmentation masks) and reports presence ("Present"/"Missing"). Optionally, for welds you may annotate "Short" when a configured `min_length_px` threshold is not met. There is no generic classification beyond this optional weld length check.
 
 ## Files
 
@@ -15,8 +15,8 @@ This module assigns configured feature IDs to model predictions (either detectio
     - Inside each feature ROI, candidates are filtered (strict, opt-in params only), then sorted by size (boxes: ROI-overlap area; masks: contour area), then up to `num_expected` are selected. No pairwise spacing rule is applied.
 
 - `feature_detector.py`
-  - `FeatureDetector`: public API with a single entrypoint `detect` that auto-detects boxes vs masks
-  - Adds weld-only classification: "Short" if below `min_length_*`; presence is reported via `found == expected`.
+  - `FeatureDetector`: single entrypoint `detect` that auto-detects boxes vs masks
+  - Performs feature assignment and presence evaluation by comparing predictions to configured ROIs and counts. Optionally adds weld-only "Short" if below `min_length_px`.
 
 - `examples/`
   - `config_demo.json`: minimal example config
@@ -44,12 +44,12 @@ Strict, opt-in params (pixels only):
 - Masks (holes or other classes):
   - `class_id` (REQUIRED for non-weld types when using masks; welds can inherit from per-call `class_id`)
   - `min_contour_area_px` (optional noise filter)
-- Weld classification:
-  - `min_length_px` → sets `classification: "Short"` only when present and below length
+- Optional weld length check:
+  - `min_length_px` → adds `classification: "Short"` only when present and below this length
 
 No IoU thresholds are applied unless you add such a param and a corresponding filter (see Extensibility).
 
-## Public API and flow
+## Usage and flow
 
 1) Create the detector with a path to your config file:
 ```
@@ -90,8 +90,8 @@ results = det.detect(
 ```
 
 Notes:
-- `present` is derived from `found == expected` and returns "Present"/"Missing".
-- `classification` is added only for welds that are shorter than `min_length_*`.
+- Presence is derived from count matching: `present` is "Present" when `found == expected`, else "Missing".
+- `classification` is not generally used; only welds may include `"Short"` when `min_length_px` is configured and not met.
 
 ## Selection logic
 
