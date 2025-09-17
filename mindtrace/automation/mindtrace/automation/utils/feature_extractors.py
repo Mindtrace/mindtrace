@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Set, Tuple
 
-import numpy as np
 import cv2
+import numpy as np
 
 from .feature_models import Feature, FeatureConfig
 
@@ -76,7 +76,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
     Logic per feature:
     - Keep boxes with any overlap with ROI
     - Sort by overlap area (largest first)
-    - Select up to num_expected; if minimum_distance_px is set, enforce spacing greedily
+    - Select up to num_expected (no pairwise spacing rule)
     - Report union bbox; [] if none selected
     """
     def __init__(self, utils: Any):
@@ -109,8 +109,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
     def _select_boxes_in_roi(self, boxes: np.ndarray, x1: int, y1: int, x2: int, y2: int, expected: int, params: Dict[str, Any]) -> np.ndarray:
         """Return indices of selected boxes intersecting the ROI.
 
-        Pixels-only thresholds:
-          - minimum_distance_px: optional spacing between selected centers
+        Pixels-only thresholds: none (simple top-N by overlap area)
         """
         ix1 = np.maximum(boxes[:, 0], x1)
         iy1 = np.maximum(boxes[:, 1], y1)
@@ -125,10 +124,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
         pos = np.nonzero(area > 0)[0]
         if pos.size == 0:
             return np.array([])
-        min_dist_px = self.utils.get_pixel_value(params, "minimum_distance_px")
-        if min_dist_px is None:
-            return self._select_top_n_by_area(area, pos, expected)
-        return self._select_with_distance_constraint(boxes, area, pos, expected, float(min_dist_px))
+        return self._select_top_n_by_area(area, pos, expected)
 
     def _select_top_n_by_area(self, area: np.ndarray, candidates: np.ndarray, n: int) -> np.ndarray:
         if n >= candidates.size:
@@ -137,21 +133,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
         selected_idx = candidates[topk_idx_rel]
         return selected_idx[np.argsort(area[selected_idx])[::-1]]
 
-    def _select_with_distance_constraint(self, boxes: np.ndarray, area: np.ndarray, candidates: np.ndarray, expected: int, min_dist_px: float) -> np.ndarray:
-        min_dist_px_sq = min_dist_px * min_dist_px
-        order = candidates[np.argsort(area[candidates])[::-1]]
-        selected_list: List[int] = []
-        selected_centers: List[Tuple[float, float]] = []
-        for idx in order.tolist():
-            if len(selected_list) >= expected:
-                break
-            cx = (boxes[idx, 0] + boxes[idx, 2]) / 2.0
-            cy = (boxes[idx, 1] + boxes[idx, 3]) / 2.0
-            too_close = any((cx - scx) ** 2 + (cy - scy) ** 2 < min_dist_px_sq for scx, scy in selected_centers)
-            if not too_close:
-                selected_centers.append((cx, cy))
-                selected_list.append(idx)
-        return np.array(selected_list, dtype=np.int64) if selected_list else np.array([], dtype=np.int64)
+    
 
 
 class MaskFeatureExtractor(BaseFeatureExtractor):
@@ -161,13 +143,13 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
     - Resolve class_id (explicit for non-welds; welds may use provided default)
     - Keep contours whose boundingRect intersects ROI
     - Sort by contour area (largest first)
-    - Select up to num_expected; if minimum_distance_px is set, enforce spacing greedily
+    - Select up to num_expected (no pairwise spacing rule)
     - Report union bbox; [] if none selected
     """
 
-    def __init__(self, utils: Any, default_weld_class_id: int):
+    def __init__(self, utils: Any, class_id: int):
         super().__init__(utils)
-        self.default_weld_class_id = default_weld_class_id
+        self.class_id = class_id
         self.assigned_contours: Dict[int, Set[int]]
 
     def _reset_state(self) -> None:
@@ -176,8 +158,8 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
     def extract(self, mask: np.ndarray, feature_config: FeatureConfig, feature_id: str, contours_cache: Dict[int, List[np.ndarray]] | None = None, **kwargs: Any) -> Feature:
         params = feature_config.params or {}
         class_id = params.get("class_id")
-        if class_id is None and feature_config.type == "weld":
-            class_id = self.default_weld_class_id
+        if class_id is None:
+            class_id = self.class_id
         if class_id is None:
             return self._create_empty_feature(feature_id, feature_config)
         class_id = int(class_id)
@@ -190,14 +172,13 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
             self.assigned_contours[class_id] = set()
         selected_contours = self._select_contours_in_roi(contours, feature_config.bbox, feature_config.num_expected, params, self.assigned_contours[class_id])
         found = len(selected_contours)
-        combined_bbox = self._compute_contours_bbox(selected_contours) if found > 0 else [0, 0, 0, 0]
+        combined_bbox = self._compute_contours_bbox(selected_contours) if found > 0 else []
         return Feature(id=feature_id, type=feature_config.type, bbox=combined_bbox, expected=feature_config.num_expected, found=found, params=params)
 
     def _select_contours_in_roi(self, contours: List[np.ndarray], roi_bbox: List[int], expected: int, params: Dict[str, Any], assigned: set) -> List[Tuple[int, np.ndarray]]:
         """Return [(index, contour), ...] for selected contours intersecting ROI.
 
-        Pixels-only thresholds:
-          - minimum_distance_px: optional spacing between selected centers
+        Pixels-only thresholds: none (simple top-N by area)
         """
         x1, y1, x2, y2 = roi_bbox
         roi_contours: List[Tuple[int, np.ndarray, float, float]] = []
@@ -213,28 +194,12 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
         if not roi_contours:
             return []
         roi_contours.sort(key=lambda x: cv2.contourArea(x[1]), reverse=True)
-        min_dist_px = self.utils.get_pixel_value(params, "minimum_distance_px")
-        if min_dist_px is None:
-            selected = roi_contours[:expected]
-        else:
-            selected = self._select_with_distance_constraint(roi_contours, expected, float(min_dist_px))
+        selected = roi_contours[:expected]
         for idx, _ in [(c[0], c[1]) for c in selected]:
             assigned.add(idx)
         return [(idx, contour) for idx, contour, _, _ in selected]
 
-    def _select_with_distance_constraint(self, roi_contours: List[Tuple[int, np.ndarray, float, float]], expected: int, min_dist_px: float) -> List[Tuple[int, np.ndarray, float, float]]:
-        min_dist_px_sq = min_dist_px * min_dist_px
-        selected: List[Tuple[int, np.ndarray, float, float]] = []
-        centers: List[Tuple[float, float]] = []
-        for item in roi_contours:
-            if len(selected) >= expected:
-                break
-            _, _, cx, cy = item
-            too_close = any((cx - scx) ** 2 + (cy - scy) ** 2 < min_dist_px_sq for scx, scy in centers)
-            if not too_close:
-                centers.append((cx, cy))
-                selected.append(item)
-        return selected
+    
 
     def _compute_contours_bbox(self, selected_contours: List[Tuple[int, np.ndarray]]) -> List[int]:
         all_points = np.vstack([contour.reshape(-1, 2) for _, contour in selected_contours])
