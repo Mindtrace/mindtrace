@@ -65,8 +65,13 @@ def registry(backend_type, temp_dir):
 def test_config():
     """Create a test Config object."""
     return Config(
-        MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-        CUSTOM_KEY="custom_value",
+        {
+            "MINDTRACE_DIR_PATHS": {
+                "TEMP_DIR": "/custom/temp/dir",
+                "REGISTRY_DIR": "/custom/registry/dir",
+            },
+            "CUSTOM_KEY": "custom_value",
+        }
     )
 
 
@@ -171,8 +176,13 @@ def test_concurrent_operations(registry, test_config):
     def save_object():
         time.sleep(0.1)
         new_config = Config(
-            MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir2", "REGISTRY_DIR": "/custom/registry/dir2"},
-            CUSTOM_KEY="new_value",
+            {
+                "MINDTRACE_DIR_PATHS": {
+                    "TEMP_DIR": "/custom/temp/dir2",
+                    "REGISTRY_DIR": "/custom/registry/dir2",
+                },
+                "CUSTOM_KEY": "new_value",
+            }
         )
         registry.save("test:concurrent", new_config)
 
@@ -216,8 +226,13 @@ def test_concurrent_save_operations(registry, test_config):
     def save_with_delay(i):
         time.sleep(0.1)  # Add delay to increase chance of race condition
         new_config = Config(
-            MINDTRACE_DIR_PATHS={"TEMP_DIR": f"/custom/temp/dir{i}", "REGISTRY_DIR": f"/custom/registry/dir{i}"},
-            CUSTOM_KEY=f"value{i}",
+            {
+                "MINDTRACE_DIR_PATHS": {
+                    "TEMP_DIR": f"/custom/temp/dir{i}",
+                    "REGISTRY_DIR": f"/custom/registry/dir{i}",
+                },
+                "CUSTOM_KEY": f"value{i}",
+            }
         )
         registry.save("test:concurrent-save", new_config, version=f"1.0.{i}")
 
@@ -268,8 +283,13 @@ def test_concurrent_save_load_race(registry, test_config):
     def save_new_version():
         time.sleep(0.1)
         new_config = Config(
-            MINDTRACE_DIR_PATHS={"TEMP_DIR": "/custom/temp/dir2", "REGISTRY_DIR": "/custom/registry/dir2"},
-            CUSTOM_KEY="new_value",
+            {
+                "MINDTRACE_DIR_PATHS": {
+                    "TEMP_DIR": "/custom/temp/dir2",
+                    "REGISTRY_DIR": "/custom/registry/dir2",
+                },
+                "CUSTOM_KEY": "new_value",
+            }
         )
         registry.save("test:race", new_config, version="1.0.1")
 
@@ -355,7 +375,7 @@ def test_dict_like_interface_advanced(registry, test_config):
     assert registry["test:setdefault"]["CUSTOM_KEY"] == "custom_value"
 
     # Test update()
-    new_config = Config(CUSTOM_KEY="new_value")
+    new_config = Config({"CUSTOM_KEY": "new_value"})
     registry.update({"test:update": new_config})
     assert registry["test:update"]["CUSTOM_KEY"] == "new_value"
 
@@ -364,7 +384,7 @@ def test_dict_like_interface_versioned(registry, test_config):
     """Test dictionary-like interface with versioned keys."""
     # Test versioned keys
     registry["test:versioned@1.0.0"] = test_config
-    new_config = Config(CUSTOM_KEY="new_value")
+    new_config = Config({"CUSTOM_KEY": "new_value"})
     registry["test:versioned@1.0.1"] = new_config
 
     # Test loading specific versions
@@ -385,7 +405,7 @@ def test_concurrent_dict_operations(registry, test_config):
 
     def set_item(i):
         time.sleep(0.1)
-        new_config = Config(CUSTOM_KEY=f"value{i}")
+        new_config = Config({"CUSTOM_KEY": f"value{i}"})
         registry[f"test:concurrent-dict-{i}"] = new_config
 
     def get_item(i):
