@@ -1,7 +1,7 @@
 """Synchronous Camera Manager facade for Mindtrace hardware cameras.
 
-This class provides a synchronous API that delegates to `AsyncCameraManager`
-running on a dedicated background event loop thread.
+This class provides a synchronous API that delegates to `AsyncCameraManager` running on a dedicated background event 
+loop thread.
 """
 
 from __future__ import annotations
@@ -51,8 +51,6 @@ class CameraManager(Mindtrace):
         details: bool = False,
         include_mocks: bool = False,
     ):
-        from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-
         return AsyncCameraManager.discover(backends=backends, details=details, include_mocks=include_mocks)
 
     def open(
@@ -138,8 +136,9 @@ class CameraManager(Mindtrace):
     def close(self, names: Optional[Union[str, List[str]]] = None) -> None:
         """Close cameras or shut down the manager.
 
-        - If names is provided (str or list[str]), closes those cameras via the async manager.
-        - If names is None, closes all cameras and shuts down the background event loop thread.
+        Args:
+            names: Camera name (e.g., "Backend:device") or a list of names. If None, closes all cameras and shuts down 
+                the background event loop thread.
         """
         # Close specific cameras
         if names is not None:
