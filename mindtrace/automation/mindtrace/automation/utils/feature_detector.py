@@ -1,15 +1,15 @@
 import json
-import logging
 from typing import Any, Dict, List
 
 import cv2
 import numpy as np
+from mindtrace.core.base.mindtrace_base import Mindtrace
 
 from .feature_models import Feature, FeatureConfig
 from .feature_extractors import BoxFeatureExtractor, MaskFeatureExtractor
 
 
-class FeatureDetector:
+class FeatureDetector(Mindtrace):
     """Assign expected features to predictions and report presence.
 
     Cross-compares configured ROIs/types/counts (expected) with model outputs
@@ -18,8 +18,8 @@ class FeatureDetector:
     measured length (max of bbox width/height) falls below that threshold.
     """
 
-    def __init__(self, config_path: str):
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, config_path: str, **kwargs: Any):
+        super().__init__(**kwargs)
         self.config = self._load_config(config_path)
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
