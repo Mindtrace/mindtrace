@@ -19,7 +19,7 @@ class User(MindtraceDocument):
     organization: Link["Organization"]
 
     # e.g. "user" | "admin" | "super_admin"
-    org_role: str = Field(default=OrgRole.USER.value)
+    org_role: OrgRole = Field(default=OrgRole.USER.value)
 
     # --- relationships ---
     projects: List[Link["Project"]] = Field(default_factory=list)
