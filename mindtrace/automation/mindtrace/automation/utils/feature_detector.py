@@ -102,28 +102,26 @@ class FeatureDetector(Mindtrace):
         self._apply_shared_union_bbox_with_groups(self.config.get(camera_key, {}), features)
         return features
 
-    def detect(self, inputs: List[Any], image_keys: List[str], mapping: Dict[str, str] | None = None, class_id: int | None = None) -> Dict[str, Dict[str, Any]]:
+    def detect(self, inputs: Dict[str, Any], class_id: int | None = None) -> Dict[str, Dict[str, Any]]:
         """
-        Unified entrypoint:
-        - If inputs are masks (np.ndarray HxW), pass class_id
-        - If inputs are boxes, provide NumPy arrays shaped (N,4) or (4,)
+        Detect features for predictions keyed by camera.
+
+        - Inputs: dict keyed by camera { "cam1": data1, ... }
+        - Masks: np.ndarray HxW; Boxes: np.ndarray shaped (N,4) or (4,)
         Returns per-image dict: { features: [...], present: {...}, config_key }
         """
-        mapping = mapping or {}
+        if not isinstance(inputs, dict):
+            raise TypeError("inputs must be a dict keyed by camera: { 'cam1': data, ... }")
+        items = list(inputs.items())
+        if len(items) == 0:
+            return {}
+        first_val = items[0][1]
+        is_mask = isinstance(first_val, np.ndarray) and not (
+            first_val.ndim == 2 and first_val.shape[1] == 4
+        ) and not (first_val.ndim == 1 and first_val.size == 4)
         results: Dict[str, Dict[str, Any]] = {}
-        # Infer modality from the first item
-        is_mask = False
-        if len(inputs) > 0 and isinstance(inputs[0], np.ndarray):
-            first = inputs[0]
-            # Masks are HxW arrays; boxes are (N,4) or (4,)
-            if first.ndim == 2 and first.shape[1] == 4:
-                is_mask = False
-            elif first.ndim == 1 and first.size == 4:
-                is_mask = False
-            else:
-                is_mask = True
-        for key, data in zip(image_keys, inputs):
-            resolved_key = mapping.get(key, key)
+        for key, data in items:
+            resolved_key = key
             if is_mask:
                 if class_id is None:
                     raise ValueError("class_id required for mask inputs (used when feature.params.class_id is not set)")
