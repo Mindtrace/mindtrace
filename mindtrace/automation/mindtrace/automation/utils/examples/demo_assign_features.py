@@ -18,7 +18,7 @@ def print_json(title, obj):
 def run_boxes():
     det = FeatureDetector(CONFIG_PATH)
     image_keys = ["c1", "c2"]
-    mapping = {"c1": "Basler:laser_cam1", "c2": "Basler:laser_cam2"}
+    mapping = {"c1": "cam1", "c2": "cam2"}
 
     # boxes_by_image: list per image; each box is [x1,y1,x2,y2] or dict with bbox/x1..y2
     boxes_by_image = [
@@ -37,7 +37,7 @@ def run_boxes():
 def run_masks():
     det = FeatureDetector(CONFIG_PATH)
     image_keys = ["c1", "c2"]
-    mapping = {"c1": "Basler:laser_cam1", "c2": "Basler:laser_cam2"}
+    mapping = {"c1": "cam1", "c2": "cam2"}
     class_id = 1  # mask class used when feature.params.class_id is not set
 
     mask1 = np.zeros((200, 300), dtype=np.uint8)

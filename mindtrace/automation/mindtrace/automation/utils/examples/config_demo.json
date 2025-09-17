@@ -1,5 +1,5 @@
 {
-  "Basler:laser_cam1": {
+  "cam1": {
     "features": {
       "W1": {
         "type": "weld",
@@ -22,7 +22,7 @@
     },
     "groups": [ ["W1", "W2"] ]
   },
-  "Basler:laser_cam2": {
+  "cam2": {
     "features": {
       "W3": {
         "type": "weld",
