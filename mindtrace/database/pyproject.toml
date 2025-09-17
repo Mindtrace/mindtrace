@@ -1,7 +1,8 @@
 [project]
 name = "mindtrace-database"
-version = "0.1.0"
+version = "0.3.0"
 description = "Database functionality for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}
@@ -11,11 +12,18 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "beanie>=1.29.0",
+    "beanie>=1.29.0, <2",
     "mindtrace-core",
+    "redis>=4.0.0",
     "redis-om>=0.3.5",
+    "motor>=3.3.0",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/database"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+

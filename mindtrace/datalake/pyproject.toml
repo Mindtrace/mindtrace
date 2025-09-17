@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-datalake"
-version = "0.1.0"
+version = "0.3.0"
 description = "Datalake functionality for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -16,6 +16,10 @@ dependencies = [
     "mindtrace-database",
     "mindtrace-services",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/datalake"
 
 [build-system]
 requires = ["setuptools"]

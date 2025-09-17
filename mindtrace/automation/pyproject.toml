@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-automation"
-version = "0.1.0"
+version = "0.3.0"
 description = "Automation for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -17,8 +17,13 @@ dependencies = [
     "mindtrace-services",
     "mindtrace-datalake",
     "mindtrace-models",
-    "mindtrace-cluster"
+    "mindtrace-cluster",
+    "label-studio-sdk>=2.0.4"
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/automation"
 
 [build-system]
 requires = ["setuptools"]

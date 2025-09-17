@@ -8,9 +8,8 @@ Basler, Daheng, and mock backends) with unified async interfaces.
 """
 
 import logging
-import base64
-from datetime import datetime, UTC
-from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict
 
 from fastapi import Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,25 +19,57 @@ import cv2
 import asyncio
 from pydantic import BaseModel
 
-from mindtrace.services.core.service import Service
-from mindtrace.core import TaskSchema
+from mindtrace.hardware.api.routes import (
+    backends,
+    cameras,
+    capture,
+    config_async,
+    config_persistence,
+    config_sync,
+    network,
+)
 from mindtrace.hardware.core.exceptions import (
-    CameraError,
-    CameraNotFoundError,
-    CameraInitializationError,
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
-    SDKNotAvailableError,
+    CameraError,
+    CameraInitializationError,
+    CameraNotFoundError,
     CameraTimeoutError,
+    SDKNotAvailableError,
 )
 from mindtrace.hardware.models.responses import ErrorResponse
-from mindtrace.hardware.api.dependencies import get_camera_manager
-from mindtrace.hardware.models.requests import *
-from mindtrace.hardware.models.responses import *
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+
+# Create FastAPI application
+app = FastAPI(
+    title="Camera API",
+    description="REST API for camera management and control using CameraManager",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+
+# Configure CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # React development server
+        "http://localhost:3001",  # Alternative React port
+        "http://localhost:8080",  # Alternative frontend port
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Exception mapping for camera errors
 EXCEPTION_MAPPING = {
     CameraNotFoundError: (404, "CAMERA_NOT_FOUND"),
     CameraInitializationError: (409, "CAMERA_INITIALIZATION_ERROR"),
@@ -53,6 +84,9 @@ EXCEPTION_MAPPING = {
 def camera_error_handler(request: Request, exc: CameraError):
     """Handle camera-specific exceptions and return appropriate HTTP responses."""
     status_code, error_code = EXCEPTION_MAPPING.get(type(exc), (500, "UNKNOWN_CAMERA_ERROR"))
+
+    logger.error(f"Camera error: {exc} (Request: {request.method} {request.url})")
+
     return JSONResponse(
         status_code=status_code,
         content=ErrorResponse(
@@ -60,12 +94,16 @@ def camera_error_handler(request: Request, exc: CameraError):
             message=str(exc),
             error_type=type(exc).__name__,
             error_code=error_code,
-            timestamp=datetime.now(UTC)
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
-def value_error_handler(request: Request, exc: ValueError):
-    """Handle ValueError exceptions and return appropriate HTTP responses."""
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handle value errors (typically validation errors)."""
+    logger.warning(f"Value error: {exc} (Request: {request.method} {request.url})")
+
     return JSONResponse(
         status_code=400,
         content=ErrorResponse(
@@ -73,12 +111,16 @@ def value_error_handler(request: Request, exc: ValueError):
             message=str(exc),
             error_type="ValueError",
             error_code="VALIDATION_ERROR",
-            timestamp=datetime.now(UTC)
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
-def key_error_handler(request: Request, exc: KeyError):
-    """Handle KeyError exceptions and return appropriate HTTP responses."""
+
+@app.exception_handler(KeyError)
+async def key_error_handler(request: Request, exc: KeyError):
+    """Handle key errors (typically missing camera or resource)."""
+    logger.warning(f"Key error: {exc} (Request: {request.method} {request.url})")
+
     return JSONResponse(
         status_code=404,
         content=ErrorResponse(
@@ -86,12 +128,16 @@ def key_error_handler(request: Request, exc: KeyError):
             message=f"Resource not found: {exc}",
             error_type="KeyError",
             error_code="RESOURCE_NOT_FOUND",
-            timestamp=datetime.now(UTC)
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
-def general_exception_handler(request: Request, exc: Exception):
-    """Handle general exceptions and return appropriate HTTP responses."""
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions."""
+    logger.error(f"Unexpected error: {exc} (Request: {request.method} {request.url})", exc_info=True)
+
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(
@@ -99,16 +145,46 @@ def general_exception_handler(request: Request, exc: Exception):
             message="An unexpected error occurred",
             error_type=type(exc).__name__,
             error_code="INTERNAL_SERVER_ERROR",
-            timestamp=datetime.now(UTC)
-        ).model_dump(mode="json")
+            timestamp=datetime.utcnow(),
+        ).model_dump(mode="json"),
     )
 
+
+@app.get("/health")
+async def health_check() -> Dict[str, Any]:
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "service": "Camera API",
+    }
+
+
+@app.get("/")
+async def root():
+    """Root endpoint with basic API information."""
+    return {
+        "message": "Camera API",
+        "version": "1.0.0",
+        "docs_url": "/docs",
+        "redoc_url": "/redoc",
+        "health_url": "/health",
+    }
+
+
+# Middleware to log requests
+@app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Middleware to log request processing time and status."""
-    start_time = datetime.now(UTC)
+    """Log all incoming requests."""
+    start_time = datetime.utcnow()
+
     response = await call_next(request)
-    process_time = (datetime.now(UTC) - start_time).total_seconds()
-    logger.info(f"{request.method} {request.url} - {response.status_code} - {process_time:.4f}s")
+
+    process_time = (datetime.utcnow() - start_time).total_seconds()
+
+    logger.info(f"{request.method} {request.url} - Status: {response.status_code} - Time: {process_time:.4f}s")
+
     return response
 
 def _encode_image_to_base64(image_array) -> Optional[str]:
@@ -1737,4 +1813,5 @@ app = camera_api_service.app
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info") 
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

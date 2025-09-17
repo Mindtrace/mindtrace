@@ -15,6 +15,9 @@ RUN_UNIT=false
 RUN_INTEGRATION=false
 RUN_STRESS=false
 RUN_ALL=true
+MODULES=()
+
+export MINDTRACE_TEST_PARAM="test_1234"
 
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
@@ -32,6 +35,11 @@ while [[ $# -gt 0 ]]; do
         --stress)
             RUN_STRESS=true
             RUN_ALL=false
+            shift
+            ;;
+        apps | automation | cluster | core | database | datalake | hardware | jobs | models | registry | services | storage | ui)
+            # Specific modules provided
+            MODULES+=("$1")
             shift
             ;;
         tests/*)
@@ -59,13 +67,7 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     # Start docker containers if any integration tests are included
     if [ "$NEEDS_DOCKER" = true ]; then
         echo "Starting docker containers for integration tests..."
-        $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
-
-        # Wait for MinIO to be healthy
-        echo "Waiting for docker containers to be ready..."
-        until curl -s http://localhost:9000/minio/health/live > /dev/null; do
-            sleep 1
-        done
+        . scripts/docker_up.sh
     fi
     
     # Clear any existing coverage data
@@ -99,13 +101,7 @@ fi
 # Start MinIO container if running integration tests
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Starting docker containers..."
-    $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml up -d
-
-    # Wait for MinIO to be healthy
-    echo "Waiting for docker containers to be ready..."
-    until curl -s http://localhost:9000/minio/health/live > /dev/null; do
-        sleep 1
-    done
+    . scripts/docker_up.sh
 fi
 
 # Clear any existing coverage data when running with coverage
@@ -116,12 +112,30 @@ fi
 # Track overall exit code
 OVERALL_EXIT_CODE=0
 
+
 # Run unit tests if requested
 if [ "$RUN_UNIT" = true ]; then
     echo "Running unit tests..."
-    pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit
-    UNIT_EXIT_CODE=$?
-    if [ $UNIT_EXIT_CODE -ne 0 ]; then
+    for module in "${MODULES[@]}"; do
+        echo "Running unit tests for $module..."
+        if [ -d "tests/unit/mindtrace/$module" ]; then
+            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace/$module
+            if [ $? -ne 0 ]; then
+                echo "Unit tests for $module failed. Stopping test execution."
+                OVERALL_EXIT_CODE=1
+            fi
+        else
+            echo "No unit tests found for $module"
+        fi
+    done
+    if [ ${#MODULES[@]} -eq 0 ]; then
+        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/unit/mindtrace
+        if [ $? -ne 0 ]; then
+            echo "Unit tests failed. Stopping test execution."
+            OVERALL_EXIT_CODE=1
+        fi
+    fi
+    if [ $OVERALL_EXIT_CODE -ne 0 ]; then
         echo "Unit tests failed. Stopping test execution."
         OVERALL_EXIT_CODE=1
         # Stop docker containers if they were started
@@ -136,17 +150,34 @@ fi
 # Run integration tests if requested
 if [ "$RUN_INTEGRATION" = true ]; then
     echo "Running integration tests..."
-    pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration
-    INTEGRATION_EXIT_CODE=$?
-    if [ $INTEGRATION_EXIT_CODE -ne 0 ]; then
+    for module in "${MODULES[@]}"; do
+        echo "Running integration tests for $module..."
+        if [ -d "tests/integration/mindtrace/$module" ]; then
+            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
+            if [ $? -ne 0 ]; then
+                echo "Integration tests for $module failed. Stopping test execution."
+                OVERALL_EXIT_CODE=1
+            fi
+        else
+            echo "No integration tests found for $module"
+        fi
+    done
+    if [ ${#MODULES[@]} -eq 0 ]; then
+        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace
+        if [ $? -ne 0 ]; then
+            echo "Integration tests failed. Stopping test execution."
+            OVERALL_EXIT_CODE=1
+        fi
+    fi
+    if [ $OVERALL_EXIT_CODE -ne 0 ]; then
         echo "Integration tests failed. Stopping test execution."
-        OVERALL_EXIT_CODE=1
         # Stop docker containers if they were started
         echo "Stopping docker containers..."
         $DOCKER_COMPOSE_CMD -f tests/docker-compose.yml down
         exit $OVERALL_EXIT_CODE
     fi
 fi
+
 
 # Run stress tests if requested
 if [ "$RUN_STRESS" = true ]; then

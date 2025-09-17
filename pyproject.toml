@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.1.0"
+version = "0.3.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,24 +13,23 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.1.0",
-  "mindtrace-jobs>=0.1.0",
-  "mindtrace-registry>=0.1.0",
-  "mindtrace-database>=0.1.0",
-  "mindtrace-services>=0.1.0",
-  "mindtrace-hardware>=0.1.0",
-  "mindtrace-cluster>=0.1.0",
-  "mindtrace-models>=0.1.0",
-  "mindtrace-automation>=0.1.0",
-  "mindtrace-apps>=0.1.0",
-  "mindtrace-ui>=0.1.0",
-  "mindtrace-datalake>=0.1.0",
-  "mindtrace-storage>=0.1.0",
+  "mindtrace-core>=0.3.0",
+  "mindtrace-jobs>=0.3.0",
+  "mindtrace-registry>=0.3.0",
+  "mindtrace-database>=0.3.0",
+  "mindtrace-services>=0.3.0",
+  "mindtrace-hardware>=0.3.0",
+  "mindtrace-cluster>=0.3.0",
+  "mindtrace-models>=0.3.0",
+  "mindtrace-automation>=0.3.0",
+  "mindtrace-apps>=0.3.0",
+  "mindtrace-ui>=0.3.0",
+  "mindtrace-datalake>=0.3.0",
+  "mindtrace-storage>=0.3.0",
 ]
 
 [project.optional-dependencies]
 cameras-basler = ["mindtrace-hardware[cameras-basler]"]
-cameras-daheng = ["mindtrace-hardware[cameras-daheng]"] 
 cameras-all = ["mindtrace-hardware[cameras-all]"]
 hardware-all = ["mindtrace-hardware[hardware-all]"]
 
@@ -39,9 +38,14 @@ dev-dependencies = [
     "pytest-cov>=6.1.1",
     "pytest-asyncio>=1.0.0",
     "pytest>=8.3.5",
+    "httpx>=0.27.2",
     "pre-commit>=4.2.0",
-    "pytest-asyncio>=1.0.0",
+    "twine>=6.1.0",
 ]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace"
 
 [tool.uv.sources]
 mindtrace-core = { workspace = true }
@@ -95,6 +99,12 @@ test = """
 
     # Run multiple test paths (note the colon after 'test')
     # ds test: tests/unit tests/integration/mindtrace/services
+
+    # Run module tests only
+    # ds test: services jobs
+
+    # Run module unit tests only
+    # ds test: database --unit
 
     bash scripts/run_tests.sh ${@:-}
 """
@@ -190,3 +200,9 @@ include = ["mindtrace*"]
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.coverage.run]
+omit = ["**/.cache/**"]
+
+[tool.coverage.report]
+omit = ["**/.cache/**"]
