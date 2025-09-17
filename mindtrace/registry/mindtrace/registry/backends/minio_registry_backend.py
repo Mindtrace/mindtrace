@@ -102,11 +102,8 @@ class MinioRegistryBackend(RegistryBackend):
             secure: Whether to use HTTPS.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
-        if uri is not None:
-            self._uri = Path(uri).expanduser().resolve()
-        else:
-            self._uri = Path(self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
-        super().__init__(uri=self._uri, **kwargs)
+        super().__init__(uri=uri, **kwargs)
+        self._uri = Path(uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
