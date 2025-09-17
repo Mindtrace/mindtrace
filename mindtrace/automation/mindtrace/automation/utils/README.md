@@ -78,7 +78,7 @@ results = det.detect(inputs={
 {
   "<key>": {
     "features": [
-      { "id", "type", "bbox": [x1,y1,x2,y2], "expected": int, "found": int, "classification"?: "Short" }
+      { "id": "W1", "type": "weld", "bbox": [112,55,165,65], "expected": 1, "found": 1, "classification": "Short" }
     ],
     "present": { "<feature_id>": "Present" | "Missing" },
     "config_key": "<camera_key>"
