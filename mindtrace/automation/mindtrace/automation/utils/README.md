@@ -12,7 +12,7 @@ This module assigns configured feature IDs to model predictions (either detectio
   - `BoxFeatureExtractor`: assigns features from detection boxes
   - `MaskFeatureExtractor`: assigns features from segmentation masks
   - Shared behavior:
-    - Inside each feature ROI, candidates are filtered (strict, opt-in params only), then sorted by size (boxes: ROI-overlap area; masks: contour area), then up to `num_expected` are selected. If `minimum_distance_*` is provided, selection uses a greedy distance constraint.
+    - Inside each feature ROI, candidates are filtered (strict, opt-in params only), then sorted by size (boxes: ROI-overlap area; masks: contour area), then up to `num_expected` are selected. No pairwise spacing rule is applied.
 
 - `feature_detector.py`
   - `FeatureDetector`: public API with a single entrypoint `detect` that auto-detects boxes vs masks
@@ -40,10 +40,9 @@ This module assigns configured feature IDs to model predictions (either detectio
 ```
 
 Strict, opt-in params (pixels only):
-- Common selection constraint (both boxes and masks selection support distance)
-  - `minimum_distance_px`
+- Common selection rules: none by default (simple top-N by size). Add explicit params only if needed.
 - Masks (holes or other classes):
-  - `class_id` (REQUIRED for non-weld types when using masks; welds can inherit from `weld_class_id` at call-time)
+  - `class_id` (REQUIRED for non-weld types when using masks; welds can inherit from per-call `class_id`)
   - `min_contour_area_px` (optional noise filter)
 - Weld classification:
   - `min_length_px` → sets `classification: "Short"` only when present and below length
@@ -73,7 +72,7 @@ results = det.detect(
   inputs=masks,                     # List[np.ndarray]
   image_keys=["c1","c2"],
   mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"},
-  weld_class_id=1                   # default class for weld in mask
+  class_id=1                        # used when feature.params.class_id is not set
 )
 ```
 
@@ -99,15 +98,18 @@ Notes:
 - Boxes:
   - Consider boxes that overlap the ROI (overlap area > 0).
   - Sort by overlap area (largest first).
-  - Take up to `num_expected` boxes. If `minimum_distance_*` is set, selection becomes greedy to enforce spacing.
+  - Take up to `num_expected` boxes.
 
-- Masks:
-  - Extract contours for each required class (`class_id` per feature; welds can use `weld_class_id`).
+ - Masks:
+  - Extract contours for each required class (`class_id` per feature; welds can use per-call `class_id`).
   - Keep contours whose bounding rectangle intersects the ROI.
   - Sort by contour area (largest first).
-  - Take up to `num_expected`. If `minimum_distance_*` is set, selection becomes greedy to enforce spacing.
+  - Take up to `num_expected`.
 
 - Union bbox: The final `bbox` reported for each feature is the union of the selected items.
+
+Optional behavior (opt-in via config):
+- `groups` (camera-level): list of feature-ID lists that should share a union bbox when present, e.g. `"groups": [["W1","W2"], ["A","B","C"]]`.
 
 ## Extensibility (add new features or params)
 
