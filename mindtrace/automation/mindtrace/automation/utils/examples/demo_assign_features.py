@@ -20,14 +20,14 @@ def run_boxes():
     image_keys = ["c1", "c2"]
     mapping = {"c1": "cam1", "c2": "cam2"}
 
-    # boxes_by_image: list per image; each box is [x1,y1,x2,y2] or dict with bbox/x1..y2
+    # boxes_by_image: list per image; each item is a NumPy array shaped (N,4)
     boxes_by_image = [
-        [
-            [112, 55, 125, 65],          # weld WL11_13 (1/2)
-            [150, 55, 165, 65],          # weld WL11_13 (2/2)
-            {"bbox": [205, 55, 225, 75]} # hole H1 → present
-        ],
-        []  # c2: missing W3
+        np.asarray([
+            [112, 55, 125, 65],          # weld W1
+            [150, 55, 165, 65],          # weld W2
+            [205, 55, 225, 75],          # hole H1 → present
+        ]),
+        np.asarray([]).reshape(0, 4)  # c2: missing W3
     ]
 
     results = det.detect(inputs=boxes_by_image, image_keys=image_keys, mapping=mapping)

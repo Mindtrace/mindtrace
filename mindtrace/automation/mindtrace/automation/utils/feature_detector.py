@@ -111,7 +111,17 @@ class FeatureDetector(Mindtrace):
         """
         mapping = mapping or {}
         results: Dict[str, Dict[str, Any]] = {}
-        is_mask = len(inputs) > 0 and isinstance(inputs[0], np.ndarray)
+        # Infer modality from the first item
+        is_mask = False
+        if len(inputs) > 0 and isinstance(inputs[0], np.ndarray):
+            first = inputs[0]
+            # Masks are HxW arrays; boxes are (N,4) or (4,)
+            if first.ndim == 2 and first.shape[1] == 4:
+                is_mask = False
+            elif first.ndim == 1 and first.size == 4:
+                is_mask = False
+            else:
+                is_mask = True
         for key, data in zip(image_keys, inputs):
             resolved_key = mapping.get(key, key)
             if is_mask:
