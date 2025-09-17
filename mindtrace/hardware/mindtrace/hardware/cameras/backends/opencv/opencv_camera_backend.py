@@ -94,8 +94,7 @@ class OpenCVCameraBackend(CameraBackend):
         retrieve_retry_count: Optional[int] = None,
         **backend_kwargs,
     ):
-        """
-        Initialize OpenCV camera with configuration.
+        """Initialize OpenCV camera with configuration.
 
         Args:
             camera_name: Camera identifier (index number or device path)
@@ -631,8 +630,7 @@ class OpenCVCameraBackend(CameraBackend):
         )
 
     def _enhance_image_quality(self, image: np.ndarray) -> np.ndarray:
-        """
-        Apply image quality enhancement using CLAHE.
+        """Apply image quality enhancement using CLAHE.
 
         Args:
             image: Input image array (RGB format)
@@ -680,8 +678,7 @@ class OpenCVCameraBackend(CameraBackend):
             raise CameraCaptureError(f"Image enhancement failed for camera '{self.camera_name}': {str(e)}")
 
     async def check_connection(self) -> bool:
-        """
-        Check if camera connection is active and healthy.
+        """Check if camera connection is active and healthy.
 
         Returns:
             True if camera is connected and responsive, False otherwise
@@ -707,8 +704,7 @@ class OpenCVCameraBackend(CameraBackend):
             return False
 
     async def close(self) -> None:
-        """
-        Close camera connection and cleanup resources.
+        """Close camera connection and cleanup resources.
 
         Properly releases the VideoCapture object and resets camera state.
 
@@ -751,9 +747,10 @@ class OpenCVCameraBackend(CameraBackend):
                 self._sdk_executor = None
 
     async def is_exposure_control_supported(self) -> bool:
-        """
-        Check if exposure control is supported for this camera.
+        """Check if exposure control is supported for this camera.
+        
         Simplified version to avoid hanging operations.
+        
         Returns:
             True if exposure control is supported, False otherwise
         """
@@ -944,8 +941,7 @@ class OpenCVCameraBackend(CameraBackend):
     async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
         """Set Region of Interest (ROI).
 
-        Note: OpenCV cameras typically don't support hardware ROI,
-        this would need to be implemented in software.
+        Note: OpenCV cameras typically don't support hardware ROI, this would need to be implemented in software.
 
         Args:
             x: ROI x offset

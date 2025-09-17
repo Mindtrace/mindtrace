@@ -37,11 +37,10 @@ from mindtrace.hardware.core.config import get_hardware_config
 
 
 class PylonSDKInstaller(Mindtrace):
-    """
-    Basler Pylon SDK installer and manager.
+    """Basler Pylon SDK installer and manager.
 
-    This class handles the download, installation, and uninstallation
-    of the Basler Pylon SDK across different platforms.
+    This class handles the download, installation, and uninstallation of the Basler Pylon SDK across different 
+    platforms.
     """
 
     # SDK URLs for different platforms
@@ -54,8 +53,7 @@ class PylonSDKInstaller(Mindtrace):
     LINUX_DEPENDENCIES = ["libglx-mesa0", "libgl1", "libxcb-xinerama0", "libxcb-xinput0", "libxcb-cursor0"]
 
     def __init__(self, release_version: str = "v1.0-stable"):
-        """
-        Initialize the Pylon SDK installer.
+        """Initialize the Pylon SDK installer.
 
         Args:
             release_version: SDK release version to download
@@ -75,8 +73,7 @@ class PylonSDKInstaller(Mindtrace):
         self.logger.debug(f"Installation directory: {self.pylon_dir}")
 
     def install(self) -> bool:
-        """
-        Install the Pylon SDK for the current platform.
+        """Install the Pylon SDK for the current platform.
 
         Returns:
             True if installation successful, False otherwise
@@ -98,8 +95,7 @@ class PylonSDKInstaller(Mindtrace):
             return False
 
     def _install_linux(self) -> bool:
-        """
-        Install Pylon SDK on Linux using .deb packages.
+        """Install Pylon SDK on Linux using .deb packages.
 
         Returns:
             True if installation successful, False otherwise
@@ -141,8 +137,7 @@ class PylonSDKInstaller(Mindtrace):
             return False
 
     def _install_linux_packages(self) -> None:
-        """
-        Install the .deb packages and dependencies on Linux.
+        """Install the .deb packages and dependencies on Linux.
 
         Raises:
             subprocess.CalledProcessError: If package installation fails
@@ -185,8 +180,7 @@ class PylonSDKInstaller(Mindtrace):
         self._run_command(["sudo", "apt-get", "-f", "install", "-y"])
 
     def _install_windows(self) -> bool:
-        """
-        Install Pylon SDK on Windows.
+        """Install Pylon SDK on Windows.
 
         Returns:
             True if installation successful, False otherwise
@@ -224,8 +218,7 @@ class PylonSDKInstaller(Mindtrace):
             return False
 
     def _find_windows_executable(self, extracted_dir: str) -> str:
-        """
-        Find the Windows SDK executable in the extracted directory.
+        """Find the Windows SDK executable in the extracted directory.
 
         Args:
             extracted_dir: Path to extracted SDK directory
@@ -252,8 +245,7 @@ class PylonSDKInstaller(Mindtrace):
         raise FileNotFoundError(f"No executable found in {extracted_dir}")
 
     def _elevate_privileges(self) -> bool:
-        """
-        Attempt to elevate privileges on Windows.
+        """Attempt to elevate privileges on Windows.
 
         Returns:
             False (elevation requires restart)
@@ -272,8 +264,7 @@ class PylonSDKInstaller(Mindtrace):
         return False
 
     def _run_command(self, cmd: List[str]) -> None:
-        """
-        Run a system command with logging.
+        """Run a system command with logging.
 
         Args:
             cmd: Command and arguments to run
@@ -285,8 +276,7 @@ class PylonSDKInstaller(Mindtrace):
         subprocess.run(cmd, check=True)
 
     def uninstall(self) -> bool:
-        """
-        Uninstall the Pylon SDK.
+        """Uninstall the Pylon SDK.
 
         Returns:
             True if uninstallation successful, False otherwise
@@ -307,8 +297,7 @@ class PylonSDKInstaller(Mindtrace):
             return False
 
     def _uninstall_linux(self) -> bool:
-        """
-        Uninstall Pylon SDK on Linux.
+        """Uninstall Pylon SDK on Linux.
 
         Returns:
             True if uninstallation successful, False otherwise
@@ -336,8 +325,7 @@ class PylonSDKInstaller(Mindtrace):
             return False
 
     def _uninstall_windows(self) -> bool:
-        """
-        Uninstall Pylon SDK on Windows.
+        """Uninstall Pylon SDK on Windows.
 
         Returns:
             False (manual uninstallation required)
@@ -348,8 +336,7 @@ class PylonSDKInstaller(Mindtrace):
 
 
 def install_pylon_sdk(release_version: str = "v1.0-stable") -> bool:
-    """
-    Install the Basler Pylon SDK.
+    """Install the Basler Pylon SDK.
 
     Args:
         release_version: SDK release version to install
@@ -362,8 +349,7 @@ def install_pylon_sdk(release_version: str = "v1.0-stable") -> bool:
 
 
 def uninstall_pylon_sdk() -> bool:
-    """
-    Uninstall the Basler Pylon SDK.
+    """Uninstall the Basler Pylon SDK.
 
     Returns:
         True if uninstallation successful, False otherwise

@@ -24,8 +24,8 @@ class Camera(Mindtrace):
     ):
         """Create a sync Camera facade.
 
-        If no async_camera/loop is supplied, a default OpenCV camera is created under the hood
-        using a private background loop, targeting ``OpenCV:opencv_camera_0``.
+        If no async_camera/loop is supplied, a default OpenCV camera is created under the hood using a private 
+        background loop, targeting ``OpenCV:opencv_camera_0``.
         """
         super().__init__(**kwargs)
         self._owns_loop_thread = False
