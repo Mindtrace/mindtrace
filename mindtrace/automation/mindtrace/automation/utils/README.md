@@ -57,10 +57,10 @@ det = FeatureDetector("/path/to/config.json")
 ```
 
 2) Call a single function with your inputs (auto-detects type):
-- Boxes (list of boxes per image):
+- Boxes (NumPy arrays per image):
 ```
 results = det.detect(
-  inputs=boxes_by_image,            # List[List[[x1,y1,x2,y2] | {bbox: [...]} | {x1,y1,x2,y2}]]
+  inputs=boxes_by_image,            # List[np.ndarray], each shaped (N,4) or (4,)
   image_keys=["c1","c2"],
   mapping={"c1":"<camera_key_1>", "c2":"<camera_key_2>"}
 )
@@ -107,6 +107,9 @@ Notes:
   - Take up to `num_expected`.
 
 - Union bbox: The final `bbox` reported for each feature is the union of the selected items.
+
+Input notes:
+- Box inputs must be NumPy arrays shaped (N,4) or (4,). Values are not scaled/normalized.
 
 Optional behavior (opt-in via config):
 - `groups` (camera-level): list of feature-ID lists that should share a union bbox when present, e.g. `"groups": [["W1","W2"], ["A","B","C"]]`.

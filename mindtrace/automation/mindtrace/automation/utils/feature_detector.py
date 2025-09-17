@@ -53,12 +53,21 @@ class FeatureDetector(Mindtrace):
         return normalized
 
 
-    def detect_from_boxes(self, boxes: List[Any], camera_key: str) -> List[Feature]:
-        """Detect features from bounding boxes using the resolved camera key."""
+    def detect_from_boxes(self, boxes: Any, camera_key: str) -> List[Feature]:
+        """Detect features from bounding boxes using the resolved camera key.
+
+        Expects `boxes` as a NumPy array of shape (N,4) or (4,).
+        """
         camera_cfg = self.config.get(camera_key, {})
         if not camera_cfg or "features" not in camera_cfg:
             return []
-        boxes_np = self._normalize_boxes(boxes)
+        arr = np.asarray(boxes)
+        if arr.ndim == 1 and arr.size == 4:
+            boxes_np = arr.reshape(1, 4)
+        elif arr.ndim == 2 and arr.shape[1] == 4:
+            boxes_np = arr
+        else:
+            boxes_np = np.array([], dtype=arr.dtype if isinstance(arr, np.ndarray) else np.float32)
         extractor = BoxFeatureExtractor(self)
         features: List[Feature] = []
         ordered_configs: List[FeatureConfig] = []
@@ -96,8 +105,8 @@ class FeatureDetector(Mindtrace):
     def detect(self, inputs: List[Any], image_keys: List[str], mapping: Dict[str, str] | None = None, class_id: int | None = None) -> Dict[str, Dict[str, Any]]:
         """
         Unified entrypoint:
-        - If inputs are masks (np.ndarray), pass weld_class_id
-        - If inputs are boxes (lists), weld_class_id is ignored
+        - If inputs are masks (np.ndarray HxW), pass class_id
+        - If inputs are boxes, provide NumPy arrays shaped (N,4) or (4,)
         Returns per-image dict: { features: [...], present: {...}, config_key }
         """
         mapping = mapping or {}
@@ -118,19 +127,7 @@ class FeatureDetector(Mindtrace):
             }
         return results
 
-    def _normalize_boxes(self, boxes: List[Any]) -> np.ndarray:
-        if not boxes:
-            return np.array([], dtype=np.int32)
-        normalized: List[List[int]] = []
-        for box in boxes:
-            if isinstance(box, dict):
-                if "bbox" in box and len(box["bbox"]) == 4:
-                    normalized.append([int(x) for x in box["bbox"]])
-                elif all(k in box for k in ["x1", "y1", "x2", "y2"]):
-                    normalized.append([int(box[k]) for k in ["x1", "y1", "x2", "y2"]])
-            elif isinstance(box, (list, tuple)) and len(box) == 4:
-                normalized.append([int(x) for x in box])
-        return np.array(normalized, dtype=np.int32) if normalized else np.array([], dtype=np.int32)
+    
 
     def _extract_all_contours(self, mask: np.ndarray, features: Dict[str, FeatureConfig], class_id: int) -> Dict[int, List[np.ndarray]]:
         required_classes = set()
