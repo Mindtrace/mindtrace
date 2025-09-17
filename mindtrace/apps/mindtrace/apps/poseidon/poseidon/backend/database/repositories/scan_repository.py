@@ -1,7 +1,9 @@
 from poseidon.backend.database.models.scan import Scan
 from poseidon.backend.database.models.enums import ScanStatus
 from poseidon.backend.database.init import initialize_database
-from typing import Optional, List
+from typing import Optional, List, Dict
+from datetime import datetime
+from beanie import PydanticObjectId
 
 class ScanRepository:
     @staticmethod
@@ -77,7 +79,15 @@ class ScanRepository:
     async def get_by_project(project_id: str) -> List[Scan]:
         """Get all scans for a project"""
         await ScanRepository._ensure_init()
-        return await Scan.find(Scan.project.id == project_id).to_list()
+        try:
+            # Follow existing pattern: get the linked object first
+            from poseidon.backend.database.models.project import Project
+                
+            
+            return await Scan.find(Scan.project.id == PydanticObjectId(project_id)).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project: {e}")
+            return []
 
     @staticmethod
     async def get_by_status(status: ScanStatus) -> List[Scan]:
@@ -118,4 +128,48 @@ class ScanRepository:
     async def get_failed_scans() -> List[Scan]:
         """Get all failed scans"""
         await ScanRepository._ensure_init()
-        return await Scan.find(Scan.status == ScanStatus.FAILED).to_list() 
+        return await Scan.find(Scan.status == ScanStatus.FAILED).to_list()
+    
+    @staticmethod
+    async def get_by_project_and_date_range(
+        project_id: str, 
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[Scan]:
+        """Get scans for a project within a date range"""
+        await ScanRepository._ensure_init()
+        try:
+
+            
+            # Build query conditions
+            conditions = [Scan.project.id == PydanticObjectId(project_id)]
+            
+            if start_date is not None:
+                conditions.append(Scan.created_at >= start_date)
+            if end_date:
+                conditions.append(Scan.created_at <= end_date)
+            
+            
+            return await Scan.find(*conditions).to_list()
+        except Exception as e:
+            print(f"Error in get_by_project_and_date_range: {e}")
+            return []
+    
+    @staticmethod
+    async def get_scan_count_by_date(
+        project_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Dict[str, int]:
+        """Get scan counts grouped by date for a project"""
+        await ScanRepository._ensure_init()
+        scans = await ScanRepository.get_by_project_and_date_range(
+            project_id, start_date, end_date
+        )
+        
+        counts = {}
+        for scan in scans:
+            date_key = scan.created_at.strftime("%Y-%m-%d")
+            counts[date_key] = counts.get(date_key, 0) + 1
+        
+        return counts 

@@ -57,8 +57,6 @@ def select_input(
         select_variant = "error"
     elif success:
         select_variant = "success"
-    elif disabled:
-        select_variant = "disabled"
     else:
         select_variant = "base"
 
@@ -73,19 +71,20 @@ def select_input(
         "border": "1px solid #e2e8f0 !important",  # Override global button border
         "box_shadow": "none !important",  # Override global button shadow
         "font_weight": "normal !important",  # Override global button font weight
+        # Visual disabled feedback without Python boolean checks
+        "opacity": rx.cond(disabled, "0.6", "1"),
+        "pointer_events": rx.cond(disabled, "none", "auto"),
     }
 
-    # Add focus and hover styles if not disabled
-    if not disabled:
-        select_styles["_focus"] = COMPONENT_VARIANTS["select"]["focus"]
-        select_styles["_hover"] = {
-            **COMPONENT_VARIANTS["select"]["hover"],
-            "background": "white !important",  # Override global button hover background
-            "color": C.fg + " !important",  # Keep text readable on hover
-            "border": "1px solid rgba(0, 87, 255, 0.3) !important",  # Subtle blue border on hover
-            "box_shadow": "0 0 0 4px rgba(0, 87, 255, 0.1) !important",  # Subtle focus ring
-            "font_weight": "normal !important",  # Override global button font weight
-        }
+    select_styles["_focus"] = COMPONENT_VARIANTS["select"]["focus"]
+    select_styles["_hover"] = {
+        **COMPONENT_VARIANTS["select"]["hover"],
+        "background": "white !important",  # Override global button hover background
+        "color": C.fg + " !important",  # Keep text readable on hover
+        "border": "1px solid rgba(0, 87, 255, 0.3) !important",  # Subtle blue border on hover
+        "box_shadow": "0 0 0 4px rgba(0, 87, 255, 0.1) !important",  # Subtle focus ring
+        "font_weight": "normal !important",  # Override global button font weight
+    }
 
     # Build the select component using proper Reflex select
     # Use the lower-level components to handle our data format
@@ -205,13 +204,11 @@ def select_input_with_form(
     # Get size styles
     current_size = SIZE_VARIANTS["input"].get(size, SIZE_VARIANTS["input"]["large"])
 
-    # Determine select variant styles
+    # Determine select variant styles (avoid Python bool on Vars)
     if error or server_invalid:
         select_variant = "error"
     elif success:
         select_variant = "success"
-    elif disabled:
-        select_variant = "disabled"
     else:
         select_variant = "base"
 
@@ -226,19 +223,21 @@ def select_input_with_form(
         "border": "1px solid #e2e8f0 !important",  # Override global button border
         "box_shadow": "none !important",  # Override global button shadow
         "font_weight": "normal !important",  # Override global button font weight
+        # Visual disabled feedback without Python boolean checks
+        "opacity": rx.cond(disabled, "0.6", "1"),
+        "pointer_events": rx.cond(disabled, "none", "auto"),
     }
 
-    # Add focus and hover styles if not disabled
-    if not disabled:
-        select_styles["_focus"] = COMPONENT_VARIANTS["select"]["focus"]
-        select_styles["_hover"] = {
-            **COMPONENT_VARIANTS["select"]["hover"],
-            "background": "white !important",  # Override global button hover background
-            "color": C.fg + " !important",  # Keep text readable on hover
-            "border": "1px solid rgba(0, 87, 255, 0.3) !important",  # Subtle blue border on hover
-            "box_shadow": "0 0 0 4px rgba(0, 87, 255, 0.1) !important",  # Subtle focus ring
-            "font_weight": "normal !important",  # Override global button font weight
-        }
+    # Add focus and hover styles
+    select_styles["_focus"] = COMPONENT_VARIANTS["select"]["focus"]
+    select_styles["_hover"] = {
+        **COMPONENT_VARIANTS["select"]["hover"],
+        "background": "white !important",  # Override global button hover background
+        "color": C.fg + " !important",  # Keep text readable on hover
+        "border": "1px solid rgba(0, 87, 255, 0.3) !important",  # Subtle blue border on hover
+        "box_shadow": "0 0 0 4px rgba(0, 87, 255, 0.1) !important",  # Subtle focus ring
+        "font_weight": "normal !important",  # Override global button font weight
+    }
 
     # Build the form field
     return rx.form.field(

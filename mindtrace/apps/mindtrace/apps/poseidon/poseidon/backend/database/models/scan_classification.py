@@ -1,8 +1,11 @@
+from asyncio.base_futures import _PENDING
 from mindtrace.database import MindtraceDocument
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime, UTC
 from beanie import Link, before_event, Insert, Replace, SaveChanges
 from pydantic import Field
+from pymongo import IndexModel, ASCENDING, DESCENDING
+from beanie import PydanticObjectId
 
 if TYPE_CHECKING:
     from .scan_image import ScanImage
@@ -12,6 +15,8 @@ class ScanClassification(MindtraceDocument):
     # Required relationships
     image: Link["ScanImage"]
     scan: Link["Scan"]
+    scan_project_id: Optional[PydanticObjectId] = None
+    is_defect: Optional[bool] = None
     
     # Classification information
     name: str  # classification name/label
@@ -28,6 +33,16 @@ class ScanClassification(MindtraceDocument):
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    class Settings:
+        name = "ScanClassification"
+        indexes = [
+            IndexModel([("scan.$id", ASCENDING), ("created_at", DESCENDING)], name="scancls_scan_created_at"),
+            IndexModel([("name", ASCENDING), ("created_at", DESCENDING)], name="scancls_name_created_at"),
+            IndexModel([("det_cls", ASCENDING), ("created_at", DESCENDING)], name="scancls_detcls_created_at"),
+            IndexModel([("scan_project_id", ASCENDING), ("created_at", DESCENDING)], name="scancls_scanprojectid_created_at"),
+            IndexModel([("is_defect", ASCENDING), ("created_at", DESCENDING)], name="scancls_isdefect_created_at"),
+        ]
 
     @before_event(Insert)
     def set_creation_timestamps(self):

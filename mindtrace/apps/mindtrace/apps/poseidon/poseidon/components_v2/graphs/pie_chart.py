@@ -8,6 +8,7 @@ Supports both simple and advanced configurations with custom styling.
 from typing import Any, Dict, List, Optional, Union
 
 import reflex as rx
+from reflex.vars.base import Var
 
 from poseidon.styles.global_styles import THEME as T
 from poseidon.components_v2.containers import chart_card
@@ -50,7 +51,7 @@ def get_chart_colors_for_data(data: List[Dict[str, Any]]) -> List[str]:
 
 
 def pie_chart(
-    data: List[Dict[str, Any]],
+    data: Union[List[Dict[str, Any]], Var[List[Dict[str, Any]]]],
     data_key: str = "value",
     name_key: str = "name",
     title: Optional[str] = None,
@@ -97,17 +98,15 @@ def pie_chart(
     # Create pie chart components
     chart_components = []
 
-    # Create cell components for colors
+    # Create cell components for colors (always create 12 cells for Reflex Vars)
     cell_components = []
-    if len(data) > 1:
-        for i, color in enumerate(CHART_COLORS[:12]):
-            if i < len(data):
-                cell_components.append(
-                    rx.recharts.cell(
-                        key=f"cell-{i}",
-                        fill=color,
-                    )
-                )
+    for i, color in enumerate(CHART_COLORS[:12]):
+        cell_components.append(
+            rx.recharts.cell(
+                key=f"cell-{i}",
+                fill=color,
+            )
+        )
 
     # Add the main pie component with cells as children
     pie_component = rx.recharts.pie(

@@ -1,7 +1,7 @@
 import reflex as rx
 from poseidon.styles.global_styles import SP, T
-
 from .sidebar_state import SidebarState as S
+from poseidon.state.line_scope import ScopeState
 
 NAV = [
     (
@@ -12,6 +12,13 @@ NAV = [
             {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
             {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
         ],
+    ),
+    (
+        "Analytics",
+        [
+            {"label": "Line Insights", "icon": "chart-line", "scope": "line", "to": "line-insights"},
+            #{"label": "Line View", "icon": "panel-top", "scope": "line", "to": "line-view"}, add when its in.
+        ], 
     ),
     (
         "Admin",
@@ -43,11 +50,10 @@ def _active_bar():
 
 
 def _nav_row(label: str, icon: str, active: bool, collapsed):
-    icon_size_px = "20px"
     icon_node = rx.box(
         rx.icon(tag=icon, size=20, color="currentColor"),
-        width=icon_size_px,
-        height=icon_size_px,
+        width="20px",
+        height="20px",
         display="grid",
         place_items="center",
         flex_shrink="0",
@@ -72,17 +78,46 @@ def _nav_row(label: str, icon: str, active: bool, collapsed):
     )
 
 
-def _nav_item(*, label: str, icon: str, href: str, active: bool, collapsed):
+def _scoped_href(scope: str, to: str):
+    to = to.lstrip("/")
+    if scope == "line":
+        return rx.cond(
+            ScopeState.resolved_plant != "",
+            rx.cond(
+                ScopeState.resolved_line != "",
+                "/plants/" + ScopeState.resolved_plant + "/lines/" + ScopeState.resolved_line + "/" + to,
+                "/plants/" + ScopeState.resolved_plant + "/overview",
+            ),
+            "/overview",
+        )
+    if scope == "plant":
+        return rx.cond(
+            ScopeState.resolved_plant != "",
+            "/plants/" + ScopeState.resolved_plant + "/" + to,
+            "/overview",
+        )
+    return "/" + to
+
+
+def _nav_item(
+    label: str, icon: str, *, href=None, scope: str | None = None, to: str | None = None, active=False, collapsed=False
+):
     row = _nav_row(label, icon, active, collapsed)
     row = rx.cond(collapsed, rx.tooltip(row, content=label, side="right"), row)
-    return rx.link(
-        row,
-        href=href,
-        color="inherit",
-        text_decoration="none",
-        aria_current="page" if active else "false",
-        width="100%",
-    )
+
+    if scope and to:
+        href_var = _scoped_href(scope, to)
+        return rx.link(
+            row,
+            href=href_var,  # real link, no redirect
+            pointer_events=rx.cond(ScopeState.links_ready, "auto", "none"),
+            opacity=rx.cond(ScopeState.links_ready, "1", "0.6"),
+            color="inherit",
+            text_decoration="none",
+            width="100%",
+        )
+
+    return rx.link(row, href=href or "#", color="inherit", text_decoration="none", width="100%")
 
 
 def _section(*, title: str, items: list[dict], active_label: str, collapsed):
@@ -103,22 +138,20 @@ def _section(*, title: str, items: list[dict], active_label: str, collapsed):
             _nav_item(
                 label=i["label"],
                 icon=i["icon"],
-                href=i["href"],
+                href=i.get("href"),
+                scope=i.get("scope"),
+                to=i.get("to"),
                 active=(i["label"] == active_label),
-                collapsed=collapsed,
+                collapsed=S.collapsed,
             )
         )
-    return rx.vstack(*nodes, gap="6px", width="100%", align_items="stretch")
+    return rx.vstack(*nodes, gap="8px", width="100%", align_items="stretch")
 
 
 def Sidebar(*, active: str):
     toggle = rx.tooltip(
         rx.button(
-            rx.cond(
-                S.collapsed,
-                rx.icon(tag="chevron-right", size=18),
-                rx.icon(tag="chevron-left", size=18),
-            ),
+            rx.cond(S.collapsed, rx.icon(tag="chevron-right", size=18), rx.icon(tag="chevron-left", size=18)),
             on_click=S.toggle,
             padding=f"{V_PAD}",
             border_radius=T.r_full,

@@ -22,15 +22,6 @@ class CameraState(BaseManagementState):
     all scoped by organization, project, and user role.
     """
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Ensure models are rebuilt when state is created to prevent forward reference errors
-        try:
-            from poseidon.backend.database.init import rebuild_all_models
-            rebuild_all_models()
-        except Exception as e:
-            print(f"Warning: Could not rebuild models in CameraState init: {e}")
-    
     # Context
     organization_id: Optional[str] = None
     project_id: Optional[str] = None

@@ -18,6 +18,7 @@ from poseidon.pages.auth import login_page, register_admin_page, register_page, 
 from poseidon.pages.camera import camera_configurator_page
 from poseidon.pages.component_showcase import component_showcase_page
 from poseidon.pages.dashboards import admin_page, super_admin_dashboard_page
+from poseidon.pages.dashboards.line_insights import line_insights_page
 from poseidon.pages.gallery import images_page
 from poseidon.pages.index import index
 from poseidon.pages.inference import inference_page
@@ -26,6 +27,8 @@ from poseidon.pages.model_deployment import model_deployment_page
 from poseidon.pages.user import profile_page
 from poseidon.styles.styles import styles
 from poseidon.styles.theme import theme_config
+from poseidon.state.line_insights import LineInsightsState
+from poseidon.state.auth import AuthState
 
 # Create app with comprehensive styling configuration
 app = rx.App(
@@ -66,7 +69,7 @@ app.add_page(
 
 # Camera Configurator route
 app.add_page(
-    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator", show_scope_selector=True),
+    with_shell(camera_configurator_page, title="Mindtrace - Camera Configurator", active="Camera Configurator"),
     route="/camera-configurator",
 )
 
@@ -99,6 +102,13 @@ app.add_page(
     route="/project-management",
 )
 
+# Analytics routes
+app.add_page(
+    with_shell(line_insights_page, title="Mindtrace - Line Insights", active="Line Insights", show_scope_selector=True),
+    route="/plants/[plant_id]/lines/[line_id]/line-insights",
+    on_load=[AuthState.redirect_if_not_authenticated, LineInsightsState.on_mount],
+)
+
 # User routes
 app.add_page(with_shell(profile_page, title="Mindtrace - Profile", active="Profile"), route="/profile")
 app.add_page(with_shell(images_page, title="Mindtrace - Image Viewer", active="Image Viewer"), route="/image-viewer")
@@ -108,3 +118,5 @@ app.add_page(
     with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
     route="/component-showcase",
 )
+from poseidon.backend.database.init import rebuild_all_models
+rebuild_all_models()
