@@ -79,7 +79,7 @@ class RedisConsumerBackend(ConsumerBackendBase):
 
     def close(self):
         """Close the Redis connection and clean up resources."""
-        if hasattr(self, 'connection') and self.connection is not None:
+        if hasattr(self, "connection") and self.connection is not None:
             self.connection.close()
             self.connection = None
 
