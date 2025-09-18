@@ -1,8 +1,10 @@
+import json
 import os
-from typing import List
+from typing import Any, Dict, List
 
 from mindtrace.core import Mindtrace
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
+
 class GenerateIdConfig(Mindtrace):
     def __init__(self, label_studio: LabelStudio, **kwargs):
         super().__init__(**kwargs)
@@ -43,16 +45,84 @@ class GenerateIdConfig(Mindtrace):
                 self.logger.warning(f"Project {name} export failed or was not found")
         return successful_projects
 
-    #def generate_id_config(self, **kwargs):
-     #   successful_projects = self.export_projects(**kwargs)
+    def build_id_config_from_exports(self, exports_root: str, output_path: str) -> Dict[str, Any]:
+        if not os.path.isdir(exports_root):
+            raise ValueError(f"exports_root does not exist or is not a directory: {exports_root}")
 
-if __name__ == "__main__":
-    label_studio = LabelStudio(
-        url="http://34.66.135.145:8080/",
-        api_key="5c7de958cb0583e9b89f5795cdd9fc053aa105ba"
-    )
-    generate_id_config = GenerateIdConfig(label_studio)
-    generate_id_config.export_projects(save_path="./t_projects", project_prefix="paslin_cam")
+        combined: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+        global_prefixes: set[str] = set()
+
+        for entry in sorted(os.listdir(exports_root)):
+            project_dir = os.path.join(exports_root, entry)
+            if not os.path.isdir(project_dir):
+                continue
+            export_file = os.path.join(project_dir, "export.json")
+            if not os.path.isfile(export_file):
+                self.logger.warning(f"Missing export.json in {project_dir}, skipping")
+                continue
+
+            try:
+                with open(export_file, "r") as f:
+                    data = json.load(f)
+            except Exception as e:
+                self.logger.error(f"Failed to read {export_file}: {e}")
+                continue
+
+            groups: Dict[str, List[Dict[str, Any]]] = {}
+
+            for task in data:
+                annotations = task.get("annotations", [])
+                for ann in annotations:
+                    results = ann.get("result", [])
+                    for res in results:
+                        if res.get("type") != "rectanglelabels":
+                            continue
+                        value = res.get("value", {})
+                        labels = value.get("rectanglelabels", [])
+                        if not labels:
+                            continue
+                        label_str = labels[0]
+                        if "_" not in label_str:
+                            self.logger.warning(f"Label '{label_str}' missing '_' separator; skipping")
+                            continue
+                        prefix, suffix = label_str.split("_", 1)
+                        if not suffix:
+                            self.logger.warning(f"Label '{label_str}' has empty id part; skipping")
+                            continue
+                        group_key = f"{prefix.lower()}s"
+                        global_prefixes.add(prefix.lower())
+                        bbox = [
+                            value.get("x"),
+                            value.get("y"),
+                            value.get("width"),
+                            value.get("height"),
+                        ]
+                        item = {
+                            "id": str(suffix),
+                            "class_id": None,
+                            "name": label_str,
+                            "bbox": bbox,
+                        }
+                        groups.setdefault(group_key, []).append(item)
+
+            if groups:
+                combined[entry] = groups
+
+        prefix_to_class: Dict[str, int] = {p: idx for idx, p in enumerate(sorted(global_prefixes))}
+        for project_groups in combined.values():
+            for group_key, items in project_groups.items():
+                prefix_lower = group_key[:-1]
+                class_id = prefix_to_class.get(prefix_lower)
+                for obj in items:
+                    obj["class_id"] = class_id
+
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(combined, f, indent=2)
+        self.logger.info(f"Wrote ID config to {output_path}")
+        return combined
         
             
 
