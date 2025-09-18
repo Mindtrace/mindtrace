@@ -408,9 +408,7 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
-            self.logger.debug(
-                f"Configuration {'succeeded' if success else 'had failures'} for camera '{self._full_name}'"
-            )
+            self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
             
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.

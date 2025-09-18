@@ -11,6 +11,7 @@ from mindtrace.hardware.core.exceptions import (
     CameraConfigurationError,
     CameraNotFoundError,
     CameraTimeoutError,
+    HardwareOperationError,
 )
 
 
@@ -92,8 +93,7 @@ async def test_initialize_and_capture_success(fake_cv):
     ok, cap, rc = await cam.initialize()
     assert ok and cap is rc
 
-    success, img = await cam.capture()
-    assert success is True
+    img = await cam.capture()
     assert isinstance(img, np.ndarray) and img.ndim == 3
 
     await cam.close()
@@ -135,8 +135,8 @@ async def test_set_exposure_not_supported(fake_cv, monkeypatch):
     cam = OpenCVCameraBackend("0")
     await cam.initialize()
     monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=False))
-    ok = await cam.set_exposure(-5.0)
-    assert ok is False
+    with pytest.raises(CameraConfigurationError, match="Exposure control is not supported"):
+        await cam.set_exposure(-5.0)
     await cam.close()
 
 
@@ -146,8 +146,7 @@ async def test_set_exposure_supported_and_range(fake_cv, monkeypatch):
     await cam.initialize()
     monkeypatch.setattr(cam, "is_exposure_control_supported", lambda: asyncio.sleep(0, result=True))
     monkeypatch.setattr(cam, "get_exposure_range", lambda: asyncio.sleep(0, result=[-13.0, -1.0]))
-    ok = await cam.set_exposure(-6.0)
-    assert ok is True
+    await cam.set_exposure(-6.0)
     with pytest.raises(CameraConfigurationError):
         await cam.set_exposure(-20.0)
     await cam.close()
@@ -161,7 +160,7 @@ async def test_gain_set_get(fake_cv):
 
     cam.initialized = True
     cam.cap = cv2.VideoCapture(0)
-    assert await cam.set_gain(15.0) is True
+    await cam.set_gain(15.0)
     val = await cam.get_gain()
     assert isinstance(val, float)
     with pytest.raises(CameraConfigurationError):
@@ -177,20 +176,22 @@ async def test_roi_and_pixel_format_and_enhancement(fake_cv):
     cam.cap = cv2.VideoCapture(0)
 
     # ROI methods
-    assert await cam.set_ROI(0, 0, 10, 10) is False
+    with pytest.raises(NotImplementedError, match="ROI setting not supported"):
+        await cam.set_ROI(0, 0, 10, 10)
     roi = await cam.get_ROI()
     assert set(roi.keys()) == {"x", "y", "width", "height"}
-    assert await cam.reset_ROI() is False
+    with pytest.raises(NotImplementedError, match="ROI reset not supported"):
+        await cam.reset_ROI()
 
     # Pixel format
     fmts = await cam.get_pixel_format_range()
     assert "RGB8" in fmts
-    assert await cam.set_pixel_format("RGB8") is True
+    await cam.set_pixel_format("RGB8")
     with pytest.raises(CameraConfigurationError):
         await cam.set_pixel_format("XYZ")
 
     # Enhancement toggle
-    assert await cam.set_image_quality_enhancement(True) is True
+    await cam.set_image_quality_enhancement(True)
     assert await cam.get_image_quality_enhancement() is True
 
 
@@ -200,10 +201,11 @@ async def test_white_balance_get_and_set(fake_cv):
     await cam.initialize()
     mode = await cam.get_wb()
     assert mode in {"auto", "manual", "unknown"}
-    assert await cam.set_auto_wb_once("auto") in {True, False}
-    assert await cam.set_auto_wb_once("manual") in {True, False}
-    assert await cam.set_auto_wb_once("off") in {True, False}
-    assert await cam.set_auto_wb_once("invalid") is False
+    await cam.set_auto_wb_once("auto")
+    await cam.set_auto_wb_once("manual")
+    await cam.set_auto_wb_once("off")
+    with pytest.raises(HardwareOperationError, match="Unsupported white balance mode"):
+        await cam.set_auto_wb_once("invalid")
     await cam.close()
 
 
@@ -212,13 +214,11 @@ async def test_export_and_import_config(fake_cv, tmp_path):
     cam = OpenCVCameraBackend("0")
     await cam.initialize()
     path = os.path.join(tmp_path, "cfg.json")
-    ok = await cam.export_config(path)
-    assert ok is True
+    await cam.export_config(path)
     with open(path, "r") as f:
         data = json.load(f)
     assert "camera_type" in data and data["camera_type"] == "opencv"
-    ok2 = await cam.import_config(path)
-    assert ok2 is True
+    await cam.import_config(path)
     await cam.close()
 
 
@@ -401,8 +401,7 @@ async def test_import_config_optional_settings_failures(fake_cv, tmp_path, monke
         return await original_sdk(func, *args, **kwargs)
 
     monkeypatch.setattr(cam, "_sdk", _sdk_maybe_fail, raising=False)
-    ok = await cam.import_config(path)
-    assert ok is True
+    await cam.import_config(path)
     await cam.close()
 
 

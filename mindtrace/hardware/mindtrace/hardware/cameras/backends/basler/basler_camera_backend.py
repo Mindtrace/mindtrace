@@ -912,7 +912,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            available_formats = self.get_pixel_format_range()
+                            available_formats = await self.get_pixel_format_range()
                             pixel_format = config_data["pixel_format"]
                             if pixel_format in available_formats:
                                 await self._sdk(

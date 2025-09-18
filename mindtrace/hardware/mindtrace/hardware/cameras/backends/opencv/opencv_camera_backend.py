@@ -963,14 +963,16 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to get ROI for camera '{self.camera_name}': {str(e)}")
             return {"x": 0, "y": 0, "width": 0, "height": 0}
 
-    async def reset_ROI(self) -> bool:
+    async def reset_ROI(self):
         """Reset ROI to full sensor size.
 
-        Returns:
-            False (not supported by OpenCV backend)
+        Raises:
+            NotImplementedError: ROI reset is not supported by the OpenCV backend
         """
-        self.logger.warning(f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'")
-        return False
+        self.logger.error(f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'")
+        raise NotImplementedError(
+            f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'"
+        )
 
     async def get_wb(self) -> str:
         """Get current white balance mode.
