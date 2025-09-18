@@ -1,17 +1,13 @@
-import os
-import configparser
 import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable, Tuple, get_origin, get_args
+import os
 from copy import deepcopy
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, get_args, get_origin
 
-from pydantic import BaseModel, SecretStr
+from pydantic import AnyUrl, BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from pydantic import AnyUrl
+
 from mindtrace.core.utils import expand_tilde, expand_tilde_str, load_ini_as_dict
-
-
-
 
 
 class MINDTRACE_API_KEYS(BaseModel):
@@ -49,6 +45,7 @@ class MINDTRACE_CLUSTER(BaseModel):
     MINIO_SECRET_KEY: SecretStr
     MINIO_BUCKET: str
 
+
 class MINDTRACE_MCP(BaseModel):
     MOUNT_PATH: str
     HTTP_APP_PATH: str
@@ -58,10 +55,10 @@ class MINDTRACE_WORKER(BaseModel):
     DEFAULT_REDIS_URL: str
 
 
-
 def load_ini_settings() -> Dict[str, Any]:
     ini_path = Path(__file__).parent / "config.ini"
     return load_ini_as_dict(ini_path)
+
 
 class CoreSettings(BaseSettings):
     MINDTRACE_API_KEYS: MINDTRACE_API_KEYS
@@ -91,10 +88,10 @@ class CoreSettings(BaseSettings):
             return expand_tilde(data)
 
         return (
-            init_settings,           # constructor kwargs
-            env_settings_expanded,   # env vars (with '~' expanded) take precedence
-            dotenv_settings,         # then .env
-            load_ini_settings,       # then INI file (lowest precedence)
+            init_settings,  # constructor kwargs
+            env_settings_expanded,  # env vars (with '~' expanded) take precedence
+            dotenv_settings,  # then .env
+            load_ini_settings,  # then INI file (lowest precedence)
             file_secret_settings,
         )
 
@@ -146,7 +143,7 @@ class Config(dict):
     Unified configuration manager for Mindtrace components.
 
     The `Config` class consolidates configuration from sources including
-    dictionaries, Pydantic `BaseSettings` or `BaseModel` objects. 
+    dictionaries, Pydantic `BaseSettings` or `BaseModel` objects.
     It supports user provided arguments and environment variable overrides, path normalization by expanding the `~` character.
 
     Key Features:
@@ -226,11 +223,12 @@ class Config(dict):
         cls,
         *,
         defaults: Optional[Union[Dict[str, Any], BaseSettings, BaseModel]] = None,
-        overrides: Optional[Union[Dict[str, Any], List[Union[Dict[str, Any], BaseSettings, BaseModel]], BaseSettings, BaseModel]] = None,
+        overrides: Optional[
+            Union[Dict[str, Any], List[Union[Dict[str, Any], BaseSettings, BaseModel]], BaseSettings, BaseModel]
+        ] = None,
         file_loader: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> "Config":
-        """Create a Config from optional defaults, optional file loader, and runtime overrides.
-        """
+        """Create a Config from optional defaults, optional file loader, and runtime overrides."""
         base: Dict[str, Any] = {}
         if isinstance(defaults, (BaseSettings, BaseModel)):
             base = defaults.model_dump()
@@ -262,9 +260,11 @@ class Config(dict):
     @classmethod
     def load_json(cls, path: str | Path) -> "Config":
         """Load from a JSON file (acts as file_loader layer) and apply env + masking."""
+
         def _loader() -> Dict[str, Any]:
             with open(path, "r") as f:
                 return json.load(f)
+
         return cls.load(file_loader=_loader)
 
     def save_json(self, path: str | Path, *, reveal_secrets: bool = False, indent: int = 4) -> None:
@@ -290,6 +290,7 @@ class Config(dict):
     def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
         """Return a new Config clone with overrides applied (original remains unchanged)."""
         items: List[Dict[str, Any]] = [deepcopy(dict(self))]
+
         def push(x):
             if isinstance(x, (BaseSettings, BaseModel)):
                 items.append(x.model_dump())
@@ -307,6 +308,7 @@ class Config(dict):
                     f"Unsupported override type: {type(x).__name__}. "
                     "Expected dict, BaseSettings, BaseModel, or list/tuple of these."
                 )
+
         for o in overrides:
             push(o)
         return Config(items, apply_env_overrides=False)
@@ -399,6 +401,7 @@ class Config(dict):
                 return mask
             expanded = expand_tilde_str(original_sval)
             return expanded
+
         return convert(data, ())
 
     @staticmethod
@@ -414,9 +417,12 @@ class Config(dict):
                 return [convert(x) for x in v]
             s = str(v)
             return expand_tilde_str(s)
+
         return convert(data)
 
-    def _collect_secret_paths_from_model(self, model_cls: type[BaseModel] | type[BaseSettings], prefix: Tuple[str, ...] = ()) -> set[Tuple[str, ...]]:
+    def _collect_secret_paths_from_model(
+        self, model_cls: type[BaseModel] | type[BaseSettings], prefix: Tuple[str, ...] = ()
+    ) -> set[Tuple[str, ...]]:
         paths: set[Tuple[str, ...]] = set()
         fields = getattr(model_cls, "__pydantic_fields__", {})
         for name, field in fields.items():
@@ -424,7 +430,7 @@ class Config(dict):
             if self._is_secret_annotation(ann):
                 paths.add(prefix + (name,))
                 continue
-            
+
             nested_cls = self._extract_model_class(ann)
             if nested_cls is not None:
                 paths.update(self._collect_secret_paths_from_model(nested_cls, prefix + (name,)))
@@ -455,7 +461,6 @@ class Config(dict):
                 except TypeError:
                     continue
         return None
-
 
 
 class CoreConfig(Config):

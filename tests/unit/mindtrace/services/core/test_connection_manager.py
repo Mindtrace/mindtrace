@@ -18,7 +18,9 @@ def _cm_env(monkeypatch):
     """Set minimal env and reload class config per test to avoid config patching."""
     monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
     from mindtrace.core import CoreConfig
+
     ConnectionManager.config = CoreConfig()
+
 
 class TestConnectionManagerInitialization:
     """Test ConnectionManager initialization and configuration."""

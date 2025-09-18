@@ -91,6 +91,7 @@ class Mindtrace(metaclass=MindtraceMeta):
     The logging functionality is automatically provided through the MindtraceMeta metaclass,
     which ensures consistent logging behavior across all method types.
     """
+
     def __init__(self, suppress: bool = False, *, config_overrides: SettingsLike | None = None, **kwargs):
         """
         Initialize the Mindtrace object.

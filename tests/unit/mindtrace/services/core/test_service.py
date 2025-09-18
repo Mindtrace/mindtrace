@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, Mock, patch, PropertyMock
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID
 
 import psutil
@@ -20,7 +20,9 @@ def _set_minimal_env(monkeypatch):
     monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
     # Reload class-level config each test to pick up env
     from mindtrace.core import CoreConfig
+
     Service.config = CoreConfig()
+
 
 class SampleInput(BaseModel):
     message: str
@@ -454,6 +456,7 @@ class TestServiceUrlBuilding:
         monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
         # Force reload of class-level config to pick up new env
         from mindtrace.core import CoreConfig
+
         Service.config = CoreConfig()
         result = Service.default_url()
         assert str(result) == "http://service.example.com:8080"
@@ -470,6 +473,7 @@ class TestServiceUrlBuilding:
         # Ensure no env for SERVICE is set; rely on code fallback
         monkeypatch.delenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", raising=False)
         from mindtrace.core import CoreConfig
+
         Service.config = CoreConfig()
         result = Service.default_url()
 
@@ -1171,6 +1175,7 @@ class TestServiceInterruption:
             # Ensure SERVICE host matches expected in assertion
             monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
             from mindtrace.core import CoreConfig
+
             Service.config = CoreConfig()
 
             with patch("mindtrace.services.core.service.Timeout") as mock_timeout_class:

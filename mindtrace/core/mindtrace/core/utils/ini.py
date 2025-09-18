@@ -21,8 +21,5 @@ def load_ini_as_dict(ini_path: Path) -> Dict[str, Any]:
 
     result: Dict[str, Any] = {}
     for section in parser.sections():
-        result[section.upper()] = {
-            key.upper(): expand_tilde_str(value) for key, value in parser[section].items()
-        }
+        result[section.upper()] = {key.upper(): expand_tilde_str(value) for key, value in parser[section].items()}
     return result
-
