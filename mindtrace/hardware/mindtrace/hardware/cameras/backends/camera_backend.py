@@ -60,8 +60,7 @@ class CameraBackend(MindtraceABC):
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
     ):
-        """
-        Initialize base camera with configuration integration.
+        """Initialize base camera with configuration integration.
 
         Args:
             camera_name: Unique identifier for the camera (auto-generated if None)
@@ -99,11 +98,10 @@ class CameraBackend(MindtraceABC):
         )
 
     def _setup_camera_logger_formatting(self):
-        """
-        Setup camera-specific logger formatting.
+        """Setup camera-specific logger formatting.
 
-        Provides consistent formatting for all camera-related log messages.
-        This method ensures uniform logging across all camera implementations.
+        Provides consistent formatting for all camera-related log messages. This method ensures uniform logging across 
+        all camera implementations.
         """
         import logging
 
@@ -121,13 +119,11 @@ class CameraBackend(MindtraceABC):
 
         self.logger.propagate = False
 
-    async def setup_camera(self) -> None:
-        """
-        Common setup method for camera initialization.
+    async def setup_camera(self):
+        """Common setup method for camera initialization.
 
-        This method provides a standardized setup pattern that can be used
-        by all camera backends. It calls the abstract initialize() method
-        and handles common initialization patterns.
+        This method provides a standardized setup pattern that can be used by all camera backends. It calls the 
+        abstract initialize() method and handles common initialization patterns.
 
         Raises:
             CameraNotFoundError: If camera cannot be found
@@ -150,7 +146,7 @@ class CameraBackend(MindtraceABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def set_exposure(self, exposure: Union[int, float]) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]):
         raise NotImplementedError
 
     @abstractmethod
@@ -162,7 +158,7 @@ class CameraBackend(MindtraceABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
+    async def capture(self) -> np.ndarray:
         raise NotImplementedError
 
     @abstractmethod
@@ -179,119 +175,118 @@ class CameraBackend(MindtraceABC):
         raise NotImplementedError
 
     # Default implementations for optional methods
-    async def set_config(self, config: str) -> bool:
-        self.logger.warning(f"set_config not implemented for {self.__class__.__name__}")
-        return False
+    async def set_config(self, config: str):
+        self.logger.error(f"set_config not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_config not supported by {self.__class__.__name__}")
 
-    async def import_config(self, config_path: str) -> bool:
-        self.logger.warning(f"import_config not implemented for {self.__class__.__name__}")
-        return False
+    async def import_config(self, config_path: str):
+        self.logger.error(f"import_config not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"import_config not supported by {self.__class__.__name__}")
 
-    async def export_config(self, config_path: str) -> bool:
-        self.logger.warning(f"export_config not implemented for {self.__class__.__name__}")
-        return False
+    async def export_config(self, config_path: str):
+        self.logger.error(f"export_config not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"export_config not supported by {self.__class__.__name__}")
 
     async def get_wb(self) -> str:
-        self.logger.warning(f"get_wb not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_wb not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_wb not supported by {self.__class__.__name__}")
 
-    async def set_auto_wb_once(self, value: str) -> bool:
-        self.logger.warning(f"set_auto_wb_once not implemented for {self.__class__.__name__}")
-        return False
+    async def set_auto_wb_once(self, value: str):
+        self.logger.error(f"set_auto_wb_once not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_auto_wb_once not supported by {self.__class__.__name__}")
 
     async def get_wb_range(self) -> List[str]:
-        self.logger.warning(f"get_wb_range not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_wb_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_wb_range not supported by {self.__class__.__name__}")
 
     async def get_triggermode(self) -> str:
-        self.logger.warning(f"get_triggermode not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_triggermode not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_triggermode not supported by {self.__class__.__name__}")
 
-    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
-        self.logger.warning(f"set_triggermode not implemented for {self.__class__.__name__}")
-        return False
+    async def set_triggermode(self, triggermode: str = "continuous"):
+        self.logger.error(f"set_triggermode not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_triggermode not supported by {self.__class__.__name__}")
 
     async def get_image_quality_enhancement(self) -> bool:
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
+    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         self.img_quality_enhancement = img_quality_enhancement
-        self.logger.info(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
-        return True
+        self.logger.debug(f"Image quality enhancement set to {img_quality_enhancement} for camera '{self.camera_name}'")
 
     async def get_width_range(self) -> List[int]:
-        self.logger.warning(f"get_width_range not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_width_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_width_range not supported by {self.__class__.__name__}")
 
     async def get_height_range(self) -> List[int]:
-        self.logger.warning(f"get_height_range not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_height_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_height_range not supported by {self.__class__.__name__}")
 
-    async def set_gain(self, gain: Union[int, float]) -> bool:
-        self.logger.warning(f"set_gain not implemented for {self.__class__.__name__}")
-        return False
+    async def set_gain(self, gain: Union[int, float]):
+        self.logger.error(f"set_gain not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_gain not supported by {self.__class__.__name__}")
 
     async def get_gain(self) -> float:
-        self.logger.warning(f"get_gain not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_gain not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gain not supported by {self.__class__.__name__}")
 
     async def get_gain_range(self) -> List[Union[int, float]]:
-        self.logger.warning(f"get_gain_range not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_gain_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_gain_range not supported by {self.__class__.__name__}")
 
-    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
-        self.logger.warning(f"set_ROI not implemented for {self.__class__.__name__}")
-        return False
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
+        self.logger.error(f"set_ROI not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_ROI not supported by {self.__class__.__name__}")
 
     async def get_ROI(self) -> Dict[str, int]:
-        self.logger.warning(f"get_ROI not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_ROI not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_ROI not supported by {self.__class__.__name__}")
 
-    async def reset_ROI(self) -> bool:
-        self.logger.warning(f"reset_ROI not implemented for {self.__class__.__name__}")
-        return False
+    async def reset_ROI(self):
+        self.logger.error(f"reset_ROI not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"reset_ROI not supported by {self.__class__.__name__}")
 
     async def get_pixel_format_range(self) -> List[str]:
-        self.logger.warning(f"get_pixel_format_range not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_pixel_format_range not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_pixel_format_range not supported by {self.__class__.__name__}")
 
     async def get_current_pixel_format(self) -> str:
-        self.logger.warning(f"get_current_pixel_format not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_current_pixel_format not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_current_pixel_format not supported by {self.__class__.__name__}")
 
-    async def set_pixel_format(self, pixel_format: str) -> bool:
-        self.logger.warning(f"set_pixel_format not implemented for {self.__class__.__name__}")
-        return False
+    async def set_pixel_format(self, pixel_format: str):
+        self.logger.error(f"set_pixel_format not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_pixel_format not supported by {self.__class__.__name__}")
 
     # Network-related functionality for GigE cameras
-    async def set_bandwidth_limit(self, limit_mbps: Optional[float]) -> bool:
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps."""
-        self.logger.warning(f"set_bandwidth_limit not implemented for {self.__class__.__name__}")
-        return False
+        self.logger.error(f"set_bandwidth_limit not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_bandwidth_limit not supported by {self.__class__.__name__}")
 
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit."""
-        self.logger.warning(f"get_bandwidth_limit not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_bandwidth_limit not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_bandwidth_limit not supported by {self.__class__.__name__}")
 
-    async def set_packet_size(self, size: int) -> bool:
+    async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization."""
-        self.logger.warning(f"set_packet_size not implemented for {self.__class__.__name__}")
-        return False
+        self.logger.error(f"set_packet_size not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_packet_size not supported by {self.__class__.__name__}")
 
     async def get_packet_size(self) -> int:
         """Get current packet size."""
-        self.logger.warning(f"get_packet_size not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_packet_size not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_packet_size not supported by {self.__class__.__name__}")
 
-    async def set_inter_packet_delay(self, delay_ticks: int) -> bool:
+    async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control."""
-        self.logger.warning(f"set_inter_packet_delay not implemented for {self.__class__.__name__}")
-        return False
+        self.logger.error(f"set_inter_packet_delay not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_inter_packet_delay not supported by {self.__class__.__name__}")
 
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay."""
-        self.logger.warning(f"get_inter_packet_delay not implemented for {self.__class__.__name__}")
+        self.logger.error(f"get_inter_packet_delay not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_inter_packet_delay not supported by {self.__class__.__name__}")
 
     async def __aenter__(self):

@@ -221,7 +221,7 @@ class OpenCVCameraBackend(CameraBackend):
         future = self._sdk_executor.submit(_call)
         return future.result(timeout or self._op_timeout_s)
 
-    async def _ensure_open(self) -> None:
+    async def _ensure_open(self):
         """Ensure the VideoCapture is initialized and open.
 
         Raises:
@@ -291,7 +291,7 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV is available but cv2 is not initialized"
 
-        self.logger.info(f"Initializing OpenCV camera: {self.camera_name}")
+        self.logger.debug(f"Initializing OpenCV camera: {self.camera_name}")
 
         try:
             # Prepare executor/loop
@@ -327,7 +327,7 @@ class OpenCVCameraBackend(CameraBackend):
                 raise CameraInitializationError(f"Camera {self.camera_index} returned invalid frame format")
 
             self.initialized = True
-            self.logger.info(
+            self.logger.debug(
                 f"OpenCV camera '{self.camera_name}' initialization successful, "
                 f"test frame shape: {frame.shape}, dtype: {frame.dtype}"
             )
@@ -347,7 +347,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.initialized = False
             raise CameraInitializationError(f"Failed to initialize OpenCV camera '{self.camera_name}': {str(e)}")
 
-    async def _configure_camera(self) -> None:
+    async def _configure_camera(self):
         """Configure camera properties.
 
         Raises:
@@ -377,7 +377,7 @@ class OpenCVCameraBackend(CameraBackend):
             actual_fps = await self._sdk(self.cap.get, cv2.CAP_PROP_FPS)
             actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Camera '{self.camera_name}' configuration applied: "
                 f"resolution={actual_width}x{actual_height} (requested {self._width}x{self._height}), "
                 f"fps={actual_fps:.1f} (requested {self._fps}), "
@@ -552,15 +552,14 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception:
             return {} if include_details else []
 
-    async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
+    async def capture(self) -> np.ndarray:
         """Capture an image from the camera.
 
         Implements retry logic and proper error handling for robust image capture.
         Converts OpenCV's default BGR format to RGB for consistency.
 
         Returns:
-            Tuple[bool, Optional[np.ndarray]]: (success, image_array). On success, the image is
-            an RGB numpy array; on failure, image_array is None.
+            np.ndarray: Captured image as an RGB numpy array.
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -598,7 +597,7 @@ class OpenCVCameraBackend(CameraBackend):
                         f"shape={frame_rgb.shape}, dtype={frame_rgb.dtype}, attempt={attempt + 1}"
                     )
 
-                    return True, frame_rgb
+                    return frame_rgb
                 else:
                     self.logger.warning(
                         f"Capture failed for camera '{self.camera_name}': "
@@ -703,7 +702,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.debug(f"Connection check failed for camera '{self.camera_name}': {e}")
             return False
 
-    async def close(self) -> None:
+    async def close(self):
         """Close camera connection and cleanup resources.
 
         Properly releases the VideoCapture object and resets camera state.
@@ -711,7 +710,7 @@ class OpenCVCameraBackend(CameraBackend):
         Raises:
             CameraConnectionError: If camera closure fails
         """
-        self.logger.info(f"Closing OpenCV camera: {self.camera_name}")
+        self.logger.debug(f"Closing OpenCV camera: {self.camera_name}")
 
         if self.cap:
             try:
@@ -771,18 +770,15 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
             return False
 
-    async def set_exposure(self, exposure: Union[int, float]) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]):
         """Set camera exposure time.
 
         Args:
             exposure: Exposure value (OpenCV uses log scale, typically -13 to -1)
 
-        Returns:
-            bool: True if exposure was set successfully, otherwise False.
-
         Raises:
             CameraConnectionError: If camera is not initialized
-            CameraConfigurationError: If exposure value is invalid
+            CameraConfigurationError: If exposure value is invalid or unsupported
             HardwareOperationError: If exposure setting fails
         """
         if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
@@ -792,10 +788,9 @@ class OpenCVCameraBackend(CameraBackend):
         await self._ensure_open()
         # Check if exposure control is supported
         if not await self.is_exposure_control_supported():
-            self.logger.warning(
-                f"Exposure control is not supported for camera '{self.camera_name}'. Skipping set_exposure."
+            raise CameraConfigurationError(
+                f"Exposure control is not supported for camera '{self.camera_name}'"
             )
-            return False
         try:
             exposure_range = await self.get_exposure_range()
             if exposure < exposure_range[0] or exposure > exposure_range[1]:
@@ -804,17 +799,16 @@ class OpenCVCameraBackend(CameraBackend):
                 )
             async with self._io_lock:
                 success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
-            if success:
-                self._exposure = float(exposure)
-                async with self._io_lock:
-                    actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
-                self.logger.info(
-                    f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
+            if not success:
+                raise HardwareOperationError(
+                    f"Failed to set exposure to {exposure} for camera '{self.camera_name}'"
                 )
-                return True
-            else:
-                self.logger.warning(f"Failed to set exposure to {exposure} for camera '{self.camera_name}'")
-                return False
+            self._exposure = float(exposure)
+            async with self._io_lock:
+                actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
+            self.logger.debug(
+                f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
+            )
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
@@ -885,14 +879,11 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return [0.0, 100.0]
 
-    async def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]):
         """Set camera gain.
 
         Args:
             gain: Gain value
-
-        Returns:
-            True if gain was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -909,12 +900,10 @@ class OpenCVCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Gain {gain} out of range {gain_range}")
 
             success = await self._sdk(self.cap.set, cv2.CAP_PROP_GAIN, float(gain))
-            if success:
-                actual_gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
-                self.logger.info(f"Gain set to {gain} (actual: {actual_gain:.1f}) for camera '{self.camera_name}'")
-                return True
-            else:
+            if not success:
                 raise CameraConfigurationError(f"Failed to set gain to {gain} for camera '{self.camera_name}'")
+            actual_gain = await self._sdk(self.cap.get, cv2.CAP_PROP_GAIN)
+            self.logger.debug(f"Gain set to {gain} (actual: {actual_gain:.1f}) for camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
@@ -938,10 +927,10 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Failed to get gain for camera '{self.camera_name}': {str(e)}")
             return 0.0
 
-    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest (ROI).
 
-        Note: OpenCV cameras typically don't support hardware ROI, this would need to be implemented in software.
+        Note: OpenCV cameras typically don't support hardware ROI; implement in software if needed.
 
         Args:
             x: ROI x offset
@@ -949,11 +938,12 @@ class OpenCVCameraBackend(CameraBackend):
             width: ROI width
             height: ROI height
 
-        Returns:
-            False (not supported by OpenCV backend)
+        Raises:
+            NotImplementedError: ROI is not supported by the OpenCV backend
         """
-        self.logger.warning(f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'")
-        return False
+        raise NotImplementedError(
+            f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'"
+        )
 
     async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest (ROI).
@@ -1001,18 +991,20 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.debug(f"Could not get white balance mode for camera '{self.camera_name}': {str(e)}")
             return "unknown"
 
-    async def set_auto_wb_once(self, value: str) -> bool:
+    async def set_auto_wb_once(self, value: str):
         """Set white balance mode.
 
         Args:
             value: White balance mode ("auto", "manual", "off")
 
-        Returns:
-            True if white balance was set successfully, otherwise False.
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If value is invalid
+            HardwareOperationError: If the operation fails
         """
         if not self.initialized or not self.cap or not await self._sdk(self.cap.isOpened):
             self.logger.error(f"Camera '{self.camera_name}' not available for white balance setting")
-            return False
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available for white balance setting")
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
@@ -1022,22 +1014,22 @@ class OpenCVCameraBackend(CameraBackend):
             elif value.lower() in ["manual", "off"]:
                 target = 0
             else:
-                self.logger.error(f"Unsupported white balance mode: {value}")
-                return False
+                raise CameraConfigurationError(f"Unsupported white balance mode: {value}")
 
             async with self._io_lock:
                 await self._ensure_open()
                 success = await self._sdk(self.cap.set, cv2.CAP_PROP_AUTO_WB, target)
 
-            if success:
-                self.logger.info(f"White balance set to '{value}' for camera '{self.camera_name}'")
-                return True
-            else:
-                self.logger.warning(f"Failed to set white balance to '{value}' for camera '{self.camera_name}'")
-                return False
+            if not success:
+                raise HardwareOperationError(
+                    f"Failed to set white balance to '{value}' for camera '{self.camera_name}'"
+                )
+            self.logger.debug(f"White balance set to '{value}' for camera '{self.camera_name}'")
         except Exception as e:
             self.logger.error(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise HardwareOperationError(
+                f"Failed to set white balance for camera '{self.camera_name}': {str(e)}"
+            )
 
     async def get_wb_range(self) -> List[str]:
         """Get available white balance modes.
@@ -1063,22 +1055,18 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return "RGB8"  # We convert BGR to RGB in capture method
 
-    async def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str):
         """Set pixel format.
 
         Args:
             pixel_format: Pixel format to set
-
-        Returns:
-            True if pixel format is supported
 
         Raises:
             CameraConfigurationError: If pixel format is not supported
         """
         available_formats = await self.get_pixel_format_range()
         if pixel_format in available_formats:
-            self.logger.info(f"Pixel format '{pixel_format}' is supported for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Pixel format '{pixel_format}' is supported for camera '{self.camera_name}'")
         else:
             raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
 
@@ -1090,7 +1078,7 @@ class OpenCVCameraBackend(CameraBackend):
         """
         return "continuous"
 
-    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous"):
         """Set trigger mode.
 
         USB cameras only support continuous mode.
@@ -1098,15 +1086,12 @@ class OpenCVCameraBackend(CameraBackend):
         Args:
             triggermode: Trigger mode ("continuous" only)
 
-        Returns:
-            True if mode is supported
-
         Raises:
             CameraConfigurationError: If trigger mode is not supported
         """
         if triggermode == "continuous":
             self.logger.debug(f"Trigger mode 'continuous' confirmed for camera '{self.camera_name}'")
-            return True
+            return None
 
         self.logger.warning(
             f"Trigger mode '{triggermode}' not supported for camera '{self.camera_name}'. "
@@ -1121,27 +1106,28 @@ class OpenCVCameraBackend(CameraBackend):
         """Get image quality enhancement status."""
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, img_quality_enhancement: bool) -> bool:
+    async def set_image_quality_enhancement(self, img_quality_enhancement: bool):
         """Set image quality enhancement.
 
         Args:
             img_quality_enhancement: Whether to enable image quality enhancement
 
-        Returns:
-            True if setting was applied successfully, False otherwise
+        Raises:
+            HardwareOperationError: If setting cannot be applied
         """
         try:
             self.img_quality_enhancement = img_quality_enhancement
             if img_quality_enhancement and not hasattr(self, "_enhancement_initialized"):
                 self._initialize_image_enhancement()
-            self.logger.info(
+            self.logger.debug(
                 f"Image quality enhancement {'enabled' if img_quality_enhancement else 'disabled'} "
                 f"for camera '{self.camera_name}'"
             )
-            return True
         except Exception as e:
             self.logger.error(f"Failed to set image quality enhancement for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise HardwareOperationError(
+                f"Failed to set image quality enhancement for camera '{self.camera_name}': {str(e)}"
+            )
 
     def _initialize_image_enhancement(self):
         """Initialize image enhancement parameters for OpenCV camera."""
@@ -1152,14 +1138,11 @@ class OpenCVCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to initialize image enhancement for camera '{self.camera_name}': {str(e)}")
 
-    async def export_config(self, config_path: str) -> bool:
+    async def export_config(self, config_path: str):
         """Export current camera configuration to common JSON format.
 
         Args:
             config_path (str): Path to save configuration file
-
-        Returns:
-            True if successful, False otherwise.
 
         Raises:
             CameraConnectionError: If camera is not connected
@@ -1207,10 +1190,9 @@ class OpenCVCameraBackend(CameraBackend):
             with open(config_path, "w") as f:
                 json.dump(config, f, indent=2)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
             )
-            return True
 
         except Exception as e:
             self.logger.error(f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}")
@@ -1218,14 +1200,11 @@ class OpenCVCameraBackend(CameraBackend):
                 f"Failed to export config to '{config_path}' for camera '{self.camera_name}': {str(e)}"
             )
 
-    async def import_config(self, config_path: str) -> bool:
+    async def import_config(self, config_path: str):
         """Import camera configuration from common JSON format.
 
         Args:
             config_path: Path to configuration file
-
-        Returns:
-            bool: True if successful, False otherwise.
 
         Raises:
             CameraConnectionError: If camera is not connected
@@ -1325,12 +1304,10 @@ class OpenCVCameraBackend(CameraBackend):
                 success_count += 1
                 total_settings += 1
 
-            self.logger.info(
+            self.logger.debug(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
             )
-
-            return True
 
         except CameraConfigurationError:
             raise
@@ -1359,7 +1336,7 @@ class OpenCVCameraBackend(CameraBackend):
             f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
         )
 
-    def __del__(self) -> None:
+    def __del__(self):
         """Destructor to ensure proper cleanup."""
         try:
             if hasattr(self, "cap") and self.cap is not None:

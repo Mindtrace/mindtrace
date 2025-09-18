@@ -20,7 +20,7 @@ Usage:
         camera = OpenCVCameraBackend("0")
         success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
         if success:
-            success, image = await camera.capture()
+            image = await camera.capture()
             await camera.close()
 """
 
