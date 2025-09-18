@@ -2,7 +2,7 @@ import configparser
 from pathlib import Path
 from typing import Any, Dict
 
-from mindtrace.core.utils import expand_tilde_str
+from .paths import expand_tilde_str
 
 
 def load_ini_as_dict(ini_path: Path) -> Dict[str, Any]:
