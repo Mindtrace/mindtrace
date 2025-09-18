@@ -168,3 +168,16 @@ class RedisClient(OrchestratorBackend):
 
     def count_queue_messages(self, queue_name: str, **kwargs) -> int:
         return self.connection.count_queue_messages(queue_name, **kwargs)
+
+    def close(self):
+        """Close the Redis connection and clean up resources."""
+        if hasattr(self, 'connection') and self.connection is not None:
+            self.connection.close()
+            self.connection = None
+
+    def __del__(self):
+        """Ensure cleanup happens when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass
