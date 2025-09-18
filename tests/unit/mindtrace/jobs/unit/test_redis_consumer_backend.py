@@ -119,10 +119,12 @@ def test_consume_with_exception_blocking(backend):
     with patch("time.sleep") as mock_sleep:
         # Set up to exit after one iteration
         call_count = [0]
+
         def side_effect(*args):
             call_count[0] += 1
             if call_count[0] >= 2:  # Exit after a couple iterations
                 raise KeyboardInterrupt()
+
         mock_sleep.side_effect = side_effect
 
         backend.consume(num_messages=1, block=True)
@@ -203,7 +205,7 @@ def test_receive_message_json_decode_error(backend):
     """Test receive_message handles JSON decode errors."""
     backend, mock_conn = backend
     fake_queue = MagicMock()
-    fake_queue.pop.return_value = 'invalid json'
+    fake_queue.pop.return_value = "invalid json"
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
 
@@ -271,8 +273,8 @@ def test_receive_message_with_pop_method(backend):
     fake_queue = MagicMock()
     fake_queue.pop.return_value = '{"foo": "bar"}'
     # Ensure get method doesn't exist so pop method is used
-    if hasattr(fake_queue, 'get'):
-        delattr(fake_queue, 'get')
+    if hasattr(fake_queue, "get"):
+        delattr(fake_queue, "get")
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
 
@@ -287,8 +289,8 @@ def test_receive_message_exception_in_json_loads(backend):
     backend, mock_conn = backend
     fake_queue = MagicMock()
     fake_queue.pop.return_value = '{"invalid": json}'
-    if hasattr(fake_queue, 'get'):
-        delattr(fake_queue, 'get')
+    if hasattr(fake_queue, "get"):
+        delattr(fake_queue, "get")
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
 
@@ -302,8 +304,8 @@ def test_receive_message_empty_exception(backend):
     backend, mock_conn = backend
     fake_queue = MagicMock()
     fake_queue.pop.side_effect = Empty()
-    if hasattr(fake_queue, 'get'):
-        delattr(fake_queue, 'get')
+    if hasattr(fake_queue, "get"):
+        delattr(fake_queue, "get")
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
 

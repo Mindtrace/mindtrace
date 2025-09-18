@@ -234,6 +234,7 @@ def test_subscribe_to_events_shutdown_signal(monkeypatch):
         conn._shutdown_event.set()
 
         pubsub = MagicMock()
+
         # Create an iterator that will be interrupted by shutdown
         def message_generator():
             yield {"type": "subscribe"}
@@ -266,10 +267,12 @@ def test_subscribe_to_events_non_message_type(monkeypatch):
         conn = RedisConnection(host="localhost", port=6379, db=0)
 
         pubsub = MagicMock()
-        pubsub.listen.return_value = iter([
-            {"type": "subscribe"},  # Non-message type should be skipped
-            {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "fifo"}'}
-        ])
+        pubsub.listen.return_value = iter(
+            [
+                {"type": "subscribe"},  # Non-message type should be skipped
+                {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "fifo"}'},
+            ]
+        )
         conn.connection.pubsub.return_value = pubsub
 
         # Set shutdown after processing to exit loop
@@ -279,6 +282,7 @@ def test_subscribe_to_events_non_message_type(monkeypatch):
         # Use side effect to set shutdown after first call
         original_is_set = conn._shutdown_event.is_set
         call_count = [0]
+
         def mock_is_set():
             call_count[0] += 1
             if call_count[0] > 2:  # Allow a few calls then shutdown
@@ -297,14 +301,15 @@ def test_subscribe_to_events_unknown_queue_type(monkeypatch):
         conn = RedisConnection(host="localhost", port=6379, db=0)
 
         pubsub = MagicMock()
-        pubsub.listen.return_value = iter([
-            {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "unknown"}'}
-        ])
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "unknown"}'}]
+        )
         conn.connection.pubsub.return_value = pubsub
 
         # Set shutdown after processing to exit loop
         call_count = [0]
         original_is_set = conn._shutdown_event.is_set
+
         def mock_is_set():
             call_count[0] += 1
             if call_count[0] > 2:  # Allow a few calls then shutdown
@@ -326,14 +331,13 @@ def test_subscribe_to_events_delete_nonexistent_queue(monkeypatch):
         conn = RedisConnection(host="localhost", port=6379, db=0)
 
         pubsub = MagicMock()
-        pubsub.listen.return_value = iter([
-            {"type": "message", "data": b'{"event": "delete", "queue": "nonexistent"}'}
-        ])
+        pubsub.listen.return_value = iter([{"type": "message", "data": b'{"event": "delete", "queue": "nonexistent"}'}])
         conn.connection.pubsub.return_value = pubsub
 
         # Set shutdown after processing to exit loop
         call_count = [0]
         original_is_set = conn._shutdown_event.is_set
+
         def mock_is_set():
             call_count[0] += 1
             if call_count[0] > 2:  # Allow a few calls then shutdown
@@ -385,14 +389,15 @@ def test_subscribe_to_events_declare_stack_queue(monkeypatch):
         conn = RedisConnection(host="localhost", port=6379, db=0)
 
         pubsub = MagicMock()
-        pubsub.listen.return_value = iter([
-            {"type": "message", "data": b'{"event": "declare", "queue": "stack_q", "queue_type": "stack"}'}
-        ])
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "stack_q", "queue_type": "stack"}'}]
+        )
         conn.connection.pubsub.return_value = pubsub
 
         # Set shutdown after processing to exit loop
         call_count = [0]
         original_is_set = conn._shutdown_event.is_set
+
         def mock_is_set():
             call_count[0] += 1
             if call_count[0] > 2:  # Allow a few calls then shutdown
@@ -412,14 +417,15 @@ def test_subscribe_to_events_declare_priority_queue(monkeypatch):
         conn = RedisConnection(host="localhost", port=6379, db=0)
 
         pubsub = MagicMock()
-        pubsub.listen.return_value = iter([
-            {"type": "message", "data": b'{"event": "declare", "queue": "priority_q", "queue_type": "priority"}'}
-        ])
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "priority_q", "queue_type": "priority"}'}]
+        )
         conn.connection.pubsub.return_value = pubsub
 
         # Set shutdown after processing to exit loop
         call_count = [0]
         original_is_set = conn._shutdown_event.is_set
+
         def mock_is_set():
             call_count[0] += 1
             if call_count[0] > 2:  # Allow a few calls then shutdown

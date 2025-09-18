@@ -317,7 +317,5 @@ def test_create_consumer_backend():
 
         mock_consumer = MagicMock()
         with patch("mindtrace.jobs.redis.client.RedisConsumerBackend") as mock_backend_cls:
-            backend = client.create_consumer_backend(mock_consumer, "test_queue")
-            mock_backend_cls.assert_called_once_with(
-                "test_queue", mock_consumer, host="localhost", port=6379, db=0
-            )
+            client.create_consumer_backend(mock_consumer, "test_queue")
+            mock_backend_cls.assert_called_once_with("test_queue", mock_consumer, host="localhost", port=6379, db=0)
