@@ -324,7 +324,7 @@ class BaslerCameraBackend(CameraBackend):
 
                         if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
                             self.camera_name = device.GetUserDefinedName()
-                            self.logger.info(
+                            self.logger.debug(
                                 f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
                             )
 
@@ -439,7 +439,7 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
 
-            self.logger.info(f"Basler camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
+            self.logger.debug(f"Basler camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
         except Exception as e:
             self.logger.error(f"Failed to configure Basler camera '{self.camera_name}': {str(e)}")
@@ -449,11 +449,10 @@ class BaslerCameraBackend(CameraBackend):
         """Get image quality enhancement setting."""
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool):
         """Set image quality enhancement setting."""
         self.img_quality_enhancement = value
-        self.logger.info(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
-        return True
+        self.logger.debug(f"Image quality enhancement set to {value} for camera '{self.camera_name}'")
 
     async def get_exposure_range(self) -> List[Union[int, float]]:
         """Get the supported exposure time range in microseconds.
@@ -503,14 +502,11 @@ class BaslerCameraBackend(CameraBackend):
             # Return reasonable default if exposure feature is not available
             return 20000.0  # 20ms default
 
-    async def set_exposure(self, exposure: Union[int, float]) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure time in microseconds.
 
         Args:
             exposure_value: Exposure time in microseconds
-
-        Returns:
-            True if exposure was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -533,19 +529,16 @@ class BaslerCameraBackend(CameraBackend):
             await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
 
             actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
-            success = abs(actual_exposure - exposure) < 0.01 * exposure
-
-            if not success:
-                self.logger.warning(f"Exposure setting verification failed for camera '{self.camera_name}'")
-
-            return success
+            if not (abs(actual_exposure - exposure) < 0.01 * max(1.0, float(exposure))):
+                raise HardwareOperationError(
+                    f"Exposure verification failed for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure}"
+                )
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
-            self.logger.warning(f"Exposure setting not available for camera '{self.camera_name}': {str(e)}")
-            # Return True if exposure feature is not available (graceful degradation)
-            return True
+            self.logger.error(f"Exposure setting failed for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set exposure: {str(e)}")
 
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
@@ -578,14 +571,11 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting trigger mode for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get trigger mode: {str(e)}")
 
-    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous"):
         """Set the camera's trigger mode for image acquisition.
 
         Args:
             triggermode: Trigger mode ("continuous" or "trigger")
-
-        Returns:
-            True if mode was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -614,8 +604,7 @@ class BaslerCameraBackend(CameraBackend):
 
                 self.triggermode = triggermode
 
-            self.logger.info(f"Trigger mode set to '{triggermode}' for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Trigger mode set to '{triggermode}' for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -623,14 +612,14 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error setting trigger mode for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set trigger mode: {str(e)}")
 
-    async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
+    async def capture(self) -> np.ndarray:
         """Capture a single image from the camera.
 
         In continuous mode, returns the latest available frame.
         In trigger mode, executes a software trigger and waits for the image.
 
         Returns:
-            Tuple of (success, image_array) where image_array is BGR format
+            Image array in BGR format
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -648,7 +637,7 @@ class BaslerCameraBackend(CameraBackend):
 
             for i in range(self.retrieve_retry_count):
                 if i > 0:
-                    self.logger.info(
+                    self.logger.debug(
                         f"Retrying capture {i + 1} of {self.retrieve_retry_count} for camera '{self.camera_name}'"
                     )
 
@@ -673,7 +662,7 @@ class BaslerCameraBackend(CameraBackend):
                             image = await self._enhance_image(image)
 
                         await self._sdk(grab_result.Release, timeout=self._op_timeout_s)
-                        return True, image
+                        return image
                     else:
                         error_desc = await self._sdk(grab_result.ErrorDescription, timeout=self._op_timeout_s)
                         self.logger.warning(f"Grab failed for camera '{self.camera_name}': {error_desc}")
@@ -738,20 +727,17 @@ class BaslerCameraBackend(CameraBackend):
             return False
 
         try:
-            status, img = await self.capture()
-            return status and img is not None and img.shape[0] > 0 and img.shape[1] > 0
+            img = await self.capture()
+            return img is not None and img.shape[0] > 0 and img.shape[1] > 0
         except Exception as e:
             self.logger.warning(f"Connection check failed for camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def import_config(self, config_path: str) -> bool:
+    async def import_config(self, config_path: str):
         """Import camera configuration from common JSON format.
 
         Args:
             config_path: Path to configuration file
-
-        Returns:
-            True if successful
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -952,11 +938,10 @@ class BaslerCameraBackend(CameraBackend):
                     success_count += 1
                     total_settings += 1
 
-            self.logger.info(
+            self.logger.debug(
                 f"Configuration imported from '{config_path}' for camera '{self.camera_name}': "
                 f"{success_count}/{total_settings} settings applied successfully"
             )
-            return True
 
         except CameraConfigurationError:
             raise
@@ -964,14 +949,11 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error importing configuration for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to import configuration: {str(e)}")
 
-    async def export_config(self, config_path: str) -> bool:
+    async def export_config(self, config_path: str):
         """Export current camera configuration to common JSON format.
 
         Args:
             config_path: Path where to save configuration file
-
-        Returns:
-            True if successful
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1082,16 +1064,15 @@ class BaslerCameraBackend(CameraBackend):
             with open(config_path, "w") as f:
                 json.dump(config_data, f, indent=2)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Configuration exported to '{config_path}' for camera '{self.camera_name}' using common JSON format"
             )
-            return True
 
         except Exception as e:
             self.logger.error(f"Error exporting configuration for camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to export configuration: {str(e)}")
 
-    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI) for image acquisition.
 
         Args:
@@ -1099,9 +1080,6 @@ class BaslerCameraBackend(CameraBackend):
             y: Y offset from sensor top-left
             width: ROI width
             height: ROI height
-
-        Returns:
-            True if ROI was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1150,8 +1128,7 @@ class BaslerCameraBackend(CameraBackend):
                 await self._sdk(self.camera.OffsetX.SetValue, x, timeout=self._op_timeout_s)
                 await self._sdk(self.camera.OffsetY.SetValue, y, timeout=self._op_timeout_s)
 
-            self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -1188,11 +1165,8 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get ROI: {str(e)}")
 
-    async def reset_ROI(self) -> bool:
+    async def reset_ROI(self):
         """Reset ROI to maximum sensor area.
-
-        Returns:
-            True if successful
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1219,21 +1193,17 @@ class BaslerCameraBackend(CameraBackend):
                 await self._sdk(self.camera.Width.SetValue, max_width, timeout=self._op_timeout_s)
                 await self._sdk(self.camera.Height.SetValue, max_height, timeout=self._op_timeout_s)
 
-            self.logger.info(f"ROI reset to maximum for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"ROI reset to maximum for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error resetting ROI for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to reset ROI: {str(e)}")
 
-    async def set_gain(self, gain: float) -> bool:
+    async def set_gain(self, gain: float):
         """Set the camera's gain value.
 
         Args:
             gain: Gain value (camera-specific range)
-
-        Returns:
-            True if gain was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1254,8 +1224,7 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
-            self.logger.info(f"Gain set to {gain} for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Gain set to {gain} for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
             raise  # Re-raise these specific errors
@@ -1312,7 +1281,7 @@ class BaslerCameraBackend(CameraBackend):
             return [1.0, 16.0]  # Common gain range
 
     # Network-related functionality for GigE cameras
-    async def set_bandwidth_limit(self, limit_mbps: Optional[float]) -> bool:
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps."""
         if not self.initialized or not self.camera:
             self.logger.error(f"Camera '{self.camera_name}' not initialized")
@@ -1332,22 +1301,20 @@ class BaslerCameraBackend(CameraBackend):
                     await self._sdk(
                         self.camera.DeviceLinkThroughputLimit.SetValue, limit_bps, timeout=self._op_timeout_s
                     )
-                    self.logger.info(f"Set bandwidth limit to {limit_mbps} Mbps for camera '{self.camera_name}'")
-                    return True
+                    self.logger.debug(f"Set bandwidth limit to {limit_mbps} Mbps for camera '{self.camera_name}'")
                 elif limit_mbps is None:
                     # Disable bandwidth limiting
                     await self._sdk(
                         self.camera.DeviceLinkThroughputLimitMode.SetValue, "Off", timeout=self._op_timeout_s
                     )
-                    self.logger.info(f"Disabled bandwidth limit for camera '{self.camera_name}'")
-                    return True
+                    self.logger.debug(f"Disabled bandwidth limit for camera '{self.camera_name}'")
             else:
-                self.logger.warning(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
-                return False
+                self.logger.error(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
+                raise NotImplementedError(f"Bandwidth limiting not supported for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting bandwidth limit for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise HardwareOperationError(f"Failed to set bandwidth limit: {str(e)}")
 
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit in Mbps."""
@@ -1377,7 +1344,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting bandwidth limit for camera '{self.camera_name}': {str(e)}")
             raise RuntimeError(f"Failed to get bandwidth limit: {str(e)}")
 
-    async def set_packet_size(self, size: int) -> bool:
+    async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization."""
         if not self.initialized or not self.camera:
             self.logger.error(f"Camera '{self.camera_name}' not initialized")
@@ -1388,15 +1355,14 @@ class BaslerCameraBackend(CameraBackend):
 
             if hasattr(self.camera, "GevSCPSPacketSize"):
                 await self._sdk(self.camera.GevSCPSPacketSize.SetValue, size, timeout=self._op_timeout_s)
-                self.logger.info(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
-                return True
+                self.logger.debug(f"Set packet size to {size} bytes for camera '{self.camera_name}'")
             else:
-                self.logger.warning(f"Packet size control not supported for camera '{self.camera_name}'")
-                return False
+                self.logger.error(f"Packet size control not supported for camera '{self.camera_name}'")
+                raise NotImplementedError(f"Packet size control not supported for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting packet size for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise HardwareOperationError(f"Failed to set packet size: {str(e)}")
 
     async def get_packet_size(self) -> int:
         """Get current packet size."""
@@ -1417,7 +1383,7 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting packet size for camera '{self.camera_name}': {str(e)}")
             raise RuntimeError(f"Failed to get packet size: {str(e)}")
 
-    async def set_inter_packet_delay(self, delay_ticks: int) -> bool:
+    async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control."""
         if not self.initialized or not self.camera:
             self.logger.error(f"Camera '{self.camera_name}' not initialized")
@@ -1428,15 +1394,16 @@ class BaslerCameraBackend(CameraBackend):
 
             if hasattr(self.camera, "GevSCPD"):
                 await self._sdk(self.camera.GevSCPD.SetValue, delay_ticks, timeout=self._op_timeout_s)
-                self.logger.info(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
-                return True
+                self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
             else:
-                self.logger.warning(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
-                return False
+                self.logger.error(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
+                raise NotImplementedError(
+                    f"Inter-packet delay control not supported for camera '{self.camera_name}'"
+                )
 
         except Exception as e:
             self.logger.error(f"Error setting inter-packet delay for camera '{self.camera_name}': {str(e)}")
-            return False
+            raise HardwareOperationError(f"Failed to set inter-packet delay: {str(e)}")
 
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay."""
@@ -1569,14 +1536,11 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting current pixel format for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get current pixel format: {str(e)}")
 
-    async def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str):
         """Set pixel format.
 
         Args:
             pixel_format: Pixel format to set
-
-        Returns:
-            True if pixel format was set successfully, False otherwise
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1600,8 +1564,7 @@ class BaslerCameraBackend(CameraBackend):
             async with self._grabbing_suspended():
                 await self._sdk(self.camera.PixelFormat.SetValue, pixel_format, timeout=self._op_timeout_s)
 
-            self.logger.info(f"Pixel format set to '{pixel_format}' for camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Pixel format set to '{pixel_format}' for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -1643,14 +1606,11 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.error(f"Error getting white balance for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to get white balance: {str(e)}")
 
-    async def set_auto_wb_once(self, value: str) -> bool:
+    async def set_auto_wb_once(self, value: str):
         """Set the white balance auto mode.
 
         Args:
             value: White balance mode ("off", "once", "continuous")
-
-        Returns:
-            True if white balance mode was set successfully
 
         Raises:
             CameraConnectionError: If camera is not initialized
@@ -1674,8 +1634,10 @@ class BaslerCameraBackend(CameraBackend):
                 self.camera.Open()
 
             if self.camera.BalanceWhiteAuto.GetAccessMode() != genicam.RW:
-                self.logger.warning(f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'")
-                return False
+                self.logger.error(f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'")
+                raise HardwareOperationError(
+                    f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'"
+                )
 
             if value == "off":
                 await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)
@@ -1693,17 +1655,17 @@ class BaslerCameraBackend(CameraBackend):
                 )
 
             actual_mode = await self._sdk(self.camera.BalanceWhiteAuto.GetValue, timeout=self._op_timeout_s)
-            success = actual_mode == target_mode
-
-            if success:
-                self.logger.info(f"White balance mode set to '{actual_mode}' for camera '{self.camera_name}'")
+            if actual_mode == target_mode:
+                self.logger.debug(f"White balance mode set to '{actual_mode}' for camera '{self.camera_name}'")
             else:
-                self.logger.warning(
+                self.logger.error(
                     f"Failed to set white balance mode for camera '{self.camera_name}'. "
                     f"Target: {target_mode}, Actual: {actual_mode}"
                 )
-
-            return success
+                raise HardwareOperationError(
+                    f"Failed to set white balance mode for camera '{self.camera_name}'. "
+                    f"Target: {target_mode}, Actual: {actual_mode}"
+                )
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
