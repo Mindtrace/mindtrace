@@ -1185,10 +1185,18 @@ def test_prod_create_gcp_storage_duplicates_and_creds_errors_and_success(tmp_pat
     with pytest.raises(StorageAlreadyExistsError):
         ls.create_gcp_storage(project_id=1, bucket="b", prefix="p", storage_type="import")
 
-    # missing creds
+    # missing creds (explicit path to avoid environment/config defaults)
     ls.get_project = lambda project_name=None, project_id=None: Proj()  # type: ignore
+    missing = tmp_path / "missing.json"
+    assert not missing.exists()
     with pytest.raises(CredentialsNotFoundError):
-        ls.create_gcp_storage(project_id=1, bucket="bx", prefix="px", storage_type="import")
+        ls.create_gcp_storage(
+            project_id=1,
+            bucket="bx",
+            prefix="px",
+            storage_type="import",
+            google_application_credentials=str(missing),
+        )
 
     # invalid json
     bad = tmp_path / "bad.json"
