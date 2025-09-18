@@ -43,6 +43,7 @@ class MINDTRACE_MINIO(BaseModel):
 
 class MINDTRACE_CLUSTER(BaseModel):
     DEFAULT_REDIS_URL: str
+    MINIO_REGISTRY_URI: str
     MINIO_ENDPOINT: str
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: SecretStr

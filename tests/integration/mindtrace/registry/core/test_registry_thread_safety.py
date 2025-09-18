@@ -20,7 +20,7 @@ def minio_client():
     client = Minio(
         endpoint=config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"],
         access_key=config["MINDTRACE_MINIO"]["MINIO_ACCESS_KEY"],
-        secret_key=config["MINDTRACE_MINIO"]["MINIO_SECRET_KEY"],
+        secret_key=config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY"),
         secure=False,
     )
     return client

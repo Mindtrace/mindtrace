@@ -56,13 +56,14 @@ class ClusterManager(Gateway):
             unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
         )
         self.worker_status_database.initialize_sync()
+        self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
         self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER"]["MINIO_ENDPOINT"]
         self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
-        self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER"]["MINIO_SECRET_KEY"]
+        self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
         self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
         self.nodes = []
         minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry_cluster",
+            uri=self.worker_registry_uri,
             endpoint=self.worker_registry_endpoint,
             access_key=self.worker_registry_access_key,
             secret_key=self.worker_registry_secret_key,
