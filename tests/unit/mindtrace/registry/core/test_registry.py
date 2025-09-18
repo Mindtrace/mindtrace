@@ -227,7 +227,9 @@ def test_save_and_load_path(registry, test_path):
     assert registry.has_object("test:path", "1.0.0")
 
     # Load the path
-    with TemporaryDirectory(dir=Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()) as temp_dir:
+    with TemporaryDirectory(
+        dir=Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
+    ) as temp_dir:
         loaded_path = registry.load("test:path", version="1.0.0", output_dir=temp_dir)
 
         # Verify the loaded path is a Path object
@@ -1424,9 +1426,11 @@ def test_download_with_materializer(registry):
 
         # Create a test config
         config = Config(
-            {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-            "CUSTOM_KEY": "custom_value",
-            })
+            {
+                "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+                "CUSTOM_KEY": "custom_value",
+            }
+        )
 
         # Save object with ConfigArchiver materializer
         source_reg.save("test:config", config, version="1.0.0")
@@ -1496,9 +1500,11 @@ def test_download_vs_dict_assignment(registry):
 
         # Create a test config
         config = Config(
-            {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-            "CUSTOM_KEY": "custom_value",
-            })
+            {
+                "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+                "CUSTOM_KEY": "custom_value",
+            }
+        )
 
         # Save object to source registry
         source_reg.save("test:config", config, version="1.0.0")
@@ -1589,9 +1595,11 @@ def test_distributed_lock_save_concurrent(registry):
 
     # Create a test object
     test_obj = Config(
-        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-        "CUSTOM_KEY": "custom_value",
-        })
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
+    )
 
     # Function to perform save with delay
     def save_with_delay(i):
@@ -1618,10 +1626,11 @@ def test_distributed_lock_save_conflict(registry):
     from mindtrace.registry.core.exceptions import LockTimeoutError
 
     test_obj = Config(
-        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-        "CUSTOM_KEY": "custom_value",
-        })
-    
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
+    )
 
     # First save should succeed
     registry.save("test:conflict", test_obj, version="1.0.0")
@@ -1654,9 +1663,11 @@ def test_distributed_lock_load_concurrent(registry):
 
     # Create and save a test object
     test_obj = Config(
-        {"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
-        "CUSTOM_KEY": "custom_value",
-        })
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
+    )
     registry.save("test:concurrent:load", test_obj)
 
     # Function to perform load

@@ -20,4 +20,3 @@ def expand_tilde(obj: Any) -> Any:
         t = type(obj)
         return t(expand_tilde(v) for v in obj)
     return obj
-
