@@ -20,8 +20,7 @@ def test_sync_camera_capture_and_config():
         assert cam.is_connected
 
         # Configure gain/roi (sync paths) - Test actual values, not just types
-        ok = cam.set_gain(1.5)
-        assert ok is True, "Gain setting should succeed"
+        cam.set_gain(1.5)
         actual_gain = cam.get_gain()
         assert actual_gain == 1.5, f"Expected gain 1.5, got {actual_gain}"
 
@@ -72,8 +71,7 @@ def test_sync_camera_capture_and_config():
         cam.get_pixel_format()
         test_format = fmts[0] if fmts else "BGR8"
 
-        ok = cam.set_pixel_format(test_format)
-        assert ok is True, f"Setting pixel format '{test_format}' should succeed"
+        cam.set_pixel_format(test_format)
 
         current_fmt = cam.get_pixel_format()
 
@@ -96,42 +94,40 @@ def test_sync_camera_capture_and_config():
         wb_modes = cam.get_available_white_balance_modes()
         assert isinstance(wb_modes, list)
         if wb_modes:
-            assert cam.set_white_balance(wb_modes[0]) in {True, False}
-            cur_wb = cam.get_white_balance()
-            assert isinstance(cur_wb, str)
+            cam.set_white_balance(wb_modes[0])
+        cur_wb = cam.get_white_balance()
+        assert isinstance(cur_wb, str)
 
         # Image enhancement toggle
-        assert cam.set_image_enhancement(True) in {True, False}
+        cam.set_image_enhancement(True)
         _ = cam.get_image_enhancement()
 
         # Config save/load - Test actual configuration persistence
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
             config_path = tf.name
 
-        try:
-            # Save configuration
-            save_result = cam.save_config(config_path)
-            assert save_result is True, "Configuration save should succeed"
+            try:
+                # Save configuration
+                cam.save_config(config_path)
 
-            # Verify config file was created and contains valid JSON
-            import os
+                # Verify config file was created and contains valid JSON
+                import os
 
-            assert os.path.exists(config_path), "Configuration file should exist"
-            assert os.path.getsize(config_path) > 0, "Configuration file should not be empty"
+                assert os.path.exists(config_path), "Configuration file should exist"
+                assert os.path.getsize(config_path) > 0, "Configuration file should not be empty"
 
-            # Verify it's valid JSON
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
-            assert isinstance(config_data, dict), "Configuration should be a dictionary"
+                # Verify it's valid JSON
+                with open(config_path, "r") as f:
+                    config_data = json.load(f)
+                assert isinstance(config_data, dict), "Configuration should be a dictionary"
 
-            # Load configuration back
-            load_result = cam.load_config(config_path)
-            assert load_result is True, "Configuration load should succeed"
+                # Load configuration back
+                cam.load_config(config_path)
 
-        finally:
-            # Clean up
-            if os.path.exists(config_path):
-                os.unlink(config_path)
+            finally:
+                # Clean up
+                if os.path.exists(config_path):
+                    os.unlink(config_path)
 
         # Connection / sensor info - Verify actual connectivity and info
         connection_status = cam.check_connection()
@@ -351,14 +347,9 @@ def test_camera_concurrent_operations():
             ("gain", 1.5),
         ]
 
-        results = []
         for param_name, value in configurations:
             if param_name == "gain":
-                result = cam.set_gain(value)
-                results.append(result)
-
-        # All operations should complete without errors
-        assert all(isinstance(r, bool) for r in results), "All operations should return boolean"
+                cam.set_gain(value)
 
         # Final state should be consistent
         final_gain = cam.get_gain()
@@ -377,26 +368,22 @@ def test_camera_image_enhancement():
         cam = mgr.open(cameras[0])
 
         # Test enabling enhancement
-        result = cam.set_image_enhancement(True)
-        assert isinstance(result, bool), "Enhancement setting should return boolean"
+        cam.set_image_enhancement(True)
+        enhancement_status = cam.get_image_enhancement()
+        assert enhancement_status is True, "Enhancement should be enabled"
 
-        if result:
-            enhancement_status = cam.get_image_enhancement()
-            assert enhancement_status is True, "Enhancement should be enabled"
-
-            # Capture with enhancement
-            img_enhanced = cam.capture()
-            assert_image_valid(img_enhanced)
+        # Capture with enhancement
+        img_enhanced = cam.capture()
+        assert_image_valid(img_enhanced)
 
         # Test disabling enhancement
-        result = cam.set_image_enhancement(False)
-        if result:
-            enhancement_status = cam.get_image_enhancement()
-            assert enhancement_status is False, "Enhancement should be disabled"
+        cam.set_image_enhancement(False)
+        enhancement_status = cam.get_image_enhancement()
+        assert enhancement_status is False, "Enhancement should be disabled"
 
-            # Capture without enhancement
-            img_normal = cam.capture()
-            assert_image_valid(img_normal)
+        # Capture without enhancement
+        img_normal = cam.capture()
+        assert_image_valid(img_normal)
 
     finally:
         mgr.close()
@@ -459,15 +446,13 @@ def test_camera_properties_roi_and_explicit_context():
 
         # Test setting exposure within range
         test_exposure = (min_exposure + max_exposure) / 2
-        set_result = cam.set_exposure(test_exposure)
-        assert set_result is True, f"Setting exposure to {test_exposure} should succeed"
+        cam.set_exposure(test_exposure)
         actual_exposure = cam.get_exposure()
         assert abs(actual_exposure - test_exposure) < 100, f"Expected ~{test_exposure}, got {actual_exposure}"
 
         # ROI set/reset
         roi_before = cam.get_roi()
-        ok = cam.set_roi(0, 0, max(1, roi_before["width"] // 2), max(1, roi_before["height"] // 2))
-        assert ok in {True, False}
+        cam.set_roi(0, 0, max(1, roi_before["width"] // 2), max(1, roi_before["height"] // 2))
         _ = cam.reset_roi()
 
         # Explicit context enter/exit
@@ -487,7 +472,7 @@ def test_camera_configure_backend_and_close():
         cam = mgr.open(name)
 
         # Configure multiple settings via wrapper
-        cfg_ok = cam.configure(
+        cam.configure(
             exposure=20000,
             gain=1.0,
             roi=(0, 0, 10, 10),
@@ -496,7 +481,6 @@ def test_camera_configure_backend_and_close():
             white_balance="auto",
             image_enhancement=True,
         )
-        assert cfg_ok in {True, False}
 
         # backend property
         _ = cam.backend

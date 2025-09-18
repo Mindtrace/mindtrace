@@ -426,8 +426,8 @@ class MockBaslerCameraBackend(CameraBackend):
             return False
 
         try:
-            status, img = await self.capture()
-            return status and img is not None and img.shape[0] > 0 and img.shape[1] > 0
+            img = await self.capture()
+            return img is not None and img.shape[0] > 0 and img.shape[1] > 0
         except Exception as e:
             self.logger.warning(f"Connection check failed for mock camera '{self.camera_name}': {str(e)}")
             return False

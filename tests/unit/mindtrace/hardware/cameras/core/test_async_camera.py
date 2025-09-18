@@ -23,8 +23,7 @@ async def test_async_camera_configure_and_capture():
         assert cam.is_connected
 
         # Configure exposure
-        ok = await cam.set_exposure(1000)
-        assert ok is True
+        await cam.set_exposure(1000)
         exp = await cam.get_exposure()
         assert isinstance(exp, float)
 
@@ -87,7 +86,7 @@ async def test_async_camera_configure_all_settings(monkeypatch):
         backend.set_auto_wb_once = _set_wb  # type: ignore[attr-defined]
         backend.set_image_quality_enhancement = _set_ie  # type: ignore[attr-defined]
 
-        ok = await cam.configure(
+        await cam.configure(
             exposure=1234,
             gain=1.5,
             roi=(1, 2, 3, 4),
@@ -96,7 +95,6 @@ async def test_async_camera_configure_all_settings(monkeypatch):
             white_balance="auto",
             image_enhancement=True,
         )
-        assert ok is True
     finally:
         await manager.close(None)
 
@@ -124,7 +122,7 @@ async def test_async_camera_capture_retries_then_success(monkeypatch):
                 raise CameraTimeoutError("timeout")
             import numpy as np
 
-            return True, np.zeros((8, 8, 3), dtype=np.uint8)
+            return np.zeros((8, 8, 3), dtype=np.uint8)
 
         cam.backend.retrieve_retry_count = 3  # type: ignore[attr-defined]
         monkeypatch.setattr(cam.backend, "capture", _cap, raising=False)
@@ -219,10 +217,10 @@ async def test_async_camera_hdr_partial_success_and_failure(monkeypatch):
         import numpy as np
 
         async def _cap_ok():
-            return True, np.zeros((4, 4, 3), dtype=np.uint8)
+            return np.zeros((4, 4, 3), dtype=np.uint8)
 
         async def _cap_fail():
-            return False, None
+            return None
 
         # Partial success: two levels, one ok, one fail
         monkeypatch.setattr(cam.backend, "get_exposure", _get_exp, raising=False)
@@ -248,7 +246,7 @@ async def test_async_camera_hdr_partial_success_and_failure(monkeypatch):
 
         # All fail path -> raises CameraCaptureError
         async def _cap_all_fail():
-            return False, None
+            return None
 
         monkeypatch.setattr(cam.backend, "capture", _cap_all_fail, raising=False)
         with pytest.raises(CameraCaptureError):
@@ -396,8 +394,8 @@ class TestAsyncCameraConcurrentOperations:
 
             # All should complete without deadlock
             assert len(results) == 3
-            # Mock backend should return True for successful operations
-            assert all(r is True or isinstance(r, Exception) for r in results)
+            # Mock backend should return None for successful operations or Exception for failures
+            assert all(r is None or isinstance(r, Exception) for r in results)
 
         finally:
             await manager.close(None)
@@ -425,7 +423,7 @@ class TestAsyncCameraConcurrentOperations:
             image, config_result = await asyncio.gather(capture_task, config_task)
 
             assert isinstance(image, np.ndarray)
-            assert config_result is True
+            assert config_result is None
 
         finally:
             await manager.close(None)
