@@ -489,3 +489,42 @@ def test_camera_configure_backend_and_close():
         cam.close()
     finally:
         mgr.close()
+
+
+def test_camera_call_in_loop_method():
+    """Test the _call_in_loop helper method for synchronous functions."""
+    mgr = CameraManager(include_mocks=True)
+    try:
+        cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
+        cam = mgr.open(cameras[0])
+        
+        # Test 1: Simple function execution
+        def simple_func(x, y):
+            return x + y
+        
+        result = cam._call_in_loop(simple_func, 5, 10)
+        assert result == 15, "Should execute simple function in loop thread"
+        
+        # Test 2: Function with keyword arguments
+        def func_with_kwargs(a, b=10, c=20):
+            return a + b + c
+        
+        result = cam._call_in_loop(func_with_kwargs, 5, b=15, c=25)
+        assert result == 45, "Should handle keyword arguments"
+        
+        # Test 3: Exception handling
+        def failing_func():
+            raise ValueError("Test exception")
+        
+        with pytest.raises(ValueError, match="Test exception"):
+            cam._call_in_loop(failing_func)
+            
+        # Test 4: Function that returns complex objects
+        def create_dict():
+            return {"key": "value", "number": 42}
+        
+        result = cam._call_in_loop(create_dict)
+        assert result == {"key": "value", "number": 42}
+        
+    finally:
+        mgr.close()
