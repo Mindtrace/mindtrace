@@ -58,6 +58,30 @@ class Camera(Mindtrace):
         return fut.result()
 
     def _call_in_loop(self, func, *args, **kwargs):
+        """Execute a synchronous function in the event loop thread.
+        
+        This is a dormant utility method for future backend operations that require synchronous execution in the loop 
+        thread context. Currently unused but provides infrastructure for scenarios such as:
+        - Backend hardware reset operations
+        - Synchronous driver initialization
+        - Thread-affine resource management
+        - Hardware-specific sync operations (temperature sensors, diagnostics, etc.)
+        
+        Args:
+            func: Synchronous function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            The result of func(*args, **kwargs) executed in the loop thread
+            
+        Raises:
+            Any exception raised by func is propagated to the caller
+            
+        Note:
+            Complements _submit() which handles coroutines. Use this for synchronous functions that must run in the 
+            event loop thread for thread safety.
+        """
         result_future: Future = Future()
 
         def _run():
