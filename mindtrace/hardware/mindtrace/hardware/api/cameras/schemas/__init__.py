@@ -38,6 +38,13 @@ from mindtrace.hardware.api.cameras.schemas.network_schemas import (
     GetNetworkDiagnosticsSchema,
     SetBandwidthLimitSchema,
 )
+from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
+    GetActiveStreamsSchema,
+    StopAllStreamsSchema,
+    StreamStartSchema,
+    StreamStatusSchema,
+    StreamStopSchema,
+)
 
 # All schemas for easy import - maintains backward compatibility
 ALL_SCHEMAS = {
@@ -72,6 +79,12 @@ ALL_SCHEMAS = {
     "get_bandwidth_settings": GetBandwidthSettingsSchema,
     "set_bandwidth_limit": SetBandwidthLimitSchema,
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
+    # Streaming
+    "stream_start": StreamStartSchema,
+    "stream_stop": StreamStopSchema,
+    "stream_status": StreamStatusSchema,
+    "get_active_streams": GetActiveStreamsSchema,
+    "stop_all_streams": StopAllStreamsSchema,
 }
 
 __all__ = [
@@ -106,6 +119,12 @@ __all__ = [
     "GetBandwidthSettingsSchema",
     "SetBandwidthLimitSchema",
     "GetNetworkDiagnosticsSchema",
+    # Streaming
+    "StreamStartSchema",
+    "StreamStopSchema",
+    "StreamStatusSchema",
+    "GetActiveStreamsSchema",
+    "StopAllStreamsSchema",
     # All schemas dictionary
     "ALL_SCHEMAS",
 ]
