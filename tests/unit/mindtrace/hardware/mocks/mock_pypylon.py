@@ -360,6 +360,31 @@ def create_fake_pypylon():
         def OnOpened(self, camera):
             camera.MaxNumBuffer.SetValue(1)
 
+    # Image format converter and result
+    class PylonImage:
+        """Mock pypylon image result."""
+        
+        def __init__(self, image_array):
+            self._array = image_array
+            
+        def GetArray(self):
+            """Return the numpy array."""
+            return self._array
+
+    class ImageFormatConverter:
+        """Mock image format converter."""
+        
+        def __init__(self):
+            self.OutputPixelFormat = None
+            self.OutputBitAlignment = None
+            
+        def Convert(self, grab_result):
+            """Convert grab result to image."""
+            # Return a PylonImage object that has GetArray() method
+            # Generate a simple test image
+            image_array = np.random.randint(0, 256, (480, 640, 3), dtype=np.uint8)
+            return PylonImage(image_array)
+
     # Grab strategies
     class GrabStrategy:
         """Base grab strategy."""

@@ -377,8 +377,8 @@ class AsyncCameraManager(Mindtrace):
                 try:
                     success = await camera.check_connection()
                     if not success:
-                        success, test_image = await camera.capture()
-                        if not success or test_image is None:
+                        test_image = await camera.capture()
+                        if test_image is None:
                             await camera.close()
                             raise CameraConnectionError(
                                 f"Camera '{camera_name}' failed connection test - could not capture test image"

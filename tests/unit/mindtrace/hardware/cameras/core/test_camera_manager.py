@@ -60,21 +60,41 @@ def test_discover_details_records_sync():
             assert k in sample
 
 
-def test_open_default_without_mocks_raises():
-    mgr = CameraManager(include_mocks=False)
+def test_open_default_no_cameras_raises(monkeypatch):
+    """Test that opening default camera raises when no cameras are available."""
+    # Mock all backends to return empty results (no cameras available)
     try:
-        # Check if real cameras are available
-        available_cameras = mgr.discover()
-        if not available_cameras:
-            # Only test for exception if no real cameras are present
-            with pytest.raises(CameraNotFoundError):
-                mgr.open(None)
-        else:
-            # If real cameras exist, verify that open(None) succeeds and returns a camera
-            cam = mgr.open(None)
-            assert cam is not None
-            assert cam.name in available_cameras
-            mgr.close(cam.name)
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+        monkeypatch.setattr(
+            BaslerCameraBackend,
+            "get_available_cameras", 
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+    
+    try:
+        from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+        monkeypatch.setattr(
+            OpenCVCameraBackend,
+            "get_available_cameras", 
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+    
+    # Use include_mocks=True but mock the mock backend to return empty too
+    mgr = CameraManager(include_mocks=True)
+    
+    # Mock discover to return empty list
+    monkeypatch.setattr(mgr, "discover", lambda: [])
+    
+    try:
+        # Should raise CameraNotFoundError when no cameras are available
+        with pytest.raises(CameraNotFoundError, match="No cameras available to open by default"):
+            mgr.open(None)
     finally:
         mgr.close()
 
