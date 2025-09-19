@@ -613,9 +613,10 @@ def test_launch_worker_with_delay():
         assert worker_status.status == WorkerStatusEnum.IDLE.value
 
         # Test query_worker_status for initial state
+        # Note: Job may have already started processing, so accept both IDLE and RUNNING
         query_status = cluster_cm.query_worker_status(worker_id=worker_id)
         assert query_status.worker_id == worker_id
-        assert query_status.status == WorkerStatusEnum.IDLE.value
+        assert query_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
 
         # Wait for the job to be processed
         time.sleep(1)
