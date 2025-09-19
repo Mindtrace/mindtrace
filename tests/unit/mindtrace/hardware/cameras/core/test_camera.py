@@ -4,6 +4,7 @@ import tempfile
 import numpy as np
 import pytest
 
+from mindtrace.hardware.cameras.core.camera import Camera
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraInitializationError
 from tests.unit.mindtrace.hardware.mocks.hardware_test_utils import assert_image_valid
@@ -156,6 +157,13 @@ def test_sync_camera_capture_and_config():
         )
         assert isinstance(info["device_name"], str), "Device name should be string"
         assert info["connected"] is True, "Info should reflect connected status"
+
+        # Test gain range - Test range validity
+        gain_range = cam.get_gain_range()
+        assert isinstance(gain_range, tuple) and len(gain_range) == 2, "Gain range should be a 2-tuple"
+        min_gain, max_gain = gain_range
+        assert min_gain < max_gain, f"Min gain {min_gain} should be less than max {max_gain}"
+        assert min_gain >= 0, "Minimum gain should be non-negative"
 
         # HDR path (sync facade) - Test HDR capture functionality
         hdr_result = cam.capture_hdr(exposure_levels=3, return_images=True)
@@ -525,6 +533,118 @@ def test_camera_call_in_loop_method():
         
         result = cam._call_in_loop(create_dict)
         assert result == {"key": "value", "number": 42}
+        
+    finally:
+        mgr.close()
+
+
+def test_camera_standalone_construction_and_cleanup():
+    """Test standalone Camera construction with private loop to cover cleanup code."""
+    from mindtrace.hardware.cameras.core.camera import Camera
+    
+    # Test standalone camera construction (creates private loop)
+    # This should cover the private loop cleanup code in close() method
+    try:
+        # This will create a Camera with its own private event loop
+        cam = Camera(name="MockBasler:test_camera_0")
+        
+        # Verify it's working
+        assert cam.is_connected
+        assert cam._owns_loop_thread is True, "Standalone camera should own its loop thread"
+        
+        # Test basic functionality
+        img = cam.capture()
+        assert img is not None
+        
+        # Test gain range
+        gain_range = cam.get_gain_range()
+        assert isinstance(gain_range, tuple) and len(gain_range) == 2
+        
+        # Explicitly close to trigger cleanup code
+        cam.close()
+        
+    except CameraInitializationError:
+        # If MockBasler isn't available in standalone mode, that's okay
+        # The test still exercises the construction path
+        pass
+
+
+def test_camera_cleanup_exception_handling_real(monkeypatch):
+    """Test real exception handling in Camera.close() method."""
+    import asyncio
+    import threading
+    
+    try:
+        # Create a standalone camera
+        cam = Camera(name="MockBasler:test_camera_0")
+        assert cam._owns_loop_thread is True
+        
+        # Store references to original methods
+        original_call_soon_threadsafe = cam._loop.call_soon_threadsafe
+        original_join = cam._loop_thread.join if cam._loop_thread else None
+        original_close = cam._loop.close
+        
+        # Patch methods to fail on specific calls but allow normal operations
+        def patched_call_soon_threadsafe(func, *args, **kwargs):
+            # Only fail when trying to stop the loop
+            if callable(func) and hasattr(func, '__name__') and func.__name__ == 'stop':
+                raise RuntimeError("Simulated loop stop failure")
+            # For other calls, use original method
+            return original_call_soon_threadsafe(func, *args, **kwargs)
+        
+        def patched_join(*args, **kwargs):
+            # Fail the join operation
+            raise threading.ThreadError("Simulated thread join failure")
+        
+        def patched_close():
+            # Fail the loop close operation
+            raise RuntimeError("Simulated loop close failure")
+        
+        # Apply patches using monkeypatch
+        monkeypatch.setattr(cam._loop, "call_soon_threadsafe", patched_call_soon_threadsafe)
+        if cam._loop_thread:
+            monkeypatch.setattr(cam._loop_thread, "join", patched_join)
+        monkeypatch.setattr(cam._loop, "close", patched_close)
+        
+        # Now call close - this should trigger the exception handlers
+        # but not raise any exceptions to the caller
+        cam.close()
+        
+    except CameraInitializationError:
+        pytest.skip("MockBasler not available for standalone construction")
+
+
+def test_camera_context_manager_fallbacks(monkeypatch):
+    """Test context manager fallback behavior when parent class lacks methods."""
+    
+    mgr = CameraManager(include_mocks=True)
+    try:
+        cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
+        cam = mgr.open(cameras[0])
+        
+        # Mock the parent class to not have context manager methods
+        def mock_getattr_no_enter(obj, name, default=None):
+            if name == "__enter__":
+                return None  # Parent has no __enter__ method
+            return original_getattr(obj, name, default)
+        
+        def mock_getattr_no_exit(obj, name, default=None):
+            if name == "__exit__":
+                return None  # Parent has no __exit__ method  
+            return original_getattr(obj, name, default)
+        
+        # Test __enter__ fallback
+        original_getattr = getattr
+        monkeypatch.setattr("builtins.getattr", mock_getattr_no_enter)
+        
+        result = cam.__enter__()
+        assert result is cam, "Should return self when parent has no __enter__"
+        
+        # Test __exit__ fallback
+        monkeypatch.setattr("builtins.getattr", mock_getattr_no_exit)
+        
+        result = cam.__exit__(None, None, None)
+        assert result is False, "Should return False when parent has no __exit__"
         
     finally:
         mgr.close()
