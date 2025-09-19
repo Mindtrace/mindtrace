@@ -330,3 +330,41 @@ class ConfigFileResponse(BaseResponse):
     """Response model for configuration file operations."""
 
     data: ConfigFileOperationResult
+
+
+# Streaming Responses
+class StreamInfo(BaseModel):
+    """Stream information model."""
+
+    camera: str
+    streaming: bool
+    stream_url: Optional[str] = None
+    start_time: Optional[datetime] = None
+
+
+class StreamStatus(BaseModel):
+    """Stream status model."""
+
+    camera: str
+    streaming: bool
+    connected: bool
+    stream_url: Optional[str] = None
+    uptime_seconds: Optional[float] = None
+
+
+class StreamInfoResponse(BaseResponse):
+    """Response model for stream information."""
+
+    data: StreamInfo
+
+
+class StreamStatusResponse(BaseResponse):
+    """Response model for stream status."""
+
+    data: StreamStatus
+
+
+class ActiveStreamsResponse(BaseResponse):
+    """Response model for active streams list."""
+
+    data: List[str]  # List of camera names with active streams
