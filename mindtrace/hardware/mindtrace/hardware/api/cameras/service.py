@@ -99,6 +99,7 @@ class CameraManagerService(Service):
         self.include_mocks = include_mocks
         self._camera_manager: Optional[AsyncCameraManager] = None
         self._startup_time = time.time()
+        self._active_streams: dict = {}  # Track active camera streams
 
         # Register all endpoints with their schemas
         self._register_endpoints()
@@ -117,6 +118,10 @@ class CameraManagerService(Service):
 
     async def shutdown_cleanup(self):
         """Cleanup camera manager on shutdown."""
+        # Stop all active streams
+        if hasattr(self, '_active_streams'):
+            self._active_streams.clear()
+            
         if self._camera_manager is not None:
             try:
                 await self._camera_manager.__aexit__(None, None, None)
@@ -174,6 +179,9 @@ class CameraManagerService(Service):
         self.add_endpoint("cameras/stream/status", self.get_stream_status, ALL_SCHEMAS["stream_status"])
         self.add_endpoint("cameras/stream/active", self.get_active_streams, ALL_SCHEMAS["get_active_streams"], methods=["GET"])
         self.add_endpoint("cameras/stream/stop/all", self.stop_all_streams, ALL_SCHEMAS["stop_all_streams"], methods=["POST"])
+        
+        # Video stream endpoints (serve actual video)
+        self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
 
         # Network & Bandwidth
         self.add_endpoint(
@@ -449,10 +457,68 @@ class CameraManagerService(Service):
             except Exception:
                 pixel_formats = None
 
+            try:
+                white_balance_modes = await camera_proxy.get_available_white_balance_modes()
+            except Exception:
+                white_balance_modes = None
+
+            # Get trigger modes (backend-specific implementation)
+            try:
+                backend = camera_proxy.backend
+                if hasattr(backend, 'get_trigger_modes'):
+                    trigger_modes = await backend.get_trigger_modes()
+                else:
+                    # Default trigger modes for most cameras
+                    trigger_modes = ["continuous", "triggered"]
+            except Exception:
+                trigger_modes = None
+
+            try:
+                width_range = await camera_proxy.backend.get_width_range()
+            except Exception:
+                width_range = None
+
+            try:
+                height_range = await camera_proxy.backend.get_height_range()
+            except Exception:
+                height_range = None
+
+            # Network parameters (Basler-specific)
+            try:
+                if hasattr(camera_proxy.backend, 'get_bandwidth_limit_range'):
+                    bandwidth_limit_range = await camera_proxy.backend.get_bandwidth_limit_range()
+                else:
+                    bandwidth_limit_range = None
+            except Exception:
+                bandwidth_limit_range = None
+
+            try:
+                if hasattr(camera_proxy.backend, 'get_packet_size_range'):
+                    packet_size_range = await camera_proxy.backend.get_packet_size_range()
+                else:
+                    packet_size_range = None
+            except Exception:
+                packet_size_range = None
+
+            try:
+                if hasattr(camera_proxy.backend, 'get_inter_packet_delay_range'):
+                    inter_packet_delay_range = await camera_proxy.backend.get_inter_packet_delay_range()
+                else:
+                    inter_packet_delay_range = None
+            except Exception:
+                inter_packet_delay_range = None
+
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
                 gain_range=gain_range,
                 pixel_formats=pixel_formats,
+                white_balance_modes=white_balance_modes,
+                trigger_modes=trigger_modes,
+                width_range=width_range,
+                height_range=height_range,
+                bandwidth_limit_range=bandwidth_limit_range,
+                packet_size_range=packet_size_range,
+                inter_packet_delay_range=inter_packet_delay_range,
                 supports_roi=True,  # Most cameras support ROI
                 supports_trigger=True,  # Most cameras support trigger
                 supports_hdr=True,  # Our implementation supports HDR
@@ -548,7 +614,7 @@ class CameraManagerService(Service):
                 roi_tuple = None
 
             config = CameraConfiguration(
-                exposure=await camera_proxy.get_exposure(),
+                exposure_time=await camera_proxy.get_exposure(),
                 gain=await camera_proxy.get_gain(),
                 roi=roi_tuple,
                 trigger_mode=await camera_proxy.get_trigger_mode(),
@@ -819,9 +885,16 @@ class CameraManagerService(Service):
 
             camera_proxy = await manager.open(request.camera)
             
-            # Start streaming (this would need to be implemented in the camera backend)
-            # For now, we'll return a mock response with stream info
+            # Start streaming - return the actual stream URL
+            # Use the same host and port as the API service
             stream_url = f"http://192.168.50.32:8002/stream/{request.camera.replace(':', '_')}"
+            
+            # Track this stream as active
+            self._active_streams[request.camera] = {
+                "stream_url": stream_url,
+                "start_time": datetime.utcnow(),
+                "camera_proxy": camera_proxy
+            }
             
             stream_info = StreamInfo(
                 camera=request.camera,
@@ -848,8 +921,9 @@ class CameraManagerService(Service):
             if request.camera not in manager.active_cameras:
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
-            # Stop streaming (this would need to be implemented in the camera backend)
-            # For now, we'll return success
+            # Stop streaming and remove from active streams
+            if request.camera in self._active_streams:
+                del self._active_streams[request.camera]
             
             return BoolResponse(
                 success=True, 
@@ -872,14 +946,22 @@ class CameraManagerService(Service):
             camera_proxy = await manager.open(request.camera)
             is_connected = await camera_proxy.check_connection()
             
-            # Check streaming status (this would need to be implemented in the camera backend)
-            # For now, we'll return a mock status
+            # Check if camera is actively streaming
+            is_streaming = request.camera in self._active_streams
+            stream_url = None
+            uptime_seconds = 0.0
+            
+            if is_streaming:
+                stream_info = self._active_streams[request.camera]
+                stream_url = stream_info["stream_url"]
+                uptime_seconds = (datetime.utcnow() - stream_info["start_time"]).total_seconds()
+            
             stream_status = StreamStatus(
                 camera=request.camera,
-                streaming=False,  # Would check actual streaming state
+                streaming=is_streaming,
                 connected=is_connected,
-                stream_url=None,
-                uptime_seconds=0.0
+                stream_url=stream_url,
+                uptime_seconds=uptime_seconds
             )
 
             return StreamStatusResponse(
@@ -896,9 +978,8 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
             
-            # This would need to be implemented to track active streams
-            # For now, return empty list
-            active_streams = []
+            # Return list of cameras with active streams
+            active_streams = list(self._active_streams.keys())
 
             return ActiveStreamsResponse(
                 success=True, 
@@ -914,17 +995,114 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
             
-            # This would need to be implemented to stop all active streams
-            # For now, return success
+            # Stop all active streams
+            stopped_count = len(self._active_streams)
+            self._active_streams.clear()
             
             return BoolResponse(
                 success=True, 
-                message="All streams stopped successfully", 
+                message=f"Stopped {stopped_count} active streams successfully", 
                 data=True
             )
         except Exception as e:
             self.logger.error(f"Failed to stop all streams: {e}")
             raise
+
+    async def serve_camera_stream(self, camera_name: str):
+        """Serve MJPEG video stream for a specific camera."""
+        try:
+            manager = await self._get_camera_manager()
+            
+            # Replace first underscore back to colon for camera name (Backend_device → Backend:device)
+            actual_camera_name = camera_name.replace('_', ':', 1)
+            
+            # Check if camera is active
+            if actual_camera_name not in manager.active_cameras:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail=f"Camera '{actual_camera_name}' is not initialized")
+            
+            # Don't check _active_streams since it's not shared across workers
+            # Just serve the stream if the camera is initialized
+            # The frontend will control when to show/hide the stream
+            self.logger.info(f"Serving stream for camera '{actual_camera_name}'")
+
+            camera_proxy = await manager.open(actual_camera_name)
+            
+            # Check if camera is connected
+            is_connected = await camera_proxy.check_connection()
+            if not is_connected:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail=f"Camera '{actual_camera_name}' is not connected")
+            
+            # Create MJPEG streaming response
+            from fastapi.responses import StreamingResponse
+            import asyncio
+            import time
+            
+            async def generate_mjpeg_stream():
+                """Generate MJPEG stream frames."""
+                import cv2
+                import numpy as np
+                boundary = "frame"
+                
+                while True:
+                    try:
+                        # Capture frame from camera as numpy array
+                        frame_np = await camera_proxy.capture(output_format="numpy")
+                        
+                        if frame_np is not None:
+                            # Convert numpy array to JPEG bytes
+                            # Ensure it's uint8 and RGB/BGR
+                            if frame_np.dtype != np.uint8:
+                                frame_np = (frame_np * 255).astype(np.uint8)
+                            
+                            # Convert RGB to BGR if needed (OpenCV expects BGR)
+                            if len(frame_np.shape) == 3 and frame_np.shape[2] == 3:
+                                # Assuming RGB input, convert to BGR for cv2
+                                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                            else:
+                                frame_bgr = frame_np
+                            
+                            # Encode as JPEG
+                            success, jpeg_data = cv2.imencode('.jpg', frame_bgr, 
+                                                             [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            
+                            if success:
+                                # Create MJPEG frame
+                                frame_data = jpeg_data.tobytes()
+                                yield (
+                                    f"--{boundary}\r\n"
+                                    f"Content-Type: image/jpeg\r\n"
+                                    f"Content-Length: {len(frame_data)}\r\n\r\n"
+                                ).encode() + frame_data + b"\r\n"
+                        
+                        # Control frame rate (30 FPS = ~33ms delay)
+                        await asyncio.sleep(0.033)
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Frame capture error for {actual_camera_name}: {e}")
+                        # Check if camera is still active, if not, stop streaming
+                        if actual_camera_name not in manager.active_cameras:
+                            self.logger.info(f"Camera '{actual_camera_name}' no longer active, stopping stream")
+                            break
+                        # Send error frame or continue
+                        await asyncio.sleep(0.1)
+                        continue
+            
+            return StreamingResponse(
+                generate_mjpeg_stream(),
+                media_type=f"multipart/x-mixed-replace; boundary=frame",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Failed to serve stream for '{camera_name}': {e}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
 
     # Add remaining method stubs...
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
