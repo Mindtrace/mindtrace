@@ -926,7 +926,7 @@ class BaslerCameraBackend(CameraBackend):
                             genicam.RW,
                             genicam.WO,
                         ]:
-                            available_formats = self.get_pixel_format_range()
+                            available_formats = await self.get_pixel_format_range()
                             pixel_format = config_data["pixel_format"]
                             if pixel_format in available_formats:
                                 await self._sdk(
@@ -1461,7 +1461,7 @@ class BaslerCameraBackend(CameraBackend):
         """Get available white balance modes.
 
         Returns:
-            List of available white balance modes
+            List of available white balance modes (lowercase for API compatibility)
         """
         return ["off", "once", "continuous"]
 
@@ -1710,6 +1710,94 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Error setting white balance for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set white balance: {str(e)}")
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for Basler cameras.
+        
+        Returns:
+            List of available trigger modes based on GenICam TriggerMode and TriggerSource
+        """
+        # TriggerMode "Off" = continuous acquisition
+        # TriggerMode "On" + TriggerSource = triggered acquisition
+        return [
+            "continuous",           # TriggerMode=Off (freerunning)
+            "trigger"               # TriggerMode=On, TriggerSource=Software
+        ]
+
+    async def get_bandwidth_limit_range(self) -> List[float]:
+        """Get bandwidth limit range for GigE cameras.
+        
+        Returns:
+            List containing [min_bandwidth, max_bandwidth] in Mbps
+        """
+        if not self.initialized or self.camera is None:
+            return [1.0, 1000.0]  # Default range
+        
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+                
+            if hasattr(self.camera, 'DeviceLinkThroughputLimit'):
+                min_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.DeviceLinkThroughputLimit.GetMax, timeout=self._op_timeout_s)
+                return [float(min_val) / 1000000, float(max_val) / 1000000]  # Convert to Mbps
+            else:
+                return [1.0, 1000.0]  # Default range for non-GigE cameras
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to get bandwidth limit range for camera '{self.camera_name}': {e}")
+            return [1.0, 1000.0]  # Default range
+
+    async def get_packet_size_range(self) -> List[int]:
+        """Get packet size range for GigE cameras.
+        
+        Returns:
+            List containing [min_packet_size, max_packet_size] in bytes
+        """
+        if not self.initialized or self.camera is None:
+            return [1476, 9000]  # Default range
+        
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+                
+            if hasattr(self.camera, 'GevSCPSPacketSize'):
+                min_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.GevSCPSPacketSize.GetMax, timeout=self._op_timeout_s)
+                return [int(min_val), int(max_val)]
+            else:
+                return [1476, 9000]  # Default range for non-GigE cameras
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to get packet size range for camera '{self.camera_name}': {e}")
+            return [1476, 9000]  # Default range
+
+    async def get_inter_packet_delay_range(self) -> List[int]:
+        """Get inter-packet delay range for GigE cameras.
+        
+        Returns:
+            List containing [min_delay, max_delay] in ticks
+        """
+        if not self.initialized or self.camera is None:
+            return [0, 65535]  # Default range
+        
+        try:
+            was_open = self.camera.IsOpen()
+            if not was_open:
+                self.camera.Open()
+                
+            if hasattr(self.camera, 'GevSCPD'):
+                min_val = await self._sdk(self.camera.GevSCPD.GetMin, timeout=self._op_timeout_s)
+                max_val = await self._sdk(self.camera.GevSCPD.GetMax, timeout=self._op_timeout_s)
+                return [int(min_val), int(max_val)]
+            else:
+                return [0, 65535]  # Default range for non-GigE cameras
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to get inter-packet delay range for camera '{self.camera_name}': {e}")
+            return [0, 65535]  # Default range
 
     async def close(self):
         """Close the camera and release resources.

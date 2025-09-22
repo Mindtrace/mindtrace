@@ -1363,6 +1363,14 @@ class OpenCVCameraBackend(CameraBackend):
             f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
         )
 
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for OpenCV cameras.
+        
+        Returns:
+            List of available trigger modes (OpenCV only supports continuous)
+        """
+        return ["continuous"]  # OpenCV cameras only support freerunning/continuous mode
+
     def __del__(self) -> None:
         """Destructor to ensure proper cleanup."""
         try:
