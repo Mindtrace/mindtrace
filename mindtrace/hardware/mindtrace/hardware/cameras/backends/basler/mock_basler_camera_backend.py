@@ -677,11 +677,11 @@ class MockBaslerCameraBackend(CameraBackend):
         """Get available white balance modes.
 
         Returns:
-            List of available white balance modes
+            List of available white balance modes (lowercase for API compatibility)
         """
         # Simulate async operation
         await asyncio.sleep(0.001)
-        return ["off", "auto", "continuous", "once"]
+        return ["off", "once", "continuous"]
 
     async def get_pixel_format_range(self) -> List[str]:
         """Get available pixel formats.
@@ -785,6 +785,25 @@ class MockBaslerCameraBackend(CameraBackend):
         """Get current inter-packet delay (simulated)."""
         await asyncio.sleep(0.001)
         return 0  # Simulated no delay
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for mock Basler cameras."""
+        return [
+            "continuous",           # TriggerMode=Off (freerunning)
+            "trigger"               # TriggerMode=On, TriggerSource=Software
+        ]
+
+    async def get_bandwidth_limit_range(self) -> List[float]:
+        """Get bandwidth limit range for mock GigE cameras."""
+        return [1.0, 1000.0]  # Mbps
+
+    async def get_packet_size_range(self) -> List[int]:
+        """Get packet size range for mock GigE cameras."""
+        return [1476, 9000]  # bytes
+
+    async def get_inter_packet_delay_range(self) -> List[int]:
+        """Get inter-packet delay range for mock GigE cameras."""
+        return [0, 65535]  # ticks
 
     async def close(self):
         """Close the mock camera and release resources."""
