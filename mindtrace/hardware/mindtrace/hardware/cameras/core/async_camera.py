@@ -397,8 +397,8 @@ class AsyncCamera(Mindtrace):
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
             success = True
-            if "exposure" in settings:
-                success &= await self._backend.set_exposure(settings["exposure"])
+            if "exposure_time" in settings:
+                success &= await self._backend.set_exposure(settings["exposure_time"])
             if "gain" in settings:
                 success &= await self._backend.set_gain(settings["gain"])
             if "roi" in settings:

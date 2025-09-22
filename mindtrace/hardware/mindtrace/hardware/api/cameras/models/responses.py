@@ -109,6 +109,12 @@ class CameraCapabilities(BaseModel):
     gain_range: Optional[Tuple[float, float]] = None
     pixel_formats: Optional[List[str]] = None
     white_balance_modes: Optional[List[str]] = None
+    trigger_modes: Optional[List[str]] = None
+    width_range: Optional[Tuple[int, int]] = None
+    height_range: Optional[Tuple[int, int]] = None
+    bandwidth_limit_range: Optional[Tuple[float, float]] = None
+    packet_size_range: Optional[Tuple[int, int]] = None
+    inter_packet_delay_range: Optional[Tuple[int, int]] = None
     max_resolution: Optional[Tuple[int, int]] = None
     supports_roi: bool = False
     supports_trigger: bool = False
@@ -118,7 +124,7 @@ class CameraCapabilities(BaseModel):
 class CameraConfiguration(BaseModel):
     """Camera configuration model."""
 
-    exposure: Optional[float] = None
+    exposure_time: Optional[float] = None
     gain: Optional[float] = None
     roi: Optional[Tuple[int, int, int, int]] = None
     trigger_mode: Optional[str] = None
