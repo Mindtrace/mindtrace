@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
-from mindtrace.core.config import Config
+from mindtrace.core.config import CoreSettings
 
 
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
@@ -58,7 +58,7 @@ def setup_logger(
     logger.addHandler(stream_handler)
 
     # Set up file handler
-    default_config = Config()
+    default_config = CoreSettings()
     if name == "mindtrace":
         child_log_path = f"{name}.log"
     else:
@@ -67,7 +67,7 @@ def setup_logger(
     if log_dir:
         log_file_path = os.path.join(log_dir, child_log_path)
     else:
-        log_file_path = os.path.join(default_config["MINDTRACE_LOGGER_DIR"], child_log_path)
+        log_file_path = os.path.join(default_config.MINDTRACE_DIR_PATHS.LOGGER_DIR, child_log_path)
 
     os.makedirs(Path(log_file_path).parent, exist_ok=True)
     file_handler = RotatingFileHandler(
