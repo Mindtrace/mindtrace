@@ -293,7 +293,7 @@ class Config(dict):
     def to_revealed_strings(self) -> Dict[str, Any]:
         """Convert the config to a dictionary with revealed secret values."""
         result = deepcopy(dict(self))
-        
+
         def reveal_secrets(data: Dict[str, Any], path: Tuple[str, ...] = ()) -> None:
             for key, value in data.items():
                 current_path = path + (key,)
@@ -305,7 +305,7 @@ class Config(dict):
                     for i, item in enumerate(value):
                         if isinstance(item, dict):
                             reveal_secrets(item, current_path + (str(i),))
-        
+
         reveal_secrets(result)
         return result
 
@@ -374,7 +374,7 @@ class Config(dict):
                 if key not in node or not isinstance(node[key], dict):
                     return  # Skip if path doesn't exist
                 node = node[key]
-            
+
             # Only override if final key exists
             if path[-1] in node:
                 node[path[-1]] = Config._coerce_env_value(value)
@@ -385,7 +385,7 @@ class Config(dict):
                 original_parts = env_key.split(delimiter)
                 if any(not part.strip() for part in original_parts):
                     continue
-                
+
                 # Handle nested keys with delimiter (e.g., SECTION__KEY)
                 parts = [p.strip() for p in original_parts if p.strip()]
                 if parts:

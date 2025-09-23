@@ -1,8 +1,6 @@
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, mock_open
-import pytest
 
 from mindtrace.core.utils import load_ini_as_dict
 
@@ -21,7 +19,7 @@ key2 = value2
 key3 = value3
 nested_key = nested_value
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -42,7 +40,7 @@ nested_key = nested_value
 
     def test_load_ini_as_dict_empty_file(self):
         """Test loading from an empty INI file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             temp_path = Path(f.name)
 
         try:
@@ -59,7 +57,7 @@ nested_key = nested_value
 key1 = value1
 key2 = value2
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -77,7 +75,7 @@ key2 = value2
   key1   =   value1   
   key2 = value2
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -95,7 +93,7 @@ key2 = value2
 unicode_key = 测试
 emoji_key = 🚀
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -115,7 +113,7 @@ false_value = false
 numeric_true = 1
 numeric_false = 0
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -136,7 +134,7 @@ integer_value = 42
 float_value = 3.14
 negative_value = -10
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -156,7 +154,7 @@ quoted_value = "quoted string"
 single_quoted = 'single quoted'
 mixed_quotes = "mixed 'quotes'"
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -176,7 +174,7 @@ multiline_value = This is a \
 multiline \
 value
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -195,7 +193,7 @@ value
 special_chars = !@#%^&*()_+-=[]{}|;':",./<>?
 url_value = https://example.com/path?param=value&other=123
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -212,7 +210,7 @@ url_value = https://example.com/path?param=value&other=123
 [section1]
 key1 = value1
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -228,7 +226,7 @@ key1 = value1
 [section1]
 home_path = ~/test/path
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -247,7 +245,7 @@ key1 = value1
 [section2]
 key2 = value2
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -268,7 +266,7 @@ Key1 = value1
 KEY2 = value2
 key3 = value3
 """
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write(ini_content)
             temp_path = Path(f.name)
 
@@ -283,7 +281,7 @@ key3 = value3
     def test_load_ini_as_dict_permission_error(self):
         """Test handling of permission errors."""
         # Create a file and then make it unreadable
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.ini', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ini", delete=False) as f:
             f.write("[section1]\nkey1 = value1\n")
             temp_path = Path(f.name)
 

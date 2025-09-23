@@ -3,6 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 from pydantic import BaseModel, SecretStr
 
@@ -166,34 +167,37 @@ class TestConfigSecrets:
 
     def test_config_with_secret_str(self):
         """Test Config with SecretStr fields."""
+
         class TestModel(BaseModel):
             api_key: SecretStr
             normal_field: str
 
         model = TestModel(api_key="secret123", normal_field="normal")
         config = Config(model)
-        
+
         # Secret should be masked
         assert config.api_key == "********"
         assert config.normal_field == "normal"
-        
+
         # Should be able to get the real secret
         assert config.get_secret("api_key") == "secret123"
 
     def test_config_secret_paths(self):
         """Test secret path tracking."""
+
         class TestModel(BaseModel):
             api_key: SecretStr
             nested: dict
 
         model = TestModel(api_key="secret123", nested={"other": "value"})
         config = Config(model)
-        
+
         paths = config.secret_paths()
         assert "api_key" in paths
 
     def test_config_get_secret_nested(self):
         """Test getting secrets from nested paths."""
+
         class NestedModel(BaseModel):
             key: SecretStr
 
@@ -202,7 +206,7 @@ class TestConfigSecrets:
 
         model = TestModel(nested=NestedModel(key="secret123"))
         config = Config(model)
-        
+
         assert config.get_secret("nested", "key") == "secret123"
 
     def test_config_get_secret_missing(self):
@@ -230,6 +234,7 @@ class TestConfigLoading:
 
     def test_config_load_with_base_model(self):
         """Test Config.load with BaseModel."""
+
         class TestModel(BaseModel):
             key: str = "default"
 
@@ -245,6 +250,7 @@ class TestConfigLoading:
 
     def test_config_load_with_file_loader(self):
         """Test Config.load with file loader."""
+
         def mock_loader():
             return {"loaded": "value"}
 
@@ -253,7 +259,7 @@ class TestConfigLoading:
 
     def test_config_load_json(self):
         """Test Config.load_json method."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump({"key": "value"}, f)
             temp_path = f.name
 
@@ -271,21 +277,19 @@ class TestConfigCloning:
         """Test cloning with overrides."""
         original = Config({"key": "original"})
         clone = original.clone_with_overrides({"key": "override"})
-        
+
         assert original["key"] == "original"  # Original unchanged
         assert clone["key"] == "override"  # Clone has override
 
     def test_config_clone_with_multiple_overrides(self):
         """Test cloning with multiple overrides."""
         original = Config({"key": "original"})
-        clone = original.clone_with_overrides(
-            {"key": "override1"},
-            {"key": "override2"}
-        )
+        clone = original.clone_with_overrides({"key": "override1"}, {"key": "override2"})
         assert clone["key"] == "override2"  # Last override wins
 
     def test_config_clone_with_base_model(self):
         """Test cloning with BaseModel override."""
+
         class TestModel(BaseModel):
             key: str = "model_value"
 
@@ -312,13 +316,13 @@ class TestConfigJSON:
     def test_config_save_json(self):
         """Test saving config to JSON."""
         config = Config({"key": "value", "nested": {"inner": "test"}})
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             temp_path = f.name
 
         try:
             config.save_json(temp_path)
-            with open(temp_path, 'r') as f:
+            with open(temp_path, "r") as f:
                 data = json.load(f)
             assert data["key"] == "value"
             assert data["nested"]["inner"] == "test"
@@ -327,18 +331,19 @@ class TestConfigJSON:
 
     def test_config_save_json_masked_secrets(self):
         """Test saving config with masked secrets."""
+
         class TestModel(BaseModel):
             api_key: SecretStr
 
         model = TestModel(api_key="secret123")
         config = Config(model)
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             temp_path = f.name
 
         try:
             config.save_json(temp_path, reveal_secrets=False)
-            with open(temp_path, 'r') as f:
+            with open(temp_path, "r") as f:
                 data = json.load(f)
             assert data["api_key"] == "********"  # Should be masked
         finally:
@@ -347,7 +352,7 @@ class TestConfigJSON:
     def test_config_save_json_create_directories(self):
         """Test that save_json creates parent directories."""
         config = Config({"key": "value"})
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             nested_path = Path(temp_dir) / "nested" / "deep" / "config.json"
             config.save_json(nested_path)
@@ -356,7 +361,7 @@ class TestConfigJSON:
     def test_config_save_json_error_handling(self):
         """Test error handling in save_json."""
         config = Config({"key": "value"})
-        
+
         # Test with invalid path (should raise RuntimeError)
         with pytest.raises(RuntimeError, match="Failed to save config"):
             config.save_json("/invalid/path/that/does/not/exist/config.json")
@@ -388,6 +393,7 @@ class TestCoreConfig:
 
     def test_core_config_init_with_base_model(self):
         """Test CoreConfig with BaseModel extra settings."""
+
         class TestModel(BaseModel):
             custom_key: str = "model_value"
 
@@ -480,7 +486,7 @@ class TestConfigEdgeCases:
             "float": 3.14,
             "bool": True,
             "list": [1, 2, 3],
-            "dict": {"nested": "value"}
+            "dict": {"nested": "value"},
         }
         config = Config(data)
         # All values are converted to strings by _stringify_and_mask
@@ -504,9 +510,8 @@ class TestConfigEdgeCases:
         assert config["unicode"] == "测试"
         assert config["emoji"] == "🚀"
 
-class TestConfigEdgeCases:
-    """Additional tests to increase coverage for Config module."""
 
+class TestConfigUtils:
     def test_config_deep_update_nested_merge(self):
         """Test _deep_update with nested dictionary merging."""
         config = Config()
@@ -528,11 +533,11 @@ class TestConfigEdgeCases:
     def test_config_load_with_base_model_defaults(self):
         """Test Config.load with BaseModel as defaults."""
         from pydantic import BaseModel
-        
+
         class TestModel(BaseModel):
             field1: str = "default_value"
             field2: int = 42
-        
+
         model = TestModel()
         config = Config.load(defaults=model)
         assert config["field1"] == "default_value"
@@ -555,10 +560,10 @@ class TestConfigEdgeCases:
     def test_config_clone_with_base_model_override(self):
         """Test clone_with_overrides with BaseModel."""
         from pydantic import BaseModel
-        
+
         class OverrideModel(BaseModel):
             override_field: str = "override_value"
-        
+
         config = Config({"original": "value"})
         cloned = config.clone_with_overrides(OverrideModel())
         assert cloned["original"] == "value"
@@ -595,7 +600,7 @@ class TestConfigEdgeCases:
     def test_config_stringify_dict_static_with_secret_str(self):
         """Test _stringify_dict_static with SecretStr."""
         from pydantic import SecretStr
-        
+
         data = {"secret": SecretStr("secret_value"), "normal": "normal_value"}
         result = Config._stringify_dict_static(data)
         assert result["secret"] == "secret_value"
@@ -604,7 +609,7 @@ class TestConfigEdgeCases:
     def test_config_stringify_dict_static_with_anyurl(self):
         """Test _stringify_dict_static with AnyUrl."""
         from pydantic import AnyUrl
-        
+
         data = {"url": AnyUrl("https://example.com"), "normal": "normal_value"}
         result = Config._stringify_dict_static(data)
         assert result["url"] == "https://example.com/"
@@ -634,15 +639,15 @@ class TestConfigEdgeCases:
     def test_config_collect_secret_paths_from_model(self):
         """Test _collect_secret_paths_from_model."""
         from pydantic import BaseModel, SecretStr
-        
+
         class TestModel(BaseModel):
             normal_field: str
             secret_field: SecretStr
             nested: "TestNestedModel"
-        
+
         class TestNestedModel(BaseModel):
             nested_secret: SecretStr
-        
+
         config = Config()
         paths = config._collect_secret_paths_from_model(TestModel)
         assert ("secret_field",) in paths
@@ -652,7 +657,7 @@ class TestConfigEdgeCases:
     def test_config_is_secret_annotation_with_union(self):
         """Test _is_secret_annotation with Union type."""
         from typing import Union
-        
+
         config = Config()
         # Test Union with SecretStr
         assert config._is_secret_annotation(Union[str, SecretStr])
@@ -663,12 +668,13 @@ class TestConfigEdgeCases:
 
     def test_config_extract_model_class_with_union(self):
         """Test _extract_model_class with Union type."""
-        from pydantic import BaseModel
         from typing import Union
-        
+
+        from pydantic import BaseModel
+
         class TestModel(BaseModel):
             field: str
-        
+
         config = Config()
         # Test Union with BaseModel
         model_class = config._extract_model_class(Union[str, TestModel])
@@ -680,18 +686,19 @@ class TestConfigEdgeCases:
 
     def test_config_save_json_with_revealed_secrets(self):
         """Test save_json with reveal_secrets=True."""
-        from pydantic import SecretStr
-        import tempfile
         import os
-        
+        import tempfile
+
+        from pydantic import SecretStr
+
         config = Config({"secret": SecretStr("secret_value")})
-        
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
             temp_path = f.name
-        
+
         try:
             config.save_json(temp_path, reveal_secrets=True)
-            with open(temp_path, 'r') as f:
+            with open(temp_path, "r") as f:
                 data = json.load(f)
             assert data["secret"] == "secret_value"
         finally:
@@ -700,7 +707,7 @@ class TestConfigEdgeCases:
     def test_config_save_json_error_handling_os_error(self):
         """Test save_json error handling for OSError."""
         config = Config({"key": "value"})
-        
+
         # Try to save to a path that will cause OSError (permission denied)
         with pytest.raises(RuntimeError, match="Failed to save config"):
             config.save_json("/root/forbidden_path.json")
@@ -712,28 +719,29 @@ class TestConfigEdgeCases:
 
     def test_config_load_with_file_loader_returning_none(self):
         """Test Config.load with file_loader returning None."""
+
         def none_loader():
             return None
-        
+
         config = Config.load(file_loader=none_loader)
         assert len(config) == 0
 
     def test_config_load_with_file_loader_returning_empty(self):
         """Test Config.load with file_loader returning empty dict."""
+
         def empty_loader():
             return {}
-        
+
         config = Config.load(file_loader=empty_loader)
         assert len(config) == 0
 
     def test_config_stringify_and_mask_with_secret_paths(self):
         """Test _stringify_and_mask with secret paths."""
-        from pydantic import SecretStr
-        
+
         config = Config()
         config._secret_paths = {("secret_field",)}
         config._secrets = {("secret_field",): "real_secret"}
-        
+
         data = {"secret_field": "masked_value", "normal_field": "normal_value"}
         result = config._stringify_and_mask(data)
         assert result["secret_field"] == "********"
@@ -742,10 +750,10 @@ class TestConfigEdgeCases:
     def test_config_stringify_and_mask_with_anyurl_secret(self):
         """Test _stringify_and_mask with AnyUrl in secret path."""
         from pydantic import AnyUrl
-        
+
         config = Config()
         config._secret_paths = {("url_field",)}
-        
+
         data = {"url_field": AnyUrl("https://secret.com")}
         result = config._stringify_and_mask(data)
         assert result["url_field"] == "********"
@@ -773,12 +781,12 @@ class TestConfigEdgeCases:
     def test_config_apply_env_overrides_static_with_empty_parts_edge_cases(self):
         """Test _apply_env_overrides_static with various empty parts edge cases."""
         base = {"section": {"key": "original"}}
-        
+
         # Test multiple consecutive delimiters
         with patch.dict(os.environ, {"section____key": "value1", "section______key": "value2"}):
             result = Config._apply_env_overrides_static(base)
             assert result["section"]["key"] == "original"  # Should be ignored
-        
+
         # Test leading and trailing delimiters
         with patch.dict(os.environ, {"__section__key": "value1", "section__key__": "value2"}):
             result = Config._apply_env_overrides_static(base)
@@ -787,7 +795,7 @@ class TestConfigEdgeCases:
     def test_config_apply_env_overrides_static_with_whitespace_parts(self):
         """Test _apply_env_overrides_static with whitespace in parts."""
         base = {"section": {"key": "original"}}
-        
+
         # Test with whitespace that gets stripped
         with patch.dict(os.environ, {" section __ key ": "value"}):
             result = Config._apply_env_overrides_static(base)
@@ -796,7 +804,7 @@ class TestConfigEdgeCases:
     def test_config_apply_env_overrides_static_nested_path_does_not_exist(self):
         """Test _apply_env_overrides_static when nested path doesn't exist."""
         base = {"section": {"key": "original"}}
-        
+
         # Test with path that doesn't exist
         with patch.dict(os.environ, {"nonexistent__key": "value"}):
             result = Config._apply_env_overrides_static(base)
@@ -805,9 +813,8 @@ class TestConfigEdgeCases:
     def test_config_apply_env_overrides_static_nested_path_not_dict(self):
         """Test _apply_env_overrides_static when nested path is not a dict."""
         base = {"section": "not_a_dict"}
-        
+
         # Test with path that exists but is not a dict
         with patch.dict(os.environ, {"section__key": "value"}):
             result = Config._apply_env_overrides_static(base)
             assert result == base  # Should remain unchanged
-
