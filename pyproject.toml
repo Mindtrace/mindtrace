@@ -197,6 +197,9 @@ docstring-code-line-length = "dynamic"
 where = ["."]
 include = ["mindtrace*"]
 
+[tool.setuptools.package-data]
+"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

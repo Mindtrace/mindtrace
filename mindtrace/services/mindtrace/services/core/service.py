@@ -195,7 +195,7 @@ class Service(Mindtrace):
 
     @classmethod
     def _server_id_to_pid_file(cls, server_id: UUID) -> str:
-        return os.path.join(cls.config["MINDTRACE_SERVER_PIDS_DIR_PATH"], f"{cls.__name__}_{server_id}_pid.txt")
+        return os.path.join(cls.config["MINDTRACE_DIR_PATHS"]["SERVER_PIDS_DIR"], f"{cls.__name__}_{server_id}_pid.txt")
 
     @classmethod
     def _pid_file_to_server_id(cls, pid_file: str) -> UUID:
@@ -484,7 +484,7 @@ class Service(Mindtrace):
         3. Fallback to localhost:8000
         """
         default_urls = cls.config["MINDTRACE_DEFAULT_HOST_URLS"]
-        server_url = default_urls.get(cls.__name__) or default_urls.get("ServerBase", "http://localhost:8000")
+        server_url = default_urls.get(cls.__name__.upper()) or default_urls.get("ServerBase", "http://localhost:8000")
         return parse_url(server_url)
 
     @classmethod
@@ -526,8 +526,8 @@ class Service(Mindtrace):
         - mount_path: "/mcp-server"
         - http_app_path: "/mcp"
         """
-        mcp_http_app_path = str(cls.config.get("MINDTRACE_MCP_HTTP_APP_PATH", "/mcp"))
-        mcp_mount_path = str(cls.config.get("MINDTRACE_MCP_MOUNT_PATH", "/mcp-server"))
+        mcp_http_app_path = str(cls.config["MINDTRACE_MCP"]["HTTP_APP_PATH"])
+        mcp_mount_path = str(cls.config["MINDTRACE_MCP"]["MOUNT_PATH"])
         if not mcp_http_app_path.startswith("/"):
             mcp_http_app_path = "/" + mcp_http_app_path
         if not mcp_mount_path.startswith("/"):
@@ -542,7 +542,7 @@ class Service(Mindtrace):
     @classmethod
     def default_log_file(cls) -> str:
         """Get the default log file for this server type."""
-        return os.path.join(cls.config["MINDTRACE_DEFAULT_LOG_DIR"], f"{cls.__name__}_logs.txt")
+        return os.path.join(cls.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"], f"{cls.__name__}_logs.txt")
 
     def add_endpoint(
         self,

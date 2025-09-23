@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mindtrace.core import Config
+from mindtrace.core import CoreConfig
 from mindtrace.registry import LocalRegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
 
@@ -30,7 +30,7 @@ else:
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
     """Create a temporary directory for testing."""
-    temp_dir = Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"
+    temp_dir = Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     yield temp_dir
     shutil.rmtree(temp_dir)
