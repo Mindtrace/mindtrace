@@ -69,34 +69,24 @@ class DockerEnvironment(Mindtrace):
                 self.client.images.pull(self.image)
             if command is None:
                 command = "sh"
+            run_kwargs = {
+                "image": self.image,
+                "environment": self.environment,
+                "volumes": self.volumes,
+                "working_dir": self.working_dir,
+                "detach": True,
+                "tty": True,
+                "command": "sh",
+                "stdin_open": True,
+                "ports": self.ports,
+                **self.kwargs,
+            }
             if self.devices:
-                # Create and start container
-                self.container = self.client.containers.run(
-                    image=self.image,
-                    environment=self.environment,
-                    volumes=self.volumes,
-                    working_dir=self.working_dir,
-                    device_requests=[docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])],
-                    detach=True,
-                    tty=True,
-                    command=command,
-                    stdin_open=True,
-                    ports=self.ports,
-                    **self.kwargs,
-                )
-            else:
-                self.container = self.client.containers.run(
-                    image=self.image,
-                    environment=self.environment,
-                    volumes=self.volumes,
-                    working_dir=self.working_dir,
-                    detach=True,
-                    tty=True,
-                    command=command,
-                    stdin_open=True,
-                    ports=self.ports,
-                    **self.kwargs,
-                )
+                run_kwargs["device_requests"] = [
+                    docker.types.DeviceRequest(device_ids=self.devices, capabilities=[["gpu"]])
+                ]
+            # Create and start container
+            self.container = self.client.containers.run(**run_kwargs)
 
             return str(self.container.id)
 
