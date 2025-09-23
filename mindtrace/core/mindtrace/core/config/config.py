@@ -198,8 +198,11 @@ class Config(dict):
         for override in extra_list:
             default_config = self._deep_update(default_config, override)
 
-        # Overlay environment variables last so they can override provided settings
-        if apply_env_overrides:
+        # Only apply environment variable overrides if we have some base configuration
+        # or if explicitly requested. This prevents empty Config() from picking up random env vars.
+        # Check if any of the provided settings actually contain data
+        has_any_data = any(len(item) > 0 for item in extra_list) if extra_list else False
+        if apply_env_overrides and (has_any_data or len(default_config) > 0):
             default_config = self._apply_env_overrides(default_config)
 
         # Coerce everything to string and mask secrets by default
@@ -287,6 +290,25 @@ class Config(dict):
         except (TypeError, OSError) as e:
             raise RuntimeError(f"Failed to save config to '{path}': {e}") from e
 
+    def to_revealed_strings(self) -> Dict[str, Any]:
+        """Convert the config to a dictionary with revealed secret values."""
+        result = deepcopy(dict(self))
+        
+        def reveal_secrets(data: Dict[str, Any], path: Tuple[str, ...] = ()) -> None:
+            for key, value in data.items():
+                current_path = path + (key,)
+                if current_path in self._secrets:
+                    data[key] = self._secrets[current_path]
+                elif isinstance(value, dict):
+                    reveal_secrets(value, current_path)
+                elif isinstance(value, list):
+                    for i, item in enumerate(value):
+                        if isinstance(item, dict):
+                            reveal_secrets(item, current_path + (str(i),))
+        
+        reveal_secrets(result)
+        return result
+
     def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
         """Return a new Config clone with overrides applied (original remains unchanged)."""
         items: List[Dict[str, Any]] = [deepcopy(dict(self))]
@@ -348,18 +370,30 @@ class Config(dict):
         def set_nested(target: dict, path: List[str], value: Any):
             node = target
             for key in path[:-1]:
+                # Only override if key exists and is a dict
                 if key not in node or not isinstance(node[key], dict):
-                    node[key] = {}
+                    return  # Skip if path doesn't exist
                 node = node[key]
-            node[path[-1]] = Config._coerce_env_value(value)
+            
+            # Only override if final key exists
+            if path[-1] in node:
+                node[path[-1]] = Config._coerce_env_value(value)
 
         for env_key, env_value in os.environ.items():
-            if delimiter not in env_key:
-                continue
-            parts = [p.strip().upper() for p in env_key.split(delimiter) if p.strip()]
-            if not parts:
-                continue
-            set_nested(result, parts, env_value)
+            if delimiter in env_key:
+                # Check for empty parts in the original split
+                original_parts = env_key.split(delimiter)
+                if any(not part.strip() for part in original_parts):
+                    continue
+                
+                # Handle nested keys with delimiter (e.g., SECTION__KEY)
+                parts = [p.strip() for p in original_parts if p.strip()]
+                if parts:
+                    set_nested(result, parts, env_value)
+            else:
+                # Handle flat keys (e.g., KEY) - only override existing keys
+                if env_key in result:
+                    result[env_key] = Config._coerce_env_value(env_value)
 
         return result
 
