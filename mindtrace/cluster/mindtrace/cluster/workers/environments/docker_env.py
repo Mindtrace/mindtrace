@@ -21,6 +21,19 @@ class DockerEnvironment(Mindtrace):
         ports: Optional[dict[int | str, int | str]] = None,
         **kwargs,
     ):
+        """
+        The actual creation of the Docker environment is in setup(), this merely saves the parameters.
+        Args:
+            image: str: the image to run, either on a docker hub or locally. If local, use setup(pull=False).
+            environment: optional dict: environment variables to pass to the docker image.
+                If GOOGLE_APPLICATION_CREDENTIALS is set either here or in os.environ, we automatically add that file to a volume
+                and redirect the GOOGLE_APPLICATION_CREDENTIALS to the mounted file
+            devices: optional list of str: the GPU device IDs to use, or None to get no GPUs
+            working_dir: optional str: the working directory within the Docker image 
+            ports: optional dict: outgoing ports to expose
+            kwargs: dict: additional parameters to pass to the containers.run() call.
+
+        """
         super().__init__()
         self.image = image
         self.environment = environment or {}
@@ -41,7 +54,10 @@ class DockerEnvironment(Mindtrace):
 
     def setup(self, pull=True, command=None) -> str:
         """Setup Docker container environment.
-
+        Args:
+            pull: bool: whether to pull the image from a cloud hub. Should in general be True but there are use cases for False.
+            command: None or str: the command to run to start the service.
+                If None, will run `sh` to allow self.execute() to run later.
         Returns:
             str: Container ID
         """
