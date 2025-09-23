@@ -33,6 +33,10 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 
 class ClusterManager(Gateway):
     def __init__(self, minio_endpoint=None, **kwargs):
+        """
+        Args:
+            minio_endpoint: str | None: the location of the minio server to use for the registry. If None, use MINDTRACE_CLUSTER_MINIO_ENDPOINT
+        """
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
@@ -607,6 +611,11 @@ class ClusterManager(Gateway):
         self.logger.info("Cleared all cluster manager databases")
 
     def clear_job_schema_queue(self, payload: dict):
+        """
+        Clear the queue related to a job schema.
+        Args:
+            job_schema_name: str: the name of the job schema
+        """
         queue_name = payload["job_schema_name"]
         self.orchestrator.clean_queue(queue_name)
 
