@@ -21,5 +21,24 @@ def load_ini_as_dict(ini_path: Path) -> Dict[str, Any]:
 
     result: Dict[str, Any] = {}
     for section in parser.sections():
-        result[section.upper()] = {key.upper(): expand_tilde_str(value) for key, value in parser[section].items()}
+        # Normalize section name by stripping whitespace and uppercasing
+        normalized_section = section.strip().upper()
+        result[normalized_section] = {}
+        
+        for key, value in parser[section].items():
+            # Strip whitespace from key and uppercase
+            normalized_key = key.strip().upper()
+            
+            # Strip whitespace from value and handle quotes
+            stripped_value = value.strip()
+            
+            # Remove surrounding quotes if present
+            if stripped_value.startswith('"') and stripped_value.endswith('"'):
+                stripped_value = stripped_value[1:-1]
+            elif stripped_value.startswith("'") and stripped_value.endswith("'"):
+                stripped_value = stripped_value[1:-1]
+            
+            # Expand tilde and store
+            result[normalized_section][normalized_key] = expand_tilde_str(stripped_value)
+    
     return result
