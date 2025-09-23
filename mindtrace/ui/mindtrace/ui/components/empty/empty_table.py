@@ -1,5 +1,6 @@
-import reflex as rx
 from typing import Callable
+
+import reflex as rx
 
 
 def empty_table(

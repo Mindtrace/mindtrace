@@ -1,5 +1,6 @@
+from typing import Any, Iterable, Mapping, Union
+
 import reflex as rx
-from typing import Iterable, Mapping, Union, Any
 
 
 def accordion(

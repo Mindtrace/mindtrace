@@ -1,21 +1,21 @@
 import json
+
 import reflex as rx
+from mindtrace.ui.components.core.button import button
+from mindtrace.ui.components.data.checklist import checklist
+from mindtrace.ui.components.data.stat_cards import stat_grid
+from mindtrace.ui.components.empty.empty_table import empty_table
+from mindtrace.ui.components.feedback.inline_alert import inline_alert
+from mindtrace.ui.components.inputs.file_upload import file_uploader
+from mindtrace.ui.components.inputs.multi_select import multi_select
+from mindtrace.ui.components.inputs.search_box import search_box
+from mindtrace.ui.components.inputs.tag_input import tag_input
 
 # === Import your modular components ===
 from mindtrace.ui.components.layout.accordion import accordion
 from mindtrace.ui.components.navigation.breadcrumbs import breadcrumbs
-from mindtrace.ui.components.core.button import button
-from mindtrace.ui.components.data.checklist import checklist
-from mindtrace.ui.components.data.stat_cards import stat_grid
-from mindtrace.ui.components.inputs.tag_input import tag_input
-from mindtrace.ui.components.inputs.multi_select import multi_select
-from mindtrace.ui.components.navigation.tabs_pills import pill_tabs
-from mindtrace.ui.components.empty.empty_table import empty_table
-from mindtrace.ui.components.inputs.search_box import search_box
-from mindtrace.ui.components.inputs.file_upload import file_uploader
-from mindtrace.ui.components.feedback.inline_alert import inline_alert
 from mindtrace.ui.components.navigation.pagination import pagination
-
+from mindtrace.ui.components.navigation.tabs_pills import pill_tabs
 
 # ========== SHARED UI HELPERS (pure components) ==========
 

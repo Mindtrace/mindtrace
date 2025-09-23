@@ -1,5 +1,6 @@
-import reflex as rx
 from typing import Optional
+
+import reflex as rx
 
 
 def section(

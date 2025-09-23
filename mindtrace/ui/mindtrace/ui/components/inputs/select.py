@@ -1,5 +1,6 @@
-import reflex as rx
 from typing import Callable, Iterable, Union
+
+import reflex as rx
 
 
 class _SelectState(rx.State):

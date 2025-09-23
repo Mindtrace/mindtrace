@@ -7,9 +7,7 @@ Owns:
 Depends on tokens via absolute import: mindtrace.ui.tokens
 """
 
-from mindtrace.ui.tokens import (
-    THEME, T, C, SP, R, L, Z, SH, M, FX, AN, Ty
-)
+from mindtrace.ui.tokens import FX, SH, SP, C, M, R, Ty
 
 # ---- Size maps ----
 SIZE_VARIANTS = {

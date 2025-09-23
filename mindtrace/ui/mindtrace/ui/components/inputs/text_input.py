@@ -1,5 +1,6 @@
-import reflex as rx
 from typing import Callable
+
+import reflex as rx
 
 
 class _TextState(rx.State):

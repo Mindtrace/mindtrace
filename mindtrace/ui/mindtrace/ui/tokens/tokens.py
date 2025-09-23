@@ -10,8 +10,8 @@ No component variants here.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 
+from dataclasses import dataclass
 
 # ---------- Token dataclasses ----------
 

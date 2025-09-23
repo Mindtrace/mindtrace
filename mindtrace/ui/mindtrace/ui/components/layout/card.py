@@ -1,5 +1,6 @@
+from typing import Sequence, Union
+
 import reflex as rx
-from typing import Union, Sequence
 
 
 def card(
