@@ -195,14 +195,14 @@ node.launch_worker(worker_type="gitworker", worker_url="http://localhost:8005")
 
 ```bash
 # Redis configuration
-MINDTRACE_CLUSTER_DEFAULT_REDIS_URL=redis://localhost:6379
-MINDTRACE_WORKER_REDIS_DEFAULT_URL=redis://localhost:6379
+MINDTRACE_CLUSTER__DEFAULT_REDIS_URL=redis://localhost:6379
+MINDTRACE_WORKER__DEFAULT_REDIS_URL=redis://localhost:6379
 
 # MinIO configuration (for worker registry)
-MINDTRACE_CLUSTER_MINIO_ENDPOINT=localhost:9000
-MINDTRACE_CLUSTER_MINIO_ACCESS_KEY=minioadmin
-MINDTRACE_CLUSTER_MINIO_SECRET_KEY=minioadmin
-MINDTRACE_CLUSTER_MINIO_BUCKET=workers
+MINDTRACE_CLUSTER__MINIO_ENDPOINT=localhost:9000
+MINDTRACE_CLUSTER__MINIO_ACCESS_KEY=minioadmin
+MINDTRACE_CLUSTER__MINIO_SECRET_KEY=minioadmin
+MINDTRACE_CLUSTER__MINIO_BUCKET=workers
 ```
 
 ### Database Models

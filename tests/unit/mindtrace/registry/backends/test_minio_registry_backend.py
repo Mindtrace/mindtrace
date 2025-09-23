@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from minio.error import S3Error
 
-from mindtrace.core import Config
+from mindtrace.core import CoreConfig
 from mindtrace.registry import MinioRegistryBackend
 
 
@@ -55,7 +55,7 @@ def mock_minio_client(monkeypatch):
 def backend(mock_minio_client):
     """Create a MinioRegistryBackend instance with a mock client."""
     return MinioRegistryBackend(
-        uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / "test_dir"),
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
         endpoint="localhost:9000",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -1108,7 +1108,7 @@ def test_metadata_path_property(backend):
 
     # Create a new backend with a custom metadata path
     custom_backend = MinioRegistryBackend(
-        uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / "test_dir"),
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]) / "test_dir"),
         endpoint="localhost:9000",
         access_key="minioadmin",
         secret_key="minioadmin",

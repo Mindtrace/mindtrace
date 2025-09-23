@@ -40,7 +40,7 @@ class ClusterManager(Gateway):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
-            self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
+            self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
             self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
                 unified_model_cls=cluster_types.JobSchemaTargeting,
                 redis_url=self.redis_url,
@@ -63,13 +63,14 @@ class ClusterManager(Gateway):
                 preferred_backend=BackendType.REDIS,
             )
             self.worker_status_database.initialize_sync()
-            self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"])
-            self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
-            self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
-            self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
+            self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
+            self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER"]["MINIO_ENDPOINT"])
+            self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
+            self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
+            self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
             self.nodes = []
             minio_backend = MinioRegistryBackend(
-                uri="~/.cache/mindtrace/minio_registry_cluster",
+                uri=self.worker_registry_uri,
                 endpoint=self.worker_registry_endpoint,
                 access_key=self.worker_registry_access_key,
                 secret_key=self.worker_registry_secret_key,
@@ -672,7 +673,7 @@ class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
-            self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
+            self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
             self.worker_status_local_database = UnifiedMindtraceODMBackend(
                 unified_model_cls=cluster_types.WorkerStatusLocal,
                 redis_url=self.redis_url,
