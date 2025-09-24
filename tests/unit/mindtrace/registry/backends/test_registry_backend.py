@@ -13,15 +13,16 @@ def concrete_backend():
         def __init__(self, uri: str | Path):
             super().__init__(uri=uri)
             self._materializers: Dict[str, str] = {}
+            self._uri = Path(uri)
 
         @property
         def uri(self) -> Path:
             return self._uri
 
-        def push(self, name: str, version: str | None = None, local_path: str | None = None):
+        def push(self, name: str, version: str, local_path: str | Path):
             pass
 
-        def pull(self, name: str, version: str, local_path: str):
+        def pull(self, name: str, version: str, local_path: str | Path):
             pass
 
         def delete(self, name: str, version: str = "all"):
@@ -33,8 +34,8 @@ def concrete_backend():
         def fetch_metadata(self, name: str, version: str) -> dict:
             return {}
 
-        def delete_metadata(self, name: str, version: str) -> dict:
-            return {}
+        def delete_metadata(self, model_name: str, version: str):
+            pass
 
         def list_objects(self) -> list[str]:
             return []
@@ -54,7 +55,7 @@ def concrete_backend():
         def registered_materializers(self) -> Dict[str, str]:
             return self._materializers.copy()
 
-        def acquire_lock(self, key: str, lock_id: str, timeout: int) -> bool:
+        def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
             """Test implementation of acquire_lock."""
             return True
 

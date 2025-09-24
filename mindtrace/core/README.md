@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-core)](https://pypi.org/project/mindtrace-core/)
+[![License](https://img.shields.io/pypi/l/mindtrace-core)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/core/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-core)](https://pepy.tech/projects/mindtrace-core)
+
 # Mindtrace Core
 
 The foundational module of the Mindtrace ML framework, providing essential utilities, base classes, and core abstractions used across all other Mindtrace modules.

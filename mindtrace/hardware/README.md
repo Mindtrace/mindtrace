@@ -1,3 +1,7 @@
+[![PyPI version](https://img.shields.io/pypi/v/mindtrace-hardware)](https://pypi.org/project/mindtrace-hardware/)
+[![License](https://img.shields.io/pypi/l/mindtrace-hardware)](https://github.com/mindtrace/mindtrace/blob/main/mindtrace/hardware/LICENSE)
+[![Downloads](https://static.pepy.tech/badge/mindtrace-hardware)](https://pepy.tech/projects/mindtrace-hardware)
+
 # Mindtrace Hardware Component
 
 The Mindtrace Hardware Component provides a unified interface for managing industrial hardware devices including cameras, PLCs, sensors, and actuators. The component is designed with modularity, extensibility, and production-ready reliability in mind.
@@ -82,8 +86,9 @@ mindtrace-setup-cameras
 
 #### Individual Camera Backend Setup
 ```bash
-# Setup Daheng cameras (installs gxipy SDK)
+# Setup Daheng cameras (gxipy SDK needs to be installed separately)
 mindtrace-setup-daheng
+pip install git+https://github.com/Mindtrace/gxipy.git@gxipy_deploy
 
 # Setup Basler cameras (installs pypylon SDK)
 mindtrace-setup-basler

@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-ui"
-version = "0.1.0"
+version = "0.3.0"
 description = "UI for Mindtrace"
 license = "Apache-2.0"
 authors = [
@@ -26,14 +26,9 @@ dependencies = [
     "beanie>=1.29.0",
 ]
 
-[tool.setuptools]
-packages = ["mindtrace.ui"]
-
-[tool.setuptools.package-dir]
-"" = "."
-
-[tool.dstool.scripts]
-poseidon-dev = "cd mindtrace/ui && reflex run"
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/ui"
 
 [build-system]
 requires = ["setuptools"]

@@ -84,7 +84,7 @@ class TestServiceClass:
 
         # The schema parameter is now required, so this should raise TypeError
         with pytest.raises(TypeError):
-            service.add_endpoint("dummy", dummy_handler)
+            service.add_endpoint("dummy", dummy_handler)  # type: ignore
 
 
 class TestServiceInitialization:
@@ -274,8 +274,38 @@ class TestServiceProperties:
 
         assert heartbeat.status == service.status
         assert heartbeat.server_id == service.id
-        assert "Heartbeat check successful" in heartbeat.message
+        assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
+
+    def test_endpoints_func(self):
+        """Test endpoints_func method."""
+        service = SampleService()
+        result = service.endpoints_func()
+
+        assert isinstance(result, dict)
+        assert "endpoints" in result
+        assert isinstance(result["endpoints"], list)
+        assert "test_task" in result["endpoints"]
+        assert "echo" in result["endpoints"]
+
+    def test_status_func(self):
+        """Test status_func method."""
+        service = SampleService()
+        result = service.status_func()
+
+        assert isinstance(result, dict)
+        assert "status" in result
+        assert result["status"] == service.status.value
+
+    def test_heartbeat_func(self):
+        """Test heartbeat_func method."""
+        service = SampleService()
+        result = service.heartbeat_func()
+
+        assert isinstance(result, dict)
+        assert "heartbeat" in result
+        assert isinstance(result["heartbeat"], type(service.heartbeat()))
+        assert result["heartbeat"].status == service.status
 
 
 class TestServiceMCP:
@@ -290,17 +320,19 @@ class TestServiceMCP:
         # mcp_app should be a FastAPI app (or compatible)
         from fastapi import FastAPI
         from starlette.applications import Starlette
+
         assert isinstance(service.mcp_app, (FastAPI, Starlette)), "mcp_app should be a FastAPI or Starlette app."
 
     def test_service_mounts_mcp_app(self):
         service = Service()
         # The /mcp-server route should be mounted
-        routes = [route for route in service.app.routes if hasattr(route, 'path')]
-        mcp_mounts = [route for route in routes if getattr(route, 'path', None) == "/mcp-server"]
+        routes = [route for route in service.app.routes if hasattr(route, "path")]
+        mcp_mounts = [route for route in routes if getattr(route, "path", None) == "/mcp-server"]
         assert mcp_mounts, "Service.app should have /mcp-server mounted."
         # The mounted app should be the mcp_app
         # In FastAPI, mounts are in app.routes as Mount objects
         from fastapi.routing import Mount
+
         found = False
         for route in service.app.routes:
             if isinstance(route, Mount) and route.path == "/mcp-server":
@@ -312,33 +344,43 @@ class TestServiceMCP:
         service = Service()
         # Patch the mcp.tool decorator to track registration
         called = {}
-        def fake_tool(name):
+
+        def fake_tool(name, **kwargs):
             def decorator(func):
-                called['name'] = name
-                called['func'] = func
+                called["name"] = name
+                called["func"] = func
+                called["kwargs"] = kwargs
                 return func
+
             return decorator
+
         service.mcp.tool = fake_tool
+
         def dummy_func():
             return "ok"
+
         service.add_tool("dummy_tool", dummy_func)
-        assert called['name'] == "dummy_tool"
-        assert called['func'] is dummy_func
+        assert called["name"] == "dummy_tool"
+        assert called["func"] is dummy_func
 
     def test_add_endpoint_with_as_tool_calls_add_tool(self):
         service = Service()
         # Patch add_tool to track calls
         called = {}
+
         def fake_add_tool(tool_name, func):
-            called['tool_name'] = tool_name
-            called['func'] = func
+            called["tool_name"] = tool_name
+            called["func"] = func
+
         service.add_tool = fake_add_tool
+
         def dummy_func():
             return "ok"
+
         test_schema = TaskSchema(name="dummy", input_schema=None, output_schema=None)
         service.add_endpoint("dummy", dummy_func, schema=test_schema, as_tool=True)
-        assert called['tool_name'] == "dummy"
-        assert called['func'] is dummy_func
+        assert called["tool_name"] == "dummy"
+        assert called["func"] is dummy_func
 
 
 class TestServiceUrlBuilding:
@@ -533,7 +575,7 @@ class TestServiceLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_context_manager(self):
-        """Test FastAPI lifespan context manager (covers lines 98-101)."""
+        """Test FastAPI lifespan context manager."""
         service = SampleService()
 
         # Get the lifespan function from the FastAPI app
@@ -561,7 +603,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_runtime_error_handling(self, mock_build_url, mock_status_at_host):
-        """Test launch method RuntimeError handling (covers lines 234-240)."""
+        """Test launch method RuntimeError handling."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host raise RuntimeError
         mock_status_at_host.side_effect = RuntimeError("Connection failed")
@@ -581,7 +623,7 @@ class TestServiceLaunchExceptionHandling:
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
     def test_launch_service_already_running_http_exception(self, mock_build_url, mock_status_at_host):
-        """Test launch method HTTPException when service already running (covers line 234)."""
+        """Test launch method HTTPException when service already running."""
         mock_build_url.return_value = parse_url("http://localhost:8000")
         # Make status_at_host return AVAILABLE (service already running)
         mock_status_at_host.return_value = ServerStatus.AVAILABLE
@@ -605,7 +647,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_keyboard_interrupt(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking with KeyboardInterrupt (covers lines 290-299)."""
+        """Test launch method blocking with KeyboardInterrupt."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -658,7 +700,7 @@ class TestServiceLaunchExceptionHandling:
     def test_launch_blocking_finally_cleanup(
         self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_build_url, mock_status_at_host
     ):
-        """Test launch method blocking finally block (covers lines 290-299)."""
+        """Test launch method blocking finally block."""
         # Setup mocks
         mock_build_url.return_value = parse_url("http://localhost:8000")
         mock_status_at_host.return_value = ServerStatus.DOWN
@@ -692,7 +734,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_child_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with child NoSuchProcess exception (covers lines 328-331)."""
+        """Test _cleanup_server with child NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -725,7 +767,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent NoSuchProcess exception (covers lines 335-338)."""
+        """Test _cleanup_server with parent NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -754,7 +796,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_terminate_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent terminate NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent terminate NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -788,7 +830,7 @@ class TestServiceCleanupMethods:
 
     @patch("mindtrace.services.core.service.psutil.Process")
     def test_cleanup_server_parent_wait_no_such_process(self, mock_psutil_process):
-        """Test _cleanup_server with parent wait NoSuchProcess exception (covers lines 335-336)."""
+        """Test _cleanup_server with parent wait NoSuchProcess exception."""
         # Setup mock process
         mock_process = Mock()
         mock_process.pid = 1234
@@ -820,7 +862,7 @@ class TestServiceCleanupMethods:
             Service._active_servers = original_servers
 
     def test_cleanup_all_servers(self):
-        """Test _cleanup_all_servers method (covers lines 345-346)."""
+        """Test _cleanup_all_servers method."""
         # Setup multiple mock servers
         test_uuid1 = UUID("12345678-1234-5678-1234-567812345678")
         test_uuid2 = UUID("87654321-4321-8765-4321-876543218765")
@@ -882,3 +924,284 @@ class TestServiceGlobalEndpointPollution:
         assert "echo" not in service_methods, (
             f"Global pollution detected: Service connection manager has methods: {service_methods}"
         )
+
+
+class TestServiceInterruption:
+    """Test Service interruption handling during launch."""
+
+    def test_connect_with_interrupt_handling_process_exited_cleanly(self):
+        """Test _connect_with_interrupt_handling when process exits cleanly."""
+        mock_process = Mock()
+        mock_process.poll.return_value = 0  # Process has exited
+        mock_process.returncode = 0  # Clean exit
+
+        with pytest.raises(SystemExit, match="Service exited cleanly."):
+            Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+    def test_connect_with_interrupt_handling_process_error_exit(self):
+        """Test _connect_with_interrupt_handling when process exits with error."""
+        mock_process = Mock()
+        mock_process.poll.return_value = 0  # Process has exited
+        mock_process.returncode = 1  # Error exit
+
+        with pytest.raises(RuntimeError, match="Server exited with code 1"):
+            Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+    def test_connect_with_interrupt_handling_process_running(self):
+        """Test _connect_with_interrupt_handling when process is still running."""
+        mock_process = Mock()
+        mock_process.poll.return_value = None  # Process is still running
+
+        with patch.object(Service, "connect") as mock_connect:
+            mock_connection_manager = Mock()
+            mock_connect.return_value = mock_connection_manager
+
+            result = Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+            assert result == mock_connection_manager
+            mock_connect.assert_called_once_with(url="http://localhost:8000")
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_keyboard_interrupt_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method KeyboardInterrupt during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise KeyboardInterrupt
+            mock_timeout_handler = Mock()
+            mock_timeout_handler.run.side_effect = KeyboardInterrupt("User interrupted")
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with patch("mindtrace.services.core.service.logging.getLogger") as mock_get_logger:
+                        mock_logger = Mock()
+                        mock_get_logger.return_value = mock_logger
+
+                        with pytest.raises(KeyboardInterrupt, match="User interrupted"):
+                            Service.launch(wait_for_launch=True, timeout=30)
+
+                        # Should cleanup the server
+                        mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_system_exit_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method SystemExit during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise SystemExit
+            mock_timeout_handler = Mock()
+            mock_timeout_handler.run.side_effect = SystemExit("Service terminated")
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with patch("mindtrace.services.core.service.logging.getLogger") as mock_get_logger:
+                        mock_logger = Mock()
+                        mock_get_logger.return_value = mock_logger
+
+                        with pytest.raises(SystemExit, match="Service terminated"):
+                            Service.launch(wait_for_launch=True, timeout=30)
+
+                        # Should cleanup the server
+                        mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_general_exception_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method general exception during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise a general exception
+            mock_timeout_handler = Mock()
+            test_exception = RuntimeError("Connection timeout")
+            mock_timeout_handler.run.side_effect = test_exception
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with pytest.raises(RuntimeError, match="Connection timeout"):
+                        Service.launch(wait_for_launch=True, timeout=30)
+
+                    # Should cleanup the server
+                    mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_successful_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method successful wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to return a connection manager
+            mock_timeout_handler = Mock()
+            mock_connection_manager = Mock()
+            mock_timeout_handler.run.return_value = mock_connection_manager
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                result = Service.launch(wait_for_launch=True, timeout=30)
+
+                # Should return the connection manager
+                assert result == mock_connection_manager
+                # Should call timeout handler with correct parameters
+                mock_timeout_handler.run.assert_called_once()
+                call_args = mock_timeout_handler.run.call_args
+                assert call_args[0][0] == Service._connect_with_interrupt_handling
+                assert call_args[1]["process"] == mock_process
+                assert call_args[1]["timeout"] == 30
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_timeout_handler_configuration(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method timeout handler configuration."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            with patch("mindtrace.services.core.service.Timeout") as mock_timeout_class:
+                mock_timeout_instance = Mock()
+                mock_timeout_class.return_value = mock_timeout_instance
+                mock_connection_manager = Mock()
+                mock_timeout_instance.run.return_value = mock_connection_manager
+
+                Service.launch(wait_for_launch=True, timeout=60, progress_bar=True)
+
+                # Should create Timeout with correct parameters
+                mock_timeout_class.assert_called_once_with(
+                    timeout=60,
+                    exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                    progress_bar=True,
+                    desc=f"Launching {Service.unique_name.split('.')[-1]} at http://localhost:8000",
+                )
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_no_wait_for_launch_returns_none(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method when wait_for_launch=False returns None."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            result = Service.launch(wait_for_launch=False)
+
+            # Should return None when wait_for_launch=False
+            assert result is None
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers

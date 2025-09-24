@@ -1,14 +1,14 @@
-from typing import Any, Iterable
+from typing import Iterable
 
 from urllib3.util.url import Url, parse_url
 
 
-def ifnone(val: Any, default: Any) -> Any:
+def ifnone[T1, T2](val: T1 | None, default: T2) -> T1 | T2:
     """Return the given value if it is not None, else return the default."""
     return val if val is not None else default
 
 
-def first_not_none(vals: Iterable, default: Any = None):
+def first_not_none[T1, T2](vals: Iterable[T1 | None], default: T2 = None) -> T1 | T2:
     """Returns the first not-None value in the given iterable, else returns the default."""
     return next((item for item in vals if item is not None), default)
 
@@ -28,8 +28,17 @@ def ifnone_url(url: str | Url | None, default: str | Url) -> Url:
     )
 
 
-def check_libs(required_libs: list[str]) -> list[str]:
-    """Check if all required libraries are available."""
+def check_libs(required_libs: str | list[str]) -> list[str]:
+    """Check if all required libraries are available.
+
+    Args:
+        required_libs: A list of library names to check.
+
+    Returns:
+        A list of missing libraries.
+    """
+    if isinstance(required_libs, str):
+        required_libs = [required_libs]
     missing_libs = []
     for lib in required_libs:
         try:

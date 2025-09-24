@@ -41,12 +41,9 @@ class LineInsightsState(BaseFilterState):
 
     # Loading flags
 
-    loading_parts_chart: bool = False
-    loading_defect_chart: bool = False
-    loading_defect_histogram_chart: bool = False
-    loading_weld_chart: bool = False
-    loading_healthy_vs_defective_chart: bool = False
+    loading_charts: bool = True
 
+    @rx.event
     async def set_date_range(self, range_type: str):
         """Set the date range and reload data."""
         self.date_range = range_type
@@ -64,30 +61,28 @@ class LineInsightsState(BaseFilterState):
         elif range_type == "last_90_days":
             self.start_date = now - timedelta(days=90)
             self.end_date = now
-        await self.load_dashboard_data()
+        return type(self).load_dashboard_data
 
     @rx.event
     async def on_mount(self):
         """Initialize filters and data for current line scope."""
         if not self.start_date:
-            await self.set_date_range("last_7_days")
-        else:
-            await self.load_dashboard_data()
+            now = datetime.now(timezone.utc)
+            self.date_range = "last_7_days"
+            self.start_date = now - timedelta(days=7)
+            self.end_date = now
+        return type(self).load_dashboard_data
 
+    @rx.event
     async def load_dashboard_data(self):
         """One fast pass to fetch everything needed for the dashboard."""
-
-        self.loading = True
-        self.loading_parts_chart = True
-        self.loading_defect_chart = True
-        self.loading_defect_histogram_chart = True
-        self.loading_weld_chart = True
-        self.loading_healthy_vs_defective_chart = True
+        self.loading_charts = True
         self.clear_messages()
+        print("CALLED LOAD_DASHBOARD_DATA")
+        yield
 
         try:
             if not (self.line_id and self.start_date and self.end_date):
-                # Clear if incomplete context
                 self._clear_all_data()
                 return
 
@@ -130,14 +125,12 @@ class LineInsightsState(BaseFilterState):
 
         except Exception as e:
             self.set_error(f"Failed to load dashboard data: {e}")
+            self.loading_charts = False
             self._clear_all_data()
         finally:
-            self.loading = False
-            self.loading_parts_chart = False
-            self.loading_defect_chart = False
-            self.loading_defect_histogram_chart = False
-            self.loading_weld_chart = False
-            self.loading_healthy_vs_defective_chart = False
+            self.loading_charts = False
+            yield
+
 
     # -----------------------
     # Helpers
