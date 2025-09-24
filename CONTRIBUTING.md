@@ -63,6 +63,8 @@ git checkout -b docs/update-description
 - **Use type hints** for better code clarity and IDE support
 - **Add unit tests** for new functionality (`tests/unit/mindtrace/[module]`)
 - **Add integration tests** where applicable (`tests/integration/mindtrace/[module]`)
+- **Add or update any relevant README files** to include descriptions of important functionality and modules. Link to sub-module READMEs for covering more detail where necessary.
+- **Add or update any relevant samples** in `samples/[module]/` providing simple, clear, self-contained example usage code that just works
 
 #### 3. Code Quality
 
@@ -133,9 +135,10 @@ Your pull request should include:
 - [x] PR targets the `dev` branch
 - [x] Tests added for new functionality
 - [x] No regression in test coverage
-- [x] Documentation updated as needed
+- [x] Documentation and READMEs updated as needed
 - [x] Useful commit messages
 - [x] Links to relevant issues/PRs/discussions, if any
+- [x] Samples working as expected
 
 
 ### Code Review Process
