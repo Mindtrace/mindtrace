@@ -84,10 +84,10 @@ mindtrace/ui/
 - Example:
   ```python
   import reflex as rx
-  from mindtrace.ui.themes.tokens import COLORS
+  from mindtrace.ui.tokens import C
 
   def my_button():
-      return rx.button("Click Me", background=COLORS["primary"])
+      return rx.button("Click Me", background=C["primary"])
   ```
 
 ---
