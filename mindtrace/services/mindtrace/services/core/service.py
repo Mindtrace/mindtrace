@@ -58,6 +58,7 @@ class Service(Mindtrace):
         description: str | None = None,
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
+        live_service: bool = True,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -69,6 +70,9 @@ class Service(Mindtrace):
             description: Description of the server
             terms_of_service: Terms of service for the server
             license_info: License information for the server
+            live_service: bool: set to True when launching via .launch(),
+                set to False when querying endpoints in mindtrace.services.core.utils.py::generate_connection_manager
+                Used to allow Service subclasses to have expensive __init__() methods without making .connect() slow
 
         Warning: Services should be created via the ServiceClass.launch() method. The __init__ method here should be
         considered private internal use.
