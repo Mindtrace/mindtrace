@@ -1,4 +1,4 @@
-from asyncio.base_futures import _PENDING
+from asyncio.base_futures import _PENDING  # (left as in your original file)
 from mindtrace.database import MindtraceDocument
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime, UTC
@@ -17,19 +17,19 @@ class ScanClassification(MindtraceDocument):
     scan: Link["Scan"]
     scan_project_id: Optional[PydanticObjectId] = None
     is_defect: Optional[bool] = None
-    
+
     # Classification information
     name: str  # classification name/label
     cls_confidence: Optional[float] = None
     cls_pred_time: Optional[float] = None  # in seconds
-    
+
     # Detection bounding box coordinates
     det_cls: Optional[str] = None  # detected class
     det_x: Optional[float] = None  # x coordinate
-    det_y: Optional[float] = None  # y coordinate  
+    det_y: Optional[float] = None  # y coordinate
     det_w: Optional[float] = None  # width
     det_h: Optional[float] = None  # height
-    
+
     # Timestamps
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -38,6 +38,7 @@ class ScanClassification(MindtraceDocument):
         name = "ScanClassification"
         indexes = [
             IndexModel([("scan.$id", ASCENDING), ("created_at", DESCENDING)], name="scancls_scan_created_at"),
+            IndexModel([("image.$id", ASCENDING)], name="scancls_image_id"),
             IndexModel([("name", ASCENDING), ("created_at", DESCENDING)], name="scancls_name_created_at"),
             IndexModel([("det_cls", ASCENDING), ("created_at", DESCENDING)], name="scancls_detcls_created_at"),
             IndexModel([("scan_project_id", ASCENDING), ("created_at", DESCENDING)], name="scancls_scanprojectid_created_at"),
@@ -77,4 +78,4 @@ class ScanClassification(MindtraceDocument):
 
     def is_high_confidence(self, threshold: float = 0.8) -> bool:
         """Check if classification confidence is above threshold"""
-        return self.cls_confidence is not None and self.cls_confidence >= threshold 
+        return self.cls_confidence is not None and self.cls_confidence >= threshold

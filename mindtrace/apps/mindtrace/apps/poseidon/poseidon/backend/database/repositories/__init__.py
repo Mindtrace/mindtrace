@@ -8,6 +8,7 @@ from .model_deployment_repository import ModelDeploymentRepository
 from .scan_repository import ScanRepository
 from .scan_image_repository import ScanImageRepository
 from .scan_classification_repository import ScanClassificationRepository
+from .data_view_table_repository import TableRepository
 
 __all__ = [
     "UserRepository",
@@ -19,5 +20,6 @@ __all__ = [
     "ModelDeploymentRepository",
     "ScanRepository",
     "ScanImageRepository",
-    "ScanClassificationRepository"
+    "ScanClassificationRepository",
+    "TableRepository",
 ]

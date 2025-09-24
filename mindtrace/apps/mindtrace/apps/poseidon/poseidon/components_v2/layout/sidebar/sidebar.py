@@ -11,6 +11,7 @@ NAV = [
             {"label": "Model Deployment", "icon": "layout-panel-left", "href": "/model-deployment"},
             {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
             {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
+            {"label": "Line View", "icon": "shield-check", "scope": "line", "to": "line-view"},
         ],
     ),
     (

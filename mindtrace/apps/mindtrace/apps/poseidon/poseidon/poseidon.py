@@ -29,6 +29,8 @@ from poseidon.styles.styles import styles
 from poseidon.styles.theme import theme_config
 from poseidon.state.line_insights import LineInsightsState
 from poseidon.state.auth import AuthState
+from poseidon.pages.filter_table_demo import filter_table_demo
+from poseidon.state.line_view_state import LineViewState
 
 # Create app with comprehensive styling configuration
 app = rx.App(
@@ -118,5 +120,12 @@ app.add_page(
     with_shell(component_showcase_page, title="Mindtrace - Component Showcase", active="Component Showcase"),
     route="/component-showcase",
 )
+
+app.add_page(
+    with_shell(filter_table_demo, title="Mindtrace - Line View", active="Line View", show_scope_selector=True),
+    route="/plants/[plant_id]/lines/[line_id]/line-view",
+    on_load=LineViewState.load,
+)
+
 from poseidon.backend.database.init import rebuild_all_models
 rebuild_all_models()
