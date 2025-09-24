@@ -603,9 +603,11 @@ def test_launch_worker_with_delay():
         assert result.status == "queued"
         assert result.output == {}
 
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id) # even this is potentially a race
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)  # even this is potentially a race
         if worker_status.status != WorkerStatusEnum.IDLE.value:
-            warnings.warn(f"get_worker_status returned {worker_status.status} when we were expecting {WorkerStatusEnum.IDLE.value}")
+            warnings.warn(
+                f"get_worker_status returned {worker_status.status} when we were expecting {WorkerStatusEnum.IDLE.value}"
+            )
 
         # Wait for the job to be processed
         time.sleep(1)
