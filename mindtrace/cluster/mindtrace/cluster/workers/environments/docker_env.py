@@ -76,7 +76,7 @@ class DockerEnvironment(Mindtrace):
                 "working_dir": self.working_dir,
                 "detach": True,
                 "tty": True,
-                "command": "sh",
+                "command": command,
                 "stdin_open": True,
                 "ports": self.ports,
                 **self.kwargs,
