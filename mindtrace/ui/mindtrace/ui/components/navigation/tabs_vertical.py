@@ -10,6 +10,7 @@ class _VTabState(rx.State):
     Attributes:
         values (dict[str, str]): Mapping of tab IDs (`cid`) to currently selected value.
     """
+
     values: dict[str, str] = {}
 
     def set_value(self, cid: str, v: str) -> None:

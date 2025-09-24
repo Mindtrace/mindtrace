@@ -14,9 +14,9 @@ def button(
 
     Args:
         label (str): The text displayed on the button.
-        variant (str, optional): Visual style of the button. 
+        variant (str, optional): Visual style of the button.
             Options: "primary", "secondary", "ghost", "danger", "outline". Defaults to "primary".
-        size (str, optional): Button size. 
+        size (str, optional): Button size.
             Options: "xs", "sm", "md", "lg". Defaults to "md".
         disabled (bool, optional): If True, disables the button. Defaults to False.
         on_click (callable, optional): Function to trigger on button click. Defaults to None.

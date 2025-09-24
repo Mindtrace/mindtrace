@@ -10,6 +10,7 @@ class _AlertState(rx.State):
     Attributes:
         dismissed (dict[str, bool]): Whether a given alert (by `cid`) is dismissed.
     """
+
     dismissed: dict[str, bool] = {}
 
     def dismiss(self, cid: str) -> None:
@@ -52,9 +53,9 @@ def alert(
     """
     colors = {
         "success": ("#065f46", "rgba(16,185,129,.1)", "rgba(16,185,129,.3)"),
-        "error":   ("#991b1b", "rgba(239,68,68,.1)", "rgba(239,68,68,.3)"),
+        "error": ("#991b1b", "rgba(239,68,68,.1)", "rgba(239,68,68,.3)"),
         "warning": ("#92400e", "rgba(245,158,11,.1)", "rgba(245,158,11,.3)"),
-        "info":    ("#1e40af", "rgba(59,130,246,.1)", "rgba(59,130,246,.3)"),
+        "info": ("#1e40af", "rgba(59,130,246,.1)", "rgba(59,130,246,.3)"),
     }
     fg, bg, bd = colors.get(severity, colors["info"])
 

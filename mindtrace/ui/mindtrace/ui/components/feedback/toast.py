@@ -14,6 +14,7 @@ class _ToastState(rx.State):
             - message (str): Toast text content.
             - variant (str): Toast variant ("success", "error", "warning", "info").
     """
+
     toasts: dict[str, list[dict]] = {}
 
     def add(self, cid: str, message: str, variant: str = "info") -> None:
@@ -84,9 +85,9 @@ def toast_portal(
 
     colors = {
         "success": ("#065f46", "rgba(16,185,129,.1)", "rgba(16,185,129,.3)"),
-        "error":   ("#991b1b", "rgba(239,68,68,.1)", "rgba(239,68,68,.3)"),
+        "error": ("#991b1b", "rgba(239,68,68,.1)", "rgba(239,68,68,.3)"),
         "warning": ("#92400e", "rgba(245,158,11,.1)", "rgba(245,158,11,.3)"),
-        "info":    ("#1e40af", "rgba(59,130,246,.1)", "rgba(59,130,246,.3)"),
+        "info": ("#1e40af", "rgba(59,130,246,.1)", "rgba(59,130,246,.3)"),
     }
 
     def toast_item(t: dict) -> rx.Component:

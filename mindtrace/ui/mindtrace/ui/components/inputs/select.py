@@ -10,6 +10,7 @@ class _SelectState(rx.State):
     Attributes:
         values (dict[str, str]): Mapping of component IDs (`cid`) to the current selected value.
     """
+
     values: dict[str, str] = {}
 
     def set(self, cid: str, v: str) -> None:
@@ -65,9 +66,7 @@ def select(
 
     return rx.select.root(
         rx.select.trigger(placeholder=placeholder),
-        rx.select.content(
-            *[rx.select.item(i["label"], value=i["value"]) for i in norm]
-        ),
+        rx.select.content(*[rx.select.item(i["label"], value=i["value"]) for i in norm]),
         value=value,
         on_change=lambda v: (
             _SelectState.set(cid, v),

@@ -9,6 +9,7 @@ class _SearchState(rx.State):
         q (dict[str, str]): Current query text per component.
         last (dict[str, str]): Last submitted query per component.
     """
+
     q: dict[str, str] = {}
     last: dict[str, str] = {}
 

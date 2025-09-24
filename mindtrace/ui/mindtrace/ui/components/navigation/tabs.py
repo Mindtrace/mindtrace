@@ -10,6 +10,7 @@ class _TabsState(rx.State):
     Attributes:
         values (dict[str, str]): Mapping of tab group IDs (`cid`) to the currently selected value.
     """
+
     values: dict[str, str] = {}
 
     def set_value(self, cid: str, v: str) -> None:
@@ -57,9 +58,7 @@ def tabs(
                 *[
                     rx.tabs.trigger(
                         rx.hstack(
-                            rx.text(tab.get("icon", ""), margin_right="6px")
-                            if tab.get("icon")
-                            else rx.fragment(),
+                            rx.text(tab.get("icon", ""), margin_right="6px") if tab.get("icon") else rx.fragment(),
                             rx.text(tab["label"]),
                             align="center",
                             spacing="1",

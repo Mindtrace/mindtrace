@@ -9,6 +9,7 @@ class _TagState(rx.State):
         tags (dict[str, list[str]]): Mapping of component IDs (`cid`) to lists of committed tags.
         draft (dict[str, str]): Mapping of component IDs (`cid`) to the current draft input text.
     """
+
     tags: dict[str, list[str]] = {}
     draft: dict[str, str] = {}
 

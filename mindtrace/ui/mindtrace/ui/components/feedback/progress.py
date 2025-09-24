@@ -8,6 +8,7 @@ class _ProgressState(rx.State):
     Attributes:
         values (dict[str, int]): Mapping of component IDs (`cid`) to progress values (0–100).
     """
+
     values: dict[str, int] = {}
 
     def set(self, cid: str, v: int) -> None:

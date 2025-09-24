@@ -10,6 +10,7 @@ class _PillTabsState(rx.State):
     Attributes:
         selected_by_cid (dict[str, str]): Mapping of `cid` to the currently selected tab value.
     """
+
     selected_by_cid: dict[str, str] = {}
 
     def select_value(self, cid: str, value: str) -> None:

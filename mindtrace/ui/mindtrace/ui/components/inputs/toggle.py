@@ -8,6 +8,7 @@ class _ToggleState(rx.State):
     Attributes:
         values (dict[str, bool]): Mapping of component IDs (`cid`) to boolean values.
     """
+
     values: dict[str, bool] = {}
 
     def toggle(self, cid: str) -> None:

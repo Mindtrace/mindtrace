@@ -19,6 +19,7 @@ from mindtrace.ui.components.navigation.tabs_pills import pill_tabs
 
 # ========== SHARED UI HELPERS (pure components) ==========
 
+
 def _prop_input_text(label: str, value, on_change):
     return rx.vstack(
         rx.text(label, size="2", color="#64748b"),
@@ -83,12 +84,9 @@ def _code_panel(title: str, code_text):
 
 # ========= PER-STORY STATE (each stores a live code_text) =========
 
+
 class BreadcrumbsState(rx.State):
-    items_json: str = (
-        '[{"label":"Home","href":"/"},'
-        ' {"label":"Admin","href":"/admin"},'
-        ' {"label":"Users"}]'
-    )
+    items_json: str = '[{"label":"Home","href":"/"}, {"label":"Admin","href":"/admin"}, {"label":"Users"}]'
     code_text: str = """import reflex as rx
 from mindtrace.ui.components.navigation.breadcrumbs import breadcrumbs
 
@@ -114,9 +112,7 @@ def demo():
                 if i == len(items) - 1:
                     o["is_last"] = True
                 out.append(o)
-            body = ",\n        ".join(
-                "{" + ", ".join(f"{k!r}: {v!r}" for k, v in o.items()) + "}" for o in out
-            )
+            body = ",\n        ".join("{" + ", ".join(f"{k!r}: {v!r}" for k, v in o.items()) + "}" for o in out)
         except Exception:
             body = """{"label": "Home", "href": "/"},
         {"label": "Admin", "href": "/admin"},
@@ -148,11 +144,13 @@ def demo():
         out = []
         n = len(self.items)
         for i, it in enumerate(self.items):
-            out.append({
-                "label": it.get("label", ""),
-                "href": it.get("href", "") or "",
-                "is_last": (i == n - 1),
-            })
+            out.append(
+                {
+                    "label": it.get("label", ""),
+                    "href": it.get("href", "") or "",
+                    "is_last": (i == n - 1),
+                }
+            )
         return out
 
 
@@ -177,9 +175,7 @@ def demo():
     def _sync_code(self):
         try:
             cards = json.loads(self.cards_json)
-            body = ",\n        ".join(
-                "{" + ", ".join(f"{k!r}: {v!r}" for k, v in c.items()) + "}" for c in cards
-            )
+            body = ",\n        ".join("{" + ", ".join(f"{k!r}: {v!r}" for k, v in c.items()) + "}" for c in cards)
         except Exception:
             body = """{"title": "Users", "value": "1,234", "subtitle": "+4% WoW", "icon": "👥"}"""
         self.code_text = f"""import reflex as rx
@@ -207,7 +203,7 @@ def demo():
 
 class InlineAlertState(rx.State):
     message: str = "Heads up: something changed."
-    variant: str = "warning"   # info | success | warning | error
+    variant: str = "warning"  # info | success | warning | error
     dismissible: bool = True
     code_text: str = """import reflex as rx
 from mindtrace.ui.components.feedback.inline_alert import inline_alert
@@ -308,8 +304,8 @@ def demo():
 # NEW: Button story state
 class ButtonState(rx.State):
     label: str = "Click Me"
-    variant: str = "primary"   # primary | secondary | ghost | danger | outline
-    size: str = "md"           # xs | sm | md | lg
+    variant: str = "primary"  # primary | secondary | ghost | danger | outline
+    size: str = "md"  # xs | sm | md | lg
     disabled: bool = False
     loading: bool = False
     full_width: bool = False
@@ -363,9 +359,7 @@ def demo():
 # NEW: Checklist story state
 class ChecklistState(rx.State):
     items_json: str = (
-        '[{"id":"1","label":"Email backend wired"},'
-        ' {"id":"2","label":"CI passing"},'
-        ' {"id":"3","label":"Docs updated"}]'
+        '[{"id":"1","label":"Email backend wired"}, {"id":"2","label":"CI passing"}, {"id":"3","label":"Docs updated"}]'
     )
     checked_ids: set[str] = set()
     code_text: str = """import reflex as rx
@@ -389,9 +383,10 @@ def demo():
 
     def _sync_code(self):
         items = self._parsed_items()
-        items_body = ",\n        ".join(
-            "{" + ", ".join(f"{k!r}: {v!r}" for k, v in it.items()) + "}" for it in items
-        ) or """{"id":"1","label":"Example"}"""
+        items_body = (
+            ",\n        ".join("{" + ", ".join(f"{k!r}: {v!r}" for k, v in it.items()) + "}" for it in items)
+            or """{"id":"1","label":"Example"}"""
+        )
         checked_body = "{" + ", ".join(repr(x) for x in sorted(self.checked_ids)) + "}"
         self.code_text = f"""import reflex as rx
 from mindtrace.ui.components.data.checklist import checklist
@@ -423,10 +418,7 @@ def demo():
 
 # NEW: Simple Table story (using built-in rx.table primitives)
 class TableState(rx.State):
-    rows_json: str = (
-        '[{"name":"Alice","role":"Admin","active":true},'
-        ' {"name":"Bob","role":"Editor","active":false}]'
-    )
+    rows_json: str = '[{"name":"Alice","role":"Admin","active":true}, {"name":"Bob","role":"Editor","active":false}]'
     code_text: str = """import reflex as rx
 
 def demo():
@@ -464,9 +456,10 @@ def demo():
 
     def _sync_code(self):
         rows = self._parsed_rows()
-        body = ",\n        ".join(
-            "{" + ", ".join(f"{k!r}: {v!r}" for k, v in r.items()) + "}" for r in rows
-        ) or """{"name":"Alice","role":"Admin","active":True}"""
+        body = (
+            ",\n        ".join("{" + ", ".join(f"{k!r}: {v!r}" for k, v in r.items()) + "}" for r in rows)
+            or """{"name":"Alice","role":"Admin","active":True}"""
+        )
         self.code_text = f"""import reflex as rx
 
 def demo():
@@ -505,6 +498,7 @@ def demo():
 
 # ========== STORIES (stateful previews + controls + code panel) ==========
 
+
 # Breadcrumbs
 def story_breadcrumbs_preview() -> rx.Component:
     return rx.center(
@@ -513,15 +507,19 @@ def story_breadcrumbs_preview() -> rx.Component:
         width="100%",
     )
 
+
 def story_breadcrumbs_controls() -> rx.Component:
     return rx.vstack(
         _prop_textarea("items_json", BreadcrumbsState.items_json, BreadcrumbsState.set_items_json, rows=8),
         rx.text(
             "Tip: each item may have 'label' and optional 'href'. The last item is inferred in state.",
-            size="1", color="#94a3b8",
+            size="1",
+            color="#94a3b8",
         ),
-        spacing="2", width="100%",
+        spacing="2",
+        width="100%",
     )
+
 
 STORY_BREADCRUMBS = {
     "id": "breadcrumbs",
@@ -536,12 +534,15 @@ STORY_BREADCRUMBS = {
 def story_statgrid_preview() -> rx.Component:
     return rx.box(stat_grid(StatGridState.cards), width="100%")
 
+
 def story_statgrid_controls() -> rx.Component:
     return rx.vstack(
         _prop_textarea("cards_json", StatGridState.cards_json, StatGridState.set_cards_json, rows=8),
         rx.text('Example: [{"title":"Users","value":"1,234","subtitle":"+4%","icon":"👥"}]', size="1", color="#94a3b8"),
-        spacing="2", width="100%",
+        spacing="2",
+        width="100%",
     )
+
 
 STORY_STATGRID = {
     "id": "stat_grid",
@@ -559,13 +560,18 @@ def story_alert_preview() -> rx.Component:
         width="100%",
     )
 
+
 def story_alert_controls() -> rx.Component:
     return rx.vstack(
         _prop_input_text("message", InlineAlertState.message, InlineAlertState.set_message),
-        _prop_select("variant", InlineAlertState.variant, ["info", "success", "warning", "error"], InlineAlertState.set_variant),
+        _prop_select(
+            "variant", InlineAlertState.variant, ["info", "success", "warning", "error"], InlineAlertState.set_variant
+        ),
         _prop_switch("dismissible", InlineAlertState.dismissible, InlineAlertState.toggle_dismissible),
-        spacing="2", width="100%",
+        spacing="2",
+        width="100%",
     )
+
 
 STORY_ALERT = {
     "id": "inline_alert",
@@ -585,15 +591,19 @@ def story_pilltabs_preview() -> rx.Component:
     ]
     return rx.box(pill_tabs(tabs, "pt1"), width="100%")
 
+
 def story_pilltabs_controls() -> rx.Component:
     return rx.text("No controls for this story (add state if needed).")
+
 
 STORY_PILLTABS = {
     "id": "pill_tabs",
     "name": "Pill Tabs",
     "preview": story_pilltabs_preview,
     "controls": story_pilltabs_controls,
-    "code": lambda: _code_panel("Pill Tabs", """import reflex as rx
+    "code": lambda: _code_panel(
+        "Pill Tabs",
+        """import reflex as rx
 from mindtrace.ui.components.navigation.tabs_pills import pill_tabs
 
 def demo():
@@ -603,7 +613,8 @@ def demo():
         {"label":"Archived","value":"archived","content": rx.text("Archived content")},
     ]
     return pill_tabs(tabs, cid="pt1")
-"""),
+""",
+    ),
 }
 
 
@@ -616,8 +627,10 @@ def story_accordion_preview() -> rx.Component:
     ]
     return rx.box(accordion(items, "acc1", AccordionState.single), width="100%")
 
+
 def story_accordion_controls() -> rx.Component:
     return rx.vstack(_prop_switch("single", AccordionState.single, AccordionState.toggle_single), width="100%")
+
 
 STORY_ACCORDION = {
     "id": "accordion",
@@ -632,20 +645,25 @@ STORY_ACCORDION = {
 def story_tag_preview() -> rx.Component:
     return rx.box(tag_input("tags1"), width="100%")
 
+
 def story_tag_controls() -> rx.Component:
     return rx.text("Type and press Enter to add tags.")
+
 
 STORY_TAG = {
     "id": "tag_input",
     "name": "Tag Input",
     "preview": story_tag_preview,
     "controls": story_tag_controls,
-    "code": lambda: _code_panel("Tag Input", """import reflex as rx
+    "code": lambda: _code_panel(
+        "Tag Input",
+        """import reflex as rx
 from mindtrace.ui.components.inputs.tag_input import tag_input
 
 def demo():
     return tag_input(cid="tags1")
-"""),
+""",
+    ),
 }
 
 
@@ -654,23 +672,29 @@ def story_ms_preview() -> rx.Component:
     options = ["Alpha", "Beta", "Gamma", "Delta"]
     return rx.box(multi_select(options, "ms1"), width="100%")
 
+
 def story_ms_controls() -> rx.Component:
     return rx.text("Click items to select / unselect.")
+
 
 STORY_MULTISELECT = {
     "id": "multi_select",
     "name": "Multi Select",
     "preview": story_ms_preview,
     "controls": story_ms_controls,
-    "code": lambda: _code_panel("Multi Select", """import reflex as rx
+    "code": lambda: _code_panel(
+        "Multi Select",
+        """import reflex as rx
 from mindtrace.ui.components.inputs.multi_select import multi_select
 
 def demo():
     return multi_select(["Alpha","Beta","Gamma","Delta"], cid="ms1")
-"""),
+""",
+    ),
 }
 
 # Story EmptyTableState
+
 
 class EmptyTableState(rx.State):
     title: str = "No data"
@@ -721,20 +745,25 @@ def story_empty_preview() -> rx.Component:
         width="100%",
     )
 
+
 def story_empty_controls() -> rx.Component:
     return rx.vstack(
         _prop_input_text("title", EmptyTableState.title, EmptyTableState.set_title),
         _prop_input_text("description", EmptyTableState.description, EmptyTableState.set_description),
         _prop_input_text("action_label", EmptyTableState.action_label, EmptyTableState.set_action_label),
-        spacing="2", width="100%",
+        spacing="2",
+        width="100%",
     )
+
 
 STORY_EMPTY = {
     "id": "empty_table",
     "name": "Empty Table",
     "preview": story_empty_preview,
     "controls": story_empty_controls,
-    "code": lambda: _code_panel("Empty Table", f"""import reflex as rx
+    "code": lambda: _code_panel(
+        "Empty Table",
+        f"""import reflex as rx
 from mindtrace.ui.components.empty.empty_table import empty_table
 
 def demo():
@@ -743,7 +772,8 @@ def demo():
         description={EmptyTableState.description!r},
         action_label={EmptyTableState.action_label!r},
     )
-"""),
+""",
+    ),
 }
 
 
@@ -751,20 +781,25 @@ def demo():
 def story_search_preview() -> rx.Component:
     return rx.box(search_box("s1"), width="100%")
 
+
 def story_search_controls() -> rx.Component:
     return rx.text("Press Enter to submit; click × to clear.")
+
 
 STORY_SEARCH = {
     "id": "search_box",
     "name": "Search Box",
     "preview": story_search_preview,
     "controls": story_search_controls,
-    "code": lambda: _code_panel("Search Box", """import reflex as rx
+    "code": lambda: _code_panel(
+        "Search Box",
+        """import reflex as rx
 from mindtrace.ui.components.inputs.search_box import search_box
 
 def demo():
     return search_box(cid="s1")
-"""),
+""",
+    ),
 }
 
 
@@ -772,20 +807,25 @@ def demo():
 def story_upload_preview() -> rx.Component:
     return rx.box(file_uploader("up1", ".png,.jpg,.pdf", True), width="100%")
 
+
 def story_upload_controls() -> rx.Component:
     return rx.text("Drop or click; accepts .png/.jpg/.pdf in this demo.")
+
 
 STORY_UPLOAD = {
     "id": "file_uploader",
     "name": "File Uploader",
     "preview": story_upload_preview,
     "controls": story_upload_controls,
-    "code": lambda: _code_panel("File Uploader", """import reflex as rx
+    "code": lambda: _code_panel(
+        "File Uploader",
+        """import reflex as rx
 from mindtrace.ui.components.inputs.file_upload import file_uploader
 
 def demo():
     return file_uploader(cid="up1", accept=".png,.jpg,.pdf", multiple=True)
-"""),
+""",
+    ),
 }
 
 
@@ -793,11 +833,14 @@ def demo():
 def story_pager_preview() -> rx.Component:
     return rx.center(pagination(PaginationState.total_pages, "pg1"), padding="1rem", width="100%")
 
+
 def story_pager_controls() -> rx.Component:
     return rx.vstack(
         _prop_input_text("total_pages", str(PaginationState.total_pages), PaginationState.set_total_pages),
-        spacing="2", width="100%",
+        spacing="2",
+        width="100%",
     )
+
 
 STORY_PAGER = {
     "id": "pagination",
@@ -823,10 +866,16 @@ def story_button_preview() -> rx.Component:
         width="100%",
     )
 
+
 def story_button_controls() -> rx.Component:
     return rx.vstack(
         _prop_input_text("label", ButtonState.label, ButtonState.set_label),
-        _prop_select("variant", ButtonState.variant, ["primary", "secondary", "ghost", "danger", "outline"], ButtonState.set_variant),
+        _prop_select(
+            "variant",
+            ButtonState.variant,
+            ["primary", "secondary", "ghost", "danger", "outline"],
+            ButtonState.set_variant,
+        ),
         _prop_select("size", ButtonState.size, ["xs", "sm", "md", "lg"], ButtonState.set_size),
         _prop_switch("disabled", ButtonState.disabled, ButtonState.toggle_disabled),
         _prop_switch("loading", ButtonState.loading, ButtonState.toggle_loading),
@@ -834,6 +883,7 @@ def story_button_controls() -> rx.Component:
         spacing="2",
         width="100%",
     )
+
 
 STORY_BUTTON = {
     "id": "button",
@@ -855,6 +905,7 @@ def story_checklist_preview() -> rx.Component:
         width="100%",
     )
 
+
 def story_checklist_controls() -> rx.Component:
     return rx.vstack(
         _prop_textarea("items_json", ChecklistState.items_json, ChecklistState.set_items_json, rows=8),
@@ -862,6 +913,7 @@ def story_checklist_controls() -> rx.Component:
         spacing="2",
         width="100%",
     )
+
 
 STORY_CHECKLIST = {
     "id": "checklist",
@@ -890,11 +942,12 @@ def story_table_preview() -> rx.Component:
                     rx.table.cell(r["name"]),
                     rx.table.cell(r["role"]),
                     rx.table.cell(rx.cond(r["active"], "Yes", "No")),
-                )
+                ),
             )
         ),
         width="100%",
     )
+
 
 def story_table_controls() -> rx.Component:
     return rx.vstack(
@@ -903,6 +956,7 @@ def story_table_controls() -> rx.Component:
         spacing="2",
         width="100%",
     )
+
 
 STORY_TABLE = {
     "id": "table",
@@ -915,17 +969,95 @@ STORY_TABLE = {
 
 # Registry list (used only for sidebar labels / ids in storybook.py)
 STORIES = [
-    {"id": STORY_BUTTON["id"], "name": STORY_BUTTON["name"], "preview": STORY_BUTTON["preview"], "controls": STORY_BUTTON["controls"], "code": STORY_BUTTON["code"]},
-    {"id": STORY_BREADCRUMBS["id"], "name": STORY_BREADCRUMBS["name"], "preview": STORY_BREADCRUMBS["preview"], "controls": STORY_BREADCRUMBS["controls"], "code": STORY_BREADCRUMBS["code"]},
-    {"id": STORY_STATGRID["id"], "name": STORY_STATGRID["name"], "preview": STORY_STATGRID["preview"], "controls": STORY_STATGRID["controls"], "code": STORY_STATGRID["code"]},
-    {"id": STORY_ALERT["id"], "name": STORY_ALERT["name"], "preview": STORY_ALERT["preview"], "controls": STORY_ALERT["controls"], "code": STORY_ALERT["code"]},
-    {"id": STORY_PILLTABS["id"], "name": STORY_PILLTABS["name"], "preview": STORY_PILLTABS["preview"], "controls": STORY_PILLTABS["controls"], "code": STORY_PILLTABS["code"]},
-    {"id": STORY_ACCORDION["id"], "name": STORY_ACCORDION["name"], "preview": STORY_ACCORDION["preview"], "controls": STORY_ACCORDION["controls"], "code": STORY_ACCORDION["code"]},
-    {"id": STORY_TAG["id"], "name": STORY_TAG["name"], "preview": STORY_TAG["preview"], "controls": STORY_TAG["controls"], "code": STORY_TAG["code"]},
-    {"id": STORY_MULTISELECT["id"], "name": STORY_MULTISELECT["name"], "preview": STORY_MULTISELECT["preview"], "controls": STORY_MULTISELECT["controls"], "code": STORY_MULTISELECT["code"]},
-    {"id": STORY_SEARCH["id"], "name": STORY_SEARCH["name"], "preview": STORY_SEARCH["preview"], "controls": STORY_SEARCH["controls"], "code": STORY_SEARCH["code"]},
-    {"id": STORY_UPLOAD["id"], "name": STORY_UPLOAD["name"], "preview": STORY_UPLOAD["preview"], "controls": STORY_UPLOAD["controls"], "code": STORY_UPLOAD["code"]},
-    {"id": STORY_EMPTY["id"], "name": STORY_EMPTY["name"], "preview": STORY_EMPTY["preview"], "controls": STORY_EMPTY["controls"], "code": STORY_EMPTY["code"]},
-    {"id": STORY_PAGER["id"], "name": STORY_PAGER["name"], "preview": STORY_PAGER["preview"], "controls": STORY_PAGER["controls"], "code": STORY_PAGER["code"]},
-    {"id": STORY_TABLE["id"], "name": STORY_TABLE["name"], "preview": STORY_TABLE["preview"], "controls": STORY_TABLE["controls"], "code": STORY_TABLE["code"]},
+    {
+        "id": STORY_BUTTON["id"],
+        "name": STORY_BUTTON["name"],
+        "preview": STORY_BUTTON["preview"],
+        "controls": STORY_BUTTON["controls"],
+        "code": STORY_BUTTON["code"],
+    },
+    {
+        "id": STORY_BREADCRUMBS["id"],
+        "name": STORY_BREADCRUMBS["name"],
+        "preview": STORY_BREADCRUMBS["preview"],
+        "controls": STORY_BREADCRUMBS["controls"],
+        "code": STORY_BREADCRUMBS["code"],
+    },
+    {
+        "id": STORY_STATGRID["id"],
+        "name": STORY_STATGRID["name"],
+        "preview": STORY_STATGRID["preview"],
+        "controls": STORY_STATGRID["controls"],
+        "code": STORY_STATGRID["code"],
+    },
+    {
+        "id": STORY_ALERT["id"],
+        "name": STORY_ALERT["name"],
+        "preview": STORY_ALERT["preview"],
+        "controls": STORY_ALERT["controls"],
+        "code": STORY_ALERT["code"],
+    },
+    {
+        "id": STORY_PILLTABS["id"],
+        "name": STORY_PILLTABS["name"],
+        "preview": STORY_PILLTABS["preview"],
+        "controls": STORY_PILLTABS["controls"],
+        "code": STORY_PILLTABS["code"],
+    },
+    {
+        "id": STORY_ACCORDION["id"],
+        "name": STORY_ACCORDION["name"],
+        "preview": STORY_ACCORDION["preview"],
+        "controls": STORY_ACCORDION["controls"],
+        "code": STORY_ACCORDION["code"],
+    },
+    {
+        "id": STORY_TAG["id"],
+        "name": STORY_TAG["name"],
+        "preview": STORY_TAG["preview"],
+        "controls": STORY_TAG["controls"],
+        "code": STORY_TAG["code"],
+    },
+    {
+        "id": STORY_MULTISELECT["id"],
+        "name": STORY_MULTISELECT["name"],
+        "preview": STORY_MULTISELECT["preview"],
+        "controls": STORY_MULTISELECT["controls"],
+        "code": STORY_MULTISELECT["code"],
+    },
+    {
+        "id": STORY_SEARCH["id"],
+        "name": STORY_SEARCH["name"],
+        "preview": STORY_SEARCH["preview"],
+        "controls": STORY_SEARCH["controls"],
+        "code": STORY_SEARCH["code"],
+    },
+    {
+        "id": STORY_UPLOAD["id"],
+        "name": STORY_UPLOAD["name"],
+        "preview": STORY_UPLOAD["preview"],
+        "controls": STORY_UPLOAD["controls"],
+        "code": STORY_UPLOAD["code"],
+    },
+    {
+        "id": STORY_EMPTY["id"],
+        "name": STORY_EMPTY["name"],
+        "preview": STORY_EMPTY["preview"],
+        "controls": STORY_EMPTY["controls"],
+        "code": STORY_EMPTY["code"],
+    },
+    {
+        "id": STORY_PAGER["id"],
+        "name": STORY_PAGER["name"],
+        "preview": STORY_PAGER["preview"],
+        "controls": STORY_PAGER["controls"],
+        "code": STORY_PAGER["code"],
+    },
+    {
+        "id": STORY_TABLE["id"],
+        "name": STORY_TABLE["name"],
+        "preview": STORY_TABLE["preview"],
+        "controls": STORY_TABLE["controls"],
+        "code": STORY_TABLE["code"],
+    },
 ]

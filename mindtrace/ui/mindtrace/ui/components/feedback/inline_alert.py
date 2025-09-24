@@ -13,6 +13,7 @@ class _AlertState(rx.State):
     Attributes:
         open (dict[str, bool]): Mapping of alert IDs to open/closed states.
     """
+
     open: dict[str, bool] = {}
 
     def _set_open(self, cid: str, val: bool) -> None:

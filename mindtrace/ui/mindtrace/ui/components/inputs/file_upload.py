@@ -1,4 +1,3 @@
-
 import reflex as rx
 
 
@@ -10,6 +9,7 @@ class _UploadState(rx.State):
         uploaded (dict[str, list[str]]): Mapping of uploader IDs (`cid`) to lists of
             uploaded file names.
     """
+
     uploaded: dict[str, list[str]] = {}
 
     @rx.event
@@ -94,7 +94,6 @@ def file_uploader(
             background="#ffffff",
             _hover={"background": "#f8fafc"},
         ),
-
         rx.hstack(
             rx.button(
                 "Upload",
@@ -115,7 +114,6 @@ def file_uploader(
             ),
             spacing="2",
         ),
-
         rx.vstack(
             rx.hstack(rx.icon(tag="file"), rx.text("Selected"), spacing="2", align="center"),
             rx.cond(
@@ -134,7 +132,6 @@ def file_uploader(
             spacing="2",
             width="100%",
         ),
-
         rx.vstack(
             rx.hstack(rx.icon(tag="image"), rx.text("Uploaded"), spacing="2", align="center"),
             rx.cond(
@@ -158,7 +155,6 @@ def file_uploader(
             spacing="2",
             width="100%",
         ),
-
         spacing="3",
         width="100%",
     )

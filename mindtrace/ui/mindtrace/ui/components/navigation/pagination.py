@@ -15,6 +15,7 @@ class _PagerState(rx.State):
               - {"kind": "page", "n": int}
               - {"kind": "ellipsis"}
     """
+
     page: Dict[str, int] = {}
     total: Dict[str, int] = {}
     display: Dict[str, List[Dict[str, Any]]] = {}
@@ -31,11 +32,7 @@ class _PagerState(rx.State):
 
         nums: List[int] = []
         for p in range(1, tot + 1):
-            if (
-                p in {1, tot, cur - 1, cur, cur + 1}
-                or (cur <= 3 and p <= 5)
-                or (cur >= tot - 2 and p >= tot - 4)
-            ):
+            if p in {1, tot, cur - 1, cur, cur + 1} or (cur <= 3 and p <= 5) or (cur >= tot - 2 and p >= tot - 4):
                 nums.append(p)
 
         disp: List[Dict[str, Any]] = []

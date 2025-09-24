@@ -10,6 +10,7 @@ class _DrawerState(rx.State):
     Attributes:
         open (dict[str, bool]): Mapping of drawer IDs (`cid`) to their open state.
     """
+
     open: dict[str, bool] = {}
 
     def set(self, cid: str, value: bool) -> None:
@@ -67,9 +68,7 @@ def drawer(
     )
 
     return rx.dialog.root(
-        rx.dialog.trigger(
-            rx.button(trigger_label, on_click=lambda: _DrawerState.set(cid, True))
-        ),
+        rx.dialog.trigger(rx.button(trigger_label, on_click=lambda: _DrawerState.set(cid, True))),
         rx.dialog.content(
             rx.vstack(
                 rx.hstack(

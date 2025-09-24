@@ -8,6 +8,7 @@ class _MultiSelectState(rx.State):
     Attributes:
         values (dict[str, list[str]]): Mapping of component IDs (`cid`) to lists of selected values.
     """
+
     values: dict[str, list[str]] = {}
 
     def toggle(self, cid: str, value: str) -> None:
@@ -76,7 +77,7 @@ def _options_list(options: list[str], cid: str) -> rx.Component:
     """
     Render the list of selectable options.
 
-    Each option is a button that toggles its selection.  
+    Each option is a button that toggles its selection.
     Styling is kept static to avoid reactive `in` checks.
 
     Args:

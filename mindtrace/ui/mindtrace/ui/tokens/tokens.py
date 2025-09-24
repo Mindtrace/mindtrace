@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 # ---------- Token dataclasses ----------
 
+
 @dataclass(frozen=True)
 class ColorTokens:
     accent: str
@@ -138,8 +139,16 @@ class ThemeTokens:
     # ergonomic passthrough: T.fs_sm, T.accent, etc.
     def __getattr__(self, name: str):
         for group in (
-            self.colors, self.typography, self.spacing, self.radius, self.shadows,
-            self.motion, self.effects, self.animations, self.layout, self.z,
+            self.colors,
+            self.typography,
+            self.spacing,
+            self.radius,
+            self.shadows,
+            self.motion,
+            self.effects,
+            self.animations,
+            self.layout,
+            self.z,
         ):
             if hasattr(group, name):
                 return getattr(group, name)
@@ -282,9 +291,28 @@ Ty = THEME.typography
 
 __all__ = [
     # instances
-    "THEME", "T", "C", "SP", "R", "L", "Z", "SH", "M", "FX", "AN", "Ty",
+    "THEME",
+    "T",
+    "C",
+    "SP",
+    "R",
+    "L",
+    "Z",
+    "SH",
+    "M",
+    "FX",
+    "AN",
+    "Ty",
     # dataclasses
-    "ThemeTokens", "ColorTokens", "TypographyTokens", "SpacingTokens", "RadiusTokens",
-    "ShadowTokens", "MotionTokens", "EffectsTokens", "AnimationTokens",
-    "LayoutTokens", "ZTokens",
+    "ThemeTokens",
+    "ColorTokens",
+    "TypographyTokens",
+    "SpacingTokens",
+    "RadiusTokens",
+    "ShadowTokens",
+    "MotionTokens",
+    "EffectsTokens",
+    "AnimationTokens",
+    "LayoutTokens",
+    "ZTokens",
 ]

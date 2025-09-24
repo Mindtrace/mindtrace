@@ -10,6 +10,7 @@ class _ModalState(rx.State):
     Attributes:
         open (dict[str, bool]): Mapping of modal IDs (`cid`) to their open state.
     """
+
     open: dict[str, bool] = {}
 
     def set_open(self, cid: str, value: bool) -> None:
@@ -49,9 +50,7 @@ def modal(
         body = rx.text("This is a modal body.")
 
     return rx.dialog.root(
-        rx.dialog.trigger(
-            rx.button(trigger_label, on_click=lambda: _ModalState.set_open(cid, True))
-        ),
+        rx.dialog.trigger(rx.button(trigger_label, on_click=lambda: _ModalState.set_open(cid, True))),
         rx.dialog.content(
             rx.vstack(
                 rx.hstack(

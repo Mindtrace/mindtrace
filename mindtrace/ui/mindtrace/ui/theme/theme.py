@@ -215,7 +215,7 @@ COMPONENT_VARIANTS = {
         "danger": {"color": C.danger, "background": f"{C.danger}20"},
         "success": {"color": C.success, "background": f"{C.success}20"},
         "warning": {"color": C.warning, "background": f"{C.warning}20"},
-        "info":    {"color": C.info,    "background": f"{C.info}20"},
+        "info": {"color": C.info, "background": f"{C.info}20"},
     },
     "alert": {
         "base": {
@@ -233,13 +233,24 @@ COMPONENT_VARIANTS = {
             "position": "relative",
             "overflow": "hidden",
         },
-        "success": {"background": "rgba(16, 185, 129, 0.1)", "border_color": "rgba(16, 185, 129, 0.3)", "color": "#065f46"},
-        "error":   {"background": "rgba(239, 68, 68, 0.1)", "border_color": "rgba(239, 68, 68, 0.3)", "color": "#991b1b"},
-        "warning": {"background": "rgba(245, 158, 11, 0.1)", "border_color": "rgba(245, 158, 11, 0.3)", "color": "#92400e"},
-        "info":    {"background": "rgba(59, 130, 246, 0.1)", "border_color": "rgba(59, 130, 246, 0.3)", "color": "#1e40af"},
+        "success": {
+            "background": "rgba(16, 185, 129, 0.1)",
+            "border_color": "rgba(16, 185, 129, 0.3)",
+            "color": "#065f46",
+        },
+        "error": {"background": "rgba(239, 68, 68, 0.1)", "border_color": "rgba(239, 68, 68, 0.3)", "color": "#991b1b"},
+        "warning": {
+            "background": "rgba(245, 158, 11, 0.1)",
+            "border_color": "rgba(245, 158, 11, 0.3)",
+            "color": "#92400e",
+        },
+        "info": {
+            "background": "rgba(59, 130, 246, 0.1)",
+            "border_color": "rgba(59, 130, 246, 0.3)",
+            "color": "#1e40af",
+        },
         "filled": {"border": "none"},
         "outlined": {"background": "transparent"},
         "soft": {"border": "none", "box_shadow": SH.shadow_1},
     },
 }
-

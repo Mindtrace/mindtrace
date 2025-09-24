@@ -10,6 +10,7 @@ class _StepperState(rx.State):
     Attributes:
         steps (dict[str, int]): Mapping of stepper IDs (`cid`) to the current step index (0-based).
     """
+
     steps: dict[str, int] = {}
 
     def set(self, cid: str, i: int) -> None:
@@ -72,7 +73,7 @@ def stepper(steps: List[str], cid: str = "default") -> rx.Component:
             spacing="2",
             align="center",
         ),
-        rx.text(f"Step {cur+1} of {total} — {steps[cur]}", size="3", color="#0f172a"),
+        rx.text(f"Step {cur + 1} of {total} — {steps[cur]}", size="3", color="#0f172a"),
         rx.hstack(
             rx.button(
                 "Back",

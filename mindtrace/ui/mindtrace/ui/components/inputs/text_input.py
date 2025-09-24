@@ -10,6 +10,7 @@ class _TextState(rx.State):
     Attributes:
         values (dict[str, str]): Mapping of component IDs (`cid`) to their current text value.
     """
+
     values: dict[str, str] = {}
 
     def set_value(self, cid: str, v: str) -> None:
@@ -99,9 +100,7 @@ def search_input(
         ),
         rx.button(
             button_label,
-            on_click=lambda: (
-                on_search(_TextState.values.get(cid, "")) if on_search else None
-            ),
+            on_click=lambda: (on_search(_TextState.values.get(cid, "")) if on_search else None),
         ),
         align="center",
         spacing="3",

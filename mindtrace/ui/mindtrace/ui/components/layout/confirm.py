@@ -11,6 +11,7 @@ class _ConfirmState(rx.State):
     Attributes:
         open (dict[str, bool]): Mapping of dialog IDs (`cid`) to their open state.
     """
+
     open: dict[str, bool] = {}
 
     def set(self, cid: str, val: bool) -> None:
@@ -75,10 +76,7 @@ def confirm(
                     rx.button(
                         confirm_label,
                         variant="solid",
-                        on_click=lambda: (
-                            _ConfirmState.set(cid, False),
-                            on_confirm() if on_confirm else None
-                        ),
+                        on_click=lambda: (_ConfirmState.set(cid, False), on_confirm() if on_confirm else None),
                     ),
                     justify="end",
                     width="100%",
