@@ -120,6 +120,23 @@ publish_to_pypi = """
 """
 
 [tool.ruff]
+src = [
+    ".",
+    "mindtrace/apps",
+    "mindtrace/automation",
+    "mindtrace/cluster",
+    "mindtrace/core",
+    "mindtrace/database",
+    "mindtrace/datalake",
+    "mindtrace/hardware",
+    "mindtrace/jobs",
+    "mindtrace/models",
+    "mindtrace/registry",
+    "mindtrace/services",
+    "mindtrace/storage",
+    "mindtrace/ui",
+]
+
 # Exclude a variety of commonly ignored directories.
 exclude = [
     ".bzr",
@@ -150,6 +167,7 @@ exclude = [
     "venv",
     "applications",
 ]
+
 # Same as Black.
 line-length = 120
 indent-width = 4
