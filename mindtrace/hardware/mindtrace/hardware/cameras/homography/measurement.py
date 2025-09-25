@@ -30,7 +30,7 @@ class PlanarHomographyMeasurer:
     distances.
     """
 
-    _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
+    _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "in": 25.4, "ft": 304.8}
 
     def __init__(self, calibration: CalibrationData):
         """Initialize the measurer.
@@ -56,7 +56,7 @@ class PlanarHomographyMeasurer:
             The scale factor.
         """
         if from_unit not in cls._UNIT_TO_MM or to_unit not in cls._UNIT_TO_MM:
-            raise ValueError("Units must be one of {'mm','cm','m'}")
+            raise ValueError("Units must be one of {'mm','cm','m','in','ft'}")
         return cls._UNIT_TO_MM[from_unit] / cls._UNIT_TO_MM[to_unit]
 
     def pixels_to_world(self, points_px: np.ndarray) -> np.ndarray:
