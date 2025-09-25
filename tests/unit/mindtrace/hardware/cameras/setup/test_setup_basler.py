@@ -17,7 +17,7 @@ class TestPylonSDKInstaller:
         installer = PylonSDKInstaller()
 
         # Should be a Mindtrace instance
-        from mindtrace.core.base.mindtrace_base import Mindtrace
+        from mindtrace.core import Mindtrace
 
         assert isinstance(installer, Mindtrace)
 
