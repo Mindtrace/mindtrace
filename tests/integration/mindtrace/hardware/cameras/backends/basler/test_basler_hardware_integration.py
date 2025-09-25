@@ -175,9 +175,8 @@ class TestHardwareCapture:
     @pytest.mark.asyncio
     async def test_hardware_basic_capture(self, basler_camera):
         """Test basic image capture from real hardware."""
-        success, image = await basler_camera.capture()
+        image = await basler_camera.capture()
 
-        assert success is True
         assert image is not None
         assert isinstance(image, np.ndarray)
         assert image.ndim == 3  # Should be color image (H, W, C)
@@ -190,9 +189,8 @@ class TestHardwareCapture:
         """Test multiple consecutive captures."""
         images = []
 
-        for i in range(3):
-            success, image = await basler_camera.capture()
-            assert success is True
+        for _ in range(3):
+            image = await basler_camera.capture()
             assert image is not None
             images.append(image)
 
@@ -223,8 +221,7 @@ class TestHardwareCapture:
         assert abs(current_exposure - new_exposure) < 1000  # Allow for small differences
 
         # Capture should still work
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
         assert image is not None
 
 
@@ -277,8 +274,7 @@ class TestHardwareConfiguration:
         assert mode == "continuous"
 
         # Capture should work in continuous mode
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
         assert image is not None
 
     @pytest.mark.asyncio
@@ -318,8 +314,7 @@ class TestHardwareConfiguration:
         assert abs(current_roi["height"] - new_height) <= 4
 
         # Capture should work with new ROI
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
         assert image is not None
 
         # Reset ROI
@@ -399,8 +394,7 @@ class TestHardwareConnectionManagement:
         assert success is True
 
         # Capture to verify it works
-        success, image = await camera.capture()
-        assert success is True
+        image = await camera.capture()
         assert image is not None
 
         # Close
@@ -412,8 +406,7 @@ class TestHardwareConnectionManagement:
         assert success is True
 
         # Capture should work again
-        success, image = await camera.capture()
-        assert success is True
+        image = await camera.capture()
         assert image is not None
 
         # Final cleanup

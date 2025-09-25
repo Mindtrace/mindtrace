@@ -82,7 +82,7 @@ class OpenCVCameraBackend(CameraBackend):
             camera = OpenCVCameraBackend("0", width=1280, height=720)
             ok, cap, _ = await camera.initialize()
             if ok:
-                success, image = await camera.capture()
+                image = await camera.capture()
                 await camera.close()
     """
 

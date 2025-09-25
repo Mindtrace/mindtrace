@@ -40,7 +40,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
         camera = MockBaslerCameraBackend("mock_camera_1")
         await camera.set_exposure(20000)
-        success, image = await camera.capture()
+        image = await camera.capture()
         await camera.close()
 
     Error Simulation:
