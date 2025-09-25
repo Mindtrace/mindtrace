@@ -177,8 +177,6 @@ cython_debug/
 stress_test_results/
 
 # Reflex stuff:
-__pycache__/
-*.py[cod]
 .states
 assets/external/
 *.db
