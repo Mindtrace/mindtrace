@@ -1,7 +1,6 @@
 import json
 
 import reflex as rx
-
 from mindtrace.ui.components.core.button import button
 from mindtrace.ui.components.data.checklist import checklist
 from mindtrace.ui.components.data.stat_cards import stat_grid

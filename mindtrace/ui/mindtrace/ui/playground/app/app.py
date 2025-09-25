@@ -1,5 +1,4 @@
 import reflex as rx
-
 from mindtrace.ui.playground.storybook import storybook_page
 
 

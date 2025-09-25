@@ -1,18 +1,17 @@
 # mindtrace/ui/mindtrace/ui/playground/storybook.py
 import reflex as rx
-
 from mindtrace.ui.playground.stories_registry import (
-    STORY_BREADCRUMBS,
-    STORY_STATGRID,
-    STORY_ALERT,
-    STORY_PILLTABS,
     STORY_ACCORDION,
-    STORY_TAG,
-    STORY_MULTISELECT,
-    STORY_SEARCH,
-    STORY_UPLOAD,
+    STORY_ALERT,
+    STORY_BREADCRUMBS,
     STORY_EMPTY,
+    STORY_MULTISELECT,
     STORY_PAGER,
+    STORY_PILLTABS,
+    STORY_SEARCH,
+    STORY_STATGRID,
+    STORY_TAG,
+    STORY_UPLOAD,
 )
 
 _SIDEBAR = [
@@ -44,6 +43,7 @@ ID_PG = STORY_PAGER["id"]
 
 class StoryState(rx.State):
     story_id: str = _SIDEBAR[0]["id"]
+
     def select(self, sid: str):
         self.story_id = sid
 
@@ -89,25 +89,35 @@ def _sidebar():
 
 def _pick_preview():
     return rx.cond(
-        StoryState.story_id == ID_BC, STORY_BREADCRUMBS["preview"](),
+        StoryState.story_id == ID_BC,
+        STORY_BREADCRUMBS["preview"](),
         rx.cond(
-            StoryState.story_id == ID_SG, STORY_STATGRID["preview"](),
+            StoryState.story_id == ID_SG,
+            STORY_STATGRID["preview"](),
             rx.cond(
-                StoryState.story_id == ID_AL, STORY_ALERT["preview"](),
+                StoryState.story_id == ID_AL,
+                STORY_ALERT["preview"](),
                 rx.cond(
-                    StoryState.story_id == ID_PT, STORY_PILLTABS["preview"](),
+                    StoryState.story_id == ID_PT,
+                    STORY_PILLTABS["preview"](),
                     rx.cond(
-                        StoryState.story_id == ID_AC, STORY_ACCORDION["preview"](),
+                        StoryState.story_id == ID_AC,
+                        STORY_ACCORDION["preview"](),
                         rx.cond(
-                            StoryState.story_id == ID_TI, STORY_TAG["preview"](),
+                            StoryState.story_id == ID_TI,
+                            STORY_TAG["preview"](),
                             rx.cond(
-                                StoryState.story_id == ID_MS, STORY_MULTISELECT["preview"](),
+                                StoryState.story_id == ID_MS,
+                                STORY_MULTISELECT["preview"](),
                                 rx.cond(
-                                    StoryState.story_id == ID_SB, STORY_SEARCH["preview"](),
+                                    StoryState.story_id == ID_SB,
+                                    STORY_SEARCH["preview"](),
                                     rx.cond(
-                                        StoryState.story_id == ID_UP, STORY_UPLOAD["preview"](),
+                                        StoryState.story_id == ID_UP,
+                                        STORY_UPLOAD["preview"](),
                                         rx.cond(
-                                            StoryState.story_id == ID_ET, STORY_EMPTY["preview"](),
+                                            StoryState.story_id == ID_ET,
+                                            STORY_EMPTY["preview"](),
                                             STORY_PAGER["preview"](),
                                         ),
                                     ),
@@ -123,25 +133,35 @@ def _pick_preview():
 
 def _pick_controls():
     return rx.cond(
-        StoryState.story_id == ID_BC, STORY_BREADCRUMBS["controls"](),
+        StoryState.story_id == ID_BC,
+        STORY_BREADCRUMBS["controls"](),
         rx.cond(
-            StoryState.story_id == ID_SG, STORY_STATGRID["controls"](),
+            StoryState.story_id == ID_SG,
+            STORY_STATGRID["controls"](),
             rx.cond(
-                StoryState.story_id == ID_AL, STORY_ALERT["controls"](),
+                StoryState.story_id == ID_AL,
+                STORY_ALERT["controls"](),
                 rx.cond(
-                    StoryState.story_id == ID_PT, STORY_PILLTABS["controls"](),
+                    StoryState.story_id == ID_PT,
+                    STORY_PILLTABS["controls"](),
                     rx.cond(
-                        StoryState.story_id == ID_AC, STORY_ACCORDION["controls"](),
+                        StoryState.story_id == ID_AC,
+                        STORY_ACCORDION["controls"](),
                         rx.cond(
-                            StoryState.story_id == ID_TI, STORY_TAG["controls"](),
+                            StoryState.story_id == ID_TI,
+                            STORY_TAG["controls"](),
                             rx.cond(
-                                StoryState.story_id == ID_MS, STORY_MULTISELECT["controls"](),
+                                StoryState.story_id == ID_MS,
+                                STORY_MULTISELECT["controls"](),
                                 rx.cond(
-                                    StoryState.story_id == ID_SB, STORY_SEARCH["controls"](),
+                                    StoryState.story_id == ID_SB,
+                                    STORY_SEARCH["controls"](),
                                     rx.cond(
-                                        StoryState.story_id == ID_UP, STORY_UPLOAD["controls"](),
+                                        StoryState.story_id == ID_UP,
+                                        STORY_UPLOAD["controls"](),
                                         rx.cond(
-                                            StoryState.story_id == ID_ET, STORY_EMPTY["controls"](),
+                                            StoryState.story_id == ID_ET,
+                                            STORY_EMPTY["controls"](),
                                             STORY_PAGER["controls"](),
                                         ),
                                     ),
@@ -197,25 +217,35 @@ def _code_box(title: str, code_or_component):
 def _pick_code():
     # Each branch calls the story's code() and hands the result (string OR component) to _code_box.
     return rx.cond(
-        StoryState.story_id == ID_BC, _code_box("Breadcrumbs", STORY_BREADCRUMBS["code"]()),
+        StoryState.story_id == ID_BC,
+        _code_box("Breadcrumbs", STORY_BREADCRUMBS["code"]()),
         rx.cond(
-            StoryState.story_id == ID_SG, _code_box("Stat Grid", STORY_STATGRID["code"]()),
+            StoryState.story_id == ID_SG,
+            _code_box("Stat Grid", STORY_STATGRID["code"]()),
             rx.cond(
-                StoryState.story_id == ID_AL, _code_box("Inline Alert", STORY_ALERT["code"]()),
+                StoryState.story_id == ID_AL,
+                _code_box("Inline Alert", STORY_ALERT["code"]()),
                 rx.cond(
-                    StoryState.story_id == ID_PT, _code_box("Pill Tabs", STORY_PILLTABS["code"]()),
+                    StoryState.story_id == ID_PT,
+                    _code_box("Pill Tabs", STORY_PILLTABS["code"]()),
                     rx.cond(
-                        StoryState.story_id == ID_AC, _code_box("Accordion", STORY_ACCORDION["code"]()),
+                        StoryState.story_id == ID_AC,
+                        _code_box("Accordion", STORY_ACCORDION["code"]()),
                         rx.cond(
-                            StoryState.story_id == ID_TI, _code_box("Tag Input", STORY_TAG["code"]()),
+                            StoryState.story_id == ID_TI,
+                            _code_box("Tag Input", STORY_TAG["code"]()),
                             rx.cond(
-                                StoryState.story_id == ID_MS, _code_box("Multi Select", STORY_MULTISELECT["code"]()),
+                                StoryState.story_id == ID_MS,
+                                _code_box("Multi Select", STORY_MULTISELECT["code"]()),
                                 rx.cond(
-                                    StoryState.story_id == ID_SB, _code_box("Search Box", STORY_SEARCH["code"]()),
+                                    StoryState.story_id == ID_SB,
+                                    _code_box("Search Box", STORY_SEARCH["code"]()),
                                     rx.cond(
-                                        StoryState.story_id == ID_UP, _code_box("File Uploader", STORY_UPLOAD["code"]()),
+                                        StoryState.story_id == ID_UP,
+                                        _code_box("File Uploader", STORY_UPLOAD["code"]()),
                                         rx.cond(
-                                            StoryState.story_id == ID_ET, _code_box("Empty Table", STORY_EMPTY["code"]()),
+                                            StoryState.story_id == ID_ET,
+                                            _code_box("Empty Table", STORY_EMPTY["code"]()),
                                             _code_box("Pagination", STORY_PAGER["code"]()),
                                         ),
                                     ),
