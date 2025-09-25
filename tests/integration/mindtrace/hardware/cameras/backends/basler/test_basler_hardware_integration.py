@@ -213,8 +213,7 @@ class TestHardwareCapture:
 
         # Change exposure
         new_exposure = min(50000, original_exposure * 2)  # Double exposure, cap at 50ms
-        success = await basler_camera.set_exposure(new_exposure)
-        assert success is True
+        await basler_camera.set_exposure(new_exposure)
 
         # Verify exposure changed
         current_exposure = await basler_camera.get_exposure()
@@ -240,8 +239,7 @@ class TestHardwareConfiguration:
 
         # Test setting exposure within range
         test_exposure = min_exp + (max_exp - min_exp) * 0.25  # 25% of range
-        success = await basler_camera.set_exposure(test_exposure)
-        assert success is True
+        await basler_camera.set_exposure(test_exposure)
 
         # Verify exposure was set
         current_exposure = await basler_camera.get_exposure()
@@ -256,8 +254,7 @@ class TestHardwareConfiguration:
 
         # Set new gain
         new_gain = max(0.0, min(10.0, original_gain + 1.0))  # Stay within reasonable range
-        success = await basler_camera.set_gain(new_gain)
-        assert success is True
+        await basler_camera.set_gain(new_gain)
 
         # Verify gain was set
         current_gain = await basler_camera.get_gain()
@@ -267,8 +264,7 @@ class TestHardwareConfiguration:
     async def test_hardware_trigger_mode(self, basler_camera):
         """Test trigger mode configuration."""
         # Test continuous mode
-        success = await basler_camera.set_triggermode("continuous")
-        assert success is True
+        await basler_camera.set_triggermode("continuous")
 
         mode = await basler_camera.get_triggermode()
         assert mode == "continuous"
@@ -295,13 +291,11 @@ class TestHardwareConfiguration:
 
         # Set ROI - handle cameras that don't support offsets by using (0,0)
         try:
-            success = await basler_camera.set_ROI(new_x, new_y, new_width, new_height)
-            assert success is True
+            await basler_camera.set_ROI(new_x, new_y, new_width, new_height)
         except CameraConfigurationError as e:
             if "out of range" in str(e):
                 # Try with (0,0) offsets if camera doesn't support offsets
-                success = await basler_camera.set_ROI(0, 0, new_width, new_height)
-                assert success is True
+                await basler_camera.set_ROI(0, 0, new_width, new_height)
                 new_x, new_y = 0, 0  # Update expected values
             else:
                 raise
@@ -318,8 +312,7 @@ class TestHardwareConfiguration:
         assert image is not None
 
         # Reset ROI
-        success = await basler_camera.reset_ROI()
-        assert success is True
+        await basler_camera.reset_ROI()
 
 
 class TestHardwareAdvancedFeatures:
@@ -346,30 +339,25 @@ class TestHardwareAdvancedFeatures:
         assert wb_mode in ["auto", "manual", "off", "once", "continuous"]
 
         # Try setting auto white balance
-        success = await basler_camera.set_auto_wb_once("once")
-        assert isinstance(success, bool)  # May succeed or fail depending on camera
+        await basler_camera.set_auto_wb_once("once")
 
     @pytest.mark.asyncio
     async def test_hardware_image_enhancement(self, basler_camera):
         """Test image quality enhancement."""
         # Test enabling enhancement
-        success = await basler_camera.set_image_quality_enhancement(True)
-        assert success is True
+        await basler_camera.set_image_quality_enhancement(True)
         assert await basler_camera.get_image_quality_enhancement() is True
 
         # Capture with enhancement
-        success, enhanced_image = await basler_camera.capture()
-        assert success is True
+        enhanced_image = await basler_camera.capture()
         assert enhanced_image is not None
 
         # Test disabling enhancement
-        success = await basler_camera.set_image_quality_enhancement(False)
-        assert success is True
+        await basler_camera.set_image_quality_enhancement(False)
         assert await basler_camera.get_image_quality_enhancement() is False
 
         # Capture without enhancement
-        success, normal_image = await basler_camera.capture()
-        assert success is True
+        normal_image = await basler_camera.capture()
         assert normal_image is not None
 
 
@@ -434,8 +422,7 @@ class TestHardwareManagerIntegration:
             assert isinstance(image, np.ndarray)
 
             # Configuration
-            success = camera.set_exposure(20000)
-            assert isinstance(success, bool)
+            camera.set_exposure(20000)
 
         finally:
             manager.close()
@@ -458,8 +445,7 @@ class TestHardwareManagerIntegration:
             assert isinstance(image, np.ndarray)
 
             # Configuration
-            success = await camera.set_exposure(20000)
-            assert isinstance(success, bool)
+            await camera.set_exposure(20000)
 
         finally:
             await manager.close(None)
