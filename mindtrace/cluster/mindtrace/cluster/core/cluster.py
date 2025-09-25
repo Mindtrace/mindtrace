@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from mindtrace.cluster.core import types as cluster_types
 from mindtrace.cluster.workers.environments.git_env import GitEnvironment
-from mindtrace.core import TaskSchema, Timeout, get_class
+from mindtrace.core import TaskSchema, Timeout, get_class, ifnone
 from mindtrace.database import BackendType, UnifiedMindtraceODMBackend
 from mindtrace.jobs import Consumer, Job, JobSchema, Orchestrator, RabbitMQClient
 from mindtrace.registry import Archiver, Registry
@@ -32,47 +32,55 @@ def update_database(database: UnifiedMindtraceODMBackend, sort_key: str, find_ke
 
 
 class ClusterManager(Gateway):
-    def __init__(self, **kwargs):
+    def __init__(self, minio_endpoint=None, **kwargs):
+        """
+        Args:
+            minio_endpoint: str | None: the location of the minio server to use for the registry. If None, use MINDTRACE_CLUSTER_MINIO_ENDPOINT
+        """
         super().__init__(**kwargs)
-        self.orchestrator = Orchestrator(backend=RabbitMQClient())
-        self.redis_url = self.config["MINDTRACE_CLUSTER_DEFAULT_REDIS_URL"]
-        self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.JobSchemaTargeting,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.job_schema_targeting_database.initialize_sync()
-        self.job_status_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
-        )
-        self.job_status_database.initialize_sync()
-        self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerAutoConnect,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.worker_auto_connect_database.initialize_sync()
-        self.worker_status_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
-        )
-        self.worker_status_database.initialize_sync()
-        self.worker_registry_endpoint = self.config["MINDTRACE_CLUSTER_MINIO_ENDPOINT"]
-        self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER_MINIO_ACCESS_KEY"]
-        self.worker_registry_secret_key = self.config["MINDTRACE_CLUSTER_MINIO_SECRET_KEY"]
-        self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER_MINIO_BUCKET"]
-        self.nodes = []
-        minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry_cluster",
-            endpoint=self.worker_registry_endpoint,
-            access_key=self.worker_registry_access_key,
-            secret_key=self.worker_registry_secret_key,
-            bucket=self.worker_registry_bucket,
-            secure=False,
-        )
-        self.worker_registry = Registry(backend=minio_backend)
-        self.worker_registry.register_materializer(
-            cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
-        )
+        if kwargs.get("live_service", True):
+            self.orchestrator = Orchestrator(backend=RabbitMQClient(host=self._url.hostname))
+            self.redis_url = self.config["MINDTRACE_CLUSTER"]["DEFAULT_REDIS_URL"]
+            self.job_schema_targeting_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.JobSchemaTargeting,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
+            )
+            self.job_schema_targeting_database.initialize_sync()
+            self.job_status_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.JobStatus, redis_url=self.redis_url, preferred_backend=BackendType.REDIS
+            )
+            self.job_status_database.initialize_sync()
+            self.worker_auto_connect_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerAutoConnect,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
+            )
+            self.worker_auto_connect_database.initialize_sync()
+            self.worker_status_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerStatus,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
+            )
+            self.worker_status_database.initialize_sync()
+            self.worker_registry_uri = self.config["MINDTRACE_CLUSTER"]["MINIO_REGISTRY_URI"]
+            self.worker_registry_endpoint = ifnone(minio_endpoint, self.config["MINDTRACE_CLUSTER"]["MINIO_ENDPOINT"])
+            self.worker_registry_access_key = self.config["MINDTRACE_CLUSTER"]["MINIO_ACCESS_KEY"]
+            self.worker_registry_secret_key = self.config.get_secret("MINDTRACE_CLUSTER", "MINIO_SECRET_KEY")
+            self.worker_registry_bucket = self.config["MINDTRACE_CLUSTER"]["MINIO_BUCKET"]
+            self.nodes = []
+            minio_backend = MinioRegistryBackend(
+                uri=self.worker_registry_uri,
+                endpoint=self.worker_registry_endpoint,
+                access_key=self.worker_registry_access_key,
+                secret_key=self.worker_registry_secret_key,
+                bucket=self.worker_registry_bucket,
+                secure=False,
+            )
+            self.worker_registry = Registry(backend=minio_backend)
+            self.worker_registry.register_materializer(
+                cluster_types.ProxyWorker, "mindtrace.cluster.StandardWorkerLauncher"
+            )
         self.add_endpoint(
             "/submit_job",
             func=self.submit_job,
@@ -192,6 +200,15 @@ class ClusterManager(Gateway):
                 name="query_worker_status_by_url",
                 input_schema=cluster_types.QueryWorkerStatusByUrlInput,
                 output_schema=cluster_types.WorkerStatus,
+            ),
+            methods=["POST"],
+        )
+        self.add_endpoint(
+            "/clear_job_schema_queue",
+            func=self.clear_job_schema_queue,
+            schema=TaskSchema(
+                name="clear_job_schema_queue",
+                input_schema=cluster_types.ClearJobSchemaQueueInput,
             ),
             methods=["POST"],
         )
@@ -594,6 +611,15 @@ class ClusterManager(Gateway):
                 db.delete(entry.pk)
         self.logger.info("Cleared all cluster manager databases")
 
+    def clear_job_schema_queue(self, payload: dict):
+        """
+        Clear the queue related to a job schema.
+        Args:
+            job_schema_name: str: the name of the job schema
+        """
+        queue_name = payload["job_schema_name"]
+        self.orchestrator.clean_queue(queue_name)
+
 
 class Node(Service):
     def __init__(self, cluster_url: str | None = None, **kwargs):
@@ -646,20 +672,21 @@ class Node(Service):
 class Worker(Service, Consumer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER_REDIS_DEFAULT_URL"])
-        self.worker_status_local_database = UnifiedMindtraceODMBackend(
-            unified_model_cls=cluster_types.WorkerStatusLocal,
-            redis_url=self.redis_url,
-            preferred_backend=BackendType.REDIS,
-        )
-        self.worker_status_local_database.initialize_sync()
-        self.worker_status_local_database.insert(
-            cluster_types.WorkerStatusLocal(
-                worker_id=str(self.id),
-                status=cluster_types.WorkerStatusEnum.IDLE,
-                job_id=None,
+        if kwargs.get("live_service", True):
+            self.redis_url = kwargs.get("redis_url", self.config["MINDTRACE_WORKER"]["DEFAULT_REDIS_URL"])
+            self.worker_status_local_database = UnifiedMindtraceODMBackend(
+                unified_model_cls=cluster_types.WorkerStatusLocal,
+                redis_url=self.redis_url,
+                preferred_backend=BackendType.REDIS,
             )
-        )
+            self.worker_status_local_database.initialize_sync()
+            self.worker_status_local_database.insert(
+                cluster_types.WorkerStatusLocal(
+                    worker_id=str(self.id),
+                    status=cluster_types.WorkerStatusEnum.IDLE,
+                    job_id=None,
+                )
+            )
         self.add_endpoint("/start", self.start, schema=TaskSchema(name="start_worker"))
         self.add_endpoint(
             "/run",
