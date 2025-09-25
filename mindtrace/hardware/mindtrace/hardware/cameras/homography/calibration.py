@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
+from PIL import Image
+
+from mindtrace.core import pil_to_cv2
 
 
 @dataclass(frozen=True)
@@ -98,7 +101,7 @@ class HomographyCalibrator:
 
     def calibrate_checkerboard(
         self,
-        image_bgr: np.ndarray,
+        image: Union[Image.Image, np.ndarray],
         board_size: Tuple[int, int],
         square_size: float,
         world_unit: str = "mm",
@@ -109,7 +112,7 @@ class HomographyCalibrator:
         """Detect checkerboard and compute H. The board lies on Z=0 plane.
 
         Args:
-            image_bgr: BGR image of the checkerboard
+            image: PIL Image or BGR numpy array (i.e. a CV2 image)
             board_size: (cols, rows) inner corners
             square_size: size of one square in world units
             world_unit: unit of the world points
@@ -117,7 +120,17 @@ class HomographyCalibrator:
             dist_coeffs: distortion coefficients
             refine_corners: whether to refine the corners
         """
-        gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY) if image_bgr.ndim == 3 else image_bgr
+        # Convert input to CV2 format (BGR numpy array)
+        if isinstance(image, Image.Image):
+            # PIL Image -> CV2 (BGR)
+            cv2_image = pil_to_cv2(image)
+        elif isinstance(image, np.ndarray):
+            cv2_image = image
+        else:
+            raise ValueError(f"Unsupported image type: {type(image)}. Expected PIL Image or numpy array.")
+        
+        # Convert to grayscale for checkerboard detection
+        gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY) if cv2_image.ndim == 3 else cv2_image
         found, corners = cv2.findChessboardCorners(gray, board_size, flags=cv2.CALIB_CB_ADAPTIVE_THRESH)
         if not found:
             raise ValueError("Checkerboard not found")
