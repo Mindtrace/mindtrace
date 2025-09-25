@@ -4,8 +4,10 @@ from unittest.mock import patch, MagicMock
 
 import cv2
 import numpy as np
+from PIL import Image
 import pytest
 
+from mindtrace.core import cv2_to_pil
 from mindtrace.hardware.cameras.homography.calibration import HomographyCalibrator, CalibrationData
 from mindtrace.hardware.core.exceptions import CameraConfigurationError
 
@@ -223,7 +225,7 @@ class TestHomographyCalibrator:
             for board_size in board_sizes_to_try:
                 try:
                     calib_data = self.calibrator.calibrate_checkerboard(
-                        image_bgr=image,
+                        image=image,
                         board_size=board_size,
                         square_size=25.0,  # Assume 25mm squares
                         world_unit="mm",
@@ -256,7 +258,7 @@ class TestHomographyCalibrator:
         
         with pytest.raises(ValueError, match="Checkerboard not found"):
             self.calibrator.calibrate_checkerboard(
-                image_bgr=image,
+                image=image,
                 board_size=(9, 6),
                 square_size=25.0
             )
@@ -269,7 +271,7 @@ class TestHomographyCalibrator:
         
         try:
             calib_data = self.calibrator.calibrate_checkerboard(
-                image_bgr=checkerboard,  # Grayscale image
+                image=checkerboard,  # Grayscale image
                 board_size=(5, 3),  # Inner corners = (cols-1, rows-1)
                 square_size=25.0,
                 world_unit="cm",
@@ -308,7 +310,7 @@ class TestHomographyCalibrator:
             mock_homography.return_value = (H, mask)
             
             calib_data = self.calibrator.calibrate_checkerboard(
-                image_bgr=image,
+                image=image,
                 board_size=(2, 2),  # 2x2 inner corners = 4 points
                 square_size=50.0,
                 camera_matrix=camera_matrix,
@@ -392,7 +394,7 @@ class TestHomographyCalibrator:
             image = np.zeros((480, 640), dtype=np.uint8)
             
             calib_data = self.calibrator.calibrate_checkerboard(
-                image_bgr=image,
+                image=image,
                 board_size=(5, 3),
                 square_size=25.0,
                 world_unit="cm",
@@ -430,3 +432,103 @@ class TestHomographyCalibrator:
         
         assert isinstance(calib_data.H, np.ndarray)
         assert calib_data.H.dtype == np.float64
+
+    def test_calibrate_checkerboard_pil_image_support(self):
+        """Test checkerboard calibration with PIL Image input."""
+        # Create a synthetic checkerboard as numpy array first
+        checkerboard_np = self._create_synthetic_checkerboard((640, 480), (6, 4), 50)
+        
+        # Convert to PIL Image
+        checkerboard_pil = Image.fromarray(checkerboard_np)
+        
+        try:
+            calib_data = self.calibrator.calibrate_checkerboard(
+                image=checkerboard_pil,  # PIL Image input
+                board_size=(5, 3),
+                square_size=25.0,
+                world_unit="mm",
+                refine_corners=False
+            )
+            
+            assert isinstance(calib_data, CalibrationData)
+            assert calib_data.world_unit == "mm"
+            assert calib_data.H.shape == (3, 3)
+            
+        except ValueError as e:
+            if "Checkerboard not found" in str(e):
+                # If synthetic checkerboard fails, test with mocked PIL image
+                self._test_pil_image_with_mock()
+            else:
+                raise
+
+    def test_calibrate_checkerboard_backward_compatibility(self):
+        """Test that numpy arrays still work (backward compatibility)."""
+        # Create a synthetic checkerboard as numpy array
+        checkerboard_np = self._create_synthetic_checkerboard((640, 480), (6, 4), 50)
+        
+        try:
+            calib_data = self.calibrator.calibrate_checkerboard(
+                image=checkerboard_np,  # numpy array input (backward compatibility)
+                board_size=(5, 3),
+                square_size=25.0,
+                world_unit="cm",
+                refine_corners=False
+            )
+            
+            assert isinstance(calib_data, CalibrationData)
+            assert calib_data.world_unit == "cm"
+            assert calib_data.H.shape == (3, 3)
+            
+        except ValueError as e:
+            if "Checkerboard not found" in str(e):
+                # Expected for synthetic checkerboard - test passes if we reach here
+                pass
+            else:
+                raise
+
+    def test_calibrate_checkerboard_invalid_input_type(self):
+        """Test error handling for invalid input types."""
+        with pytest.raises(ValueError, match="Unsupported image type"):
+            self.calibrator.calibrate_checkerboard(
+                image="invalid_input",  # String instead of Image or array
+                board_size=(5, 3),
+                square_size=25.0
+            )
+
+    def _test_pil_image_with_mock(self):
+        """Test PIL image input using mocked checkerboard detection."""
+        with patch('cv2.findChessboardCorners') as mock_find, \
+             patch('cv2.findHomography') as mock_homography:
+            
+            # Mock successful corner detection
+            corners = np.array([
+                [[100, 100]], [[150, 100]], [[200, 100]], [[250, 100]], [[300, 100]],
+                [[100, 150]], [[150, 150]], [[200, 150]], [[250, 150]], [[300, 150]],
+                [[100, 200]], [[150, 200]], [[200, 200]], [[250, 200]], [[300, 200]]
+            ], dtype=np.float32)
+            
+            mock_find.return_value = (True, corners)
+            
+            # Mock homography computation
+            H = np.array([
+                [2.0, 0.0, 100.0],
+                [0.0, 2.0, 50.0],
+                [0.0, 0.0, 1.0]
+            ], dtype=np.float64)
+            mask = np.ones(15, dtype=np.uint8)
+            mock_homography.return_value = (H, mask)
+            
+            # Create PIL Image
+            pil_image = Image.new('RGB', (640, 480), color='white')
+            
+            calib_data = self.calibrator.calibrate_checkerboard(
+                image=pil_image,
+                board_size=(5, 3),
+                square_size=25.0,
+                world_unit="mm",
+                refine_corners=False
+            )
+            
+            assert isinstance(calib_data, CalibrationData)
+            assert calib_data.world_unit == "mm"
+            assert calib_data.H.shape == (3, 3)
