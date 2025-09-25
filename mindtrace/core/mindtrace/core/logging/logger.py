@@ -1,20 +1,17 @@
 import logging
 import os
+from collections import OrderedDict
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
-from typing import Any, Generator, Callable
-from contextlib import asynccontextmanager
-from collections import OrderedDict
 
 from mindtrace.core.config import CoreSettings
 from mindtrace.core.utils import ifnone
 
 
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
-    """Returns a logging formatter with a default format if none is specified.
-    """
+    """Returns a logging formatter with a default format if none is specified."""
     default_fmt = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
     return logging.Formatter(fmt or default_fmt)
 
@@ -70,7 +67,7 @@ def setup_logger(
     # Get config
     default_config = CoreSettings()
     use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
-    
+
     # Determine log file path
     if name == "mindtrace":
         child_log_path = f"{name}.log"
@@ -100,7 +97,7 @@ def setup_logger(
         file_handler.setLevel(file_level)
         file_handler.setFormatter(default_formatter())
         logger.addHandler(file_handler)
-        
+
         return logger
 
     # Structlog setup
@@ -132,19 +129,22 @@ def setup_logger(
         if structlog_processors is not None
         else [
             structlog.stdlib.filter_by_level,
-            getattr(structlog.contextvars, "merge_contextvars", None) or (lambda logger, method_name, event_dict: event_dict),
+            getattr(structlog.contextvars, "merge_contextvars", None)
+            or (lambda logger, method_name, event_dict: event_dict),
             structlog.stdlib.PositionalArgumentsFormatter(),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
-            _enforce_key_order_processor([
-                "event",
-                "service",
-                "duration_ms",
-                "metrics",
-                "level",
-                "logger",
-                "timestamp",
-            ]),
+            _enforce_key_order_processor(
+                [
+                    "event",
+                    "service",
+                    "duration_ms",
+                    "metrics",
+                    "level",
+                    "logger",
+                    "timestamp",
+                ]
+            ),
             renderer,
         ]
     )
@@ -162,7 +162,6 @@ def setup_logger(
     stdlib_logger.handlers.clear()
     stdlib_logger.setLevel(logger_level)
     stdlib_logger.propagate = propagate
-
 
     # Add stream handler
     stream_handler = logging.StreamHandler()
@@ -246,7 +245,7 @@ def get_logger(name: str | None = "mindtrace", use_structlog: bool | None = None
 
     default_config = CoreSettings()
     use_structlog = ifnone(use_structlog, default_config.MINDTRACE_LOGGER.USE_STRUCTLOG)
-    
+
     if kwargs.get("propagate"):
         parts = full_name.split(".") if "." in full_name else [full_name]
         parent_name = parts[0]
