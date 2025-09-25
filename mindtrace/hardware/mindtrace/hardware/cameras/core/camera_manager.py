@@ -11,7 +11,7 @@ import threading
 from concurrent.futures import Future
 from typing import Any, Dict, List, Optional, Union
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.cameras.core.camera import Camera

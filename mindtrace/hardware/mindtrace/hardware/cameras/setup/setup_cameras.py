@@ -60,7 +60,7 @@ import subprocess
 import sys
 from typing import Optional
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
 from mindtrace.hardware.core.config import get_hardware_config
 

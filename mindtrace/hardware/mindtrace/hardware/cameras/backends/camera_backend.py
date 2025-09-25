@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 
-from mindtrace.core.base.mindtrace_base import MindtraceABC
+from mindtrace.core import MindtraceABC
 from mindtrace.hardware.core.config import get_camera_config
 from mindtrace.hardware.core.exceptions import CameraConnectionError, CameraInitializationError, CameraNotFoundError
 

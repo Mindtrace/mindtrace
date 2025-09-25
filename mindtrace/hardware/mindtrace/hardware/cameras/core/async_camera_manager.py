@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.core.exceptions import (
