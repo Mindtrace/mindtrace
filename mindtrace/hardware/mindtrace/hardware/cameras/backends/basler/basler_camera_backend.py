@@ -71,7 +71,7 @@ class BaslerCameraBackend(CameraBackend):
             # Configure and capture
             await camera.set_exposure(20000)
             await camera.set_triggermode("continuous")
-            success, image = await camera.capture()
+            image = await camera.capture()
             await camera.close()
 
     Configuration:
@@ -1284,8 +1284,7 @@ class BaslerCameraBackend(CameraBackend):
     async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            return False
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
@@ -1319,8 +1318,7 @@ class BaslerCameraBackend(CameraBackend):
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit in Mbps."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            raise RuntimeError("Camera not initialized")
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
@@ -1347,8 +1345,7 @@ class BaslerCameraBackend(CameraBackend):
     async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            return False
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
@@ -1367,8 +1364,7 @@ class BaslerCameraBackend(CameraBackend):
     async def get_packet_size(self) -> int:
         """Get current packet size."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            raise RuntimeError("Camera not initialized")
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
@@ -1386,8 +1382,7 @@ class BaslerCameraBackend(CameraBackend):
     async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            return False
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
@@ -1408,8 +1403,7 @@ class BaslerCameraBackend(CameraBackend):
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay."""
         if not self.initialized or not self.camera:
-            self.logger.error(f"Camera '{self.camera_name}' not initialized")
-            raise RuntimeError("Camera not initialized")
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
 
         try:
             await self._ensure_open()
