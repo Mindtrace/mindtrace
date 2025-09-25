@@ -183,7 +183,7 @@ class TestHomographyIntegration:
         
         # Calibrate using checkerboard
         calibration_data = self.calibrator.calibrate_checkerboard(
-            image_bgr=image,
+            image=image,
             board_size=(3, 3),  # 3x3 inner corners
             square_size=25.0,   # 25mm squares
             world_unit="mm",
@@ -218,7 +218,7 @@ class TestHomographyIntegration:
         for board_size in board_sizes_to_try:
             try:
                 calibration_data = self.calibrator.calibrate_checkerboard(
-                    image_bgr=image,
+                    image=image,
                     board_size=board_size,
                     square_size=25.0,  # Assume 25mm squares
                     world_unit="mm",
