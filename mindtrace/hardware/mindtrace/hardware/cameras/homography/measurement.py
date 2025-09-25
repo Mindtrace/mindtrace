@@ -33,6 +33,11 @@ class PlanarHomographyMeasurer:
     _UNIT_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0}
 
     def __init__(self, calibration: CalibrationData):
+        """Initialize the measurer.
+        
+        Args:
+            calibration: The calibration data.
+        """
         self.calibration = calibration
         if self.calibration.H.shape != (3, 3):
             raise ValueError("CalibrationData.H must be 3x3")
@@ -41,14 +46,24 @@ class PlanarHomographyMeasurer:
 
     @classmethod
     def _unit_scale(cls, from_unit: str, to_unit: str) -> float:
+        """Convert units to millimeters.
+        
+        Args:
+            from_unit: The unit to convert from.
+            to_unit: The unit to convert to.
+        
+        Returns:
+            The scale factor.
+        """
         if from_unit not in cls._UNIT_TO_MM or to_unit not in cls._UNIT_TO_MM:
             raise ValueError("Units must be one of {'mm','cm','m'}")
         return cls._UNIT_TO_MM[from_unit] / cls._UNIT_TO_MM[to_unit]
 
     def pixels_to_world(self, points_px: np.ndarray) -> np.ndarray:
-        """
-        Map Nx2 pixel coordinates to world plane coordinates using H^{-1}.
-        Returns Nx2 world coordinates in calibration world unit.
+        """Map Nx2 pixel coordinates to world plane coordinates using H^{-1}.
+        
+        Returns:
+            Nx2 world coordinates in calibration world unit.
         """
         pts = np.asarray(points_px, dtype=np.float64)
         if pts.ndim != 2 or pts.shape[1] != 2:
@@ -60,6 +75,15 @@ class PlanarHomographyMeasurer:
         return mapped[:, :2]
 
     def measure_bounding_box(self, box: BoundingBox, target_unit: Optional[str] = None) -> MeasuredBox:
+        """Measure the size of a bounding box on the plane after homography inversion.
+        
+        Args:
+            box: The bounding box to measure.
+            target_unit: The unit to convert the measurements to.
+        
+        Returns:
+            The measured box.
+        """
         corners_px = np.array(box.to_corners(), dtype=np.float64)
         corners_world = self.pixels_to_world(corners_px)
         # Width: distance between top-right and top-left; Height: distance between top-left and bottom-left
@@ -86,4 +110,13 @@ class PlanarHomographyMeasurer:
         )
 
     def measure_bounding_boxes(self, boxes: Sequence[BoundingBox], target_unit: Optional[str] = None) -> List[MeasuredBox]:
+        """Measure the size of a list of bounding boxes on the plane after homography inversion.
+        
+        Args:
+            boxes: The list of bounding boxes to measure.
+            target_unit: The unit to convert the measurements to.
+        
+        Returns:
+            The list of measured boxes.
+        """
         return [self.measure_bounding_box(b, target_unit=target_unit) for b in boxes] 
