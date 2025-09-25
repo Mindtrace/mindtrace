@@ -18,9 +18,9 @@ def minio_client():
     """Create a MinIO client for testing."""
     config = Config()
     client = Minio(
-        endpoint=config["MINDTRACE_MINIO_ENDPOINT"],
-        access_key=config["MINDTRACE_MINIO_ACCESS_KEY"],
-        secret_key=config["MINDTRACE_MINIO_SECRET_KEY"],
+        endpoint=config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"],
+        access_key=config["MINDTRACE_MINIO"]["MINIO_ACCESS_KEY"],
+        secret_key=config.get_secret("MINDTRACE_MINIO", "MINIO_SECRET_KEY"),
         secure=False,
     )
     return client

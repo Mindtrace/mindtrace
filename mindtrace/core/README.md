@@ -64,14 +64,21 @@ class MyProcessor(Mindtrace):
 ```
 
 #### `Config`
-Configuration management with validation and defaults.
+The Config class in Mindtrace provides a configuration layer designed to unify various sources of configuration— Pydantic models, Settings, Dict objects in a single, easy-to-use object with attribute access, and dynamic overrides.
 
 ```python
-config = Config({
-    "param1": "value1",
-    "param2": 42
-})
+from mindtrace.core.config import Config
+
+# Pass a dictionary
+config = Config({"MINDTRACE_DIR_PATHS":{"TEMP":"~/tmp"}})
+
+# Access config values
+print(config["MINDTRACE_DIR_PATHS"]["TEMP"])      
+# Attribute-style access
+print(config.MINDTRACE_DIR_PATHS.TEMP)
 ```
+
+For detailed usage of the Config class—including how it’s used within the Mindtrace class—refer to the [Usage documentation](../../samples/core/config/README.md)
 
 ### Observables
 

@@ -166,7 +166,7 @@ def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) 
     return F.to_pil_image((image - min_) / (max_ - min_), mode=mode)
 
 
-def pil_to_ndarray(image: Image, image_format="RGB") -> np.ndarray:
+def pil_to_ndarray(image: Image, image_format="RGB") -> "np.ndarray":
     """Convert PIL image to numpy ndarray.
 
     If an alpha channel is present, it will automatically be copied over as well.
@@ -205,7 +205,7 @@ def pil_to_ndarray(image: Image, image_format="RGB") -> np.ndarray:
                 return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
 
-def ndarray_to_pil(image: np.ndarray, image_format: str = "RGB"):
+def ndarray_to_pil(image: "np.ndarray", image_format: str = "RGB"):
     """Convert numpy ndarray to PIL image.
 
     The input image can either be a float array with values in the range [0, 1], an int array with values in the
@@ -250,7 +250,7 @@ def ndarray_to_pil(image: np.ndarray, image_format: str = "RGB"):
     raise AssertionError(f'Unknown image format "{image_format}". Expected one of "RGB" or "BGR".')
 
 
-def pil_to_cv2(image: Image) -> np.ndarray:
+def pil_to_cv2(image: Image) -> "np.ndarray":
     """Convert PIL image to cv2 image.
 
     Note that, in addition to cv2 images being numpy arrays, PIL Images follow RGB format while cv2 images follow BGR
@@ -277,7 +277,7 @@ def pil_to_cv2(image: Image) -> np.ndarray:
     return pil_to_ndarray(image, image_format="BGR")
 
 
-def cv2_to_pil(image: np.ndarray) -> Image:
+def cv2_to_pil(image: "np.ndarray") -> Image:
     """Convert PIL image to cv2 image.
 
     Note that, in addition to cv2 images being numpy arrays, PIL Images follow RGB format while cv2 images follow BGR
