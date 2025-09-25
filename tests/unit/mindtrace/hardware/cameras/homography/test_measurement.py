@@ -33,7 +33,7 @@ class TestMeasuredBox:
         """Test MeasuredBox with different units."""
         corners = np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype=np.float64)
         
-        for unit in ["mm", "cm", "m"]:
+        for unit in ["mm", "cm", "m", "in", "ft"]:
             measured_box = MeasuredBox(
                 corners_world=corners,
                 width_world=1.0,
@@ -92,14 +92,31 @@ class TestPlanarHomographyMeasurer:
         assert PlanarHomographyMeasurer._unit_scale("m", "mm") == 1000.0
         assert PlanarHomographyMeasurer._unit_scale("m", "cm") == 100.0
         assert PlanarHomographyMeasurer._unit_scale("m", "m") == 1.0
+        
+        # Test inches conversions
+        assert abs(PlanarHomographyMeasurer._unit_scale("mm", "in") - (1.0 / 25.4)) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("in", "mm") - 25.4) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("in", "in") - 1.0) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("in", "cm") - 2.54) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("cm", "in") - (1.0 / 2.54)) < 1e-10
+        
+        # Test feet conversions
+        assert abs(PlanarHomographyMeasurer._unit_scale("mm", "ft") - (1.0 / 304.8)) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "mm") - 304.8) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "ft") - 1.0) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("ft", "in") - 12.0) < 1e-10
+        assert abs(PlanarHomographyMeasurer._unit_scale("in", "ft") - (1.0 / 12.0)) < 1e-10
 
     def test_unit_scale_invalid_units(self):
         """Test error handling for invalid units."""
         with pytest.raises(ValueError, match="Units must be one of"):
-            PlanarHomographyMeasurer._unit_scale("mm", "inches")
+            PlanarHomographyMeasurer._unit_scale("mm", "inches")  # Should be "in", not "inches"
         
         with pytest.raises(ValueError, match="Units must be one of"):
-            PlanarHomographyMeasurer._unit_scale("feet", "mm")
+            PlanarHomographyMeasurer._unit_scale("feet", "mm")    # Should be "ft", not "feet"
+        
+        with pytest.raises(ValueError, match="Units must be one of"):
+            PlanarHomographyMeasurer._unit_scale("mm", "yards")   # Unsupported unit
 
     def test_pixels_to_world_basic(self):
         """Test basic pixel to world coordinate conversion."""
@@ -231,6 +248,67 @@ class TestPlanarHomographyMeasurer:
         # Check converted values
         assert abs(measurements[0].width_world - 5.0) < 1e-10  # 50mm = 5cm
         assert abs(measurements[1].width_world - 10.0) < 1e-10 # 100mm = 10cm
+
+    def test_measure_bounding_box_with_inches(self):
+        """Test measuring bounding box with inch conversion."""
+        bbox = BoundingBox(x=100, y=50, width=100, height=100)
+        
+        # Measure in inches (should convert from mm)
+        measured = self.measurer.measure_bounding_box(bbox, target_unit="in")
+        
+        assert measured.unit == "in"
+        # 50mm = ~1.968 inches (50 / 25.4)
+        expected_width_in = 50.0 / 25.4
+        expected_height_in = 50.0 / 25.4
+        expected_area_in = (50.0 * 50.0) / (25.4 * 25.4)
+        
+        assert abs(measured.width_world - expected_width_in) < 1e-10
+        assert abs(measured.height_world - expected_height_in) < 1e-10
+        assert abs(measured.area_world - expected_area_in) < 1e-10
+
+    def test_measure_bounding_box_with_feet(self):
+        """Test measuring bounding box with feet conversion."""
+        bbox = BoundingBox(x=100, y=50, width=100, height=100)
+        
+        # Measure in feet (should convert from mm)
+        measured = self.measurer.measure_bounding_box(bbox, target_unit="ft")
+        
+        assert measured.unit == "ft"
+        # 50mm = ~0.164 feet (50 / 304.8)
+        expected_width_ft = 50.0 / 304.8
+        expected_height_ft = 50.0 / 304.8
+        expected_area_ft = (50.0 * 50.0) / (304.8 * 304.8)
+        
+        assert abs(measured.width_world - expected_width_ft) < 1e-10
+        assert abs(measured.height_world - expected_height_ft) < 1e-10
+        assert abs(measured.area_world - expected_area_ft) < 1e-10
+
+    def test_measure_bounding_boxes_with_imperial_units(self):
+        """Test measuring multiple boxes with imperial unit conversions."""
+        boxes = [
+            BoundingBox(x=100, y=50, width=100, height=100),  # 50x50 mm
+            BoundingBox(x=200, y=100, width=200, height=100), # 100x50 mm
+        ]
+        
+        # Test with inches
+        measurements_in = self.measurer.measure_bounding_boxes(boxes, target_unit="in")
+        
+        assert len(measurements_in) == 2
+        assert all(m.unit == "in" for m in measurements_in)
+        
+        # Check converted values
+        assert abs(measurements_in[0].width_world - (50.0 / 25.4)) < 1e-10  # 50mm to inches
+        assert abs(measurements_in[1].width_world - (100.0 / 25.4)) < 1e-10 # 100mm to inches
+        
+        # Test with feet
+        measurements_ft = self.measurer.measure_bounding_boxes(boxes, target_unit="ft")
+        
+        assert len(measurements_ft) == 2
+        assert all(m.unit == "ft" for m in measurements_ft)
+        
+        # Check converted values
+        assert abs(measurements_ft[0].width_world - (50.0 / 304.8)) < 1e-10  # 50mm to feet
+        assert abs(measurements_ft[1].width_world - (100.0 / 304.8)) < 1e-10 # 100mm to feet
 
     def test_measure_empty_bounding_box_list(self):
         """Test measuring an empty list of bounding boxes."""

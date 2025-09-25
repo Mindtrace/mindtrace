@@ -410,7 +410,7 @@ class TestHomographyCalibrator:
         world_points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
         image_points = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], dtype=np.float64)
         
-        for unit in ["mm", "cm", "m"]:
+        for unit in ["mm", "cm", "m", "in", "ft"]:
             calib_data = self.calibrator.calibrate_from_correspondences(
                 world_points=world_points,
                 image_points=image_points,
