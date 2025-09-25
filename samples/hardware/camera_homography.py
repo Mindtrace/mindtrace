@@ -1,11 +1,10 @@
-import cv2
-import numpy as np
+from PIL import Image
 
-from mindtrace.hardware import HomographyCalibrator, PlanarHomographyMeasurer
 from mindtrace.core.types.bounding_box import BoundingBox
+from mindtrace.hardware import HomographyCalibrator, PlanarHomographyMeasurer
 
-# Load your image
-image = cv2.imread("tests/resources/checkerboard.jpg")
+# Load your image (PIL is now the preferred format)
+image = Image.open("tests/resources/checkerboard.jpg")
 
 # Create calibrator
 calibrator = HomographyCalibrator()
@@ -14,7 +13,7 @@ calibrator = HomographyCalibrator()
 # board_size: (columns, rows) of inner corners
 # square_size: real-world size of each square in your chosen unit
 calibration_data = calibrator.calibrate_checkerboard(
-    image_bgr=image,
+    image=image,          # PIL Image (preferred) or numpy array (backward compatible)
     board_size=(12, 12),  # 9x6 inner corners
     square_size=25.0,     # Each square is 25mm
     world_unit="mm",      # Using millimeters
