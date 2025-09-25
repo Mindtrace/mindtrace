@@ -17,7 +17,7 @@ class TestPylonSDKInstaller:
         installer = PylonSDKInstaller()
 
         # Should be a Mindtrace instance
-        from mindtrace.core.base.mindtrace_base import Mindtrace
+        from mindtrace.core import Mindtrace
 
         assert isinstance(installer, Mindtrace)
 
@@ -59,12 +59,19 @@ class TestPylonSDKInstaller:
         )
 
     @patch("subprocess.run")
-    def test_install_method_callable(self, mock_subprocess):
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_tarball")
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_zip")
+    def test_install_method_callable(self, mock_download_zip, mock_download_tarball, mock_subprocess):
         """Test that install method is callable."""
         installer = PylonSDKInstaller()
 
         # Mock successful subprocess calls
         mock_subprocess.return_value.returncode = 0
+
+        # Mock download functions to return a fake directory
+        from pathlib import Path
+        mock_download_tarball.return_value = Path("/tmp/fake_extracted")
+        mock_download_zip.return_value = Path("/tmp/fake_extracted")
 
         # Should be able to call install without errors
         try:
@@ -76,12 +83,19 @@ class TestPylonSDKInstaller:
             assert "dpkg" in str(e) or "permission" in str(e).lower() or "not found" in str(e).lower()
 
     @patch("subprocess.run")
-    def test_uninstall_method_callable(self, mock_subprocess):
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_tarball")
+    @patch("mindtrace.hardware.cameras.setup.setup_basler.download_and_extract_zip")
+    def test_uninstall_method_callable(self, mock_download_zip, mock_download_tarball, mock_subprocess):
         """Test that uninstall method is callable."""
         installer = PylonSDKInstaller()
 
         # Mock successful subprocess calls
         mock_subprocess.return_value.returncode = 0
+
+        # Mock download functions to return a fake directory
+        from pathlib import Path
+        mock_download_tarball.return_value = Path("/tmp/fake_extracted")
+        mock_download_zip.return_value = Path("/tmp/fake_extracted")
 
         # Should be able to call uninstall without errors
         try:
