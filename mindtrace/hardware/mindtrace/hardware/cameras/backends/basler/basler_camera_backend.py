@@ -664,7 +664,7 @@ class BaslerCameraBackend(CameraBackend):
                         await self._sdk(grab_result.Release, timeout=self._op_timeout_s)
                         return image
                     else:
-                        error_desc = await self._sdk(grab_result.ErrorDescription, timeout=self._op_timeout_s)
+                        error_desc = await self._sdk(grab_result.GetErrorDescription, timeout=self._op_timeout_s)
                         self.logger.warning(f"Grab failed for camera '{self.camera_name}': {error_desc}")
                         await self._sdk(grab_result.Release, timeout=self._op_timeout_s)
 
