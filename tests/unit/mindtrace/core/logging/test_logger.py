@@ -290,8 +290,8 @@ class TestGetLoggerAdvanced:
         assert logger.name == "mindtrace.parent.child.grandchild"
 
         # Check that parent loggers exist
-        parent_logger = logging.getLogger("mindtrace.parent")
-        child_logger = logging.getLogger("mindtrace.parent.child")
+        logging.getLogger("mindtrace.parent")
+        logging.getLogger("mindtrace.parent.child")
 
         # The target logger should have handlers
         assert len(logger.handlers) > 0
@@ -307,8 +307,8 @@ class TestGetLoggerAdvanced:
         assert logger.name == "mindtrace.parent.child.grandchild"
 
         # Check that parent loggers exist but may not have handlers
-        parent_logger = logging.getLogger("mindtrace.parent")
-        child_logger = logging.getLogger("mindtrace.parent.child")
+        logging.getLogger("mindtrace.parent")
+        logging.getLogger("mindtrace.parent.child")
 
         # Only the target logger should have handlers
         assert len(logger.handlers) > 0
@@ -342,7 +342,7 @@ class TestGetLoggerAdvanced:
             mock_setup.return_value = mock_logger
 
             # Create a logger with propagation
-            result = get_logger(name="a.b.c.d", log_dir=tmp_path, propagate=True)
+            get_logger(name="a.b.c.d", log_dir=tmp_path, propagate=True)
 
             # The current implementation only calls setup_logger for the target logger
             # and for parent loggers that already have handlers
