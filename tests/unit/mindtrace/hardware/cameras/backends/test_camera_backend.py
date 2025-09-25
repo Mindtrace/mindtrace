@@ -804,7 +804,7 @@ class TestCameraBackendInheritance:
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_inherits_from_mindtrace_abc(self, mock_get_config):
         """Test that CameraBackend properly inherits from MindtraceABC."""
-        from mindtrace.core.base.mindtrace_base import MindtraceABC
+        from mindtrace.core import MindtraceABC
 
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
@@ -825,7 +825,7 @@ class TestCameraBackendInheritance:
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_method_resolution_order(self, mock_get_config):
         """Test method resolution order is correct."""
-        from mindtrace.core.base.mindtrace_base import MindtraceABC
+        from mindtrace.core import MindtraceABC
 
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
