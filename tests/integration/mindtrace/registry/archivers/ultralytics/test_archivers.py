@@ -1,6 +1,9 @@
 import os
+import socket
 import tempfile
+import urllib.request
 
+import pytest
 from ultralytics import SAM, YOLO, YOLOE
 
 from mindtrace.registry.archivers.ultralytics.sam_archiver import SamArchiver
@@ -8,6 +11,52 @@ from mindtrace.registry.archivers.ultralytics.yolo_archiver import YoloArchiver
 from mindtrace.registry.archivers.ultralytics.yoloe_archiver import YoloEArchiver
 
 MINIO_BUCKET = os.environ.get("MINIO_BUCKET", "minio-registry")
+
+
+def check_ultralytics_connectivity(timeout=10):
+    """Check if ultralytics model download servers are reachable.
+    
+    Args:
+        timeout: Connection timeout in seconds
+        
+    Returns:
+        bool: True if servers are reachable, False otherwise
+    """
+    # Primary servers that ultralytics uses for model downloads
+    servers_to_check = [
+        ("github.com", 443),  # GitHub releases (primary model host)
+        ("api.github.com", 443),  # GitHub API
+        ("objects.githubusercontent.com", 443),  # GitHub raw content
+    ]
+    
+    for host, port in servers_to_check:
+        try:
+            # Test TCP connection
+            with socket.create_connection((host, port), timeout=timeout):
+                pass
+            
+            # Test HTTP(S) connectivity for at least one server
+            if host == "github.com":
+                try:
+                    with urllib.request.urlopen(f"https://{host}", timeout=timeout) as response:
+                        if response.getcode() == 200:
+                            return True
+                except Exception:
+                    continue
+            else:
+                return True  # TCP connection succeeded
+                
+        except (socket.timeout, socket.error, OSError):
+            continue
+    
+    return False
+
+
+# Skip all tests in this module if ultralytics servers are unreachable
+pytestmark = pytest.mark.skipif(
+    not check_ultralytics_connectivity(),
+    reason="Ultralytics model download servers are not reachable (requires internet connection)"
+)
 
 
 def minio_uri(prefix):
