@@ -45,6 +45,7 @@ app = rx.App(
     },
 )
 
+
 # Add routes
 app.add_page(
     index_page,

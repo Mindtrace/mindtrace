@@ -5,7 +5,6 @@ from ..state.camera_state import CameraState
 from ..components.camera_grid import camera_grid, camera_grid_header, camera_grid_controls
 from ..components.camera_modal import camera_modal
 from ..components.status_banner import status_banner
-from ..components.file_config import file_config_section
 from ..components.layout import main_layout, page_container
 from ..styles.theme import colors, spacing, css_spacing, layout
 
@@ -67,38 +66,14 @@ def index_page() -> rx.Component:
         )
     
     def active_streams_summary() -> rx.Component:
-        """Display summary of active camera streams."""
-        # Since streaming is now per-camera and displayed in cards, 
-        # we can show a simple summary or remove this entirely
-        return rx.cond(
-            # Check if any camera is streaming
-            rx.text("") != "",  # This will be always false, effectively hiding this section
-            rx.box(
-                rx.text(
-                    "Active Streams",
-                    font_weight="600",
-                    font_size="1.125rem",
-                    color=colors["gray_900"],
-                ),
-                rx.text(
-                    "Camera streams are now displayed within individual camera cards above.",
-                    color=colors["gray_600"],
-                    font_size="0.875rem",
-                ),
-                background=colors["white"],
-                border=f"1px solid {colors['border']}",
-                border_radius=css_spacing["lg"],
-                padding=css_spacing["lg"],
-                margin_top=css_spacing["lg"],
-            ),
-        )
+        """Removed - streams are displayed in camera cards."""
+        return rx.fragment()
     
     return rx.box(
         main_layout(
             page_container(
                 rx.vstack(
                     page_content(),
-                    file_config_section(),
                     captured_image_viewer(),
                     active_streams_summary(),
                     camera_modal(),

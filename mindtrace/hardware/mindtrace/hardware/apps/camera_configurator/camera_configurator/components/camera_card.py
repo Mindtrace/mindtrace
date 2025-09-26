@@ -8,35 +8,30 @@ def camera_card(camera_name: str) -> rx.Component:
     """Camera card component with status and controls."""
     
     def stream_display() -> rx.Component:
-        """Video stream display component - only shows when this specific camera is streaming."""
-        # Use direct state comparison instead of method calls for better reactivity
+        """Display the MJPEG stream if streaming is active (Poseidon pattern)."""
         return rx.cond(
-            CameraState.streaming_camera_name == camera_name,
-            # Show stream when this specific camera is streaming
-            rx.box(
-                # Removed red LIVE indicator
-                rx.image(
-                    src=CameraState.streaming_url,
-                    alt=f"Live stream from {camera_name}",
+            (CameraState.current_streaming_camera == camera_name) & (CameraState.current_stream_url != ""),
+                rx.center(
+                    rx.box(
+                        rx.image(
+                            src=CameraState.current_stream_url,
+                            width="100%",
+                            max_width="480px",
+                            max_height="360px",
+                            border_radius="8px",
+                            border="1px solid #E5E7EB",
+                            alt="Live camera stream",
+                            object_fit="contain",
+                        ),
+                        background="white",
+                        padding="1rem",
+                        border_radius="8px",
+                        box_shadow="0 2px 4px rgba(0, 0, 0, 0.1)",
+                        width="100%",
+                    ),
                     width="100%",
-                    height="200px",
-                    object_fit="cover",
-                    border_radius=radius["lg"],
-                    border=f"2px solid {colors['primary']}",
-                    style={
-                        "image-rendering": "auto",
-                        "image-orientation": "from-image",
-                    },
                 ),
-                width="100%",
-                margin_bottom=spacing["md"],
-                background_color="rgba(255, 0, 0, 0.1)",
-                padding="8px",
-                border_radius=radius["lg"],
-            ),
-            # Completely empty when not streaming - no box, no content
-            rx.fragment(),
-        )
+            )
     
     def camera_icon() -> rx.Component:
         """Camera icon with dynamic status indication."""
@@ -255,7 +250,7 @@ def camera_card(camera_name: str) -> rx.Component:
                     variant="solid",
                     color_scheme="red",
                     width="100%",
-                    on_click=CameraState.close_camera(camera_name),
+                    on_click=lambda: CameraState.close_camera(camera_name),
                 ),
                 rx.button(
                     "Initialize",
@@ -263,7 +258,7 @@ def camera_card(camera_name: str) -> rx.Component:
                     variant="solid",
                     color_scheme="blue",
                     width="100%",
-                    on_click=CameraState.initialize_camera(camera_name),
+                    on_click=lambda: CameraState.initialize_camera(camera_name),
                 ),
             ),
             
@@ -276,7 +271,7 @@ def camera_card(camera_name: str) -> rx.Component:
                     size="2",
                     variant="outline",
                     width="100%",
-                    on_click=CameraState.open_config_modal(camera_name),
+                    on_click=lambda: CameraState.open_config_modal(camera_name),
                 ),
             ),
             
@@ -294,7 +289,7 @@ def camera_card(camera_name: str) -> rx.Component:
                     variant="outline",
                     width="100%",
                     disabled=CameraState.capture_loading,
-                    on_click=CameraState.capture_image(camera_name),
+                    on_click=lambda: CameraState.capture_image(camera_name),
                 ),
             ),
             
@@ -302,7 +297,7 @@ def camera_card(camera_name: str) -> rx.Component:
             rx.cond(
                 CameraState.camera_statuses.get(camera_name, "unknown") == "initialized",
                 rx.cond(
-                    CameraState.streaming_camera_name == camera_name,
+                    CameraState.current_streaming_camera == camera_name,
                     rx.button(
                         rx.icon("square"),
                         " Stop Stream",
@@ -310,7 +305,7 @@ def camera_card(camera_name: str) -> rx.Component:
                         variant="outline",
                         color_scheme="red",
                         width="100%",
-                        on_click=CameraState.stop_stream(camera_name),
+                        on_click=lambda: CameraState.stop_stream(),
                     ),
                     rx.button(
                         rx.icon("play"),
@@ -319,7 +314,7 @@ def camera_card(camera_name: str) -> rx.Component:
                         variant="outline",
                         color_scheme="green",
                         width="100%",
-                        on_click=CameraState.start_stream(camera_name),
+                        on_click=lambda: CameraState.start_stream(camera_name),
                     ),
                 ),
             ),
@@ -329,42 +324,8 @@ def camera_card(camera_name: str) -> rx.Component:
         )
     
     def camera_info(camera_name: str) -> rx.Component:
-        """Camera configuration information."""
-        return rx.cond(
-            CameraState.camera_configs.get(camera_name, {}) != {},
-            rx.vstack(
-                rx.text(
-                    "Configuration:",
-                    font_weight="500",
-                    font_size="0.875rem",
-                    color=colors["gray_700"],
-                ),
-                rx.vstack(
-                    rx.text(
-                        f"Exposure: {CameraState.camera_configs.get(camera_name, {}).get('exposure', 'N/A')}",
-                        font_size="0.75rem",
-                        color=colors["gray_600"],
-                    ),
-                    rx.text(
-                        f"Gain: {CameraState.camera_configs.get(camera_name, {}).get('gain', 'N/A')}",
-                        font_size="0.75rem",
-                        color=colors["gray_600"],
-                    ),
-                    rx.text(
-                        f"Mode: {CameraState.camera_configs.get(camera_name, {}).get('trigger_mode', 'N/A')}",
-                        font_size="0.75rem",
-                        color=colors["gray_600"],
-                    ),
-                    spacing=spacing["xs"],
-                    align="start",
-                ),
-                spacing=spacing["xs"],
-                align="start",
-                width="100%",
-                padding_top=spacing["sm"],
-                border_top=f"1px solid {colors['border_light']}",
-            ),
-        )
+        """Camera configuration information - removed as not needed."""
+        return rx.fragment()
     
     return rx.flex(
         camera_header(),
