@@ -225,7 +225,7 @@ class TestMockBaslerImageGeneration:
         camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="checkerboard", synthetic_checker_size=100)
         await camera.initialize()
 
-        image = await camera.capture()
+        await camera.capture()
         assert camera.synthetic_checker_size == 100
         await camera.close()
 
@@ -472,7 +472,7 @@ class TestMockBaslerStateManagement:
         assert camera.IsGrabbing() is False
 
         # Capture should auto-start grabbing
-        image = await camera.capture()
+        await camera.capture()
         assert camera.IsGrabbing() is True
 
         await camera.close()

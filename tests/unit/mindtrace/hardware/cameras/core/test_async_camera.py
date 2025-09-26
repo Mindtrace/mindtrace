@@ -666,6 +666,7 @@ async def test_async_camera_storage_initialization_failure(monkeypatch):
             # Mock the import to raise an exception during storage initialization
             import mindtrace.hardware.cameras.core.async_camera as async_camera_module
             original_storage_available = async_camera_module.STORAGE_AVAILABLE
+            assert original_storage_available
             
             # Set STORAGE_AVAILABLE to True but make config import fail
             monkeypatch.setattr(async_camera_module, "STORAGE_AVAILABLE", True)
@@ -782,8 +783,8 @@ async def test_async_camera_capture_with_save_path():
             cam = await manager.open(names[0])
             
             # Test capture with save_path (creates directory if needed)
-            import tempfile
             import os
+            import tempfile
             
             with tempfile.TemporaryDirectory() as temp_dir:
                 save_path = os.path.join(temp_dir, "subdir", "test_image.jpg")
@@ -945,7 +946,7 @@ async def test_async_camera_gcs_upload_functionality(monkeypatch):
             cam = await manager.open(names[0])
             
             # Test _should_upload_to_gcs when storage_handler is None
-            assert cam._should_upload_to_gcs() == False
+            assert not cam._should_upload_to_gcs()
             
             # Mock storage handler
             class MockStorageHandler:
@@ -971,7 +972,7 @@ async def test_async_camera_gcs_upload_functionality(monkeypatch):
             )
             
             # Now _should_upload_to_gcs should return True
-            assert cam._should_upload_to_gcs() == True
+            assert cam._should_upload_to_gcs()
             
             # Test actual upload (mock the upload process)
             import numpy as np
@@ -981,7 +982,7 @@ async def test_async_camera_gcs_upload_functionality(monkeypatch):
             monkeypatch.setattr("os.unlink", lambda x: None)
             
             result = await cam._upload_image_to_gcs(test_image)
-            assert result == True
+            assert result
     finally:
         await manager.close(None)
 
@@ -998,14 +999,14 @@ async def test_async_camera_gcs_upload_failure(monkeypatch):
             
             # Test upload with None image
             result = await cam._upload_image_to_gcs(None)
-            assert result == False
+            assert not result
             
             # Test upload when storage handler is None
             cam._storage_handler = None
             import numpy as np
             test_image = np.zeros((100, 100, 3), dtype=np.uint8)
             result = await cam._upload_image_to_gcs(test_image)
-            assert result == False
+            assert not result
     finally:
         await manager.close(None)
 
@@ -1037,6 +1038,6 @@ async def test_async_camera_gcs_config_exception(monkeypatch):
             )
             
             # Should return False when config access fails
-            assert cam._should_upload_to_gcs() == False
+            assert not cam._should_upload_to_gcs()
     finally:
         await manager.close(None)

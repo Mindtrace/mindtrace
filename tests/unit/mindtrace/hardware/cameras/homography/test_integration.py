@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from mindtrace.core.types.bounding_box import BoundingBox
-from mindtrace.hardware.cameras.homography.calibration import HomographyCalibrator, CalibrationData
-from mindtrace.hardware.cameras.homography.measurement import PlanarHomographyMeasurer, MeasuredBox
+from mindtrace.hardware.cameras.homography.calibration import HomographyCalibrator
+from mindtrace.hardware.cameras.homography.measurement import PlanarHomographyMeasurer
 
 
 class TestHomographyIntegration:

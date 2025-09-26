@@ -1,15 +1,12 @@
 import os
-import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import cv2
 import numpy as np
-from PIL import Image
 import pytest
+from PIL import Image
 
-from mindtrace.core import cv2_to_pil
-from mindtrace.hardware.cameras.homography.calibration import HomographyCalibrator, CalibrationData
-from mindtrace.hardware.core.exceptions import CameraConfigurationError
+from mindtrace.hardware.cameras.homography.calibration import CalibrationData, HomographyCalibrator
 
 
 class TestCalibrationData:
