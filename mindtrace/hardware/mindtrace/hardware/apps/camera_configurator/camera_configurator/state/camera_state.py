@@ -335,9 +335,13 @@ class CameraState(rx.State):
                 result = await _camera_api.stop_camera_stream(self.current_streaming_camera)
                 
                 if result.get("success", False):
+                    self.set_message(f"Stream stopped for {self.current_streaming_camera}", "success")
                 else:
+                    error = result.get("error", "Unknown error")
+                    self.set_message(f"Failed to stop stream: {error}", "error")
                     
             except Exception as e:
+                self.set_message(f"Error stopping stream: {str(e)}", "error")
         
         # Always clear the state
         self.current_streaming_camera = ""
