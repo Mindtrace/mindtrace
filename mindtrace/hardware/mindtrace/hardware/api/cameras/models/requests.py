@@ -245,6 +245,8 @@ class StreamStartRequest(BaseModel):
     """Request model for starting camera stream."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    quality: int = Field(85, description="JPEG quality (1-100)", ge=1, le=100)
+    fps: int = Field(30, description="Frames per second", ge=1, le=120)
 
 
 class StreamStopRequest(BaseModel):

@@ -5,8 +5,9 @@ This service wraps AsyncCameraManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
+import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from mindtrace.hardware.api.cameras.models import (
@@ -444,6 +445,12 @@ class CameraManagerService(Service):
             # Get capabilities from camera backend
             try:
                 exposure_range = await camera_proxy.get_exposure_range()
+                # For OpenCV cameras, explicitly disable exposure control as most don't support it
+                if request.camera.startswith("OpenCV:") and exposure_range is not None:
+                    # Double-check that exposure control is actually supported
+                    if hasattr(camera_proxy.backend, 'is_exposure_control_supported'):
+                        if not await camera_proxy.backend.is_exposure_control_supported():
+                            exposure_range = None
             except Exception:
                 exposure_range = None
 
@@ -695,7 +702,7 @@ class CameraManagerService(Service):
                 save_path=request.save_path, upload_to_gcs=request.upload_to_gcs, output_format=request.output_format
             )
 
-            result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.utcnow())
+            result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc))
 
             return CaptureResponse(success=True, message=f"Image captured from camera '{request.camera}'", data=result)
         except Exception as e:
@@ -715,10 +722,10 @@ class CameraManagerService(Service):
 
             for camera, image in results.items():
                 if image is not None:
-                    capture_results[camera] = CaptureResult(success=True, capture_time=datetime.utcnow())
+                    capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
                     successful_count += 1
                 else:
-                    capture_results[camera] = CaptureResult(success=False, capture_time=datetime.utcnow())
+                    capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
 
             return BatchCaptureResponse(
                 success=successful_count > 0,
@@ -756,7 +763,7 @@ class CameraManagerService(Service):
                 image_paths=hdr_result["image_paths"],
                 gcs_urls=hdr_result["gcs_urls"],
                 exposure_levels=hdr_result["exposure_levels"],
-                capture_time=datetime.utcnow(),
+                capture_time=datetime.now(timezone.utc),
                 successful_captures=hdr_result["successful_captures"],
             )
 
@@ -792,7 +799,7 @@ class CameraManagerService(Service):
                         image_paths=hdr_data.get("image_paths"),
                         gcs_urls=hdr_data.get("gcs_urls"),
                         exposure_levels=hdr_data.get("exposure_levels", []),
-                        capture_time=datetime.utcnow(),
+                        capture_time=datetime.now(timezone.utc),
                         successful_captures=hdr_data.get("successful_captures", 0),
                     )
                     successful_count += 1
@@ -803,7 +810,7 @@ class CameraManagerService(Service):
                         image_paths=None,
                         gcs_urls=None,
                         exposure_levels=[],
-                        capture_time=datetime.utcnow(),
+                        capture_time=datetime.now(timezone.utc),
                         successful_captures=0,
                     )
 
@@ -875,32 +882,43 @@ class CameraManagerService(Service):
 
     # Streaming Operations
     async def start_stream(self, request: StreamStartRequest) -> StreamInfoResponse:
-        """Start camera stream."""
+        """Start camera stream with resilient state management."""
         try:
             manager = await self._get_camera_manager()
 
-            # Check if camera is active
+            # More resilient camera check - try to initialize if not active
             if request.camera not in manager.active_cameras:
-                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
-
-            camera_proxy = await manager.open(request.camera)
+                self.logger.warning(f"Camera '{request.camera}' not in active cameras, attempting to initialize")
+                try:
+                    # Try to initialize the camera first
+                    camera_proxy = await manager.open(request.camera)
+                    self.logger.info(f"Successfully initialized camera '{request.camera}' for streaming")
+                except Exception as init_error:
+                    self.logger.error(f"Failed to initialize camera '{request.camera}': {init_error}")
+                    raise CameraNotFoundError(f"Camera '{request.camera}' is not available and could not be initialized")
+            else:
+                camera_proxy = await manager.open(request.camera)
             
             # Start streaming - return the actual stream URL
-            # Use the same host and port as the API service
-            stream_url = f"http://192.168.50.32:8002/stream/{request.camera.replace(':', '_')}"
+            # Use the same host and port as the API service from environment variables
+            api_host = os.getenv('CAMERA_API_HOST', 'localhost')
+            api_port = os.getenv('CAMERA_API_PORT', '8002')
+            stream_url = f"http://{api_host}:{api_port}/stream/{request.camera.replace(':', '_')}"
             
-            # Track this stream as active
+            # Track this stream as active (always update, even if already exists)
             self._active_streams[request.camera] = {
                 "stream_url": stream_url,
-                "start_time": datetime.utcnow(),
-                "camera_proxy": camera_proxy
+                "start_time": datetime.now(timezone.utc),
+                "camera_proxy": camera_proxy,
+                "quality": request.quality,
+                "fps": request.fps
             }
             
             stream_info = StreamInfo(
                 camera=request.camera,
                 streaming=True,
                 stream_url=stream_url,
-                start_time=datetime.utcnow()
+                start_time=datetime.now(timezone.utc)
             )
 
             return StreamInfoResponse(
@@ -908,45 +926,66 @@ class CameraManagerService(Service):
                 message=f"Stream started for camera '{request.camera}'", 
                 data=stream_info
             )
+        except CameraNotFoundError:
+            # Re-raise camera not found errors
+            raise
         except Exception as e:
             self.logger.error(f"Failed to start stream for '{request.camera}': {e}")
-            raise
+            # Return a more graceful error response instead of raising
+            return StreamInfoResponse(
+                success=False,
+                message=f"Failed to start stream for '{request.camera}': {str(e)}",
+                data=None
+            )
 
     async def stop_stream(self, request: StreamStopRequest) -> BoolResponse:
-        """Stop camera stream."""
+        """Stop camera stream with resilient state management."""
         try:
-            manager = await self._get_camera_manager()
-
-            # Check if camera is active
-            if request.camera not in manager.active_cameras:
-                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
-
-            # Stop streaming and remove from active streams
-            if request.camera in self._active_streams:
+            # Remove from active streams regardless of camera state
+            was_streaming = request.camera in self._active_streams
+            if was_streaming:
                 del self._active_streams[request.camera]
+                self.logger.info(f"Removed camera '{request.camera}' from active streams")
+            
+            # Don't require camera to be initialized for stopping streams
+            # The actual video streaming endpoint doesn't depend on _active_streams anyway
+            message = f"Stream stopped for camera '{request.camera}'"
+            if not was_streaming:
+                message = f"Stream was not active for camera '{request.camera}' (already stopped)"
             
             return BoolResponse(
                 success=True, 
-                message=f"Stream stopped for camera '{request.camera}'", 
+                message=message, 
                 data=True
             )
         except Exception as e:
-            self.logger.error(f"Failed to stop stream for '{request.camera}': {e}")
-            raise
+            self.logger.warning(f"Exception during stop_stream for '{request.camera}': {e}")
+            # Always succeed for stop operations to prevent UI blocking
+            # The worst case is we don't update our tracking dict, but streaming still works
+            return BoolResponse(
+                success=True, 
+                message=f"Stream stop attempted for '{request.camera}': {str(e)}", 
+                data=True
+            )
 
     async def get_stream_status(self, request: StreamStatusRequest) -> StreamStatusResponse:
-        """Get camera stream status."""
+        """Get camera stream status with resilient state management."""
         try:
             manager = await self._get_camera_manager()
 
-            # Check if camera is active
-            if request.camera not in manager.active_cameras:
-                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
-
-            camera_proxy = await manager.open(request.camera)
-            is_connected = await camera_proxy.check_connection()
+            # More resilient camera connection check
+            is_connected = False
+            try:
+                if request.camera in manager.active_cameras:
+                    camera_proxy = await manager.open(request.camera)
+                    is_connected = await camera_proxy.check_connection()
+                else:
+                    self.logger.warning(f"Camera '{request.camera}' not in active cameras for status check")
+            except Exception as conn_error:
+                self.logger.warning(f"Could not check connection for '{request.camera}': {conn_error}")
+                is_connected = False
             
-            # Check if camera is actively streaming
+            # Check if camera is actively streaming (from our tracking)
             is_streaming = request.camera in self._active_streams
             stream_url = None
             uptime_seconds = 0.0
@@ -954,7 +993,7 @@ class CameraManagerService(Service):
             if is_streaming:
                 stream_info = self._active_streams[request.camera]
                 stream_url = stream_info["stream_url"]
-                uptime_seconds = (datetime.utcnow() - stream_info["start_time"]).total_seconds()
+                uptime_seconds = (datetime.now(timezone.utc) - stream_info["start_time"]).total_seconds()
             
             stream_status = StreamStatus(
                 camera=request.camera,
@@ -1045,6 +1084,14 @@ class CameraManagerService(Service):
                 import numpy as np
                 boundary = "frame"
                 
+                # Get dynamic streaming parameters
+                stream_info = self._active_streams.get(actual_camera_name, {})
+                quality = stream_info.get("quality", 85)
+                fps = stream_info.get("fps", 30)
+                frame_delay = 1.0 / fps
+                
+                self.logger.info(f"Starting stream for '{actual_camera_name}' with quality={quality}, fps={fps}")
+                
                 while True:
                     try:
                         # Capture frame from camera as numpy array
@@ -1063,21 +1110,18 @@ class CameraManagerService(Service):
                             else:
                                 frame_bgr = frame_np
                             
-                            # Encode as JPEG
+                            # Encode as JPEG with dynamic quality
                             success, jpeg_data = cv2.imencode('.jpg', frame_bgr, 
-                                                             [cv2.IMWRITE_JPEG_QUALITY, 85])
+                                                             [cv2.IMWRITE_JPEG_QUALITY, quality])
                             
                             if success:
-                                # Create MJPEG frame
+                                # Create MJPEG frame (Poseidon format)
                                 frame_data = jpeg_data.tobytes()
-                                yield (
-                                    f"--{boundary}\r\n"
-                                    f"Content-Type: image/jpeg\r\n"
-                                    f"Content-Length: {len(frame_data)}\r\n\r\n"
-                                ).encode() + frame_data + b"\r\n"
+                                yield (b'--frame\r\n'
+                                       b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
                         
-                        # Control frame rate (30 FPS = ~33ms delay)
-                        await asyncio.sleep(0.033)
+                        # Control frame rate with dynamic FPS
+                        await asyncio.sleep(frame_delay)
                         
                     except Exception as e:
                         self.logger.warning(f"Frame capture error for {actual_camera_name}: {e}")
