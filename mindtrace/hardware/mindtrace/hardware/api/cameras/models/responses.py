@@ -5,7 +5,7 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all camera management endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ class BaseResponse(BaseModel):
 
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BoolResponse(BaseResponse):
@@ -175,7 +175,7 @@ class CaptureResult(BaseModel):
     image_data: Optional[str] = None  # Base64 encoded image
     image_path: Optional[str] = None
     gcs_url: Optional[str] = None
-    capture_time: datetime = Field(default_factory=datetime.utcnow)
+    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     image_size: Optional[Tuple[int, int]] = None
     file_size_bytes: Optional[int] = None
 
@@ -202,7 +202,7 @@ class HDRCaptureResult(BaseModel):
     image_paths: Optional[List[str]] = None
     gcs_urls: Optional[List[str]] = None
     exposure_levels: List[float]
-    capture_time: datetime = Field(default_factory=datetime.utcnow)
+    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     successful_captures: int
 
 

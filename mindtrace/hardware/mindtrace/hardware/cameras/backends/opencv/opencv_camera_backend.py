@@ -752,8 +752,8 @@ class OpenCVCameraBackend(CameraBackend):
 
     async def is_exposure_control_supported(self) -> bool:
         """
-        Check if exposure control is supported for this camera.
-        Simplified version to avoid hanging operations.
+        Check if exposure control is actually supported for this camera.
+        Tests both reading and setting exposure to verify true support.
         Returns:
             True if exposure control is supported, False otherwise
         """
@@ -762,14 +762,25 @@ class OpenCVCameraBackend(CameraBackend):
         else:
             assert cv2 is not None, "OpenCV camera is initialized but cv2 is not available"
         try:
-            # Simple test - just check if we can read the current exposure
-            # Most cameras that support exposure will return a valid value
+            # First check if we can read the current exposure
             async with self._io_lock:
                 current_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE, timeout=2.0)
 
-            # If we get a reasonable exposure value, assume control is supported
-            # OpenCV typically returns -1 or 0 for unsupported properties
-            return current_exposure is not None and current_exposure > -1
+            # If we can't get a valid exposure value, it's definitely not supported
+            if current_exposure is None or current_exposure <= -1:
+                return False
+                
+            # Now test if we can actually set exposure (the real test)
+            # Try to set the same value we just read - this should always work if exposure control is supported
+            async with self._io_lock:
+                set_success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(current_exposure), timeout=2.0)
+            
+            # If set operation failed, exposure control is not truly supported
+            if not set_success:
+                self.logger.debug(f"Camera '{self.camera_name}' can read exposure but cannot set it - exposure control not supported")
+                return False
+                
+            return True
         except Exception as e:
             self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
             return False
@@ -847,12 +858,17 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.error(f"Error getting exposure for camera '{self.camera_name}': {e}")
             raise HardwareOperationError(f"Failed to get exposure for camera '{self.camera_name}': {str(e)}")
 
-    async def get_exposure_range(self) -> List[Union[int, float]]:
+    async def get_exposure_range(self) -> Optional[List[Union[int, float]]]:
         """Get camera exposure time range.
 
         Returns:
-            List containing [min_exposure, max_exposure] in OpenCV log scale
+            List containing [min_exposure, max_exposure] in OpenCV log scale, or None if exposure control not supported
         """
+        # Check if this camera actually supports exposure control
+        # Many OpenCV cameras can read exposure but cannot set it
+        if not await self.is_exposure_control_supported():
+            return None
+            
         return [
             getattr(self.camera_config.cameras, "opencv_exposure_range_min", -13.0),
             getattr(self.camera_config.cameras, "opencv_exposure_range_max", -1.0),
