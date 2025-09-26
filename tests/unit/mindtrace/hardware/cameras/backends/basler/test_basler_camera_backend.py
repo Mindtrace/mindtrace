@@ -614,9 +614,8 @@ class TestBaslerCameraBackendCapture:
         """Test successful image capture."""
         await basler_camera.initialize()
 
-        success, image = await basler_camera.capture()
+        image = await basler_camera.capture()
 
-        assert success is True
         assert isinstance(image, np.ndarray)
         assert image.shape == (1080, 1920, 3)
 
@@ -673,8 +672,8 @@ class TestBaslerCameraBackendCapture:
 
         basler_camera.camera.RetrieveResult = failing_retrieve
 
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
+        assert image is not None
         assert call_count == 3
 
 
@@ -686,8 +685,7 @@ class TestBaslerCameraBackendConfiguration:
         """Test setting exposure time."""
         await basler_camera.initialize()
 
-        result = await basler_camera.set_exposure(20000)
-        assert result is True
+        await basler_camera.set_exposure(20000)
         assert basler_camera.camera.exposure_time == 20000
 
     @pytest.mark.asyncio
@@ -721,8 +719,7 @@ class TestBaslerCameraBackendConfiguration:
         """Test setting gain."""
         await basler_camera.initialize()
 
-        result = await basler_camera.set_gain(5.0)
-        assert result is True
+        await basler_camera.set_gain(5.0)
         assert basler_camera.camera.gain == 5.0
 
     @pytest.mark.asyncio
@@ -761,8 +758,7 @@ class TestBaslerCameraBackendTriggerMode:
         """Test setting continuous trigger mode."""
         await basler_camera.initialize()
 
-        result = await basler_camera.set_triggermode("continuous")
-        assert result is True
+        await basler_camera.set_triggermode("continuous")
         assert basler_camera.camera.trigger_mode == "Off"
 
     @pytest.mark.asyncio
@@ -770,8 +766,7 @@ class TestBaslerCameraBackendTriggerMode:
         """Test setting trigger mode."""
         await basler_camera.initialize()
 
-        result = await basler_camera.set_triggermode("trigger")
-        assert result is True
+        await basler_camera.set_triggermode("trigger")
         assert basler_camera.camera.trigger_mode == "On"
         assert basler_camera.camera.trigger_source == "Software"
 
@@ -802,8 +797,7 @@ class TestBaslerCameraBackendROI:
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
 
-        result = await basler_camera.set_ROI(100, 100, 800, 600)
-        assert result is True
+        await basler_camera.set_ROI(100, 100, 800, 600)
         assert basler_camera.camera.width == 800
         assert basler_camera.camera.height == 600
 
@@ -836,8 +830,7 @@ class TestBaslerCameraBackendROI:
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
 
-        result = await basler_camera.reset_ROI()
-        assert result is True
+        await basler_camera.reset_ROI()
         assert basler_camera.camera.width == 1920
         assert basler_camera.camera.height == 1080
 
@@ -851,8 +844,7 @@ class TestBaslerCameraBackendPixelFormat:
         basler_camera.initialized = True
         basler_camera.camera = MockPylonCamera()
 
-        result = await basler_camera.set_pixel_format("RGB8")
-        assert result is True
+        await basler_camera.set_pixel_format("RGB8")
         assert basler_camera.camera.pixel_format == "RGB8"
 
     @pytest.mark.asyncio
@@ -912,8 +904,7 @@ class TestBaslerCameraBackendWhiteBalance:
 
         # Test all valid white balance modes
         for mode in ["off", "once", "continuous"]:
-            result = await basler_camera.set_auto_wb_once(mode)
-            assert result is True
+            await basler_camera.set_auto_wb_once(mode)
 
             # Verify the mode was set
             current_mode = await basler_camera.get_wb()
@@ -959,9 +950,9 @@ class TestBaslerCameraBackendWhiteBalance:
 
         monkeypatch.setattr(basler_camera.camera.BalanceWhiteAuto, "GetAccessMode", lambda: mod.genicam.RO)
 
-        # Setting should return False when not writable
-        result = await basler_camera.set_auto_wb_once("once")
-        assert result is False
+        # Setting should raise when not writable
+        with pytest.raises(HardwareOperationError):
+            await basler_camera.set_auto_wb_once("once")
 
 
 class TestBaslerCameraBackendRangeQueries:
@@ -1150,12 +1141,10 @@ class TestBaslerCameraBackendImageEnhancement:
         """Test enabling/disabling image enhancement."""
         basler_camera.initialized = True
 
-        result = await basler_camera.set_image_quality_enhancement(True)
-        assert result is True
+        await basler_camera.set_image_quality_enhancement(True)
         assert await basler_camera.get_image_quality_enhancement() is True
 
-        result = await basler_camera.set_image_quality_enhancement(False)
-        assert result is True
+        await basler_camera.set_image_quality_enhancement(False)
         assert await basler_camera.get_image_quality_enhancement() is False
 
     @pytest.mark.asyncio
@@ -1193,8 +1182,7 @@ class TestBaslerCameraBackendImageEnhancement:
         await basler_camera.set_image_quality_enhancement(False)
 
         # Test that capture works when enhancement is disabled
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
         assert isinstance(image, np.ndarray)
         assert image.shape == (1080, 1920, 3)  # Original mock size
 
@@ -1261,8 +1249,7 @@ class TestBaslerCameraBackendConfigurationFiles:
         await basler_camera.initialize()
         config_path = tmp_path / "test_config.json"
 
-        result = await basler_camera.export_config(str(config_path))
-        assert result is True
+        await basler_camera.export_config(str(config_path))
         assert config_path.exists()
 
         # Verify config content
@@ -1296,8 +1283,7 @@ class TestBaslerCameraBackendConfigurationFiles:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True
+        await basler_camera.import_config(str(config_path))
 
     @pytest.mark.asyncio
     async def test_import_config_file_not_found(self, basler_camera):
@@ -1367,8 +1353,8 @@ class TestBaslerCameraBackendErrorHandling:
 
         basler_camera.camera.ExposureTime.SetValue = raise_genicam_error
 
-        result = await basler_camera.set_exposure(10000)
-        assert result is True
+        with pytest.raises(HardwareOperationError):
+            await basler_camera.set_exposure(10000)
 
     @pytest.mark.asyncio
     async def test_runtime_error_handling(self, basler_camera):
@@ -1418,8 +1404,7 @@ class TestBaslerCameraBackendAdvancedErrorScenarios:
         basler_camera.camera.grabbing = False
 
         # Capture should automatically start grabbing
-        success, image = await basler_camera.capture()
-        assert success is True
+        image = await basler_camera.capture()
         assert isinstance(image, np.ndarray)
         assert basler_camera.camera.IsGrabbing() is True
 
@@ -1434,9 +1419,9 @@ class TestBaslerCameraBackendAdvancedErrorScenarios:
 
         basler_camera.camera.ExposureTime.SetValue = raise_genicam_error
 
-        # Should still return True (error is logged but not propagated)
-        result = await basler_camera.set_exposure(10000)
-        assert result is True
+        # Should raise HardwareOperationError under new behavior
+        with pytest.raises(HardwareOperationError):
+            await basler_camera.set_exposure(10000)
 
     @pytest.mark.asyncio
     async def test_initialize_with_device_creation_failure(self, basler_camera, mock_pypylon):
@@ -1489,8 +1474,7 @@ class TestBaslerCameraBackendConcurrentOperations:
         results = await asyncio.gather(*capture_tasks)
 
         # All captures should succeed
-        for success, image in results:
-            assert success is True
+        for image in results:
             assert isinstance(image, np.ndarray)
 
     @pytest.mark.asyncio
@@ -1511,12 +1495,10 @@ class TestBaslerCameraBackendConcurrentOperations:
         capture_task = asyncio.create_task(basler_camera.capture())
         config_task = asyncio.create_task(basler_camera.set_exposure(15000))
 
-        capture_result, config_result = await asyncio.gather(capture_task, config_task)
+        capture_result, _ = await asyncio.gather(capture_task, config_task)
 
-        success, image = capture_result
-        assert success is True
+        image = capture_result
         assert isinstance(image, np.ndarray)
-        assert config_result is True
 
     @pytest.mark.asyncio
     async def test_connection_check_during_operations(self, basler_camera):
@@ -1534,15 +1516,14 @@ class TestBaslerCameraBackendConcurrentOperations:
         results = await asyncio.gather(*tasks)
 
         # All operations should complete successfully
-        success, image = results[0]
-        assert success is True
+        image = results[0]
+        assert image is not None
         assert results[1] is True  # connection check
         assert isinstance(results[2], float)  # exposure
-        assert results[3] is True  # exposure setting
+        assert results[3] is None  # exposure setting now returns None
 
         # Test sync method separately
-        gain_result = await basler_camera.set_gain(2.0)
-        assert gain_result is True
+        await basler_camera.set_gain(2.0)
 
     @pytest.mark.asyncio
     async def test_grabbing_state_race_condition(self, basler_camera, monkeypatch):
@@ -1592,9 +1573,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Should handle invalid values gracefully
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True  # Import succeeds despite invalid values
+        # Should handle invalid values gracefully (no exception)
+        await basler_camera.import_config(str(config_path))
 
     @pytest.mark.asyncio
     async def test_import_config_with_unavailable_features(self, basler_camera, tmp_path, monkeypatch):
@@ -1616,9 +1596,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Should handle unavailable features gracefully
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True
+        # Should handle unavailable features gracefully (no exception)
+        await basler_camera.import_config(str(config_path))
 
     @pytest.mark.asyncio
     async def test_export_config_with_feature_errors(self, basler_camera, tmp_path, monkeypatch):
@@ -1633,9 +1612,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
 
         config_path = tmp_path / "error_export_config.json"
 
-        # Should still export successfully with available features
-        result = await basler_camera.export_config(str(config_path))
-        assert result is True
+        # Should still export successfully with available features (no exception)
+        await basler_camera.export_config(str(config_path))
         assert config_path.exists()
 
     @pytest.mark.asyncio
@@ -1657,9 +1635,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Should handle extreme values correctly
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True
+        # Should handle extreme values correctly (no exception)
+        await basler_camera.import_config(str(config_path))
 
     @pytest.mark.asyncio
     async def test_partial_config_import_failure(self, basler_camera, tmp_path, monkeypatch):
@@ -1683,9 +1660,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         with open(config_path, "w") as f:
             json.dump(config_data, f)
 
-        # Should still return True even with partial failures
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True
+        # Should still complete even with partial failures (no exception)
+        await basler_camera.import_config(str(config_path))
 
         # Verify successful settings were applied
         assert await basler_camera.get_gain() == 2.0
@@ -1706,9 +1682,8 @@ class TestBaslerCameraBackendConfigurationEdgeCases:
         with open(config_path, "w") as f:
             json.dump(legacy_config, f)
 
-        # Should handle legacy format gracefully
-        result = await basler_camera.import_config(str(config_path))
-        assert result is True
+        # Should handle legacy format gracefully (no exception)
+        await basler_camera.import_config(str(config_path))
 
 
 class TestBaslerCameraBackendMissingCoverageLines:
@@ -2717,15 +2692,9 @@ class TestBaslerCameraBackendAdditionalLineCoverage:
 
         camera.get_exposure_range = mock_get_exposure_range
 
-        # set_exposure should log warning when verification fails
-        result = await camera.set_exposure(20000.0)
-
-        # Should return False due to verification failure
-        # abs(50000.0 - 20000.0) = 30000.0, which is NOT < 200.0
-        assert result is False
-
-        # Should log warning about verification failure
-        mock_logger.warning.assert_called_once_with(f"Exposure setting verification failed for camera '{camera_name}'")
+        # set_exposure should raise HardwareOperationError when verification fails
+        with pytest.raises(HardwareOperationError, match="Exposure verification failed"):
+            await camera.set_exposure(20000.0)
 
     @pytest.mark.asyncio
     async def test_get_triggermode_not_initialized(self, mock_pypylon):
@@ -3741,11 +3710,8 @@ class TestBaslerCameraBackendROIOperations:
             # Clean up temporary file
             os.unlink(config_path)
 
-        # Should log info about configuration import with partial success
-        mock_logger.info.assert_called_once()
-        info_msg = mock_logger.info.call_args[0][0]
-        assert "Configuration imported from" in info_msg
-        assert "1/1" in info_msg  # 1 ROI setting succeeded out of 1 total
+        # Should have logged a debug summary; not asserting specific info call now
+        camera.logger.debug.assert_called()
 
     @pytest.mark.asyncio
     async def test_roi_offset_retrieval_in_export_config(self, mock_pypylon):
@@ -4013,11 +3979,8 @@ class TestBaslerCameraBackendROIOperations:
         mock_logger = MagicMock()
         camera.logger = mock_logger
 
-        # Reset ROI
-        result = await camera.reset_ROI()
-
-        # Verify result
-        assert result is True
+        # Reset ROI (should not raise)
+        await camera.reset_ROI()
 
         # Verify that ROI was reset to maximum values
         mock_offset_x.SetValue.assert_called_once_with(0)
@@ -4025,10 +3988,8 @@ class TestBaslerCameraBackendROIOperations:
         mock_width.SetValue.assert_called_once_with(1920)
         mock_height.SetValue.assert_called_once_with(1080)
 
-        # Verify info logging
-        mock_logger.info.assert_called_once()
-        info_msg = mock_logger.info.call_args[0][0]
-        assert "ROI reset to maximum" in info_msg
+        # Optional: ensure debug logging path executed
+        camera.logger.debug.assert_called()
 
     @pytest.mark.asyncio
     async def test_set_roi_increment_adjustment(self, mock_pypylon):
@@ -4073,11 +4034,8 @@ class TestBaslerCameraBackendROIOperations:
         mock_offset_y.SetValue = MagicMock()
         mock_camera.OffsetY = mock_offset_y
 
-        # Set ROI with values that need adjustment
-        result = await camera.set_ROI(105, 203, 1283, 721)  # Values not aligned with increments
-
-        # Verify result
-        assert result is True
+        # Set ROI with values that need adjustment (should not raise)
+        await camera.set_ROI(105, 203, 1283, 721)
 
         # Verify that values were adjusted to increments
         # 105 // 8 * 8 = 104, 203 // 2 * 2 = 202, 1283 // 4 * 4 = 1280, 721 // 2 * 2 = 720
@@ -4118,9 +4076,8 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
 
         camera._sdk = mock_sdk
 
-        # Import should succeed despite pixel format failure
-        result = await camera.import_config(str(config_path))
-        assert result is True
+        # Import should succeed despite pixel format failure (no exception)
+        await camera.import_config(str(config_path))
 
         # Verify warning was logged
         # Note: We can't easily verify logging in unit tests, but the code path is covered
@@ -4153,9 +4110,8 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
 
         camera._sdk = mock_sdk
 
-        # Import should succeed despite white balance failure
-        result = await camera.import_config(str(config_path))
-        assert result is True
+        # Import should succeed despite white balance failure (no exception)
+        await camera.import_config(str(config_path))
 
         # Verify warning was logged
 
@@ -4183,8 +4139,7 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
 
         # Export should succeed despite white balance failure
         config_path = tmp_path / "export_config.json"
-        result = await camera.export_config(str(config_path))
-        assert result is True
+        await camera.export_config(str(config_path))
 
         # Verify warning was logged
 
@@ -4217,8 +4172,7 @@ class TestBaslerCameraBackendWhiteBalanceAndPixelFormatErrorHandling:
 
         # Export should succeed despite pixel format failure
         config_path = tmp_path / "export_config.json"
-        result = await camera.export_config(str(config_path))
-        assert result is True
+        await camera.export_config(str(config_path))
 
         # Verify warning was logged
 
@@ -4720,8 +4674,7 @@ class TestBaslerCameraBackendRemainingLineCoverage:
         camera._sdk = mock_sdk
 
         # Import should succeed despite gain setting failure (warning logged)
-        result = await camera.import_config(str(config_path))
-        assert result is True
+        await camera.import_config(str(config_path))
 
         # Restore original method
         camera._sdk = original_sdk
@@ -4748,11 +4701,9 @@ class TestBaslerCameraBackendRemainingLineCoverage:
             json.dump(config_data, f)
 
         # Import should succeed and trigger source should be set
-        result = await camera.import_config(str(config_path))
-        assert result is True
+        await camera.import_config(str(config_path))
 
         # Verify that the trigger source setting was attempted
-        # (This exercises line 810)
 
     @pytest.mark.asyncio
     async def test_import_config_white_balance_off_setting(self, mock_pypylon, tmp_path):
@@ -4773,8 +4724,7 @@ class TestBaslerCameraBackendRemainingLineCoverage:
             json.dump(config_data, f)
 
         # Import should succeed and white balance should be set to off
-        result = await camera.import_config(str(config_path))
-        assert result is True
+        await camera.import_config(str(config_path))
 
         # This should exercise line 826
 
@@ -4797,10 +4747,7 @@ class TestBaslerCameraBackendRemainingLineCoverage:
             json.dump(config_data, f)
 
         # Import should succeed and white balance should be set to continuous
-        result = await camera.import_config(str(config_path))
-        assert result is True
-
-        # This should exercise line 830
+        await camera.import_config(str(config_path))
 
     @pytest.mark.asyncio
     async def test_export_config_directory_creation_failure(self, mock_pypylon, tmp_path, monkeypatch):

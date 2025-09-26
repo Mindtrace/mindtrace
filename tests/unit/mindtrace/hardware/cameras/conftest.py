@@ -180,13 +180,35 @@ async def temp_config_file():
 
 
 @pytest.fixture(autouse=True)
-def _disable_real_opencv_camera_discovery(monkeypatch):
+def _disable_real_camera_discovery(monkeypatch, request):
+    """Disable real camera discovery for camera unit tests, except for discovery-specific tests."""
+    # Skip this fixture for tests that specifically test discovery functionality
+    test_name = getattr(request.node, "name", "")
+    test_class = getattr(request.node, "cls", None)
+    class_name = test_class.__name__ if test_class else ""
+
+    # Don't disable discovery for tests that are specifically testing discovery
+    if "discovery" in test_name.lower() or "Discovery" in class_name or "get_available_cameras" in test_name:
+        return
+
+    # Disable OpenCV camera discovery for non-discovery tests
     try:
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
 
-        def _fake_get_available_cameras(include_details: bool = False):
+        def _fake_opencv_cameras(include_details: bool = False):
             return {} if include_details else []
 
-        monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_get_available_cameras))
+        monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_opencv_cameras))
+    except Exception:
+        pass
+
+    # Disable Basler camera discovery for non-discovery tests
+    try:
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+        def _fake_basler_cameras(include_details: bool = False):
+            return {} if include_details else []
+
+        monkeypatch.setattr(BaslerCameraBackend, "get_available_cameras", staticmethod(_fake_basler_cameras))
     except Exception:
         pass

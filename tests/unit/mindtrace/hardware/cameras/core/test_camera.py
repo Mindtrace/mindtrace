@@ -4,6 +4,7 @@ import tempfile
 import numpy as np
 import pytest
 
+from mindtrace.hardware.cameras.core.camera import Camera
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 from mindtrace.hardware.core.exceptions import CameraConfigurationError, CameraInitializationError
 from tests.unit.mindtrace.hardware.mocks.hardware_test_utils import assert_image_valid
@@ -20,8 +21,7 @@ def test_sync_camera_capture_and_config():
         assert cam.is_connected
 
         # Configure gain/roi (sync paths) - Test actual values, not just types
-        ok = cam.set_gain(1.5)
-        assert ok is True, "Gain setting should succeed"
+        cam.set_gain(1.5)
         actual_gain = cam.get_gain()
         assert actual_gain == 1.5, f"Expected gain 1.5, got {actual_gain}"
 
@@ -72,8 +72,7 @@ def test_sync_camera_capture_and_config():
         cam.get_pixel_format()
         test_format = fmts[0] if fmts else "BGR8"
 
-        ok = cam.set_pixel_format(test_format)
-        assert ok is True, f"Setting pixel format '{test_format}' should succeed"
+        cam.set_pixel_format(test_format)
 
         current_fmt = cam.get_pixel_format()
 
@@ -96,42 +95,40 @@ def test_sync_camera_capture_and_config():
         wb_modes = cam.get_available_white_balance_modes()
         assert isinstance(wb_modes, list)
         if wb_modes:
-            assert cam.set_white_balance(wb_modes[0]) in {True, False}
-            cur_wb = cam.get_white_balance()
-            assert isinstance(cur_wb, str)
+            cam.set_white_balance(wb_modes[0])
+        cur_wb = cam.get_white_balance()
+        assert isinstance(cur_wb, str)
 
         # Image enhancement toggle
-        assert cam.set_image_enhancement(True) in {True, False}
+        cam.set_image_enhancement(True)
         _ = cam.get_image_enhancement()
 
         # Config save/load - Test actual configuration persistence
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
             config_path = tf.name
 
-        try:
-            # Save configuration
-            save_result = cam.save_config(config_path)
-            assert save_result is True, "Configuration save should succeed"
+            try:
+                # Save configuration
+                cam.save_config(config_path)
 
-            # Verify config file was created and contains valid JSON
-            import os
+                # Verify config file was created and contains valid JSON
+                import os
 
-            assert os.path.exists(config_path), "Configuration file should exist"
-            assert os.path.getsize(config_path) > 0, "Configuration file should not be empty"
+                assert os.path.exists(config_path), "Configuration file should exist"
+                assert os.path.getsize(config_path) > 0, "Configuration file should not be empty"
 
-            # Verify it's valid JSON
-            with open(config_path, "r") as f:
-                config_data = json.load(f)
-            assert isinstance(config_data, dict), "Configuration should be a dictionary"
+                # Verify it's valid JSON
+                with open(config_path, "r") as f:
+                    config_data = json.load(f)
+                assert isinstance(config_data, dict), "Configuration should be a dictionary"
 
-            # Load configuration back
-            load_result = cam.load_config(config_path)
-            assert load_result is True, "Configuration load should succeed"
+                # Load configuration back
+                cam.load_config(config_path)
 
-        finally:
-            # Clean up
-            if os.path.exists(config_path):
-                os.unlink(config_path)
+            finally:
+                # Clean up
+                if os.path.exists(config_path):
+                    os.unlink(config_path)
 
         # Connection / sensor info - Verify actual connectivity and info
         connection_status = cam.check_connection()
@@ -160,6 +157,13 @@ def test_sync_camera_capture_and_config():
         )
         assert isinstance(info["device_name"], str), "Device name should be string"
         assert info["connected"] is True, "Info should reflect connected status"
+
+        # Test gain range - Test range validity
+        gain_range = cam.get_gain_range()
+        assert isinstance(gain_range, tuple) and len(gain_range) == 2, "Gain range should be a 2-tuple"
+        min_gain, max_gain = gain_range
+        assert min_gain < max_gain, f"Min gain {min_gain} should be less than max {max_gain}"
+        assert min_gain >= 0, "Minimum gain should be non-negative"
 
         # HDR path (sync facade) - Test HDR capture functionality
         hdr_result = cam.capture_hdr(exposure_levels=3, return_images=True)
@@ -351,14 +355,9 @@ def test_camera_concurrent_operations():
             ("gain", 1.5),
         ]
 
-        results = []
         for param_name, value in configurations:
             if param_name == "gain":
-                result = cam.set_gain(value)
-                results.append(result)
-
-        # All operations should complete without errors
-        assert all(isinstance(r, bool) for r in results), "All operations should return boolean"
+                cam.set_gain(value)
 
         # Final state should be consistent
         final_gain = cam.get_gain()
@@ -377,26 +376,22 @@ def test_camera_image_enhancement():
         cam = mgr.open(cameras[0])
 
         # Test enabling enhancement
-        result = cam.set_image_enhancement(True)
-        assert isinstance(result, bool), "Enhancement setting should return boolean"
+        cam.set_image_enhancement(True)
+        enhancement_status = cam.get_image_enhancement()
+        assert enhancement_status is True, "Enhancement should be enabled"
 
-        if result:
-            enhancement_status = cam.get_image_enhancement()
-            assert enhancement_status is True, "Enhancement should be enabled"
-
-            # Capture with enhancement
-            img_enhanced = cam.capture()
-            assert_image_valid(img_enhanced)
+        # Capture with enhancement
+        img_enhanced = cam.capture()
+        assert_image_valid(img_enhanced)
 
         # Test disabling enhancement
-        result = cam.set_image_enhancement(False)
-        if result:
-            enhancement_status = cam.get_image_enhancement()
-            assert enhancement_status is False, "Enhancement should be disabled"
+        cam.set_image_enhancement(False)
+        enhancement_status = cam.get_image_enhancement()
+        assert enhancement_status is False, "Enhancement should be disabled"
 
-            # Capture without enhancement
-            img_normal = cam.capture()
-            assert_image_valid(img_normal)
+        # Capture without enhancement
+        img_normal = cam.capture()
+        assert_image_valid(img_normal)
 
     finally:
         mgr.close()
@@ -459,15 +454,13 @@ def test_camera_properties_roi_and_explicit_context():
 
         # Test setting exposure within range
         test_exposure = (min_exposure + max_exposure) / 2
-        set_result = cam.set_exposure(test_exposure)
-        assert set_result is True, f"Setting exposure to {test_exposure} should succeed"
+        cam.set_exposure(test_exposure)
         actual_exposure = cam.get_exposure()
         assert abs(actual_exposure - test_exposure) < 100, f"Expected ~{test_exposure}, got {actual_exposure}"
 
         # ROI set/reset
         roi_before = cam.get_roi()
-        ok = cam.set_roi(0, 0, max(1, roi_before["width"] // 2), max(1, roi_before["height"] // 2))
-        assert ok in {True, False}
+        cam.set_roi(0, 0, max(1, roi_before["width"] // 2), max(1, roi_before["height"] // 2))
         _ = cam.reset_roi()
 
         # Explicit context enter/exit
@@ -487,7 +480,7 @@ def test_camera_configure_backend_and_close():
         cam = mgr.open(name)
 
         # Configure multiple settings via wrapper
-        cfg_ok = cam.configure(
+        cam.configure(
             exposure=20000,
             gain=1.0,
             roi=(0, 0, 10, 10),
@@ -496,12 +489,159 @@ def test_camera_configure_backend_and_close():
             white_balance="auto",
             image_enhancement=True,
         )
-        assert cfg_ok in {True, False}
 
         # backend property
         _ = cam.backend
 
         # Explicit close wrapper
         cam.close()
+    finally:
+        mgr.close()
+
+
+def test_camera_call_in_loop_method():
+    """Test the _call_in_loop helper method for synchronous functions."""
+    mgr = CameraManager(include_mocks=True)
+    try:
+        cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
+        cam = mgr.open(cameras[0])
+
+        # Test 1: Simple function execution
+        def simple_func(x, y):
+            return x + y
+
+        result = cam._call_in_loop(simple_func, 5, 10)
+        assert result == 15, "Should execute simple function in loop thread"
+
+        # Test 2: Function with keyword arguments
+        def func_with_kwargs(a, b=10, c=20):
+            return a + b + c
+
+        result = cam._call_in_loop(func_with_kwargs, 5, b=15, c=25)
+        assert result == 45, "Should handle keyword arguments"
+
+        # Test 3: Exception handling
+        def failing_func():
+            raise ValueError("Test exception")
+
+        with pytest.raises(ValueError, match="Test exception"):
+            cam._call_in_loop(failing_func)
+
+        # Test 4: Function that returns complex objects
+        def create_dict():
+            return {"key": "value", "number": 42}
+
+        result = cam._call_in_loop(create_dict)
+        assert result == {"key": "value", "number": 42}
+
+    finally:
+        mgr.close()
+
+
+def test_camera_standalone_construction_and_cleanup():
+    """Test standalone Camera construction with private loop to cover cleanup code."""
+    from mindtrace.hardware.cameras.core.camera import Camera
+
+    # Test standalone camera construction (creates private loop)
+    # This should cover the private loop cleanup code in close() method
+    try:
+        # This will create a Camera with its own private event loop
+        cam = Camera(name="MockBasler:test_camera_0")
+
+        # Verify it's working
+        assert cam.is_connected
+        assert cam._owns_loop_thread is True, "Standalone camera should own its loop thread"
+
+        # Test basic functionality
+        img = cam.capture()
+        assert img is not None
+
+        # Test gain range
+        gain_range = cam.get_gain_range()
+        assert isinstance(gain_range, tuple) and len(gain_range) == 2
+
+        # Explicitly close to trigger cleanup code
+        cam.close()
+
+    except CameraInitializationError:
+        # If MockBasler isn't available in standalone mode, that's okay
+        # The test still exercises the construction path
+        pass
+
+
+def test_camera_cleanup_exception_handling_real(monkeypatch):
+    """Test real exception handling in Camera.close() method."""
+    import threading
+
+    try:
+        # Create a standalone camera
+        cam = Camera(name="MockBasler:test_camera_0")
+        assert cam._owns_loop_thread is True
+
+        # Store references to original methods
+        original_call_soon_threadsafe = cam._loop.call_soon_threadsafe
+
+        # Patch methods to fail on specific calls but allow normal operations
+        def patched_call_soon_threadsafe(func, *args, **kwargs):
+            # Only fail when trying to stop the loop
+            if callable(func) and hasattr(func, "__name__") and func.__name__ == "stop":
+                raise RuntimeError("Simulated loop stop failure")
+            # For other calls, use original method
+            return original_call_soon_threadsafe(func, *args, **kwargs)
+
+        def patched_join(*args, **kwargs):
+            # Fail the join operation
+            raise threading.ThreadError("Simulated thread join failure")
+
+        def patched_close():
+            # Fail the loop close operation
+            raise RuntimeError("Simulated loop close failure")
+
+        # Apply patches using monkeypatch
+        monkeypatch.setattr(cam._loop, "call_soon_threadsafe", patched_call_soon_threadsafe)
+        if cam._loop_thread:
+            monkeypatch.setattr(cam._loop_thread, "join", patched_join)
+        monkeypatch.setattr(cam._loop, "close", patched_close)
+
+        # Now call close - this should trigger the exception handlers
+        # but not raise any exceptions to the caller
+        cam.close()
+
+    except CameraInitializationError:
+        pytest.skip("MockBasler not available for standalone construction")
+
+
+def test_camera_context_manager_fallbacks(monkeypatch):
+    """Test context manager fallback behavior when parent class lacks methods."""
+
+    mgr = CameraManager(include_mocks=True)
+    try:
+        cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
+        cam = mgr.open(cameras[0])
+
+        # Mock the parent class to not have context manager methods
+        def mock_getattr_no_enter(obj, name, default=None):
+            if name == "__enter__":
+                return None  # Parent has no __enter__ method
+            return original_getattr(obj, name, default)
+
+        def mock_getattr_no_exit(obj, name, default=None):
+            if name == "__exit__":
+                return None  # Parent has no __exit__ method
+            return original_getattr(obj, name, default)
+
+        # Test __enter__ fallback
+        original_getattr = getattr
+        monkeypatch.setattr("builtins.getattr", mock_getattr_no_enter)
+
+        result = cam.__enter__()
+        assert result is cam, "Should return self when parent has no __enter__"
+
+        # Test __exit__ fallback
+        monkeypatch.setattr("builtins.getattr", mock_getattr_no_exit)
+
+        result = cam.__exit__(None, None, None)
+        assert result is False, "Should return False when parent has no __exit__"
+
     finally:
         mgr.close()

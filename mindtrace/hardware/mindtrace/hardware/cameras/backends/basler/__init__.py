@@ -23,14 +23,14 @@ Usage:
         camera = BaslerCameraBackend("camera_name")
         success, cam_obj, remote_obj = await camera.initialize()  # Initialize first
         if success:
-            success, image = await camera.capture()
+            image = await camera.capture()
             await camera.close()
 
     # Mock camera (always available)
     mock_camera = MockBaslerCameraBackend("mock_cam_0")
     success, cam_obj, remote_obj = await mock_camera.initialize()  # Initialize first
     if success:
-        success, image = await mock_camera.capture()
+        image = await mock_camera.capture()
         await mock_camera.close()
 """
 

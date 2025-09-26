@@ -71,7 +71,7 @@ def __getattr__(name):
 
         return PLCManager
     elif name in {"HomographyCalibrator", "CalibrationData", "PlanarHomographyMeasurer", "MeasuredBox"}:
-        from mindtrace.hardware.homography import (
+        from mindtrace.hardware.cameras.homography import (
             CalibrationData,
             HomographyCalibrator,
             MeasuredBox,
