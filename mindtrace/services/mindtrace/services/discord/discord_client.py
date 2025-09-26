@@ -136,7 +136,7 @@ class BaseDiscordClient(Service):
         super().__init__(**kwargs)
         
         # Discord bot configuration
-        self.token = ifnone(token, default=self.config["MINDTRACE_DISCORD_BOT_TOKEN"])
+        self.token = ifnone(token, default=self.config.get("MINDTRACE_DISCORD_BOT_TOKEN"))
         if self.token is None:
             raise RuntimeError("No Discord token provided. Pass in a token or provide MINDTRACE_DISCORD_BOT_TOKEN in the Mindtrace config.")
         self.command_prefix = command_prefix
