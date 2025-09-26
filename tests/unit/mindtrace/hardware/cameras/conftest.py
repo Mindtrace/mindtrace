@@ -186,13 +186,11 @@ def _disable_real_camera_discovery(monkeypatch, request):
     test_name = getattr(request.node, "name", "")
     test_class = getattr(request.node, "cls", None)
     class_name = test_class.__name__ if test_class else ""
-    
+
     # Don't disable discovery for tests that are specifically testing discovery
-    if ("discovery" in test_name.lower() or 
-        "Discovery" in class_name or 
-        "get_available_cameras" in test_name):
+    if "discovery" in test_name.lower() or "Discovery" in class_name or "get_available_cameras" in test_name:
         return
-    
+
     # Disable OpenCV camera discovery for non-discovery tests
     try:
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
@@ -203,7 +201,7 @@ def _disable_real_camera_discovery(monkeypatch, request):
         monkeypatch.setattr(OpenCVCameraBackend, "get_available_cameras", staticmethod(_fake_opencv_cameras))
     except Exception:
         pass
-    
+
     # Disable Basler camera discovery for non-discovery tests
     try:
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend

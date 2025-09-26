@@ -346,21 +346,21 @@ def create_fake_pypylon():
     # Image format converter and result
     class PylonImage:
         """Mock pypylon image result."""
-        
+
         def __init__(self, image_array):
             self._array = image_array
-            
+
         def GetArray(self):
             """Return the numpy array."""
             return self._array
 
     class ImageFormatConverter:
         """Mock image format converter."""
-        
+
         def __init__(self):
             self.OutputPixelFormat = None
             self.OutputBitAlignment = None
-            
+
         def Convert(self, grab_result):
             """Convert grab result to image."""
             # Return a PylonImage object that has GetArray() method

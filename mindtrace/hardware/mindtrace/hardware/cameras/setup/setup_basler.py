@@ -39,7 +39,7 @@ from mindtrace.hardware.core.config import get_hardware_config
 class PylonSDKInstaller(Mindtrace):
     """Basler Pylon SDK installer and manager.
 
-    This class handles the download, installation, and uninstallation of the Basler Pylon SDK across different 
+    This class handles the download, installation, and uninstallation of the Basler Pylon SDK across different
     platforms.
     """
 

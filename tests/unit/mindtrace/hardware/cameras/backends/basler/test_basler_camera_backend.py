@@ -905,7 +905,7 @@ class TestBaslerCameraBackendWhiteBalance:
         # Test all valid white balance modes
         for mode in ["off", "once", "continuous"]:
             await basler_camera.set_auto_wb_once(mode)
-            
+
             # Verify the mode was set
             current_mode = await basler_camera.get_wb()
             assert current_mode == mode
@@ -4748,7 +4748,6 @@ class TestBaslerCameraBackendRemainingLineCoverage:
 
         # Import should succeed and white balance should be set to continuous
         await camera.import_config(str(config_path))
-
 
     @pytest.mark.asyncio
     async def test_export_config_directory_creation_failure(self, mock_pypylon, tmp_path, monkeypatch):

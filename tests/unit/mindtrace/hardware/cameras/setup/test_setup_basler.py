@@ -70,6 +70,7 @@ class TestPylonSDKInstaller:
 
         # Mock download functions to return a fake directory
         from pathlib import Path
+
         mock_download_tarball.return_value = Path("/tmp/fake_extracted")
         mock_download_zip.return_value = Path("/tmp/fake_extracted")
 
@@ -94,6 +95,7 @@ class TestPylonSDKInstaller:
 
         # Mock download functions to return a fake directory
         from pathlib import Path
+
         mock_download_tarball.return_value = Path("/tmp/fake_extracted")
         mock_download_zip.return_value = Path("/tmp/fake_extracted")
 

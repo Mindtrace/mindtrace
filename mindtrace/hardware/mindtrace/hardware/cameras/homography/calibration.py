@@ -21,6 +21,7 @@ class CalibrationData:
         world_unit: string describing unit used in world points (e.g., 'mm', 'cm', 'm')
         plane_normal_camera: optional 3D normal of the plane in camera frame if recovered
     """
+
     H: np.ndarray
     camera_matrix: Optional[np.ndarray] = None
     dist_coeffs: Optional[np.ndarray] = None
@@ -30,8 +31,8 @@ class CalibrationData:
 
 class HomographyCalibrator:
     """Calibrates a planar homography H.
-    
-    Calibrates a planar homography H mapping planar world coordinates (X, Y, 1) in metric units to image pixel 
+
+    Calibrates a planar homography H mapping planar world coordinates (X, Y, 1) in metric units to image pixel
     coordinates (u, v, 1) using known point correspondences. Supports checkerboard-based registration.
 
     Typical flows:
@@ -128,7 +129,7 @@ class HomographyCalibrator:
             cv2_image = image
         else:
             raise ValueError(f"Unsupported image type: {type(image)}. Expected PIL Image or numpy array.")
-        
+
         # Convert to grayscale for checkerboard detection
         gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY) if cv2_image.ndim == 3 else cv2_image
         found, corners = cv2.findChessboardCorners(gray, board_size, flags=cv2.CALIB_CB_ADAPTIVE_THRESH)
@@ -150,4 +151,4 @@ class HomographyCalibrator:
             world_unit=world_unit,
             camera_matrix=camera_matrix,
             dist_coeffs=dist_coeffs,
-        ) 
+        )

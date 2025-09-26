@@ -100,7 +100,7 @@ class CameraBackend(MindtraceABC):
     def _setup_camera_logger_formatting(self):
         """Setup camera-specific logger formatting.
 
-        Provides consistent formatting for all camera-related log messages. This method ensures uniform logging across 
+        Provides consistent formatting for all camera-related log messages. This method ensures uniform logging across
         all camera implementations.
         """
         import logging
@@ -122,7 +122,7 @@ class CameraBackend(MindtraceABC):
     async def setup_camera(self):
         """Common setup method for camera initialization.
 
-        This method provides a standardized setup pattern that can be used by all camera backends. It calls the 
+        This method provides a standardized setup pattern that can be used by all camera backends. It calls the
         abstract initialize() method and handles common initialization patterns.
 
         Raises:

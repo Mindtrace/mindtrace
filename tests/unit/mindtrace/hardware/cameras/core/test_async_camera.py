@@ -597,22 +597,22 @@ class TestAsyncCameraConcurrentOperations:
 
 
 # Additional tests to improve coverage
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_async_camera_open_class_method():
     """Test AsyncCamera.open() class method for direct camera creation."""
     from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
-    
+
     # Test opening with MockBasler backend
     try:
         cam = await AsyncCamera.open("MockBasler:test_camera_0")
         assert cam is not None
         assert cam.name == "MockBasler:test_camera_0"
         assert cam.is_connected
-        
+
         # Test basic functionality
         img = await cam.capture()
         assert img is not None
-        
+
         await cam.close()
     except Exception as e:
         # If MockBasler isn't available for direct open, skip
@@ -624,7 +624,7 @@ async def test_async_camera_open_unsupported_backend():
     """Test AsyncCamera.open() with unsupported backend raises error."""
     from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
     from mindtrace.hardware.core.exceptions import CameraInitializationError
-    
+
     with pytest.raises(CameraInitializationError, match="Unsupported backend"):
         await AsyncCamera.open("UnsupportedBackend:device_0")
 
@@ -634,11 +634,12 @@ async def test_async_camera_storage_unavailable(monkeypatch):
     """Test AsyncCamera initialization when GCS storage is unavailable."""
     # Mock STORAGE_AVAILABLE to False
     import mindtrace.hardware.cameras.core.async_camera as async_camera_module
+
     original_storage_available = async_camera_module.STORAGE_AVAILABLE
-    
+
     try:
         monkeypatch.setattr(async_camera_module, "STORAGE_AVAILABLE", False)
-        
+
         manager = AsyncCameraManager(include_mocks=True)
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
@@ -655,36 +656,38 @@ async def test_async_camera_storage_unavailable(monkeypatch):
 async def test_async_camera_storage_initialization_failure(monkeypatch):
     """Test AsyncCamera initialization when GCS storage initialization fails."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             # Mock get_hardware_config to raise an exception
             def failing_get_config():
                 raise RuntimeError("Config initialization failed")
-            
+
             # Mock the import to raise an exception during storage initialization
             import mindtrace.hardware.cameras.core.async_camera as async_camera_module
+
             original_storage_available = async_camera_module.STORAGE_AVAILABLE
             assert original_storage_available
-            
+
             # Set STORAGE_AVAILABLE to True but make config import fail
             monkeypatch.setattr(async_camera_module, "STORAGE_AVAILABLE", True)
-            
+
             # Mock the import to fail
             def failing_import(*args, **kwargs):
                 raise RuntimeError("Config initialization failed")
-            
+
             import builtins
+
             original_import = builtins.__import__
-            
+
             def mock_import(name, *args, **kwargs):
                 if name == "mindtrace.hardware.core.config":
                     raise RuntimeError("Config initialization failed")
                 return original_import(name, *args, **kwargs)
-            
+
             monkeypatch.setattr(builtins, "__import__", mock_import)
-            
+
             cam = await manager.open(names[0])
             # Storage handler should be None when initialization fails
             assert cam._storage_handler is None
@@ -696,12 +699,12 @@ async def test_async_camera_storage_initialization_failure(monkeypatch):
 async def test_async_camera_context_manager():
     """Test AsyncCamera as async context manager."""
     from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
-    
+
     try:
         async with await AsyncCamera.open("MockBasler:test_camera_0") as cam:
             assert cam is not None
             assert cam.is_connected
-            
+
             # Test basic functionality within context
             img = await cam.capture()
             assert img is not None
@@ -713,37 +716,37 @@ async def test_async_camera_context_manager():
 async def test_async_camera_properties():
     """Test AsyncCamera properties and info methods."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test properties
             assert isinstance(cam.name, str)
             assert isinstance(cam.backend_name, str)
             assert isinstance(cam.device_name, str)
             assert isinstance(cam.is_connected, bool)
             assert cam.backend is not None
-            
+
             # Test that camera has expected attributes
-            assert hasattr(cam, '_backend')
-            assert hasattr(cam, '_full_name')
-            assert hasattr(cam, '_lock')
+            assert hasattr(cam, "_backend")
+            assert hasattr(cam, "_full_name")
+            assert hasattr(cam, "_lock")
     finally:
         await manager.close(None)
 
 
-@pytest.mark.asyncio 
+@pytest.mark.asyncio
 async def test_async_camera_get_gain_range():
     """Test AsyncCamera get_gain_range method."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test get_gain_range
             gain_range = await cam.get_gain_range()
             assert isinstance(gain_range, tuple)
@@ -758,12 +761,12 @@ async def test_async_camera_get_gain_range():
 async def test_async_camera_capture_with_upload():
     """Test AsyncCamera capture with GCS upload functionality."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test capture with upload_to_gcs=True (should handle gracefully even without storage)
             result = await cam.capture(upload_to_gcs=True, output_format="numpy")
             # Should still return image even if upload fails
@@ -776,19 +779,19 @@ async def test_async_camera_capture_with_upload():
 async def test_async_camera_capture_with_save_path():
     """Test AsyncCamera capture with save_path functionality."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test capture with save_path (creates directory if needed)
             import os
             import tempfile
-            
+
             with tempfile.TemporaryDirectory() as temp_dir:
                 save_path = os.path.join(temp_dir, "subdir", "test_image.jpg")
-                
+
                 # This should create the directory and save the image
                 result = await cam.capture(save_path=save_path)
                 assert result is not None
@@ -801,12 +804,12 @@ async def test_async_camera_capture_with_save_path():
 async def test_async_camera_capture_retry_logic(monkeypatch):
     """Test AsyncCamera capture retry logic when captures fail."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Mock backend to fail first few attempts, then succeed
             original_capture = cam._backend.capture
             call_count = 0
@@ -833,12 +836,12 @@ async def test_async_camera_capture_retry_logic(monkeypatch):
 async def test_async_camera_capture_connection_error_retry(monkeypatch):
     """Test AsyncCamera capture retry logic for connection errors."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Mock backend to raise connection error, then succeed
             original_capture = cam._backend.capture
             call_count = 0
@@ -865,12 +868,12 @@ async def test_async_camera_capture_connection_error_retry(monkeypatch):
 async def test_async_camera_capture_max_retries_exceeded(monkeypatch):
     """Test AsyncCamera capture when max retries are exceeded."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Mock backend to always fail
             async def always_failing_capture():
                 raise CameraCaptureError("Persistent failure")
@@ -889,18 +892,18 @@ async def test_async_camera_capture_max_retries_exceeded(monkeypatch):
 async def test_async_camera_capture_returns_none(monkeypatch):
     """Test AsyncCamera capture when backend returns None."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Mock backend to return None
             async def none_capture():
                 return None
-            
+
             cam._backend.capture = none_capture
-            
+
             # This should raise CameraCaptureError
             with pytest.raises(CameraCaptureError, match="Capture returned None"):
                 await cam.capture()
@@ -912,25 +915,25 @@ async def test_async_camera_capture_returns_none(monkeypatch):
 async def test_async_camera_additional_methods():
     """Test additional AsyncCamera methods for better coverage."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test get_exposure_range
             exp_range = await cam.get_exposure_range()
             assert isinstance(exp_range, tuple)
             assert len(exp_range) == 2
-            
+
             # Test set_gain and get_gain
             await cam.set_gain(1.5)
             gain = await cam.get_gain()
             assert isinstance(gain, (int, float))
-            
+
             # Test set_roi
             await cam.set_roi(10, 10, 100, 100)
-            
+
     finally:
         await manager.close(None)
 
@@ -939,48 +942,49 @@ async def test_async_camera_additional_methods():
 async def test_async_camera_gcs_upload_functionality(monkeypatch):
     """Test GCS upload functionality."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test _should_upload_to_gcs when storage_handler is None
             assert not cam._should_upload_to_gcs()
-            
+
             # Mock storage handler
             class MockStorageHandler:
                 def upload(self, local_path, gcs_path):
                     pass
-            
+
             cam._storage_handler = MockStorageHandler()
-            
+
             # Mock get_hardware_config to return upload enabled
             def mock_get_config():
                 class MockGCSConfig:
                     auto_upload = True
+
                 class MockConfig:
                     gcs = MockGCSConfig()
+
                 class MockHardwareConfig:
                     def get_config(self):
                         return MockConfig()
+
                 return MockHardwareConfig()
-            
-            monkeypatch.setattr(
-                "mindtrace.hardware.core.config.get_hardware_config",
-                mock_get_config
-            )
-            
+
+            monkeypatch.setattr("mindtrace.hardware.core.config.get_hardware_config", mock_get_config)
+
             # Now _should_upload_to_gcs should return True
             assert cam._should_upload_to_gcs()
-            
+
             # Test actual upload (mock the upload process)
             import numpy as np
+
             test_image = np.zeros((100, 100, 3), dtype=np.uint8)
-            
+
             # Mock os.unlink to avoid file system operations
             monkeypatch.setattr("os.unlink", lambda x: None)
-            
+
             result = await cam._upload_image_to_gcs(test_image)
             assert result
     finally:
@@ -991,19 +995,20 @@ async def test_async_camera_gcs_upload_functionality(monkeypatch):
 async def test_async_camera_gcs_upload_failure(monkeypatch):
     """Test GCS upload when it fails."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Test upload with None image
             result = await cam._upload_image_to_gcs(None)
             assert not result
-            
+
             # Test upload when storage handler is None
             cam._storage_handler = None
             import numpy as np
+
             test_image = np.zeros((100, 100, 3), dtype=np.uint8)
             result = await cam._upload_image_to_gcs(test_image)
             assert not result
@@ -1015,28 +1020,25 @@ async def test_async_camera_gcs_upload_failure(monkeypatch):
 async def test_async_camera_gcs_config_exception(monkeypatch):
     """Test _should_upload_to_gcs when config access fails."""
     manager = AsyncCameraManager(include_mocks=True)
-    
+
     try:
         names = [n for n in AsyncCameraManager.discover(include_mocks=True) if n.startswith("MockBasler:")]
         if names:
             cam = await manager.open(names[0])
-            
+
             # Mock storage handler
             class MockStorageHandler:
                 def upload(self, local_path, gcs_path):
                     pass
-            
+
             cam._storage_handler = MockStorageHandler()
-            
+
             # Mock get_hardware_config to raise exception
             def failing_get_config():
                 raise RuntimeError("Config access failed")
-            
-            monkeypatch.setattr(
-                "mindtrace.hardware.core.config.get_hardware_config",
-                failing_get_config
-            )
-            
+
+            monkeypatch.setattr("mindtrace.hardware.core.config.get_hardware_config", failing_get_config)
+
             # Should return False when config access fails
             assert not cam._should_upload_to_gcs()
     finally:

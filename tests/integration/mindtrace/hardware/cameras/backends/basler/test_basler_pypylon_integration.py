@@ -65,18 +65,18 @@ class TestBaslerSDKIntegration:
 
         try:
             from pypylon import genicam, pylon
-            
+
             # Test that basic classes are available
-            assert hasattr(pylon, 'TlFactory')
-            assert hasattr(pylon, 'InstantCamera')
-            assert hasattr(pylon, 'TimeoutException')
-            assert hasattr(pylon, 'RuntimeException')
-            assert hasattr(genicam, 'GenericException')
-            
+            assert hasattr(pylon, "TlFactory")
+            assert hasattr(pylon, "InstantCamera")
+            assert hasattr(pylon, "TimeoutException")
+            assert hasattr(pylon, "RuntimeException")
+            assert hasattr(genicam, "GenericException")
+
             # Test that factory can be created
             factory = pylon.TlFactory.GetInstance()
             assert factory is not None
-            
+
         except Exception as e:
             if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
                 pytest.skip(f"Pypylon SDK not available: {e}")
@@ -90,16 +90,16 @@ class TestBaslerSDKIntegration:
 
         try:
             from pypylon import pylon
-            
+
             # Get factory and enumerate devices
             factory = pylon.TlFactory.GetInstance()
             devices = factory.EnumerateDevices()
-            
+
             # Should return an iterable container (may be empty if no cameras connected)
             # pypylon returns a SWIG-generated container, not necessarily a Python list
-            assert hasattr(devices, '__iter__'), f"Expected iterable, got {type(devices)}"
-            assert hasattr(devices, '__len__'), f"Expected container with length, got {type(devices)}"
-            
+            assert hasattr(devices, "__iter__"), f"Expected iterable, got {type(devices)}"
+            assert hasattr(devices, "__len__"), f"Expected container with length, got {type(devices)}"
+
         except Exception as e:
             if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
                 pytest.skip(f"Pypylon SDK not available: {e}")
@@ -115,7 +115,7 @@ class TestBaslerSDKIntegration:
             # Test discovery (should work even without cameras)
             cameras = BaslerCameraBackend.get_available_cameras()
             assert isinstance(cameras, list)
-            
+
         except Exception as e:
             if "SDKNotAvailableError" in str(type(e)) or "SDK 'pypylon' is not available" in str(e):
                 pytest.skip(f"Pypylon SDK not available: {e}")
@@ -194,7 +194,6 @@ class TestManagerIntegration:
             pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
         try:
-
             from mindtrace.hardware.cameras.core.camera_manager import CameraManager
 
             # Test that Basler backend is discovered

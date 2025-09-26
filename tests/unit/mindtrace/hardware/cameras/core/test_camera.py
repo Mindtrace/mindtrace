@@ -505,35 +505,35 @@ def test_camera_call_in_loop_method():
     try:
         cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
         cam = mgr.open(cameras[0])
-        
+
         # Test 1: Simple function execution
         def simple_func(x, y):
             return x + y
-        
+
         result = cam._call_in_loop(simple_func, 5, 10)
         assert result == 15, "Should execute simple function in loop thread"
-        
+
         # Test 2: Function with keyword arguments
         def func_with_kwargs(a, b=10, c=20):
             return a + b + c
-        
+
         result = cam._call_in_loop(func_with_kwargs, 5, b=15, c=25)
         assert result == 45, "Should handle keyword arguments"
-        
+
         # Test 3: Exception handling
         def failing_func():
             raise ValueError("Test exception")
-        
+
         with pytest.raises(ValueError, match="Test exception"):
             cam._call_in_loop(failing_func)
-            
+
         # Test 4: Function that returns complex objects
         def create_dict():
             return {"key": "value", "number": 42}
-        
+
         result = cam._call_in_loop(create_dict)
         assert result == {"key": "value", "number": 42}
-        
+
     finally:
         mgr.close()
 
@@ -541,28 +541,28 @@ def test_camera_call_in_loop_method():
 def test_camera_standalone_construction_and_cleanup():
     """Test standalone Camera construction with private loop to cover cleanup code."""
     from mindtrace.hardware.cameras.core.camera import Camera
-    
+
     # Test standalone camera construction (creates private loop)
     # This should cover the private loop cleanup code in close() method
     try:
         # This will create a Camera with its own private event loop
         cam = Camera(name="MockBasler:test_camera_0")
-        
+
         # Verify it's working
         assert cam.is_connected
         assert cam._owns_loop_thread is True, "Standalone camera should own its loop thread"
-        
+
         # Test basic functionality
         img = cam.capture()
         assert img is not None
-        
+
         # Test gain range
         gain_range = cam.get_gain_range()
         assert isinstance(gain_range, tuple) and len(gain_range) == 2
-        
+
         # Explicitly close to trigger cleanup code
         cam.close()
-        
+
     except CameraInitializationError:
         # If MockBasler isn't available in standalone mode, that's okay
         # The test still exercises the construction path
@@ -584,7 +584,7 @@ def test_camera_cleanup_exception_handling_real(monkeypatch):
         # Patch methods to fail on specific calls but allow normal operations
         def patched_call_soon_threadsafe(func, *args, **kwargs):
             # Only fail when trying to stop the loop
-            if callable(func) and hasattr(func, '__name__') and func.__name__ == 'stop':
+            if callable(func) and hasattr(func, "__name__") and func.__name__ == "stop":
                 raise RuntimeError("Simulated loop stop failure")
             # For other calls, use original method
             return original_call_soon_threadsafe(func, *args, **kwargs)
@@ -592,7 +592,7 @@ def test_camera_cleanup_exception_handling_real(monkeypatch):
         def patched_join(*args, **kwargs):
             # Fail the join operation
             raise threading.ThreadError("Simulated thread join failure")
-        
+
         def patched_close():
             # Fail the loop close operation
             raise RuntimeError("Simulated loop close failure")
@@ -613,35 +613,35 @@ def test_camera_cleanup_exception_handling_real(monkeypatch):
 
 def test_camera_context_manager_fallbacks(monkeypatch):
     """Test context manager fallback behavior when parent class lacks methods."""
-    
+
     mgr = CameraManager(include_mocks=True)
     try:
         cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
         cam = mgr.open(cameras[0])
-        
+
         # Mock the parent class to not have context manager methods
         def mock_getattr_no_enter(obj, name, default=None):
             if name == "__enter__":
                 return None  # Parent has no __enter__ method
             return original_getattr(obj, name, default)
-        
+
         def mock_getattr_no_exit(obj, name, default=None):
             if name == "__exit__":
-                return None  # Parent has no __exit__ method  
+                return None  # Parent has no __exit__ method
             return original_getattr(obj, name, default)
-        
+
         # Test __enter__ fallback
         original_getattr = getattr
         monkeypatch.setattr("builtins.getattr", mock_getattr_no_enter)
-        
+
         result = cam.__enter__()
         assert result is cam, "Should return self when parent has no __enter__"
-        
+
         # Test __exit__ fallback
         monkeypatch.setattr("builtins.getattr", mock_getattr_no_exit)
-        
+
         result = cam.__exit__(None, None, None)
         assert result is False, "Should return False when parent has no __exit__"
-        
+
     finally:
         mgr.close()

@@ -68,7 +68,7 @@ from mindtrace.hardware.core.config import get_hardware_config
 class CameraSystemSetup(Mindtrace):
     """Unified camera system setup and configuration manager.
 
-    This class handles the installation and configuration of all camera SDKs and related network settings for the 
+    This class handles the installation and configuration of all camera SDKs and related network settings for the
     Mindtrace hardware system.
     """
 
@@ -153,7 +153,7 @@ class CameraSystemSetup(Mindtrace):
     def configure_firewall(self, ip_range: Optional[str] = None) -> bool:
         """Configure firewall rules to allow camera communication.
 
-        This method configures platform-specific firewall rules to allow communication with GigE Vision cameras on the 
+        This method configures platform-specific firewall rules to allow communication with GigE Vision cameras on the
         specified IP range.
 
         Args:
@@ -276,7 +276,7 @@ class CameraSystemSetup(Mindtrace):
 def configure_firewall(ip_range: Optional[str] = None) -> bool:
     """Configure firewall rules to allow camera communication.
 
-    This function provides a simple interface to configure firewall rules for camera network communication. It works on 
+    This function provides a simple interface to configure firewall rules for camera network communication. It works on
     both Windows and Linux.
 
     Args:

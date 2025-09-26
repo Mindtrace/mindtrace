@@ -1,6 +1,6 @@
 """Synchronous Camera Manager facade for Mindtrace hardware cameras.
 
-This class provides a synchronous API that delegates to `AsyncCameraManager` running on a dedicated background event 
+This class provides a synchronous API that delegates to `AsyncCameraManager` running on a dedicated background event
 loop thread.
 """
 
@@ -137,7 +137,7 @@ class CameraManager(Mindtrace):
         """Close cameras or shut down the manager.
 
         Args:
-            names: Camera name (e.g., "Backend:device") or a list of names. If None, closes all cameras and shuts down 
+            names: Camera name (e.g., "Backend:device") or a list of names. If None, closes all cameras and shuts down
                 the background event loop thread.
         """
         # Close specific cameras
