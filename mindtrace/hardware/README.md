@@ -17,6 +17,55 @@ The Mindtrace Hardware Component provides a unified, industrial-grade interface 
 - **Industrial Integration**: Real-time PLC coordination with multiple addressing schemes
 - **Extensible Design**: Easy backend addition with consistent patterns
 
+## 🛠️ Hardware Management Tools
+
+### CLI Tools
+The hardware system includes comprehensive command-line management tools for development, testing, and production deployment.
+
+**Key Features:**
+- Service lifecycle management with PID tracking
+- Health monitoring and status reporting
+- Network configuration and port management
+- Environment variable integration
+- Browser auto-launch for web interfaces
+
+**Quick Start:**
+```bash
+# Start camera services (API + web configurator)
+uv run python -m mindtrace.hardware.cli camera start
+
+# Check service status with access URLs
+uv run python -m mindtrace.hardware.cli camera status
+
+# Stop all services gracefully
+uv run python -m mindtrace.hardware.cli camera stop
+```
+
+[**→ See CLI Documentation**](mindtrace/hardware/cli/README.md) for comprehensive usage examples, configuration options, and troubleshooting guides.
+
+### Camera Configurator App
+A standalone Reflex web application providing intuitive camera management with real-time streaming capabilities.
+
+**Key Features:**
+- Multi-backend camera discovery (Basler, OpenCV, Daheng)
+- Real-time MJPEG streaming with dynamic quality/FPS control
+- Interactive parameter configuration with range validation
+- Configuration import/export as JSON files
+- Live camera status monitoring
+- Responsive modern UI with state-driven updates
+
+**Access via CLI:**
+```bash
+# Launch both API and configurator app
+uv run python -m mindtrace.hardware.cli camera start
+# Opens browser automatically to http://localhost:3000
+
+# API-only mode for headless operation
+uv run python -m mindtrace.hardware.cli camera start --api-only
+```
+
+[**→ See App Documentation**](mindtrace/hardware/apps/camera_configurator/README.md) for detailed features, API integration, configuration management, and troubleshooting.
+
 ---
 
 # 🏗️ HARDWARE COMPONENT ARCHITECTURE
@@ -30,9 +79,31 @@ mindtrace/hardware/
     ├── api/                  # Service layer
     │   └── cameras/          # CameraManagerService + client
     │       ├── service.py         # 25 endpoints + 16 MCP tools
+    │       ├── launcher.py        # Service launcher and startup
     │       ├── connection_manager.py # Python client
     │       ├── models/            # Request/response models
     │       └── schemas/           # TaskSchema definitions
+    ├── apps/                 # Web applications
+    │   └── camera_configurator/   # Reflex-based camera management app
+    │       ├── camera_configurator/
+    │       │   ├── components/    # UI components (cards, modals, layouts)
+    │       │   ├── pages/         # Application pages
+    │       │   ├── services/      # API client integration
+    │       │   ├── state/         # Reactive state management
+    │       │   └── styles/        # Theme and styling
+    │       ├── rxconfig.py        # Reflex configuration
+    │       └── uploaded_files/    # Configuration file uploads
+    ├── cli/                  # Command-line interface
+    │   ├── __main__.py       # CLI entry point
+    │   ├── commands/         # Command implementations
+    │   │   ├── camera.py          # Camera service management
+    │   │   └── status.py          # Global status commands
+    │   ├── core/             # Core CLI functionality
+    │   │   ├── process_manager.py # Service lifecycle with PID tracking
+    │   │   └── logger.py          # Structured CLI logging
+    │   └── utils/            # CLI utilities
+    │       ├── display.py         # Terminal formatting
+    │       └── network.py         # Port checking and health
     ├── core/
     │   ├── config.py         # Unified hardware configuration
     │   └── exceptions.py     # Hardware exception hierarchy
@@ -50,6 +121,7 @@ mindtrace/hardware/
     │   │   └── plc_manager.py    # PLC management interface
     │   └── backends/
     │       └── allen_bradley/    # LogixDriver, SLCDriver, CIPDriver
+    ├── sensors/             # Sensor management (extensible)
     └── tests/unit/          # Comprehensive test suite
 ```
 
