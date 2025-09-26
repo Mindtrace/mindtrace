@@ -163,23 +163,6 @@ def create_fake_pypylon():
         def Release(self):
             pass
 
-    # Image format converter class
-    class ImageFormatConverter:
-        """Mock image format converter."""
-
-        def __init__(self):
-            self.output_pixel_format = "RGB8"
-
-        def Convert(self, image_result):
-            """Mock conversion."""
-            if hasattr(image_result, "GetArray"):
-                return image_result.GetArray()
-            return image_result
-
-        def SetOutputPixelFormat(self, format):
-            """Set output pixel format."""
-            self.output_pixel_format = format
-
     # Camera class
     class InstantCamera:
         """Mock Basler camera."""

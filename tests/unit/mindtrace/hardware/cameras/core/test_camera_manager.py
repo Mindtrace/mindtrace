@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from mindtrace.hardware.cameras.core.camera_manager import CameraManager
@@ -175,7 +177,7 @@ def test_active_cameras_property():
         # Open a camera
         cameras = CameraManager.discover(backends=["MockBasler"], include_mocks=True)
         if cameras:
-            cam = mgr.open(cameras[0])
+            mgr.open(cameras[0])
             active_after = mgr.active_cameras
             assert len(active_after) >= len(active)
     finally:
@@ -343,8 +345,6 @@ def test_submit_coro_cancellation_path(monkeypatch):
     
     try:
         # Mock run_coroutine_threadsafe to return a future that raises an exception
-        original_run_coro = asyncio.run_coroutine_threadsafe
-        
         def mock_run_coro_threadsafe(coro, loop):
             # Create a future that will raise an exception when result() is called
             fut = Future()
@@ -413,14 +413,11 @@ def test_submit_coro_cancel_exception_handling(monkeypatch):
     
     try:
         # Mock run_coroutine_threadsafe to return a future that behaves badly
-        original_run_coro = asyncio.run_coroutine_threadsafe
-        
         def mock_run_coro_threadsafe(coro, loop):
             # Create a future that will timeout and then fail to cancel
             fut = Future()
             
             # Mock result() to raise TimeoutError
-            original_result = fut.result
             def mock_result(timeout=None):
                 raise TimeoutError("Simulated timeout")
             fut.result = mock_result
@@ -448,7 +445,6 @@ def test_submit_coro_cancel_exception_handling(monkeypatch):
 
 def test_del_method_exception_handling_direct():
     """Test the __del__ method exception handling by directly invoking it."""
-    import asyncio
     
     # Create a CameraManager
     mgr = CameraManager(include_mocks=True)
@@ -490,7 +486,6 @@ def test_del_method_exception_handling_direct():
 
 def test_del_method_outer_exception_handling():
     """Test the outermost exception handling in __del__ method."""
-    import asyncio
     
     # Create a CameraManager
     mgr = CameraManager(include_mocks=True)

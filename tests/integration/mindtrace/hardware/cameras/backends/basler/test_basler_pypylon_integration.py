@@ -64,7 +64,7 @@ class TestBaslerSDKIntegration:
             pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
         try:
-            from pypylon import pylon, genicam
+            from pypylon import genicam, pylon
             
             # Test that basic classes are available
             assert hasattr(pylon, 'TlFactory')
@@ -194,8 +194,8 @@ class TestManagerIntegration:
             pytest.skip(f"Required libraries not installed: {', '.join(missing_libs)}. Skipping test.")
 
         try:
+
             from mindtrace.hardware.cameras.core.camera_manager import CameraManager
-            from pypylon import pylon
 
             # Test that Basler backend is discovered
             manager = CameraManager(include_mocks=False)

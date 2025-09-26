@@ -571,19 +571,16 @@ def test_camera_standalone_construction_and_cleanup():
 
 def test_camera_cleanup_exception_handling_real(monkeypatch):
     """Test real exception handling in Camera.close() method."""
-    import asyncio
     import threading
-    
+
     try:
         # Create a standalone camera
         cam = Camera(name="MockBasler:test_camera_0")
         assert cam._owns_loop_thread is True
-        
+
         # Store references to original methods
         original_call_soon_threadsafe = cam._loop.call_soon_threadsafe
-        original_join = cam._loop_thread.join if cam._loop_thread else None
-        original_close = cam._loop.close
-        
+
         # Patch methods to fail on specific calls but allow normal operations
         def patched_call_soon_threadsafe(func, *args, **kwargs):
             # Only fail when trying to stop the loop
@@ -591,7 +588,7 @@ def test_camera_cleanup_exception_handling_real(monkeypatch):
                 raise RuntimeError("Simulated loop stop failure")
             # For other calls, use original method
             return original_call_soon_threadsafe(func, *args, **kwargs)
-        
+
         def patched_join(*args, **kwargs):
             # Fail the join operation
             raise threading.ThreadError("Simulated thread join failure")
@@ -599,17 +596,17 @@ def test_camera_cleanup_exception_handling_real(monkeypatch):
         def patched_close():
             # Fail the loop close operation
             raise RuntimeError("Simulated loop close failure")
-        
+
         # Apply patches using monkeypatch
         monkeypatch.setattr(cam._loop, "call_soon_threadsafe", patched_call_soon_threadsafe)
         if cam._loop_thread:
             monkeypatch.setattr(cam._loop_thread, "join", patched_join)
         monkeypatch.setattr(cam._loop, "close", patched_close)
-        
+
         # Now call close - this should trigger the exception handlers
         # but not raise any exceptions to the caller
         cam.close()
-        
+
     except CameraInitializationError:
         pytest.skip("MockBasler not available for standalone construction")
 
