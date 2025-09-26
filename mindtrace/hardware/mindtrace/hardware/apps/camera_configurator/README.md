@@ -14,34 +14,50 @@ A standalone Reflex web application for camera hardware configuration and manage
 ## Requirements
 
 - Python 3.8+
+- uv (Python package manager)
 - Reflex framework
-- Camera API service running at `http://192.168.50.32:8001`
+- Camera API service (configurable via environment variables)
 
 ## Installation
 
 1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 2. Initialize Reflex:
 ```bash
-reflex init
+uv run reflex init
+```
+
+## Environment Variables
+
+Configure the application using these environment variables:
+
+- `CAMERA_API_URL` - Camera API service URL (default: `http://localhost:8002`)
+- `CAMERA_UI_FRONTEND_PORT` - Frontend port (default: `3000`)
+- `CAMERA_UI_BACKEND_PORT` - Reflex backend port (default: `8000`)
+
+Example:
+```bash
+export CAMERA_API_URL="http://your-camera-api:8002"
+export CAMERA_UI_FRONTEND_PORT="3000"
+export CAMERA_UI_BACKEND_PORT="8005"
 ```
 
 ## Running the Application
 
-### Option 1: Using the run script
+### Option 1: Using Reflex directly
 ```bash
-python run.py
+uv run reflex run
 ```
 
-### Option 2: Using Reflex directly
+### Option 2: Using the CLI (Recommended)
 ```bash
-reflex run
+uv run python -m mindtrace.hardware.cli camera start
 ```
 
-The application will be available at `http://localhost:3001`
+The application will be available at `http://localhost:3000` (or the port specified in `CAMERA_UI_FRONTEND_PORT`)
 
 ## Project Structure
 
@@ -64,8 +80,7 @@ camera_configurator/
 │   └── styles/             # Styling
 │       └── theme.py        # Theme configuration
 ├── rxconfig.py             # Reflex configuration
-├── requirements.txt        # Dependencies
-└── run.py                 # Startup script
+└── requirements.txt        # Dependencies
 ```
 
 ## API Integration
@@ -108,9 +123,10 @@ Begin live video streaming from a camera.
 ## Troubleshooting
 
 ### Camera API Connection Issues
-- Verify the camera API service is running at `http://192.168.50.32:8001`
+- Verify the camera API service is running at the configured URL (check `CAMERA_API_URL`)
 - Check network connectivity to the camera server
 - Ensure camera hardware is properly connected
+- Verify environment variables are set correctly
 
 ### Camera Not Detected
 - Check physical camera connections

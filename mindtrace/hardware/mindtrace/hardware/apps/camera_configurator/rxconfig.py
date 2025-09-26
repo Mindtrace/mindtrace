@@ -1,12 +1,13 @@
 import reflex as rx
+import os
 
 class CameraConfiguratorConfig(rx.Config):
     app_name = "camera_configurator"
-    api_url = "http://192.168.50.32:8001"
 
 config = CameraConfiguratorConfig(
     app_name="camera_configurator",
     db_url="sqlite:///camera_configurator.db",
     env=rx.Env.DEV,
-    port=3001,  # Use different port to avoid conflicts
+    frontend_port=int(os.getenv('CAMERA_UI_FRONTEND_PORT', '3000')),  # Reflex frontend port
+    backend_port=int(os.getenv('CAMERA_UI_BACKEND_PORT', '8000')),  # Reflex backend port
 )
