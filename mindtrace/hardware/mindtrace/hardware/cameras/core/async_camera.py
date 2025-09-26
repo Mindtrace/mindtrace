@@ -409,7 +409,7 @@ class AsyncCamera(Mindtrace):
             if "image_enhancement" in settings:
                 await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
-            
+
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
 
@@ -557,7 +557,7 @@ class AsyncCamera(Mindtrace):
             enabled: True to enable, False to disable.
         """
         await self._backend.set_image_quality_enhancement(enabled)
-        
+
     async def get_image_enhancement(self) -> bool:
         """Check whether image enhancement is enabled.
 
@@ -660,7 +660,7 @@ class AsyncCamera(Mindtrace):
                 for i, exposure in enumerate(exposures):
                     try:
                         await self._backend.set_exposure(exposure)
-                        
+
                         await asyncio.sleep(0.1)
                         save_path = None
                         if save_path_pattern:

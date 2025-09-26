@@ -1392,9 +1392,7 @@ class BaslerCameraBackend(CameraBackend):
                 self.logger.debug(f"Set inter-packet delay to {delay_ticks} ticks for camera '{self.camera_name}'")
             else:
                 self.logger.error(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
-                raise NotImplementedError(
-                    f"Inter-packet delay control not supported for camera '{self.camera_name}'"
-                )
+                raise NotImplementedError(f"Inter-packet delay control not supported for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Error setting inter-packet delay for camera '{self.camera_name}': {str(e)}")
@@ -1629,9 +1627,7 @@ class BaslerCameraBackend(CameraBackend):
 
             if self.camera.BalanceWhiteAuto.GetAccessMode() != genicam.RW:
                 self.logger.error(f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'")
-                raise HardwareOperationError(
-                    f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'"
-                )
+                raise HardwareOperationError(f"BalanceWhiteAuto feature not writable on camera '{self.camera_name}'")
 
             if value == "off":
                 await self._sdk(self.camera.BalanceWhiteAuto.SetValue, "Off", timeout=self._op_timeout_s)

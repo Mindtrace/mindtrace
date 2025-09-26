@@ -1033,7 +1033,7 @@ def test_dict_like_interface_pop(registry):
     # Reduce timeout for faster test execution
     original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
     registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.01  # 10ms
-    
+
     try:
         # Test with default value
         assert registry.pop("nonexistent", "default") == "default"
@@ -1273,7 +1273,7 @@ def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     # Reduce timeout for faster test execution
     original_timeout = non_versioned_registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
     non_versioned_registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.01  # 10ms
-    
+
     try:
         # Test __setitem__ and __getitem__
         non_versioned_registry["test:config"] = test_config
@@ -1763,7 +1763,7 @@ def test_lock_timeout_error(registry):
     # Temporarily reduce timeout to speed up test
     original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
     registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.1  # 100ms instead of 5s
-    
+
     try:
         # Mock the backend's acquire_lock method to simulate failure
         with patch.object(registry.backend, "acquire_lock", return_value=False):

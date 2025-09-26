@@ -175,32 +175,34 @@ async def test_open_default_no_cameras_raises(monkeypatch):
     # Mock all backends to return empty results (no cameras available)
     try:
         from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
         monkeypatch.setattr(
             BaslerCameraBackend,
-            "get_available_cameras", 
+            "get_available_cameras",
             staticmethod(lambda include_details=False: {} if include_details else []),
             raising=False,
         )
     except Exception:
         pass
-    
+
     try:
         from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
         monkeypatch.setattr(
             OpenCVCameraBackend,
-            "get_available_cameras", 
+            "get_available_cameras",
             staticmethod(lambda include_details=False: {} if include_details else []),
             raising=False,
         )
     except Exception:
         pass
-    
+
     # Use include_mocks=True but mock the mock backend to return empty too
     mgr = AsyncCameraManager(include_mocks=True)
-    
+
     # Mock discover to return empty list
     monkeypatch.setattr(mgr, "discover", lambda: [])
-    
+
     try:
         # Should raise CameraNotFoundError when no cameras are available
         with pytest.raises(Exception, match="No cameras available to open by default"):

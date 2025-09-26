@@ -12,7 +12,7 @@ from mindtrace.hardware.cameras.homography.calibration import CalibrationData
 @dataclass
 class MeasuredBox:
     """Metric-space measurement of a box on the plane after homography inversion.
-    
+
     Stores the projected polygon points and size in world units.
     """
 
@@ -25,8 +25,8 @@ class MeasuredBox:
 
 class PlanarHomographyMeasurer:
     """A class for measuring the size of a box on a plane after homography inversion.
-    
-    Uses a planar homography calibration to project pixel points back to world plane coordinates and compute metric 
+
+    Uses a planar homography calibration to project pixel points back to world plane coordinates and compute metric
     distances.
     """
 
@@ -34,7 +34,7 @@ class PlanarHomographyMeasurer:
 
     def __init__(self, calibration: CalibrationData):
         """Initialize the measurer.
-        
+
         Args:
             calibration: The calibration data.
         """
@@ -47,11 +47,11 @@ class PlanarHomographyMeasurer:
     @classmethod
     def _unit_scale(cls, from_unit: str, to_unit: str) -> float:
         """Convert units to millimeters.
-        
+
         Args:
             from_unit: The unit to convert from.
             to_unit: The unit to convert to.
-        
+
         Returns:
             The scale factor.
         """
@@ -61,7 +61,7 @@ class PlanarHomographyMeasurer:
 
     def pixels_to_world(self, points_px: np.ndarray) -> np.ndarray:
         """Map Nx2 pixel coordinates to world plane coordinates using H^{-1}.
-        
+
         Returns:
             Nx2 world coordinates in calibration world unit.
         """
@@ -76,11 +76,11 @@ class PlanarHomographyMeasurer:
 
     def measure_bounding_box(self, box: BoundingBox, target_unit: Optional[str] = None) -> MeasuredBox:
         """Measure the size of a bounding box on the plane after homography inversion.
-        
+
         Args:
             box: The bounding box to measure.
             target_unit: The unit to convert the measurements to.
-        
+
         Returns:
             The measured box.
         """
@@ -109,14 +109,16 @@ class PlanarHomographyMeasurer:
             unit=unit,
         )
 
-    def measure_bounding_boxes(self, boxes: Sequence[BoundingBox], target_unit: Optional[str] = None) -> List[MeasuredBox]:
+    def measure_bounding_boxes(
+        self, boxes: Sequence[BoundingBox], target_unit: Optional[str] = None
+    ) -> List[MeasuredBox]:
         """Measure the size of a list of bounding boxes on the plane after homography inversion.
-        
+
         Args:
             boxes: The list of bounding boxes to measure.
             target_unit: The unit to convert the measurements to.
-        
+
         Returns:
             The list of measured boxes.
         """
-        return [self.measure_bounding_box(b, target_unit=target_unit) for b in boxes] 
+        return [self.measure_bounding_box(b, target_unit=target_unit) for b in boxes]

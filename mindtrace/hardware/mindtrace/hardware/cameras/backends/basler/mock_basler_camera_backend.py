@@ -368,7 +368,7 @@ class MockBaslerCameraBackend(CameraBackend):
         Args:
             exposure: Exposure time in microseconds
 
-    
+
         Raises:
             CameraConfigurationError: If exposure value is out of range
         """
@@ -385,9 +385,7 @@ class MockBaslerCameraBackend(CameraBackend):
             raise
         except Exception as e:
             self.logger.error(f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}")
-            raise CameraConfigurationError(
-                f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}"
-            )
+            raise CameraConfigurationError(f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}")
 
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
@@ -437,7 +435,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
         Args:
             config_path: Path to configuration file
-            
+
         Raises:
             CameraConfigurationError: If configuration file is not found or invalid
         """
@@ -564,8 +562,7 @@ class MockBaslerCameraBackend(CameraBackend):
         return self.roi.copy()
 
     async def reset_ROI(self):
-        """Reset ROI to full sensor size.
-        """
+        """Reset ROI to full sensor size."""
         try:
             # Simulate async operation
             await asyncio.sleep(0.001)
@@ -718,7 +715,7 @@ class MockBaslerCameraBackend(CameraBackend):
         """Set GigE camera bandwidth limit in Mbps (simulated)."""
         await asyncio.sleep(0.001)
         self.logger.debug(f"Bandwidth limit set to {limit_mbps} Mbps for mock camera '{self.camera_name}' (simulated)")
-        
+
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit (simulated)."""
         await asyncio.sleep(0.001)

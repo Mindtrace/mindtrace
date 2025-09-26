@@ -67,26 +67,28 @@ class TestCameraManagerServiceInitialization:
         # This tests the flag setting, not actual hardware interaction
         try:
             from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
             monkeypatch.setattr(
                 BaslerCameraBackend,
-                "get_available_cameras", 
+                "get_available_cameras",
                 staticmethod(lambda include_details=False: {} if include_details else []),
                 raising=False,
             )
         except Exception:
             pass
-        
+
         try:
             from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
             monkeypatch.setattr(
                 OpenCVCameraBackend,
-                "get_available_cameras", 
+                "get_available_cameras",
                 staticmethod(lambda include_details=False: {} if include_details else []),
                 raising=False,
             )
         except Exception:
             pass
-        
+
         service = CameraManagerService(include_mocks=False)
         assert service.include_mocks is False
         await service.shutdown_cleanup()

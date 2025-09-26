@@ -747,9 +747,9 @@ class OpenCVCameraBackend(CameraBackend):
 
     async def is_exposure_control_supported(self) -> bool:
         """Check if exposure control is supported for this camera.
-        
+
         Simplified version to avoid hanging operations.
-        
+
         Returns:
             True if exposure control is supported, False otherwise
         """
@@ -788,9 +788,7 @@ class OpenCVCameraBackend(CameraBackend):
         await self._ensure_open()
         # Check if exposure control is supported
         if not await self.is_exposure_control_supported():
-            raise CameraConfigurationError(
-                f"Exposure control is not supported for camera '{self.camera_name}'"
-            )
+            raise CameraConfigurationError(f"Exposure control is not supported for camera '{self.camera_name}'")
         try:
             exposure_range = await self.get_exposure_range()
             if exposure < exposure_range[0] or exposure > exposure_range[1]:
@@ -800,9 +798,7 @@ class OpenCVCameraBackend(CameraBackend):
             async with self._io_lock:
                 success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(exposure))
             if not success:
-                raise HardwareOperationError(
-                    f"Failed to set exposure to {exposure} for camera '{self.camera_name}'"
-                )
+                raise HardwareOperationError(f"Failed to set exposure to {exposure} for camera '{self.camera_name}'")
             self._exposure = float(exposure)
             async with self._io_lock:
                 actual_exposure = await self._sdk(self.cap.get, cv2.CAP_PROP_EXPOSURE)
@@ -941,9 +937,7 @@ class OpenCVCameraBackend(CameraBackend):
         Raises:
             NotImplementedError: ROI is not supported by the OpenCV backend
         """
-        raise NotImplementedError(
-            f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'"
-        )
+        raise NotImplementedError(f"ROI setting not supported by OpenCV backend for camera '{self.camera_name}'")
 
     async def get_ROI(self) -> Dict[str, int]:
         """Get current Region of Interest (ROI).
@@ -970,9 +964,7 @@ class OpenCVCameraBackend(CameraBackend):
             NotImplementedError: ROI reset is not supported by the OpenCV backend
         """
         self.logger.error(f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'")
-        raise NotImplementedError(
-            f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'"
-        )
+        raise NotImplementedError(f"ROI reset not supported by OpenCV backend for camera '{self.camera_name}'")
 
     async def get_wb(self) -> str:
         """Get current white balance mode.
@@ -1029,9 +1021,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.debug(f"White balance set to '{value}' for camera '{self.camera_name}'")
         except Exception as e:
             self.logger.error(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
-            raise HardwareOperationError(
-                f"Failed to set white balance for camera '{self.camera_name}': {str(e)}"
-            )
+            raise HardwareOperationError(f"Failed to set white balance for camera '{self.camera_name}': {str(e)}")
 
     async def get_wb_range(self) -> List[str]:
         """Get available white balance modes.
