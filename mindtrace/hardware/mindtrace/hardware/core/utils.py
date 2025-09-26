@@ -7,8 +7,9 @@ including image format conversions and validation functions.
 
 from typing import Any, Union
 
-import cv2
 import numpy as np
+
+from mindtrace.core import cv2_to_pil
 
 
 def convert_image_format(image: np.ndarray, output_format: str) -> Union[np.ndarray, Any]:
@@ -43,25 +44,7 @@ def convert_image_format(image: np.ndarray, output_format: str) -> Union[np.ndar
     if output_format == "numpy":
         return image
     elif output_format == "pil":
-        try:
-            from PIL import Image
-        except ImportError:
-            raise ImportError(
-                "PIL (Pillow) is required for output_format='pil'. Install with: pip install Pillow"
-            ) from None
-
-        # Convert BGR to RGB for PIL (OpenCV uses BGR, PIL expects RGB)
-        if len(image.shape) == 3 and image.shape[2] == 3:
-            # Color image - convert BGR to RGB
-            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        elif len(image.shape) == 2 or (len(image.shape) == 3 and image.shape[2] == 1):
-            # Grayscale image - use as-is
-            rgb_image = image
-        else:
-            # Unsupported format - use as-is and let PIL handle it
-            rgb_image = image
-
-        return Image.fromarray(rgb_image)
+        return cv2_to_pil(image)
     else:
         raise ValueError(f"Unsupported output_format: '{output_format}'. Supported formats: 'numpy', 'pil'")
 
