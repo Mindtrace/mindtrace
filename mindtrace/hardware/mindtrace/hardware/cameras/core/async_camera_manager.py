@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.backends.camera_backend import CameraBackend
 from mindtrace.hardware.cameras.core.async_camera import AsyncCamera
 from mindtrace.hardware.core.exceptions import (
@@ -377,8 +377,8 @@ class AsyncCameraManager(Mindtrace):
                 try:
                     success = await camera.check_connection()
                     if not success:
-                        success, test_image = await camera.capture()
-                        if not success or test_image is None:
+                        test_image = await camera.capture()
+                        if test_image is None:
                             await camera.close()
                             raise CameraConnectionError(
                                 f"Camera '{camera_name}' failed connection test - could not capture test image"

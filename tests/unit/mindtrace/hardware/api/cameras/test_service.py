@@ -61,8 +61,34 @@ class TestCameraManagerServiceInitialization:
         await service.shutdown_cleanup()
 
     @pytest.mark.asyncio
-    async def test_service_without_mocks(self):
-        """Test service initialization without mocks."""
+    async def test_service_include_mocks_flag(self, monkeypatch):
+        """Test service initialization with include_mocks=False flag (but still mock hardware for unit test)."""
+        # Even though we set include_mocks=False, we still mock hardware for unit testing
+        # This tests the flag setting, not actual hardware interaction
+        try:
+            from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+            monkeypatch.setattr(
+                BaslerCameraBackend,
+                "get_available_cameras",
+                staticmethod(lambda include_details=False: {} if include_details else []),
+                raising=False,
+            )
+        except Exception:
+            pass
+
+        try:
+            from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
+            monkeypatch.setattr(
+                OpenCVCameraBackend,
+                "get_available_cameras",
+                staticmethod(lambda include_details=False: {} if include_details else []),
+                raising=False,
+            )
+        except Exception:
+            pass
+
         service = CameraManagerService(include_mocks=False)
         assert service.include_mocks is False
         await service.shutdown_cleanup()

@@ -379,14 +379,13 @@ class TestCameraBackendDefaultImplementations:
         original_levels, original_propagate = enable_log_capture(backend)
 
         with caplog.at_level(logging.WARNING):
-            # Test async config methods - call base class methods to trigger warnings
-            result1 = await CameraBackend.set_config(backend, "test_config")
-            result2 = await CameraBackend.import_config(backend, "/path/to/config")
-            result3 = await CameraBackend.export_config(backend, "/path/to/config")
-
-            assert result1 is False
-            assert result2 is False
-            assert result3 is False
+            # Test async config methods - call base class methods to trigger exceptions
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.set_config(backend, "test_config")
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.import_config(backend, "/path/to/config")
+            with pytest.raises(NotImplementedError):
+                await CameraBackend.export_config(backend, "/path/to/config")
 
         # Restore original handler levels
         restore_log_settings(backend, original_levels, original_propagate)
@@ -418,14 +417,18 @@ class TestCameraBackendDefaultImplementations:
                 result1 = await CameraBackend.get_wb(backend)
             except NotImplementedError:
                 result1 = "auto"  # Expected behavior
-            result2 = await CameraBackend.set_auto_wb_once(backend, "auto")
+            try:
+                await CameraBackend.set_auto_wb_once(backend, "auto")
+                result2 = None  # Should not reach here
+            except NotImplementedError:
+                result2 = "exception_raised"  # Expected behavior
             try:
                 result3 = await CameraBackend.get_wb_range(backend)
             except NotImplementedError:
                 result3 = ["auto", "manual", "off"]  # Expected behavior
 
             assert result1 == "auto"
-            assert result2 is False  # Base class returns False
+            assert result2 == "exception_raised"  # Base class raises NotImplementedError
             assert result3 == ["auto", "manual", "off"]
 
         # Restore original handler levels
@@ -457,10 +460,14 @@ class TestCameraBackendDefaultImplementations:
                 result1 = await CameraBackend.get_triggermode(backend)
             except NotImplementedError:
                 result1 = "continuous"  # Expected behavior
-            result2 = await CameraBackend.set_triggermode(backend, "trigger")
+            try:
+                await CameraBackend.set_triggermode(backend, "trigger")
+                result2 = None  # Should not reach here
+            except NotImplementedError:
+                result2 = "exception_raised"  # Expected behavior
 
             assert result1 == "continuous"
-            assert result2 is False  # Base class returns False
+            assert result2 == "exception_raised"  # Base class raises NotImplementedError
 
         # Restore original handler levels
         restore_log_settings(backend, original_levels, original_propagate)
@@ -601,13 +608,11 @@ class TestCameraBackendImageQualityEnhancement:
 
         backend = MinimalConcreteBackend()
 
-        # Temporarily lower handler levels to capture info logs
-        original_levels, original_propagate = enable_log_capture(backend, logging.INFO)
+        # Temporarily lower handler levels to capture debug logs
+        original_levels, original_propagate = enable_log_capture(backend, logging.DEBUG)
 
-        with caplog.at_level(logging.INFO):
-            result = await backend.set_image_quality_enhancement(False)
-
-            assert result is True
+        with caplog.at_level(logging.DEBUG):
+            await backend.set_image_quality_enhancement(False)
             assert backend.img_quality_enhancement is False
             get_result = await backend.get_image_quality_enhancement()
             assert get_result is False
@@ -799,7 +804,7 @@ class TestCameraBackendInheritance:
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_inherits_from_mindtrace_abc(self, mock_get_config):
         """Test that CameraBackend properly inherits from MindtraceABC."""
-        from mindtrace.core.base.mindtrace_base import MindtraceABC
+        from mindtrace.core import MindtraceABC
 
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True
@@ -820,7 +825,7 @@ class TestCameraBackendInheritance:
     @patch("mindtrace.hardware.cameras.backends.camera_backend.get_camera_config")
     def test_method_resolution_order(self, mock_get_config):
         """Test method resolution order is correct."""
-        from mindtrace.core.base.mindtrace_base import MindtraceABC
+        from mindtrace.core import MindtraceABC
 
         mock_config_obj = MagicMock()
         mock_config_obj.cameras.image_quality_enhancement = True

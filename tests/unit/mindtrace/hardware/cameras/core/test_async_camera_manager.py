@@ -170,22 +170,43 @@ async def test_discover_with_details_records():
 
 
 @pytest.mark.asyncio
-async def test_open_default_raises_when_no_devices():
-    mgr = AsyncCameraManager(include_mocks=False)  # OpenCV returns empty via patches
+async def test_open_default_no_cameras_raises(monkeypatch):
+    """Test that opening default camera raises when no cameras are available."""
+    # Mock all backends to return empty results (no cameras available)
     try:
-        # Check if real cameras are available
-        available_cameras = mgr.discover()
-        if not available_cameras:
-            # Only test for exception if no real cameras are present
-            with pytest.raises(Exception):
-                # Should raise because there are no default devices
-                await mgr.open(None)
-        else:
-            # If real cameras exist, verify that open(None) succeeds and returns a camera
-            cam = await mgr.open(None)
-            assert cam is not None
-            assert cam.name in available_cameras
-            await mgr.close(cam.name)
+        from mindtrace.hardware.cameras.backends.basler.basler_camera_backend import BaslerCameraBackend
+
+        monkeypatch.setattr(
+            BaslerCameraBackend,
+            "get_available_cameras",
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+
+    try:
+        from mindtrace.hardware.cameras.backends.opencv.opencv_camera_backend import OpenCVCameraBackend
+
+        monkeypatch.setattr(
+            OpenCVCameraBackend,
+            "get_available_cameras",
+            staticmethod(lambda include_details=False: {} if include_details else []),
+            raising=False,
+        )
+    except Exception:
+        pass
+
+    # Use include_mocks=True but mock the mock backend to return empty too
+    mgr = AsyncCameraManager(include_mocks=True)
+
+    # Mock discover to return empty list
+    monkeypatch.setattr(mgr, "discover", lambda: [])
+
+    try:
+        # Should raise CameraNotFoundError when no cameras are available
+        with pytest.raises(Exception, match="No cameras available to open by default"):
+            await mgr.open(None)
     finally:
         await mgr.close(None)
 

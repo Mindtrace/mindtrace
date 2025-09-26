@@ -40,7 +40,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
         camera = MockBaslerCameraBackend("mock_camera_1")
         await camera.set_exposure(20000)
-        success, image = await camera.capture()
+        image = await camera.capture()
         await camera.close()
 
     Error Simulation:
@@ -177,7 +177,7 @@ class MockBaslerCameraBackend(CameraBackend):
         self.initialized = False
         self.camera = None
 
-        self.logger.info(f"Mock Basler camera '{self.camera_name}' initialized successfully")
+        self.logger.debug(f"Mock Basler camera '{self.camera_name}' initialized successfully")
 
     @staticmethod
     def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
@@ -251,11 +251,11 @@ class MockBaslerCameraBackend(CameraBackend):
             self.logger.error(f"Unexpected error initializing mock Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing mock camera '{self.camera_name}': {str(e)}")
 
-    async def capture(self) -> Tuple[bool, Optional[np.ndarray]]:
+    async def capture(self) -> np.ndarray:
         """Capture a single image from the mock camera.
 
         Returns:
-            Tuple of (success, image_array) where image_array is BGR format
+            Captured BGR image array
 
         Raises:
             CameraConnectionError: If camera is not initialized or accessible
@@ -296,7 +296,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
             self.image_counter += 1
             self.logger.debug(f"Captured frame {self.image_counter} from mock camera '{self.camera_name}'")
-            return True, image
+            return image
 
         except asyncio.CancelledError:
             # Propagate cancellations unchanged to mirror real behavior
@@ -335,20 +335,16 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         return self.img_quality_enhancement
 
-    async def set_image_quality_enhancement(self, value: bool) -> bool:
+    async def set_image_quality_enhancement(self, value: bool):
         """Set image quality enhancement setting.
 
         Args:
             value: True to enable enhancement, False to disable.
-
-        Returns:
-            True if the setting was applied successfully.
         """
         self.img_quality_enhancement = value
         if value and not hasattr(self, "_enhancement_initialized"):
             self._initialize_image_enhancement()
-        self.logger.info(f"Image quality enhancement set to {value} for mock camera '{self.camera_name}'")
-        return True
+        self.logger.debug(f"Image quality enhancement set to {value} for mock camera '{self.camera_name}'")
 
     async def get_exposure_range(self) -> List[Union[int, float]]:
         """Get the supported exposure time range in microseconds.
@@ -366,14 +362,12 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         return self.exposure_time
 
-    async def set_exposure(self, exposure: Union[int, float]) -> bool:
+    async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure time in microseconds.
 
         Args:
             exposure: Exposure time in microseconds
 
-        Returns:
-            True if exposure was set successfully
 
         Raises:
             CameraConfigurationError: If exposure value is out of range
@@ -386,13 +380,12 @@ class MockBaslerCameraBackend(CameraBackend):
                 )
 
             self.exposure_time = float(exposure)
-            self.logger.info(f"Exposure set to {exposure} for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Exposure set to {exposure} for mock camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
             self.logger.error(f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}")
-            return False
+            raise CameraConfigurationError(f"Failed to set exposure for mock camera '{self.camera_name}': {str(e)}")
 
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
@@ -402,14 +395,11 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         return self.triggermode
 
-    async def set_triggermode(self, triggermode: str = "continuous") -> bool:
+    async def set_triggermode(self, triggermode: str = "continuous"):
         """Set trigger mode.
 
         Args:
             triggermode: Trigger mode ("continuous" or "trigger")
-
-        Returns:
-            True if trigger mode was set successfully
 
         Raises:
             CameraConfigurationError: If trigger mode is invalid
@@ -419,8 +409,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
         try:
             self.triggermode = triggermode
-            self.logger.info(f"Trigger mode set to '{triggermode}' for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Trigger mode set to '{triggermode}' for mock camera '{self.camera_name}'")
         except Exception as e:
             self.logger.error(f"Failed to set trigger mode for mock camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to set trigger mode for mock camera '{self.camera_name}': {str(e)}")
@@ -435,20 +424,17 @@ class MockBaslerCameraBackend(CameraBackend):
             return False
 
         try:
-            status, img = await self.capture()
-            return status and img is not None and img.shape[0] > 0 and img.shape[1] > 0
+            img = await self.capture()
+            return img is not None and img.shape[0] > 0 and img.shape[1] > 0
         except Exception as e:
             self.logger.warning(f"Connection check failed for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def import_config(self, config_path: str) -> bool:
+    async def import_config(self, config_path: str):
         """Import camera configuration from common JSON format.
 
         Args:
             config_path: Path to configuration file
-
-        Returns:
-            True if configuration was imported successfully
 
         Raises:
             CameraConfigurationError: If configuration file is not found or invalid
@@ -488,22 +474,18 @@ class MockBaslerCameraBackend(CameraBackend):
             except (json.JSONDecodeError, KeyError, ValueError) as e:
                 raise CameraConfigurationError(f"Invalid JSON configuration format: {e}")
 
-            self.logger.info(f"Configuration imported from '{config_path}' for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Configuration imported from '{config_path}' for mock camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
             self.logger.error(f"Failed to import config from '{config_path}': {str(e)}")
             raise CameraConfigurationError(f"Failed to import config from '{config_path}': {str(e)}")
 
-    async def export_config(self, config_path: str) -> bool:
+    async def export_config(self, config_path: str):
         """Export camera configuration to common JSON format.
 
         Args:
             config_path: Path to save configuration file
-
-        Returns:
-            True if configuration was exported successfully, False otherwise
         """
         try:
             # Create common format configuration data
@@ -532,15 +514,14 @@ class MockBaslerCameraBackend(CameraBackend):
             with open(config_path, "w") as f:
                 json.dump(config_data, f, indent=2)
 
-            self.logger.info(
+            self.logger.debug(
                 f"Configuration exported to '{config_path}' for mock camera '{self.camera_name}' using common JSON format"
             )
-            return True
         except Exception as e:
             self.logger.error(f"Failed to export config to '{config_path}': {str(e)}")
             return False
 
-    async def set_ROI(self, x: int, y: int, width: int, height: int) -> bool:
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest (ROI).
 
         Args:
@@ -548,9 +529,6 @@ class MockBaslerCameraBackend(CameraBackend):
             y: ROI y offset
             width: ROI width
             height: ROI height
-
-        Returns:
-            True if ROI was set successfully
 
         Raises:
             CameraConfigurationError: If ROI parameters are invalid
@@ -566,8 +544,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Invalid ROI offset: ({x}, {y})")
 
             self.roi = {"x": x, "y": y, "width": width, "height": height}
-            self.logger.info(f"ROI set to ({x}, {y}, {width}, {height}) for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"ROI set to ({x}, {y}, {width}, {height}) for mock camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
@@ -584,30 +561,22 @@ class MockBaslerCameraBackend(CameraBackend):
         await asyncio.sleep(0.001)
         return self.roi.copy()
 
-    async def reset_ROI(self) -> bool:
-        """Reset ROI to full sensor size.
-
-        Returns:
-            True if ROI was reset successfully
-        """
+    async def reset_ROI(self):
+        """Reset ROI to full sensor size."""
         try:
             # Simulate async operation
             await asyncio.sleep(0.001)
             self.roi = {"x": 0, "y": 0, "width": self.synthetic_width, "height": self.synthetic_height}
-            self.logger.info(f"ROI reset to full size for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"ROI reset to full size for mock camera '{self.camera_name}'")
         except Exception as e:
             self.logger.error(f"Failed to reset ROI for mock camera '{self.camera_name}': {str(e)}")
             return False
 
-    async def set_gain(self, gain: Union[int, float]) -> bool:
+    async def set_gain(self, gain: Union[int, float]):
         """Set camera gain.
 
         Args:
             gain: Gain value
-
-        Returns:
-            True if gain was set successfully
 
         Raises:
             CameraConfigurationError: If gain value is out of range
@@ -620,8 +589,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Gain {gain} out of range [1.0, 16.0]")
 
             self.gain = float(gain)
-            self.logger.info(f"Gain set to {gain} for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Gain set to {gain} for mock camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
@@ -656,19 +624,15 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         return self.white_balance_mode
 
-    async def set_auto_wb_once(self, value: str) -> bool:
+    async def set_auto_wb_once(self, value: str):
         """Set white balance mode.
 
         Args:
             value: White balance mode
-
-        Returns:
-            True if white balance was set successfully
         """
         try:
             self.white_balance_mode = value
-            self.logger.info(f"White balance set to '{value}' for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"White balance set to '{value}' for mock camera '{self.camera_name}'")
         except Exception as e:
             self.logger.error(f"Failed to set white balance for mock camera '{self.camera_name}': {str(e)}")
             return False
@@ -703,14 +667,11 @@ class MockBaslerCameraBackend(CameraBackend):
         await asyncio.sleep(0.001)
         return self.default_pixel_format
 
-    async def set_pixel_format(self, pixel_format: str) -> bool:
+    async def set_pixel_format(self, pixel_format: str):
         """Set pixel format.
 
         Args:
             pixel_format: Pixel format to set
-
-        Returns:
-            True if pixel format was set successfully
 
         Raises:
             CameraConfigurationError: If pixel format is not supported
@@ -723,8 +684,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
 
             self.default_pixel_format = pixel_format
-            self.logger.info(f"Pixel format set to '{pixel_format}' for mock camera '{self.camera_name}'")
-            return True
+            self.logger.debug(f"Pixel format set to '{pixel_format}' for mock camera '{self.camera_name}'")
         except CameraConfigurationError:
             raise
         except Exception as e:
@@ -751,35 +711,32 @@ class MockBaslerCameraBackend(CameraBackend):
         return [240, 1080]
 
     # Network-related methods (simulated for GigE cameras)
-    async def set_bandwidth_limit(self, limit_mbps: Optional[float]) -> bool:
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps (simulated)."""
         await asyncio.sleep(0.001)
-        self.logger.info(f"Bandwidth limit set to {limit_mbps} Mbps for mock camera '{self.camera_name}' (simulated)")
-        return True
+        self.logger.debug(f"Bandwidth limit set to {limit_mbps} Mbps for mock camera '{self.camera_name}' (simulated)")
 
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit (simulated)."""
         await asyncio.sleep(0.001)
         return 125.0  # Simulated 1Gbps = 125MB/s
 
-    async def set_packet_size(self, size: int) -> bool:
+    async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization (simulated)."""
         await asyncio.sleep(0.001)
-        self.logger.info(f"Packet size set to {size} bytes for mock camera '{self.camera_name}' (simulated)")
-        return True
+        self.logger.debug(f"Packet size set to {size} bytes for mock camera '{self.camera_name}' (simulated)")
 
     async def get_packet_size(self) -> int:
         """Get current packet size (simulated)."""
         await asyncio.sleep(0.001)
         return 1500  # Simulated standard MTU
 
-    async def set_inter_packet_delay(self, delay_ticks: int) -> bool:
+    async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control (simulated)."""
         await asyncio.sleep(0.001)
-        self.logger.info(
+        self.logger.debug(
             f"Inter-packet delay set to {delay_ticks} ticks for mock camera '{self.camera_name}' (simulated)"
         )
-        return True
 
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay (simulated)."""

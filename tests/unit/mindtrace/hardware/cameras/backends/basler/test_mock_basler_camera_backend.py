@@ -92,8 +92,7 @@ async def test_basler_specific_features(mock_basler_camera):
 async def test_configuration_compatibility(mock_basler_camera, temp_config_file):
     camera = mock_basler_camera
     await camera.initialize()
-    success = await camera.import_config(temp_config_file)
-    assert success is True
+    await camera.import_config(temp_config_file)
     assert await camera.get_exposure() == 15000.0
     assert await camera.get_gain() == 2.5
 
@@ -111,8 +110,7 @@ async def test_common_format_export(mock_basler_camera):
         export_path = f.name
 
     try:
-        success = await camera.export_config(export_path)
-        assert success is True
+        await camera.export_config(export_path)
         with open(export_path, "r") as f:
             config = json.load(f)
         assert config["exposure_time"] == 30000
@@ -187,8 +185,7 @@ class TestMockBaslerImageGeneration:
             )
             await camera.initialize()
 
-            success, image = await camera.capture()
-            assert success is True
+            image = await camera.capture()
             assert isinstance(image, np.ndarray)
             assert len(image.shape) == 3  # Should be 3D array (height, width, channels)
             assert image.shape[2] == 3  # Should have 3 color channels
@@ -209,8 +206,7 @@ class TestMockBaslerImageGeneration:
         images = []
         image_stats = []
         for i in range(8):  # Capture more images to ensure we see rotation
-            success, image = await camera.capture()
-            assert success is True
+            image = await camera.capture()
             images.append(image)
             # Track statistics to detect pattern changes
             stats = (image.mean(), image.std(), image.min(), image.max())
@@ -229,8 +225,7 @@ class TestMockBaslerImageGeneration:
         camera = MockBaslerCameraBackend("test_cam", synthetic_pattern="checkerboard", synthetic_checker_size=100)
         await camera.initialize()
 
-        success, image = await camera.capture()
-        assert success is True
+        await camera.capture()
         assert camera.synthetic_checker_size == 100
         await camera.close()
 
@@ -246,10 +241,8 @@ class TestMockBaslerImageGeneration:
         await camera_no_text.initialize()
 
         # Both should work
-        success1, _ = await camera_with_text.capture()
-        success2, _ = await camera_no_text.capture()
-        assert success1 is True
-        assert success2 is True
+        _ = await camera_with_text.capture()
+        _ = await camera_no_text.capture()
 
         await camera_with_text.close()
         await camera_no_text.close()
@@ -262,11 +255,11 @@ class TestMockBaslerImageGeneration:
 
         # Use more extreme exposure values to ensure visible difference
         await camera.set_exposure(50)  # Very low exposure
-        _, image1 = await camera.capture()
+        image1 = await camera.capture()
         stats1 = (image1.mean(), image1.std())
 
         await camera.set_exposure(500000)  # Very high exposure
-        _, image2 = await camera.capture()
+        image2 = await camera.capture()
         stats2 = (image2.mean(), image2.std())
 
         # Check that exposure affects image statistics
@@ -274,11 +267,11 @@ class TestMockBaslerImageGeneration:
 
         # Test gain effects with more extreme values
         await camera.set_gain(1.0)  # Low gain
-        _, image3 = await camera.capture()
+        image3 = await camera.capture()
         stats3 = (image3.mean(), image3.std())
 
         await camera.set_gain(12.0)  # High gain
-        _, image4 = await camera.capture()
+        image4 = await camera.capture()
         stats4 = (image4.mean(), image4.std())
 
         # Check that gain affects image statistics
@@ -324,8 +317,7 @@ class TestMockBaslerROIOperations:
 
         # Set custom ROI
         roi_params = (100, 50, 800, 600)
-        success = await camera.set_ROI(*roi_params)
-        assert success is True
+        await camera.set_ROI(*roi_params)
 
         # Get ROI and verify
         roi = await camera.get_ROI()
@@ -335,8 +327,7 @@ class TestMockBaslerROIOperations:
         assert roi["height"] == 600
 
         # Test image generation with custom ROI
-        success, image = await camera.capture()
-        assert success is True
+        image = await camera.capture()
         # ROI should affect the generated image size
         assert image.shape == (600, 800, 3), f"Expected (600, 800, 3) for custom ROI, got {image.shape}"
 
@@ -352,8 +343,7 @@ class TestMockBaslerROIOperations:
         await camera.set_ROI(100, 100, 640, 480)
 
         # Reset ROI
-        success = await camera.reset_ROI()
-        assert success is True
+        await camera.reset_ROI()
 
         # Verify reset to full size
         roi = await camera.get_ROI()
@@ -385,8 +375,7 @@ class TestMockBaslerConfigurationValidation:
         await camera.initialize()
 
         # Test valid exposure
-        success = await camera.set_exposure(20000)
-        assert success is True
+        await camera.set_exposure(20000)
 
         # Test exposure too low
         with pytest.raises(CameraConfigurationError, match="Exposure.*out of range"):
@@ -405,8 +394,7 @@ class TestMockBaslerConfigurationValidation:
         await camera.initialize()
 
         # Test valid gain
-        success = await camera.set_gain(8.0)
-        assert success is True
+        await camera.set_gain(8.0)
 
         # Test gain too low
         with pytest.raises(CameraConfigurationError, match="Gain.*out of range"):
@@ -425,11 +413,8 @@ class TestMockBaslerConfigurationValidation:
         await camera.initialize()
 
         # Test valid trigger modes
-        success = await camera.set_triggermode("continuous")
-        assert success is True
-
-        success = await camera.set_triggermode("trigger")
-        assert success is True
+        await camera.set_triggermode("continuous")
+        await camera.set_triggermode("trigger")
 
         # Test invalid trigger mode
         with pytest.raises(CameraConfigurationError, match="Invalid trigger mode"):
@@ -444,8 +429,7 @@ class TestMockBaslerConfigurationValidation:
         await camera.initialize()
 
         # Test valid pixel format
-        success = await camera.set_pixel_format("BGR8")
-        assert success is True
+        await camera.set_pixel_format("BGR8")
 
         # Test invalid pixel format
         with pytest.raises(CameraConfigurationError, match="Unsupported pixel format"):
@@ -488,8 +472,7 @@ class TestMockBaslerStateManagement:
         assert camera.IsGrabbing() is False
 
         # Capture should auto-start grabbing
-        success, image = await camera.capture()
-        assert success is True
+        await camera.capture()
         assert camera.IsGrabbing() is True
 
         await camera.close()
@@ -555,8 +538,7 @@ class TestMockBaslerConfigurationFiles:
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = os.path.join(temp_dir, "nested", "config.json")
 
-            success = await camera.export_config(config_path)
-            assert success is True
+            await camera.export_config(config_path)
             assert os.path.exists(config_path)
 
             # Verify content
@@ -585,8 +567,7 @@ class TestMockBaslerConfigurationFiles:
             partial_path = f.name
 
         try:
-            success = await camera.import_config(partial_path)
-            assert success is True
+            await camera.import_config(partial_path)
 
             # Verify imported values
             assert await camera.get_exposure() == 25000.0
@@ -612,8 +593,7 @@ class TestMockBaslerWhiteBalance:
         assert "auto" in wb_modes
 
         for mode in wb_modes:
-            success = await camera.set_auto_wb_once(mode)
-            assert success is True
+            await camera.set_auto_wb_once(mode)
 
             current_wb = await camera.get_wb()
             assert current_wb == mode
@@ -635,13 +615,11 @@ class TestMockBaslerImageEnhancement:
         assert isinstance(initial_state, bool)
 
         # Test setting enhancement
-        success = await camera.set_image_quality_enhancement(True)
-        assert success is True
+        await camera.set_image_quality_enhancement(True)
         assert await camera.get_image_quality_enhancement() is True
 
         # Test disabling enhancement
-        success = await camera.set_image_quality_enhancement(False)
-        assert success is True
+        await camera.set_image_quality_enhancement(False)
         assert await camera.get_image_quality_enhancement() is False
 
         await camera.close()
@@ -670,11 +648,11 @@ class TestMockBaslerImageEnhancement:
 
         # Capture without enhancement
         await camera.set_image_quality_enhancement(False)
-        _, image_no_enhancement = await camera.capture()
+        image_no_enhancement = await camera.capture()
 
         # Capture with enhancement
         await camera.set_image_quality_enhancement(True)
-        _, image_with_enhancement = await camera.capture()
+        image_with_enhancement = await camera.capture()
 
         # Images should be the same size
         assert image_no_enhancement.shape == image_with_enhancement.shape
@@ -722,8 +700,7 @@ class TestMockBaslerPerformanceAndTiming:
         results = await asyncio.gather(*tasks)
 
         # All captures should succeed
-        for success, image in results:
-            assert success is True
+        for image in results:
             assert isinstance(image, np.ndarray)
 
         await camera.close()
@@ -849,10 +826,9 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
 
         # Mock cv2.cvtColor to raise an error during enhancement
         with patch("cv2.cvtColor", side_effect=RuntimeError("Enhancement error")):
-            success, image = await camera.capture()
+            image = await camera.capture()
 
             # Should still succeed, using original image
-            assert success is True
             assert isinstance(image, np.ndarray)
 
         await camera.close()
@@ -864,11 +840,9 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
         await camera.initialize()
 
         # Test very small ROI
-        success = await camera.set_ROI(0, 0, 1, 1)
-        assert success is True
+        await camera.set_ROI(0, 0, 1, 1)
 
-        success, image = await camera.capture()
-        assert success is True
+        image = await camera.capture()
         # ROI should affect the generated image size
         assert image.shape == (1, 1, 3), f"Expected (1, 1, 3) for 1x1 ROI, got {image.shape}"
 
@@ -892,8 +866,7 @@ class TestMockBaslerEdgeCasesAndErrorHandling:
         capture_results, _ = await asyncio.gather(asyncio.gather(*[capture_task() for _ in range(3)]), config_task())
 
         # All captures should succeed
-        for success, image in capture_results:
-            assert success is True
+        for image in capture_results:
             assert isinstance(image, np.ndarray)
 
         await camera.close()
