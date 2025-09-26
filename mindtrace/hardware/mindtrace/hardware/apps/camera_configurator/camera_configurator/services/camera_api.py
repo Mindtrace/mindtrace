@@ -2,6 +2,7 @@
 
 import httpx
 import asyncio
+import os
 from typing import List, Dict, Any, Optional
 import logging
 from pathlib import Path
@@ -11,7 +12,10 @@ logger = logging.getLogger(__name__)
 class CameraAPI:
     """Camera API service for hardware interaction matching real API structure."""
     
-    def __init__(self, base_url: str = "http://192.168.50.32:8002"):
+    def __init__(self, base_url: Optional[str] = None):
+        # Use environment variable, then fallback to default
+        if base_url is None:
+            base_url = os.getenv('CAMERA_API_URL', 'http://localhost:8002')
         self.base_url = base_url
         self.timeout = 30.0
         
@@ -107,12 +111,10 @@ class CameraAPI:
         try:
             request_data = {"camera": camera_name}
             result = await self._make_request("POST", "/cameras/configuration", json=request_data)
-            if result.get("success"):
-                return result.get("data", {})
-            return {}
+            return result  # Return full response with success/error fields
         except Exception as e:
             logger.error(f"Error getting camera configuration for {camera_name}: {e}")
-            return {}
+            return {"success": False, "error": str(e)}
     
     async def initialize_camera(self, camera_name: str, test_connection: bool = False) -> Dict[str, Any]:
         """Initialize/open a camera."""
@@ -301,12 +303,11 @@ class CameraAPI:
             logger.error(f"Error getting stream URL for {camera_name}: {e}")
             return None
     
-    async def start_camera_stream(self, camera_name: str, format: str = "mjpeg", quality: int = 85, fps: int = 30) -> Dict[str, Any]:
-        """Start camera stream."""
+    async def start_camera_stream(self, camera_name: str, quality: int = 85, fps: int = 30) -> Dict[str, Any]:
+        """Start camera stream with configurable quality and FPS."""
         try:
             request_data = {
                 "camera": camera_name,
-                "format": format,
                 "quality": quality,
                 "fps": fps
             }

@@ -22,22 +22,85 @@ def file_config_section() -> rx.Component:
             margin_bottom=spacing["md"],
         ),
         
-        # File path input section
+        # Drag and drop upload area
         rx.box(
             rx.text(
-                "File Path:",
+                "Upload Configuration:",
                 font_weight="500",
                 color=colors["gray_700"],
                 margin_bottom=spacing["xs"],
             ),
-            rx.input(
-                placeholder="/path/to/config.json",
-                value=CameraState.config_file_path,
-                on_change=CameraState.set_config_file_path,
-                width="100%",
-                size="3",
+            rx.upload(
+                rx.box(
+                    rx.flex(
+                        rx.icon("cloud-upload", size=32, color=colors["gray_400"]),
+                        rx.vstack(
+                            rx.text(
+                                "Drag and drop JSON files here",
+                                font_weight="500",
+                                color=colors["gray_700"],
+                                font_size="1rem",
+                            ),
+                            rx.text(
+                                "or click to browse",
+                                color=colors["gray_500"],
+                                font_size="0.875rem",
+                            ),
+                            spacing="2",
+                            align="center",
+                        ),
+                        direction="column",
+                        align="center",
+                        gap=spacing["sm"],
+                    ),
+                    border=f"2px dashed {colors['border']}",
+                    border_radius=css_spacing["lg"],
+                    padding=css_spacing["xl"],
+                    background=colors["gray_50"],
+                    width="100%",
+                    min_height="120px",
+                    display="flex",
+                    align_items="center",
+                    justify_content="center",
+                    cursor="pointer",
+                    _hover={
+                        "border_color": colors["primary"],
+                        "background": colors["primary"] + "10",
+                    },
+                ),
+                id="config_upload",
+                accept={"application/json": [".json"]},
+                multiple=True,
+                max_files=10,
+            ),
+            rx.button(
+                "Upload Files", 
+                on_click=CameraState.handle_upload(rx.upload_files("config_upload")),
+                margin_top=spacing["sm"],
             ),
             margin_bottom=spacing["md"],
+        ),
+        
+        # Show uploaded files with selector
+        rx.cond(
+            CameraState.uploaded_files.length() > 0,
+            rx.box(
+                rx.text(
+                    "Select File for Import:",
+                    font_weight="500",
+                    color=colors["gray_700"],
+                    margin_bottom=spacing["xs"],
+                ),
+                rx.select(
+                    CameraState.uploaded_files,
+                    placeholder="Choose a file...",
+                    value=CameraState.selected_file,
+                    on_change=CameraState.set_selected_file,
+                    width="100%",
+                    size="3",
+                ),
+                margin_bottom=spacing["md"],
+            ),
         ),
         
         # Camera selection for config operations
@@ -59,7 +122,7 @@ def file_config_section() -> rx.Component:
             margin_bottom=spacing["lg"],
         ),
         
-        # Action buttons with consistent spacing
+        # Action buttons centered
         rx.flex(
             rx.button(
                 rx.cond(
@@ -78,10 +141,9 @@ def file_config_section() -> rx.Component:
                     )
                 ),
                 on_click=lambda: CameraState.export_camera_config(
-                    CameraState.selected_camera, 
-                    CameraState.config_file_path
+                    CameraState.selected_camera
                 ),
-                disabled=(CameraState.selected_camera == "") | (CameraState.config_file_path == "") | CameraState.config_export_loading,
+                disabled=(CameraState.selected_camera == "") | CameraState.config_export_loading,
                 variant="outline",
                 size="3",
             ),
@@ -103,43 +165,19 @@ def file_config_section() -> rx.Component:
                     )
                 ),
                 on_click=lambda: CameraState.import_camera_config(
-                    CameraState.selected_camera,
-                    CameraState.config_file_path
+                    CameraState.selected_camera
                 ),
-                disabled=(CameraState.selected_camera == "") | (CameraState.config_file_path == "") | CameraState.config_import_loading,
+                disabled=(CameraState.selected_camera == "") | (CameraState.selected_file == "") | CameraState.config_import_loading,
                 variant="solid",
                 size="3",
             ),
             
             gap=spacing["md"],
+            justify="center",
             width="100%",
             flex_wrap="wrap",
         ),
         
-        # Instructions with consistent styling
-        rx.box(
-            rx.text(
-                "How to use:",
-                font_weight="500",
-                color=colors["gray_700"],
-                margin_bottom=spacing["xs"],
-            ),
-            rx.box(
-                "• Enter full path for config file location\n"
-                "• Select an initialized camera from dropdown\n" 
-                "• Export saves current camera settings to file\n"
-                "• Import loads previously saved configuration",
-                font_size="0.875rem",
-                color=colors["gray_600"],
-                line_height="1.5",
-                white_space="pre-line",
-            ),
-            background=colors["gray_50"],
-            border=f"1px solid {colors['border']}",
-            border_radius=css_spacing["md"],
-            padding=spacing["md"],
-            margin_top=spacing["lg"],
-        ),
         
         # Match existing card styling
         background=colors["white"],

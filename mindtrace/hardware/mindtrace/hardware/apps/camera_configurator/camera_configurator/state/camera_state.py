@@ -4,6 +4,7 @@ import reflex as rx
 from typing import List, Dict, Any, Optional
 import asyncio
 import logging
+import math
 from ..services.camera_api import CameraAPI
 
 logger = logging.getLogger(__name__)
@@ -47,9 +48,21 @@ class CameraState(rx.State):
     api_connected: bool = False
     
     # File-based configuration management
-    config_file_path: str = ""
+    uploaded_files: list[str] = []
+    selected_file: str = ""
     config_export_loading: bool = False
     config_import_loading: bool = False
+    
+    # Computed vars for compatibility with camera_card component
+    @rx.var
+    def streaming_camera_name(self) -> str:
+        """Alias for current_streaming_camera for component compatibility."""
+        return self.current_streaming_camera
+    
+    @rx.var
+    def streaming_url(self) -> str:
+        """Alias for current_stream_url for component compatibility."""
+        return self.current_stream_url
     
     def set_message(self, message: str, message_type: str = "info"):
         """Set a status message."""
@@ -110,8 +123,8 @@ class CameraState(rx.State):
                             camera_statuses[camera] = "available"
                         
                         # Get current configuration
-                        config = await _camera_api.get_camera_configuration(camera)
-                        camera_configs[camera] = config
+                        config_response = await _camera_api.get_camera_configuration(camera)
+                        camera_configs[camera] = config_response.get("data", {}) if config_response.get("success") else {}
                     elif camera in discovered_cameras:
                         # Camera is discoverable but not initialized
                         camera_statuses[camera] = "available"
@@ -176,7 +189,7 @@ class CameraState(rx.State):
         try:
             # Stop streaming if active for this camera
             if self.is_camera_streaming(camera_name):
-                await self.stop_stream(camera_name)
+                await self.stop_stream()
             
             result = await _camera_api.close_camera(camera_name)
             if result.get("success", False):
@@ -231,14 +244,23 @@ class CameraState(rx.State):
         """Close configuration modal."""
         self.config_modal_open = False
         self.selected_camera = ""
+        self.selected_file = ""  # Clear selected file when closing modal
     
     async def apply_camera_config(self):
         """Apply configuration to the selected camera."""
         if not self.selected_camera:
             return
         
+        # Convert exposure value based on camera backend
+        exposure_value = self.config_exposure
+        if self.selected_camera.startswith("OpenCV:"):
+            # Convert microseconds back to logarithmic value for OpenCV
+            # Formula: log2(microseconds / 1000000)
+            if exposure_value > 0:
+                exposure_value = math.log2(exposure_value / 1000000)
+        
         config = {
-            "exposure_time": self.config_exposure,
+            "exposure_time": exposure_value,
             "gain": self.config_gain,
             "trigger_mode": self.config_trigger_mode
         }
@@ -247,8 +269,8 @@ class CameraState(rx.State):
             result = await _camera_api.configure_camera(self.selected_camera, config)
             if result.get("success", False):
                 # Refresh camera configuration from API to get actual values
-                actual_config = await _camera_api.get_camera_configuration(self.selected_camera)
-                self.camera_configs[self.selected_camera] = actual_config
+                actual_config_response = await _camera_api.get_camera_configuration(self.selected_camera)
+                self.camera_configs[self.selected_camera] = actual_config_response.get("data", {}) if actual_config_response.get("success") else {}
                 self.set_message(f"Configuration applied to {self.selected_camera}", "success")
                 self.close_config_modal()
             else:
@@ -276,57 +298,51 @@ class CameraState(rx.State):
             self.capture_loading = False
     
     async def start_stream(self, camera_name: str):
-        """Start video stream from a camera. Only one camera can stream at a time."""
-        # Debug log removed
+        """Start MJPEG video stream for the given camera."""
+        
+        # Stop any existing stream first
+        if self.current_streaming_camera:
+            await self.stop_stream()
+        
         try:
-            # Stop any existing stream first (only one stream at a time)
-            if self.current_streaming_camera:
-                await self.stop_stream(self.current_streaming_camera)
-            
-            # Start the stream on the API side
+            # Start the stream on the backend
             result = await _camera_api.start_camera_stream(camera_name)
-            # Debug log removed
-            if result.get("success"):
-                stream_url = result.get("data", {}).get("stream_url")
+            
+            if result.get("success", False):
+                # Use the stream URL from the API response
+                stream_data = result.get("data", {})
+                stream_url = stream_data.get("stream_url")
+                
                 if stream_url:
-                    self.current_streaming_camera = camera_name
                     self.current_stream_url = stream_url
-                    # Debug log removed
+                    self.current_streaming_camera = camera_name
                     self.set_message(f"Stream started for {camera_name}", "success")
                 else:
-                    # Debug log removed
-                    self.set_message(f"Failed to get stream URL for {camera_name}", "error")
+                    self.set_message("Failed to get stream URL", "error")
             else:
-                # Debug log removed
-                self.set_message(f"Failed to start stream for {camera_name}", "error")
+                error = result.get("error", "Failed to start stream")
+                self.set_message(f"Failed to start stream: {error}", "error")
+                
         except Exception as e:
-            # Debug log removed
-            self.set_message(f"Error starting stream for {camera_name}: {str(e)}", "error")
+            self.set_message(f"Error starting stream: {str(e)}", "error")
 
-    async def stop_stream(self, camera_name: str):
-        """Stop video stream for a specific camera."""
-        # Debug log removed
-        try:
-            # Only stop if this camera is actually streaming
-            if self.current_streaming_camera != camera_name:
-                # Debug log removed
-                return
-            
-            # Stop the stream on the API side
-            result = await _camera_api.stop_camera_stream(camera_name)
-            # Debug log removed
-            if result.get("success"):
-                # Clear streaming state
-                self.current_streaming_camera = ""
-                self.current_stream_url = ""
-                # Debug log removed
-                self.set_message(f"Stream stopped for {camera_name}", "success")
-            else:
-                # Debug log removed
-                self.set_message(f"Failed to stop stream for {camera_name}", "error")
-        except Exception as e:
-            # Debug log removed
-            self.set_message(f"Error stopping stream for {camera_name}: {str(e)}", "error")
+    async def stop_stream(self):
+        """Stop the MJPEG video stream."""
+        
+        if self.current_streaming_camera:
+            try:
+                # Stop the stream on the backend
+                result = await _camera_api.stop_camera_stream(self.current_streaming_camera)
+                
+                if result.get("success", False):
+                else:
+                    
+            except Exception as e:
+        
+        # Always clear the state
+        self.current_streaming_camera = ""
+        self.current_stream_url = ""
+        self.set_message("Stream stopped", "success")
     
     def is_camera_streaming(self, camera_name: str) -> bool:
         """Check if a specific camera is streaming."""
@@ -378,17 +394,23 @@ class CameraState(rx.State):
         await self.refresh_cameras()
     
     # State setters for UI controls
-    def set_config_exposure(self, value: str):
+    def set_config_exposure(self, value):
         """Set exposure configuration value."""
         try:
-            self.config_exposure = int(value)
+            if isinstance(value, (int, float)):
+                self.config_exposure = int(value)
+            else:
+                self.config_exposure = int(value)
         except (ValueError, TypeError):
             pass  # Keep existing value if conversion fails
     
-    def set_config_gain(self, value: str):
+    def set_config_gain(self, value):
         """Set gain configuration value."""
         try:
-            self.config_gain = int(value)
+            if isinstance(value, (int, float)):
+                self.config_gain = int(value)
+            else:
+                self.config_gain = int(value)
         except (ValueError, TypeError):
             pass  # Keep existing value if conversion fails
     
@@ -404,41 +426,160 @@ class CameraState(rx.State):
         """Set captured image data."""
         self.captured_image = value
     
-    def set_config_file_path(self, value: str):
-        """Set configuration file path."""
-        self.config_file_path = value
+    def set_selected_file(self, value: str):
+        """Set selected file for import."""
+        self.selected_file = value
     
-    async def export_camera_config(self, camera_name: str, file_path: str):
-        """Export camera configuration to file."""
+    
+    async def handle_upload(self, files: list[rx.UploadFile]):
+        """Handle uploaded configuration files."""
+        logger.info(f"🔍 UPLOAD DEBUG: handle_upload called with {len(files)} files")
+        
+        if not files:
+            logger.warning("⚠️ UPLOAD DEBUG: No files received in handle_upload")
+            self.set_message("No files received", "warning")
+            return
+        
+        for i, file in enumerate(files):
+            try:
+                logger.info(f"📁 UPLOAD DEBUG: Processing file {i+1}/{len(files)}")
+                logger.info(f"📄 UPLOAD DEBUG: File object type: {type(file)}")
+                logger.info(f"🔍 UPLOAD DEBUG: File object attributes: {dir(file)}")
+                
+                # Extract filename from the file object  
+                filename = None
+                if hasattr(file, 'name') and file.name:
+                    filename = file.name
+                    logger.info(f"✅ UPLOAD DEBUG: Got filename from .name: {filename}")
+                elif hasattr(file, 'filename') and file.filename:
+                    filename = file.filename
+                    logger.info(f"✅ UPLOAD DEBUG: Got filename from .filename: {filename}")
+                else:
+                    filename = f"config_{len(self.uploaded_files)+1}.json"
+                    logger.info(f"🔄 UPLOAD DEBUG: Using fallback filename: {filename}")
+                
+                if not filename.endswith('.json'):
+                    logger.error(f"❌ UPLOAD DEBUG: File {filename} is not a JSON file")
+                    self.set_message("Please upload only JSON files", "error")
+                    continue
+                
+                logger.info(f"📂 UPLOAD DEBUG: Processing JSON file: {filename}")
+                upload_path = rx.get_upload_dir() / filename
+                logger.info(f"💾 UPLOAD DEBUG: Upload path: {upload_path}")
+                
+                # Handle different file content types
+                content = None
+                if hasattr(file, 'read') and callable(file.read):
+                    logger.info("📖 UPLOAD DEBUG: Reading file with .read() method")
+                    content = await file.read()
+                    logger.info(f"📊 UPLOAD DEBUG: Read {len(content)} bytes")
+                elif isinstance(file, bytes):
+                    logger.info("📦 UPLOAD DEBUG: File is already bytes")
+                    content = file
+                else:
+                    logger.info("🔄 UPLOAD DEBUG: Converting file to bytes")
+                    content = str(file).encode('utf-8')
+                
+                if content is None or len(content) == 0:
+                    logger.error("❌ UPLOAD DEBUG: No content extracted from file")
+                    self.set_message(f"File '{filename}' appears to be empty", "error")
+                    continue
+                
+                # Write the file content
+                logger.info(f"💾 UPLOAD DEBUG: Saving to {upload_path}")
+                with upload_path.open("wb") as file_obj:
+                    file_obj.write(content)
+                
+                # Avoid duplicates
+                if filename not in self.uploaded_files:
+                    self.uploaded_files.append(filename)
+                    logger.info(f"📝 UPLOAD DEBUG: Added {filename} to uploaded_files list")
+                
+                # Set the selected file for import
+                self.selected_file = filename
+                
+                self.set_message(f"File '{filename}' uploaded successfully", "success")
+                logger.info(f"✅ UPLOAD DEBUG: Successfully processed file: {filename}")
+                    
+            except Exception as e:
+                logger.error(f"❌ UPLOAD DEBUG: Error uploading file: {e}")
+                import traceback
+                logger.error(f"🔍 UPLOAD DEBUG: Full traceback:\n{traceback.format_exc()}")
+                self.set_message(f"Error uploading file: {str(e)}", "error")
+
+    async def export_camera_config(self, camera_name: str):
+        """Export camera configuration and trigger download."""
         self.config_export_loading = True
         self.clear_message()
         
         try:
-            result = await _camera_api.export_camera_config(camera_name, file_path)
-            if result.get("success", False):
-                self.set_message(f"Configuration exported to {file_path}", "success")
+            # Get current camera configuration
+            config = await _camera_api.get_camera_configuration(camera_name)
+            if config.get("success", False):
+                import json
+                config_data = json.dumps(config.get("data", {}), indent=2)
+                filename = f"{camera_name.replace(':', '_')}_config.json"
+                self.set_message(f"Configuration exported for {camera_name}", "success")
+                return rx.download(data=config_data, filename=filename)
             else:
-                error = result.get("error", "Unknown error")
+                error = config.get("error", "Unknown error")
                 self.set_message(f"Failed to export config: {error}", "error")
         except Exception as e:
             self.set_message(f"Error exporting config: {str(e)}", "error")
         finally:
             self.config_export_loading = False
     
-    async def import_camera_config(self, camera_name: str, file_path: str):
-        """Import camera configuration from file."""
+    async def import_camera_config(self, camera_name: str):
+        """Import camera configuration from selected uploaded file."""
         self.config_import_loading = True
         self.clear_message()
         
+        if not self.selected_file:
+            self.set_message("Please select a file to import", "error")
+            self.config_import_loading = False
+            return
+        
         try:
-            result = await _camera_api.import_camera_config(camera_name, file_path)
-            if result.get("success", False):
-                self.set_message(f"Configuration imported from {file_path}", "success")
-                # Refresh camera configuration after import
-                await self.refresh_cameras()
+            # Read the uploaded file
+            upload_path = rx.get_upload_dir() / self.selected_file
+            if not upload_path.exists():
+                self.set_message(f"File '{self.selected_file}' not found. Please upload it first.", "error")
+                return
+            
+            import json
+            with upload_path.open("r") as f:
+                config_data = json.load(f)
+            
+            logger.info(f"Loaded config data from {self.selected_file}: {config_data}")
+            
+            # Filter configuration to only include API-supported fields
+            filtered_config = {}
+            if "exposure_time" in config_data:
+                filtered_config["exposure_time"] = config_data["exposure_time"]
+            if "gain" in config_data:
+                filtered_config["gain"] = config_data["gain"] 
+            if "trigger_mode" in config_data:
+                filtered_config["trigger_mode"] = config_data["trigger_mode"]
+            
+            # Apply configuration via API
+            if camera_name in self.cameras:
+                logger.info(f"Loaded config data from {self.selected_file}: {config_data}")
+                logger.info(f"Filtered config for API: {filtered_config}")
+                logger.info(f"Configuring camera {camera_name} with filtered data: {filtered_config}")
+                # Configure camera with the filtered settings
+                success = await _camera_api.configure_camera(camera_name, filtered_config)
+                logger.info(f"Configure camera result: {success}")
+                if success.get("success", False):
+                    self.set_message(f"Configuration imported from {self.selected_file}", "success")
+                    # Refresh camera configuration after import
+                    await self.refresh_cameras()
+                else:
+                    error = success.get("error", "Unknown error")
+                    self.set_message(f"Failed to apply config: {error}", "error")
             else:
-                error = result.get("error", "Unknown error")
-                self.set_message(f"Failed to import config: {error}", "error")
+                self.set_message(f"Camera '{camera_name}' not found", "error")
+        except json.JSONDecodeError:
+            self.set_message(f"Invalid JSON file: {self.selected_file}", "error")
         except Exception as e:
             self.set_message(f"Error importing config: {str(e)}", "error")
         finally:
@@ -467,15 +608,6 @@ class CameraState(rx.State):
         """Whether any camera is currently streaming."""
         return self.current_streaming_camera != ""
     
-    @rx.var
-    def streaming_camera_name(self) -> str:
-        """Name of the currently streaming camera."""
-        return self.current_streaming_camera
-    
-    @rx.var
-    def streaming_url(self) -> str:
-        """Current stream URL."""
-        return self.current_stream_url
     
     # Computed properties
     @rx.var
@@ -502,3 +634,73 @@ class CameraState(rx.State):
         if not self.selected_camera:
             return {}
         return self.camera_ranges.get(self.selected_camera, {})
+    
+    @rx.var
+    def available_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for selected camera as strings."""
+        if not self.selected_camera:
+            return ["continuous", "trigger"]
+        
+        ranges = self.camera_ranges.get(self.selected_camera, {})
+        trigger_modes = ranges.get("trigger_modes", [])
+        
+        # Ensure all modes are strings
+        if trigger_modes:
+            return [str(mode) for mode in trigger_modes]
+        else:
+            # Default modes if none specified
+            return ["continuous", "trigger"]
+    
+    @rx.var
+    def exposure_supported(self) -> bool:
+        """Check if the selected camera supports exposure control."""
+        if not self.selected_camera:
+            return False
+        
+        ranges = self.camera_ranges.get(self.selected_camera, {})
+        exposure_range = ranges.get("exposure")
+        
+        # Return True only if exposure_range exists (not None/null)
+        # OpenCV cameras will have exposure_range: null
+        # Basler cameras will have exposure_range: [min, max]
+        return exposure_range is not None
+    
+    @rx.var
+    def exposure_min_microseconds(self) -> int:
+        """Get minimum exposure in microseconds, handling different backends."""
+        if not self.selected_camera:
+            return 100
+        
+        ranges = self.camera_ranges.get(self.selected_camera, {})
+        exposure_range = ranges.get("exposure", [])
+        
+        if len(exposure_range) >= 2:
+            min_val = exposure_range[0]
+            # Check if this looks like OpenCV log values (negative numbers)
+            if min_val < 0:
+                # Convert from log values: 2^(log_value) * 1000000
+                return int(2 ** min_val * 1000000)
+            else:
+                # Already in microseconds (Basler, etc.)
+                return int(min_val)
+        return 100
+    
+    @rx.var
+    def exposure_max_microseconds(self) -> int:
+        """Get maximum exposure in microseconds, handling different backends."""
+        if not self.selected_camera:
+            return 10000
+        
+        ranges = self.camera_ranges.get(self.selected_camera, {})
+        exposure_range = ranges.get("exposure", [])
+        
+        if len(exposure_range) >= 2:
+            max_val = exposure_range[1]
+            # Check if this looks like OpenCV log values (negative numbers)
+            if max_val < 0:
+                # Convert from log values: 2^(log_value) * 1000000
+                return int(2 ** max_val * 1000000)
+            else:
+                # Already in microseconds (Basler, etc.)
+                return int(max_val)
+        return 10000
