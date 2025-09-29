@@ -1,8 +1,8 @@
 import pytest_asyncio
 
 from mindtrace.services import Gateway
-from mindtrace.services.sample.echo_mcp import EchoService as echo_mcp_service
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService as echo_mcp_service
+from mindtrace.services.samples.echo_service import EchoService
 
 
 @pytest_asyncio.fixture(scope="session")
