@@ -7,7 +7,7 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.core.types import WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 
 @pytest.mark.integration
