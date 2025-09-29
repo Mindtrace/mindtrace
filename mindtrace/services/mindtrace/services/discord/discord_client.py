@@ -1,16 +1,15 @@
-"""
-Discord client implementation for Mindtrace services.
+"""Discord client implementation for Mindtrace services.
 
 This module provides a base Discord client that can be extended for different bot implementations.
 It follows the Mindtrace Service patterns and provides a clean interface for command registration.
 """
 
-import asyncio
-import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Union
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
+import logging
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import discord
 from discord import app_commands
@@ -19,96 +18,22 @@ from pydantic import BaseModel
 
 from mindtrace.core import TaskSchema, ifnone
 from mindtrace.services import Service
-
-
-class DiscordEventType(Enum):
-    """Types of Discord events that can be handled."""
-    MESSAGE = "message"
-    REACTION = "reaction"
-    MEMBER_JOIN = "member_join"
-    MEMBER_LEAVE = "member_leave"
-    VOICE_STATE_UPDATE = "voice_state_update"
-    GUILD_JOIN = "guild_join"
-    GUILD_LEAVE = "guild_leave"
-
-
-@dataclass
-class DiscordCommand:
-    """Represents a Discord command with its metadata."""
-    name: str
-    description: str
-    usage: str
-    aliases: List[str]
-    category: str
-    enabled: bool = True
-    hidden: bool = False
-    cooldown: Optional[int] = None
-    permissions: Optional[List[str]] = None
-
-
-class DiscordCommandInput(BaseModel):
-    """Base input schema for Discord commands."""
-    content: str
-    author_id: int
-    channel_id: int
-    guild_id: Optional[int] = None
-    message_id: int
-
-
-class DiscordCommandOutput(BaseModel):
-    """Base output schema for Discord commands."""
-    response: str
-    embed: Optional[Dict[str, Any]] = None
-    delete_after: Optional[float] = None
-
-
-class DiscordStatusOutput(BaseModel):
-    """Output schema for bot status."""
-    bot_name: Optional[str] = None
-    guild_count: int
-    user_count: int
-    latency: float
-    status: str
-
-
-class DiscordCommandsOutput(BaseModel):
-    """Output schema for commands list."""
-    commands: List[Dict[str, Any]]
-
-
-class DiscordCommandSchema(TaskSchema):
-    """Base schema for Discord commands."""
-    name: str = "discord_command"
-    input_schema: type[DiscordCommandInput] = DiscordCommandInput
-    output_schema: type[DiscordCommandOutput] = DiscordCommandOutput
-
-
-class DiscordStatusSchema(TaskSchema):
-    """Schema for bot status endpoint."""
-    name: str = "discord_status"
-    input_schema: type[None] = type(None)
-    output_schema: type[DiscordStatusOutput] = DiscordStatusOutput
-
-
-class DiscordCommandsSchema(TaskSchema):
-    """Schema for commands list endpoint."""
-    name: str = "discord_commands"
-    input_schema: type[None] = type(None)
-    output_schema: type[DiscordCommandsOutput] = DiscordCommandsOutput
-
-
-class DiscordEventHandler(ABC):
-    """Abstract base class for Discord event handlers."""
-    
-    @abstractmethod
-    async def handle(self, event_type: DiscordEventType, **kwargs) -> None:
-        """Handle a Discord event."""
-        pass
+from mindtrace.services.discord.types import (
+    DiscordCommand, 
+    DiscordCommandInput, 
+    DiscordCommandOutput, 
+    DiscordCommandSchema, 
+    DiscordCommandsOutput, 
+    DiscordCommandsSchema, 
+    DiscordEventType, 
+    DiscordEventHandler, 
+    DiscordStatusOutput, 
+    DiscordStatusSchema
+)
 
 
 class BaseDiscordClient(Service):
-    """
-    Base Discord client that can be extended for different bot implementations.
+    """Base Discord client that can be extended for different bot implementations.
     
     This class provides:
     - Command registration and management
@@ -512,93 +437,3 @@ class BaseDiscordClient(Service):
         """Cleanup when shutting down the service."""
         await super().shutdown_cleanup()
         await self.stop_bot()
-
-
-# Example command handlers
-async def ping_command(ctx: commands.Context, *args) -> str:
-    """Example ping command."""
-    return f"Pong! Latency: {round(ctx.bot.latency * 1000)}ms"
-
-
-async def echo_command(ctx: commands.Context, *args) -> str:
-    """Example echo command."""
-    if not args:
-        return "Please provide a message to echo."
-    return " ".join(args)
-
-
-async def help_command(ctx: commands.Context, *args) -> str:
-    """Example help command."""
-    client = ctx.bot
-    if hasattr(client, '_commands'):
-        commands_list = []
-        for cmd in client._commands.values():
-            if not cmd.hidden:
-                commands_list.append(f"**{cmd.name}**: {cmd.description}")
-        
-        return "Available commands:\n" + "\n".join(commands_list)
-    return "No commands available."
-
-
-# Example event handler
-class LoggingEventHandler(DiscordEventHandler):
-    """Example event handler that logs events."""
-    
-    def __init__(self, logger: logging.Logger):
-        self.logger = logger
-    
-    async def handle(self, event_type: DiscordEventType, **kwargs):
-        """Handle events by logging them."""
-        if event_type == DiscordEventType.MESSAGE:
-            message = kwargs.get('message')
-            self.logger.info(f"Message from {message.author}: {message.content}")
-        elif event_type == DiscordEventType.MEMBER_JOIN:
-            member = kwargs.get('member')
-            self.logger.info(f"Member joined: {member.name}")
-        elif event_type == DiscordEventType.MEMBER_LEAVE:
-            member = kwargs.get('member')
-            self.logger.info(f"Member left: {member.name}")
-
-
-# Example bot implementation
-class ExampleDiscordBot(BaseDiscordClient):
-    """Example Discord bot implementation."""
-    
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        
-        # Register commands
-        self.register_command(
-            name="ping",
-            description="Check bot latency",
-            usage="!ping",
-            handler=ping_command
-        )
-        
-        self.register_command(
-            name="echo",
-            description="Echo a message",
-            usage="!echo <message>",
-            handler=echo_command
-        )
-        
-        self.register_command(
-            name="help",
-            description="Show available commands",
-            usage="!help",
-            handler=help_command
-        )
-        
-        # Register event handlers
-        self.register_event_handler(
-            DiscordEventType.MESSAGE,
-            LoggingEventHandler(self.logger)
-        )
-        self.register_event_handler(
-            DiscordEventType.MEMBER_JOIN,
-            LoggingEventHandler(self.logger)
-        )
-        self.register_event_handler(
-            DiscordEventType.MEMBER_LEAVE,
-            LoggingEventHandler(self.logger)
-        )
