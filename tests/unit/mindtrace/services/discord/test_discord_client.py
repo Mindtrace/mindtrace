@@ -81,7 +81,6 @@ class TestBaseDiscordClient:
         with patch('mindtrace.services.discord.discord_client.commands.Bot', return_value=mock_bot):
             client = BaseDiscordClient(
                 token="test_token",
-                command_prefix="!",
                 description="Test bot"
             )
             return client
@@ -89,7 +88,6 @@ class TestBaseDiscordClient:
     def test_discord_client_initialization(self, discord_client):
         """Test Discord client initialization."""
         assert discord_client.token == "test_token"
-        assert discord_client.command_prefix == "!"
         assert discord_client.bot is not None
         assert isinstance(discord_client._commands, dict)
         assert isinstance(discord_client._event_handlers, dict)
