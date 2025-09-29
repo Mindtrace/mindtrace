@@ -3,7 +3,7 @@ import json
 import pytest
 import requests
 
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 
 
 async def _extract_echoed(result):
