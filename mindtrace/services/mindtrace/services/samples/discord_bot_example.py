@@ -160,7 +160,7 @@ Examples:
   python discord_bot_example.py --token "your_token_here"
   
   # Set token via environment variable
-  MINDTRACE_DISCORD_BOT_TOKEN="your_token" python discord_bot_example.py
+  MINDTRACE_API_KEYS__DISCORD="your_token" python discord_bot_example.py
   
   # Custom command prefix
   python discord_bot_example.py --prefix "?"
