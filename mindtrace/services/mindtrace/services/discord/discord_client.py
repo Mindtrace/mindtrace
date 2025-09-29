@@ -46,7 +46,6 @@ class BaseDiscordClient(Service):
         self,
         *,
         token: str | None = None,
-        command_prefix: str = "!",
         intents: Optional[discord.Intents] = None,
         **kwargs
     ):
@@ -54,7 +53,6 @@ class BaseDiscordClient(Service):
         
         Args:
             token: Discord bot token (optional, will use config if not provided)
-            command_prefix: Prefix for bot commands
             intents: Discord intents configuration
             **kwargs: Additional arguments passed to Service
         """
@@ -65,14 +63,13 @@ class BaseDiscordClient(Service):
         self.token = ifnone(token, default=default_token)
         if self.token is None:
             raise RuntimeError("No Discord token provided. Pass in a token or provide a MINDTRACE_API_KEYS__DISCORD in the Mindtrace config.")
-        self.command_prefix = command_prefix
         self.intents = intents or discord.Intents.default()
         self.intents.message_content = True
         
         # Bot instance
         self.bot = commands.Bot(
-            command_prefix=self.command_prefix,
             intents=self.intents,
+            command_prefix="!",  # Unused but required by discord.py
             help_command=None  # We'll implement custom help
         )
         
