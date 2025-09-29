@@ -1,5 +1,4 @@
-"""
-Hardware Unit Tests
+"""Hardware Unit Tests
 
 Unit tests for the mindtrace hardware module components.
 

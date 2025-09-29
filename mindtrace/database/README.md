@@ -6,7 +6,7 @@
 
 A powerful, flexible Object-Document Mapping (ODM) system that provides a **unified interface** for working with multiple database backends in the Mindtrace project. Write once, run on MongoDB, Redis, or both!
 
-## ✨ Key Features
+## Key Features
 
 - **Unified Backend System** - One interface for multiple databases
 - **Dynamic Backend Switching** - Switch between MongoDB and Redis at runtime
@@ -392,13 +392,13 @@ docker compose -f tests/docker-compose.yml down
 
 The test suite covers:
 
-- ✅ **CRUD Operations** - Create, Read, Update, Delete
-- ✅ **Query Operations** - Find, filter, search
-- ✅ **Error Handling** - All exception scenarios
-- ✅ **Backend Switching** - Dynamic backend changes
-- ✅ **Async/Sync Compatibility** - Both programming styles
-- ✅ **Model Conversion** - Unified to backend-specific models
-- ✅ **Edge Cases** - Duplicate keys, missing documents, invalid queries
+- **CRUD Operations** - Create, Read, Update, Delete
+- **Query Operations** - Find, filter, search
+- **Error Handling** - All exception scenarios
+- **Backend Switching** - Dynamic backend changes
+- **Async/Sync Compatibility** - Both programming styles
+- **Model Conversion** - Unified to backend-specific models
+- **Edge Cases** - Duplicate keys, missing documents, invalid queries
 
 ## Examples
 
@@ -470,15 +470,15 @@ async def main():
     for user in users:
         try:
             inserted = await backend.insert_async(user)
-            print(f"✅ Created: {inserted.name} (ID: {inserted.id})")
+            print(f"Created: {inserted.name} (ID: {inserted.id})")
         except Exception as e:
-            print(f"❌ Failed to create {user.name}: {e}")
+            print(f"Failed to create {user.name}: {e}")
     
     # Find engineers
-    print("\n🔍 Finding engineers...")
+    print("\nFinding engineers...")
     engineers = await backend.find_async({"department": "Engineering"})
     for eng in engineers:
-        print(f"👨‍💻 {eng.name} - Skills: {', '.join(eng.skills)}")
+        print(f"{eng.name} - Skills: {', '.join(eng.skills)}")
     
     # Switch to Redis for fast lookups
     print("\n Switching to Redis for fast operations...")
@@ -521,7 +521,7 @@ Check out the `samples/database/` directory for additional examples:
 
 ### 1. Model Design
 ```python
-# ✅ Good: Clear, descriptive models
+# Good: Clear, descriptive models
 class Product(UnifiedMindtraceDocument):
     name: str = Field(description="Product name", min_length=1)
     price: float = Field(ge=0, description="Price in USD")
@@ -532,7 +532,7 @@ class Product(UnifiedMindtraceDocument):
         indexed_fields = ["category", "name"]
         unique_fields = ["name"]
 
-# ❌ Avoid: Unclear models without validation
+# Avoid: Unclear models without validation
 class Product(UnifiedMindtraceDocument):
     n: str
     p: float
@@ -541,7 +541,7 @@ class Product(UnifiedMindtraceDocument):
 
 ### 2. Error Handling
 ```python
-# ✅ Always handle database exceptions
+# Always handle database exceptions
 try:
     user = await backend.get_async(user_id)
     print(f"Found user: {user.name}")
@@ -555,7 +555,7 @@ except Exception as e:
 
 ### 3. Backend Selection
 ```python
-# ✅ Choose backends based on use case
+# Choose backends based on use case
 if high_frequency_reads:
     backend.switch_backend(BackendType.REDIS)  # Fast reads
 else:
@@ -564,7 +564,7 @@ else:
 
 ### 4. Initialization
 ```python
-# ✅ Initialize once at application startup
+# Initialize once at application startup
 class DatabaseService:
     def __init__(self):
         self.backend = UnifiedMindtraceODMBackend(...)
