@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace"
-version = "0.3.0"
+version = "0.4.0"
 description = "Mindtrace monorepo with modular packages"
 requires-python = ">=3.12"
 readme = "README.md"
@@ -13,19 +13,19 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "mindtrace-core>=0.3.0",
-  "mindtrace-jobs>=0.3.0",
-  "mindtrace-registry>=0.3.0",
-  "mindtrace-database>=0.3.0",
-  "mindtrace-services>=0.3.0",
-  "mindtrace-hardware>=0.3.0",
-  "mindtrace-cluster>=0.3.0",
-  "mindtrace-models>=0.3.0",
-  "mindtrace-automation>=0.3.0",
-  "mindtrace-apps>=0.3.0",
-  "mindtrace-ui>=0.3.0",
-  "mindtrace-datalake>=0.3.0",
-  "mindtrace-storage>=0.3.0",
+  "mindtrace-core>=0.4.0",
+  "mindtrace-jobs>=0.4.0",
+  "mindtrace-registry>=0.4.0",
+  "mindtrace-database>=0.4.0",
+  "mindtrace-services>=0.4.0",
+  "mindtrace-hardware>=0.4.0",
+  "mindtrace-cluster>=0.4.0",
+  "mindtrace-models>=0.4.0",
+  "mindtrace-automation>=0.4.0",
+  "mindtrace-apps>=0.4.0",
+  "mindtrace-ui>=0.4.0",
+  "mindtrace-datalake>=0.4.0",
+  "mindtrace-storage>=0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -120,6 +120,23 @@ publish_to_pypi = """
 """
 
 [tool.ruff]
+src = [
+    ".",
+    "mindtrace/apps",
+    "mindtrace/automation",
+    "mindtrace/cluster",
+    "mindtrace/core",
+    "mindtrace/database",
+    "mindtrace/datalake",
+    "mindtrace/hardware",
+    "mindtrace/jobs",
+    "mindtrace/models",
+    "mindtrace/registry",
+    "mindtrace/services",
+    "mindtrace/storage",
+    "mindtrace/ui",
+]
+
 # Exclude a variety of commonly ignored directories.
 exclude = [
     ".bzr",
@@ -150,6 +167,7 @@ exclude = [
     "venv",
     "applications",
 ]
+
 # Same as Black.
 line-length = 120
 indent-width = 4
@@ -197,6 +215,15 @@ docstring-code-line-length = "dynamic"
 where = ["."]
 include = ["mindtrace*"]
 
+[tool.setuptools.package-data]
+"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.coverage.run]
+omit = ["**/.cache/**"]
+
+[tool.coverage.report]
+omit = ["**/.cache/**"]

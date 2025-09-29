@@ -119,7 +119,7 @@ def generate_connection_manager(
         pass  # Methods will be added dynamically
 
     # Create a temporary service instance to get the endpoints
-    temp_service = service_cls()
+    temp_service = service_cls(live_service=False)
 
     # Store service class and endpoints
     ServiceConnectionManager._service_class = service_cls

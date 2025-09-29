@@ -51,7 +51,7 @@ class Registry(Mindtrace):
 
         if backend is None:
             if registry_dir is None:
-                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+                registry_dir = self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
@@ -61,7 +61,7 @@ class Registry(Mindtrace):
             name="local_artifact_store",
             id=None,  # Will be auto-generated
             config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve() / "artifact_store")
+                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
             ),
             flavor="local",
             type="artifact-store",
@@ -75,9 +75,7 @@ class Registry(Mindtrace):
         self._materializer_cache_lock = threading.Lock()
 
         # Register the default materializers if there are none
-        if len(self.registered_materializers()) == 0:
-            self.logger.info("No materializers found, registering defaults...")
-            self._register_default_materializers()
+        self._register_default_materializers()
 
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
@@ -105,6 +103,7 @@ class Registry(Mindtrace):
         self,
         name: str,
         obj: Any,
+        *,
         materializer: Type[BaseMaterializer] | None = None,
         version: str | None = None,
         init_params: Dict[str, Any] | None = None,
@@ -791,11 +790,15 @@ class Registry(Mindtrace):
 
         return sorted(versions, key=lambda v: [int(n) for n in v.split(".")])[-1]
 
-    def _register_default_materializers(self):
-        """Register default materializers from the class-level registry."""
+    def _register_default_materializers(self, override_preexisting_materializers: bool = False):
+        """Register default materializers from the class-level registry.
+
+        By default, the registry will only register materializers that are not already registered.
+        """
         self.logger.info("Registering default materializers...")
         for object_class, materializer_class in self.get_default_materializers().items():
-            self.register_materializer(object_class, materializer_class)
+            if override_preexisting_materializers or object_class not in self.backend.registered_materializers():
+                self.register_materializer(object_class, materializer_class)
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):
