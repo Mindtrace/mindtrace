@@ -12,8 +12,7 @@ import discord
 from mindtrace.services.discord.discord_client import (
     BaseDiscordClient,
     DiscordEventType,
-    DiscordEventHandler,
-    ExampleDiscordBot
+    DiscordEventHandler
 )
 
 
@@ -161,9 +160,6 @@ Examples:
   
   # Set token via environment variable
   MINDTRACE_API_KEYS__DISCORD="your_token" python discord_bot_example.py
-  
-  # Custom command prefix
-  python discord_bot_example.py --prefix "?"
         """
     )
     
@@ -172,13 +168,6 @@ Examples:
         type=str,
         default=None,
         help="Discord bot token (overrides MINDTRACE_DISCORD_BOT_TOKEN from config)"
-    )
-    
-    parser.add_argument(
-        "--prefix",
-        type=str,
-        default="!",
-        help="Command prefix for the bot (default: !)"
     )
     
     parser.add_argument(
@@ -214,13 +203,12 @@ async def main():
     # Create and configure the bot
     bot = CustomDiscordBot(
         token=token,  # This can be None, BaseDiscordClient will use config
-        command_prefix=args.prefix,
         description=args.description
     )
     
     try:
         # Start the bot
-        print(f"Starting Discord bot with prefix '{args.prefix}'...")
+        print(f"Starting Discord bot...")
         if args.verbose:
             print(f"Bot description: {args.description}")
             if token:
