@@ -6,10 +6,11 @@ import traceback
 from abc import ABC, ABCMeta
 from functools import wraps
 from typing import Callable, Optional
+import time
 
 from mindtrace.core.config import CoreConfig, SettingsLike
 from mindtrace.core.logging.logger import get_logger
-from mindtrace.core.utils import ifnone
+from mindtrace.core.utils import ifnone, SystemMetricsCollector
 
 
 class MindtraceMeta(type):
@@ -38,11 +39,14 @@ class MindtraceMeta(type):
         super().__init__(name, bases, attr_dict)
         cls._logger = None
         cls._config = None
+        cls._logger_kwargs = None
 
     @property
     def logger(cls):
         if cls._logger is None:
-            cls._logger = get_logger(cls.unique_name)
+            # Use stored logger kwargs if available, otherwise use defaults
+            kwargs = cls._logger_kwargs or {}
+            cls._logger = get_logger(cls.unique_name, **kwargs)
         return cls._logger
 
     @logger.setter
@@ -118,6 +122,12 @@ class Mindtrace(metaclass=MindtraceMeta):
                 "propagate",
                 "max_bytes",
                 "backup_count",
+                "use_structlog",
+                "structlog_json",
+                "structlog_pre_chain",
+                "structlog_processors",
+                "structlog_renderer",
+                "structlog_bind",
             }
             remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
             try:
@@ -139,8 +149,17 @@ class Mindtrace(metaclass=MindtraceMeta):
             "propagate",
             "max_bytes",
             "backup_count",
+            "use_structlog",
+            "structlog_json",
+            "structlog_pre_chain",
+            "structlog_processors",
+            "structlog_renderer",
+            "structlog_bind",
         }
         logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
+
+        # Store logger kwargs in the class for class-level logger
+        type(self)._logger_kwargs = logger_kwargs
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)
@@ -173,6 +192,9 @@ class Mindtrace(metaclass=MindtraceMeta):
         suffix_formatter: Optional[Callable] = None,
         exception_formatter: Optional[Callable] = None,
         self: Optional["Mindtrace"] = None,
+        include_duration: bool = True,
+        include_system_metrics: bool = False,
+        system_metrics: Optional[list[str]] = None,
     ):
         """Decorator that adds logger.log calls to the decorated method before and after the method is called.
 
@@ -204,6 +226,11 @@ class Mindtrace(metaclass=MindtraceMeta):
                 - stack trace: The stack trace, as provided by traceback.format_exc().
             self: The instance of the class that the method is being called on. Self only needs to be passed in if the
                 wrapped method does not have self as the first argument. Refer to the example below for more details.
+            include_duration: If True, append the duration of the wrapped method to each log record.
+            include_system_metrics: If True, append a snapshot of system metrics to each log record.
+            system_metrics: Optional list of metric names from SystemMetricsCollector.AVAILABLE_METRICS to include. If
+                None, include all available metrics.
+            
 
         Example::
 
@@ -243,69 +270,169 @@ class Mindtrace(metaclass=MindtraceMeta):
 
         .. code-block:: python
 
-            from fastapi import FastAPI
             from mindtrace.core import Mindtrace
 
-            class MyClass(Mindtrace):
-                def __init__():
+            class Calculator(Mindtrace):
+                def __init__(self):
                     super().__init__()
 
-                def create_app(self):
-                    app_ = FastAPI()
+                @Mindtrace.autolog()
+                def add(self, a, b):
+                    return a + b
 
-                    @Mindtrace.autolog(self=self)  # self must be passed in as an argument as it is not captured in status()
-                    @app_.post("/status")
-                    def status():
-                        return {"status": "Available"}
+                @Mindtrace.autolog(self=self)
+                def multiply(x, y):
+                    return x * y
 
-                    return app_
-
+            calc = Calculator()
+            result = calc.add(5, 3)
+            product = calc.multiply(4, 6)
         """
         prefix_formatter = ifnone(
             prefix_formatter,
             default=lambda function,
             args,
-            kwargs: f"Calling {function.__name__} with args: {args} and kwargs: {kwargs}",
+            kwargs: f"Operation {function.__name__} started with args: {args} and kwargs: {kwargs}",
         )
         suffix_formatter = ifnone(
-            suffix_formatter, default=lambda function, result: f"Finished {function.__name__} with result: {result}"
+            suffix_formatter, default=lambda function, result: f"Operation {function.__name__} completed with result: {result}"
         )
         exception_formatter = ifnone(
             exception_formatter,
             default=lambda function,
             e,
-            stack_trace: f"{function.__name__} failed to complete with the following error: {e}\n{stack_trace}",
+            stack_trace: f"Operation {function.__name__} failed with the following error: {e}\n{stack_trace}",
         )
 
         def decorator(function):
             is_async = inspect.iscoroutinefunction(function)
+
+            metrics_collector = (
+                SystemMetricsCollector(metrics_to_collect=system_metrics) if include_system_metrics else None
+            )
+
+            # _emit_log handles both structured and stdlib emission; no separate message transformers needed
+
+            def _emit_log(level: int, logger_obj, event_text: str, *, started_at: float | None = None, is_error: bool = False, add_duration: bool = False, function=None, args=None, kwargs=None, result=None, exception=None, stack_trace=None):
+                """Emit a log entry, using structured keys if logger is a structlog BoundLogger."""
+                # Collect metrics snapshot if enabled
+                metrics_snapshot = None
+                if metrics_collector is not None:
+                    try:
+                        metrics_snapshot = metrics_collector()
+                    except Exception:
+                        metrics_snapshot = None
+
+                # Detect structlog by presence of 'bind'
+                is_structlog = hasattr(logger_obj, "bind")
+
+                if is_structlog:
+                    # For structlog, use structured fields and concise messages
+                    fields = {}
+                    
+                    # Add function name and status
+                    if function is not None:
+                        fields["function_name"] = function.__name__
+                        if is_error:
+                            fields["status"] = "failed"
+                        elif result is not None:
+                            fields["status"] = "completed"
+                        else:
+                            fields["status"] = "started"
+                    
+                    # Add args and kwargs as separate dictionary fields
+                    if args is not None:
+                        fields["args"] = list(args)
+                    if kwargs is not None:
+                        fields["kwargs"] = dict(kwargs)
+                    
+                    # Add result for completed operations
+                    if result is not None:
+                        fields["result"] = result
+                    
+                    # Add exception details for failed operations
+                    if exception is not None:
+                        fields["exception"] = str(exception)
+                        fields["exception_type"] = type(exception).__name__
+                    if stack_trace is not None:
+                        fields["stack_trace"] = stack_trace
+                    
+                    # Add metrics and duration
+                    if metrics_snapshot is not None:
+                        fields["metrics"] = metrics_snapshot
+                    if include_duration and add_duration and started_at is not None:
+                        try:
+                            fields["duration_ms"] = (time.perf_counter() - started_at) * 1000.0
+                        except Exception:
+                            pass
+                    
+                    # Create concise event message for structlog
+                    if function is not None:
+                        if is_error:
+                            event_msg = f"{function.__name__} failed"
+                        elif result is not None:
+                            event_msg = f"{function.__name__} completed"
+                        else:
+                            event_msg = f"{function.__name__} started"
+                    else:
+                        event_msg = event_text
+                    
+                    if is_error:
+                        try:
+                            logger_obj.error(event_msg, **fields)
+                            return
+                        except Exception:
+                            pass
+                    try:
+                        logger_obj.log(level, event_msg, **fields)
+                        return
+                    except Exception:
+                        # Fallback to stdlib-style string if structured emit fails
+                        pass
+
+                # Stdlib fallback: use original formatters and append into message (UNCHANGED)
+                msg = event_text
+                if metrics_snapshot is not None:
+                    msg = f"{msg} | metrics={metrics_snapshot}"
+                if include_duration and add_duration and started_at is not None:
+                    try:
+                        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+                        msg = f"{msg} | duration_ms={elapsed_ms:.2f}"
+                    except Exception:
+                        pass
+                if is_error:
+                    logger_obj.error(msg)
+                else:
+                    logger_obj.log(level, msg)
 
             if self is None:
                 if is_async:
 
                     @wraps(function)
                     async def wrapper(self, *args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        started_at = time.perf_counter() if include_duration else None
+                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
                         try:
                             result = await function(self, *args, **kwargs)
                         except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
                             raise
                         else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
+                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
                             return result
                 else:
 
                     @wraps(function)
                     def wrapper(self, *args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        started_at = time.perf_counter() if include_duration else None
+                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
                         try:
                             result = function(self, *args, **kwargs)
                         except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
                             raise
                         else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
+                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
                             return result
 
             else:
@@ -313,27 +440,29 @@ class Mindtrace(metaclass=MindtraceMeta):
 
                     @wraps(function)
                     async def wrapper(*args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        started_at = time.perf_counter() if include_duration else None
+                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
                         try:
                             result = await function(*args, **kwargs)
                         except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
                             raise
                         else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
+                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
                             return result
                 else:
 
                     @wraps(function)
                     def wrapper(*args, **kwargs):
-                        self.logger.log(log_level, prefix_formatter(function, args, kwargs))
+                        started_at = time.perf_counter() if include_duration else None
+                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
                         try:
                             result = function(*args, **kwargs)
                         except Exception as e:
-                            self.logger.error(exception_formatter(function, e, traceback.format_exc()))
+                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
                             raise
                         else:
-                            self.logger.log(log_level, suffix_formatter(function, result))
+                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
                             return result
 
             return wrapper
