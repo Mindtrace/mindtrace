@@ -322,7 +322,7 @@ class TestMindtrace:
             # Verify exception was logged with proper formatter
             assert mock_error.call_count == 1
             error_call_args = mock_error.call_args[0][0]
-            assert "method_that_raises failed to complete" in error_call_args
+            assert "Operation method_that_raises failed with the following error:" in error_call_args
             assert "Test exception from decorated method" in error_call_args
             assert "Traceback" in error_call_args  # Stack trace included
 
@@ -372,7 +372,7 @@ class TestMindtrace:
                 # Verify exception was logged
                 assert mock_error.call_count == 1
                 error_message = mock_error.call_args[0][0]
-                assert "async_failing_method failed to complete" in error_message
+                assert "Operation async_failing_method failed with the following error:" in error_message
                 assert "Async test error" in error_message
 
         asyncio.run(run_test())
@@ -428,7 +428,7 @@ class TestMindtrace:
 
             # Verify the exception was logged with proper formatting
             error_message = mock_error.call_args[0][0]
-            assert "failing_function failed to complete" in error_message
+            assert "Operation failing_function failed with the following error:" in error_message
             assert "Endpoint error" in error_message
 
     def test_autolog_decorator_with_async(self):
@@ -584,12 +584,12 @@ class TestMindtrace:
 
                 # Verify prefix log (before execution)
                 prefix_call = mock_log.call_args_list[0]
-                assert "Calling standalone_async_function with args: (3, 7)" in prefix_call[0][1]
+                assert "Operation standalone_async_function started with args: (3, 7)" in prefix_call[0][1]
                 assert "'multiplier': 2" in prefix_call[0][1]
 
                 # Verify suffix log (after successful execution)
                 suffix_call = mock_log.call_args_list[1]
-                assert "Finished standalone_async_function with result: 20" in suffix_call[0][1]
+                assert "Operation standalone_async_function completed with result: 20" in suffix_call[0][1]
 
         asyncio.run(run_test())
 
@@ -622,12 +622,12 @@ class TestMindtrace:
                 # Verify prefix log was called (before exception)
                 assert mock_log.call_count == 1
                 prefix_call = mock_log.call_args_list[0]
-                assert "Calling failing_async_function" in prefix_call[0][1]
+                assert "Operation failing_async_function started" in prefix_call[0][1]
 
                 # Verify exception was logged
                 assert mock_error.call_count == 1
                 error_call = mock_error.call_args[0][0]
-                assert "failing_async_function failed to complete" in error_call
+                assert "Operation failing_async_function failed with the following error:" in error_call
                 assert "Async function failed" in error_call
 
         asyncio.run(run_test())
@@ -782,7 +782,7 @@ class TestMindtrace:
                 assert result["count"] == 42
                 assert result["nested"]["data"] == [1, 2, 3]
                 # The suffix formatter should handle complex objects
-                assert "Finished return_complex_object with result:" in mock_log.call_args_list[1][0][1]
+                assert "Operation return_complex_object completed with result:" in mock_log.call_args_list[1][0][1]
 
         asyncio.run(run_test())
 
@@ -880,12 +880,12 @@ class TestMindtraceSyncWrapper:
 
             # Verify prefix log (before execution)
             prefix_call = mock_log.call_args_list[0]
-            assert "Calling standalone_sync_function with args: (3, 7)" in prefix_call[0][1]
+            assert "Operation standalone_sync_function started with args: (3, 7)" in prefix_call[0][1]
             assert "'multiplier': 2" in prefix_call[0][1]
 
             # Verify suffix log (after successful execution)
             suffix_call = mock_log.call_args_list[1]
-            assert "Finished standalone_sync_function with result: 20" in suffix_call[0][1]
+            assert "Operation standalone_sync_function completed with result: 20" in suffix_call[0][1]
 
     def test_autolog_sync_wrapper_return_value_preservation(self):
         """Test that return result preserves all types of return values."""
@@ -936,7 +936,7 @@ class TestMindtraceSyncWrapper:
                 # Verify suffix logging occurred
                 assert mock_log.call_count == 2
                 suffix_call = mock_log.call_args_list[1][0][1]
-                assert f"Finished return_different_types with result: {expected_result}" in suffix_call
+                assert f"Operation return_different_types completed with result: {expected_result}" in suffix_call
 
     def test_autolog_sync_wrapper_with_custom_suffix_formatter(self):
         """Test suffix logging with custom suffix formatter."""
@@ -998,7 +998,7 @@ class TestMindtraceSyncWrapper:
             # Verify suffix logging handles large objects
             assert mock_log.call_count == 2
             suffix_call = mock_log.call_args_list[1][0][1]
-            assert "Finished create_large_object with result:" in suffix_call
+            assert "Operation create_large_object completed with result:" in suffix_call
 
     def test_autolog_sync_wrapper_execution_order(self):
         """Test that suffix logging and return execute in correct order after successful function completion."""
@@ -1104,4 +1104,4 @@ class TestMindtraceSyncWrapper:
             assert "kwargs: {}" in prefix_call
 
             suffix_call = mock_log.call_args_list[1][0][1]
-            assert "Finished no_args_function with result: no_args_result" in suffix_call
+            assert "Operation no_args_function completed with result: no_args_result" in suffix_call
