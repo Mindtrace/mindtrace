@@ -26,8 +26,8 @@ from mindtrace.core.utils.conversions import (
 )
 from mindtrace.core.utils.dynamic import get_class, instantiate_target
 from mindtrace.core.utils.lambdas import named_lambda
-from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
+from mindtrace.core.utils.timers import Timeout, Timer, TimerCollection
 
 setup_logger()  # Initialize the default logger
 

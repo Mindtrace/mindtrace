@@ -1,6 +1,7 @@
 import asyncio
-import psutil
 import threading
+
+import psutil
 
 
 class SystemMetricsCollector:

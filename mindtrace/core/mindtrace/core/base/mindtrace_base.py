@@ -2,15 +2,15 @@
 
 import inspect
 import logging
+import time
 import traceback
 from abc import ABC, ABCMeta
 from functools import wraps
 from typing import Callable, Optional
-import time
 
 from mindtrace.core.config import CoreConfig, SettingsLike
 from mindtrace.core.logging.logger import get_logger
-from mindtrace.core.utils import ifnone, SystemMetricsCollector
+from mindtrace.core.utils import SystemMetricsCollector, ifnone
 
 
 class MindtraceMeta(type):
@@ -230,7 +230,7 @@ class Mindtrace(metaclass=MindtraceMeta):
             include_system_metrics: If True, append a snapshot of system metrics to each log record.
             system_metrics: Optional list of metric names from SystemMetricsCollector.AVAILABLE_METRICS to include. If
                 None, include all available metrics.
-            
+
 
         Example::
 
@@ -295,7 +295,8 @@ class Mindtrace(metaclass=MindtraceMeta):
             kwargs: f"Operation {function.__name__} started with args: {args} and kwargs: {kwargs}",
         )
         suffix_formatter = ifnone(
-            suffix_formatter, default=lambda function, result: f"Operation {function.__name__} completed with result: {result}"
+            suffix_formatter,
+            default=lambda function, result: f"Operation {function.__name__} completed with result: {result}",
         )
         exception_formatter = ifnone(
             exception_formatter,
@@ -313,7 +314,21 @@ class Mindtrace(metaclass=MindtraceMeta):
 
             # _emit_log handles both structured and stdlib emission; no separate message transformers needed
 
-            def _emit_log(level: int, logger_obj, event_text: str, *, started_at: float | None = None, is_error: bool = False, add_duration: bool = False, function=None, args=None, kwargs=None, result=None, exception=None, stack_trace=None):
+            def _emit_log(
+                level: int,
+                logger_obj,
+                event_text: str,
+                *,
+                started_at: float | None = None,
+                is_error: bool = False,
+                add_duration: bool = False,
+                function=None,
+                args=None,
+                kwargs=None,
+                result=None,
+                exception=None,
+                stack_trace=None,
+            ):
                 """Emit a log entry, using structured keys if logger is a structlog BoundLogger."""
                 # Collect metrics snapshot if enabled
                 metrics_snapshot = None
@@ -329,7 +344,7 @@ class Mindtrace(metaclass=MindtraceMeta):
                 if is_structlog:
                     # For structlog, use structured fields and concise messages
                     fields = {}
-                    
+
                     # Add function name and status
                     if function is not None:
                         fields["function_name"] = function.__name__
@@ -339,24 +354,24 @@ class Mindtrace(metaclass=MindtraceMeta):
                             fields["status"] = "completed"
                         else:
                             fields["status"] = "started"
-                    
+
                     # Add args and kwargs as separate dictionary fields
                     if args is not None:
                         fields["args"] = list(args)
                     if kwargs is not None:
                         fields["kwargs"] = dict(kwargs)
-                    
+
                     # Add result for completed operations
                     if result is not None:
                         fields["result"] = result
-                    
+
                     # Add exception details for failed operations
                     if exception is not None:
                         fields["exception"] = str(exception)
                         fields["exception_type"] = type(exception).__name__
                     if stack_trace is not None:
                         fields["stack_trace"] = stack_trace
-                    
+
                     # Add metrics and duration
                     if metrics_snapshot is not None:
                         fields["metrics"] = metrics_snapshot
@@ -365,7 +380,7 @@ class Mindtrace(metaclass=MindtraceMeta):
                             fields["duration_ms"] = (time.perf_counter() - started_at) * 1000.0
                         except Exception:
                             pass
-                    
+
                     # Create concise event message for structlog
                     if function is not None:
                         if is_error:
@@ -376,7 +391,7 @@ class Mindtrace(metaclass=MindtraceMeta):
                             event_msg = f"{function.__name__} started"
                     else:
                         event_msg = event_text
-                    
+
                     if is_error:
                         try:
                             logger_obj.error(event_msg, **fields)
@@ -411,28 +426,94 @@ class Mindtrace(metaclass=MindtraceMeta):
                     @wraps(function)
                     async def wrapper(self, *args, **kwargs):
                         started_at = time.perf_counter() if include_duration else None
-                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
+                        _emit_log(
+                            log_level,
+                            self.logger,
+                            prefix_formatter(function, args, kwargs),
+                            started_at=started_at,
+                            is_error=False,
+                            add_duration=False,
+                            function=function,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                         try:
                             result = await function(self, *args, **kwargs)
                         except Exception as e:
-                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                exception_formatter(function, e, traceback.format_exc()),
+                                started_at=started_at,
+                                is_error=True,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                exception=e,
+                                stack_trace=traceback.format_exc(),
+                            )
                             raise
                         else:
-                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                suffix_formatter(function, result),
+                                started_at=started_at,
+                                is_error=False,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                result=result,
+                            )
                             return result
                 else:
 
                     @wraps(function)
                     def wrapper(self, *args, **kwargs):
                         started_at = time.perf_counter() if include_duration else None
-                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
+                        _emit_log(
+                            log_level,
+                            self.logger,
+                            prefix_formatter(function, args, kwargs),
+                            started_at=started_at,
+                            is_error=False,
+                            add_duration=False,
+                            function=function,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                         try:
                             result = function(self, *args, **kwargs)
                         except Exception as e:
-                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                exception_formatter(function, e, traceback.format_exc()),
+                                started_at=started_at,
+                                is_error=True,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                exception=e,
+                                stack_trace=traceback.format_exc(),
+                            )
                             raise
                         else:
-                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                suffix_formatter(function, result),
+                                started_at=started_at,
+                                is_error=False,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                result=result,
+                            )
                             return result
 
             else:
@@ -441,28 +522,94 @@ class Mindtrace(metaclass=MindtraceMeta):
                     @wraps(function)
                     async def wrapper(*args, **kwargs):
                         started_at = time.perf_counter() if include_duration else None
-                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
+                        _emit_log(
+                            log_level,
+                            self.logger,
+                            prefix_formatter(function, args, kwargs),
+                            started_at=started_at,
+                            is_error=False,
+                            add_duration=False,
+                            function=function,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                         try:
                             result = await function(*args, **kwargs)
                         except Exception as e:
-                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                exception_formatter(function, e, traceback.format_exc()),
+                                started_at=started_at,
+                                is_error=True,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                exception=e,
+                                stack_trace=traceback.format_exc(),
+                            )
                             raise
                         else:
-                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                suffix_formatter(function, result),
+                                started_at=started_at,
+                                is_error=False,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                result=result,
+                            )
                             return result
                 else:
 
                     @wraps(function)
                     def wrapper(*args, **kwargs):
                         started_at = time.perf_counter() if include_duration else None
-                        _emit_log(log_level, self.logger, prefix_formatter(function, args, kwargs), started_at=started_at, is_error=False, add_duration=False, function=function, args=args, kwargs=kwargs)
+                        _emit_log(
+                            log_level,
+                            self.logger,
+                            prefix_formatter(function, args, kwargs),
+                            started_at=started_at,
+                            is_error=False,
+                            add_duration=False,
+                            function=function,
+                            args=args,
+                            kwargs=kwargs,
+                        )
                         try:
                             result = function(*args, **kwargs)
                         except Exception as e:
-                            _emit_log(log_level, self.logger, exception_formatter(function, e, traceback.format_exc()), started_at=started_at, is_error=True, add_duration=True, function=function, args=args, kwargs=kwargs, exception=e, stack_trace=traceback.format_exc())
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                exception_formatter(function, e, traceback.format_exc()),
+                                started_at=started_at,
+                                is_error=True,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                exception=e,
+                                stack_trace=traceback.format_exc(),
+                            )
                             raise
                         else:
-                            _emit_log(log_level, self.logger, suffix_formatter(function, result), started_at=started_at, is_error=False, add_duration=True, function=function, args=args, kwargs=kwargs, result=result)
+                            _emit_log(
+                                log_level,
+                                self.logger,
+                                suffix_formatter(function, result),
+                                started_at=started_at,
+                                is_error=False,
+                                add_duration=True,
+                                function=function,
+                                args=args,
+                                kwargs=kwargs,
+                                result=result,
+                            )
                             return result
 
             return wrapper
