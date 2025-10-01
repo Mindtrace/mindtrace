@@ -44,7 +44,7 @@ class TestDiscordService:
         """Test bot status when bot is not started."""
         discord_service.discord_client.bot = None
         
-        status = discord_service.get_bot_status(None)
+        status = discord_service.get_bot_status()
         
         assert isinstance(status, DiscordStatusOutput)
         assert status.bot_name is None
@@ -55,7 +55,7 @@ class TestDiscordService:
     
     def test_get_bot_status_started(self, discord_service):
         """Test bot status when bot is started."""
-        status = discord_service.get_bot_status(None)
+        status = discord_service.get_bot_status()
         
         assert isinstance(status, DiscordStatusOutput)
         assert status.bot_name == "TestBot"
@@ -78,7 +78,7 @@ class TestDiscordService:
         
         discord_service.discord_client._commands = {"test": mock_command}
         
-        commands = discord_service.get_commands(None)
+        commands = discord_service.get_commands()
         
         assert isinstance(commands, DiscordCommandsOutput)
         assert len(commands.commands) == 1

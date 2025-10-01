@@ -92,7 +92,7 @@ class CustomDiscordService(DiscordService):
             
             import random
             result = random.randint(1, sides)
-            response = f"🎲 You rolled a {result} (1-{sides})"
+            response = f"You rolled a {result} (1-{sides})"
             await interaction.response.send_message(response)
         
         @self.discord_client.bot.tree.command(name="cleanup", description="Clean up bot messages")

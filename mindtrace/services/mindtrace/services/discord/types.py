@@ -42,10 +42,10 @@ class DiscordCommand:
 class DiscordCommandInput(BaseModel):
     """Base input schema for Discord commands."""
     content: str
-    author_id: int
-    channel_id: int
+    author_id: Optional[int] = None
+    channel_id: Optional[int] = None
     guild_id: Optional[int] = None
-    message_id: int
+    message_id: Optional[int] = None
 
 
 class DiscordCommandOutput(BaseModel):
@@ -76,27 +76,15 @@ class DiscordCommandSchema(TaskSchema):
     output_schema: type[DiscordCommandOutput] = DiscordCommandOutput
 
 
-class DiscordStatusInput(BaseModel):
-    """Input schema for bot status endpoint (empty)."""
-    pass
-
-
-class DiscordCommandsInput(BaseModel):
-    """Input schema for commands list endpoint (empty)."""
-    pass
-
-
 class DiscordStatusSchema(TaskSchema):
     """Schema for bot status endpoint."""
     name: str = "discord_status"
-    input_schema: type[None] = type(None)
     output_schema: type[DiscordStatusOutput] = DiscordStatusOutput
 
 
 class DiscordCommandsSchema(TaskSchema):
     """Schema for commands list endpoint."""
     name: str = "discord_commands"
-    input_schema: type[None] = type(None)
     output_schema: type[DiscordCommandsOutput] = DiscordCommandsOutput
 
 
