@@ -113,9 +113,15 @@ class AsyncCamera(Mindtrace):
                 )
 
                 backend = MockBaslerCameraBackend(device_name)
+            elif backend_name.lower() == "genicam":
+                from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import (
+                    GenICamCameraBackend,
+                )
+
+                backend = GenICamCameraBackend(device_name)
             else:
                 raise CameraInitializationError(
-                    f"Unsupported backend '{backend_name}'. Try 'OpenCV:opencv_camera_0' or a mock Basler."
+                    f"Unsupported backend '{backend_name}'. Try 'OpenCV:opencv_camera_0', 'GenICam:camera_id', or a mock Basler."
                 )
 
             ok, _, _ = await backend.initialize()
