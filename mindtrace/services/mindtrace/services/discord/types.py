@@ -76,6 +76,16 @@ class DiscordCommandSchema(TaskSchema):
     output_schema: type[DiscordCommandOutput] = DiscordCommandOutput
 
 
+class DiscordStatusInput(BaseModel):
+    """Input schema for bot status endpoint (empty)."""
+    pass
+
+
+class DiscordCommandsInput(BaseModel):
+    """Input schema for commands list endpoint (empty)."""
+    pass
+
+
 class DiscordStatusSchema(TaskSchema):
     """Schema for bot status endpoint."""
     name: str = "discord_status"

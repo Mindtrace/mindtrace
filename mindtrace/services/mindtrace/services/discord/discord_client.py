@@ -16,8 +16,7 @@ from discord import app_commands
 from discord.ext import commands
 from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema, ifnone
-from mindtrace.services import Service
+from mindtrace.core import ifnone, Mindtrace, TaskSchema
 from mindtrace.services.discord.types import (
     DiscordCommand, 
     DiscordCommandInput, 
@@ -32,13 +31,13 @@ from mindtrace.services.discord.types import (
 )
 
 
-class BaseDiscordClient(Service):
-    """Base Discord client that can be extended for different bot implementations.
+class DiscordClient(Mindtrace):
+    """Discord client that can be extended for different bot implementations.
     
     This class provides:
     - Command registration and management
     - Event handling system
-    - Integration with Mindtrace Service patterns
+    - Integration with Mindtrace patterns
     - Configurable bot behavior
     """
     
@@ -54,7 +53,7 @@ class BaseDiscordClient(Service):
         Args:
             token: Discord bot token (optional, will use config if not provided)
             intents: Discord intents configuration
-            **kwargs: Additional arguments passed to Service
+            **kwargs: Additional arguments passed to Mindtrace
         """
         super().__init__(**kwargs)
         
@@ -82,9 +81,6 @@ class BaseDiscordClient(Service):
         
         # Setup bot events
         self._setup_bot_events()
-        
-        # Add Discord-specific endpoints
-        self._add_discord_endpoints()
     
     def _setup_bot_events(self):
         """Setup Discord bot event handlers."""
@@ -159,30 +155,6 @@ class BaseDiscordClient(Service):
                 after=after
             )
     
-    def _add_discord_endpoints(self):
-        """Add Discord-specific endpoints to the service."""
-        
-        # Add command execution endpoint
-        self.add_endpoint(
-            path="/discord/execute",
-            func=self.execute_command,
-            schema=DiscordCommandSchema(),
-            autolog_kwargs={"log_level": logging.INFO}
-        )
-        
-        # Add bot status endpoint
-        self.add_endpoint(
-            path="/discord/status",
-            func=self.get_bot_status,
-            schema=DiscordStatusSchema()
-        )
-        
-        # Add command list endpoint
-        self.add_endpoint(
-            path="/discord/commands",
-            func=self.get_commands,
-            schema=DiscordCommandsSchema()
-        )
     
     def register_command(
         self,
@@ -364,56 +336,6 @@ class BaseDiscordClient(Service):
                 except Exception as e:
                     self.logger.error(f"Error in event handler for {event_type.value}: {e}")
     
-    async def execute_command(self, payload: DiscordCommandInput) -> DiscordCommandOutput:
-        """Execute a command via the service API.
-        
-        Args:
-            payload: Command input data
-            
-        Returns:
-            Command output
-        """
-        # This would need to be implemented to execute commands programmatically
-        # For now, return a placeholder response
-        return DiscordCommandOutput(
-            response=f"Command '{payload.content}' received from user {payload.author_id}"
-        )
-    
-    def get_bot_status(self, payload: None) -> DiscordStatusOutput:
-        """Get the current bot status.
-        
-        Returns:
-            Bot status information
-        """
-        return DiscordStatusOutput(
-            bot_name=self.bot.user.name if self.bot.user else None,
-            guild_count=len(self.bot.guilds),
-            user_count=len(self.bot.users),
-            latency=self.bot.latency,
-            status=str(self.bot.status)
-        )
-    
-    def get_commands(self, payload: None) -> DiscordCommandsOutput:
-        """Get list of registered commands.
-        
-        Returns:
-            Command information
-        """
-        return DiscordCommandsOutput(
-            commands=[
-                {
-                    "name": cmd.name,
-                    "description": cmd.description,
-                    "usage": cmd.usage,
-                    "aliases": cmd.aliases,
-                    "category": cmd.category,
-                    "enabled": cmd.enabled,
-                    "hidden": cmd.hidden
-                }
-                for cmd in self._commands.values()
-            ]
-        )
-    
     async def start_bot(self):
         """Start the Discord bot."""
         try:
@@ -429,8 +351,3 @@ class BaseDiscordClient(Service):
         except Exception as e:
             self.logger.error(f"Failed to stop Discord bot: {e}")
             raise
-    
-    async def shutdown_cleanup(self):
-        """Cleanup when shutting down the service."""
-        await super().shutdown_cleanup()
-        await self.stop_bot()
