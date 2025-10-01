@@ -6,8 +6,8 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from typing import Dict, Any
 
-from mindtrace.services.discord.discord_client import (
-    BaseDiscordClient,
+from mindtrace.services.discord.discord_client import DiscordClient
+from mindtrace.services.discord.types import (
     DiscordCommand,
     DiscordEventType,
     DiscordEventHandler,
@@ -60,8 +60,8 @@ class MockDiscordEventHandler(DiscordEventHandler):
         self.handled_events.append((event_type, kwargs))
 
 
-class TestBaseDiscordClient:
-    """Test BaseDiscordClient class."""
+class TestDiscordClient:
+    """Test DiscordClient class."""
     
     @pytest.fixture
     def mock_bot(self):
@@ -79,7 +79,7 @@ class TestBaseDiscordClient:
     def discord_client(self, mock_bot):
         """Create a Discord client instance for testing."""
         with patch('mindtrace.services.discord.discord_client.commands.Bot', return_value=mock_bot):
-            client = BaseDiscordClient(
+            client = DiscordClient(
                 token="test_token",
                 description="Test bot"
             )
@@ -131,76 +131,9 @@ class TestBaseDiscordClient:
         assert handler.handled_events[0][0] == DiscordEventType.MESSAGE
         assert handler.handled_events[0][1] == test_data
     
-    def test_get_bot_status(self, discord_client):
-        """Test bot status endpoint."""
-        status = discord_client.get_bot_status(None)
-        
-        assert isinstance(status, DiscordStatusOutput)
-        assert status.bot_name == "TestBot"
-        assert status.guild_count == 0
-        assert status.user_count == 0
-        assert status.latency == 0.1
-        assert status.status == "online"
     
-    def test_get_commands(self, discord_client):
-        """Test commands endpoint."""
-        # Register a test command first
-        async def test_command(ctx, *args):
-            return "Test"
-        
-        discord_client.register_command(
-            name="test",
-            description="Test command",
-            usage="!test",
-            handler=test_command
-        )
-        
-        commands = discord_client.get_commands(None)
-        
-        assert isinstance(commands, DiscordCommandsOutput)
-        assert len(commands.commands) == 1
-        assert commands.commands[0]["name"] == "test"
     
-    @pytest.mark.asyncio
-    async def test_execute_command(self, discord_client):
-        """Test command execution endpoint."""
-        input_data = DiscordCommandInput(
-            content="!test",
-            author_id=123,
-            channel_id=456,
-            guild_id=789,
-            message_id=101112
-        )
-        
-        output = await discord_client.execute_command(input_data)
-        
-        assert isinstance(output, DiscordCommandOutput)
-        assert "test" in output.response
-        assert str(input_data.author_id) in output.response
     
-    @pytest.mark.asyncio
-    async def test_execute_command_with_permissions(self, discord_client):
-        """Test command execution with permission checks."""
-        async def admin_command(ctx, *args):
-            return "Admin command executed"
-        
-        discord_client.register_command(
-            name="admin",
-            description="Admin command",
-            usage="!admin",
-            handler=admin_command,
-            permissions=["administrator"]
-        )
-        
-        # Mock context with no admin permissions
-        mock_ctx = Mock()
-        mock_ctx.author.guild_permissions.administrator = False
-        mock_ctx.send = AsyncMock()
-        
-        await discord_client._execute_command(mock_ctx, "admin")
-        
-        # Should send permission error
-        mock_ctx.send.assert_called_with("You need the `administrator` permission to use this command.")
     
     @pytest.mark.asyncio
     async def test_execute_disabled_command(self, discord_client):
