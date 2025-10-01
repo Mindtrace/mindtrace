@@ -1,87 +1,11 @@
-import shutil
-import tempfile
 import uuid
 from pathlib import Path
-from typing import Generator
 
 import pytest
-from minio import Minio
 from minio.error import S3Error
 
-from mindtrace.core import Config
+from mindtrace.core import CoreConfig
 from mindtrace.registry import MinioRegistryBackend
-
-
-@pytest.fixture
-def minio_client():
-    """Create a MinIO client for testing."""
-    config = Config()
-    client = Minio(
-        endpoint=config["MINDTRACE_MINIO_ENDPOINT"],
-        access_key=config["MINDTRACE_MINIO_ACCESS_KEY"],
-        secret_key=config["MINDTRACE_MINIO_SECRET_KEY"],
-        secure=False,
-    )
-    return client
-
-
-@pytest.fixture
-def test_bucket(minio_client) -> Generator[str, None, None]:
-    """Create a temporary bucket for testing."""
-    bucket_name = f"test-bucket-{uuid.uuid4()}"
-    minio_client.make_bucket(bucket_name)
-    yield bucket_name
-    # Cleanup
-    try:
-        for obj in minio_client.list_objects(bucket_name, recursive=True):
-            minio_client.remove_object(bucket_name, obj.object_name)
-        minio_client.remove_bucket(bucket_name)
-    except S3Error:
-        pass
-
-
-@pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for testing."""
-    temp_dir = Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    yield temp_dir
-    shutil.rmtree(temp_dir)
-
-
-@pytest.fixture
-def backend(temp_dir, test_bucket, minio_client):
-    """Create a MinioRegistryBackend instance with a test bucket."""
-    return MinioRegistryBackend(
-        uri=str(temp_dir),
-        endpoint="localhost:9100",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        bucket=test_bucket,
-        secure=False,
-    )
-
-
-@pytest.fixture
-def sample_object_dir():
-    """Create a sample object directory with some files."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        obj_dir = Path(temp_dir) / "sample:object"
-        obj_dir.mkdir()
-        (obj_dir / "file1.txt").write_text("test content 1")
-        (obj_dir / "file2.txt").write_text("test content 2")
-        yield str(obj_dir)
-
-
-@pytest.fixture
-def sample_metadata():
-    """Sample metadata for testing."""
-    return {
-        "name": "test:object",
-        "version": "1.0.0",
-        "description": "Test object",
-        "created_at": "2024-01-01T00:00:00Z",
-    }
 
 
 def test_init(backend, test_bucket, minio_client):
@@ -264,7 +188,7 @@ def test_init_with_default_uri(minio_client, test_bucket):
     )
 
     # Verify the URI is set to the default from config
-    expected_uri = Path(Config()["MINDTRACE_MINIO_REGISTRY_URI"]).expanduser().resolve()
+    expected_uri = Path(CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
     assert backend.uri == expected_uri
     assert backend.uri.exists()
     assert backend.uri.is_dir()
@@ -281,7 +205,7 @@ def test_init_creates_bucket(minio_client):
 
     # Create backend with the new bucket name
     _ = MinioRegistryBackend(
-        uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -302,7 +226,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     """Test backend initialization handles errors when checking metadata file."""
     # Create a backend with valid credentials
     _ = MinioRegistryBackend(
-        uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -339,7 +263,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     # Try to create another backend - should fail with a non-NoSuchKey error
     with pytest.raises(S3Error) as exc_info:
         MinioRegistryBackend(
-            uri=str(Path(Config()["MINDTRACE_TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+            uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
             endpoint="localhost:9100",
             access_key="minioadmin",
             secret_key="minioadmin",

@@ -1,5 +1,5 @@
 from mindtrace.core.base import Mindtrace, MindtraceABC, MindtraceMeta
-from mindtrace.core.config import Config
+from mindtrace.core.config import Config, CoreConfig
 from mindtrace.core.logging.logger import setup_logger
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
@@ -37,6 +37,7 @@ __all__ = [
     "check_libs",
     "ContextListener",
     "Config",
+    "CoreConfig",
     "cv2_to_pil",
     "discord_file_to_pil",
     "EventBus",

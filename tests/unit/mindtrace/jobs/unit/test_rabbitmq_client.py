@@ -43,6 +43,7 @@ def make_client():
             client.channel = dc
             client.connection.get_channel = MagicMock(return_value=dc)
             client.connection.count_queue_messages = MagicMock(return_value=42)
+            client.create_connection = MagicMock(return_value=dc)
             return client
 
 
