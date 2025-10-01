@@ -32,6 +32,10 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
     - MINDTRACE_HW_CAMERA_PIXEL_FORMAT: Default pixel format (BGR8, RGB8, etc.)
     - MINDTRACE_HW_CAMERA_BUFFER_COUNT: Number of frame buffers for cameras
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_ENABLED: Enable Basler multicast streaming
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP: Basler multicast group IP address
+    - MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT: Basler multicast port number
+    - MINDTRACE_HW_CAMERA_BASLER_TARGET_IPS: Comma-separated list of target IP addresses for Basler discovery
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
@@ -63,7 +67,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from mindtrace.core import Mindtrace
 
@@ -146,6 +150,10 @@ class CameraSettings:
     # Basler-specific settings
     pixel_format: str = "BGR8"
     buffer_count: int = 25
+    basler_multicast_enabled: bool = False
+    basler_multicast_group: str = "239.192.1.1"
+    basler_multicast_port: int = 3956
+    basler_target_ips: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -480,6 +488,23 @@ class HardwareConfigManager(Mindtrace):
                 self._config.cameras.buffer_count = int(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
+
+        # Basler multicast settings
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_ENABLED"):
+            self._config.cameras.basler_multicast_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP"):
+            self._config.cameras.basler_multicast_group = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT"):
+            try:
+                self._config.cameras.basler_multicast_port = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_TARGET_IPS"):
+            # Parse comma-separated list of IPs
+            self._config.cameras.basler_target_ips = [ip.strip() for ip in env_val.split(",") if ip.strip()]
 
         # Network bandwidth management
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
