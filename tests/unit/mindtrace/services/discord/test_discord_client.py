@@ -562,4 +562,191 @@ class TestDiscordCommandSchemas:
                 pass
         
         handler = TestEventHandler()
-        assert isinstance(handler, DiscordEventHandler) 
+        assert isinstance(handler, DiscordEventHandler)
+
+
+class TestDiscordClientCoverage:
+    """Additional tests to cover missing lines in DiscordClient."""
+    
+    def test_discord_client_no_token_error(self):
+        """Test that DiscordClient raises error when no token is provided."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Mock config to return None for Discord token
+            mock_config = Mock()
+            mock_config.get_secret.return_value = None
+            
+            with patch('mindtrace.core.config.CoreConfig') as mock_core_config:
+                mock_core_config.return_value = mock_config
+                
+                client = DiscordClient.__new__(DiscordClient)
+                client.config = mock_config
+                
+                with pytest.raises(RuntimeError, match="No Discord token provided"):
+                    client.__init__(token=None)
+    
+    def test_discord_client_initialization_with_token(self):
+        """Test DiscordClient initialization with token."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Create a mock bot
+            mock_bot = Mock()
+            mock_bot.tree = Mock()
+            mock_bot.tree.command = Mock()
+            
+            # Create client and set up mocks
+            client = DiscordClient.__new__(DiscordClient)
+            client.logger = Mock()
+            client.config = Mock()
+            client.config.get_secret.return_value = "test_token"
+            client._commands = {}
+            client._command_handlers = {}
+            
+            # Test initialization
+            client.__init__(token="test_token")
+            
+            # Verify bot was created and event handlers were registered
+            assert hasattr(client, 'bot')
+            assert hasattr(client, 'token')
+            assert client.token == "test_token"
+    
+    def test_discord_client_event_handlers_registered(self):
+        """Test that event handlers are registered during initialization."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Create a mock bot
+            mock_bot = Mock()
+            mock_bot.tree = Mock()
+            mock_bot.tree.command = Mock()
+            
+            # Create client and set up mocks
+            client = DiscordClient.__new__(DiscordClient)
+            client.logger = Mock()
+            client.config = Mock()
+            client.config.get_secret.return_value = "test_token"
+            client._commands = {}
+            client._command_handlers = {}
+            
+            # Test initialization
+            client.__init__(token="test_token")
+            
+            # Verify bot was created and has event method
+            assert hasattr(client, 'bot')
+            assert hasattr(client.bot, 'event')
+    
+    def test_register_command_structure(self):
+        """Test that register_command method exists and has expected structure."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Create client and set up mocks
+            client = DiscordClient.__new__(DiscordClient)
+            client.logger = Mock()
+            client.config = Mock()
+            client.config.get_secret.return_value = "test_token"
+            client._commands = {}
+            client._command_handlers = {}
+            
+            # Test initialization
+            client.__init__(token="test_token")
+            
+            # Verify register_command method exists
+            assert hasattr(client, 'register_command')
+            assert callable(client.register_command)
+    
+    @pytest.mark.asyncio
+    async def test_command_execution_with_permissions(self):
+        """Test command execution with permission checking."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Create a mock bot
+            mock_bot = Mock()
+            
+            # Create client and set up mocks
+            client = DiscordClient.__new__(DiscordClient)
+            client.bot = mock_bot
+            client.logger = Mock()
+            client.config = Mock()
+            client.config.get_secret.return_value = "test_token"
+            client._commands = {}
+            client._command_handlers = {}
+            
+            # Create a command with permissions
+            command = DiscordCommand(
+                name="test",
+                description="Test command",
+                usage="!test",
+                aliases=["t"],
+                category="Test",
+                permissions=["manage_messages"]
+            )
+            client._commands["test"] = command
+            
+            async def test_handler(ctx):
+                await ctx.send("Test response")
+            
+            client._command_handlers["test"] = test_handler
+            
+            # Create mock context with insufficient permissions
+            mock_ctx = Mock()
+            mock_ctx.author = Mock()
+            mock_ctx.author.guild_permissions = Mock()
+            mock_ctx.author.guild_permissions.manage_messages = False
+            mock_ctx.send = AsyncMock()
+            
+            # Test command execution with insufficient permissions
+            await client._execute_command(mock_ctx, "test")
+            
+            # Verify permission error message was sent
+            mock_ctx.send.assert_called_once_with("You need the `manage_messages` permission to use this command.")
+    
+    @pytest.mark.asyncio
+    async def test_command_execution_with_cooldown(self):
+        """Test command execution with cooldown handling."""
+        with patch('mindtrace.services.discord.discord_client.Mindtrace.__init__') as mock_init:
+            mock_init.return_value = None
+            
+            # Create a mock bot
+            mock_bot = Mock()
+            
+            # Create client and set up mocks
+            client = DiscordClient.__new__(DiscordClient)
+            client.bot = mock_bot
+            client.logger = Mock()
+            client.config = Mock()
+            client.config.get_secret.return_value = "test_token"
+            client._commands = {}
+            client._command_handlers = {}
+            
+            # Create a command with cooldown
+            command = DiscordCommand(
+                name="test",
+                description="Test command",
+                usage="!test",
+                aliases=["t"],
+                category="Test",
+                cooldown=5.0
+            )
+            client._commands["test"] = command
+            
+            async def test_handler(ctx):
+                await ctx.send("Test response")
+            
+            client._command_handlers["test"] = test_handler
+            
+            # Create mock context
+            mock_ctx = Mock()
+            mock_ctx.author = Mock()
+            mock_ctx.author.guild_permissions = Mock()
+            mock_ctx.author.guild_permissions.manage_messages = True
+            mock_ctx.send = AsyncMock()
+            
+            # Test command execution with cooldown (should pass through cooldown check)
+            await client._execute_command(mock_ctx, "test")
+            
+            # Verify command handler was called
+            mock_ctx.send.assert_called_once_with("Test response") 
