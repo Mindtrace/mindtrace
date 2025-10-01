@@ -7,6 +7,8 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from typing import Dict, Any
 
+import discord
+
 from mindtrace.services.discord.discord_service import DiscordService
 from mindtrace.services.discord.types import (
     DiscordCommandInput,
@@ -225,3 +227,488 @@ class TestDiscordService:
             
             mock_task.cancel.assert_called_once()
             mock_stop.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_bot_not_connected(self, discord_service):
+        """Test command execution when bot is not connected."""
+        discord_service.discord_client.bot = None
+        
+        input_data = DiscordCommandInput(
+            content="!test",
+            author_id=123,
+            channel_id=456,
+            guild_id=789,
+            message_id=101112
+        )
+        
+        output = await discord_service.execute_command(input_data)
+        
+        assert isinstance(output, DiscordCommandOutput)
+        assert "Bot is not connected" in output.response
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_not_found(self, discord_service):
+        """Test command execution when command is not found."""
+        # Mock empty command tree
+        discord_service.discord_client.bot.tree.get_commands.return_value = []
+        
+        input_data = DiscordCommandInput(
+            content="/nonexistent",
+            author_id=123,
+            channel_id=456,
+            guild_id=789,
+            message_id=101112
+        )
+        
+        output = await discord_service.execute_command(input_data)
+        
+        assert isinstance(output, DiscordCommandOutput)
+        assert "Command '/nonexistent' not found" in output.response
+        assert "Available commands:" in output.response
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_with_parameters(self, discord_service):
+        """Test command execution with parameters."""
+        # Mock command with parameters
+        mock_command = Mock()
+        mock_command.name = "roll"
+        mock_command.parameters = [Mock(name="sides", type=1)]  # 1 = integer type
+        mock_command.callback = AsyncMock()
+        
+        discord_service.discord_client.bot.tree.get_commands.return_value = [mock_command]
+        
+        input_data = DiscordCommandInput(
+            content="/roll 20",
+            author_id=123,
+            channel_id=456,
+            guild_id=789,
+            message_id=101112
+        )
+        
+        # Mock the interaction creation
+        mock_interaction = Mock()
+        mock_interaction.response = Mock()
+        mock_interaction.response.send_message = AsyncMock()
+        mock_interaction.followup = Mock()
+        mock_interaction.followup.send = AsyncMock()
+        
+        with patch.object(discord_service, '_create_minimal_interaction', return_value=mock_interaction):
+            output = await discord_service.execute_command(input_data)
+        
+        assert isinstance(output, DiscordCommandOutput)
+        # The command should be found and executed
+        assert "Command '/roll' not found" not in output.response
+    
+    def test_get_default_values(self, discord_service):
+        """Test default value handling."""
+        payload = DiscordCommandInput(
+            content="!test",
+            author_id=None,
+            channel_id=None,
+            guild_id=789,
+            message_id=None
+        )
+        
+        defaults = discord_service._get_default_values(payload, "test")
+        
+        assert defaults.author_id == 0
+        assert defaults.channel_id == 0
+        assert defaults.guild_id == 789
+        assert defaults.message_id == 0
+    
+    def test_get_default_values_with_warnings(self, discord_service):
+        """Test default value handling with warning logging."""
+        payload = DiscordCommandInput(
+            content="!info",
+            author_id=None,
+            channel_id=None,
+            guild_id=None,
+            message_id=None
+        )
+        
+        with patch.object(discord_service.logger, 'warning') as mock_warning:
+            defaults = discord_service._get_default_values(payload, "info")
+            
+            # Should log warnings for missing values
+            assert mock_warning.call_count >= 3  # author_id, channel_id, message_id
+            assert any("author_id not provided" in str(call) for call in mock_warning.call_args_list)
+            assert any("channel_id not provided" in str(call) for call in mock_warning.call_args_list)
+            assert any("message_id not provided" in str(call) for call in mock_warning.call_args_list)
+    
+    def test_parse_command_parameters(self, discord_service):
+        """Test command parameter parsing."""
+        # Mock command with parameters
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # integer type
+        mock_param.default = None
+        
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+        
+        content = "!roll 20"
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 20  # The actual implementation converts to the correct type
+    
+    def test_parse_command_parameters_with_defaults(self, discord_service):
+        """Test command parameter parsing with defaults."""
+        # Mock command with parameters
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # integer type
+        mock_param.default = 6
+        
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+        
+        content = "!roll"  # No parameters provided
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 6  # Should use default
+    
+    def test_parse_command_parameters_conversion_error(self, discord_service):
+        """Test command parameter parsing with conversion error."""
+        # Mock command with parameters
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # integer type
+        mock_param.default = None
+        
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+        
+        content = "!roll invalid"  # Invalid integer
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 6  # The actual implementation falls back to default for conversion errors
+    
+    def test_get_python_type_from_discord_type(self, discord_service):
+        """Test Discord type to Python type conversion."""
+        import discord
+        
+        # Test various Discord types
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.string) == str
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.integer) == int
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.number) == float
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.boolean) == bool
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.user) == int
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.channel) == int
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.role) == int
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.mentionable) == int
+        assert discord_service._get_python_type_from_discord_type(discord.AppCommandOptionType.attachment) == str
+        
+        # Test unknown type (should default to str)
+        unknown_type = Mock()
+        assert discord_service._get_python_type_from_discord_type(unknown_type) == str
+    
+    def test_create_minimal_interaction(self, discord_service):
+        """Test minimal interaction creation."""
+        payload = DiscordCommandInput(
+            content="!test",
+            author_id=123,
+            channel_id=456,
+            guild_id=789,
+            message_id=101112
+        )
+        
+        interaction = discord_service._create_minimal_interaction(payload)
+        
+        assert interaction.user.id == 123
+        assert interaction.user.mention == "<@123>"
+        assert interaction.user.display_name == "User123"
+        assert interaction.guild.id == 789
+        assert interaction.channel.id == 456
+        assert interaction.message_id == 101112
+        assert hasattr(interaction.response, 'send_message')
+        assert hasattr(interaction.followup, 'send')
+    
+    def test_create_minimal_interaction_no_guild(self, discord_service):
+        """Test minimal interaction creation without guild."""
+        payload = DiscordCommandInput(
+            content="!test",
+            author_id=123,
+            channel_id=456,
+            guild_id=None,
+            message_id=101112
+        )
+        
+        interaction = discord_service._create_minimal_interaction(payload)
+        
+        assert interaction.user.id == 123
+        assert interaction.guild is None
+        assert interaction.channel.id == 456
+    
+    def test_create_minimal_interaction_no_author_id(self, discord_service):
+        """Test minimal interaction creation without author_id."""
+        payload = DiscordCommandInput(
+            content="!test",
+            author_id=None,
+            channel_id=456,
+            guild_id=789,
+            message_id=101112
+        )
+        
+        interaction = discord_service._create_minimal_interaction(payload)
+        
+        assert interaction.user.id is None
+        assert interaction.user.mention == "<@0>"
+        assert interaction.user.display_name == "API User"
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_with_response_send_message(self, discord_service):
+        """Test command execution with response.send_message called."""
+        # Mock command
+        mock_command = Mock()
+        mock_command.name = "test"
+        mock_command.parameters = []
+        mock_command.callback = AsyncMock()
+        
+        discord_service.discord_client.bot.tree.get_commands.return_value = [mock_command]
+        
+        # Mock interaction with send_message called
+        mock_interaction = Mock()
+        mock_interaction.response = Mock()
+        mock_interaction.response.send_message = AsyncMock()
+        mock_interaction.response.send_message.called = True
+        mock_interaction.response.send_message.call_args = (("Test response",), {})
+        mock_interaction.followup = Mock()
+        mock_interaction.followup.send = AsyncMock()
+        mock_interaction.followup.send.called = False
+        
+        with patch.object(discord_service, '_create_minimal_interaction', return_value=mock_interaction):
+            input_data = DiscordCommandInput(content="/test")
+            output = await discord_service.execute_command(input_data)
+        
+        # The command should be found and executed
+        assert "Command '/test' not found" not in output.response
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_with_followup_send(self, discord_service):
+        """Test command execution with followup.send called."""
+        # Mock command
+        mock_command = Mock()
+        mock_command.name = "test"
+        mock_command.parameters = []
+        mock_command.callback = AsyncMock()
+        
+        discord_service.discord_client.bot.tree.get_commands.return_value = [mock_command]
+        
+        # Mock interaction with followup.send called
+        mock_interaction = Mock()
+        mock_interaction.response = Mock()
+        mock_interaction.response.send_message = AsyncMock()
+        mock_interaction.response.send_message.called = False
+        mock_interaction.followup = Mock()
+        mock_interaction.followup.send = AsyncMock()
+        mock_interaction.followup.send.called = True
+        mock_interaction.followup.send.call_args = (("Followup response",), {})
+        
+        with patch.object(discord_service, '_create_minimal_interaction', return_value=mock_interaction):
+            input_data = DiscordCommandInput(content="/test")
+            output = await discord_service.execute_command(input_data)
+        
+        # The command should be found and executed
+        assert "Command '/test' not found" not in output.response
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_with_exception(self, discord_service):
+        """Test command execution with exception."""
+        # Mock command that raises exception
+        mock_command = Mock()
+        mock_command.name = "test"
+        mock_command.parameters = []
+        mock_command.callback = AsyncMock(side_effect=Exception("Test error"))
+        
+        discord_service.discord_client.bot.tree.get_commands.return_value = [mock_command]
+        
+        mock_interaction = Mock()
+        mock_interaction.response = Mock()
+        mock_interaction.response.send_message = AsyncMock()
+        mock_interaction.followup = Mock()
+        mock_interaction.followup.send = AsyncMock()
+        
+        with patch.object(discord_service, '_create_minimal_interaction', return_value=mock_interaction):
+            with patch.object(discord_service.logger, 'error') as mock_logger:
+                input_data = DiscordCommandInput(content="/test")
+                output = await discord_service.execute_command(input_data)
+        
+        # The command should be found and executed, but with an error
+        assert "Command '/!test' not found" not in output.response
+        assert "Error executing command: Test error" in output.response
+        mock_logger.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_startup_already_started(self, discord_service):
+        """Test startup when already started."""
+        # Set up a mock task
+        mock_task = Mock()
+        discord_service._bot_task = mock_task
+        
+        await discord_service.startup()
+        
+        # Should not create a new task
+        assert discord_service._bot_task is mock_task
+    
+    @pytest.mark.asyncio
+    async def test_run_bot_success(self, discord_service):
+        """Test successful bot running."""
+        with patch.object(discord_service.discord_client, 'start_bot', new_callable=AsyncMock) as mock_start:
+            await discord_service._run_bot()
+            mock_start.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_run_bot_error(self, discord_service):
+        """Test bot running with error."""
+        with patch.object(discord_service.discord_client, 'start_bot', new_callable=AsyncMock) as mock_start:
+            mock_start.side_effect = Exception("Bot error")
+            
+            with pytest.raises(Exception, match="Bot error"):
+                await discord_service._run_bot()
+    
+    def test_launch_context_manager(self, discord_service):
+        """Test DiscordService.launch context manager."""
+        # Test the launch method returns a connection manager
+        cm = discord_service.launch()
+        assert cm is not None
+        
+        # Test that the context manager can be used
+        with cm:
+            assert cm is not None
+    
+    def test_parse_command_parameters_empty_content(self, discord_service):
+        """Test command parameter parsing with empty content."""
+        mock_command = Mock()
+        mock_command.parameters = []
+        
+        content = ""
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params == {}
+    
+    def test_parse_command_parameters_whitespace_content(self, discord_service):
+        """Test command parameter parsing with whitespace-only content."""
+        mock_command = Mock()
+        mock_command.parameters = []
+        
+        content = "   \n\t  "
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params == {}
+    
+    def test_parse_command_parameters_conversion_error_with_default(self, discord_service):
+        """Test command parameter parsing with conversion error and default value."""
+        # Mock command with parameters that have defaults
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # integer type
+        mock_param.default = 20
+    
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+    
+        content = "/roll invalid"  # Invalid integer
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 20  # The actual implementation uses the default value for conversion errors
+    
+    def test_parse_command_parameters_conversion_error_no_default_int(self, discord_service):
+        """Test command parameter parsing with conversion error, no default, int type."""
+        # Mock command with parameters that have no defaults
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # integer type
+        mock_param.default = None
+    
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+    
+        content = "/roll invalid"  # Invalid integer
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 6  # The actual implementation falls back to default for conversion errors
+    
+    def test_parse_command_parameters_conversion_error_no_default_str(self, discord_service):
+        """Test command parameter parsing with conversion error, no default, str type."""
+        # Mock command with parameters that have no defaults
+        mock_param = Mock()
+        mock_param.name = "message"
+        mock_param.type = 3  # string type
+        mock_param.default = None
+        
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+        
+        content = "/say"  # No parameters provided
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["message"] == ""  # Should use reasonable default for str
+    
+    def test_parse_command_parameters_conversion_error_no_default_other(self, discord_service):
+        """Test command parameter parsing with conversion error, no default, other type."""
+        # Mock command with parameters that have no defaults
+        mock_param = Mock()
+        mock_param.name = "value"
+        mock_param.type = 10  # unknown type
+        mock_param.default = None
+        
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+        
+        content = "/test"  # No parameters provided
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["value"] == ""  # The actual implementation returns empty string for no params
+    
+    def test_parse_command_parameters_has_default_attribute(self, discord_service):
+        """Test command parameter parsing with hasattr check for default."""
+        # Mock command with parameters that don't have default attribute
+        mock_param = Mock()
+        mock_param.name = "sides"
+        mock_param.type = discord.AppCommandOptionType.integer  # Use the actual enum
+        # Remove the default attribute that Mock creates by default
+        del mock_param.default
+    
+        mock_command = Mock()
+        mock_command.parameters = [mock_param]
+    
+        content = "/roll"  # No parameters provided
+        params = discord_service._parse_command_parameters(content, mock_command)
+        
+        assert params["sides"] == 6  # The actual implementation returns 6 for int type with no default
+    
+    @pytest.mark.asyncio
+    async def test_execute_command_no_response_methods_called(self, discord_service):
+        """Test command execution when neither response method is called."""
+        # Mock command
+        mock_command = Mock()
+        mock_command.name = "test"
+        mock_command.parameters = []
+        mock_command.callback = AsyncMock()
+        
+        discord_service.discord_client.bot.tree.get_commands.return_value = [mock_command]
+        
+        # Mock interaction with no response methods called
+        mock_interaction = Mock()
+        mock_interaction.response = Mock()
+        mock_interaction.response.send_message = AsyncMock()
+        mock_interaction.response.send_message.called = False
+        mock_interaction.followup = Mock()
+        mock_interaction.followup.send = AsyncMock()
+        mock_interaction.followup.send.called = False
+        
+        with patch.object(discord_service, '_create_minimal_interaction', return_value=mock_interaction):
+            input_data = DiscordCommandInput(content="/test")
+            output = await discord_service.execute_command(input_data)
+        
+        # Should return default success message
+        assert output.response == "Command executed successfully"
+    
+    def test_get_python_type_from_discord_type_unknown(self, discord_service):
+        """Test Discord type to Python type conversion with unknown type."""
+        # Test with a completely unknown type
+        unknown_type = Mock()
+        unknown_type.value = 999  # Some unknown value
+        
+        result = discord_service._get_python_type_from_discord_type(unknown_type)
+        assert result == str  # Should default to str
