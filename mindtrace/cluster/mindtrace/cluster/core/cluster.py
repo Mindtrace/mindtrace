@@ -40,7 +40,7 @@ class ClusterManager(Gateway):
         super().__init__(**kwargs)
         if kwargs.get("live_service", True):
             self.orchestrator = Orchestrator(
-                backend=RabbitMQClient(host=self._url.hostname
+                backend=RabbitMQClient(
                     host=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_HOST"],
                     port=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_PORT"],
                     username=self.config["MINDTRACE_CLUSTER"]["RABBITMQ_USERNAME"],
