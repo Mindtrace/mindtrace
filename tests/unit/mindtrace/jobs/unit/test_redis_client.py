@@ -11,7 +11,7 @@ def client():
     with patch("mindtrace.jobs.redis.client.RedisConnection") as mock_conn_cls:
         mock_conn = MagicMock()
         mock_conn_cls.return_value = mock_conn
-        client = RedisClient(host="localhost", port=6379, db=0)
+        client = RedisClient(host="localhost", port=6381, db=0)
         client.connection = mock_conn
         yield client, mock_conn
 
