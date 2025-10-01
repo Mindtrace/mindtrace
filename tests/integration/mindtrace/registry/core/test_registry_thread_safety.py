@@ -53,7 +53,7 @@ def registry(temp_dir, test_bucket):
     """Create a Registry instance with Minio backend."""
     backend = MinioRegistryBackend(
         uri=str(temp_dir),
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket=test_bucket,

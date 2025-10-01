@@ -25,7 +25,7 @@ def test_start_worker_from_git():
             worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
             worker_params={},
             git_repo_url="https://github.com/Mindtrace/mindtrace.git",
-            git_branch="feature/cluster/git-and-docker",
+            git_branch="feature/tests/different-ports-for-tests",
             job_type="echo",
         )
 

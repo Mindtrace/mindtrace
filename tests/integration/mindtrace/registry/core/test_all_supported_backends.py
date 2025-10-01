@@ -19,7 +19,7 @@ BACKENDS = {
     "minio": {
         "class": MinioRegistryBackend,
         "params": {
-            "endpoint": os.getenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000"),
+            "endpoint": os.getenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9100"),
             "access_key": os.getenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin"),
             "secret_key": os.getenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin"),
             "bucket": None,  # Will be set in fixture

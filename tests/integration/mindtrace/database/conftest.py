@@ -15,11 +15,11 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # MongoDB connection settings
-MONGO_URL = "mongodb://localhost:27017"
+MONGO_URL = "mongodb://localhost:27018"
 MONGO_DB = "test_db"
 
 # Redis connection settings
-REDIS_URL = "redis://localhost:6379"
+REDIS_URL = "redis://localhost:6380"
 
 # Store all clients to ensure proper cleanup
 _test_clients = []
