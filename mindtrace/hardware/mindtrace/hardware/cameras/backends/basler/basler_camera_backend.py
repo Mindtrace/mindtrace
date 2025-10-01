@@ -478,10 +478,6 @@ class BaslerCameraBackend(CameraBackend):
                     self.camera = camera
                     await self._configure_camera()
 
-                    # Configure multicast streaming if enabled
-                    if self.multicast_enabled:
-                        await self.configure_streaming()
-
                     # Load config if provided
                     if self.camera_config_path and os.path.exists(self.camera_config_path):
                         await self.import_config(self.camera_config_path)
@@ -582,6 +578,10 @@ class BaslerCameraBackend(CameraBackend):
             await self._ensure_open()
 
             await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
+
+            # Configure multicast streaming BEFORE starting grabbing if enabled
+            if self.multicast_enabled:
+                await self.configure_streaming()
 
             self.logger.debug(f"Basler camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
@@ -695,8 +695,15 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_value = await self._sdk(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
-            max_value = await self._sdk(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                min_value = await self._sdk(self.camera.ExposureTime.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._sdk(self.camera.ExposureTime.GetMax, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for get_exposure_range on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs")
+                min_value = await self._sdk(self.camera.ExposureTimeAbs.GetMin, timeout=self._op_timeout_s)
+                max_value = await self._sdk(self.camera.ExposureTimeAbs.GetMax, timeout=self._op_timeout_s)
 
             return [min_value, max_value]
         except Exception as e:
@@ -720,7 +727,14 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for get_exposure on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs")
+                exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+                
             return exposure
         except Exception as e:
             self.logger.warning(f"Exposure not available for camera '{self.camera_name}': {str(e)}")
@@ -751,9 +765,16 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._ensure_open()
 
-            await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
-
-            actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+            # Try ExposureTime first, fallback to ExposureTimeAbs
+            try:
+                await self._sdk(self.camera.ExposureTime.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using ExposureTime for set_exposure on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"ExposureTime not available for camera '{self.camera_name}', falling back to ExposureTimeAbs")
+                await self._sdk(self.camera.ExposureTimeAbs.SetValue, exposure, timeout=self._op_timeout_s)
+                actual_exposure = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
+                
             if not (abs(actual_exposure - exposure) < 0.01 * max(1.0, float(exposure))):
                 raise HardwareOperationError(
                     f"Exposure verification failed for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure}"
@@ -992,12 +1013,24 @@ class BaslerCameraBackend(CameraBackend):
                 if "exposure_time" in config_data:
                     total_settings += 1
                     try:
+                        # Try ExposureTime first, fallback to ExposureTimeAbs
                         if hasattr(self.camera, "ExposureTime") and self.camera.ExposureTime.GetAccessMode() in [
                             genicam.RW,
                             genicam.WO,
                         ]:
                             await self._sdk(
                                 self.camera.ExposureTime.SetValue,
+                                float(config_data["exposure_time"]),
+                                timeout=self._op_timeout_s,
+                            )
+                            success_count += 1
+                        elif hasattr(self.camera, "ExposureTimeAbs") and self.camera.ExposureTimeAbs.GetAccessMode() in [
+                            genicam.RW,
+                            genicam.WO,
+                        ]:
+                            self.logger.debug(f"Using ExposureTimeAbs for config import on camera '{self.camera_name}'")
+                            await self._sdk(
+                                self.camera.ExposureTimeAbs.SetValue,
                                 float(config_data["exposure_time"]),
                                 timeout=self._op_timeout_s,
                             )
@@ -1212,7 +1245,12 @@ class BaslerCameraBackend(CameraBackend):
             # Get current camera settings with fallbacks
             exposure_time = defaults["exposure_time"]
             try:
-                exposure_time = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                # Try ExposureTime first, fallback to ExposureTimeAbs
+                try:
+                    exposure_time = await self._sdk(self.camera.ExposureTime.GetValue, timeout=self._op_timeout_s)
+                except Exception:
+                    self.logger.debug(f"ExposureTime not available for camera '{self.camera_name}', trying ExposureTimeAbs")
+                    exposure_time = await self._sdk(self.camera.ExposureTimeAbs.GetValue, timeout=self._op_timeout_s)
             except Exception as e:
                 self.logger.warning(f"Could not get exposure time for camera '{self.camera_name}': {e}")
 
