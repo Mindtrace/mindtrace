@@ -190,3 +190,250 @@ def test_connect_and_close_logger_calls(monkeypatch):
             conn.close()
             assert conn.logger.error.called
             assert conn.logger.debug.called
+
+
+def test_connect_ping_failure(mock_redis):
+    """Test connection failure when ping returns False."""
+    mock_redis.ping.return_value = False
+    # The constructor catches the ConnectionError and logs a warning
+    # It doesn't re-raise the exception, so we check that connection fails
+    conn = RedisConnection(host="localhost", port=6379, db=0)
+    assert not conn.is_connected()  # Should return False since ping failed
+
+
+def test_close_pubsub_error(mock_redis):
+    """Test close method handles pubsub close errors gracefully."""
+    conn = RedisConnection(host="localhost", port=6379, db=0)
+    # Simulate pubsub connection
+    mock_pubsub = MagicMock()
+    mock_pubsub.close.side_effect = Exception("pubsub close failed")
+    conn._pubsub = mock_pubsub
+    # This should not raise an exception
+    conn.close()
+    mock_pubsub.close.assert_called_once()
+
+
+def test_del_method_exception_handling():
+    """Test __del__ method handles exceptions gracefully."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis") as mock_redis_cls:
+        mock_instance = MagicMock()
+        mock_instance.ping.return_value = True
+        mock_redis_cls.return_value = mock_instance
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        # Make close raise an exception
+        conn.close = MagicMock(side_effect=Exception("close failed"))
+        # This should not raise an exception
+        conn.__del__()
+
+
+def test_subscribe_to_events_shutdown_signal(monkeypatch):
+    """Test that _subscribe_to_events respects shutdown signal."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+        # Set shutdown event before starting
+        conn._shutdown_event.set()
+
+        pubsub = MagicMock()
+
+        # Create an iterator that will be interrupted by shutdown
+        def message_generator():
+            yield {"type": "subscribe"}
+            # After first message, shutdown should be detected
+
+        pubsub.listen.return_value = message_generator()
+        conn.connection.pubsub.return_value = pubsub
+
+        # This should exit quickly due to shutdown event
+        conn._subscribe_to_events()
+
+
+def test_subscribe_to_events_exception_handling(monkeypatch):
+    """Test that _subscribe_to_events handles exceptions in the main loop."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        # Make pubsub.listen() raise an exception
+        pubsub = MagicMock()
+        pubsub.listen.side_effect = Exception("connection lost")
+        conn.connection.pubsub.return_value = pubsub
+
+        # This should not raise an exception, just log it
+        conn._subscribe_to_events()
+
+
+def test_subscribe_to_events_non_message_type(monkeypatch):
+    """Test that _subscribe_to_events handles non-message type events."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [
+                {"type": "subscribe"},  # Non-message type should be skipped
+                {"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "fifo"}'},
+            ]
+        )
+        conn.connection.pubsub.return_value = pubsub
+
+        # Set shutdown after processing to exit loop
+        def set_shutdown():
+            conn._shutdown_event.set()
+
+        # Use side effect to set shutdown after first call
+        original_is_set = conn._shutdown_event.is_set
+        call_count = [0]
+
+        def mock_is_set():
+            call_count[0] += 1
+            if call_count[0] > 2:  # Allow a few calls then shutdown
+                return True
+            return original_is_set()
+
+        conn._shutdown_event.is_set = mock_is_set
+
+        with patch("threading.Thread"):
+            conn._subscribe_to_events()
+
+
+def test_subscribe_to_events_unknown_queue_type(monkeypatch):
+    """Test _subscribe_to_events with unknown queue type in declare event."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "q", "queue_type": "unknown"}'}]
+        )
+        conn.connection.pubsub.return_value = pubsub
+
+        # Set shutdown after processing to exit loop
+        call_count = [0]
+        original_is_set = conn._shutdown_event.is_set
+
+        def mock_is_set():
+            call_count[0] += 1
+            if call_count[0] > 2:  # Allow a few calls then shutdown
+                return True
+            return original_is_set()
+
+        conn._shutdown_event.is_set = mock_is_set
+
+        # This should handle unknown queue type gracefully
+        conn._subscribe_to_events()
+
+        # Should not have added anything to queues
+        assert len(conn.queues) == 0
+
+
+def test_subscribe_to_events_delete_nonexistent_queue(monkeypatch):
+    """Test _subscribe_to_events with delete event for nonexistent queue."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter([{"type": "message", "data": b'{"event": "delete", "queue": "nonexistent"}'}])
+        conn.connection.pubsub.return_value = pubsub
+
+        # Set shutdown after processing to exit loop
+        call_count = [0]
+        original_is_set = conn._shutdown_event.is_set
+
+        def mock_is_set():
+            call_count[0] += 1
+            if call_count[0] > 2:  # Allow a few calls then shutdown
+                return True
+            return original_is_set()
+
+        conn._shutdown_event.is_set = mock_is_set
+
+        # This should handle delete of nonexistent queue gracefully
+        conn._subscribe_to_events()
+
+
+def test_subscribe_to_events_pubsub_close_in_finally(monkeypatch):
+    """Test that _subscribe_to_events closes pubsub in finally block."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        # Make pubsub.listen() raise an exception to trigger finally block
+        pubsub = MagicMock()
+        pubsub.listen.side_effect = Exception("connection lost")
+        conn.connection.pubsub.return_value = pubsub
+
+        # This should call pubsub.close() in the finally block
+        conn._subscribe_to_events()
+
+        pubsub.close.assert_called_once()
+
+
+def test_subscribe_to_events_pubsub_close_exception_in_finally(monkeypatch):
+    """Test that _subscribe_to_events handles pubsub close exception in finally block."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        # Make pubsub.listen() raise an exception to trigger finally block
+        pubsub = MagicMock()
+        pubsub.listen.side_effect = Exception("connection lost")
+        pubsub.close.side_effect = Exception("close failed")
+        conn.connection.pubsub.return_value = pubsub
+
+        # This should handle the close exception gracefully
+        conn._subscribe_to_events()
+
+        pubsub.close.assert_called_once()
+
+
+def test_subscribe_to_events_declare_stack_queue(monkeypatch):
+    """Test _subscribe_to_events with declare event for stack queue type."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "stack_q", "queue_type": "stack"}'}]
+        )
+        conn.connection.pubsub.return_value = pubsub
+
+        # Set shutdown after processing to exit loop
+        call_count = [0]
+        original_is_set = conn._shutdown_event.is_set
+
+        def mock_is_set():
+            call_count[0] += 1
+            if call_count[0] > 2:  # Allow a few calls then shutdown
+                return True
+            return original_is_set()
+
+        conn._shutdown_event.is_set = mock_is_set
+
+        with patch("mindtrace.jobs.redis.connection.RedisStack") as mock_stack:
+            conn._subscribe_to_events()
+            mock_stack.assert_called_once()
+
+
+def test_subscribe_to_events_declare_priority_queue(monkeypatch):
+    """Test _subscribe_to_events with declare event for priority queue type."""
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+        conn = RedisConnection(host="localhost", port=6379, db=0)
+
+        pubsub = MagicMock()
+        pubsub.listen.return_value = iter(
+            [{"type": "message", "data": b'{"event": "declare", "queue": "priority_q", "queue_type": "priority"}'}]
+        )
+        conn.connection.pubsub.return_value = pubsub
+
+        # Set shutdown after processing to exit loop
+        call_count = [0]
+        original_is_set = conn._shutdown_event.is_set
+
+        def mock_is_set():
+            call_count[0] += 1
+            if call_count[0] > 2:  # Allow a few calls then shutdown
+                return True
+            return original_is_set()
+
+        conn._shutdown_event.is_set = mock_is_set
+
+        with patch("mindtrace.jobs.redis.connection.RedisPriorityQueue") as mock_priority:
+            conn._subscribe_to_events()
+            mock_priority.assert_called_once()
