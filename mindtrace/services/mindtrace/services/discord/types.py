@@ -1,21 +1,16 @@
 from abc import ABC, abstractmethod
-import asyncio
 from dataclasses import dataclass
 from enum import Enum
-import logging
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-import discord
-from discord import app_commands
-from discord.ext import commands
 from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema, ifnone
-from mindtrace.services import Service
+from mindtrace.core import TaskSchema
 
 
 class DiscordEventType(Enum):
     """Types of Discord events that can be handled."""
+
     MESSAGE = "message"
     REACTION = "reaction"
     MEMBER_JOIN = "member_join"
@@ -28,6 +23,7 @@ class DiscordEventType(Enum):
 @dataclass
 class DiscordCommand:
     """Represents a Discord command with its metadata."""
+
     name: str
     description: str
     usage: str
@@ -41,6 +37,7 @@ class DiscordCommand:
 
 class DiscordCommandInput(BaseModel):
     """Base input schema for Discord commands."""
+
     content: str
     author_id: Optional[int] = None
     channel_id: Optional[int] = None
@@ -50,6 +47,7 @@ class DiscordCommandInput(BaseModel):
 
 class DiscordCommandOutput(BaseModel):
     """Base output schema for Discord commands."""
+
     response: str
     embed: Optional[Dict[str, Any]] = None
     delete_after: Optional[float] = None
@@ -57,6 +55,7 @@ class DiscordCommandOutput(BaseModel):
 
 class DiscordStatusOutput(BaseModel):
     """Output schema for bot status."""
+
     bot_name: Optional[str] = None
     guild_count: int
     user_count: int
@@ -66,11 +65,13 @@ class DiscordStatusOutput(BaseModel):
 
 class DiscordCommandsOutput(BaseModel):
     """Output schema for commands list."""
+
     commands: List[Dict[str, Any]]
 
 
 class DiscordCommandSchema(TaskSchema):
     """Base schema for Discord commands."""
+
     name: str = "discord_command"
     input_schema: type[DiscordCommandInput] = DiscordCommandInput
     output_schema: type[DiscordCommandOutput] = DiscordCommandOutput
@@ -78,19 +79,21 @@ class DiscordCommandSchema(TaskSchema):
 
 class DiscordStatusSchema(TaskSchema):
     """Schema for bot status endpoint."""
+
     name: str = "discord_status"
     output_schema: type[DiscordStatusOutput] = DiscordStatusOutput
 
 
 class DiscordCommandsSchema(TaskSchema):
     """Schema for commands list endpoint."""
+
     name: str = "discord_commands"
     output_schema: type[DiscordCommandsOutput] = DiscordCommandsOutput
 
 
 class DiscordEventHandler(ABC):
     """Abstract base class for Discord event handlers."""
-    
+
     @abstractmethod
     async def handle(self, event_type: DiscordEventType, **kwargs) -> None:
         """Handle a Discord event."""

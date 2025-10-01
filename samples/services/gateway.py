@@ -11,9 +11,9 @@ import asyncio
 
 import httpx
 import requests
+from mindtrace.services.sample.echo_service import EchoService
 
 from mindtrace.services import Gateway
-from mindtrace.services.sample.echo_service import EchoService
 
 
 def sync_gateway_example():
