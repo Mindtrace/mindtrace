@@ -416,11 +416,16 @@ class GenICamCameraBackend(CameraBackend):
                 )
             
             # Initialize harvester
-            self.harvester = await self._sdk(Harvester, timeout=self._op_timeout_s)
-            await self._sdk(self.harvester.add_file, self.cti_path, timeout=self._op_timeout_s)
-            await self._sdk(self.harvester.update, timeout=self._op_timeout_s)
+            # Create Harvester synchronously (it's just object instantiation)
+            self.harvester = Harvester()
             
-            device_list = await self._sdk(lambda: self.harvester.device_info_list, timeout=self._op_timeout_s)
+            # Run Harvester operations synchronously to avoid threading issues
+            # These are quick operations that shouldn't block long
+            self.harvester.add_file(self.cti_path)
+            self.harvester.update()
+            
+            # Get device list directly - it's just an attribute access
+            device_list = self.harvester.device_info_list
             if len(device_list) == 0:
                 raise CameraNotFoundError("No GenICam cameras found")
             
@@ -428,14 +433,21 @@ class GenICamCameraBackend(CameraBackend):
             camera_found = False
             target_device_info = None
             
+            # Parse camera name to extract actual identifier
+            # Camera names come in as "GenICam:serial_number" from discovery
+            if self.camera_name.startswith("GenICam:"):
+                actual_camera_id = self.camera_name.split(":", 1)[1]
+            else:
+                actual_camera_id = self.camera_name
+            
             for device_info in device_list:
                 serial_number = getattr(device_info, 'serial_number', '')
                 device_id = getattr(device_info, 'id_', '')
                 user_defined_name = getattr(device_info, 'user_defined_name', '')
                 display_name = getattr(device_info, 'display_name', '')
                 
-                if (self.camera_name in [serial_number, device_id, user_defined_name, display_name] or
-                    self.camera_name in str(device_info)):
+                if (actual_camera_id in [serial_number, device_id, user_defined_name, display_name] or
+                    actual_camera_id in str(device_info)):
                     camera_found = True
                     target_device_info = device_info
                     break
@@ -446,19 +458,23 @@ class GenICamCameraBackend(CameraBackend):
                     for info in device_list
                 ]
                 raise CameraNotFoundError(
-                    f"Camera '{self.camera_name}' not found. Available cameras: {available_cameras}"
+                    f"Camera '{actual_camera_id}' (from '{self.camera_name}') not found. Available cameras: {available_cameras}"
                 )
             
             # Create image acquirer
             try:
-                def _create_image_acquirer():
-                    # Create by index or by device info
-                    for i, device_info in enumerate(device_list):
-                        if device_info == target_device_info:
-                            return self.harvester.create(i)
-                    return None
+                # Create by index - find the index of our target device
+                target_index = None
+                for i, device_info in enumerate(device_list):
+                    if device_info == target_device_info:
+                        target_index = i
+                        break
                 
-                self.image_acquirer = await self._sdk(_create_image_acquirer, timeout=self._op_timeout_s)
+                if target_index is None:
+                    raise CameraConnectionError(f"Failed to find index for camera '{actual_camera_id}'")
+                
+                # Create the image acquirer synchronously like the working script
+                self.image_acquirer = self.harvester.create(target_index)
                 
                 if self.image_acquirer is None:
                     raise CameraConnectionError(f"Failed to create image acquirer for camera '{self.camera_name}'")
@@ -1366,7 +1382,10 @@ class GenICamCameraBackend(CameraBackend):
                 config = json.load(f)
             
             # Apply configuration settings
-            if 'exposure' in config:
+            # Support both 'exposure_time' (new) and 'exposure' (legacy) for backward compatibility
+            if 'exposure_time' in config:
+                await self.set_exposure(config['exposure_time'])
+            elif 'exposure' in config:
                 await self.set_exposure(config['exposure'])
                 
             if 'gain' in config:
@@ -1418,7 +1437,7 @@ class GenICamCameraBackend(CameraBackend):
                 'vendor': self.device_info.get('vendor', 'Unknown') if self.device_info else 'Unknown',
                 'model': self.device_info.get('model', 'Unknown') if self.device_info else 'Unknown',
                 'exported_timestamp': time.time(),
-                'exposure': await self.get_exposure(),
+                'exposure_time': await self.get_exposure(),
                 'gain': await self.get_gain(),
                 'triggermode': await self.get_triggermode(),
                 'white_balance': await self.get_wb(),
