@@ -209,7 +209,7 @@ def generate_connection_manager(
 
         # Replace dots with underscores to make it a valid identifier
         method_name = endpoint_name.replace(".", "_")
-        
+
         # Set up sync method
         method.__name__ = method_name
         method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"

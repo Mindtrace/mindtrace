@@ -1,8 +1,9 @@
 import time
 
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+
 from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 
 def main():

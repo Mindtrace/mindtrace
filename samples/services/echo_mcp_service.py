@@ -13,7 +13,6 @@ import asyncio
 
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-
 from mindtrace.services.sample.echo_mcp import EchoService
 
 

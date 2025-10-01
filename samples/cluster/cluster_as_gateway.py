@@ -7,10 +7,11 @@ Gateway Service example showing how to:
 4. Use ProxyConnectionManager for transparent service routing
 """
 
+from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
 echo_job = JobSchema(name="echo_job", input=EchoInput, output=EchoOutput)
 

@@ -9,17 +9,17 @@ from .types import (
     DiscordCommandSchema,
     DiscordCommandsOutput,
     DiscordCommandsSchema,
-    DiscordEventType,
     DiscordEventHandler,
+    DiscordEventType,
     DiscordStatusOutput,
-    DiscordStatusSchema
+    DiscordStatusSchema,
 )
 
 __all__ = [
     "DiscordClient",
     "DiscordService",
     "DiscordCommand",
-    "DiscordCommandInput", 
+    "DiscordCommandInput",
     "DiscordCommandOutput",
     "DiscordCommandSchema",
     "DiscordCommandsOutput",
@@ -27,5 +27,5 @@ __all__ = [
     "DiscordEventType",
     "DiscordEventHandler",
     "DiscordStatusOutput",
-    "DiscordStatusSchema"
+    "DiscordStatusSchema",
 ]

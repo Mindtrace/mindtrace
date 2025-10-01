@@ -1,17 +1,7 @@
-from abc import ABC, abstractmethod
-import asyncio
-from dataclasses import dataclass
-from enum import Enum
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union
 
-import discord
-from discord import app_commands
 from discord.ext import commands
-from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema, ifnone
-from mindtrace.services import Service
 from mindtrace.services.discord.discord_client import BaseDiscordClient
 from mindtrace.services.discord.types import DiscordEventHandler, DiscordEventType
 
@@ -32,12 +22,12 @@ async def echo_command(ctx: commands.Context, *args) -> str:
 async def help_command(ctx: commands.Context, *args) -> str:
     """Example help command."""
     client = ctx.bot
-    if hasattr(client, '_commands'):
+    if hasattr(client, "_commands"):
         commands_list = []
         for cmd in client._commands.values():
             if not cmd.hidden:
                 commands_list.append(f"**{cmd.name}**: {cmd.description}")
-        
+
         return "Available commands:\n" + "\n".join(commands_list)
     return "No commands available."
 
@@ -45,62 +35,38 @@ async def help_command(ctx: commands.Context, *args) -> str:
 # Example event handler
 class LoggingEventHandler(DiscordEventHandler):
     """Example event handler that logs events."""
-    
+
     def __init__(self, logger: logging.Logger):
         self.logger = logger
-    
+
     async def handle(self, event_type: DiscordEventType, **kwargs):
         """Handle events by logging them."""
         if event_type == DiscordEventType.MESSAGE:
-            message = kwargs.get('message')
+            message = kwargs.get("message")
             self.logger.info(f"Message from {message.author}: {message.content}")
         elif event_type == DiscordEventType.MEMBER_JOIN:
-            member = kwargs.get('member')
+            member = kwargs.get("member")
             self.logger.info(f"Member joined: {member.name}")
         elif event_type == DiscordEventType.MEMBER_LEAVE:
-            member = kwargs.get('member')
+            member = kwargs.get("member")
             self.logger.info(f"Member left: {member.name}")
 
 
 # Example bot implementation
 class ExampleDiscordBot(BaseDiscordClient):
     """Example Discord bot implementation."""
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
         # Register commands
-        self.register_command(
-            name="ping",
-            description="Check bot latency",
-            usage="!ping",
-            handler=ping_command
-        )
-        
-        self.register_command(
-            name="echo",
-            description="Echo a message",
-            usage="!echo <message>",
-            handler=echo_command
-        )
-        
-        self.register_command(
-            name="help",
-            description="Show available commands",
-            usage="!help",
-            handler=help_command
-        )
-        
+        self.register_command(name="ping", description="Check bot latency", usage="!ping", handler=ping_command)
+
+        self.register_command(name="echo", description="Echo a message", usage="!echo <message>", handler=echo_command)
+
+        self.register_command(name="help", description="Show available commands", usage="!help", handler=help_command)
+
         # Register event handlers
-        self.register_event_handler(
-            DiscordEventType.MESSAGE,
-            LoggingEventHandler(self.logger)
-        )
-        self.register_event_handler(
-            DiscordEventType.MEMBER_JOIN,
-            LoggingEventHandler(self.logger)
-        )
-        self.register_event_handler(
-            DiscordEventType.MEMBER_LEAVE,
-            LoggingEventHandler(self.logger)
-        )
+        self.register_event_handler(DiscordEventType.MESSAGE, LoggingEventHandler(self.logger))
+        self.register_event_handler(DiscordEventType.MEMBER_JOIN, LoggingEventHandler(self.logger))
+        self.register_event_handler(DiscordEventType.MEMBER_LEAVE, LoggingEventHandler(self.logger))
