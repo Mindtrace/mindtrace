@@ -1,12 +1,15 @@
 """Discord Service implementation for Mindtrace services.
 
-This module provides a Service wrapper around BaseDiscordClient that enables
-HTTP API endpoints and MCP integration while maintaining the Discord bot functionality.
+This module provides a Service wrapper around DiscordClient that enables HTTP API endpoints and MCP integration while 
+maintaining the Discord bot functionality.
 """
 
 import asyncio
 import logging
 from typing import Any, Dict, Optional
+from unittest.mock import Mock, AsyncMock
+
+import discord
 
 from mindtrace.services import Service
 from mindtrace.services.discord.discord_client import DiscordClient
@@ -14,10 +17,8 @@ from mindtrace.services.discord.types import (
     DiscordCommandInput,
     DiscordCommandOutput,
     DiscordCommandSchema,
-    DiscordCommandsInput,
     DiscordCommandsOutput,
     DiscordCommandsSchema,
-    DiscordStatusInput,
     DiscordStatusOutput,
     DiscordStatusSchema
 )
@@ -130,19 +131,250 @@ class DiscordService(Service):
     async def execute_command(self, payload: DiscordCommandInput) -> DiscordCommandOutput:
         """Execute a command via the service API.
         
+        This method allows executing Discord slash commands programmatically through the FastAPI endpoint, useful for 
+        exposing AI models and other functionality through both Discord and HTTP interfaces.
+        
         Args:
             payload: Command input data
             
         Returns:
             Command output
         """
-        # This would need to be implemented to execute commands programmatically
-        # For now, return a placeholder response
-        return DiscordCommandOutput(
-            response=f"Command '{payload.content}' received from user {payload.author_id}"
-        )
+        if self.discord_client.bot is None:
+            return DiscordCommandOutput(
+                response="Bot is not connected. Cannot execute commands.",
+                embed=None,
+                delete_after=None
+            )
+        
+        # Parse the command from content
+        command_name = payload.content.strip().split()[0].lstrip('/')
+        
+        # Find the command in the bot's command tree
+        command = None
+        for cmd in self.discord_client.bot.tree.get_commands():
+            if cmd.name == command_name:
+                command = cmd
+                break
+        
+        if command is None:
+            available_commands = [cmd.name for cmd in self.discord_client.bot.tree.get_commands()]
+            return DiscordCommandOutput(
+                response=f"Command '/{command_name}' not found. Available commands: {', '.join(available_commands)}",
+                embed=None,
+                delete_after=None
+            )
+        
+        # Set defaults and log warnings for missing required values
+        defaults = self._get_default_values(payload, command_name)
+        
+        # Parse parameters from content string
+        parsed_params = self._parse_command_parameters(payload.content, command)
+        
+        # Create a minimal interaction for command execution
+        mock_interaction = self._create_minimal_interaction(defaults)
+        
+        try:
+            # Execute the command with parsed parameters
+            await command.callback(mock_interaction, **parsed_params)
+            
+            # Get the response from the mock
+            if mock_interaction.response.send_message.called:
+                response = mock_interaction.response.send_message.call_args[0][0]
+            elif mock_interaction.followup.send.called:
+                response = mock_interaction.followup.send.call_args[0][0]
+            else:
+                response = "Command executed successfully"
+            
+            return DiscordCommandOutput(
+                response=response,
+                embed=None,
+                delete_after=None
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error executing command '{command_name}': {e}")
+            return DiscordCommandOutput(
+                response=f"Error executing command: {str(e)}",
+                embed=None,
+                delete_after=None
+            )
     
-    def get_bot_status(self, payload: None = None) -> DiscordStatusOutput:
+    def _get_default_values(self, payload: DiscordCommandInput, command_name: str) -> DiscordCommandInput:
+        """Get default values for missing parameters and log warnings.
+        
+        Args:
+            payload: Original command input
+            command_name: Name of the command being executed
+            
+        Returns:
+            Command input with defaults filled in
+        """
+        # Set reasonable defaults
+        defaults = DiscordCommandInput(
+            content=payload.content,
+            author_id=payload.author_id or 0,
+            channel_id=payload.channel_id or 0,
+            guild_id=payload.guild_id,
+            message_id=payload.message_id or 0
+        )
+        
+        # Log warnings for missing values that might be required
+        if payload.author_id is None:
+            self.logger.warning(f"author_id not provided for command '{command_name}'. Some commands may require this.")
+        
+        if payload.channel_id is None:
+            self.logger.warning(f"channel_id not provided for command '{command_name}'. Some commands may require this.")
+        
+        if payload.message_id is None:
+            self.logger.warning(f"message_id not provided for command '{command_name}'. Some commands may require this.")
+        
+        # Guild-specific commands might need guild_id
+        guild_required_commands = ['info', 'cleanup']  # Commands that typically need guild context
+        if command_name in guild_required_commands and payload.guild_id is None:
+            self.logger.warning(f"guild_id not provided for command '{command_name}'. This command may require guild context.")
+        
+        return defaults
+    
+    def _parse_command_parameters(self, content: str, command) -> dict:
+        """Parse parameters from command content string.
+        
+        Args:
+            content: Command content string (e.g., "/roll 20")
+            command: The Discord command object
+            
+        Returns:
+            Dictionary of parsed parameters
+        """
+        # Split the content into parts
+        parts = content.strip().split()
+        if not parts:
+            return {}
+        
+        # Remove the command name (first part)
+        command_name = parts[0].lstrip('/')
+        param_parts = parts[1:] if len(parts) > 1 else []
+        
+        # Get command parameters
+        params = {}
+        for param in command.parameters:
+            param_name = param.name
+            param_type = param.type
+            
+            # Convert Discord parameter type to Python type
+            python_type = self._get_python_type_from_discord_type(param_type)
+            
+            # Try to find the parameter value in the remaining parts
+            if param_parts:
+                try:
+                    # Convert the first parameter to the expected type
+                    value = python_type(param_parts[0])
+                    params[param_name] = value
+                    # Remove the used parameter
+                    param_parts = param_parts[1:]
+                except (ValueError, IndexError, TypeError):
+                    # If conversion fails or no more parts, use default
+                    if hasattr(param, 'default') and param.default is not None:
+                        params[param_name] = param.default
+                    else:
+                        # For required parameters without defaults, use a reasonable default
+                        if python_type == int:
+                            params[param_name] = 6  # Default for dice sides
+                        elif python_type == str:
+                            params[param_name] = ""
+                        else:
+                            params[param_name] = None
+            else:
+                # No more parts, use default
+                if hasattr(param, 'default') and param.default is not None:
+                    params[param_name] = param.default
+                else:
+                    # For required parameters without defaults, use a reasonable default
+                    if python_type == int:
+                        params[param_name] = 6  # Default for dice sides
+                    elif python_type == str:
+                        params[param_name] = ""
+                    else:
+                        params[param_name] = None
+        
+        return params
+    
+    def _get_python_type_from_discord_type(self, discord_type) -> type:
+        """Convert Discord parameter type to Python type.
+        
+        Args:
+            discord_type: Discord parameter type enum
+            
+        Returns:
+            Python type
+        """
+        # Map Discord parameter types to Python types
+        type_mapping = {
+            discord.AppCommandOptionType.string: str,
+            discord.AppCommandOptionType.integer: int,
+            discord.AppCommandOptionType.number: float,
+            discord.AppCommandOptionType.boolean: bool,
+            discord.AppCommandOptionType.user: int,  # User ID
+            discord.AppCommandOptionType.channel: int,  # Channel ID
+            discord.AppCommandOptionType.role: int,  # Role ID
+            discord.AppCommandOptionType.mentionable: int,  # ID
+            discord.AppCommandOptionType.attachment: str,  # Attachment URL
+        }
+        
+        return type_mapping.get(discord_type, str)  # Default to str if unknown
+    
+    def _create_minimal_interaction(self, payload: DiscordCommandInput) -> Mock:
+        """Create a minimal mock Discord interaction for command execution.
+        
+        This creates only the essential attributes needed for command execution
+        without generating fake Discord server data. The focus is on exposing
+        the same functionality through both Discord and HTTP interfaces.
+        
+        Args:
+            payload: Command input data
+            
+        Returns:
+            Minimal mock interaction object
+        """
+        # Create minimal mock user
+        mock_user = Mock()
+        mock_user.id = payload.author_id
+        mock_user.mention = f"<@{payload.author_id}>" if payload.author_id else "<@0>"
+        mock_user.display_name = f"User{payload.author_id}" if payload.author_id else "API User"
+        
+        # Create minimal mock guild if guild_id is provided (for guild-specific commands)
+        mock_guild = None
+        if payload.guild_id:
+            mock_guild = Mock()
+            mock_guild.id = payload.guild_id
+            # Don't populate fake data - let commands handle missing data gracefully
+            mock_guild.get_member = Mock(return_value=mock_user)
+        
+        # Create minimal mock channel
+        mock_channel = Mock()
+        mock_channel.id = payload.channel_id
+        
+        # Create minimal mock interaction
+        mock_interaction = Mock()
+        mock_interaction.user = mock_user
+        mock_interaction.guild = mock_guild
+        mock_interaction.channel = mock_channel
+        mock_interaction.message_id = payload.message_id
+        
+        # Create mock response
+        mock_response = Mock()
+        mock_response.send_message = AsyncMock()
+        mock_response.defer = AsyncMock()
+        mock_interaction.response = mock_response
+        
+        # Create mock followup
+        mock_followup = Mock()
+        mock_followup.send = AsyncMock()
+        mock_interaction.followup = mock_followup
+        
+        return mock_interaction
+    
+    def get_bot_status(self) -> DiscordStatusOutput:
         """Get the current bot status.
         
         Returns:
@@ -165,7 +397,7 @@ class DiscordService(Service):
             status=str(self.discord_client.bot.status)
         )
     
-    def get_commands(self, payload: None = None) -> DiscordCommandsOutput:
+    def get_commands(self) -> DiscordCommandsOutput:
         """Get list of registered commands.
         
         Returns:
