@@ -7,9 +7,9 @@ It combines Basler SDK installation with firewall configuration
 for camera network communication.
 
 Features:
-- Combined installation of all camera SDKs (Basler Pylon)
+- Combined installation of all camera SDKs (Basler Pylon, Matrix Vision GenICam CTI)
 - Firewall configuration for camera network communication
-- Cross-platform support (Windows and Linux)
+- Cross-platform support (Windows, Linux, and macOS)
 - Individual SDK uninstallation support
 - Comprehensive logging and error handling
 - Configurable IP range and firewall settings
@@ -62,6 +62,7 @@ from typing import Optional
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
+from mindtrace.hardware.cameras.setup.setup_genicam import install_genicam_cti, uninstall_genicam_cti
 from mindtrace.hardware.core.config import get_hardware_config
 
 
@@ -99,7 +100,7 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting installation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 2
+        total_sdks = 3
 
         # Install Basler Pylon SDK
         self.logger.info("Installing Basler Pylon SDK")
@@ -108,6 +109,14 @@ class CameraSystemSetup(Mindtrace):
             success_count += 1
         else:
             self.logger.error("Basler Pylon SDK installation failed")
+
+        # Install Matrix Vision GenICam CTI
+        self.logger.info("Installing Matrix Vision GenICam CTI")
+        if install_genicam_cti(release_version):
+            self.logger.info("Matrix Vision GenICam CTI installation completed successfully")
+            success_count += 1
+        else:
+            self.logger.error("Matrix Vision GenICam CTI installation failed")
 
         # Log summary
         if success_count == total_sdks:
@@ -129,7 +138,7 @@ class CameraSystemSetup(Mindtrace):
         self.logger.info("Starting uninstallation of all camera SDKs")
 
         success_count = 0
-        total_sdks = 2
+        total_sdks = 3
 
         # Uninstall Basler Pylon SDK
         self.logger.info("Uninstalling Basler Pylon SDK")
@@ -138,6 +147,14 @@ class CameraSystemSetup(Mindtrace):
             success_count += 1
         else:
             self.logger.error("Basler Pylon SDK uninstallation failed")
+
+        # Uninstall Matrix Vision GenICam CTI
+        self.logger.info("Uninstalling Matrix Vision GenICam CTI")
+        if uninstall_genicam_cti():
+            self.logger.info("Matrix Vision GenICam CTI uninstallation completed successfully")
+            success_count += 1
+        else:
+            self.logger.error("Matrix Vision GenICam CTI uninstallation failed")
 
         # Log summary
         if success_count == total_sdks:
