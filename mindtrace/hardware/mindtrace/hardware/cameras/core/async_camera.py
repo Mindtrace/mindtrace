@@ -732,6 +732,47 @@ class AsyncCamera(Mindtrace):
                 self.logger.error(f"HDR capture failed for camera '{self._full_name}': {e}")
                 raise CameraCaptureError(f"HDR capture failed for camera '{self._full_name}': {str(e)}")
 
+    # Backend-specific method delegation for GenICam compatibility
+    async def get_ROI(self) -> Dict[str, int]:
+        """Get Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_ROI()
+    
+    async def set_ROI(self, x: int, y: int, width: int, height: int):
+        """Set Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_ROI(x, y, width, height)
+    
+    async def reset_ROI(self):
+        """Reset Region of Interest (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.reset_ROI()
+    
+    async def get_wb(self) -> str:
+        """Get white balance mode (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_wb()
+    
+    async def set_auto_wb_once(self, value: str):
+        """Execute automatic white balance once (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.set_auto_wb_once(value)
+    
+    async def get_wb_range(self) -> List[str]:
+        """Get available white balance modes (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.get_wb_range()
+    
+    async def export_config(self, config_path: str):
+        """Export camera configuration (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.export_config(config_path)
+    
+    async def import_config(self, config_path: str):
+        """Import camera configuration (backend-specific method)."""
+        async with self._lock:
+            return await self._backend.import_config(config_path)
+
     async def close(self):
         """Close the camera and release resources."""
         async with self._lock:
