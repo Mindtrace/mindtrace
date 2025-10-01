@@ -116,8 +116,18 @@ async def verify_setup():
     
     # Verify user is linked to organization
     if not user.organization or str(user.organization.id) != str(org.id):
-        print("❌ User is not properly linked to organization!")
-        return False
+        print("⚠️  User is not properly linked to organization! Attempting to fix...")
+        # Try to fix the link
+        user.organization = org
+        await user.save()
+        await user.fetch_all_links()
+        
+        # Check again
+        if not user.organization or str(user.organization.id) != str(org.id):
+            print("❌ Failed to fix user-organization link!")
+            return False
+        else:
+            print("✓ Fixed user-organization link!")
     
     # Verify user has super admin role
     if user.org_role != OrgRole.SUPER_ADMIN:
@@ -170,34 +180,34 @@ async def create_sample_cameras(organization: Organization, project: Project, us
     sample_data = [
         {
             "id": "8003cbf3-94b0-4745-9002-a2ce1324f572",
-            "createdAt": "2025-06-26 11:02:39.041",
+            "createdAt": "2025-08-26 11:02:39.041",
             "status": "Success",
             "partId": "10474125177070209_10474225177070209",
             "partNo": 0,
             "clsResult": "Defective",
             "clsConfidence": None,
             "images": [
-                {"id": "227ffbd4-2637-4502-b16c-827ed5b2c5b2", "createdAt": "2025-06-26T11:02:43.348", "name": "cam16-2811566.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam16", "welds": [{"id": "518be0de-229a-4da0-a527-a536888eca8d", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "01aaf317-4fd8-4505-b95f-879008768a26", "createdAt": "2025-06-26T11:02:43.687", "name": "cam21-8916226.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam21", "welds": [{"id": "e40b8278-bff2-4bbc-b922-1aedd04afd20", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "56f217b0-3ea0-4d99-b8b1-08f089596370", "createdAt": "2025-06-26T11:02:43.348", "name": "cam11-3937369.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam11", "welds": [{"id": "f5757718-7dfe-4b41-8e4c-1138eaeeb77c", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "e10c2a70-d993-413a-8bd9-55f654927245", "createdAt": "2025-06-26T11:02:43.23", "name": "cam9-6161546.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam9", "welds": [{"id": "fc46c7bc-c9d9-4e9e-a0ef-56b50f99c6b9", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "90ec5ead-0979-4d89-9a3a-5e032eed3d65", "createdAt": "2025-06-26T11:02:43.346", "name": "cam22-5509399.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam22", "welds": [{"id": "2afe700f-44c4-4323-9191-1393b5931700", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "2315f497-c25a-413d-b2cf-f0d02b7ddd0c", "createdAt": "2025-06-26T11:02:43.348", "name": "cam14-3542241.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam14", "welds": [{"id": "ce8f3a97-9f4d-4172-a693-728456d28c94", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}, {"id": "9276b1f0-617d-44b0-b496-00d53147aa87", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "d6fc250c-0793-4512-8b78-74cfb54321b9", "createdAt": "2025-06-26T11:02:43.35", "name": "cam19-9954682.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam19", "welds": [{"id": "949a1de4-2c31-42d1-9a6f-8446acd6d3e1", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "077d8ccf-f6c5-4ae1-bc37-9540c3ed4ae3", "createdAt": "2025-06-26T11:02:43.689", "name": "cam4-3898886.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam4", "welds": [{"id": "7f452c7b-8733-44fa-9cde-0239edd23980", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "0ce68e10-eb88-43ec-9365-6be0cf281ee4", "createdAt": "2025-06-26T11:02:43.229", "name": "cam6-2527995.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam6", "welds": [{"id": "cbd4edf0-a7f7-404d-8df9-d9be3cfb2588", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "8885fbc4-8943-4b77-b172-c12ced5c1a46", "createdAt": "2025-06-26T11:02:43.227", "name": "cam10-6375079.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam10", "welds": [{"id": "a4c6648b-5c06-465c-8a95-28369256ed30", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA10", "severity": 0.2, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "58f9d5ce-d477-4997-9c0c-d66b7e8bb88f", "createdAt": "2025-06-26T11:02:43.268", "name": "cam8-7214075.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam8", "welds": [{"id": "385381d9-1e66-4e05-873e-1aeb0221eafc", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA8", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "9f020bac-cb31-48e9-820d-4d0bc3c56c43", "createdAt": "2025-06-26T11:02:43.222", "name": "cam18-8591150.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam18", "welds": [{"id": "2feb40ea-0609-4ff2-b3d7-2076a4fe2e34", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA8", "severity": 4.4, "clsResult": "Burr", "clsConfidence": None}]},
-                {"id": "4573727b-04a0-4a35-88c2-ee56adf0dd78", "createdAt": "2025-06-26T11:02:43.347", "name": "cam15-8252562.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam15", "welds": [{"id": "f8f12f9e-f887-45bf-9de3-7c34091fe1f2", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "65fa1775-6b33-4493-9080-714ff83fba43", "createdAt": "2025-06-26T11:02:43.65", "name": "cam17-8314608.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam17", "welds": [{"id": "8ab3cf3d-2a47-43e0-af9a-0d3bf67abba4", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "c336a50b-22d9-489e-a4f2-6c3105b2b615", "createdAt": "2025-06-26T11:02:43.688", "name": "cam20-9459191.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam20", "welds": [{"id": "dd7e2e30-3e4c-43ee-a16b-c9b359c2f763", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA10", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "45ab3181-87a6-4dac-b245-53bf204fee37", "createdAt": "2025-06-26T11:02:43.226", "name": "cam12-8929753.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam12", "welds": [{"id": "b3615cf1-e926-4cb4-ac59-6fc7a5ec61a9", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "0810f071-fe2b-4346-8db3-8d205c09a6df", "createdAt": "2025-06-26T11:02:43.229", "name": "cam3-6517844.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam3", "welds": [{"id": "b478786b-ca40-45c7-8df9-554bd43422ba", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "9ab2aec5-9c31-49ad-8785-eeacb7ea1779", "createdAt": "2025-06-26T11:02:43.35", "name": "cam5-1666972.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam5", "welds": [{"id": "e8f88d47-50d5-473c-aa34-b1a835a5d62d", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "08d909fa-23e3-4932-aad2-1c366d6494c1", "createdAt": "2025-06-26T11:02:43.348", "name": "cam2-1387124.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam2", "welds": [{"id": "ab732aac-068c-400b-a9f9-3a63cccc1b21", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "91f6d256-3cb7-41cd-90fb-1c3d30796680", "createdAt": "2025-06-26T11:02:41.66", "name": "cam1-9349806.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam1", "welds": [{"id": "db1b3174-fd76-4cf6-a155-0d4ca11abd66", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "b4c58e4e-2866-401f-81d4-036ec68d3d2a", "createdAt": "2025-06-26T11:02:42.387", "name": "cam7-8769287.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam7", "welds": [{"id": "cefeeeb4-0c33-4b09-bdb6-7c6eb148e8fd", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
+                {"id": "227ffbd4-2637-4502-b16c-827ed5b2c5b2", "createdAt": "2025-08-26T11:02:43.348", "name": "cam16-2811566.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam16", "welds": [{"id": "518be0de-229a-4da0-a527-a536888eca8d", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "01aaf317-4fd8-4505-b95f-879008768a26", "createdAt": "2025-08-26T11:02:43.687", "name": "cam21-8916226.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam21", "welds": [{"id": "e40b8278-bff2-4bbc-b922-1aedd04afd20", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "56f217b0-3ea0-4d99-b8b1-08f089596370", "createdAt": "2025-08-26T11:02:43.348", "name": "cam11-3937369.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam11", "welds": [{"id": "f5757718-7dfe-4b41-8e4c-1138eaeeb77c", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "e10c2a70-d993-413a-8bd9-55f654927245", "createdAt": "2025-08-26T11:02:43.23", "name": "cam9-6161546.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam9", "welds": [{"id": "fc46c7bc-c9d9-4e9e-a0ef-56b50f99c6b9", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "90ec5ead-0979-4d89-9a3a-5e032eed3d65", "createdAt": "2025-08-26T11:02:43.346", "name": "cam22-5509399.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam22", "welds": [{"id": "2afe700f-44c4-4323-9191-1393b5931700", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "2315f497-c25a-413d-b2cf-f0d02b7ddd0c", "createdAt": "2025-08-26T11:02:43.348", "name": "cam14-3542241.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam14", "welds": [{"id": "ce8f3a97-9f4d-4172-a693-728456d28c94", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}, {"id": "9276b1f0-617d-44b0-b496-00d53147aa87", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "d6fc250c-0793-4512-8b78-74cfb54321b9", "createdAt": "2025-08-26T11:02:43.35", "name": "cam19-9954682.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam19", "welds": [{"id": "949a1de4-2c31-42d1-9a6f-8446acd6d3e1", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "077d8ccf-f6c5-4ae1-bc37-9540c3ed4ae3", "createdAt": "2025-08-26T11:02:43.689", "name": "cam4-3898886.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam4", "welds": [{"id": "7f452c7b-8733-44fa-9cde-0239edd23980", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "0ce68e10-eb88-43ec-9365-6be0cf281ee4", "createdAt": "2025-08-26T11:02:43.229", "name": "cam6-2527995.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam6", "welds": [{"id": "cbd4edf0-a7f7-404d-8df9-d9be3cfb2588", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "8885fbc4-8943-4b77-b172-c12ced5c1a46", "createdAt": "2025-08-26T11:02:43.227", "name": "cam10-6375079.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam10", "welds": [{"id": "a4c6648b-5c06-465c-8a95-28369256ed30", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA10", "severity": 0.2, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "58f9d5ce-d477-4997-9c0c-d66b7e8bb88f", "createdAt": "2025-08-26T11:02:43.268", "name": "cam8-7214075.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam8", "welds": [{"id": "385381d9-1e66-4e05-873e-1aeb0221eafc", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA8", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "9f020bac-cb31-48e9-820d-4d0bc3c56c43", "createdAt": "2025-08-26T11:02:43.222", "name": "cam18-8591150.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam18", "welds": [{"id": "2feb40ea-0609-4ff2-b3d7-2076a4fe2e34", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA8", "severity": 4.4, "clsResult": "Burr", "clsConfidence": None}]},
+                {"id": "4573727b-04a0-4a35-88c2-ee56adf0dd78", "createdAt": "2025-08-26T11:02:43.347", "name": "cam15-8252562.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam15", "welds": [{"id": "f8f12f9e-f887-45bf-9de3-7c34091fe1f2", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "65fa1775-6b33-4493-9080-714ff83fba43", "createdAt": "2025-08-26T11:02:43.65", "name": "cam17-8314608.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam17", "welds": [{"id": "8ab3cf3d-2a47-43e0-af9a-0d3bf67abba4", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "c336a50b-22d9-489e-a4f2-6c3105b2b615", "createdAt": "2025-08-26T11:02:43.688", "name": "cam20-9459191.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam20", "welds": [{"id": "dd7e2e30-3e4c-43ee-a16b-c9b359c2f763", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA10", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "45ab3181-87a6-4dac-b245-53bf204fee37", "createdAt": "2025-08-26T11:02:43.226", "name": "cam12-8929753.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam12", "welds": [{"id": "b3615cf1-e926-4cb4-ac59-6fc7a5ec61a9", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "0810f071-fe2b-4346-8db3-8d205c09a6df", "createdAt": "2025-08-26T11:02:43.229", "name": "cam3-6517844.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam3", "welds": [{"id": "b478786b-ca40-45c7-8df9-554bd43422ba", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "9ab2aec5-9c31-49ad-8785-eeacb7ea1779", "createdAt": "2025-08-26T11:02:43.35", "name": "cam5-1666972.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam5", "welds": [{"id": "e8f88d47-50d5-473c-aa34-b1a835a5d62d", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "08d909fa-23e3-4932-aad2-1c366d6494c1", "createdAt": "2025-08-26T11:02:43.348", "name": "cam2-1387124.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam2", "welds": [{"id": "ab732aac-068c-400b-a9f9-3a63cccc1b21", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "91f6d256-3cb7-41cd-90fb-1c3d30796680", "createdAt": "2025-08-26T11:02:41.66", "name": "cam1-9349806.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam1", "welds": [{"id": "db1b3174-fd76-4cf6-a155-0d4ca11abd66", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "b4c58e4e-2866-401f-81d4-036ec68d3d2a", "createdAt": "2025-08-26T11:02:42.387", "name": "cam7-8769287.jpg", "path": "8003cbf3-94b0-4745-9002-a2ce1324f572", "pov": "cam7", "welds": [{"id": "cefeeeb4-0c33-4b09-bdb6-7c6eb148e8fd", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
             ]
         }
     ]
@@ -315,48 +325,48 @@ def get_sample_data() -> List[Dict[str, Any]]:
     data = [
         {
             'id': '8003cbf3-94b0-4745-9002-a2ce1324f572',
-            'created_at': datetime.fromisoformat('2025-06-26T11:02:39.041'),
+            'created_at': datetime.fromisoformat('2025-08-26T11:02:39.041'),
             'status': 'Success',
             'serial_number': '10474125177070209_10474225177070209',
             'part_no': 0,
             'cls_result': 'Defective',
             'cls_confidence': None,
             'images': [
-                {"id": "227ffbd4-2637-4502-b16c-827ed5b2c5b2", "createdAt": "2025-06-26T11:02:43.348", "name": "cam16-2811566.jpg", "pov": "cam16", "welds": [{"id": "518be0de-229a-4da0-a527-a536888eca8d", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "01aaf317-4fd8-4505-b95f-879008768a26", "createdAt": "2025-06-26T11:02:43.687", "name": "cam21-8916226.jpg", "pov": "cam21", "welds": [{"id": "e40b8278-bff2-4bbc-b922-1aedd04afd20", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "56f217b0-3ea0-4d99-b8b1-08f089596370", "createdAt": "2025-06-26T11:02:43.348", "name": "cam11-3937369.jpg", "pov": "cam11", "welds": [{"id": "f5757718-7dfe-4b41-8e4c-1138eaeeb77c", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "e10c2a70-d993-413a-8bd9-55f654927245", "createdAt": "2025-06-26T11:02:43.23", "name": "cam9-6161546.jpg", "pov": "cam9", "welds": [{"id": "fc46c7bc-c9d9-4e9e-a0ef-56b50f99c6b9", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "90ec5ead-0979-4d89-9a3a-5e032eed3d65", "createdAt": "2025-06-26T11:02:43.346", "name": "cam22-5509399.jpg", "pov": "cam22", "welds": [{"id": "2afe700f-44c4-4323-9191-1393b5931700", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "2315f497-c25a-413d-b2cf-f0d02b7ddd0c", "createdAt": "2025-06-26T11:02:43.348", "name": "cam14-3542241.jpg", "pov": "cam14", "welds": [{"id": "ce8f3a97-9f4d-4172-a693-728456d28c94", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}, {"id": "9276b1f0-617d-44b0-b496-00d53147aa87", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "d6fc250c-0793-4512-8b78-74cfb54321b9", "createdAt": "2025-06-26T11:02:43.35", "name": "cam19-9954682.jpg", "pov": "cam19", "welds": [{"id": "949a1de4-2c31-42d1-9a6f-8446acd6d3e1", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "077d8ccf-f6c5-4ae1-bc37-9540c3ed4ae3", "createdAt": "2025-06-26T11:02:43.689", "name": "cam4-3898886.jpg", "pov": "cam4", "welds": [{"id": "7f452c7b-8733-44fa-9cde-0239edd23980", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "0ce68e10-eb88-43ec-9365-6be0cf281ee4", "createdAt": "2025-06-26T11:02:43.229", "name": "cam6-2527995.jpg", "pov": "cam6", "welds": [{"id": "cbd4edf0-a7f7-404d-8df9-d9be3cfb2588", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "8885fbc4-8943-4b77-b172-c12ced5c1a46", "createdAt": "2025-06-26T11:02:43.227", "name": "cam10-6375079.jpg", "pov": "cam10", "welds": [{"id": "a4c6648b-5c06-465c-8a95-28369256ed30", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA10", "severity": 0.2, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "58f9d5ce-d477-4997-9c0c-d66b7e8bb88f", "createdAt": "2025-06-26T11:02:43.268", "name": "cam8-7214075.jpg", "pov": "cam8", "welds": [{"id": "385381d9-1e66-4e05-873e-1aeb0221eafc", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA8", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "9f020bac-cb31-48e9-820d-4d0bc3c56c43", "createdAt": "2025-06-26T11:02:43.222", "name": "cam18-8591150.jpg", "pov": "cam18", "welds": [{"id": "2feb40ea-0609-4ff2-b3d7-2076a4fe2e34", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA8", "severity": 4.4, "clsResult": "Burr", "clsConfidence": None}]},
-                {"id": "4573727b-04a0-4a35-88c2-ee56adf0dd78", "createdAt": "2025-06-26T11:02:43.347", "name": "cam15-8252562.jpg", "pov": "cam15", "welds": [{"id": "f8f12f9e-f887-45bf-9de3-7c34091fe1f2", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "65fa1775-6b33-4493-9080-714ff83fba43", "createdAt": "2025-06-26T11:02:43.65", "name": "cam17-8314608.jpg", "pov": "cam17", "welds": [{"id": "8ab3cf3d-2a47-43e0-af9a-0d3bf67abba4", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "c336a50b-22d9-489e-a4f2-6c3105b2b615", "createdAt": "2025-06-26T11:02:43.688", "name": "cam20-9459191.jpg", "pov": "cam20", "welds": [{"id": "dd7e2e30-3e4c-43ee-a16b-c9b359c2f763", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA10", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "45ab3181-87a6-4dac-b245-53bf204fee37", "createdAt": "2025-06-26T11:02:43.226", "name": "cam12-8929753.jpg", "pov": "cam12", "welds": [{"id": "b3615cf1-e926-4cb4-ac59-6fc7a5ec61a9", "createdAt": "2025-06-26T11:02:45.799", "name": "IB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "0810f071-fe2b-4346-8db3-8d205c09a6df", "createdAt": "2025-06-26T11:02:43.229", "name": "cam3-6517844.jpg", "pov": "cam3", "welds": [{"id": "b478786b-ca40-45c7-8df9-554bd43422ba", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "9ab2aec5-9c31-49ad-8785-eeacb7ea1779", "createdAt": "2025-06-26T11:02:43.35", "name": "cam5-1666972.jpg", "pov": "cam5", "welds": [{"id": "e8f88d47-50d5-473c-aa34-b1a835a5d62d", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "08d909fa-23e3-4932-aad2-1c366d6494c1", "createdAt": "2025-06-26T11:02:43.348", "name": "cam2-1387124.jpg", "pov": "cam2", "welds": [{"id": "ab732aac-068c-400b-a9f9-3a63cccc1b21", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "91f6d256-3cb7-41cd-90fb-1c3d30796680", "createdAt": "2025-06-26T11:02:41.66", "name": "cam1-9349806.jpg", "pov": "cam1", "welds": [{"id": "db1b3174-fd76-4cf6-a155-0d4ca11abd66", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "b4c58e4e-2866-401f-81d4-036ec68d3d2a", "createdAt": "2025-06-26T11:02:42.387", "name": "cam7-8769287.jpg", "pov": "cam7", "welds": [{"id": "cefeeeb4-0c33-4b09-bdb6-7c6eb148e8fd", "createdAt": "2025-06-26T11:02:45.799", "name": "OB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
+                {"id": "227ffbd4-2637-4502-b16c-827ed5b2c5b2", "createdAt": "2025-08-26T11:02:43.348", "name": "cam16-2811566.jpg", "pov": "cam16", "welds": [{"id": "518be0de-229a-4da0-a527-a536888eca8d", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "01aaf317-4fd8-4505-b95f-879008768a26", "createdAt": "2025-08-26T11:02:43.687", "name": "cam21-8916226.jpg", "pov": "cam21", "welds": [{"id": "e40b8278-bff2-4bbc-b922-1aedd04afd20", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "56f217b0-3ea0-4d99-b8b1-08f089596370", "createdAt": "2025-08-26T11:02:43.348", "name": "cam11-3937369.jpg", "pov": "cam11", "welds": [{"id": "f5757718-7dfe-4b41-8e4c-1138eaeeb77c", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "e10c2a70-d993-413a-8bd9-55f654927245", "createdAt": "2025-08-26T11:02:43.23", "name": "cam9-6161546.jpg", "pov": "cam9", "welds": [{"id": "fc46c7bc-c9d9-4e9e-a0ef-56b50f99c6b9", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "90ec5ead-0979-4d89-9a3a-5e032eed3d65", "createdAt": "2025-08-26T11:02:43.346", "name": "cam22-5509399.jpg", "pov": "cam22", "welds": [{"id": "2afe700f-44c4-4323-9191-1393b5931700", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "2315f497-c25a-413d-b2cf-f0d02b7ddd0c", "createdAt": "2025-08-26T11:02:43.348", "name": "cam14-3542241.jpg", "pov": "cam14", "welds": [{"id": "ce8f3a97-9f4d-4172-a693-728456d28c94", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}, {"id": "9276b1f0-617d-44b0-b496-00d53147aa87", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "d6fc250c-0793-4512-8b78-74cfb54321b9", "createdAt": "2025-08-26T11:02:43.35", "name": "cam19-9954682.jpg", "pov": "cam19", "welds": [{"id": "949a1de4-2c31-42d1-9a6f-8446acd6d3e1", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA9", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "077d8ccf-f6c5-4ae1-bc37-9540c3ed4ae3", "createdAt": "2025-08-26T11:02:43.689", "name": "cam4-3898886.jpg", "pov": "cam4", "welds": [{"id": "7f452c7b-8733-44fa-9cde-0239edd23980", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA4", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "0ce68e10-eb88-43ec-9365-6be0cf281ee4", "createdAt": "2025-08-26T11:02:43.229", "name": "cam6-2527995.jpg", "pov": "cam6", "welds": [{"id": "cbd4edf0-a7f7-404d-8df9-d9be3cfb2588", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA6", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "8885fbc4-8943-4b77-b172-c12ced5c1a46", "createdAt": "2025-08-26T11:02:43.227", "name": "cam10-6375079.jpg", "pov": "cam10", "welds": [{"id": "a4c6648b-5c06-465c-8a95-28369256ed30", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA10", "severity": 0.2, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "58f9d5ce-d477-4997-9c0c-d66b7e8bb88f", "createdAt": "2025-08-26T11:02:43.268", "name": "cam8-7214075.jpg", "pov": "cam8", "welds": [{"id": "385381d9-1e66-4e05-873e-1aeb0221eafc", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA8", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "9f020bac-cb31-48e9-820d-4d0bc3c56c43", "createdAt": "2025-08-26T11:02:43.222", "name": "cam18-8591150.jpg", "pov": "cam18", "welds": [{"id": "2feb40ea-0609-4ff2-b3d7-2076a4fe2e34", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA8", "severity": 4.4, "clsResult": "Burr", "clsConfidence": None}]},
+                {"id": "4573727b-04a0-4a35-88c2-ee56adf0dd78", "createdAt": "2025-08-26T11:02:43.347", "name": "cam15-8252562.jpg", "pov": "cam15", "welds": [{"id": "f8f12f9e-f887-45bf-9de3-7c34091fe1f2", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "65fa1775-6b33-4493-9080-714ff83fba43", "createdAt": "2025-08-26T11:02:43.65", "name": "cam17-8314608.jpg", "pov": "cam17", "welds": [{"id": "8ab3cf3d-2a47-43e0-af9a-0d3bf67abba4", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "c336a50b-22d9-489e-a4f2-6c3105b2b615", "createdAt": "2025-08-26T11:02:43.688", "name": "cam20-9459191.jpg", "pov": "cam20", "welds": [{"id": "dd7e2e30-3e4c-43ee-a16b-c9b359c2f763", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA10", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "45ab3181-87a6-4dac-b245-53bf204fee37", "createdAt": "2025-08-26T11:02:43.226", "name": "cam12-8929753.jpg", "pov": "cam12", "welds": [{"id": "b3615cf1-e926-4cb4-ac59-6fc7a5ec61a9", "createdAt": "2025-08-26T11:02:45.799", "name": "IB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "0810f071-fe2b-4346-8db3-8d205c09a6df", "createdAt": "2025-08-26T11:02:43.229", "name": "cam3-6517844.jpg", "pov": "cam3", "welds": [{"id": "b478786b-ca40-45c7-8df9-554bd43422ba", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA3", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "9ab2aec5-9c31-49ad-8785-eeacb7ea1779", "createdAt": "2025-08-26T11:02:43.35", "name": "cam5-1666972.jpg", "pov": "cam5", "welds": [{"id": "e8f88d47-50d5-473c-aa34-b1a835a5d62d", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA5", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "08d909fa-23e3-4932-aad2-1c366d6494c1", "createdAt": "2025-08-26T11:02:43.348", "name": "cam2-1387124.jpg", "pov": "cam2", "welds": [{"id": "ab732aac-068c-400b-a9f9-3a63cccc1b21", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA2", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "91f6d256-3cb7-41cd-90fb-1c3d30796680", "createdAt": "2025-08-26T11:02:41.66", "name": "cam1-9349806.jpg", "pov": "cam1", "welds": [{"id": "db1b3174-fd76-4cf6-a155-0d4ca11abd66", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA1", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "b4c58e4e-2866-401f-81d4-036ec68d3d2a", "createdAt": "2025-08-26T11:02:42.387", "name": "cam7-8769287.jpg", "pov": "cam7", "welds": [{"id": "cefeeeb4-0c33-4b09-bdb6-7c6eb148e8fd", "createdAt": "2025-08-26T11:02:45.799", "name": "OB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
             ]
         },
         {
             'id': 'aa3d2f2a-0301-434c-be4f-0325b962e0f2',
-            'created_at': datetime.fromisoformat('2025-06-26T11:03:08.007'),
+            'created_at': datetime.fromisoformat('2025-08-26T11:03:08.007'),
             'status': 'Success',
             'serial_number': '10474325177070238_10474425177070238',
             'part_no': 0,
             'cls_result': 'Healthy',
             'cls_confidence': None,
             'images': [
-                {"id": "712a2dca-018c-4bfc-93b9-b92159805da6", "createdAt": "2025-06-26T11:03:12.306", "name": "cam22-4328034.jpg", "pov": "cam22", "welds": [{"id": "e556bf8c-e158-45a3-88dc-372de9c27d7f", "createdAt": "2025-06-26T11:03:14.609", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "7015a920-ff80-45a5-ba54-58cd2588b644", "createdAt": "2025-06-26T11:03:12.306", "name": "cam21-4919224.jpg", "pov": "cam21", "welds": [{"id": "5e45979b-b5e7-4e39-a71f-b81a99f7f501", "createdAt": "2025-06-26T11:03:14.609", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
-                {"id": "9662cff2-fb74-4bd3-bccb-86304cc7ed6e", "createdAt": "2025-06-26T11:03:12.325", "name": "cam17-9668238.jpg", "pov": "cam17", "welds": [{"id": "09fa4ac9-aac2-4dec-90ce-1c9cad71d5cd", "createdAt": "2025-06-26T11:03:14.609", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
+                {"id": "712a2dca-018c-4bfc-93b9-b92159805da6", "createdAt": "2025-08-26T11:03:12.306", "name": "cam22-4328034.jpg", "pov": "cam22", "welds": [{"id": "e556bf8c-e158-45a3-88dc-372de9c27d7f", "createdAt": "2025-08-26T11:03:14.609", "name": "OB_WA11", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "7015a920-ff80-45a5-ba54-58cd2588b644", "createdAt": "2025-08-26T11:03:12.306", "name": "cam21-4919224.jpg", "pov": "cam21", "welds": [{"id": "5e45979b-b5e7-4e39-a71f-b81a99f7f501", "createdAt": "2025-08-26T11:03:14.609", "name": "IB_WA11", "severity": 4, "clsResult": "Healthy", "clsConfidence": None}]},
+                {"id": "9662cff2-fb74-4bd3-bccb-86304cc7ed6e", "createdAt": "2025-08-26T11:03:12.325", "name": "cam17-9668238.jpg", "pov": "cam17", "welds": [{"id": "09fa4ac9-aac2-4dec-90ce-1c9cad71d5cd", "createdAt": "2025-08-26T11:03:14.609", "name": "IB_WA7", "severity": 0, "clsResult": "Healthy", "clsConfidence": None}]}
             ]
         }
     ]
@@ -407,9 +417,19 @@ async def seed_scan_data_from_csv(organization: Organization, project: Project, 
                 print(f"Warning: No camera found for {camera_name}")
                 continue
             
-            # Create ScanImage record with proper bucket and path structure
-            # Path structure: organization_id/project_id/test-seed/scan_id/
-            image_path = f"{organization.id}/{project.id}/test-seed/{scan.id}/"
+            # Create ScanImage record with predefined bucket paths
+            # Use the actual paths from the bucket structure
+            if scan_record['id'] == '8003cbf3-94b0-4745-9002-a2ce1324f572':
+                image_path = "507f1f77bcf86cd799439011/507f1f77bcf86cd799439012/test-seed/8003cbf3-94b0-4745-9002-a2ce1324f572/"
+            elif scan_record['id'] == 'aa3d2f2a-0301-434c-be4f-0325b962e0f2':
+                image_path = "507f1f77bcf86cd799439011/507f1f77bcf86cd799439012/test-seed/aa3d2f2a-0301-434c-be4f-0325b962e0f2/"
+            else:
+                # Fallback for any other scan IDs
+                image_path = f"507f1f77bcf86cd799439011/507f1f77bcf86cd799439012/test-seed/{scan_record['id']}/"
+            
+            # Extract file name from the path (last part of the path)
+            file_name = image_record['name']
+            
             image_data = {
                 "organization": organization,
                 "project": project,
@@ -417,10 +437,10 @@ async def seed_scan_data_from_csv(organization: Organization, project: Project, 
                 "scan": scan,
                 "user": user,
                 "status": ScanImageStatus.PROCESSED,
-                "file_name": image_record['name'],
+                "file_name": file_name,
                 "path": image_path,
                 "bucket_name": "paz-test-bucket",
-                "full_path": f"{image_path}{image_record['name']}",
+                "full_path": f"{image_path}{file_name}",
                 "created_at": datetime.fromisoformat(image_record['createdAt'])
             }
             
