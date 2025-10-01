@@ -97,4 +97,4 @@ class DiscordEventHandler(ABC):
     @abstractmethod
     async def handle(self, event_type: DiscordEventType, **kwargs) -> None:
         """Handle a Discord event."""
-        pass
+        pass  # pragma: no cover
