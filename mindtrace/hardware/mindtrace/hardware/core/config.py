@@ -34,6 +34,7 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_BUFFER_COUNT: Number of frame buffers for cameras
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
+    - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
     - MINDTRACE_HW_PATHS_BIN_DIR: Directory for binary installations
     - MINDTRACE_HW_PATHS_INCLUDE_DIR: Directory for header files
@@ -155,12 +156,14 @@ class CameraBackends:
     Attributes:
         basler_enabled: Enable Basler camera backend
         opencv_enabled: Enable OpenCV camera backend
+        genicam_enabled: Enable GenICam camera backend
         mock_enabled: Enable mock camera backend for testing
         discovery_timeout: Camera discovery timeout in seconds
     """
 
     basler_enabled: bool = True
     opencv_enabled: bool = True
+    genicam_enabled: bool = True
     mock_enabled: bool = False
     discovery_timeout: float = 10.0
 
@@ -491,6 +494,9 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_ENABLED"):
             self._config.backends.opencv_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_GENICAM_ENABLED"):
+            self._config.backends.genicam_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_ENABLED"):
             self._config.backends.mock_enabled = env_val.lower() == "true"
