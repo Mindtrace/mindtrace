@@ -32,6 +32,9 @@ mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
 mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
 mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
 mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
+mindtrace-setup-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:main"
+mindtrace-uninstall-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:uninstall_main"
+mindtrace-verify-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:verify_main"
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
