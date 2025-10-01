@@ -120,6 +120,10 @@ class BaslerCameraBackend(CameraBackend):
         camera_config: Optional[str] = None,
         img_quality_enhancement: Optional[bool] = None,
         retrieve_retry_count: Optional[int] = None,
+        multicast_enabled: Optional[bool] = None,
+        target_ips: Optional[List[str]] = None,
+        multicast_group: Optional[str] = None,
+        multicast_port: Optional[int] = None,
         **backend_kwargs,
     ):
         """Initialize Basler camera with configurable parameters.
@@ -129,6 +133,10 @@ class BaslerCameraBackend(CameraBackend):
             camera_config: Path to Pylon Feature Stream (.pfs) file (optional)
             img_quality_enhancement: Enable CLAHE image enhancement (uses config default if None)
             retrieve_retry_count: Number of capture retry attempts (uses config default if None)
+            multicast_enabled: Enable multicast streaming mode (uses config default if None)
+            target_ips: List of target IP addresses for multicast discovery (optional)
+            multicast_group: Multicast group IP address (uses config default if None)
+            multicast_port: Multicast port number (uses config default if None)
             **backend_kwargs: Backend-specific parameters:
                 - pixel_format: Default pixel format (uses config default if None)
                 - buffer_count: Number of frame buffers (uses config default if None)
@@ -164,6 +172,16 @@ class BaslerCameraBackend(CameraBackend):
         if timeout_ms is None:
             timeout_ms = getattr(self.camera_config, "timeout_ms", 5000)
 
+        # Multicast configuration with fallbacks
+        if multicast_enabled is None:
+            multicast_enabled = getattr(self.camera_config.cameras, "basler_multicast_enabled", False)
+        if multicast_group is None:
+            multicast_group = getattr(self.camera_config.cameras, "basler_multicast_group", "239.192.1.1")
+        if multicast_port is None:
+            multicast_port = getattr(self.camera_config.cameras, "basler_multicast_port", 3956)
+        if target_ips is None:
+            target_ips = getattr(self.camera_config.cameras, "basler_target_ips", [])
+
         # Validate parameters
         if buffer_count < 1:
             raise CameraConfigurationError("Buffer count must be at least 1")
@@ -175,6 +193,12 @@ class BaslerCameraBackend(CameraBackend):
         self.default_pixel_format = pixel_format
         self.buffer_count = buffer_count
         self.timeout_ms = timeout_ms
+        
+        # Store multicast configuration
+        self.multicast_enabled = multicast_enabled
+        self.target_ips = target_ips or []
+        self.multicast_group = multicast_group
+        self.multicast_port = multicast_port
 
         # Internal state
         self.converter = None
@@ -229,11 +253,12 @@ class BaslerCameraBackend(CameraBackend):
             raise HardwareOperationError(f"Pypylon operation failed for camera '{self.camera_name}': {e}") from e
 
     @staticmethod
-    def get_available_cameras(include_details: bool = False) -> Union[List[str], Dict[str, Dict[str, str]]]:
+    def get_available_cameras(include_details: bool = False, target_ips: Optional[List[str]] = None) -> Union[List[str], Dict[str, Dict[str, str]]]:
         """Get available Basler cameras.
 
         Args:
             include_details: If True, return detailed information
+            target_ips: Optional list of IP addresses to specifically discover
 
         Returns:
             List of camera names (user-defined names preferred, serial numbers as fallback) or dict with details
@@ -251,7 +276,11 @@ class BaslerCameraBackend(CameraBackend):
             available_cameras = []
             camera_details = {}
 
-            devices = pylon.TlFactory.GetInstance().EnumerateDevices()
+            # Use IP-based discovery if target IPs are provided
+            if target_ips:
+                devices = BaslerCameraBackend._discover_by_ip(target_ips)
+            else:
+                devices = pylon.TlFactory.GetInstance().EnumerateDevices()
 
             for device in devices:
                 serial_number = device.GetSerialNumber()
@@ -276,11 +305,57 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover Basler cameras: {str(e)}")
 
+    @staticmethod
+    def _discover_by_ip(target_ips: List[str]):
+        """Discover cameras by specific IP addresses.
+        
+        Args:
+            target_ips: List of IP addresses to target for discovery
+            
+        Returns:
+            List of discovered device info objects
+        """
+        if not PYPYLON_AVAILABLE:
+            raise SDKNotAvailableError("pypylon", "Basler SDK (pypylon) is not available")
+        else:
+            assert pylon is not None, "pypylon SDK is available but pylon is not initialized"
+            
+        discovered_devices = []
+        
+        for ip in target_ips:
+            try:
+                # Create device info for specific IP
+                device_info = pylon.DeviceInfo()
+                device_info.SetDeviceClass(pylon.DeviceClass_BaslerGigE)
+                device_info.SetIpAddress(ip)
+                
+                # Try to create device with this IP
+                factory = pylon.TlFactory.GetInstance()
+                
+                # Force discovery of this specific IP
+                factory.EnumerateDevices([device_info])
+                
+                # Get the enumerated device if it exists
+                devices = factory.EnumerateDevices()
+                for device in devices:
+                    if hasattr(device, 'GetIpAddress') and device.GetIpAddress() == ip:
+                        discovered_devices.append(device)
+                        break
+                        
+            except Exception as e:
+                # Log but continue with other IPs
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to discover camera at IP {ip}: {e}")
+                continue
+                
+        return discovered_devices
+
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
 
         This searches for the camera by name, serial number, or IP and establishes
-        a connection if found.
+        a connection if found. Uses multicast-aware discovery if enabled.
 
         Returns:
             Tuple of (success status, camera object, None)
@@ -305,57 +380,126 @@ class BaslerCameraBackend(CameraBackend):
                     max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
                 )
 
-            all_devices = await self._sdk(pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s)
-            if len(all_devices) == 0:
-                raise CameraNotFoundError("No Basler cameras found")
-
-            camera_found = False
-            for device in all_devices:
-                if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
-                    camera_found = True
-                    try:
-
-                        def _create_and_open():
-                            cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
-                            cam.Open()
-                            return cam
-
-                        camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
-
-                        if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
-                            self.camera_name = device.GetUserDefinedName()
-                            self.logger.debug(
-                                f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
-                            )
-
-                        # Configure the camera after opening
-                        self.camera = camera
-                        await self._configure_camera()
-
-                        # Load config if provided
-                        if self.camera_config_path and os.path.exists(self.camera_config_path):
-                            await self.import_config(self.camera_config_path)
-
-                        self.initialized = True
-                        return True, camera, None
-
-                    except Exception as e:
-                        self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
-                        raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
-
-            if not camera_found:
-                available_cameras = [
-                    f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in all_devices
-                ]
-                raise CameraNotFoundError(
-                    f"Camera '{self.camera_name}' not found. Available cameras: {available_cameras}"
-                )
+            # Choose initialization method based on multicast configuration
+            if self.multicast_enabled and self.target_ips:
+                return await self._initialize_by_ip()
+            else:
+                return await self._initialize_by_discovery()
 
         except (CameraNotFoundError, CameraConnectionError):
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error initializing Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing camera '{self.camera_name}': {str(e)}")
+
+    async def _initialize_by_discovery(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera using standard discovery.
+        
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        all_devices = await self._sdk(pylon.TlFactory.GetInstance().EnumerateDevices, timeout=self._op_timeout_s)
+        if len(all_devices) == 0:
+            raise CameraNotFoundError("No Basler cameras found")
+
+        camera_found = False
+        for device in all_devices:
+            if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
+                camera_found = True
+                try:
+
+                    def _create_and_open():
+                        cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+                        cam.Open()
+                        return cam
+
+                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+
+                    if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
+                        self.camera_name = device.GetUserDefinedName()
+                        self.logger.debug(
+                            f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
+                        )
+
+                    # Configure the camera after opening
+                    self.camera = camera
+                    await self._configure_camera()
+
+                    # Load config if provided
+                    if self.camera_config_path and os.path.exists(self.camera_config_path):
+                        await self.import_config(self.camera_config_path)
+
+                    self.initialized = True
+                    return True, camera, None
+
+                except Exception as e:
+                    self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
+                    raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
+
+        if not camera_found:
+            available_cameras = [
+                f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in all_devices
+            ]
+            raise CameraNotFoundError(
+                f"Camera '{self.camera_name}' not found. Available cameras: {available_cameras}"
+            )
+
+    async def _initialize_by_ip(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera using IP-based discovery for multicast.
+        
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        devices = await self._sdk(lambda: self._discover_by_ip(self.target_ips), timeout=self._op_timeout_s)
+        if len(devices) == 0:
+            raise CameraNotFoundError(f"No Basler cameras found at target IPs: {self.target_ips}")
+
+        # Try to find camera by name/serial in discovered devices
+        camera_found = False
+        for device in devices:
+            if device.GetSerialNumber() == self.camera_name or device.GetUserDefinedName() == self.camera_name:
+                camera_found = True
+                try:
+
+                    def _create_and_open():
+                        cam = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+                        cam.Open()
+                        return cam
+
+                    camera = await self._sdk(_create_and_open, timeout=self._op_timeout_s)
+
+                    if device.GetSerialNumber() == self.camera_name and device.GetUserDefinedName():
+                        self.camera_name = device.GetUserDefinedName()
+                        self.logger.debug(
+                            f"Camera found by serial number, using user-defined name: '{self.camera_name}'"
+                        )
+
+                    # Configure the camera after opening
+                    self.camera = camera
+                    await self._configure_camera()
+
+                    # Configure multicast streaming if enabled
+                    if self.multicast_enabled:
+                        await self.configure_streaming()
+
+                    # Load config if provided
+                    if self.camera_config_path and os.path.exists(self.camera_config_path):
+                        await self.import_config(self.camera_config_path)
+
+                    self.initialized = True
+                    return True, camera, None
+
+                except Exception as e:
+                    self.logger.error(f"Failed to open Basler camera '{self.camera_name}': {str(e)}")
+                    raise CameraConnectionError(f"Failed to open camera '{self.camera_name}': {str(e)}")
+
+        if not camera_found:
+            available_cameras = [
+                f"{device.GetSerialNumber()} ({device.GetUserDefinedName()})" for device in devices
+            ]
+            raise CameraNotFoundError(
+                f"Camera '{self.camera_name}' not found in target IPs. Available cameras: {available_cameras}"
+            )
 
     async def _ensure_open(self):
         """Ensure camera is open.
@@ -444,6 +588,87 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Failed to configure Basler camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
+
+    async def configure_streaming(self):
+        """Configure multicast streaming settings for the camera.
+        
+        This method sets up multicast parameters when multicast mode is enabled.
+        It configures the camera for GigE Vision multicast streaming.
+        
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            CameraConfigurationError: If multicast configuration fails
+            HardwareOperationError: If streaming configuration fails
+        """
+        if not self.initialized or self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        if not self.multicast_enabled:
+            self.logger.debug(f"Multicast not enabled for camera '{self.camera_name}', skipping streaming configuration")
+            return
+
+        try:
+            await self._ensure_open()
+
+            self.logger.info(f"Configuring multicast streaming for camera '{self.camera_name}'")
+            self.logger.debug(f"Multicast group: {self.multicast_group}, port: {self.multicast_port}")
+
+            async with self._grabbing_suspended():
+                # Configure multicast destination
+                if hasattr(self.camera, "GevSCDA"):
+                    # Set multicast destination address
+                    await self._sdk(
+                        self.camera.GevSCDA.SetValue, 
+                        self._ip_to_int(self.multicast_group), 
+                        timeout=self._op_timeout_s
+                    )
+                    self.logger.debug(f"Set multicast destination address to {self.multicast_group}")
+
+                if hasattr(self.camera, "GevSCPHostPort"):
+                    # Set multicast destination port
+                    await self._sdk(
+                        self.camera.GevSCPHostPort.SetValue, 
+                        self.multicast_port, 
+                        timeout=self._op_timeout_s
+                    )
+                    self.logger.debug(f"Set multicast destination port to {self.multicast_port}")
+
+                # Enable multicast mode if available
+                if hasattr(self.camera, "GevSCCFGMulticastEnable"):
+                    await self._sdk(
+                        self.camera.GevSCCFGMulticastEnable.SetValue, 
+                        True, 
+                        timeout=self._op_timeout_s
+                    )
+                    self.logger.debug("Enabled multicast mode")
+
+                # Configure transmission type to multicast
+                if hasattr(self.camera, "GevSCCFGTransmissionType"):
+                    await self._sdk(
+                        self.camera.GevSCCFGTransmissionType.SetValue, 
+                        "Multicast", 
+                        timeout=self._op_timeout_s
+                    )
+                    self.logger.debug("Set transmission type to multicast")
+
+            self.logger.info(f"Multicast streaming configured successfully for camera '{self.camera_name}'")
+
+        except Exception as e:
+            self.logger.error(f"Failed to configure multicast streaming for camera '{self.camera_name}': {str(e)}")
+            raise CameraConfigurationError(f"Failed to configure multicast streaming: {str(e)}")
+
+    def _ip_to_int(self, ip_address: str) -> int:
+        """Convert IP address string to integer representation.
+        
+        Args:
+            ip_address: IP address in dotted decimal notation (e.g., "192.168.1.1")
+            
+        Returns:
+            Integer representation of the IP address
+        """
+        import socket
+        import struct
+        return struct.unpack("!I", socket.inet_aton(ip_address))[0]
 
     async def get_image_quality_enhancement(self) -> bool:
         """Get image quality enhancement setting."""
