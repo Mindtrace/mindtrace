@@ -61,6 +61,7 @@ class AsyncCameraManager(Mindtrace):
     _backend_cache: Dict[str, Dict[str, Any]] = {
         "basler": {"checked": False, "available": False, "class": None},
         "opencv": {"checked": False, "available": False, "class": None},
+        "genicam": {"checked": False, "available": False, "class": None},
     }
 
     def __init__(self, include_mocks: bool = False, max_concurrent_captures: int | None = None, **kwargs):
@@ -104,7 +105,7 @@ class AsyncCameraManager(Mindtrace):
     def backend_info(self) -> Dict[str, Dict[str, Any]]:
         """Detailed information about all backends."""
         info: Dict[str, Dict[str, Any]] = {}
-        for backend in ["Basler", "OpenCV"]:
+        for backend in ["Basler", "OpenCV", "GenICam"]:
             available, _ = self._discover_backend(backend.lower())
             info[backend] = {"available": available, "type": "hardware", "sdk_required": True}
         if self._include_mocks:
@@ -124,7 +125,7 @@ class AsyncCameraManager(Mindtrace):
             backends: Optional backend(s) to discover cameras from. Can be:
                 - None: Discover from all available backends (default behavior)
                 - str: Single backend name (e.g., "Basler", "OpenCV")
-                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV"])
+                - List[str]: Multiple backend names (e.g., ["Basler", "OpenCV", "GenICam"])
             details: If True, return a list of dicts with detailed camera information.
 
         Returns:
@@ -143,7 +144,7 @@ class AsyncCameraManager(Mindtrace):
             baslers = manager.discover("Basler")
 
             # Discover multiple backends
-            mixed = manager.discover(["Basler", "OpenCV"])"""
+            mixed = manager.discover(["Basler", "OpenCV", "GenICam"])"""
         all_cameras: List[str] = []
         all_details: List[Dict[str, Any]] = []
 
@@ -163,6 +164,12 @@ class AsyncCameraManager(Mindtrace):
                     discovered.append("Basler")
             except Exception:
                 pass
+            try:
+                available, _ = cls._discover_backend("genicam")
+                if available:
+                    discovered.append("GenICam")
+            except Exception:
+                pass
             if include_mocks:
                 discovered.append("MockBasler")
             backends_to_search = discovered
@@ -180,7 +187,7 @@ class AsyncCameraManager(Mindtrace):
 
         # Validate specified backends
         for backend in backends_to_search:
-            valid = {"OpenCV", "Basler"}
+            valid = {"OpenCV", "Basler", "GenICam"}
             if include_mocks:
                 valid.add("MockBasler")
             if backend not in valid:
@@ -201,6 +208,10 @@ class AsyncCameraManager(Mindtrace):
                     valid_list.append(b)
             elif b == "Basler":
                 available, _ = cls._discover_backend("basler")
+                if available:
+                    valid_list.append(b)
+            elif b == "GenICam":
+                available, _ = cls._discover_backend("genicam")
                 if available:
                     valid_list.append(b)
             elif b == "MockBasler" and include_mocks:
@@ -277,6 +288,32 @@ class AsyncCameraManager(Mindtrace):
                                         "width": 0,
                                         "height": 0,
                                         "fps": 0.0,
+                                    }
+                                )
+                        else:
+                            all_cameras.extend([f"{backend}:{cam}" for cam in cameras])
+                elif backend == "GenICam":
+                    available, camera_class = cls._discover_backend(backend.lower())
+                    if available and camera_class:
+                        cameras = camera_class.get_available_cameras()
+                        try:
+                            cls.logger.debug(f"Found {len(cameras)} cameras for backend '{backend}'")
+                        except Exception:
+                            pass
+                        if details:
+                            detailed_cameras = camera_class.get_available_cameras(include_details=True)
+                            for cam_id, cam_details in detailed_cameras.items():
+                                all_details.append(
+                                    {
+                                        "name": f"{backend}:{cam_id}",
+                                        "backend": backend,
+                                        "serial_number": cam_details.get("serial_number", ""),
+                                        "model": cam_details.get("model", ""),
+                                        "vendor": cam_details.get("vendor", ""),
+                                        "interface": cam_details.get("interface", ""),
+                                        "display_name": cam_details.get("display_name", ""),
+                                        "user_defined_name": cam_details.get("user_defined_name", ""),
+                                        "device_id": cam_details.get("device_id", "")
                                     }
                                 )
                         else:
@@ -638,7 +675,7 @@ class AsyncCameraManager(Mindtrace):
     def _discover_all_backends(self) -> List[str]:
         """Discover all available camera backends."""
         backends = []
-        for backend_name in ["Basler", "OpenCV"]:
+        for backend_name in ["Basler", "OpenCV", "GenICam"]:
             self.logger.debug(f"Checking availability for backend '{backend_name}'")
             available, _ = self._discover_backend(backend_name)
             if available:
@@ -668,7 +705,7 @@ class AsyncCameraManager(Mindtrace):
             raise CameraNotFoundError(f"Backend '{backend}' not available")
 
         try:
-            if backend in ["Basler", "OpenCV"]:
+            if backend in ["Basler", "OpenCV", "GenICam"]:
                 available, camera_class = self._discover_backend(backend.lower())
                 if not available or not camera_class:
                     self.logger.error(f"Requested backend '{backend}' is not available or has no class")
@@ -713,6 +750,12 @@ class AsyncCameraManager(Mindtrace):
 
                 cache["available"] = OPENCV_AVAILABLE
                 cache["class"] = OpenCVCameraBackend if OPENCV_AVAILABLE else None
+
+            elif cache_key == "genicam":
+                from mindtrace.hardware.cameras.backends.genicam import GENICAM_AVAILABLE, GenICamCameraBackend
+
+                cache["available"] = GENICAM_AVAILABLE
+                cache["class"] = GenICamCameraBackend if GENICAM_AVAILABLE else None
 
             if cache["available"]:
                 try:
