@@ -28,7 +28,7 @@ class TestLauncher:
         """Create mock server object."""
         server = Mock()
         server.unique_name = "test_server"
-        server.config = {"MINDTRACE_LOGGER_DIR": "/tmp/logs"}
+        server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
         server.app = Mock()  # Mock WSGI/ASGI app
         return server
 
@@ -400,7 +400,7 @@ class TestLauncherIntegration:
 
         mock_server = Mock()
         mock_server.unique_name = "test_server"
-        mock_server.config = {"MINDTRACE_LOGGER_DIR": "/tmp/logs"}
+        mock_server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
         mock_server.app = Mock()
         mock_instantiate.return_value = mock_server
 

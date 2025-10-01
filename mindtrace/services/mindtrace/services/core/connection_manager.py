@@ -19,7 +19,7 @@ class ConnectionManager(Mindtrace):
 
     def __init__(self, url: Url | None = None, server_id: UUID | None = None, server_pid_file: str | None = None):
         super().__init__()
-        self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["Service"]))
+        self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["SERVICE"]))
         self._server_id = server_id
         self._server_pid_file = server_pid_file
         self._mcp_client: Client | None = None
@@ -145,8 +145,8 @@ class ConnectionManager(Mindtrace):
     def mcp_url(self) -> str:
         """Return the MCP endpoint URL for this service instance using config paths."""
         base = f"{str(self.url).rstrip('/')}/"
-        mount = str(self.config.get("MINDTRACE_MCP_MOUNT_PATH", "/mcp-server")).strip("/")
-        app = str(self.config.get("MINDTRACE_MCP_HTTP_APP_PATH", "/mcp")).strip("/")
+        mount = str(self.config["MINDTRACE_MCP"]["MOUNT_PATH"]).strip("/")
+        app = str(self.config["MINDTRACE_MCP"]["HTTP_APP_PATH"]).strip("/")
         return urljoin(urljoin(base, mount + "/"), app)
 
     @property
