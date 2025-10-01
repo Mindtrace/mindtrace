@@ -8,6 +8,7 @@ import asyncio
 import logging
 from typing import Any, Dict, Optional
 from unittest.mock import Mock, AsyncMock
+from urllib3.util.url import Url
 
 import discord
 
@@ -427,6 +428,90 @@ class DiscordService(Service):
         """Register an event handler with the Discord client."""
         return self.discord_client.register_event_handler(*args, **kwargs)
     
+    @classmethod
+    def launch(
+        cls,
+        *,
+        url: str | Url | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        block: bool = False,
+        num_workers: int = 1,
+        wait_for_launch: bool = True,
+        timeout: int = 60,
+        progress_bar: bool = True,
+        **kwargs,
+    ):
+        """Launch a Discord service and wait for the Discord bot to be ready.
+        
+        This overrides the base Service.launch() method to ensure the Discord bot
+        is fully connected before returning the connection manager.
+        
+        Args:
+            url: Full URL string or Url object (highest priority)
+            host: Host address (used if url not provided)
+            port: Port number (used if url not provided)
+            block: If True, blocks the calling process and keeps the server running
+            num_workers: Number of worker processes
+            wait_for_launch: Whether to wait for server startup
+            timeout: Timeout for server startup in seconds
+            progress_bar: Show progress bar during startup
+            **kwargs: Additional parameters passed to the server's __init__ method
+        """
+        # First, launch the service using the parent method
+        connection_manager = super().launch(
+            url=url,
+            host=host,
+            port=port,
+            block=block,
+            num_workers=num_workers,
+            wait_for_launch=wait_for_launch,
+            timeout=timeout,
+            progress_bar=progress_bar,
+            **kwargs
+        )
+        
+        # If we're not waiting for launch, return immediately
+        if not wait_for_launch:
+            return connection_manager
+        
+        # Wait for Discord bot to be ready
+        import time
+        from mindtrace.core import Timeout
+        
+        # Give the bot a moment to start the connection process
+        time.sleep(2)
+        
+        def check_discord_ready():
+            """Check if Discord bot is ready."""
+            try:
+                import requests
+                response = requests.post(f"{connection_manager.url}/discord.status", json={})
+                if response.status_code == 200:
+                    data = response.json()
+                    # Bot is ready if it has a name and is not in "not_started" status
+                    return data.get("bot_name") is not None and data.get("status") != "not_started"
+                return False
+            except Exception:
+                return False
+        
+        # Wait for Discord bot to be ready with a separate timeout
+        discord_timeout = Timeout(
+            timeout=min(timeout, 30),  
+            exceptions=(),
+            progress_bar=progress_bar,
+            desc="Waiting for Discord bot to connect"
+        )
+        
+        try:
+            discord_timeout.run(check_discord_ready)
+            cls.logger.info("Discord bot is ready and connected")
+        except Exception as e:
+            cls.logger.warning(f"Discord bot may not be fully connected: {e}")
+            # Don't fail the launch, just warn - the service is still functional
+        
+        return connection_manager
+
     async def shutdown_cleanup(self):
         """Cleanup when shutting down the service."""
         await super().shutdown_cleanup()
