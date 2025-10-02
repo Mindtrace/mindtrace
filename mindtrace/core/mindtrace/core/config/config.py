@@ -44,6 +44,10 @@ class MINDTRACE_CLUSTER(BaseModel):
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: SecretStr
     MINIO_BUCKET: str
+    RABBITMQ_HOST: str
+    RABBITMQ_PORT: int
+    RABBITMQ_USERNAME: str
+    RABBITMQ_PASSWORD: str
 
 
 class MINDTRACE_MCP(BaseModel):
