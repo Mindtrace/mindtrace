@@ -351,6 +351,26 @@ class BaslerCameraBackend(CameraBackend):
                 
         return discovered_devices
 
+    def _is_ip_address(self, name: str) -> bool:
+        """Check if camera_name is a valid IP address.
+        
+        Args:
+            name: String to check
+            
+        Returns:
+            True if name is a valid IP address format, False otherwise
+        """
+        import re
+        ip_pattern = r'^(\d{1,3}\.){3}\d{1,3}$'
+        if not re.match(ip_pattern, name):
+            return False
+        # Also check that each octet is valid (0-255)
+        octets = name.split('.')
+        for octet in octets:
+            if int(octet) > 255:
+                return False
+        return True
+
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
 
@@ -380,10 +400,15 @@ class BaslerCameraBackend(CameraBackend):
                     max_workers=1, thread_name_prefix=f"pypylon-{self.camera_name}"
                 )
 
-            # Choose initialization method based on multicast configuration
-            if self.multicast_enabled and self.target_ips:
+            # Choose initialization method based on camera name format and configuration
+            if self._is_ip_address(self.camera_name):
+                # If camera_name is an IP address, use direct IP connection
+                return await self._initialize_by_direct_ip()
+            elif self.multicast_enabled and self.target_ips:
+                # If multicast is enabled with target IPs, use IP-based discovery
                 return await self._initialize_by_ip()
             else:
+                # Standard discovery by name/serial
                 return await self._initialize_by_discovery()
 
         except (CameraNotFoundError, CameraConnectionError):
@@ -391,6 +416,63 @@ class BaslerCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Unexpected error initializing Basler camera '{self.camera_name}': {str(e)}")
             raise CameraInitializationError(f"Unexpected error initializing camera '{self.camera_name}': {str(e)}")
+
+    async def _initialize_by_direct_ip(self) -> Tuple[bool, Any, Any]:
+        """Initialize camera by direct IP connection.
+        
+        This method creates a direct connection to a camera using its IP address,
+        which is useful for multicast scenarios.
+        
+        Returns:
+            Tuple of (success status, camera object, None)
+        """
+        self.logger.info(f"Initializing camera by direct IP connection: {self.camera_name}")
+        
+        try:
+            def _create_and_open_by_ip():
+                # Create device info with IP address
+                device_info = pylon.CDeviceInfo()
+                device_info.SetDeviceClass("BaslerGigE")
+                device_info.SetIpAddress(self.camera_name)
+                
+                # Create device from info
+                factory = pylon.TlFactory.GetInstance()
+                device = factory.CreateDevice(device_info)
+                
+                # Create and open camera
+                cam = pylon.InstantCamera(device)
+                cam.Open()
+                
+                return cam
+            
+            camera = await self._sdk(_create_and_open_by_ip, timeout=self._op_timeout_s)
+            
+            # Log camera details
+            try:
+                device_info = camera.GetDeviceInfo()
+                model = device_info.GetModelName()
+                serial = device_info.GetSerialNumber()
+                self.logger.info(
+                    f"Connected to camera via IP - Model: {model}, "
+                    f"Serial: {serial}, IP: {self.camera_name}"
+                )
+            except Exception as e:
+                self.logger.debug(f"Could not get camera details: {e}")
+            
+            # Configure the camera
+            self.camera = camera
+            await self._configure_camera()
+            
+            # Load config if provided
+            if self.camera_config_path and os.path.exists(self.camera_config_path):
+                await self.import_config(self.camera_config_path)
+            
+            self.initialized = True
+            return True, camera, None
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera by IP '{self.camera_name}': {str(e)}")
+            raise CameraConnectionError(f"Failed to connect to camera at IP '{self.camera_name}': {str(e)}")
 
     async def _initialize_by_discovery(self) -> Tuple[bool, Any, Any]:
         """Initialize camera using standard discovery.
@@ -580,8 +662,16 @@ class BaslerCameraBackend(CameraBackend):
             await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
 
             # Configure multicast streaming BEFORE starting grabbing if enabled
+            # This is critical for proper multicast setup
             if self.multicast_enabled:
-                await self.configure_streaming()
+                try:
+                    await self.configure_streaming()
+                except Exception as stream_error:
+                    # Log but don't fail - camera may work in unicast mode
+                    self.logger.warning(
+                        f"Multicast configuration failed for camera '{self.camera_name}': {stream_error}. "
+                        f"Camera will operate in unicast mode."
+                    )
 
             self.logger.debug(f"Basler camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
 
@@ -593,15 +683,15 @@ class BaslerCameraBackend(CameraBackend):
         """Configure multicast streaming settings for the camera.
         
         This method sets up multicast parameters when multicast mode is enabled.
-        It configures the camera for GigE Vision multicast streaming.
+        It configures the camera using the StreamGrabber interface for multicast streaming.
         
         Raises:
             CameraConnectionError: If camera is not initialized
             CameraConfigurationError: If multicast configuration fails
             HardwareOperationError: If streaming configuration fails
         """
-        if not self.initialized or self.camera is None:
-            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+        if self.camera is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not available")
 
         if not self.multicast_enabled:
             self.logger.debug(f"Multicast not enabled for camera '{self.camera_name}', skipping streaming configuration")
@@ -613,8 +703,74 @@ class BaslerCameraBackend(CameraBackend):
             self.logger.info(f"Configuring multicast streaming for camera '{self.camera_name}'")
             self.logger.debug(f"Multicast group: {self.multicast_group}, port: {self.multicast_port}")
 
-            async with self._grabbing_suspended():
-                # Configure multicast destination
+            # Configure multicast without suspending grabbing since it may not have started yet
+            # Try StreamGrabber interface first (more common on newer cameras)
+            stream_grabber_available = False
+            
+            try:
+                # Check if StreamGrabber interface is available
+                if hasattr(self.camera, "StreamGrabber"):
+                    self.logger.debug("Using StreamGrabber interface for multicast configuration")
+                    
+                    # Set transmission type to multicast
+                    if hasattr(self.camera.StreamGrabber, "TransmissionType"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.TransmissionType.SetValue, 
+                            "Multicast", 
+                            timeout=self._op_timeout_s
+                        )
+                        self.logger.debug("Set transmission type to Multicast")
+                        stream_grabber_available = True
+                    
+                    # Set multicast destination address
+                    if hasattr(self.camera.StreamGrabber, "DestinationAddr"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.DestinationAddr.SetValue, 
+                            self.multicast_group, 
+                            timeout=self._op_timeout_s
+                        )
+                        self.logger.debug(f"Set multicast destination address to {self.multicast_group}")
+                    
+                    # Set multicast destination port
+                    if hasattr(self.camera.StreamGrabber, "DestinationPort"):
+                        await self._sdk(
+                            self.camera.StreamGrabber.DestinationPort.SetValue, 
+                            self.multicast_port, 
+                            timeout=self._op_timeout_s
+                        )
+                        self.logger.debug(f"Set multicast destination port to {self.multicast_port}")
+                        
+                    # Verify configuration
+                    if stream_grabber_available:
+                        verify_type = await self._sdk(
+                            self.camera.StreamGrabber.TransmissionType.GetValue,
+                            timeout=self._op_timeout_s
+                        )
+                        verify_addr = await self._sdk(
+                            self.camera.StreamGrabber.DestinationAddr.GetValue,
+                            timeout=self._op_timeout_s
+                        )
+                        verify_port = await self._sdk(
+                            self.camera.StreamGrabber.DestinationPort.GetValue,
+                            timeout=self._op_timeout_s
+                        )
+                        
+                        self.logger.info(
+                            f"StreamGrabber multicast configured - Type: {verify_type}, "
+                            f"Address: {verify_addr}, Port: {verify_port}"
+                        )
+                        
+            except Exception as sg_error:
+                self.logger.debug(f"StreamGrabber configuration failed: {sg_error}")
+                stream_grabber_available = False
+            
+            # If StreamGrabber is not available, try GevSC interface (older cameras)
+            if not stream_grabber_available:
+                self.logger.debug("StreamGrabber not available, trying GevSC interface")
+                
+                gevsc_available = False
+                
+                # Configure multicast destination using GevSC
                 if hasattr(self.camera, "GevSCDA"):
                     # Set multicast destination address
                     await self._sdk(
@@ -622,7 +778,8 @@ class BaslerCameraBackend(CameraBackend):
                         self._ip_to_int(self.multicast_group), 
                         timeout=self._op_timeout_s
                     )
-                    self.logger.debug(f"Set multicast destination address to {self.multicast_group}")
+                    self.logger.debug(f"Set GevSCDA multicast address to {self.multicast_group}")
+                    gevsc_available = True
 
                 if hasattr(self.camera, "GevSCPHostPort"):
                     # Set multicast destination port
@@ -631,7 +788,7 @@ class BaslerCameraBackend(CameraBackend):
                         self.multicast_port, 
                         timeout=self._op_timeout_s
                     )
-                    self.logger.debug(f"Set multicast destination port to {self.multicast_port}")
+                    self.logger.debug(f"Set GevSCPHostPort to {self.multicast_port}")
 
                 # Enable multicast mode if available
                 if hasattr(self.camera, "GevSCCFGMulticastEnable"):
@@ -640,7 +797,7 @@ class BaslerCameraBackend(CameraBackend):
                         True, 
                         timeout=self._op_timeout_s
                     )
-                    self.logger.debug("Enabled multicast mode")
+                    self.logger.debug("Enabled GevSCCFGMulticastEnable")
 
                 # Configure transmission type to multicast
                 if hasattr(self.camera, "GevSCCFGTransmissionType"):
@@ -649,9 +806,15 @@ class BaslerCameraBackend(CameraBackend):
                         "Multicast", 
                         timeout=self._op_timeout_s
                     )
-                    self.logger.debug("Set transmission type to multicast")
+                    self.logger.debug("Set GevSCCFGTransmissionType to Multicast")
+                
+                if not gevsc_available:
+                    self.logger.warning(
+                        f"Neither StreamGrabber nor GevSC interfaces available for camera '{self.camera_name}'. "
+                        f"Multicast may not be supported on this camera model."
+                    )
 
-            self.logger.info(f"Multicast streaming configured successfully for camera '{self.camera_name}'")
+            self.logger.info(f"Multicast streaming configuration completed for camera '{self.camera_name}'")
 
         except Exception as e:
             self.logger.error(f"Failed to configure multicast streaming for camera '{self.camera_name}': {str(e)}")
