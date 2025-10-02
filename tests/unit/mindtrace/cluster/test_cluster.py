@@ -1060,7 +1060,7 @@ def test_worker_start_method(mock_worker):
 def test_worker_connect_to_cluster(mock_worker):
     """Test Worker connect_to_cluster method."""
     payload = {
-        "backend_args": {"host": "localhost", "port": 5672},
+        "backend_args": {"host": "localhost", "port": 5673},
         "queue_name": "test_queue",
         "cluster_url": "http://cluster:8080",
     }
@@ -1080,7 +1080,7 @@ def test_worker_connect_to_cluster(mock_worker):
 
         # Verify methods were called
         mock_start.assert_called_once()
-        mock_connect_orchestrator.assert_called_once_with({"host": "localhost", "port": 5672}, queue_name="test_queue")
+        mock_connect_orchestrator.assert_called_once_with({"host": "localhost", "port": 5673}, queue_name="test_queue")
 
         # Verify process was started
         MockThread.assert_called_once_with(target=mock_consume)
@@ -2252,7 +2252,7 @@ def test_worker_connect_to_cluster_with_invalid_payload(mock_worker):
 def test_worker_connect_to_cluster_with_connect_failure(mock_worker):
     """Test worker connect_to_cluster when connect_to_orchestator_via_backend_args fails."""
     payload = {
-        "backend_args": {"cls": "test.backend", "kwargs": {"host": "localhost", "port": 5672}},
+        "backend_args": {"cls": "test.backend", "kwargs": {"host": "localhost", "port": 5673}},
         "queue_name": "test_queue",
         "cluster_url": "http://cluster:8080",
     }
@@ -2267,7 +2267,7 @@ def test_worker_connect_to_cluster_with_connect_failure(mock_worker):
 def test_worker_connect_to_cluster_with_thread_start_failure(mock_worker):
     """Test worker connect_to_cluster when thread start fails."""
     payload = {
-        "backend_args": {"cls": "test.backend", "kwargs": {"host": "localhost", "port": 5672}},
+        "backend_args": {"cls": "test.backend", "kwargs": {"host": "localhost", "port": 5673}},
         "queue_name": "test_queue",
         "cluster_url": "http://cluster:8080",
     }

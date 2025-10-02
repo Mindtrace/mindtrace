@@ -184,7 +184,7 @@ def test_init_with_default_uri(minio_client, test_bucket):
     """Test backend initialization with default URI from config."""
     # Create backend without specifying URI
     backend = MinioRegistryBackend(
-        endpoint="localhost:9000", access_key="minioadmin", secret_key="minioadmin", bucket=test_bucket, secure=False
+        endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", bucket=test_bucket, secure=False
     )
 
     # Verify the URI is set to the default from config
@@ -206,7 +206,7 @@ def test_init_creates_bucket(minio_client):
     # Create backend with the new bucket name
     _ = MinioRegistryBackend(
         uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket=bucket_name,
@@ -227,7 +227,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     # Create a backend with valid credentials
     _ = MinioRegistryBackend(
         uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket=test_bucket,
@@ -264,7 +264,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     with pytest.raises(S3Error) as exc_info:
         MinioRegistryBackend(
             uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
-            endpoint="localhost:9000",
+            endpoint="localhost:9100",
             access_key="minioadmin",
             secret_key="minioadmin",
             bucket=test_bucket,
