@@ -705,7 +705,7 @@ class Worker(Service, Consumer):
             self.get_status,
             schema=TaskSchema(name="get_status", output_schema=cluster_types.WorkerStatusLocal),
         )
-        self.consume_process = None
+        self.consume_thread = None
         self._cluster_connection_manager = None  # type: ignore
         self._cluster_url = None
 
@@ -796,9 +796,7 @@ class Worker(Service, Consumer):
         self.logger.info(f"Worker {self.id} connected to cluster {cluster_url} listening on queue {queue_name}")
         self.consume_thread = threading.Thread(target=self.consume)
         self.consume_thread.start()
-        self.logger.info(
-            f"Worker {self.id} started consuming from queue {queue_name}"  # , process id {self.consume_process.pid}"
-        )
+        self.logger.info(f"Worker {self.id} started consuming from queue {queue_name}")
 
     def get_status(self):
         """
@@ -807,15 +805,6 @@ class Worker(Service, Consumer):
         return self.worker_status_local_database.find(
             self.worker_status_local_database.redis_backend.model_cls.worker_id == str(self.id)
         )[0]
-
-    # def shutdown(self):
-    #     """
-    #     If the consume process is running, we need to kill it too when the worker is shutdown.
-    #     """
-    #     if self.consume_thread is not None:
-    #         self.consume_thread
-    #         self.logger.info(f"Worker {self.id} killed consume process {self.consume_process.pid} as part of shutdown")
-    #     return super().shutdown()
 
 
 class StandardWorkerLauncher(Archiver):

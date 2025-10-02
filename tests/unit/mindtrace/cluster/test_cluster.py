@@ -963,7 +963,7 @@ def test_node_shutdown(mock_node):
 
 def test_worker_initialization(mock_worker):
     """Test Worker initialization."""
-    assert mock_worker.consume_process is None
+    assert mock_worker.consume_thread is None
     assert mock_worker._cluster_connection_manager is None
     assert mock_worker._cluster_url is None
 
