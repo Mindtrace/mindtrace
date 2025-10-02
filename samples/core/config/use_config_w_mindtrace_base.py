@@ -1,10 +1,15 @@
+import os
+
+from pydantic import BaseModel
+
+from mindtrace.core import Mindtrace
+
 #### Overriding Config
 
 # When inheriting from the Mindtrace base class,
 # you can override configuration values directly by passing overrides at initialization.
 
 # Example:
-from mindtrace.core import Mindtrace
 
 
 class CustomMindtrace(Mindtrace):
@@ -28,9 +33,6 @@ print(custom.config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)  # http://localhost:900
 # For example, a ClusterModule might define its own config and inject it into the shared Config.
 
 # Example:
-from pydantic import BaseModel
-
-from mindtrace.core import Mindtrace
 
 
 class ClusterConfig(BaseModel):
@@ -52,8 +54,6 @@ print(cluster.config.MINIO_BUCKET)
 #### Cloning Config Without Overwriting Original
 # Sometimes you may want to clone the existing config and modify it, without affecting the original.
 
-from mindtrace.core import Mindtrace
-
 mt = Mindtrace()
 
 # Clone and override values safely
@@ -61,11 +61,6 @@ temp_config = mt.config.clone_with_overrides({"MINDTRACE_DIR_PATHS": {"TEMP_DIR"
 
 print(mt.config.MINDTRACE_DIR_PATHS.TEMP_DIR)  # Original value (unchanged)
 print(temp_config.MINDTRACE_DIR_PATHS.TEMP_DIR)  # /tmp/testing
-
-
-import os
-
-from mindtrace.core import Mindtrace
 
 # Step 1: Define environment variable (highest precedence after overrides)
 os.environ["MINDTRACE_DEFAULT_HOST_URLS__SERVICE"] = "http://env-service:8080"

@@ -386,7 +386,7 @@ class TestModuleExecution:
         """Test that the module can be executed as a script."""
         # Test that the module execution doesn't crash
         # This tests the `if __name__ == "__main__": main()` line
-        with patch("mindtrace.services.samples.discord.custom_bot_service.main") as mock_main:
+        with patch("mindtrace.services.samples.discord.custom_bot_service.main"):
             # Import the module to trigger the if __name__ == "__main__" block
 
             # The module should be importable without errors
