@@ -126,9 +126,10 @@ class TestDiscordService:
     def test_register_command_delegation(self, discord_service):
         """Test that register_command delegates to discord_client."""
         with patch.object(discord_service.discord_client, "register_command") as mock_register:
+
             def test_handler(x):
                 return None
-            
+
             discord_service.register_command(
                 name="test", description="Test command", usage="!test", handler=test_handler
             )
