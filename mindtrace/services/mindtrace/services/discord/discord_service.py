@@ -154,6 +154,9 @@ class DiscordService(Service):
         # Parse parameters from content string
         parsed_params = self._parse_command_parameters(payload.content, command)
 
+        # Validate required parameters
+        self._validate_required_parameters(parsed_params, command)
+
         # Create a minimal interaction for command execution
         mock_interaction = self._create_minimal_interaction(defaults)
 
@@ -233,7 +236,6 @@ class DiscordService(Service):
             return {}
 
         # Remove the command name (first part)
-        command_name = parts[0].lstrip("/")
         param_parts = parts[1:] if len(parts) > 1 else []
 
         # Get command parameters
@@ -258,27 +260,32 @@ class DiscordService(Service):
                     if hasattr(param, "default") and param.default is not None:
                         params[param_name] = param.default
                     else:
-                        # For required parameters without defaults, use a reasonable default
-                        if python_type == int:
-                            params[param_name] = 6  # Default for dice sides
-                        elif python_type == str:
-                            params[param_name] = ""
-                        else:
-                            params[param_name] = None
+                        params[param_name] = None
             else:
                 # No more parts, use default
                 if hasattr(param, "default") and param.default is not None:
                     params[param_name] = param.default
                 else:
-                    # For required parameters without defaults, use a reasonable default
-                    if python_type == int:
-                        params[param_name] = 6  # Default for dice sides
-                    elif python_type == str:
-                        params[param_name] = ""
-                    else:
-                        params[param_name] = None
+                    params[param_name] = None
 
         return params
+
+    def _validate_required_parameters(self, parsed_params: dict, command) -> None:
+        """Validate that all required parameters are provided.
+
+        Args:
+            parsed_params: Dictionary of parsed parameters
+            command: The Discord command object
+
+        Raises:
+            ValueError: If required parameters are missing
+        """
+        for param in command.parameters:
+            param_name = param.name
+            if param_name not in parsed_params or parsed_params[param_name] is None:
+                # Check if this parameter has a default value
+                if not (hasattr(param, "default") and param.default is not None):
+                    raise ValueError(f"Required parameter '{param_name}' is missing for command '{command.name}'")
 
     def _get_python_type_from_discord_type(self, discord_type) -> type:
         """Convert Discord parameter type to Python type.
