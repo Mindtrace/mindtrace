@@ -43,11 +43,23 @@ uv run python -m mindtrace.hardware.cli camera stop
 
 [**→ See CLI Documentation**](mindtrace/hardware/cli/README.md) for comprehensive usage examples, configuration options, and troubleshooting guides.
 
+**Additional Setup Commands:**
+```bash
+# GenICam backend setup
+uv run mindtrace-setup-genicam      # Install GenICam CTI files
+uv run mindtrace-uninstall-genicam  # Uninstall GenICam SDK
+uv run mindtrace-verify-genicam     # Verify GenICam installation
+
+# Basler backend setup  
+uv run mindtrace-setup-basler       # Install Basler Pylon SDK
+uv run mindtrace-uninstall-basler   # Uninstall Basler SDK
+```
+
 ### Camera Configurator App
 A standalone Reflex web application providing intuitive camera management with real-time streaming capabilities.
 
 **Key Features:**
-- Multi-backend camera discovery (Basler, OpenCV, Daheng)
+- Multi-backend camera discovery (Basler, GenICam, OpenCV)
 - Real-time MJPEG streaming with dynamic quality/FPS control
 - Interactive parameter configuration with range validation
 - Configuration import/export as JSON files
@@ -113,9 +125,14 @@ mindtrace/hardware/
     │   │   ├── async_camera.py   # Asynchronous interface  
     │   │   ├── camera_manager.py # Sync multi-camera manager
     │   │   └── async_camera_manager.py # Async + bandwidth mgmt
-    │   └── backends/        # Camera implementations
-    │       ├── basler/      # Basler + mock
-    │       └── opencv/      # OpenCV implementation
+    │   ├── backends/        # Camera implementations
+    │   │   ├── basler/      # Basler + mock
+    │   │   ├── genicam/     # GenICam + mock
+    │   │   └── opencv/      # OpenCV implementation
+    │   └── setup/           # Camera setup utilities
+    │       ├── setup_cameras.py   # Interactive camera setup
+    │       ├── setup_basler.py    # Basler SDK setup
+    │       └── setup_genicam.py   # GenICam CTI setup
     ├── plcs/
     │   ├── core/
     │   │   └── plc_manager.py    # PLC management interface
@@ -138,6 +155,7 @@ uv run mindtrace-setup-cameras
 
 # Or setup specific backends
 uv run mindtrace-setup-basler
+uv run mindtrace-setup-genicam
 ```
 
 ---
@@ -249,9 +267,95 @@ async def service_example():
 
 | Backend | SDK | Features | Use Case |
 |---------|-----|----------|----------|
-| **Basler** | pypylon | High-performance industrial, GigE support | Production automation |
+| **Basler** | pypylon | High-performance industrial, GigE, multicast streaming | Production automation |
+| **GenICam** | harvesters | GenICam-compliant cameras, Keyence VJ, network cameras | Industrial inspection |
 | **OpenCV** | opencv-python | USB cameras, webcams, IP cameras | Development, testing |
 | **Mock** | Built-in | Configurable test patterns | Testing, CI/CD |
+
+### GenICam Backend
+
+The GenICam backend provides support for GenICam-compliant industrial cameras through the Harvesters library with Matrix Vision GenTL Producer integration.
+
+**Supported Cameras:**
+- Keyence VJ series cameras
+- Basler cameras via GenICam protocol  
+- Any GenICam-compliant network cameras
+
+**Key Features:**
+- GenTL Producer interface via Harvesters
+- Matrix Vision mvIMPACT Acquire SDK integration
+- Network camera discovery and configuration
+- ROI controls and white balance management
+- Hardware trigger and continuous capture modes
+- Vendor-specific parameter handling
+
+**Installation:**
+```bash
+# Install with GenICam support
+uv sync --extra cameras-genicam
+
+# Setup GenICam CTI files (Matrix Vision SDK)
+uv run mindtrace-setup-genicam
+
+# Verify installation
+uv run mindtrace-verify-genicam
+```
+
+**Usage:**
+```python
+from mindtrace.hardware.cameras.backends.genicam import GenICamCameraBackend
+
+# Discover GenICam cameras
+cameras = GenICamCameraBackend.get_available_cameras()
+
+# Initialize with image quality enhancement
+camera = GenICamCameraBackend("device_serial", img_quality_enhancement=True)
+success, cam_obj, remote_obj = await camera.initialize()
+
+if success:
+    await camera.set_exposure(50000)
+    await camera.set_triggermode("continuous")
+    image = await camera.capture()
+    await camera.close()
+```
+
+**Requirements:**
+- Harvesters library (`harvesters>=1.4.0`)
+- Matrix Vision mvIMPACT Acquire SDK
+- GenTL Producer (.cti file) - automatically detected or configurable via `GENICAM_CTI_PATH`
+- Network interface configuration for GigE cameras
+
+**CTI Path Detection:**
+The GenICam backend automatically detects the CTI file location using this priority order:
+1. `GENICAM_CTI_PATH` environment variable (if set)
+2. Platform-specific default paths:
+   - **Linux x86_64**: `/opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti`
+   - **Linux ARM64**: `/opt/ImpactAcquire/lib/arm64/mvGenTLProducer.cti`
+   - **Windows x64**: `C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\win64\mvGenTLProducer.cti`
+   - **macOS**: `/Applications/ImpactAcquire/lib/mvGenTLProducer.cti`
+3. Alternative common paths in `/usr/lib`, `/usr/local/lib`, and user home directory
+
+### Basler Backend Features
+
+**Multicast Streaming:**
+- IP-based camera discovery for targeted multicast setup
+- Standard and IP-targeted initialization paths
+- `configure_streaming()` method for GigE Vision multicast configuration
+- Multicast group and port configuration via environment variables
+- Broadcasting to specific multicast groups with bandwidth management
+
+**ExposureTime Parameter Support:**
+- Automatic fallback between ExposureTime and ExposureTimeAbs parameters
+- Compatible across different Basler camera models
+- Supports multicast timing and initialization
+
+**Multicast Configuration:**
+```bash
+# Multicast settings
+export MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP="239.192.1.1"
+export MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT="3956"
+export MINDTRACE_HW_CAMERA_BASLER_ENABLE_MULTICAST="true"
+```
 
 ## Configuration
 
@@ -389,7 +493,17 @@ export MINDTRACE_HW_PLC_READ_TIMEOUT="5.0"
 
 # Backend control
 export MINDTRACE_HW_CAMERA_BASLER_ENABLED="true"
+export MINDTRACE_HW_CAMERA_GENICAM_ENABLED="true"
 export MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED="true"
+
+# Basler multicast settings
+export MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP="239.192.1.1"
+export MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT="3956"
+export MINDTRACE_HW_CAMERA_BASLER_ENABLE_MULTICAST="true"
+
+# GenICam settings (optional - auto-detected if not set)
+export GENICAM_CTI_PATH="/opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti"
+export MINDTRACE_HW_CAMERA_GENICAM_IMAGE_QUALITY_ENHANCEMENT="true"
 ```
 
 ### Configuration File
@@ -408,9 +522,21 @@ export MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED="true"
   },
   "backends": {
     "basler_enabled": true,
+    "genicam_enabled": true,
     "opencv_enabled": true,
     "allen_bradley_enabled": true,
     "mock_enabled": false
+  },
+  "basler": {
+    "multicast_group": "239.192.1.1",
+    "multicast_port": 3956,
+    "enable_multicast": true
+  },
+  "genicam": {
+    "cti_path": "/opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti",
+    "image_quality_enhancement": true,
+    "timeout_ms": 5000,
+    "buffer_count": 10
   }
 }
 ```
