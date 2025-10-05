@@ -32,17 +32,14 @@ class TestLauncher:
         server.app = Mock()  # Mock WSGI/ASGI app
         return server
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
     def test_launcher_init_with_init_params(
-        self, mock_base_init, mock_instantiate, mock_setup_logger, mock_options, mock_server
+        self, mock_base_init, mock_instantiate, mock_options, mock_server
     ):
         """Test Launcher initialization with init parameters."""
         # Setup mocks
         mock_instantiate.return_value = mock_server
-        mock_logger = Mock()
-        mock_setup_logger.return_value = mock_logger
 
         # Create launcher
         launcher = Launcher(mock_options)
@@ -59,23 +56,16 @@ class TestLauncher:
         # Verify server instantiation
         mock_instantiate.assert_called_once_with("test.server.TestServer", param1="value1", param2=42)
 
-        # Verify logger setup
-        mock_setup_logger.assert_called_once_with(
-            name="test_server", stream_level=logging.INFO, file_level=logging.DEBUG, log_dir=Path("/tmp/logs")
-        )
-
         # Verify server configuration
-        assert mock_server.logger == mock_logger
         assert mock_server.url == "127.0.0.1:8080"
         assert launcher.application == mock_server.app
 
         # Verify BaseApplication initialization
         mock_base_init.assert_called_once()
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_without_init_params(self, mock_base_init, mock_instantiate, mock_setup_logger, mock_server):
+    def test_launcher_init_without_init_params(self, mock_base_init, mock_instantiate, mock_server):
         """Test Launcher initialization without init parameters."""
         # Setup options without init_params
         options = Mock()
@@ -103,10 +93,9 @@ class TestLauncher:
         }
         assert launcher.gunicorn_options == expected_options
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_empty_init_params(self, mock_base_init, mock_instantiate, mock_setup_logger, mock_server):
+    def test_launcher_init_empty_init_params(self, mock_base_init, mock_instantiate, mock_server):
         """Test Launcher initialization with empty init parameters string."""
         options = Mock()
         options.bind = "127.0.0.1:8080"
