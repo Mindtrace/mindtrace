@@ -1,0 +1,66 @@
+# Mindtrace Logging Stack
+# This Docker Compose file sets up a complete logging infrastructure:
+# - Loki: Log storage and indexing
+# - Grafana: Log visualization and dashboards  
+# - Promtail: Log collection from your application
+
+version: "3.9"
+
+services:
+  # Loki - Log Storage and Indexing
+  # Stores and indexes all your application logs for fast querying
+  loki:
+    image: grafana/loki:2.9.8
+    command: -config.file=/etc/loki/local-config.yaml  # Use default Loki config
+    ports:
+      - "${LOKI_PORT:-3100}:3100"  # Expose Loki API (default: 3100)
+    networks:
+      - logging
+
+  # Grafana - Log Visualization Dashboard
+  # Web interface for viewing and analyzing your logs
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on:
+      - loki  # Wait for Loki to start first
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"  # Web interface (default: 3000)
+    environment:
+      # Admin credentials (set in .env file)
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_DEFAULT_THEME=light  # Light theme for better readability
+    volumes:
+      # Auto-configure Loki datasource (no manual setup needed)
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      # Persist Grafana settings and dashboards
+      - grafana-data:/var/lib/grafana
+    networks:
+      - logging
+
+  # Promtail - Log Collection Agent
+  # Collects logs from your application and sends them to Loki
+  promtail:
+    image: grafana/promtail:2.9.8
+    depends_on:
+      - loki  # Wait for Loki to start first
+    command: -config.file=/etc/promtail/config.yml  # Use our custom config
+    volumes:
+      # Promtail configuration (defines what logs to collect)
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+      # Mount your application log directories (read-only)
+      # These paths should match where your Python app writes logs
+      - ${MINDTRACE_LOGGER_DIR:-${HOME}/.cache/mindtrace/logs}:/var/log/mindtrace/logs:ro
+      - ${MINDTRACE_LOGGER_STRUCTLOG_DIR:-${HOME}/.cache/mindtrace/structlogs}:/var/log/mindtrace/structlogs:ro
+      # Promtail position tracking (remembers where it left off)
+      - ${MINDTRACE_PROMTAIL_POSITIONS_DIR:-${HOME}/.cache/mindtrace/promtail-positions}:/tmp
+    networks:
+      - logging
+
+volumes:
+  grafana-data:
+  promtail-positions:
+
+networks:
+  logging:
+    driver: bridge 

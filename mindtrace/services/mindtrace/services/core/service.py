@@ -59,6 +59,7 @@ class Service(Mindtrace):
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
         live_service: bool = True,
+        **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -77,7 +78,7 @@ class Service(Mindtrace):
         Warning: Services should be created via the ServiceClass.launch() method. The __init__ method here should be
         considered private internal use.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file()
@@ -562,15 +563,15 @@ class Service(Mindtrace):
         """Register a new endpoint with optional role."""
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
-        autolog_kwargs = ifnone(autolog_kwargs, default={})
+        autolog_kwargs = ifnone(autolog_kwargs, default={
+            "log_level": logging.INFO,
+            "include_duration": True,
+            "include_system_metrics": True,
+            "system_metrics": ["cpu_percent", "memory_percent"],
+        })
         self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
-        else:
-            # Warn if the function has no docstring
-            if not func.__doc__:
-                service_name = getattr(self, "name", self.__class__.__name__)
-                self.logger.warning(f"Function '{path}' for service '{service_name}' has no docstring.")
         self.app.add_api_route(
             "/" + path,
             endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),

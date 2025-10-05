@@ -25,12 +25,6 @@ class Launcher(BaseApplication):
 
         # Create server with initialization parameters
         server = instantiate_target(options.server_class, **init_params)
-        server.logger = setup_logger(
-            name=server.unique_name,
-            stream_level=logging.INFO,
-            file_level=logging.DEBUG,
-            log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
-        )
         self.application = server.app
         server.url = options.bind
         super().__init__()

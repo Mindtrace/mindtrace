@@ -1,0 +1,66 @@
+# Promtail Configuration for Mindtrace Logging
+# This file tells Promtail how to collect and process your application logs
+
+# Promtail Server Configuration
+server:
+  http_listen_port: 9080  # Promtail metrics endpoint (optional)
+  grpc_listen_port: 0     # Disable gRPC (not needed for this setup)
+
+# Position Tracking
+# Promtail remembers where it left off reading files to avoid duplicates
+positions:
+  filename: /tmp/positions.yaml  # Stores current position in each log file
+
+# Loki Client Configuration  
+# Where to send the collected logs
+clients:
+  - url: http://loki:3100/loki/api/v1/push  # Loki API endpoint
+
+# Log Collection Jobs
+# Each job defines what logs to collect and how to process them
+scrape_configs:
+  # Job 1: Collect Structured Logs (JSON format)
+  # These are logs from your Python application using structlog
+  - job_name: mindtrace-structlogs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: mindtrace-structlogs  # Label for filtering in Grafana
+          # Path to your structured log files (mounted from host)
+          __path__: /var/log/mindtrace/structlogs/modules/*.log
+    pipeline_stages:
+      # Stage 1: Extract JSON from log line
+      # The logs have format: [timestamp] LEVEL: logger: {json}
+      - regex:
+          expression: '^\[(?P<log_timestamp>[^\]]+)\]\s+(?P<log_level>\w+):\s+(?P<log_logger>[^:]+):\s+(?P<json_content>.*)$'
+      
+      # Stage 2: Parse the JSON content
+      - json:
+          expressions:
+            level: level           # Log level (INFO, ERROR, etc.)
+            logger: logger         # Logger name (e.g., "mindtrace.services.middleware")
+            event: event           # Event message (e.g., "request initiated")
+            service: service       # Service name (if present)
+            duration_ms: duration_ms  # Operation duration
+            operation: operation   # Operation name (if present)
+            request_id: request_id # Request correlation ID
+            timestamp: timestamp   # Log timestamp
+          source: json_content     # Parse from the extracted JSON
+      
+      # Stage 3: Create Labels
+      # These fields become searchable labels in Grafana
+      - labels:
+          level:      # Filter by log level: {level="ERROR"}
+          logger:     # Filter by logger: {logger="mindtrace.services.*"}
+          event:      # Filter by event: {event="request initiated"}
+          service:    # Filter by service: {service="EchoService"}
+          operation:  # Filter by operation: {operation="echo"}
+          request_id: # Track requests: {request_id="abc123"}
+      
+      # Stage 4: Parse Timestamps
+      # Convert timestamp to proper format for Loki
+      - timestamp:
+          source: timestamp        # Use the timestamp field from JSON
+          format: RFC3339Nano     # Expected format (ISO 8601 with nanoseconds)
+          action_on_failure: skip # Skip logs with invalid timestamps
+
