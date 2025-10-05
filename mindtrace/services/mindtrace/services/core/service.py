@@ -563,12 +563,14 @@ class Service(Mindtrace):
         """Register a new endpoint with optional role."""
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
-        autolog_kwargs = ifnone(autolog_kwargs, default={
+        # Merge and override default autolog_kwargs
+        default_autolog_kwargs = {
             "log_level": logging.INFO,
             "include_duration": True,
             "include_system_metrics": True,
             "system_metrics": ["cpu_percent", "memory_percent"],
-        })
+        }
+        autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
         self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
