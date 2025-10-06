@@ -35,7 +35,7 @@ def setup_logger(
     structlog_processors: Optional[list] = None,
     structlog_renderer: Optional[object] = None,
     structlog_bind: Optional[object] = None,
-) -> Logger | object:
+) -> Logger | structlog.BoundLogger:
     """Configure and initialize logging for Mindtrace components programmatically.
 
     Sets up a rotating file handler and a console handler on the given logger.
@@ -199,7 +199,9 @@ def _enforce_key_order_processor(key_order: list[str]):
     return _processor
 
 
-def get_logger(name: str | None = "mindtrace", use_structlog: bool | None = None, **kwargs) -> logging.Logger | object:
+def get_logger(
+    name: str | None = "mindtrace", use_structlog: bool | None = None, **kwargs
+) -> logging.Logger | structlog.BoundLogger:
     """
     Create or retrieve a named logger instance.
 
@@ -214,7 +216,7 @@ def get_logger(name: str | None = "mindtrace", use_structlog: bool | None = None
         **kwargs: Additional keyword arguments to be passed to `setup_logger`.
 
     Returns:
-        logging.Logger or structlog.BoundLogger: A configured logger instance.
+        logging.Logger | structlog.BoundLogger: A configured logger instance.
 
     Example:
         .. code-block:: python
