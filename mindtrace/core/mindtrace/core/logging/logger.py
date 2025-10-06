@@ -6,6 +6,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
+import structlog
+
 from mindtrace.core.config import CoreSettings
 from mindtrace.core.utils import ifnone
 
@@ -99,14 +101,6 @@ def setup_logger(
         logger.addHandler(file_handler)
 
         return logger
-
-    # Structlog setup
-    try:
-        import structlog
-    except ImportError as e:
-        raise ImportError(
-            "structlog is not installed. Install it with 'pip install structlog' or disable use_structlog."
-        ) from e
 
     pre_chain = (
         list(structlog_pre_chain)
