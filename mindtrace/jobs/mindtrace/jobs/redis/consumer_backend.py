@@ -77,6 +77,19 @@ class RedisConsumerBackend(ConsumerBackendBase):
 
         self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
 
+    def close(self):
+        """Close the Redis connection and clean up resources."""
+        if hasattr(self, "connection") and self.connection is not None:
+            self.connection.close()
+            self.connection = None
+
+    def __del__(self):
+        """Ensure cleanup happens when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def set_poll_timeout(self, timeout: int) -> None:
         """Set the polling timeout for Redis operations."""
         self.poll_timeout = timeout
