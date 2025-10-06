@@ -161,7 +161,7 @@ def setup_logger(
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(stream_level)
     # Use JSON renderer for pure JSON output without prefix
-    stream_handler.setFormatter(logging.Formatter('%(message)s'))
+    stream_handler.setFormatter(logging.Formatter("%(message)s"))
     stdlib_logger.addHandler(stream_handler)
 
     # Add file handler
@@ -170,7 +170,7 @@ def setup_logger(
     )
     file_handler.setLevel(file_level)
     # Use JSON renderer for pure JSON output without prefix
-    file_handler.setFormatter(logging.Formatter('%(message)s'))
+    file_handler.setFormatter(logging.Formatter("%(message)s"))
     stdlib_logger.addHandler(file_handler)
 
     # Get the bound logger
