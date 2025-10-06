@@ -160,8 +160,8 @@ def setup_logger(
     # Add stream handler
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(stream_level)
-    # Use standard formatter to preserve [timestamp] level: logger: message format
-    stream_handler.setFormatter(default_formatter())
+    # Use JSON renderer for pure JSON output without prefix
+    stream_handler.setFormatter(logging.Formatter('%(message)s'))
     stdlib_logger.addHandler(stream_handler)
 
     # Add file handler
@@ -169,8 +169,8 @@ def setup_logger(
         filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
     )
     file_handler.setLevel(file_level)
-    # Use standard formatter to preserve [timestamp] level: logger: message format
-    file_handler.setFormatter(default_formatter())
+    # Use JSON renderer for pure JSON output without prefix
+    file_handler.setFormatter(logging.Formatter('%(message)s'))
     stdlib_logger.addHandler(file_handler)
 
     # Get the bound logger
