@@ -72,6 +72,7 @@ from mindtrace.hardware.api.cameras.schemas import ALL_SCHEMAS
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
+    CameraTimeoutError,
 )
 from mindtrace.services import Service
 
@@ -249,10 +250,39 @@ class CameraManagerService(Service):
 
     # Camera Lifecycle Operations
     async def open_camera(self, request: CameraOpenRequest) -> BoolResponse:
-        """Open a single camera."""
+        """Open a single camera with exposure validation."""
         try:
             manager = await self._get_camera_manager()
             await manager.open(request.camera, test_connection=request.test_connection)
+
+            # Check exposure time and warn if too high for streaming
+            try:
+                camera_proxy = await manager.get_camera(request.camera)
+                if camera_proxy:
+                    # Try to get exposure time (GenICam cameras)
+                    if hasattr(camera_proxy._backend, 'image_acquirer'):
+                        ia = camera_proxy._backend.image_acquirer
+                        if ia and hasattr(ia, 'remote_device'):
+                            node_map = ia.remote_device.node_map
+                            if hasattr(node_map, 'ExposureTime'):
+                                exposure_us = node_map.ExposureTime.value
+                                exposure_ms = exposure_us / 1000.0
+
+                                if exposure_ms > 1000:  # > 1 second
+                                    self.logger.warning(
+                                        f"Camera '{request.camera}' has high exposure time: {exposure_ms:.0f}ms. "
+                                        f"This will cause slow capture (<1 FPS) and streaming timeouts. "
+                                        f"Recommended: <100ms for streaming, <500ms for general use."
+                                    )
+                                elif exposure_ms > 100:  # > 100ms
+                                    self.logger.info(
+                                        f"Camera '{request.camera}' exposure time: {exposure_ms:.0f}ms. "
+                                        f"This may be slow for real-time streaming (< {1000/exposure_ms:.1f} FPS max). "
+                                        f"Consider reducing exposure for better streaming performance."
+                                    )
+            except Exception as e:
+                # Don't fail the open operation if exposure check fails
+                self.logger.debug(f"Could not check exposure time for '{request.camera}': {e}")
 
             return BoolResponse(success=True, message=f"Camera '{request.camera}' opened successfully", data=True)
         except Exception as e:
@@ -560,6 +590,10 @@ class CameraManagerService(Service):
             success = await camera_proxy.configure(**request.properties)
             self.logger.debug(f"Configure completed with success: {success}")
 
+            # Handle None return value (convert to False)
+            if success is None:
+                success = False
+                
             return BoolResponse(
                 success=success,
                 message=f"Camera '{request.camera}' configured successfully"
@@ -567,8 +601,28 @@ class CameraManagerService(Service):
                 else f"Configuration failed for '{request.camera}'",
                 data=success,
             )
+        except CameraNotFoundError as e:
+            # Handle camera not found errors gracefully
+            self.logger.warning(f"Camera not found: {e}")
+            return BoolResponse(
+                success=False,
+                message=str(e),
+                data=False
+            )
         except Exception as e:
             self.logger.error(f"Failed to configure camera '{request.camera}': {e}")
+            # Import the exception types
+            from mindtrace.hardware.core.exceptions import CameraConfigurationError, HardwareOperationError
+            
+            # Handle configuration errors gracefully
+            if isinstance(e, (CameraConfigurationError, HardwareOperationError, TypeError)):
+                # Return a failure response with the error message instead of raising
+                return BoolResponse(
+                    success=False,
+                    message=str(e),
+                    data=False
+                )
+            # For other exceptions, still raise them
             raise
 
     async def configure_cameras_batch(self, request: CameraConfigureBatchRequest) -> BatchOperationResponse:
@@ -620,14 +674,45 @@ class CameraManagerService(Service):
             except Exception:
                 roi_tuple = None
 
+            # Get individual configuration parameters with error handling
+            try:
+                exposure_time = await camera_proxy.get_exposure()
+            except Exception:
+                exposure_time = None
+
+            try:
+                gain = await camera_proxy.get_gain()
+            except Exception:
+                gain = None
+
+            try:
+                trigger_mode = await camera_proxy.get_trigger_mode()
+            except Exception:
+                trigger_mode = None
+
+            try:
+                pixel_format = await camera_proxy.get_pixel_format()
+            except Exception:
+                pixel_format = None
+
+            try:
+                white_balance = await camera_proxy.get_white_balance()
+            except Exception:
+                white_balance = None
+
+            try:
+                image_enhancement = await camera_proxy.get_image_enhancement()
+            except Exception:
+                image_enhancement = None
+
             config = CameraConfiguration(
-                exposure_time=await camera_proxy.get_exposure(),
-                gain=await camera_proxy.get_gain(),
+                exposure_time=exposure_time,
+                gain=gain,
                 roi=roi_tuple,
-                trigger_mode=await camera_proxy.get_trigger_mode(),
-                pixel_format=await camera_proxy.get_pixel_format(),
-                white_balance=await camera_proxy.get_white_balance(),
-                image_enhancement=await camera_proxy.get_image_enhancement(),
+                trigger_mode=trigger_mode,
+                pixel_format=pixel_format,
+                white_balance=white_balance,
+                image_enhancement=image_enhancement,
             )
 
             return CameraConfigurationResponse(
@@ -689,7 +774,7 @@ class CameraManagerService(Service):
 
     # Image Capture Operations
     async def capture_image(self, request: CaptureImageRequest) -> CaptureResponse:
-        """Capture a single image."""
+        """Capture a single image with timeout protection."""
         try:
             manager = await self._get_camera_manager()
 
@@ -698,13 +783,33 @@ class CameraManagerService(Service):
                 raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
 
             camera_proxy = await manager.open(request.camera)
-            await camera_proxy.capture(
-                save_path=request.save_path, upload_to_gcs=request.upload_to_gcs, output_format=request.output_format
-            )
 
-            result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc))
+            # Capture with 15 second timeout (allows for some overhead but prevents indefinite hang)
+            import asyncio
+            capture_timeout = 15.0
 
-            return CaptureResponse(success=True, message=f"Image captured from camera '{request.camera}'", data=result)
+            try:
+                await asyncio.wait_for(
+                    camera_proxy.capture(
+                        save_path=request.save_path, upload_to_gcs=request.upload_to_gcs, output_format=request.output_format
+                    ),
+                    timeout=capture_timeout
+                )
+
+                result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc))
+                return CaptureResponse(success=True, message=f"Image captured from camera '{request.camera}'", data=result)
+
+            except asyncio.TimeoutError:
+                error_msg = (
+                    f"Capture timeout after {capture_timeout}s for camera '{request.camera}'. "
+                    f"Camera exposure time may be too high. Configure with lower exposure time (<1000ms recommended)."
+                )
+                self.logger.error(error_msg)
+                raise CameraTimeoutError(error_msg)
+
+        except asyncio.TimeoutError:
+            # Re-raise as already handled
+            raise
         except Exception as e:
             self.logger.error(f"Failed to capture image from '{request.camera}': {e}")
             raise
@@ -1092,11 +1197,22 @@ class CameraManagerService(Service):
                 
                 self.logger.info(f"Starting stream for '{actual_camera_name}' with quality={quality}, fps={fps}")
                 
+                # Track consecutive timeouts for early termination
+                consecutive_timeouts = 0
+                max_consecutive_timeouts = 3
+                capture_timeout = 10.0  # 10 second timeout per frame
+
                 while True:
                     try:
-                        # Capture frame from camera as numpy array
-                        frame_np = await camera_proxy.capture(output_format="numpy")
-                        
+                        # Capture frame from camera as numpy array with timeout protection
+                        frame_np = await asyncio.wait_for(
+                            camera_proxy.capture(output_format="numpy"),
+                            timeout=capture_timeout
+                        )
+
+                        # Reset timeout counter on successful capture
+                        consecutive_timeouts = 0
+
                         if frame_np is not None:
                             # Convert numpy array to JPEG bytes
                             # Ensure it's uint8 and RGB/BGR
@@ -1122,7 +1238,34 @@ class CameraManagerService(Service):
                         
                         # Control frame rate with dynamic FPS
                         await asyncio.sleep(frame_delay)
-                        
+
+                    except asyncio.TimeoutError:
+                        consecutive_timeouts += 1
+                        self.logger.warning(
+                            f"Frame capture timeout ({consecutive_timeouts}/{max_consecutive_timeouts}) "
+                            f"for {actual_camera_name} - capture took >{capture_timeout}s. "
+                            f"Camera may have high exposure time configured."
+                        )
+
+                        if consecutive_timeouts >= max_consecutive_timeouts:
+                            self.logger.error(
+                                f"Stream terminated for '{actual_camera_name}' after {max_consecutive_timeouts} "
+                                f"consecutive timeouts. Camera exposure time may be too high (>10s). "
+                                f"Configure camera with lower exposure time for streaming."
+                            )
+                            # Send error message as final frame
+                            error_msg = (
+                                f"Stream terminated: Camera '{actual_camera_name}' capture timeout.\n"
+                                f"Exposure time may be too high. Configure camera with exposure <1000ms for streaming."
+                            )
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: text/plain\r\n\r\n' + error_msg.encode() + b'\r\n')
+                            break
+
+                        # Wait before retry
+                        await asyncio.sleep(1.0)
+                        continue
+
                     except Exception as e:
                         self.logger.warning(f"Frame capture error for {actual_camera_name}: {e}")
                         # Check if camera is still active, if not, stop streaming
