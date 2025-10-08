@@ -1,7 +1,7 @@
 """Sensor task schemas for service operations."""
 
-from .lifecycle import SensorLifecycleSchemas
 from .data import SensorDataSchemas
+from .lifecycle import SensorLifecycleSchemas
 
 __all__ = [
     "SensorLifecycleSchemas",

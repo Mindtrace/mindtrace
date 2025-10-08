@@ -5,7 +5,7 @@ This module will implement the SensorSimulatorBackend interface for serial/USB c
 Currently this is a placeholder that raises NotImplementedError.
 """
 
-from typing import Dict, Any, Optional, Union
+from typing import Any, Dict, Union
 
 from .base import SensorSimulatorBackend
 
@@ -13,11 +13,11 @@ from .base import SensorSimulatorBackend
 class SerialSensorSimulator(SensorSimulatorBackend):
     """
     Serial backend for sensor simulation (placeholder).
-    
+
     This backend will connect to serial/USB ports and send sensor data commands.
     It implements a push-based pattern where we send sensor data to simulate
     physical sensor devices.
-    
+
     Future implementation will:
     - Connect to serial ports (e.g., /dev/ttyUSB0, COM3)
     - Send sensor data in various formats (JSON, CSV, custom protocols)
@@ -25,16 +25,10 @@ class SerialSensorSimulator(SensorSimulatorBackend):
     - Handle communication protocols and handshaking
     """
 
-    def __init__(
-        self, 
-        port: str,
-        baudrate: int = 9600,
-        timeout: float = 5.0,
-        **kwargs
-    ):
+    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 5.0, **kwargs):
         """
         Initialize Serial simulator backend.
-        
+
         Args:
             port: Serial port path (e.g., "/dev/ttyUSB0" or "COM3")
             baudrate: Serial communication baudrate
@@ -50,7 +44,7 @@ class SerialSensorSimulator(SensorSimulatorBackend):
     async def connect(self) -> None:
         """
         Open serial port connection.
-        
+
         Raises:
             NotImplementedError: Serial simulator not yet implemented
         """
@@ -65,11 +59,11 @@ class SerialSensorSimulator(SensorSimulatorBackend):
     async def publish_data(self, address: str, data: Union[Dict[str, Any], Any]) -> None:
         """
         Send sensor data via serial port.
-        
+
         Args:
             address: Command type or data format identifier (e.g., "TEMP_DATA", "JSON_FORMAT")
             data: Data to send (will be formatted according to address)
-            
+
         Raises:
             NotImplementedError: Serial simulator not yet implemented
         """
@@ -78,7 +72,7 @@ class SerialSensorSimulator(SensorSimulatorBackend):
     def is_connected(self) -> bool:
         """
         Check if serial port is open.
-        
+
         Returns:
             Always False until implementation is complete
         """

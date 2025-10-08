@@ -5,7 +5,7 @@ This module will implement the SensorBackend interface for serial/USB communicat
 Currently this is a placeholder that raises NotImplementedError.
 """
 
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from .base import SensorBackend
 
@@ -13,11 +13,11 @@ from .base import SensorBackend
 class SerialSensorBackend(SensorBackend):
     """
     Serial backend for sensor communication (placeholder).
-    
+
     This backend will connect to sensors via serial/USB ports and send commands
     to read sensor data. It implements a pull-based pattern where we send commands
     and read responses on-demand.
-    
+
     Future implementation will:
     - Connect to serial ports (e.g., /dev/ttyUSB0, COM3)
     - Send sensor commands and read responses
@@ -25,16 +25,10 @@ class SerialSensorBackend(SensorBackend):
     - Handle timeouts and communication errors
     """
 
-    def __init__(
-        self, 
-        port: str,
-        baudrate: int = 9600,
-        timeout: float = 5.0,
-        **kwargs
-    ):
+    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 5.0, **kwargs):
         """
         Initialize Serial backend.
-        
+
         Args:
             port: Serial port path (e.g., "/dev/ttyUSB0" or "COM3")
             baudrate: Serial communication baudrate
@@ -50,7 +44,7 @@ class SerialSensorBackend(SensorBackend):
     async def connect(self) -> None:
         """
         Open serial port connection.
-        
+
         Raises:
             NotImplementedError: Serial backend not yet implemented
         """
@@ -65,13 +59,13 @@ class SerialSensorBackend(SensorBackend):
     async def read_data(self, address: str) -> Optional[Dict[str, Any]]:
         """
         Send command to sensor and read response.
-        
+
         Args:
             address: Sensor command (e.g., "READ_TEMP", "GET_HUMIDITY")
-            
+
         Returns:
             Parsed sensor response data, or None if command fails
-            
+
         Raises:
             NotImplementedError: Serial backend not yet implemented
         """
@@ -80,7 +74,7 @@ class SerialSensorBackend(SensorBackend):
     def is_connected(self) -> bool:
         """
         Check if serial port is open.
-        
+
         Returns:
             Always False until implementation is complete
         """

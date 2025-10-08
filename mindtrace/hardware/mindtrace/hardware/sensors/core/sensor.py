@@ -6,10 +6,9 @@ unified interface for all sensor backends (MQTT, HTTP, Serial, etc.).
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from ..backends.base import SensorBackend
-
 
 logger = logging.getLogger(__name__)
 
@@ -17,44 +16,44 @@ logger = logging.getLogger(__name__)
 class AsyncSensor:
     """
     Unified async sensor interface.
-    
+
     This class provides a simple, consistent API for reading sensor data
     regardless of the underlying communication backend (MQTT, HTTP, Serial, etc.).
-    
+
     The sensor abstracts different communication patterns:
     - MQTT: Push-based (messages are cached when received)
     - HTTP: Pull-based (requests made on-demand)
     - Serial: Pull-based (commands sent on-demand)
-    
+
     All backends are hidden behind the same connect/disconnect/read interface.
     """
 
     def __init__(self, sensor_id: str, backend: SensorBackend, address: str):
         """
         Initialize AsyncSensor with a backend.
-        
+
         Args:
             sensor_id: Unique identifier for this sensor
             backend: Backend implementation (MQTT, HTTP, Serial, etc.)
             address: Backend-specific address (topic, endpoint, command, etc.)
-            
+
         Raises:
             ValueError: If sensor_id or address is empty
             TypeError: If backend is not a SensorBackend instance
         """
         if not sensor_id or not isinstance(sensor_id, str):
             raise ValueError("sensor_id must be a non-empty string")
-            
+
         if not address or not isinstance(address, str):
             raise ValueError("address must be a non-empty string")
-            
+
         if not isinstance(backend, SensorBackend):
             raise TypeError("backend must be a SensorBackend instance")
-            
+
         self._sensor_id = sensor_id.strip()
         self._backend = backend
         self._address = address.strip()
-        
+
         logger.debug(f"Created AsyncSensor {self._sensor_id} with backend {type(self._backend).__name__}")
 
     @property
@@ -66,7 +65,7 @@ class AsyncSensor:
     def is_connected(self) -> bool:
         """
         Check if sensor backend is connected.
-        
+
         Returns:
             True if backend is connected, False otherwise
         """
@@ -75,10 +74,10 @@ class AsyncSensor:
     async def connect(self) -> None:
         """
         Connect the sensor backend.
-        
+
         This establishes the connection to the underlying communication system
         (MQTT broker, HTTP server, serial port, etc.).
-        
+
         Raises:
             ConnectionError: If connection fails
         """
@@ -92,7 +91,7 @@ class AsyncSensor:
     async def disconnect(self) -> None:
         """
         Disconnect the sensor backend.
-        
+
         This closes the connection to the underlying communication system.
         Safe to call multiple times.
         """
@@ -105,15 +104,15 @@ class AsyncSensor:
     async def read(self) -> Optional[Dict[str, Any]]:
         """
         Read sensor data.
-        
+
         This method abstracts different communication patterns:
         - MQTT: Returns cached message from topic
-        - HTTP: Makes GET request to endpoint  
+        - HTTP: Makes GET request to endpoint
         - Serial: Sends command and reads response
-        
+
         Returns:
             Dictionary with sensor data, or None if no data available
-            
+
         Raises:
             ConnectionError: If backend is not connected
             TimeoutError: If read operation times out
@@ -121,7 +120,7 @@ class AsyncSensor:
         """
         if not self.is_connected:
             raise ConnectionError(f"Sensor {self._sensor_id} is not connected")
-            
+
         try:
             data = await self._backend.read_data(self._address)
             if data is not None:
