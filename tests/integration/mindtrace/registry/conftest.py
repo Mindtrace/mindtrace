@@ -56,13 +56,17 @@ def temp_dir() -> Generator[Path, None, None]:
 @pytest.fixture
 def backend(temp_dir, test_bucket):
     """Create a MinioRegistryBackend instance with a test bucket."""
+    endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000")
+    access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin")
+    secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin")
+    secure = os.environ.get("MINIO_SECURE", "0") == "1"
     return MinioRegistryBackend(
         uri=str(temp_dir),
-        endpoint="localhost:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
+        endpoint=endpoint,
+        access_key=access_key,
+        secret_key=secret_key,
         bucket=test_bucket,
-        secure=False,
+        secure=secure,
     )
 
 
