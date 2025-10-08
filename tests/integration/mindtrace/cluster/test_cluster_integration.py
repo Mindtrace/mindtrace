@@ -88,13 +88,13 @@ def test_cluster_manager_multiple_jobs_with_worker():
         cluster_cm.register_job_to_worker(job_type="multiple_jobs_echo", worker_url=str(worker_cm.url))
         messages = ["Job 1", "Job 2", "Job 3"]
         jobs = []
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
         for msg in messages:
             job = job_from_schema(echo_job_schema, input_data={"message": msg})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == "queued"
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
         time.sleep(1)
         for i, job in enumerate(jobs):
             result = cluster_cm.get_job_status(job_id=job.id)
