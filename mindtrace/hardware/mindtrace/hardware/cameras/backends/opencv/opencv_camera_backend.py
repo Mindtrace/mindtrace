@@ -774,8 +774,6 @@ class OpenCVCameraBackend(CameraBackend):
             if not set_success:
                 self.logger.debug(f"Camera '{self.camera_name}' can read exposure but cannot set it - exposure control not supported")
                 return False
-                
-            return True
         except Exception as e:
             self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
             return False
@@ -815,6 +813,7 @@ class OpenCVCameraBackend(CameraBackend):
             self.logger.debug(
                 f"Exposure set for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure:.3f}"
             )
+            
         except (CameraConnectionError, CameraConfigurationError):
             raise
         except Exception as e:
