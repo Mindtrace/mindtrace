@@ -72,10 +72,10 @@ def content_section(*children, **props) -> rx.Component:
     """Standard content section with consistent spacing."""
     return rx.box(
         *children,
-        padding="1.5rem",
-        border_radius="0.75rem",
+        # padding="1.5rem",
+        # border_radius="0.75rem",
         background=rx.color("gray", 2),
-        border=f"1px solid {rx.color('gray', 6)}",
+        # border=f"1px solid {rx.color('gray', 6)}",
         **props,
     )
 

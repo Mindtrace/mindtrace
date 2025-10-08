@@ -12,6 +12,7 @@ from .gallery import images_page
 from .inference import inference_page
 from .component_showcase import component_showcase_page
 from .filter_table_demo import filter_table_demo
+from .neuroforge_index import index as neuroforge_index
 
 __all__ = [
     "index", 
@@ -38,4 +39,6 @@ __all__ = [
     # Component showcase
     "component_showcase_page",
     "filter_table_demo",
+    # Neuroforge
+    "neuroforge_index",
 ]

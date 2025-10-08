@@ -254,7 +254,7 @@ THEME = ThemeTokens(
         """,
     ),
     layout=LayoutTokens(
-        sidebar_w="260px",
+        sidebar_w="210px",
         sidebar_w_collapsed="72px",
         header_h="60px",
         content_pad="24px",

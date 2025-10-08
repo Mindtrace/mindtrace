@@ -21,11 +21,12 @@ def AppShell(
         Sidebar(active=sidebar_active),
         rx.box(
             body,
-            padding=T.content_pad,
+            # padding=T.content_pad,
             width="100%",
             min_h=f"calc(100vh - {T.header_h})",
         ),
         align="start",
+        gap="0",
     )
     return rx.box(
         Header(title=title, right_slot=header_right, show_scope_selector=show_scope_selector),

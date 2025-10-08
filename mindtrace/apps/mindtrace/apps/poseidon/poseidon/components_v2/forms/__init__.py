@@ -8,4 +8,4 @@ __all__ = [
     "text_input_with_form",
     "select_input",
     "select_input_with_form",
-] 
+]

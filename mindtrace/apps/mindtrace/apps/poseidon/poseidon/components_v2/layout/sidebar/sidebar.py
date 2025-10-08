@@ -1,83 +1,19 @@
+# poseidon/components_v2/layout/sidebar.py
 import reflex as rx
 from poseidon.styles.global_styles import SP, T
-from .sidebar_state import SidebarState as S
 from poseidon.state.line_scope import ScopeState
 
 NAV = [
-    (
-        "Main",
-        [
-            {"label": "Camera Configurator", "icon": "camera", "href": "/camera-configurator"},
-            {"label": "Model Deployment", "icon": "layout-panel-left", "href": "/model-deployment"},
-            {"label": "Inference Scanner", "icon": "wrench", "href": "/inference"},
-            {"label": "Image Viewer", "icon": "image", "href": "/image-viewer"},
-            {"label": "Line View", "icon": "shield-check", "scope": "line", "to": "line-view"},
-        ],
-    ),
-    (
-        "Analytics",
-        [
-            {"label": "Line Insights", "icon": "chart-line", "scope": "line", "to": "line-insights"},
-            #{"label": "Line View", "icon": "panel-top", "scope": "line", "to": "line-view"}, add when its in.
-        ], 
-    ),
-    (
-        "Admin",
-        [
-            {"label": "Organization Management", "icon": "alarm-clock", "href": "/organization-management"},
-            {"label": "Project Management", "icon": "file-text", "href": "/project-management"},
-            {"label": "Profile", "icon": "user", "href": "/profile"},
-            {"label": "User Management", "icon": "shield-check", "href": "/user-management"},
-        ],
-    ),
-    (
-        "Developer",
-        [
-            {"label": "Component Showcase", "icon": "image", "href": "/component-showcase"},
-        ],
-    ),
+    {"label": "Home",              "icon": "home",          "href": "/"},
+    {"label": "Create Line",       "icon": "plus",          "href": "/create-line"},
+    {"label": "Lines Deployed",    "icon": "shield-check",  "href": "/lines"},
+    {"label": "Lines in Progress", "icon": "loader-circle", "href": "/lines-in-progress"},
+    {"label": "Settings",          "icon": "cog",           "href": "/settings"},  # pinned to bottom
 ]
 
-# Theme-based paddings
-H_PAD = SP.space_3
-V_PAD = SP.space_2
-ACTIVE_BG = "rgba(0,87,255,.08)"
-
-
-def _active_bar():
-    return rx.box(
-        position="absolute", left="0", top=V_PAD, bottom=V_PAD, width="3px", bg=T.accent, border_radius=T.r_full
-    )
-
-
-def _nav_row(label: str, icon: str, active: bool, collapsed):
-    icon_node = rx.box(
-        rx.icon(tag=icon, size=20, color="currentColor"),
-        width="20px",
-        height="20px",
-        display="grid",
-        place_items="center",
-        flex_shrink="0",
-    )
-    content = rx.hstack(
-        icon_node,
-        rx.cond(collapsed, rx.box(width="0px"), rx.text(label, size="2", color="inherit")),
-        gap=rx.cond(collapsed, "0", T.space_3),
-        align="center",
-    )
-    return rx.box(
-        rx.cond(active, _active_bar(), rx.box()),
-        content,
-        position="relative",
-        padding=f"{V_PAD} {H_PAD}",
-        border_radius=T.r_md,
-        color=rx.cond(active, T.accent, T.fg),
-        bg=rx.cond(active, ACTIVE_BG, "transparent"),
-        _hover={"bg": ACTIVE_BG, "color": T.accent},
-        font_weight=rx.cond(active, T.fw_600, T.fw_500),
-        width="100%",
-    )
-
+SIDEBAR_W   = "80px"
+ICON_BG     = "rgba(15,23,42,.06)"  # slate-ish
+ACTIVE_GRAD = "linear-gradient(135deg, rgba(37,99,235,.12) 0%, rgba(99,102,241,.12) 100%)"
 
 def _scoped_href(scope: str, to: str):
     to = to.lstrip("/")
@@ -99,88 +35,82 @@ def _scoped_href(scope: str, to: str):
         )
     return "/" + to
 
+def _tile(label: str, icon: str, *, active: bool):
+    icon_node = rx.box(
+        rx.icon(tag=icon, size=20, color=rx.cond(active, T.accent, T.fg)),
+        width="40px",
+        height="40px",
+        display="grid",
+        place_items="center",
+        border_radius="12px",
+        bg=rx.cond(active, ACTIVE_GRAD, ICON_BG),
+        flex_shrink="0",
+    )
+    text_node = rx.text(
+        label,
+        size="1",
+        weight="medium",
+        color=rx.cond(active, T.accent, T.fg),
+        text_align="center",
+        line_height="1.1",
+        margin_top="6px",
+        wrap="balance",
+    )
+    return rx.box(
+        rx.vstack(icon_node, text_node, gap="6px", align="center", justify="center", width="100%"),
+        position="relative",
+        padding=f"{SP.space_2} {SP.space_2}",
+        border_radius=T.r_lg,
+        bg=rx.cond(active, ACTIVE_GRAD, "transparent"),
+        _hover={"bg": ACTIVE_GRAD, "color": T.accent},
+        transition="all .16s ease",
+        width="100%",
+        display="flex",
+        align_items="center",
+        justify_content="center",
+    )
 
-def _nav_item(
-    label: str, icon: str, *, href=None, scope: str | None = None, to: str | None = None, active=False, collapsed=False
-):
-    row = _nav_row(label, icon, active, collapsed)
-    row = rx.cond(collapsed, rx.tooltip(row, content=label, side="right"), row)
-
-    if scope and to:
-        href_var = _scoped_href(scope, to)
-        return rx.link(
-            row,
-            href=href_var,  # real link, no redirect
+def _nav_link(item: dict, *, active: bool):
+    label, icon = item["label"], item["icon"]
+    href, scope, to = item.get("href"), item.get("scope"), item.get("to")
+    tile = _tile(label, icon, active=active)
+    link = (
+        rx.link(tile, href=href or "#", color="inherit", text_decoration="none", width="100%", display="block")
+        if not (scope and to)
+        else rx.link(
+            tile,
+            href=_scoped_href(scope, to),
             pointer_events=rx.cond(ScopeState.links_ready, "auto", "none"),
             opacity=rx.cond(ScopeState.links_ready, "1", "0.6"),
             color="inherit",
             text_decoration="none",
             width="100%",
+            display="block",
         )
-
-    return rx.link(row, href=href or "#", color="inherit", text_decoration="none", width="100%")
-
-
-def _section(*, title: str, items: list[dict], active_label: str, collapsed):
-    title_node = rx.cond(
-        collapsed,
-        rx.box(height="6px"),
-        rx.hstack(
-            rx.text(title, size="1", color=T.fg_muted, padding=f"0 {T.space_2}"),
-            rx.box(flex_grow="1", height="1px", bg=T.border, opacity="0.8"),
-            align="center",
-            gap=T.space_2,
-            padding_right=T.space_2,
-        ),
     )
-    nodes = [title_node]
-    for i in items:
-        nodes.append(
-            _nav_item(
-                label=i["label"],
-                icon=i["icon"],
-                href=i.get("href"),
-                scope=i.get("scope"),
-                to=i.get("to"),
-                active=(i["label"] == active_label),
-                collapsed=S.collapsed,
-            )
-        )
-    return rx.vstack(*nodes, gap="8px", width="100%", align_items="stretch")
-
+    return rx.tooltip(link, content=label, side="right")
 
 def Sidebar(*, active: str):
-    toggle = rx.tooltip(
-        rx.button(
-            rx.cond(S.collapsed, rx.icon(tag="chevron-right", size=18), rx.icon(tag="chevron-left", size=18)),
-            on_click=S.toggle,
-            padding=f"{V_PAD}",
-            border_radius=T.r_full,
-            bg=T.surface,
-            color=T.fg,
-            border=f"1px solid {T.border}",
-            _hover={"bg": "rgba(0,87,255,.1)", "color": T.accent},
-            width="36px",
-            height="36px",
-            min_width="36px",
-            position="absolute",
-            right="-16px",
-            top=T.space_4,
-            z_index="2",
-        ),
-        content=rx.cond(S.collapsed, "Expand", "Collapse"),
-        side="right",
-        cursor="pointer",
-    )
+    settings_item = next((i for i in NAV if i["label"] == "Settings"), None)
+    main_items    = [i for i in NAV if i["label"] != "Settings"]
 
-    sections = [_section(title=t, items=it, active_label=active, collapsed=S.collapsed) for t, it in NAV]
-    nav_scroll = rx.vstack(*sections, gap="8px", padding=T.space_4, overflow_y="auto", overscroll_behavior="none")
+    main_nodes    = [_nav_link(i, active=(i["label"] == active)) for i in main_items]
+    settings_node = _nav_link(settings_item, active=(settings_item and settings_item["label"] == active)) if settings_item else rx.fragment()
 
     return rx.box(
-        toggle,
-        nav_scroll,
-        width=rx.cond(S.collapsed, T.sidebar_w_collapsed, T.sidebar_w),
-        min_width=rx.cond(S.collapsed, T.sidebar_w_collapsed, T.sidebar_w),
+        rx.vstack(
+            *main_nodes,
+            rx.spacer(),
+            rx.divider(margin=f"{SP.space_3} 0"),
+            settings_node,
+            gap="10px",
+            padding=SP.space_3,
+            width="100%",
+            height="100%",
+            align_items="stretch",
+        ),
+        width=SIDEBAR_W,
+        min_width=SIDEBAR_W,
         bg=T.surface,
         border_right=f"1px solid {T.border}",
         position="sticky",
@@ -189,4 +119,6 @@ def Sidebar(*, active: str):
         overscroll_behavior="none",
         as_="nav",
         aria_label="Primary",
+        display="flex",
+        flex_direction="column",
     )
