@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-core"
-version = "0.3.0"
+version = "0.4.0"
 description = "Core functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -14,6 +14,7 @@ classifiers = [
 dependencies = [
     "pillow>=11.2.1",
     "pydantic>=2.11.1",
+    "pydantic-settings>=2.10.1",
     "tqdm>=4.67.1",
     "urllib3>=2.2.0",
 ]
@@ -25,3 +26,6 @@ Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/core"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+"*" = ["*.ini", "*.json", "*.yml", "*.yaml"]

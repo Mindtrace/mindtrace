@@ -6,6 +6,8 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.workers.run_script_worker import RunScriptWorkerInput, RunScriptWorkerOutput
 from mindtrace.jobs import JobSchema, job_from_schema
 
+from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
+
 
 @pytest.mark.integration
 def test_run_script_worker_simple():
@@ -108,8 +110,8 @@ def test_run_script_worker_git_environment():
             input_data={
                 "environment": {
                     "git": {
-                        "repo_url": "https://github.com/Mindtrace/mindtrace.git",
-                        "branch": "feature/cluster/git-and-docker",
+                        "repo_url": GIT_REPO_URL,
+                        "branch": GIT_REPO_BRANCH,
                         "working_dir": "",
                     }
                 },
@@ -252,8 +254,8 @@ def test_run_script_worker_both_environments():
             input_data={
                 "environment": {
                     "git": {
-                        "repo_url": "https://github.com/Mindtrace/mindtrace.git",
-                        "branch": "feature/cluster/git-and-docker",
+                        "repo_url": GIT_REPO_URL,
+                        "branch": GIT_REPO_BRANCH,
                         "working_dir": "",
                     }
                 },

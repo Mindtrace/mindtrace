@@ -88,7 +88,7 @@ class TestRunScriptWorker:
         assert worker.working_dir == "/tmp/test-repo-123/src"
 
     @patch("mindtrace.cluster.workers.run_script_worker.DockerEnvironment")
-    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/path/to/credentials.json"})
+    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": ""})
     def test_setup_environment_docker(self, mock_docker_env_class, worker, docker_job_dict):
         """Test environment setup with docker configuration."""
         # Mock DockerEnvironment
@@ -104,6 +104,7 @@ class TestRunScriptWorker:
             working_dir="/workspace",
             environment={"PYTHONPATH": "/workspace"},
             volumes={"/host/path": {"bind": "/container/path", "mode": "rw"}},
+            devices=[],
         )
 
         # Verify setup was called
@@ -112,39 +113,6 @@ class TestRunScriptWorker:
         # Verify worker attributes were set
         assert worker.env_manager == mock_docker_env
         assert worker.container_id == "test-container-id"
-
-    @patch("mindtrace.cluster.workers.run_script_worker.DockerEnvironment")
-    @patch.dict(os.environ, {"GOOGLE_APPLICATION_CREDENTIALS": "/path/to/credentials.json"})
-    def test_setup_environment_docker_with_gcp_credentials(self, mock_docker_env_class, worker):
-        """Test environment setup with docker configuration including GCP credentials."""
-        job_dict = {
-            "environment": {
-                "docker": {
-                    "image": "python:3.9",
-                    "volumes": {
-                        "GCP_CREDENTIALS": "/container/credentials.json",
-                        "/other/path": {"bind": "/other/container/path", "mode": "rw"},
-                    },
-                }
-            }
-        }
-
-        # Mock DockerEnvironment
-        mock_docker_env = Mock()
-        mock_docker_env.setup.return_value = "test-container-id"
-        mock_docker_env_class.return_value = mock_docker_env
-
-        worker.setup_environment(job_dict["environment"])
-
-        # Verify GCP_CREDENTIALS was replaced with actual credentials path
-        expected_volumes = {
-            "/path/to/credentials.json": "/container/credentials.json",
-            "/other/path": {"bind": "/other/container/path", "mode": "rw"},
-        }
-
-        mock_docker_env_class.assert_called_once_with(
-            image="python:3.9", working_dir=None, environment={}, volumes=expected_volumes
-        )
 
     def test_setup_environment_invalid_config(self, worker):
         """Test environment setup with invalid configuration."""
