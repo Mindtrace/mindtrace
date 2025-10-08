@@ -38,11 +38,12 @@ def make_client():
     dc = DummyChannel()
     with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.connect"):
         with patch("mindtrace.jobs.rabbitmq.connection.RabbitMQConnection.get_channel", return_value=dc):
-            client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+            client = RabbitMQClient(host="localhost", port=5671, username="user", password="password")
             client.logger = MagicMock()
             client.channel = dc
             client.connection.get_channel = MagicMock(return_value=dc)
             client.connection.count_queue_messages = MagicMock(return_value=42)
+            client.create_connection = MagicMock(return_value=dc)
             return client
 
 

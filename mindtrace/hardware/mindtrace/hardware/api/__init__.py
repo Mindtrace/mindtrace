@@ -1,10 +1,11 @@
-"""
-Hardware API modules.
+"""Hardware API modules."""
 
-This module contains camera and sensor API components.
-"""
+from mindtrace.hardware.api.cameras import CameraManagerConnectionManager, CameraManagerService
+from mindtrace.hardware.api.sensors import SensorConnectionManager, SensorManagerService
 
-from .app import app
-from . import cameras, sensors
-
-__all__ = ["app", "cameras", "sensors"]
+__all__ = [
+    "CameraManagerService",
+    "CameraManagerConnectionManager",
+    "SensorManagerService",
+    "SensorConnectionManager",
+]

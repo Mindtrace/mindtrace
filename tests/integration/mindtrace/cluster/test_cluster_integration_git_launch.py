@@ -6,6 +6,8 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
+from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
+
 
 @pytest.mark.integration
 def test_start_worker_from_git():
@@ -24,8 +26,8 @@ def test_start_worker_from_git():
             worker_name="echoworker",
             worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
             worker_params={},
-            git_repo_url="https://github.com/Mindtrace/mindtrace.git",
-            git_branch="feature/cluster/git-and-docker",
+            git_repo_url=GIT_REPO_URL,
+            git_branch=GIT_REPO_BRANCH,
             job_type="echo",
         )
 
