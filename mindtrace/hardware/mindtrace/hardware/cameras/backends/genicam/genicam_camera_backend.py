@@ -41,10 +41,14 @@ from mindtrace.hardware.core.exceptions import (
 
 class GenICamCameraBackend(CameraBackend):
     """GenICam Camera Backend Implementation
-    
-    This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library 
-    with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control, 
+
+    This class provides a comprehensive implementation for GenICam-compliant cameras using the Harvesters library
+    with Matrix Vision GenTL Producer. It supports advanced camera features including trigger modes, exposure control,
     ROI settings, and image quality enhancement.
+
+    Thread Safety:
+        Uses a singleton Harvester instance shared across all backend instances to avoid GenTL device conflicts.
+        Multiple cameras can be opened simultaneously using the same Harvester.
     
     Features:
         - Full GenICam camera support via Harvesters
@@ -126,6 +130,11 @@ class GenICamCameraBackend(CameraBackend):
         vendor_quirks: Vendor-specific parameter handling flags
         cti_path: Path to GenTL Producer file
     """
+
+    # Class-level singleton Harvester instance shared across all backend instances
+    _shared_harvester: Optional[Harvester] = None
+    _harvester_cti_path: Optional[str] = None
+    _harvester_lock = None  # Will be initialized as threading.Lock() when first needed
     
     def __init__(
         self,
@@ -215,6 +224,43 @@ class GenICamCameraBackend(CameraBackend):
         
         self.logger.info(f"GenICam camera '{self.camera_name}' initialized successfully")
     
+    @classmethod
+    def _get_shared_harvester(cls, cti_path: str) -> Harvester:
+        """Get or create the shared Harvester instance.
+
+        Args:
+            cti_path: Path to GenTL Producer file
+
+        Returns:
+            Shared Harvester instance
+
+        Raises:
+            CameraConfigurationError: If CTI file doesn't exist or Harvester initialization fails
+        """
+        import threading
+
+        # Initialize lock if needed
+        if cls._harvester_lock is None:
+            cls._harvester_lock = threading.Lock()
+
+        with cls._harvester_lock:
+            # Create new harvester if none exists or CTI path changed
+            if cls._shared_harvester is None or cls._harvester_cti_path != cti_path:
+                # Clean up old harvester if CTI path changed
+                if cls._shared_harvester is not None:
+                    try:
+                        cls._shared_harvester.reset()
+                    except Exception:
+                        pass
+
+                # Create new harvester and update device list ONCE
+                cls._shared_harvester = Harvester()
+                cls._shared_harvester.add_file(cti_path)
+                cls._shared_harvester.update()  # Update device list on creation ONLY
+                cls._harvester_cti_path = cti_path
+
+            return cls._shared_harvester
+
     @staticmethod
     def _detect_cti_path() -> str:
         """Auto-detect Matrix Vision GenTL Producer path based on platform.
@@ -319,22 +365,20 @@ class GenICamCameraBackend(CameraBackend):
         else:
             assert Harvester is not None, "Harvesters is available but Harvester class is not initialized"
         
-        harvester = None
         try:
             available_cameras = []
             camera_details = {}
-            
-            # Create temporary harvester for discovery
-            harvester = Harvester()
-            
+
             # Try to detect CTI path
             try:
                 cti_path = GenICamCameraBackend._detect_cti_path()
-                harvester.add_file(cti_path)
             except CameraConfigurationError:
                 # If no CTI found, return empty list
                 return camera_details if include_details else available_cameras
-            
+
+            # Get shared harvester instance
+            harvester = GenICamCameraBackend._get_shared_harvester(cti_path)
+
             # Discover devices
             harvester.update()
             
@@ -376,15 +420,9 @@ class GenICamCameraBackend(CameraBackend):
                     }
             
             return camera_details if include_details else available_cameras
-        
+
         except Exception as e:
             raise HardwareOperationError(f"Failed to discover GenICam cameras: {str(e)}")
-        finally:
-            if harvester is not None:
-                try:
-                    harvester.reset()
-                except Exception:
-                    pass
     
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the camera connection.
@@ -415,16 +453,13 @@ class GenICamCameraBackend(CameraBackend):
                     max_workers=1, thread_name_prefix=f"harvesters-{self.camera_name}"
                 )
             
-            # Initialize harvester
-            # Create Harvester synchronously (it's just object instantiation)
-            self.harvester = Harvester()
-            
-            # Run Harvester operations synchronously to avoid threading issues
-            # These are quick operations that shouldn't block long
-            self.harvester.add_file(self.cti_path)
-            self.harvester.update()
-            
+            # Get shared harvester instance
+            self.harvester = self._get_shared_harvester(self.cti_path)
+
             # Get device list directly - it's just an attribute access
+            # NOTE: Do NOT call harvester.update() here! It stops all active acquisitions
+            # on other cameras sharing this Harvester instance. The device list is already
+            # populated when the Harvester was first created in _get_shared_harvester().
             device_list = self.harvester.device_info_list
             if len(device_list) == 0:
                 raise CameraNotFoundError("No GenICam cameras found")
@@ -565,7 +600,7 @@ class GenICamCameraBackend(CameraBackend):
         """Detect vendor-specific parameter handling requirements."""
         if self.device_info and 'vendor' in self.device_info:
             vendor = self.device_info['vendor'].upper()
-            
+
             if 'KEYENCE' in vendor:
                 self.vendor_quirks.update({
                     "use_integer_exposure": True,
@@ -576,7 +611,7 @@ class GenICamCameraBackend(CameraBackend):
             elif 'BASLER' in vendor:
                 self.vendor_quirks.update({
                     "use_integer_exposure": False,
-                    "exposure_node_name": "ExposureTime", 
+                    "exposure_node_name": "ExposureTime",
                     "gain_node_name": "Gain",
                 })
                 self.logger.debug(f"Detected Basler camera, using float exposure values")
@@ -588,7 +623,68 @@ class GenICamCameraBackend(CameraBackend):
                     "gain_node_name": "Gain",
                 })
                 self.logger.debug(f"Unknown vendor '{vendor}', using default parameter handling")
-    
+
+        # Detect TriggerMode writability (camera-specific, not vendor-specific)
+        await self._detect_trigger_mode_capability()
+
+    async def _detect_trigger_mode_capability(self):
+        """Detect if camera supports runtime trigger mode changes.
+
+        Some cameras (e.g., Keyence) have read-only TriggerMode that must be
+        configured via camera software, not GenICam API.
+        """
+        try:
+            await self._ensure_connected()
+
+            def _check_trigger_capability():
+                node_map = self.image_acquirer.remote_device.node_map
+
+                # Check if TriggerMode node exists
+                if not hasattr(node_map, 'TriggerMode'):
+                    return False, "off", "TriggerMode node not found"
+
+                trigger_mode_node = node_map.TriggerMode
+
+                # Get current trigger mode value
+                try:
+                    current_mode = trigger_mode_node.value.lower()
+                except Exception as e:
+                    return False, "unknown", f"Cannot read TriggerMode: {e}"
+
+                # Check access mode (3 = Read Only, 4 = Read/Write)
+                try:
+                    access_mode = trigger_mode_node.get_access_mode()
+                    is_writable = (access_mode == 4)  # 4 = RW (Read/Write)
+                except Exception:
+                    # Fallback: assume writable if we can't check
+                    is_writable = True
+
+                return is_writable, current_mode, None
+
+            is_writable, current_mode, error = await self._sdk(_check_trigger_capability, timeout=self._op_timeout_s)
+
+            # Store results in vendor_quirks
+            self.vendor_quirks["trigger_mode_writable"] = is_writable
+            self.vendor_quirks["trigger_mode_at_init"] = current_mode
+
+            if not is_writable:
+                self.logger.warning(
+                    f"Camera '{self.camera_name}' has read-only TriggerMode (current: {current_mode}). "
+                    f"Trigger mode must be configured using camera software. "
+                    f"Runtime trigger mode changes via API are not supported."
+                )
+            else:
+                self.logger.debug(f"Camera '{self.camera_name}' supports runtime trigger mode changes (current: {current_mode})")
+
+            # Update triggermode to reflect actual camera state
+            self.triggermode = current_mode
+
+        except Exception as e:
+            self.logger.warning(f"Could not detect trigger mode capability for '{self.camera_name}': {e}")
+            # Assume writable if detection fails (optimistic default)
+            self.vendor_quirks["trigger_mode_writable"] = True
+            self.vendor_quirks["trigger_mode_at_init"] = "continuous"
+
     async def _ensure_connected(self):
         """Ensure camera is connected and image acquirer is available.
         
@@ -660,12 +756,11 @@ class GenICamCameraBackend(CameraBackend):
                         else:
                             value_to_set = value
                         node.value = value_to_set
-                        return True
-                    return False
+                    else:
+                        raise AttributeError(f"Node '{name}' not found")
                 
-                success = await self._sdk(_set_value, timeout=self._op_timeout_s)
-                if success:
-                    return
+                await self._sdk(_set_value, timeout=self._op_timeout_s)
+                return  # Success - exit method
             except Exception as e:
                 self.logger.debug(f"Failed to set node '{name}' for camera '{self.camera_name}': {e}")
                 continue
@@ -674,21 +769,30 @@ class GenICamCameraBackend(CameraBackend):
     
     async def _configure_camera(self):
         """Configure initial camera settings.
-        
+
         Raises:
             CameraConfigurationError: If camera configuration fails
         """
         try:
             await self._ensure_connected()
-            
-            # Set buffer count
+
+            # Set buffer count and acquisition mode
             def _configure_buffers():
                 self.image_acquirer.num_buffers = self.buffer_count
-            
+
+                # Set AcquisitionMode to Continuous for multi-capture support
+                node_map = self.image_acquirer.remote_device.node_map
+                if hasattr(node_map, 'AcquisitionMode'):
+                    try:
+                        node_map.AcquisitionMode.value = "Continuous"
+                        self.logger.debug(f"Set AcquisitionMode to Continuous for camera '{self.camera_name}'")
+                    except Exception as acq_error:
+                        self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
+
             await self._sdk(_configure_buffers, timeout=self._op_timeout_s)
-            
+
             self.logger.debug(f"GenICam camera '{self.camera_name}' configured with buffer_count={self.buffer_count}")
-        
+
         except Exception as e:
             self.logger.error(f"Failed to configure GenICam camera '{self.camera_name}': {str(e)}")
             raise CameraConfigurationError(f"Failed to configure camera '{self.camera_name}': {str(e)}")
@@ -702,7 +806,6 @@ class GenICamCameraBackend(CameraBackend):
                 if not self.image_acquirer.is_acquiring():
                     self.image_acquirer.start()
                     self.logger.debug(f"Started acquisition for camera '{self.camera_name}'")
-                return True
             
             await self._sdk(_start_stream, timeout=self._op_timeout_s)
             
@@ -807,7 +910,107 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.error(f"Exposure setting failed for camera '{self.camera_name}': {str(e)}")
             raise HardwareOperationError(f"Failed to set exposure: {str(e)}")
-    
+
+    async def get_current_pixel_format(self) -> str:
+        """Get current pixel format.
+
+        Returns:
+            Current pixel format string (e.g., "Mono8", "RGB8", "BayerRG8")
+
+        Raises:
+            CameraConnectionError: If camera is not initialized or accessible
+            HardwareOperationError: If pixel format retrieval fails
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _get_pixel_format():
+                node_map = self.image_acquirer.remote_device.node_map
+                pixel_format_node = getattr(node_map, 'PixelFormat', None)
+                if pixel_format_node is not None:
+                    return str(pixel_format_node.value)
+                return "Unknown"
+
+            return await self._sdk(_get_pixel_format)
+
+        except Exception as e:
+            self.logger.warning(f"Pixel format not available for camera '{self.camera_name}': {str(e)}")
+            return "Unknown"
+
+    async def get_pixel_format_range(self) -> List[str]:
+        """Get list of supported pixel formats.
+
+        Returns:
+            List of supported pixel format strings
+
+        Raises:
+            CameraConnectionError: If camera is not initialized or accessible
+            HardwareOperationError: If pixel format list retrieval fails
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _get_pixel_formats():
+                node_map = self.image_acquirer.remote_device.node_map
+                pixel_format_node = getattr(node_map, 'PixelFormat', None)
+                if pixel_format_node is not None and hasattr(pixel_format_node, 'entries'):
+                    return [str(entry.symbolic) for entry in pixel_format_node.entries if entry.is_available]
+                return []
+
+            formats = await self._sdk(_get_pixel_formats)
+            return formats if formats else ["Unknown"]
+
+        except Exception as e:
+            self.logger.warning(f"Pixel formats not available for camera '{self.camera_name}': {str(e)}")
+            return ["Unknown"]
+
+    async def set_pixel_format(self, pixel_format: str):
+        """Set the camera pixel format.
+
+        Args:
+            pixel_format: Pixel format string (e.g., "Mono8", "RGB8")
+
+        Raises:
+            CameraConnectionError: If camera is not initialized or accessible
+            CameraConfigurationError: If pixel format is not supported
+            HardwareOperationError: If pixel format setting fails
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' is not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _set_pixel_format():
+                node_map = self.image_acquirer.remote_device.node_map
+                pixel_format_node = getattr(node_map, 'PixelFormat', None)
+                if pixel_format_node is None:
+                    raise HardwareOperationError("PixelFormat node not available")
+
+                # Check if format is supported
+                if hasattr(pixel_format_node, 'entries'):
+                    available_formats = [str(entry.symbolic) for entry in pixel_format_node.entries if entry.is_available]
+                    if pixel_format not in available_formats:
+                        raise CameraConfigurationError(
+                            f"Pixel format '{pixel_format}' not supported. Available: {available_formats}"
+                        )
+
+                pixel_format_node.value = pixel_format
+
+            await self._sdk(_set_pixel_format)
+
+        except (CameraConnectionError, CameraConfigurationError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Pixel format setting failed for camera '{self.camera_name}': {str(e)}")
+            raise HardwareOperationError(f"Failed to set pixel format: {str(e)}")
+
     async def get_triggermode(self) -> str:
         """Get current trigger mode.
         
@@ -879,21 +1082,17 @@ class GenICamCameraBackend(CameraBackend):
             )
         
         try:
-            # Check if this camera vendor has known trigger mode issues
-            if hasattr(self, 'vendor_quirks') and self.vendor_quirks.get('skip_trigger_operations', False):
-                self.logger.warning(f"Skipping trigger mode operation for camera '{self.camera_name}' due to vendor quirks")
-                self.triggermode = triggermode  # Update local state but skip hardware changes
-                return
-            
-            # For Keyence cameras, skip trigger mode operations entirely to prevent acquisition corruption
-            if hasattr(self, 'device_info') and self.device_info and 'vendor' in self.device_info:
-                vendor = self.device_info['vendor'].upper()
-                if 'KEYENCE' in vendor:
-                    self.logger.warning(f"Skipping trigger mode operation for Keyence camera '{self.camera_name}' to prevent acquisition corruption")
-                    self.triggermode = triggermode  # Update local state but skip hardware changes
-                    return
-            
             await self._ensure_connected()
+
+            # Check if camera supports runtime trigger mode changes
+            if not self.vendor_quirks.get("trigger_mode_writable", True):
+                current_mode = self.vendor_quirks.get("trigger_mode_at_init", "unknown")
+                raise CameraConfigurationError(
+                    f"Camera '{self.camera_name}' does not support runtime trigger mode changes. "
+                    f"Current mode: '{current_mode}'. "
+                    f"Trigger mode must be configured using camera software (e.g., Keyence configuration tool). "
+                    f"Once configured at the hardware level, the camera will operate in that mode."
+                )
             
             def _set_trigger_mode():
                 node_map = self.image_acquirer.remote_device.node_map
@@ -969,28 +1168,36 @@ class GenICamCameraBackend(CameraBackend):
                 
                 try:
                     def _capture_image():
-                        # Debug logging
-                        self.logger.info(f"=== CAPTURE DEBUG for {self.camera_name} ===")
-                        self.logger.info(f"Image acquirer: {self.image_acquirer}")
-                        self.logger.info(f"Is acquiring: {self.image_acquirer.is_acquiring()}")
-                        
                         # Ensure acquisition is running (should already be started in initialization)
                         if not self.image_acquirer.is_acquiring():
                             self.image_acquirer.start()
-                            self.logger.info(f"Started acquisition during capture for camera '{self.camera_name}'")
-                        else:
-                            self.logger.info(f"Acquisition already running for camera '{self.camera_name}'")
-                        
+                            self.logger.debug(f"Started acquisition during capture for camera '{self.camera_name}'")
+
                         # Execute software trigger if in trigger mode
+                        # NOTE: Must be done AFTER acquisition is started for some cameras
                         if self.triggermode == "trigger":
                             node_map = self.image_acquirer.remote_device.node_map
-                            trigger_software_node = getattr(node_map, 'TriggerSoftware', None)
-                            if trigger_software_node is not None:
-                                trigger_software_node.execute()
-                        
-                        # Fetch image with timeout - match the working debug script
-                        timeout_s = 10.0  # Fixed timeout that worked in debug
-                        self.logger.info(f"About to fetch image with {timeout_s}s timeout...")
+
+                            # Find software trigger command
+                            trigger_cmd = getattr(node_map, 'TriggerSoftware', None)
+                            if trigger_cmd is None:
+                                trigger_cmd = getattr(node_map, 'SoftwareTrigger', None)
+                                cmd_name = "SoftwareTrigger"
+                            else:
+                                cmd_name = "TriggerSoftware"
+
+                            if trigger_cmd is None:
+                                raise HardwareOperationError(
+                                    f"No software trigger command found for camera '{self.camera_name}'. "
+                                    f"Camera may not support software triggering."
+                                )
+
+                            # Execute software trigger
+                            self.logger.debug(f"Executing {cmd_name} for camera '{self.camera_name}'")
+                            trigger_cmd.execute()
+
+                        # Fetch image with timeout
+                        timeout_s = max(10.0, float(self.timeout_ms) / 1000.0)
                         with self.image_acquirer.fetch(timeout=timeout_s) as buffer:
                             # Get image component
                             component = buffer.payload.components[0]
@@ -1148,14 +1355,8 @@ class GenICamCameraBackend(CameraBackend):
                 self.logger.error(f"Error in camera cleanup for '{self.camera_name}': {str(e)}")
                 raise CameraConnectionError(f"Failed to close camera '{self.camera_name}': {str(e)}")
         
-        # Clean up harvester
-        if self.harvester is not None:
-            try:
-                harvester = self.harvester
-                self.harvester = None
-                await self._sdk(harvester.reset, timeout=self._op_timeout_s)
-            except Exception as e:
-                self.logger.warning(f"Error cleaning up harvester for camera '{self.camera_name}': {str(e)}")
+        # Release harvester reference (but don't reset it - it's shared)
+        self.harvester = None
         
         # Shutdown executor if present
         try:
@@ -1285,7 +1486,7 @@ class GenICamCameraBackend(CameraBackend):
                             wb_auto_node.value = "Off"
                         else:
                             wb_auto_node.value = "Once"  # Default to once
-                        return True
+                        return  # Success - exit
                     except Exception as e:
                         self.logger.debug(f"Could not set BalanceWhiteAuto: {e}")
                 
@@ -1294,17 +1495,14 @@ class GenICamCameraBackend(CameraBackend):
                 if wb_mode_node is not None:
                     try:
                         wb_mode_node.value = value
-                        return True
+                        return  # Success - exit
                     except Exception as e:
                         self.logger.debug(f"Could not set WhiteBalanceMode: {e}")
                 
-                return False
+                raise HardwareOperationError("White balance nodes not available")
             
-            success = await self._sdk(_set_wb, timeout=self._op_timeout_s)
-            if success:
-                self.logger.debug(f"White balance set to '{value}' for camera '{self.camera_name}'")
-            else:
-                self.logger.warning(f"White balance setting not supported for camera '{self.camera_name}'")
+            await self._sdk(_set_wb, timeout=self._op_timeout_s)
+            self.logger.debug(f"White balance set to '{value}' for camera '{self.camera_name}'")
             
         except Exception as e:
             self.logger.warning(f"White balance setting failed for camera '{self.camera_name}': {str(e)}")
@@ -1589,7 +1787,7 @@ class GenICamCameraBackend(CameraBackend):
                     except Exception as e:
                         self.logger.debug(f"Could not set Height: {e}")
                 
-                return True
+                # No return needed - void method
             
             await self._sdk(_set_roi, timeout=self._op_timeout_s)
             self.logger.debug(f"ROI set to ({x}, {y}, {width}, {height}) for camera '{self.camera_name}'")
@@ -1713,7 +1911,7 @@ class GenICamCameraBackend(CameraBackend):
                     except Exception as e:
                         self.logger.debug(f"Could not reset Height: {e}")
                 
-                return True
+                # No return needed - void method
             
             await self._sdk(_reset_roi, timeout=self._op_timeout_s)
             self.logger.debug(f"ROI reset to maximum sensor area for camera '{self.camera_name}'")
