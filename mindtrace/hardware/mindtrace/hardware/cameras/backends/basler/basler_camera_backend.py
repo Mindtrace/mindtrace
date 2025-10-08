@@ -661,6 +661,18 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._sdk(self.camera.MaxNumBuffer.SetValue, self.buffer_count, timeout=self._op_timeout_s)
 
+            # Set AcquisitionMode to Continuous for multi-capture support
+            # This ensures consistent behavior across all backends
+            def _set_acquisition_mode():
+                try:
+                    if self.camera.GetNodeMap().GetNode("AcquisitionMode"):
+                        self.camera.AcquisitionMode.Value = "Continuous"
+                        self.logger.debug(f"Set AcquisitionMode to Continuous for camera '{self.camera_name}'")
+                except Exception as acq_error:
+                    self.logger.warning(f"Could not set AcquisitionMode to Continuous: {acq_error}")
+
+            await self._sdk(_set_acquisition_mode, timeout=self._op_timeout_s)
+
             # Configure multicast streaming BEFORE starting grabbing if enabled
             # This is critical for proper multicast setup
             if self.multicast_enabled:
@@ -942,6 +954,7 @@ class BaslerCameraBackend(CameraBackend):
                 raise HardwareOperationError(
                     f"Exposure verification failed for camera '{self.camera_name}': requested={exposure}, actual={actual_exposure}"
                 )
+
 
         except (CameraConnectionError, CameraConfigurationError):
             raise
@@ -1649,7 +1662,23 @@ class BaslerCameraBackend(CameraBackend):
 
             await self._ensure_open()
 
-            await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                await self._sdk(self.camera.Gain.SetValue, gain, timeout=self._op_timeout_s)
+                actual_gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for set_gain on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                # GainRaw expects integer value
+                gain_int = int(round(gain))
+                await self._sdk(self.camera.GainRaw.SetValue, gain_int, timeout=self._op_timeout_s)
+                actual_gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+                
+            if not (abs(actual_gain - gain) < 0.01 * max(1.0, float(gain))):
+                raise HardwareOperationError(
+                    f"Gain verification failed for camera '{self.camera_name}': requested={gain}, actual={actual_gain}"
+                )
+
             self.logger.debug(f"Gain set to {gain} for camera '{self.camera_name}'")
 
         except (CameraConnectionError, CameraConfigurationError):
@@ -1673,7 +1702,14 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                gain = await self._sdk(self.camera.Gain.GetValue, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for get_gain on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                gain = await self._sdk(self.camera.GainRaw.GetValue, timeout=self._op_timeout_s)
+                
             return gain
 
         except Exception as e:
@@ -1697,8 +1733,16 @@ class BaslerCameraBackend(CameraBackend):
         try:
             await self._ensure_open()
 
-            min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
-            max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
+            # Try Gain first, fallback to GainRaw
+            try:
+                min_gain = await self._sdk(self.camera.Gain.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._sdk(self.camera.Gain.GetMax, timeout=self._op_timeout_s)
+                self.logger.debug(f"Using Gain for get_gain_range on camera '{self.camera_name}'")
+            except Exception:
+                self.logger.debug(f"Gain not available for camera '{self.camera_name}', falling back to GainRaw")
+                min_gain = await self._sdk(self.camera.GainRaw.GetMin, timeout=self._op_timeout_s)
+                max_gain = await self._sdk(self.camera.GainRaw.GetMax, timeout=self._op_timeout_s)
+                
             return [min_gain, max_gain]
 
         except Exception as e:
