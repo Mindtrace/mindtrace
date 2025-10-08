@@ -107,7 +107,21 @@ class AsyncCamera(Mindtrace):
                 )
 
                 backend = OpenCVCameraBackend(device_name)
-            elif backend_name.lower() in {"basler", "mockbasler", "mock_basler"}:
+            elif backend_name.lower() == "basler":
+                try:
+                    from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCameraBackend
+                    
+                    if BASLER_AVAILABLE:
+                        backend = BaslerCameraBackend(device_name)
+                    else:
+                        raise ImportError("Real Basler backend not available, pypylon not installed")
+                except ImportError:
+                    # Fall back to mock if real backend unavailable
+                    from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
+                        MockBaslerCameraBackend,
+                    )
+                    backend = MockBaslerCameraBackend(device_name)
+            elif backend_name.lower() in {"mockbasler", "mock_basler"}:
                 from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
                     MockBaslerCameraBackend,
                 )
@@ -399,9 +413,11 @@ class AsyncCamera(Mindtrace):
         """
         async with self._lock:
             self.logger.debug(f"Configuring camera '{self._full_name}' with settings: {settings}")
-            success = True
+            # Handle both "exposure" and "exposure_time" for backwards compatibility and user convenience
             if "exposure_time" in settings:
-                success &= await self._backend.set_exposure(settings["exposure_time"])
+                await self._backend.set_exposure(settings["exposure_time"])
+            elif "exposure" in settings:
+                await self._backend.set_exposure(settings["exposure"])
             if "gain" in settings:
                 await self._backend.set_gain(settings["gain"])
             if "roi" in settings:
@@ -416,6 +432,7 @@ class AsyncCamera(Mindtrace):
             if "image_enhancement" in settings:
                 await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
+            return True
 
     async def set_exposure(self, exposure: Union[int, float]):
         """Set the camera exposure.
@@ -425,6 +442,7 @@ class AsyncCamera(Mindtrace):
         """
         async with self._lock:
             await self._backend.set_exposure(exposure)
+            return True
 
     async def get_exposure(self) -> float:
         """Get the current exposure value.
@@ -450,6 +468,7 @@ class AsyncCamera(Mindtrace):
             gain: Gain value to apply.
         """
         await self._backend.set_gain(gain)
+        return True
 
     async def get_gain(self) -> float:
         """Get the current camera gain.

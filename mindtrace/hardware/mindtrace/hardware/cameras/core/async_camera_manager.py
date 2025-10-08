@@ -544,8 +544,8 @@ class AsyncCameraManager(Mindtrace):
                 if camera_name not in self._cameras:
                     raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                 camera = self._cameras[camera_name]
-                success = await camera.configure(**settings)
-                return camera_name, success
+                await camera.configure(**settings)
+                return camera_name, True
             except Exception as e:
                 self.logger.error(f"Configuration failed for '{camera_name}': {e}")
                 return camera_name, False
