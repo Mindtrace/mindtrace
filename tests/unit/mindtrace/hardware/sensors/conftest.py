@@ -6,11 +6,12 @@ including mock backends, test data, and async test support.
 """
 
 import asyncio
-import json
-from typing import Dict, Any, Optional, AsyncGenerator
-from unittest.mock import Mock, AsyncMock
+from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 import pytest_asyncio
+
 
 # Test data fixtures
 @pytest.fixture
@@ -21,8 +22,9 @@ def sample_sensor_data():
         "humidity": 65.2,
         "timestamp": "2024-01-15T10:30:00Z",
         "unit_temp": "C",
-        "unit_humidity": "%"
+        "unit_humidity": "%",
     }
+
 
 @pytest.fixture
 def sample_mqtt_config():
@@ -31,26 +33,21 @@ def sample_mqtt_config():
         "broker_url": "mqtt://test.broker:1883",
         "identifier": "test_sensor",
         "username": "test_user",
-        "password": "test_pass"
+        "password": "test_pass",
     }
+
 
 @pytest.fixture
 def sample_http_config():
     """Sample HTTP configuration for testing."""
-    return {
-        "base_url": "http://api.sensors.test",
-        "auth_token": "test_token_123",
-        "timeout": 30.0
-    }
+    return {"base_url": "http://api.sensors.test", "auth_token": "test_token_123", "timeout": 30.0}
+
 
 @pytest.fixture
 def sample_serial_config():
     """Sample Serial configuration for testing."""
-    return {
-        "port": "/dev/ttyUSB0",
-        "baudrate": 9600,
-        "timeout": 5.0
-    }
+    return {"port": "/dev/ttyUSB0", "baudrate": 9600, "timeout": 5.0}
+
 
 # Event loop fixture
 @pytest.fixture(scope="session")
@@ -60,24 +57,26 @@ def event_loop():
     yield loop
     loop.close()
 
+
 # Mock backend fixtures
 @pytest_asyncio.fixture
 async def mock_mqtt_backend():
     """Create a mock MQTT backend for testing."""
     from mindtrace.hardware.sensors.backends.base import SensorBackend
-    
+
     backend = AsyncMock(spec=SensorBackend)
     backend.is_connected.return_value = False
     backend.connect = AsyncMock()
     backend.disconnect = AsyncMock()
     backend.read_data = AsyncMock()
     return backend
+
 
 @pytest_asyncio.fixture
 async def mock_http_backend():
     """Create a mock HTTP backend for testing."""
     from mindtrace.hardware.sensors.backends.base import SensorBackend
-    
+
     backend = AsyncMock(spec=SensorBackend)
     backend.is_connected.return_value = False
     backend.connect = AsyncMock()
@@ -85,36 +84,39 @@ async def mock_http_backend():
     backend.read_data = AsyncMock()
     return backend
 
+
 @pytest_asyncio.fixture
 async def mock_serial_backend():
     """Create a mock Serial backend for testing."""
     from mindtrace.hardware.sensors.backends.base import SensorBackend
-    
+
     backend = AsyncMock(spec=SensorBackend)
     backend.is_connected.return_value = False
     backend.connect = AsyncMock()
     backend.disconnect = AsyncMock()
     backend.read_data = AsyncMock()
     return backend
+
 
 # Mock simulator backend fixtures
 @pytest_asyncio.fixture
 async def mock_mqtt_simulator():
     """Create a mock MQTT simulator backend for testing."""
     from mindtrace.hardware.sensors.simulators.base import SensorSimulatorBackend
-    
+
     simulator = AsyncMock(spec=SensorSimulatorBackend)
     simulator.is_connected.return_value = False
     simulator.connect = AsyncMock()
     simulator.disconnect = AsyncMock()
     simulator.publish_data = AsyncMock()
     return simulator
+
 
 @pytest_asyncio.fixture
 async def mock_http_simulator():
     """Create a mock HTTP simulator backend for testing."""
     from mindtrace.hardware.sensors.simulators.base import SensorSimulatorBackend
-    
+
     simulator = AsyncMock(spec=SensorSimulatorBackend)
     simulator.is_connected.return_value = False
     simulator.connect = AsyncMock()
@@ -122,54 +124,66 @@ async def mock_http_simulator():
     simulator.publish_data = AsyncMock()
     return simulator
 
+
 @pytest_asyncio.fixture
 async def mock_serial_simulator():
     """Create a mock Serial simulator backend for testing."""
     from mindtrace.hardware.sensors.simulators.base import SensorSimulatorBackend
-    
+
     simulator = AsyncMock(spec=SensorSimulatorBackend)
     simulator.is_connected.return_value = False
     simulator.connect = AsyncMock()
     simulator.disconnect = AsyncMock()
     simulator.publish_data = AsyncMock()
     return simulator
+
 
 # Real backend test fixtures (require external dependencies)
 @pytest.fixture
 def mqtt_test_available():
     """Check if MQTT testing dependencies are available."""
     try:
-        import aiomqtt
+        import aiomqtt  # noqa: F401
+
         return True
     except ImportError:
         return False
+
 
 @pytest.fixture
 def http_test_available():
     """Check if HTTP testing dependencies are available."""
     try:
-        import aiohttp
+        import aiohttp  # noqa: F401
+
         return True
     except ImportError:
         return False
+
 
 @pytest.fixture
 def serial_test_available():
     """Check if Serial testing dependencies are available."""
     try:
-        import serial
+        import serial  # noqa: F401
+
         return True
     except ImportError:
         return False
 
+
 # Error simulation utilities
 class MockConnectionError(Exception):
     """Mock connection error for testing."""
+
     pass
+
 
 class MockTimeoutError(Exception):
     """Mock timeout error for testing."""
+
     pass
+
 
 @pytest.fixture
 def error_scenarios():
@@ -180,6 +194,7 @@ def error_scenarios():
         "invalid_data": ValueError("Invalid sensor data format"),
         "network_error": ConnectionError("Network unreachable"),
     }
+
 
 # Test utilities
 def create_mock_sensor_manager():
@@ -194,6 +209,7 @@ def create_mock_sensor_manager():
     manager.disconnect_all = AsyncMock()
     manager.read_all = AsyncMock()
     return manager
+
 
 def assert_sensor_data_valid(data: Dict[str, Any]):
     """Assert that sensor data has expected structure."""
