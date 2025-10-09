@@ -775,6 +775,8 @@ class CameraManagerService(Service):
     # Image Capture Operations
     async def capture_image(self, request: CaptureImageRequest) -> CaptureResponse:
         """Capture a single image with timeout protection."""
+        import asyncio
+
         try:
             manager = await self._get_camera_manager()
 
@@ -785,7 +787,6 @@ class CameraManagerService(Service):
             camera_proxy = await manager.open(request.camera)
 
             # Capture with 15 second timeout (allows for some overhead but prevents indefinite hang)
-            import asyncio
             capture_timeout = 15.0
 
             try:
