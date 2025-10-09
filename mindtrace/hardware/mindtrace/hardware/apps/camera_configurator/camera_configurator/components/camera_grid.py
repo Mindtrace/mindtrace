@@ -1,13 +1,15 @@
 """Camera grid layout component."""
 
 import reflex as rx
+
 from ..state.camera_state import CameraState
-from ..styles.theme import colors, spacing, css_spacing, radius, shadows, layout
+from ..styles.theme import colors, css_spacing, layout, radius, shadows, spacing
 from .camera_card import camera_card
+
 
 def camera_grid() -> rx.Component:
     """Grid layout for displaying camera cards."""
-    
+
     def empty_state() -> rx.Component:
         """Modern empty state using rx.center for proper centering."""
         return rx.center(
@@ -66,7 +68,7 @@ def camera_grid() -> rx.Component:
             min_height="350px",
             width="100%",
         )
-    
+
     def loading_state() -> rx.Component:
         """Modern loading state using rx.center for proper centering."""
         return rx.center(
@@ -105,15 +107,12 @@ def camera_grid() -> rx.Component:
             min_height="300px",
             width="100%",
         )
-    
+
     def grid_content() -> rx.Component:
         """Main grid content with properly centered camera cards."""
         return rx.center(
             rx.box(
-                rx.foreach(
-                    CameraState.cameras,
-                    lambda camera: camera_card(camera)
-                ),
+                rx.foreach(CameraState.cameras, lambda camera: camera_card(camera)),
                 display="grid",
                 grid_template_columns="repeat(auto-fill, minmax(320px, 1fr))",
                 gap=css_spacing["xl"],
@@ -125,7 +124,7 @@ def camera_grid() -> rx.Component:
             ),
             width="100%",
         )
-    
+
     return rx.cond(
         CameraState.is_loading,
         loading_state(),
@@ -133,8 +132,9 @@ def camera_grid() -> rx.Component:
             CameraState.has_cameras,
             grid_content(),
             empty_state(),
-        )
+        ),
     )
+
 
 def camera_grid_header() -> rx.Component:
     """Modern header section using Reflex flex components."""
@@ -236,6 +236,7 @@ def camera_grid_header() -> rx.Component:
         padding=css_spacing["lg"],
         margin_bottom=css_spacing["lg"],
     )
+
 
 def camera_grid_controls() -> rx.Component:
     """Modern control panel using Reflex flex components."""

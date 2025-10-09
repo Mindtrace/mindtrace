@@ -180,11 +180,7 @@ class MultiCameraScenario(HardwareScenario):
             ),
             Operation(
                 action=OperationType.CONFIGURE_BATCH,
-                payload={
-                    "configurations": {
-                        f"$cameras[{i}]": {"exposure": 2000} for i in range(camera_count)
-                    }
-                },
+                payload={"configurations": {f"$cameras[{i}]": {"exposure": 2000} for i in range(camera_count)}},
                 timeout=10.0,
             ),
             Operation(

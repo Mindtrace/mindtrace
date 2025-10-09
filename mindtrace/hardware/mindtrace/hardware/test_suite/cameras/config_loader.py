@@ -4,7 +4,6 @@ Configuration loader for camera test scenarios.
 Loads test configurations from YAML files.
 """
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -64,10 +63,7 @@ class ConfigLoader:
 
         if not config_path.exists():
             available = ", ".join(self.list_configs())
-            raise FileNotFoundError(
-                f"Config file not found: {config_path}\n"
-                f"Available configs: {available}"
-            )
+            raise FileNotFoundError(f"Config file not found: {config_path}\nAvailable configs: {available}")
 
         try:
             with open(config_path, "r") as f:

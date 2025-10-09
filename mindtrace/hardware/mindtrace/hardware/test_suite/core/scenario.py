@@ -164,9 +164,7 @@ class HardwareScenario:
 
         estimated = self.estimate_duration()
         if estimated > self.total_timeout:
-            raise ValueError(
-                f"Estimated duration ({estimated}s) exceeds total timeout ({self.total_timeout}s)"
-            )
+            raise ValueError(f"Estimated duration ({estimated}s) exceeds total timeout ({self.total_timeout}s)")
 
         return True
 

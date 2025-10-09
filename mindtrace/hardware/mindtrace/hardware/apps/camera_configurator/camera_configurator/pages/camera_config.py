@@ -1,12 +1,14 @@
 """Camera configuration page with detailed controls."""
 
 import reflex as rx
+
 from ..state.camera_state import CameraState
-from ..styles.theme import colors, spacing, radius
+from ..styles.theme import colors, radius, spacing
+
 
 def camera_config_page() -> rx.Component:
     """Detailed camera configuration page."""
-    
+
     def config_header() -> rx.Component:
         """Configuration page header."""
         return rx.vstack(
@@ -26,7 +28,7 @@ def camera_config_page() -> rx.Component:
             padding_bottom=spacing["lg"],
             border_bottom=f"1px solid {colors['border']}",
         )
-    
+
     def camera_selector() -> rx.Component:
         """Camera selection dropdown."""
         return rx.vstack(
@@ -47,7 +49,7 @@ def camera_config_page() -> rx.Component:
             align="start",
             width="100%",
         )
-    
+
     def camera_status_panel() -> rx.Component:
         """Camera status information panel."""
         return rx.cond(
@@ -107,7 +109,7 @@ def camera_config_page() -> rx.Component:
                 padding=spacing["lg"],
             ),
         )
-    
+
     def action_panel() -> rx.Component:
         """Camera action buttons panel."""
         return rx.cond(
@@ -129,7 +131,8 @@ def camera_config_page() -> rx.Component:
                             width="100%",
                             on_click=CameraState.open_config_modal(CameraState.selected_camera),
                             disabled=rx.cond(
-                                CameraState.camera_statuses.get(CameraState.selected_camera, "unknown") != "initialized",
+                                CameraState.camera_statuses.get(CameraState.selected_camera, "unknown")
+                                != "initialized",
                                 True,
                                 False,
                             ),
@@ -141,7 +144,8 @@ def camera_config_page() -> rx.Component:
                             width="100%",
                             on_click=lambda: CameraState.capture_image(CameraState.selected_camera),
                             disabled=rx.cond(
-                                CameraState.camera_statuses.get(CameraState.selected_camera, "unknown") != "initialized",
+                                CameraState.camera_statuses.get(CameraState.selected_camera, "unknown")
+                                != "initialized",
                                 True,
                                 CameraState.capture_loading,
                             ),
@@ -154,8 +158,11 @@ def camera_config_page() -> rx.Component:
                             width="100%",
                             on_click=lambda: CameraState.start_stream(CameraState.selected_camera),
                             disabled=(
-                                (CameraState.camera_statuses.get(CameraState.selected_camera, "unknown") != "initialized") |
-                                (CameraState.streaming_camera_name == CameraState.selected_camera)
+                                (
+                                    CameraState.camera_statuses.get(CameraState.selected_camera, "unknown")
+                                    != "initialized"
+                                )
+                                | (CameraState.streaming_camera_name == CameraState.selected_camera)
                             ),
                         ),
                         spacing=spacing["md"],
@@ -171,7 +178,7 @@ def camera_config_page() -> rx.Component:
                 padding=spacing["lg"],
             ),
         )
-    
+
     return rx.box(
         rx.container(
             rx.vstack(

@@ -1,8 +1,9 @@
 """File-based camera configuration component."""
 
 import reflex as rx
+
 from ..state.camera_state import CameraState
-from ..styles.theme import colors, spacing, css_spacing
+from ..styles.theme import colors, css_spacing, spacing
 
 
 def file_config_section() -> rx.Component:
@@ -21,7 +22,6 @@ def file_config_section() -> rx.Component:
             gap=spacing["sm"],
             margin_bottom=spacing["md"],
         ),
-        
         # Drag and drop upload area
         rx.box(
             rx.text(
@@ -74,13 +74,12 @@ def file_config_section() -> rx.Component:
                 max_files=10,
             ),
             rx.button(
-                "Upload Files", 
+                "Upload Files",
                 on_click=CameraState.handle_upload(rx.upload_files("config_upload")),
                 margin_top=spacing["sm"],
             ),
             margin_bottom=spacing["md"],
         ),
-        
         # Show uploaded files with selector
         rx.cond(
             CameraState.uploaded_files.length() > 0,
@@ -102,12 +101,11 @@ def file_config_section() -> rx.Component:
                 margin_bottom=spacing["md"],
             ),
         ),
-        
         # Camera selection for config operations
         rx.box(
             rx.text(
                 "Camera:",
-                font_weight="500", 
+                font_weight="500",
                 color=colors["gray_700"],
                 margin_bottom=spacing["xs"],
             ),
@@ -121,7 +119,6 @@ def file_config_section() -> rx.Component:
             ),
             margin_bottom=spacing["lg"],
         ),
-        
         # Action buttons centered
         rx.flex(
             rx.button(
@@ -138,16 +135,13 @@ def file_config_section() -> rx.Component:
                         "Export Config",
                         align="center",
                         gap=spacing["xs"],
-                    )
+                    ),
                 ),
-                on_click=lambda: CameraState.export_camera_config(
-                    CameraState.selected_camera
-                ),
+                on_click=lambda: CameraState.export_camera_config(CameraState.selected_camera),
                 disabled=(CameraState.selected_camera == "") | CameraState.config_export_loading,
                 variant="outline",
                 size="3",
             ),
-            
             rx.button(
                 rx.cond(
                     CameraState.config_import_loading,
@@ -162,23 +156,20 @@ def file_config_section() -> rx.Component:
                         "Import Config",
                         align="center",
                         gap=spacing["xs"],
-                    )
+                    ),
                 ),
-                on_click=lambda: CameraState.import_camera_config(
-                    CameraState.selected_camera
-                ),
-                disabled=(CameraState.selected_camera == "") | (CameraState.selected_file == "") | CameraState.config_import_loading,
+                on_click=lambda: CameraState.import_camera_config(CameraState.selected_camera),
+                disabled=(CameraState.selected_camera == "")
+                | (CameraState.selected_file == "")
+                | CameraState.config_import_loading,
                 variant="solid",
                 size="3",
             ),
-            
             gap=spacing["md"],
             justify="center",
             width="100%",
             flex_wrap="wrap",
         ),
-        
-        
         # Match existing card styling
         background=colors["white"],
         border=f"1px solid {colors['border']}",

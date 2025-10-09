@@ -1,6 +1,6 @@
 """GenICam Camera Backend Module"""
 
-from .genicam_camera_backend import GenICamCameraBackend, GENICAM_AVAILABLE, HARVESTERS_AVAILABLE
+from .genicam_camera_backend import GENICAM_AVAILABLE, HARVESTERS_AVAILABLE, GenICamCameraBackend
 from .mock_genicam_camera_backend import MockGenICamCameraBackend
 
 __all__ = [
