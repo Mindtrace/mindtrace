@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from mindtrace.core import Mindtrace
-from mindtrace.core.utils import download_and_extract_tarball, download_and_extract_zip
 from mindtrace.hardware.core.config import get_hardware_config
 
 
@@ -53,7 +52,7 @@ class GenICamCTIInstaller(Mindtrace):
     # SDK URLs for different platforms (Balluff official releases)
     # Base URL for mvIMPACT Acquire SDK downloads
     BASE_SDK_URL = "https://assets-2.balluff.com/mvIMPACT_Acquire/3.6.0/"
-    
+
     LINUX_SDK_URL = f"{BASE_SDK_URL}ImpactAcquire-x86_64-linux-3.6.0.sh"
     WINDOWS_SDK_URL = f"{BASE_SDK_URL}ImpactAcquire-x86_64-3.6.0.exe"
     MACOS_SDK_URL = f"{BASE_SDK_URL}ImpactAcquire-ARM64_macOS-3.6.0.dmg"
@@ -62,13 +61,18 @@ class GenICamCTIInstaller(Mindtrace):
     CTI_PATHS = {
         "Linux": "/opt/ImpactAcquire/lib/x86_64/mvGenTLProducer.cti",
         "Windows": r"C:\Program Files\MATRIX VISION\mvIMPACT Acquire\bin\x64\mvGenTLProducer.cti",
-        "Darwin": "/Applications/mvIMPACT_Acquire.app/Contents/Libraries/x86_64/mvGenTLProducer.cti"
+        "Darwin": "/Applications/mvIMPACT_Acquire.app/Contents/Libraries/x86_64/mvGenTLProducer.cti",
     }
 
     # Linux dependencies required for Impact Acquire SDK
     LINUX_DEPENDENCIES = [
-        "build-essential", "cmake", "libusb-1.0-0-dev", "libudev-dev",
-        "libxml2-dev", "libxslt1-dev", "python3-dev"
+        "build-essential",
+        "cmake",
+        "libusb-1.0-0-dev",
+        "libudev-dev",
+        "libxml2-dev",
+        "libxslt1-dev",
+        "python3-dev",
     ]
 
     def __init__(self, release_version: str = "latest"):
@@ -112,10 +116,10 @@ class GenICamCTIInstaller(Mindtrace):
             return False
 
         self.logger.info(f"Verifying CTI installation at: {cti_path}")
-        
+
         if os.path.exists(cti_path):
             self.logger.info("✓ CTI file found and accessible")
-            
+
             # Additional verification - check file size (CTI files should be > 1MB)
             file_size = os.path.getsize(cti_path) / (1024 * 1024)  # MB
             if file_size > 1.0:
@@ -170,9 +174,10 @@ class GenICamCTIInstaller(Mindtrace):
             self.logger.info(f"Downloading installer from {self.LINUX_SDK_URL}")
             installer_path = self.impact_dir / "ImpactAcquire-installer.sh"
             self.impact_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Download the installer script
             import urllib.request
+
             urllib.request.urlretrieve(self.LINUX_SDK_URL, installer_path)
             self.logger.info(f"Downloaded installer to {installer_path}")
 
@@ -182,7 +187,7 @@ class GenICamCTIInstaller(Mindtrace):
             # Run the installer script
             self.logger.info("Running Impact Acquire installer")
             self.logger.info("NOTE: This may take several minutes and will prompt for installation options")
-            
+
             # Run installer with sudo (it needs root permissions)
             self._run_command(["sudo", "bash", str(installer_path)])
 
@@ -213,19 +218,19 @@ class GenICamCTIInstaller(Mindtrace):
             Path to installation script if found, None otherwise
         """
         possible_scripts = ["install.sh", "setup.sh", "install_mvIMPACT_Acquire.sh"]
-        
+
         for script in possible_scripts:
             if os.path.exists(script):
                 self.logger.debug(f"Found installation script: {script}")
                 return script
-        
+
         self.logger.warning("No installation script found, using manual installation")
         return None
 
     def _install_linux_manual(self) -> None:
         """Manual installation for Linux when no script is available."""
         self.logger.info("Performing manual Linux installation")
-        
+
         # Look for .deb packages
         deb_files = list(Path(".").glob("*.deb"))
         if deb_files:
@@ -233,20 +238,20 @@ class GenICamCTIInstaller(Mindtrace):
             for deb_file in deb_files:
                 self.logger.info(f"Installing {deb_file}")
                 self._run_command(["sudo", "dpkg", "-i", str(deb_file)])
-            
+
             # Fix dependencies
             self._run_command(["sudo", "apt-get", "-f", "install", "-y"])
         else:
             # Copy files manually to /opt/ImpactAcquire
             self.logger.info("Copying files to /opt/ImpactAcquire")
             target_dir = Path("/opt/ImpactAcquire")
-            
+
             # Create target directory
             self._run_command(["sudo", "mkdir", "-p", str(target_dir)])
-            
+
             # Copy all contents
             self._run_command(["sudo", "cp", "-r", ".", str(target_dir / "sdk")])
-            
+
             # Set permissions
             self._run_command(["sudo", "chmod", "-R", "755", str(target_dir)])
 
@@ -269,12 +274,13 @@ class GenICamCTIInstaller(Mindtrace):
         try:
             # Download the SDK installer
             self.logger.info(f"Downloading installer from {self.WINDOWS_SDK_URL}")
-            
+
             installer_file = self.impact_dir / "ImpactAcquire-installer.exe"
             self.impact_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Download the installer
             import urllib.request
+
             urllib.request.urlretrieve(self.WINDOWS_SDK_URL, installer_file)
             self.logger.info(f"Downloaded installer to: {installer_file}")
 
@@ -309,32 +315,36 @@ class GenICamCTIInstaller(Mindtrace):
         try:
             # Download the SDK installer
             self.logger.info(f"Downloading installer from {self.MACOS_SDK_URL}")
-            
+
             # For .dmg files, we need to mount and extract
             dmg_file = self.impact_dir / "ImpactAcquire.dmg"
             self.impact_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Download DMG
             import urllib.request
+
             urllib.request.urlretrieve(self.MACOS_SDK_URL, dmg_file)
             self.logger.info(f"Downloaded DMG to: {dmg_file}")
 
             # Mount the DMG
             self.logger.info("Mounting DMG file")
-            mount_result = subprocess.run([
-                "hdiutil", "attach", str(dmg_file), "-readonly", "-nobrowse"
-            ], capture_output=True, text=True, check=True)
-            
+            mount_result = subprocess.run(
+                ["hdiutil", "attach", str(dmg_file), "-readonly", "-nobrowse"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
             # Extract mount point from output
             mount_point = None
-            for line in mount_result.stdout.split('\n'):
-                if '/Volumes/' in line:
-                    mount_point = line.split('\t')[-1].strip()
+            for line in mount_result.stdout.split("\n"):
+                if "/Volumes/" in line:
+                    mount_point = line.split("\t")[-1].strip()
                     break
-            
+
             if not mount_point:
                 raise RuntimeError("Failed to find mount point for DMG")
-            
+
             self.logger.info(f"DMG mounted at: {mount_point}")
 
             try:
@@ -342,7 +352,7 @@ class GenICamCTIInstaller(Mindtrace):
                 mount_path = Path(mount_point)
                 pkg_files = list(mount_path.glob("*.pkg"))
                 app_files = list(mount_path.glob("*.app"))
-                
+
                 if pkg_files:
                     # Install .pkg file
                     pkg_file = pkg_files[0]
@@ -353,7 +363,7 @@ class GenICamCTIInstaller(Mindtrace):
                     app_file = app_files[0]
                     target_app = Path("/Applications") / app_file.name
                     self.logger.info(f"Copying {app_file.name} to Applications")
-                    
+
                     if target_app.exists():
                         shutil.rmtree(target_app)
                     shutil.copytree(app_file, target_app)
@@ -446,7 +456,7 @@ class GenICamCTIInstaller(Mindtrace):
             # Remove installed packages
             self.logger.info("Removing mvimpact packages")
             subprocess.run(["sudo", "apt-get", "remove", "-y", "mvimpact*"], check=False)
-            
+
             # Remove installation directory
             if os.path.exists("/opt/ImpactAcquire"):
                 self.logger.info("Removing /opt/ImpactAcquire directory")
@@ -489,11 +499,8 @@ class GenICamCTIInstaller(Mindtrace):
                 shutil.rmtree(app_path)
 
             # Remove any other installation directories
-            possible_dirs = [
-                "/usr/local/lib/mvIMPACT_Acquire",
-                "/opt/mvIMPACT_Acquire"
-            ]
-            
+            possible_dirs = ["/usr/local/lib/mvIMPACT_Acquire", "/opt/mvIMPACT_Acquire"]
+
             for dir_path in possible_dirs:
                 if os.path.exists(dir_path):
                     self.logger.info(f"Removing {dir_path}")
@@ -533,16 +540,12 @@ def uninstall_genicam_cti() -> bool:
 def uninstall_main() -> None:
     """CLI entry point for uninstallation."""
     installer = GenICamCTIInstaller()
-    
+
     # Configure basic logging for CLI output
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
-    )
-    
+    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler(sys.stdout)])
+
     success = installer.uninstall()
-    
+
     if success:
         print("✓ Matrix Vision Impact Acquire SDK uninstalled successfully")
         sys.exit(0)
@@ -564,16 +567,12 @@ def verify_genicam_cti() -> bool:
 def verify_main() -> None:
     """CLI entry point for CTI verification."""
     installer = GenICamCTIInstaller()
-    
+
     # Configure basic logging for CLI output
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
-    )
-    
+    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler(sys.stdout)])
+
     success = installer.verify_installation()
-    
+
     if success:
         print("✓ Matrix Vision CTI verification successful")
         sys.exit(0)
@@ -603,9 +602,7 @@ For more information, visit: https://www.matrix-vision.com/
     )
     parser.add_argument("--uninstall", action="store_true", help="Uninstall the Impact Acquire SDK")
     parser.add_argument("--verify", action="store_true", help="Verify CTI installation only")
-    parser.add_argument(
-        "--version", default="latest", help="SDK release version to install (default: latest)"
-    )
+    parser.add_argument("--version", default="latest", help="SDK release version to install (default: latest)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()

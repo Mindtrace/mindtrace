@@ -2,15 +2,13 @@
 Scenario factory for creating test scenarios from YAML configurations.
 """
 
-from typing import Dict, Any
-
 from mindtrace.hardware.test_suite.cameras.config_loader import load_config
 from mindtrace.hardware.test_suite.cameras.scenarios import (
-    SmokeTestScenario,
     CaptureStressScenario,
-    MultiCameraScenario,
-    StreamStressScenario,
     ChaosScenario,
+    MultiCameraScenario,
+    SmokeTestScenario,
+    StreamStressScenario,
 )
 from mindtrace.hardware.test_suite.core.scenario import HardwareScenario
 

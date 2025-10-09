@@ -1,5 +1,3 @@
-
-
 from .camera_api import CameraAPI
 
 __all__ = [

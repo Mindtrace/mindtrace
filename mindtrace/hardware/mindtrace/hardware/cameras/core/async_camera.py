@@ -110,7 +110,7 @@ class AsyncCamera(Mindtrace):
             elif backend_name.lower() == "basler":
                 try:
                     from mindtrace.hardware.cameras.backends.basler import BASLER_AVAILABLE, BaslerCameraBackend
-                    
+
                     if BASLER_AVAILABLE:
                         backend = BaslerCameraBackend(device_name)
                     else:
@@ -120,6 +120,7 @@ class AsyncCamera(Mindtrace):
                     from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
                         MockBaslerCameraBackend,
                     )
+
                     backend = MockBaslerCameraBackend(device_name)
             elif backend_name.lower() in {"mockbasler", "mock_basler"}:
                 from mindtrace.hardware.cameras.backends.basler.mock_basler_camera_backend import (
@@ -756,37 +757,37 @@ class AsyncCamera(Mindtrace):
         """Get Region of Interest (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_ROI()
-    
+
     async def set_ROI(self, x: int, y: int, width: int, height: int):
         """Set Region of Interest (backend-specific method)."""
         async with self._lock:
             return await self._backend.set_ROI(x, y, width, height)
-    
+
     async def reset_ROI(self):
         """Reset Region of Interest (backend-specific method)."""
         async with self._lock:
             return await self._backend.reset_ROI()
-    
+
     async def get_wb(self) -> str:
         """Get white balance mode (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_wb()
-    
+
     async def set_auto_wb_once(self, value: str):
         """Execute automatic white balance once (backend-specific method)."""
         async with self._lock:
             return await self._backend.set_auto_wb_once(value)
-    
+
     async def get_wb_range(self) -> List[str]:
         """Get available white balance modes (backend-specific method)."""
         async with self._lock:
             return await self._backend.get_wb_range()
-    
+
     async def export_config(self, config_path: str):
         """Export camera configuration (backend-specific method)."""
         async with self._lock:
             return await self._backend.export_config(config_path)
-    
+
     async def import_config(self, config_path: str):
         """Import camera configuration (backend-specific method)."""
         async with self._lock:

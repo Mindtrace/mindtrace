@@ -1,12 +1,11 @@
 """Display utilities for CLI output using Rich."""
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
 from rich import box
-
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 
@@ -32,10 +31,10 @@ def format_status(status: Dict[str, Any]) -> None:
 
     for service_name, info in status.items():
         # Format service name
-        display_name = service_name.replace('_', ' ').title()
+        display_name = service_name.replace("_", " ").title()
 
         # Status with indicator
-        if info['running']:
+        if info["running"]:
             status_text = "[✓] Running"
             status_style = "green"
         else:
@@ -43,25 +42,18 @@ def format_status(status: Dict[str, Any]) -> None:
             status_style = "red"
 
         # URL or empty
-        url = f"http://{info['host']}:{info['port']}" if info['running'] else ""
+        url = f"http://{info['host']}:{info['port']}" if info["running"] else ""
 
         # PID or empty
-        pid = str(info['pid']) if info['running'] else ""
+        pid = str(info["pid"]) if info["running"] else ""
 
         # Uptime or empty
-        uptime = info.get('uptime', '') if info['running'] else ""
+        uptime = info.get("uptime", "") if info["running"] else ""
 
         # Memory or empty
-        memory = f"{info.get('memory_mb', 0)} MB" if info['running'] and 'memory_mb' in info else ""
+        memory = f"{info.get('memory_mb', 0)} MB" if info["running"] and "memory_mb" in info else ""
 
-        table.add_row(
-            display_name,
-            f"[{status_style}]{status_text}[/]",
-            url,
-            pid,
-            uptime,
-            memory
-        )
+        table.add_row(display_name, f"[{status_style}]{status_text}[/]", url, pid, uptime, memory)
 
     console.print(table)
 
@@ -87,7 +79,7 @@ def print_table(data: List[Dict[str, Any]], headers: Optional[List[str]] = None)
         table.add_column(header, style="white")
 
     for row in data:
-        table.add_row(*[str(row.get(h, '')) for h in headers])
+        table.add_row(*[str(row.get(h, "")) for h in headers])
 
     console.print(table)
 
@@ -104,9 +96,9 @@ def print_service_box(title: str, services: Dict[str, Dict[str, Any]]):
     else:
         lines = []
         for service_name, info in services.items():
-            display_name = service_name.replace('_', ' ').title()
+            display_name = service_name.replace("_", " ").title()
 
-            if info.get('running'):
+            if info.get("running"):
                 status = f"[green][✓] Running[/green] (port {info.get('port', '?')})"
             else:
                 status = "[red][✗] Stopped[/red]"
@@ -115,12 +107,7 @@ def print_service_box(title: str, services: Dict[str, Dict[str, Any]]):
 
         content = "\n".join(lines)
 
-    panel = Panel(
-        content,
-        title=f"[bold cyan]{title}[/]",
-        box=box.ROUNDED,
-        border_style="cyan"
-    )
+    panel = Panel(content, title=f"[bold cyan]{title}[/]", box=box.ROUNDED, border_style="cyan")
 
     console.print(panel)
 
@@ -131,12 +118,7 @@ def show_banner():
 [bold cyan]Mindtrace Hardware CLI[/]
 Manage hardware services & devices
     """
-    panel = Panel(
-        banner_text.strip(),
-        box=box.DOUBLE,
-        border_style="cyan",
-        padding=(1, 2)
-    )
+    panel = Panel(banner_text.strip(), box=box.DOUBLE, border_style="cyan", padding=(1, 2))
     console.print(panel)
 
 
@@ -171,19 +153,12 @@ def print_test_summary(summary: Any, devices_hung: set = None):
     results_table.add_row("Duration", f"{summary.duration:.2f}s")
     results_table.add_row("Total Operations", str(summary.total_operations))
     results_table.add_row(
-        "[green]Success[/green]",
-        f"[green]{summary.successful_operations} ({summary.success_rate:.1%})[/green]"
+        "[green]Success[/green]", f"[green]{summary.successful_operations} ({summary.success_rate:.1%})[/green]"
     )
     if summary.failed_operations > 0:
-        results_table.add_row(
-            "[red]Failed[/red]",
-            f"[red]{summary.failed_operations}[/red]"
-        )
+        results_table.add_row("[red]Failed[/red]", f"[red]{summary.failed_operations}[/red]")
     if summary.timeout_operations > 0:
-        results_table.add_row(
-            "[yellow]Timeout[/yellow]",
-            f"[yellow]{summary.timeout_operations}[/yellow]"
-        )
+        results_table.add_row("[yellow]Timeout[/yellow]", f"[yellow]{summary.timeout_operations}[/yellow]")
 
     # Create performance table
     perf_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
@@ -197,11 +172,9 @@ def print_test_summary(summary: Any, devices_hung: set = None):
 
     # Print title panel
     console.print()
-    console.print(Panel(
-        f"[bold cyan]Test Results: {summary.scenario_name}[/bold cyan]",
-        box=box.DOUBLE,
-        border_style="cyan"
-    ))
+    console.print(
+        Panel(f"[bold cyan]Test Results: {summary.scenario_name}[/bold cyan]", box=box.DOUBLE, border_style="cyan")
+    )
 
     # Print tables
     console.print(results_table)
@@ -223,11 +196,13 @@ def print_test_summary(summary: Any, devices_hung: set = None):
     # Print hung devices if any
     if devices_hung:
         console.print()
-        console.print(Panel(
-            f"[yellow]Hung Devices: {', '.join(sorted(devices_hung))}[/yellow]",
-            box=box.ROUNDED,
-            border_style="yellow",
-            title="[bold yellow]Warning[/bold yellow]"
-        ))
+        console.print(
+            Panel(
+                f"[yellow]Hung Devices: {', '.join(sorted(devices_hung))}[/yellow]",
+                box=box.ROUNDED,
+                border_style="yellow",
+                title="[bold yellow]Warning[/bold yellow]",
+            )
+        )
 
     console.print()

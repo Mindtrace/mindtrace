@@ -8,20 +8,21 @@ from typing import Optional
 from rich.console import Console
 from rich.theme import Theme
 
-
 # Custom theme for professional CLI output
-CLI_THEME = Theme({
-    "info": "cyan",
-    "success": "green",
-    "warning": "yellow",
-    "error": "red bold",
-    "progress": "cyan",
-})
+CLI_THEME = Theme(
+    {
+        "info": "cyan",
+        "success": "green",
+        "warning": "yellow",
+        "error": "red bold",
+        "progress": "cyan",
+    }
+)
 
 
-def setup_logger(name: str = "mindtrace-hw-cli",
-                log_file: Optional[Path] = None,
-                verbose: bool = False) -> logging.Logger:
+def setup_logger(
+    name: str = "mindtrace-hw-cli", log_file: Optional[Path] = None, verbose: bool = False
+) -> logging.Logger:
     """Set up logger for the CLI.
 
     Args:
@@ -46,9 +47,7 @@ def setup_logger(name: str = "mindtrace-hw-cli",
     console_handler.setLevel(level)
 
     # Simple format for console
-    console_format = logging.Formatter(
-        '%(levelname)s: %(message)s'
-    )
+    console_format = logging.Formatter("%(levelname)s: %(message)s")
     console_handler.setFormatter(console_format)
     logger.addHandler(console_handler)
 
@@ -56,9 +55,7 @@ def setup_logger(name: str = "mindtrace-hw-cli",
     if log_file:
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.DEBUG)
-        file_format = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+        file_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(file_format)
         logger.addHandler(file_handler)
 

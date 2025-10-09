@@ -12,7 +12,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -164,8 +164,8 @@ class HardwareTestRunner(Mindtrace):
                     # Store result if requested
                     if operation.store_result:
                         # Extract data from response if it has 'data' field
-                        if isinstance(result, dict) and 'data' in result:
-                            stored_results[operation.store_result] = result['data']
+                        if isinstance(result, dict) and "data" in result:
+                            stored_results[operation.store_result] = result["data"]
                         else:
                             stored_results[operation.store_result] = result
 
@@ -212,8 +212,7 @@ class HardwareTestRunner(Mindtrace):
             summary = monitor.get_summary()
 
             self.logger.info(
-                f"Scenario '{scenario.name}' completed in {duration:.2f}s "
-                f"({summary.success_rate:.1%} success rate)"
+                f"Scenario '{scenario.name}' completed in {duration:.2f}s ({summary.success_rate:.1%} success rate)"
             )
 
             return ScenarioResult(
@@ -257,9 +256,7 @@ class HardwareTestRunner(Mindtrace):
                         # Log cleanup failures but don't raise - best effort cleanup
                         self.logger.warning(f"Cleanup operation {idx + 1} failed: {e}")
 
-    async def _execute_operation(
-        self, operation: Operation, stored_results: Dict[str, Any], api_base_url: str
-    ) -> Any:
+    async def _execute_operation(self, operation: Operation, stored_results: Dict[str, Any], api_base_url: str) -> Any:
         """
         Execute a single operation.
 
@@ -363,7 +360,7 @@ class HardwareTestRunner(Mindtrace):
         def substitute_value(value: Any) -> Any:
             if isinstance(value, str) and value.startswith("$"):
                 # Parse variable reference: $var_name or $var_name[index] or $var_name[start:end]
-                match = re.match(r'\$(\w+)(?:\[([^\]]+)\])?', value)
+                match = re.match(r"\$(\w+)(?:\[([^\]]+)\])?", value)
                 if match:
                     var_name = match.group(1)
                     index_expr = match.group(2)
@@ -375,8 +372,8 @@ class HardwareTestRunner(Mindtrace):
                         if index_expr:
                             try:
                                 # Check if it's a slice (e.g., "0:4")
-                                if ':' in index_expr:
-                                    parts = index_expr.split(':')
+                                if ":" in index_expr:
+                                    parts = index_expr.split(":")
                                     start = int(parts[0]) if parts[0] else None
                                     end = int(parts[1]) if parts[1] else None
                                     if isinstance(result, list):

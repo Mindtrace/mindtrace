@@ -6,7 +6,7 @@ Tracks operation results, detects failures, and provides summary statistics.
 
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -239,7 +239,7 @@ class HardwareMonitor:
         print(f"  [✓] Success: {summary.successful_operations} ({summary.success_rate:.1%})")
         print(f"  [✗] Failed: {summary.failed_operations}")
         print(f"  [~] Timeout: {summary.timeout_operations}")
-        print(f"\nPerformance:")
+        print("\nPerformance:")
         print(f"  Avg time: {summary.average_operation_time:.3f}s")
         print(f"  Min time: {summary.min_operation_time:.3f}s")
         print(f"  Max time: {summary.max_operation_time:.3f}s")
@@ -249,7 +249,7 @@ class HardwareMonitor:
             print(f"\n[!] Hung Devices: {', '.join(sorted(self.devices_hung))}")
 
         if summary.top_errors:
-            print(f"\n[!] Top Errors:")
+            print("\n[!] Top Errors:")
             for error_type, count in summary.top_errors:
                 print(f"  {error_type}: {count}")
 

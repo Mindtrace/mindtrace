@@ -12,29 +12,21 @@ from mindtrace.hardware.api.cameras.models import (
 )
 
 # Streaming Schemas
-StreamStartSchema = TaskSchema(
-    name="stream_start", input_schema=StreamStartRequest, output_schema=StreamInfoResponse
-)
+StreamStartSchema = TaskSchema(name="stream_start", input_schema=StreamStartRequest, output_schema=StreamInfoResponse)
 
-StreamStopSchema = TaskSchema(
-    name="stream_stop", input_schema=StreamStopRequest, output_schema=BoolResponse
-)
+StreamStopSchema = TaskSchema(name="stream_stop", input_schema=StreamStopRequest, output_schema=BoolResponse)
 
 StreamStatusSchema = TaskSchema(
     name="stream_status", input_schema=StreamStatusRequest, output_schema=StreamStatusResponse
 )
 
-GetActiveStreamsSchema = TaskSchema(
-    name="get_active_streams", input_schema=None, output_schema=ActiveStreamsResponse
-)
+GetActiveStreamsSchema = TaskSchema(name="get_active_streams", input_schema=None, output_schema=ActiveStreamsResponse)
 
-StopAllStreamsSchema = TaskSchema(
-    name="stop_all_streams", input_schema=None, output_schema=BoolResponse
-)
+StopAllStreamsSchema = TaskSchema(name="stop_all_streams", input_schema=None, output_schema=BoolResponse)
 
 __all__ = [
     "StreamStartSchema",
-    "StreamStopSchema", 
+    "StreamStopSchema",
     "StreamStatusSchema",
     "GetActiveStreamsSchema",
     "StopAllStreamsSchema",

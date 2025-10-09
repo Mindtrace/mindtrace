@@ -1,5 +1,3 @@
-
-
 from .camera_state import CameraState
 
 __all__ = [

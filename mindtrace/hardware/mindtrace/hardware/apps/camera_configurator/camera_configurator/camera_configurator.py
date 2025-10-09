@@ -5,16 +5,15 @@ Provides real-time camera discovery, initialization, configuration, and image ca
 """
 
 import reflex as rx
-from .pages.index import index_page
+
 from .pages.camera_config import camera_config_page
+from .pages.index import index_page
 from .styles.theme import theme_config
 
 # Create the main Reflex app
 app = rx.App(
     theme=theme_config,
-    stylesheets=[
-        "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-    ],
+    stylesheets=["https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"],
     style={
         "font_family": "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif",
         "margin": "0",
@@ -31,7 +30,7 @@ app = rx.App(
             "background": "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f8fafc 100%)",
         },
         "html": {
-            "margin": "0", 
+            "margin": "0",
             "padding": "0",
             "width": "100%",
             "height": "100%",
@@ -41,7 +40,7 @@ app = rx.App(
             "min_height": "100vh",
             "margin": "0",
             "padding": "0",
-        }
+        },
     },
 )
 

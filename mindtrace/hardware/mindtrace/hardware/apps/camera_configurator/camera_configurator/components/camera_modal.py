@@ -1,12 +1,14 @@
 """Camera configuration modal component."""
 
 import reflex as rx
+
 from ..state.camera_state import CameraState
-from ..styles.theme import colors, spacing, css_spacing, radius
+from ..styles.theme import colors, css_spacing, radius, spacing
+
 
 def camera_modal() -> rx.Component:
     """Configuration modal for camera settings."""
-    
+
     def modal_header() -> rx.Component:
         """Modal header with title and close button."""
         return rx.hstack(
@@ -28,7 +30,7 @@ def camera_modal() -> rx.Component:
             border_bottom=f"1px solid {colors['border']}",
             margin_bottom=css_spacing["lg"],
         )
-    
+
     def exposure_control() -> rx.Component:
         """Exposure time control with slider."""
         return rx.vstack(
@@ -75,7 +77,7 @@ def camera_modal() -> rx.Component:
             align="start",
             width="100%",
         )
-    
+
     def gain_control() -> rx.Component:
         """Gain control with slider."""
         return rx.vstack(
@@ -99,12 +101,12 @@ def camera_modal() -> rx.Component:
                 min=rx.cond(
                     CameraState.config_ranges_for_selected.get("gain", []).length() >= 2,
                     CameraState.config_ranges_for_selected.get("gain", [])[0],
-                    0
+                    0,
                 ),
                 max=rx.cond(
                     CameraState.config_ranges_for_selected.get("gain", []).length() >= 2,
                     CameraState.config_ranges_for_selected.get("gain", [])[1],
-                    30
+                    30,
                 ),
                 step=1,
                 value=[CameraState.config_gain],
@@ -117,7 +119,7 @@ def camera_modal() -> rx.Component:
                     rx.cond(
                         CameraState.config_ranges_for_selected.get("gain", []).length() >= 2,
                         f"{CameraState.config_ranges_for_selected.get('gain', [])[0]} dB",
-                        "0 dB"
+                        "0 dB",
                     ),
                     font_size="0.75rem",
                     color=colors["gray_500"],
@@ -127,7 +129,7 @@ def camera_modal() -> rx.Component:
                     rx.cond(
                         CameraState.config_ranges_for_selected.get("gain", []).length() >= 2,
                         f"{CameraState.config_ranges_for_selected.get('gain', [])[1]} dB",
-                        "30 dB"
+                        "30 dB",
                     ),
                     font_size="0.75rem",
                     color=colors["gray_500"],
@@ -138,7 +140,7 @@ def camera_modal() -> rx.Component:
             align="start",
             width="100%",
         )
-    
+
     def trigger_mode_control() -> rx.Component:
         """Trigger mode control with dynamic options from camera capabilities."""
         return rx.vstack(
@@ -162,7 +164,7 @@ def camera_modal() -> rx.Component:
             align="start",
             width="100%",
         )
-    
+
     def file_import_export_section() -> rx.Component:
         """File import/export section for camera configuration."""
         return rx.vstack(
@@ -174,7 +176,6 @@ def camera_modal() -> rx.Component:
                 font_size="1rem",
                 margin_bottom=spacing["sm"],
             ),
-            
             # Upload area
             rx.upload(
                 rx.vstack(
@@ -205,7 +206,6 @@ def camera_modal() -> rx.Component:
                 max_files=1,
                 on_drop=CameraState.handle_upload(rx.upload_files("modal_config_upload")),
             ),
-            
             # Show selected files from upload component
             rx.cond(
                 rx.selected_files("modal_config_upload").length() > 0,
@@ -217,7 +217,7 @@ def camera_modal() -> rx.Component:
                         font_weight="500",
                     ),
                     rx.foreach(
-                        rx.selected_files("modal_config_upload"), 
+                        rx.selected_files("modal_config_upload"),
                         lambda file: rx.hstack(
                             rx.icon("file-json", size=16, color=colors["primary"]),
                             rx.text(
@@ -231,13 +231,12 @@ def camera_modal() -> rx.Component:
                             border_radius=css_spacing["sm"],
                             border=f"1px solid {colors['border']}",
                             width="100%",
-                        )
+                        ),
                     ),
                     spacing=spacing["xs"],
                     width="100%",
                 ),
             ),
-            
             # Show uploaded file if any
             rx.cond(
                 CameraState.selected_file != "",
@@ -263,7 +262,6 @@ def camera_modal() -> rx.Component:
                     width="100%",
                 ),
             ),
-            
             # Action buttons
             rx.hstack(
                 rx.button(
@@ -280,11 +278,9 @@ def camera_modal() -> rx.Component:
                             "Export",
                             align="center",
                             gap=spacing["xs"],
-                        )
+                        ),
                     ),
-                    on_click=lambda: CameraState.export_camera_config(
-                        CameraState.selected_camera
-                    ),
+                    on_click=lambda: CameraState.export_camera_config(CameraState.selected_camera),
                     disabled=CameraState.config_export_loading,
                     variant="outline",
                     size="2",
@@ -311,11 +307,9 @@ def camera_modal() -> rx.Component:
                             "Import",
                             align="center",
                             gap=spacing["xs"],
-                        )
+                        ),
                     ),
-                    on_click=lambda: CameraState.import_camera_config(
-                        CameraState.selected_camera
-                    ),
+                    on_click=lambda: CameraState.import_camera_config(CameraState.selected_camera),
                     disabled=(CameraState.selected_file == "") | CameraState.config_import_loading,
                     variant="solid",
                     size="2",
@@ -325,7 +319,6 @@ def camera_modal() -> rx.Component:
                 spacing=spacing["sm"],
                 justify="center",
             ),
-            
             spacing=spacing["md"],
             width="100%",
             padding=spacing["md"],
@@ -333,7 +326,7 @@ def camera_modal() -> rx.Component:
             border_radius=css_spacing["md"],
             border=f"1px solid {colors['border']}",
         )
-    
+
     def modal_footer() -> rx.Component:
         """Modal footer with action buttons."""
         return rx.hstack(
@@ -356,8 +349,7 @@ def camera_modal() -> rx.Component:
             padding_top=css_spacing["lg"],
             border_top=f"1px solid {colors['border']}",
         )
-    
-    
+
     def modal_content() -> rx.Component:
         """Main modal content."""
         return rx.vstack(
@@ -368,7 +360,7 @@ def camera_modal() -> rx.Component:
                     exposure_control(),
                     rx.fragment(),  # Show nothing if exposure not supported
                 ),
-                gain_control(), 
+                gain_control(),
                 trigger_mode_control(),
                 spacing=spacing["lg"],
                 width="100%",
@@ -380,7 +372,7 @@ def camera_modal() -> rx.Component:
             width="100%",
             max_width="600px",
         )
-    
+
     return rx.dialog.root(
         rx.dialog.content(
             modal_content(),
@@ -394,9 +386,10 @@ def camera_modal() -> rx.Component:
         open=CameraState.config_modal_open,
     )
 
+
 def status_banner() -> rx.Component:
     """Status banner for displaying messages."""
-    
+
     def message_icon() -> rx.Component:
         """Icon based on message type."""
         return rx.cond(
@@ -409,10 +402,10 @@ def status_banner() -> rx.Component:
                     CameraState.message_type == "warning",
                     rx.icon("triangle-alert", color=colors["warning"]),
                     rx.icon("info", color=colors["info"]),
-                )
-            )
+                ),
+            ),
         )
-    
+
     def banner_style() -> dict:
         """Get banner style based on message type."""
         return rx.cond(
@@ -432,7 +425,7 @@ def status_banner() -> rx.Component:
                 rx.cond(
                     CameraState.message_type == "warning",
                     {
-                        "background": colors["warning"] + "10", 
+                        "background": colors["warning"] + "10",
                         "border": f"1px solid {colors['warning']}30",
                         "color": colors["warning"],
                     },
@@ -441,10 +434,10 @@ def status_banner() -> rx.Component:
                         "border": f"1px solid {colors['info']}30",
                         "color": colors["info"],
                     },
-                )
-            )
+                ),
+            ),
         )
-    
+
     return rx.cond(
         CameraState.message != "",
         rx.box(

@@ -746,8 +746,8 @@ class MockBaslerCameraBackend(CameraBackend):
     async def get_trigger_modes(self) -> List[str]:
         """Get available trigger modes for mock Basler cameras."""
         return [
-            "continuous",           # TriggerMode=Off (freerunning)
-            "trigger"               # TriggerMode=On, TriggerSource=Software
+            "continuous",  # TriggerMode=Off (freerunning)
+            "trigger",  # TriggerMode=On, TriggerSource=Software
         ]
 
     async def get_bandwidth_limit_range(self) -> List[float]:

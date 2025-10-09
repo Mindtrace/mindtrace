@@ -39,7 +39,7 @@ async def run_test(config_name: str):
         print(f"   Expected success rate: {scenario.expected_success_rate:.1%}")
 
         # Confirm execution
-        print(f"\n🚀 Starting test execution...")
+        print("\n🚀 Starting test execution...")
 
         # Execute scenario
         async with CameraTestRunner(scenario.api_base_url) as runner:
@@ -53,15 +53,15 @@ async def run_test(config_name: str):
             # Overall result
             if result.status.value == "completed":
                 if result.success_rate >= scenario.expected_success_rate:
-                    print(f"\n✅ TEST PASSED")
+                    print("\n✅ TEST PASSED")
                     print(f"   Success rate: {result.success_rate:.1%} (>= {scenario.expected_success_rate:.1%})")
                     return 0
                 else:
-                    print(f"\n⚠️  TEST COMPLETED WITH WARNINGS")
+                    print("\n⚠️  TEST COMPLETED WITH WARNINGS")
                     print(f"   Success rate: {result.success_rate:.1%} (< {scenario.expected_success_rate:.1%})")
                     return 1
             else:
-                print(f"\n❌ TEST FAILED")
+                print("\n❌ TEST FAILED")
                 print(f"   Status: {result.status.value}")
                 if result.error:
                     print(f"   Error: {result.error}")
@@ -69,7 +69,7 @@ async def run_test(config_name: str):
 
     except FileNotFoundError as e:
         print(f"\n❌ Configuration not found: {e}")
-        print(f"\n💡 Available configurations:")
+        print("\n💡 Available configurations:")
         for cfg in list_available_configs():
             print(f"   - {cfg}")
         return 3
@@ -77,6 +77,7 @@ async def run_test(config_name: str):
     except Exception as e:
         print(f"\n❌ Test execution failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 4
 
@@ -121,16 +122,10 @@ Examples:
         """,
     )
 
-    parser.add_argument(
-        "--list", "-l",
-        action="store_true",
-        help="List all available test configurations"
-    )
+    parser.add_argument("--list", "-l", action="store_true", help="List all available test configurations")
 
     parser.add_argument(
-        "--config", "-c",
-        type=str,
-        help="Name of test configuration to run (e.g., smoke_test, capture_stress)"
+        "--config", "-c", type=str, help="Name of test configuration to run (e.g., smoke_test, capture_stress)"
     )
 
     args = parser.parse_args()
