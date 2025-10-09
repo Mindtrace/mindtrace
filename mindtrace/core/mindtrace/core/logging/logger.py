@@ -24,8 +24,10 @@ def setup_logger(
     log_dir: Optional[Path] = None,
     logger_level: int = logging.DEBUG,
     stream_level: int = logging.ERROR,
+    add_stream_handler: bool = True,
     file_level: int = logging.DEBUG,
     file_mode: str = "a",
+    add_file_handler: bool = True,
     propagate: bool = False,
     max_bytes: int = 10 * 1024 * 1024,  # 10 MB
     backup_count: int = 5,
@@ -46,8 +48,10 @@ def setup_logger(
         log_dir: Custom directory for log file.
         logger_level: Overall logger level.
         stream_level: StreamHandler level (e.g., ERROR).
+        add_stream_handler: Whether to add a stream handler.
         file_level: FileHandler level (e.g., DEBUG).
         file_mode: Mode for file handler, default is 'a' (append).
+        add_file_handler: Whether to add a file handler.
         propagate: Whether the logger should propagate messages to ancestor loggers.
         max_bytes: Maximum size in bytes before rotating log file.
         backup_count: Number of backup files to retain.
@@ -88,17 +92,19 @@ def setup_logger(
 
     if not use_structlog:
         # Standard logging setup
-        stream_handler = logging.StreamHandler()
-        stream_handler.setLevel(stream_level)
-        stream_handler.setFormatter(default_formatter())
-        logger.addHandler(stream_handler)
+        if add_stream_handler:
+            stream_handler = logging.StreamHandler()
+            stream_handler.setLevel(stream_level)
+            stream_handler.setFormatter(default_formatter())
+            logger.addHandler(stream_handler)
 
-        file_handler = RotatingFileHandler(
-            filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
-        )
-        file_handler.setLevel(file_level)
-        file_handler.setFormatter(default_formatter())
-        logger.addHandler(file_handler)
+        if add_file_handler:
+            file_handler = RotatingFileHandler(
+                filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
+            )
+            file_handler.setLevel(file_level)
+            file_handler.setFormatter(default_formatter())
+            logger.addHandler(file_handler)
 
         return logger
 
@@ -130,13 +136,13 @@ def setup_logger(
             structlog.processors.format_exc_info,
             _enforce_key_order_processor(
                 [
+                    "timestamp",
                     "event",
                     "service",
                     "duration_ms",
                     "metrics",
                     "level",
                     "logger",
-                    "timestamp",
                 ]
             ),
             renderer,
@@ -158,20 +164,22 @@ def setup_logger(
     stdlib_logger.propagate = propagate
 
     # Add stream handler
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(stream_level)
-    # Use JSON renderer for pure JSON output without prefix
-    stream_handler.setFormatter(logging.Formatter("%(message)s"))
-    stdlib_logger.addHandler(stream_handler)
+    if add_stream_handler:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setLevel(stream_level)
+        # Use JSON renderer for pure JSON output without prefix
+        stream_handler.setFormatter(logging.Formatter("%(message)s"))
+        stdlib_logger.addHandler(stream_handler)
 
     # Add file handler
-    file_handler = RotatingFileHandler(
-        filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
-    )
-    file_handler.setLevel(file_level)
-    # Use JSON renderer for pure JSON output without prefix
-    file_handler.setFormatter(logging.Formatter("%(message)s"))
-    stdlib_logger.addHandler(file_handler)
+    if add_file_handler:
+        file_handler = RotatingFileHandler(
+            filename=str(log_file_path), maxBytes=max_bytes, backupCount=backup_count, mode=file_mode
+        )
+        file_handler.setLevel(file_level)
+        # Use JSON renderer for pure JSON output without prefix
+        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        stdlib_logger.addHandler(file_handler)
 
     # Get the bound logger
     bound_logger = structlog.get_logger(name)
@@ -247,10 +255,10 @@ def get_logger(
         parent_name = parts[0]
         parent_logger = logging.getLogger(parent_name)
         if parent_logger.handlers:
-            setup_logger(parent_name, use_structlog=use_structlog, **kwargs)
+            setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
         for part in parts[1:-1]:
             parent_name = f"{parent_name}.{part}"
             parent_logger = logging.getLogger(parent_name)
             if parent_logger.handlers:
-                setup_logger(parent_name, use_structlog=use_structlog, **kwargs)
+                setup_logger(parent_name, add_stream_handler=False, use_structlog=use_structlog, **kwargs)
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
