@@ -25,6 +25,7 @@ The hardware system includes comprehensive command-line management tools for dev
 **Key Features:**
 - Service lifecycle management with PID tracking
 - Health monitoring and status reporting
+- Camera stress testing and validation
 - Network configuration and port management
 - Environment variable integration
 - Browser auto-launch for web interfaces
@@ -36,6 +37,10 @@ uv run python -m mindtrace.hardware.cli camera start
 
 # Check service status with access URLs
 uv run python -m mindtrace.hardware.cli camera status
+
+# Run camera stress tests
+uv run python -m mindtrace.hardware.cli camera test --list
+uv run python -m mindtrace.hardware.cli camera test --config smoke_test
 
 # Stop all services gracefully
 uv run python -m mindtrace.hardware.cli camera stop
@@ -108,7 +113,7 @@ mindtrace/hardware/
     ├── cli/                  # Command-line interface
     │   ├── __main__.py       # CLI entry point
     │   ├── commands/         # Command implementations
-    │   │   ├── camera.py          # Camera service management
+    │   │   ├── camera.py          # Camera service management + testing
     │   │   └── status.py          # Global status commands
     │   ├── core/             # Core CLI functionality
     │   │   ├── process_manager.py # Service lifecycle with PID tracking
@@ -139,6 +144,17 @@ mindtrace/hardware/
     │   └── backends/
     │       └── allen_bradley/    # LogixDriver, SLCDriver, CIPDriver
     ├── sensors/             # Sensor management (extensible)
+    ├── test_suite/          # Hardware stress testing framework
+    │   ├── core/            # Generic test framework (reusable)
+    │   │   ├── scenario.py       # Base scenario class
+    │   │   ├── runner.py         # Test execution engine
+    │   │   └── monitor.py        # Metrics and monitoring
+    │   └── cameras/         # Camera-specific tests
+    │       ├── scenarios.py      # Predefined test scenarios
+    │       ├── runner.py         # Camera API endpoint mapping
+    │       ├── config_loader.py  # YAML configuration loader
+    │       ├── scenario_factory.py # Scenario creation
+    │       └── config/           # YAML test configurations
     └── tests/unit/          # Comprehensive test suite
 ```
 
@@ -543,6 +559,31 @@ export MINDTRACE_HW_CAMERA_GENICAM_IMAGE_QUALITY_ENHANCEMENT="true"
 ```
 
 ## Testing
+
+### Hardware Stress Testing Framework
+The hardware component includes a comprehensive stress testing framework for validation and reliability testing.
+
+**Test Scenarios:**
+- **Smoke Test**: Quick validation of basic operations
+- **Capture Stress**: High-frequency capture testing (100+ captures)
+- **Multi-Camera**: Concurrent camera operations with bandwidth management
+- **Stream Stress**: Streaming stability and resource cleanup
+- **Chaos Test**: Edge case discovery through aggressive operations
+- **Soak Test**: Long-duration stability testing (8+ hours)
+
+**Run via CLI:**
+```bash
+# List available test scenarios
+uv run python -m mindtrace.hardware.cli camera test --list
+
+# Run smoke test
+uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+
+# Run stress tests with verbose output
+uv run python -m mindtrace.hardware.cli camera test --config capture_stress -v
+```
+
+[**→ See Test Suite Documentation**](mindtrace/hardware/test_suite/README.md) for detailed test scenarios, YAML configuration, and custom test creation.
 
 ### Unit Tests
 ```bash
