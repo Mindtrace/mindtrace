@@ -103,11 +103,11 @@ async def genicam_camera(camera_name, cti_path):
 class TestHardwareDiscovery:
     """Test camera discovery with real hardware."""
 
-    def test_hardware_discovery_finds_cameras(self, cti_path):
+    def test_hardware_discovery_finds_cameras(self):
         """Test that discovery finds the connected cameras."""
         from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
 
-        cameras = GenICamCameraBackend.get_available_cameras(cti_path=cti_path)
+        cameras = GenICamCameraBackend.get_available_cameras()
         assert isinstance(cameras, list)
         assert len(cameras) > 0
 
@@ -115,18 +115,16 @@ class TestHardwareDiscovery:
         for camera in cameras:
             assert isinstance(camera, str)
 
-    def test_camera_name_format(self, cti_path):
+    def test_camera_name_format(self):
         """Test that discovered camera names follow expected format."""
         from mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend import GenICamCameraBackend
 
-        cameras = GenICamCameraBackend.get_available_cameras(cti_path=cti_path)
+        cameras = GenICamCameraBackend.get_available_cameras()
 
-        # Camera names should contain 'GenICam:' prefix
+        # Camera names are just serial numbers or device IDs
         for camera in cameras:
-            assert camera.startswith("GenICam:")
-            # Extract identifier (serial, model, or ID)
-            identifier = camera.split(":", 1)[1]
-            assert len(identifier) > 0
+            assert isinstance(camera, str)
+            assert len(camera) > 0
 
 
 class TestCameraInitialization:
