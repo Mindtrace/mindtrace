@@ -9,7 +9,7 @@ import click
 from .commands.camera import camera
 from .commands.status import status_command
 from .core.process_manager import ProcessManager
-from .core.logger import ClickLogger, setup_logger
+from .core.logger import RichLogger, setup_logger
 from .utils.display import show_banner
 
 
@@ -44,7 +44,7 @@ cli.add_command(status_command, name='status')
 @cli.command()
 def stop():
     """Stop all hardware services."""
-    logger = ClickLogger()
+    logger = RichLogger()
     pm = ProcessManager()
     
     # Get all running services
@@ -75,10 +75,10 @@ def stop():
 @click.option('-f', '--follow', is_flag=True, help='Follow log output')
 def logs(service: str, follow: bool):
     """View service logs.
-    
+
     SERVICE: Service name (camera, all)
     """
-    logger = ClickLogger()
+    logger = RichLogger()
     
     if service == 'camera':
         log_locations = [
@@ -103,7 +103,7 @@ def logs(service: str, follow: bool):
 
 def handle_sigterm(signum, frame):
     """Handle SIGTERM signal for graceful shutdown."""
-    logger = ClickLogger()
+    logger = RichLogger()
     logger.info("\nReceived shutdown signal...")
     pm = ProcessManager()
     pm.stop_all()
@@ -115,11 +115,11 @@ def main():
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGTERM, handle_sigterm)
     signal.signal(signal.SIGINT, handle_sigterm)
-    
+
     try:
         cli()
     except Exception as e:
-        logger = ClickLogger()
+        logger = RichLogger()
         logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
