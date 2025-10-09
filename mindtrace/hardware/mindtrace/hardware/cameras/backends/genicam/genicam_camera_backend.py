@@ -14,13 +14,13 @@ try:
     from harvesters.core import Harvester
     HARVESTERS_AVAILABLE = True
     GENICAM_AVAILABLE = True
-    
+
     # Optional PFNC imports - not critical for basic functionality
     try:
         from harvesters.util.pfnc import PFNC_VERSION_1_0, PFNC_VERSION_2_0, PFNC_VERSION_2_1
     except ImportError:
         pass  # PFNC constants not available in this version
-        
+
 except ImportError:  # pragma: no cover
     HARVESTERS_AVAILABLE = False
     GENICAM_AVAILABLE = False
@@ -565,22 +565,18 @@ class GenICamCameraBackend(CameraBackend):
                         if self.image_acquirer.is_acquiring():
                             self.image_acquirer.stop()
                         self.image_acquirer.destroy()
-                    
+
                     await self._sdk(_cleanup_acquirer, timeout=2.0)  # Short timeout for cleanup
                 except Exception as e:
                     self.logger.warning(f"Error cleaning up image acquirer during failure: {e}")
                 finally:
                     self.image_acquirer = None
-            
-            # Reset harvester if it was created
-            if hasattr(self, 'harvester') and self.harvester is not None:
-                try:
-                    await self._sdk(self.harvester.reset, timeout=2.0)  # Short timeout for cleanup
-                except Exception as e:
-                    self.logger.warning(f"Error resetting harvester during failure: {e}")
-                finally:
-                    self.harvester = None
-            
+
+            # DO NOT reset the shared Harvester - it's used by other cameras!
+            # Just clear our reference to it
+            if hasattr(self, 'harvester'):
+                self.harvester = None
+
             # Shutdown executor
             if hasattr(self, '_sdk_executor') and self._sdk_executor is not None:
                 try:
@@ -589,9 +585,9 @@ class GenICamCameraBackend(CameraBackend):
                     self.logger.warning(f"Error shutting down executor during failure: {e}")
                 finally:
                     self._sdk_executor = None
-            
+
             self.initialized = False
-            
+
         except Exception as e:
             # Don't raise exceptions during cleanup - just log
             self.logger.warning(f"Error during failure cleanup for camera '{self.camera_name}': {e}")
@@ -939,6 +935,66 @@ class GenICamCameraBackend(CameraBackend):
         except Exception as e:
             self.logger.warning(f"Pixel format not available for camera '{self.camera_name}': {str(e)}")
             return "Unknown"
+
+    async def get_width_range(self) -> List[int]:
+        """Get camera width range.
+
+        Returns:
+            List containing [min_width, max_width]
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If width range retrieval fails
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _get_width_range():
+                node_map = self.image_acquirer.remote_device.node_map
+                width_node = getattr(node_map, 'Width', None)
+                if width_node is not None:
+                    return [width_node.min, width_node.max]
+                # Return default range if Width node not available
+                return [1, 9999]
+
+            return await self._sdk(_get_width_range, timeout=self._op_timeout_s)
+
+        except Exception as e:
+            self.logger.warning(f"Width range not available for camera '{self.camera_name}': {str(e)}")
+            return [1, 9999]  # Default range
+
+    async def get_height_range(self) -> List[int]:
+        """Get camera height range.
+
+        Returns:
+            List containing [min_height, max_height]
+
+        Raises:
+            CameraConnectionError: If camera is not initialized
+            HardwareOperationError: If height range retrieval fails
+        """
+        if not self.initialized or self.image_acquirer is None:
+            raise CameraConnectionError(f"Camera '{self.camera_name}' not initialized")
+
+        try:
+            await self._ensure_connected()
+
+            def _get_height_range():
+                node_map = self.image_acquirer.remote_device.node_map
+                height_node = getattr(node_map, 'Height', None)
+                if height_node is not None:
+                    return [height_node.min, height_node.max]
+                # Return default range if Height node not available
+                return [1, 9999]
+
+            return await self._sdk(_get_height_range, timeout=self._op_timeout_s)
+
+        except Exception as e:
+            self.logger.warning(f"Height range not available for camera '{self.camera_name}': {str(e)}")
+            return [1, 9999]  # Default range
 
     async def get_pixel_format_range(self) -> List[str]:
         """Get list of supported pixel formats.
