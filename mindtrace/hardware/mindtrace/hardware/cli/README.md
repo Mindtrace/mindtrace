@@ -9,6 +9,7 @@ A command-line interface for managing Mindtrace hardware services with process l
 - **`mindtrace-hw camera start`** - Start camera API service and configurator web app
 - **`mindtrace-hw camera stop`** - Stop camera services gracefully
 - **`mindtrace-hw camera status`** - Show detailed camera service status with URLs
+- **`mindtrace-hw camera test`** - Run camera stress tests and validation scenarios
 - **`mindtrace-hw camera logs`** - View camera service logs and guidance
 - **`mindtrace-hw status`** - Show all hardware services status
 - **`mindtrace-hw stop`** - Stop all services cleanly
@@ -64,6 +65,22 @@ uv run python -m mindtrace.hardware.cli camera start  # Will prompt to restart i
 
 # View service log information
 uv run python -m mindtrace.hardware.cli camera logs
+```
+
+### Camera Testing
+```bash
+# List available test scenarios
+uv run python -m mindtrace.hardware.cli camera test --list
+
+# Run smoke test (basic functionality validation)
+uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+
+# Run stress tests
+uv run python -m mindtrace.hardware.cli camera test --config capture_stress
+uv run python -m mindtrace.hardware.cli camera test --config multi_camera
+
+# Run with verbose output for debugging
+uv run python -m mindtrace.hardware.cli camera test --config chaos_test -v
 ```
 
 ## Architecture
@@ -228,6 +245,31 @@ uv run python -m mindtrace.hardware.cli camera logs
 # Provides guidance on log locations:
 # - Console output for API service
 # - App log files for configurator
+```
+
+### camera test
+```bash
+uv run python -m mindtrace.hardware.cli camera test [OPTIONS]
+
+Options:
+  --config, -c TEXT    Test configuration to run (e.g., smoke_test)
+  --list              List available test configurations
+  --api-host TEXT     Camera API host [default: localhost]
+  --api-port INTEGER  Camera API port [default: 8002]
+  -v, --verbose       Enable verbose output
+
+Available Test Scenarios:
+  smoke_test       - Quick validation of basic camera operations
+  capture_stress   - High-frequency capture stress testing
+  multi_camera     - Concurrent multi-camera operations
+  stream_stress    - Streaming stability and cleanup validation
+  chaos_test       - Edge case discovery through aggressive operations
+  soak_test        - Long-duration stability and resource leak detection
+
+Exit Codes:
+  0 - Test passed (success rate meets expected threshold)
+  1 - Configuration error or test not found
+  2 - Test failed (success rate below expected threshold)
 ```
 
 ## Troubleshooting
