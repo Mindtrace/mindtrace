@@ -39,6 +39,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
@@ -74,6 +75,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
@@ -123,6 +125,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
@@ -159,8 +162,12 @@ ROOT = /test/root_from_ini
 TEMP_DIR = /test/temp_from_ini
 REGISTRY_DIR = /test/registry_from_ini
 LOGGER_DIR = /test/logger_from_ini
+STRUCT_LOGGER_DIR = /test/structlog_from_ini
 CLUSTER_REGISTRY_DIR = /test/cluster_from_ini
 SERVER_PIDS_DIR = /test/pids_from_ini
+
+[MINDTRACE_LOGGER]
+USE_STRUCTLOG = True
 
 [MINDTRACE_DEFAULT_HOST_URLS]
 SERVICE = http://localhost:8000
@@ -238,6 +245,7 @@ class TestMindtraceModels:
             TEMP_DIR="/test/temp",
             REGISTRY_DIR="/test/registry",
             LOGGER_DIR="/test/logger",
+            STRUCT_LOGGER_DIR="/test/structlog",
             CLUSTER_REGISTRY_DIR="/test/cluster",
             SERVER_PIDS_DIR="/test/pids",
         )
@@ -245,6 +253,7 @@ class TestMindtraceModels:
         assert model.TEMP_DIR == "/test/temp"
         assert model.REGISTRY_DIR == "/test/registry"
         assert model.LOGGER_DIR == "/test/logger"
+        assert model.STRUCT_LOGGER_DIR == "/test/structlog"
         assert model.CLUSTER_REGISTRY_DIR == "/test/cluster"
         assert model.SERVER_PIDS_DIR == "/test/pids"
 
