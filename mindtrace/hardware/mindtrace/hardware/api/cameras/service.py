@@ -808,12 +808,20 @@ class CameraManagerService(Service):
                 self.logger.error(error_msg)
                 raise CameraTimeoutError(error_msg)
 
-        except asyncio.TimeoutError:
-            # Re-raise as already handled
-            raise
+        except CameraTimeoutError as e:
+            # Return timeout error as failed response with detailed message
+            self.logger.error(f"Capture timeout: {e}")
+            result = CaptureResult(success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e))
+            return CaptureResponse(success=False, message=str(e), data=result)
+        except CameraNotFoundError as e:
+            # Return not found error as failed response
+            self.logger.warning(f"Camera not found: {e}")
+            result = CaptureResult(success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e))
+            return CaptureResponse(success=False, message=str(e), data=result)
         except Exception as e:
             self.logger.error(f"Failed to capture image from '{request.camera}': {e}")
-            raise
+            result = CaptureResult(success=False, image_path=None, capture_time=datetime.now(timezone.utc), error=str(e))
+            return CaptureResponse(success=False, message=f"Capture failed: {str(e)}", data=result)
 
     async def capture_images_batch(self, request: CaptureBatchRequest) -> BatchCaptureResponse:
         """Capture images from multiple cameras."""
