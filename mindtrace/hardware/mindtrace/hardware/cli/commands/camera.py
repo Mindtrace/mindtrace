@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Optional
 
 import click
+from rich import box
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+from rich.table import Table
 
 from ..core.process_manager import ProcessManager
-from ..core.logger import ClickLogger
-from ..utils.display import format_status, show_banner
+from ..core.logger import RichLogger
+from ..utils.display import format_status, show_banner, console, print_test_summary
 from ..utils.network import check_port_available, wait_for_service
 
 
@@ -33,7 +36,7 @@ def camera():
 def start(api_host: str, api_port: int, app_host: str, app_port: int, backend_port: int,
          api_only: bool, include_mocks: bool):
     """Start camera services."""
-    logger = ClickLogger()
+    logger = RichLogger()
     pm = ProcessManager()
     
     # Check if services are already running
@@ -59,39 +62,44 @@ def start(api_host: str, api_port: int, app_host: str, app_port: int, backend_po
     if not api_only and not check_port_available(app_host, app_port):
         logger.error(f"Port {app_port} is already in use on {app_host}")
         return
-    
-    logger.progress("Starting Camera Services...")
-    
+
     try:
-        # Start API service
-        api_process = pm.start_camera_api(api_host, api_port, include_mocks)
-        
-        # Wait for API to be ready
-        if wait_for_service(api_host, api_port, timeout=10):
-            logger.success(f"Camera API started → http://{api_host}:{api_port}")
-        else:
-            logger.error("Camera API failed to start (timeout)")
-            pm.stop_service('camera_api')
-            return
-        
-        if not api_only:
-            # Start configurator app
-            time.sleep(1)  # Give API a moment to fully initialize
-            app_process = pm.start_configurator(app_host, app_port, backend_port)
-            
-            # Wait for app to be ready
-            if wait_for_service(app_host, app_port, timeout=15):
-                logger.success(f"Camera Configurator started → http://{app_host}:{app_port}")
-                
-                # Open browser
-                app_url = f"http://{app_host}:{app_port}"
-                webbrowser.open(app_url)
-                logger.info(f"🌐 Opening browser → {app_url}")
+        # Start API service with spinner
+        with console.status("[cyan]Starting Camera API...", spinner="dots") as status:
+            api_process = pm.start_camera_api(api_host, api_port, include_mocks)
+
+            # Wait for API to be ready
+            if wait_for_service(api_host, api_port, timeout=10):
+                status.update("[green]Camera API started")
             else:
-                logger.error("Camera Configurator failed to start (timeout)")
-                pm.stop_service('configurator')
+                logger.error("Camera API failed to start (timeout)")
                 pm.stop_service('camera_api')
                 return
+
+        logger.success(f"Camera API started → http://{api_host}:{api_port}")
+
+        if not api_only:
+            # Start configurator app with spinner
+            time.sleep(1)  # Give API a moment to fully initialize
+
+            with console.status("[cyan]Starting Camera Configurator...", spinner="dots") as status:
+                app_process = pm.start_configurator(app_host, app_port, backend_port)
+
+                # Wait for app to be ready
+                if wait_for_service(app_host, app_port, timeout=15):
+                    status.update("[green]Camera Configurator started")
+                else:
+                    logger.error("Camera Configurator failed to start (timeout)")
+                    pm.stop_service('configurator')
+                    pm.stop_service('camera_api')
+                    return
+
+            logger.success(f"Camera Configurator started → http://{app_host}:{app_port}")
+
+            # Open browser
+            app_url = f"http://{app_host}:{app_port}"
+            webbrowser.open(app_url)
+            logger.info(f"Opening browser: {app_url}")
         
         logger.info("\nPress Ctrl+C to stop all services.")
         
@@ -130,7 +138,7 @@ def start(api_host: str, api_port: int, app_host: str, app_port: int, backend_po
 @camera.command()
 def stop():
     """Stop camera services."""
-    logger = ClickLogger()
+    logger = RichLogger()
     pm = ProcessManager()
     
     logger.info("Stopping Camera Services...")
@@ -189,7 +197,7 @@ def status():
 @camera.command()
 def logs():
     """View camera service logs."""
-    logger = ClickLogger()
+    logger = RichLogger()
 
     # This would need to be implemented to capture and display logs
     # For now, provide guidance
@@ -207,7 +215,7 @@ def logs():
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose output')
 def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int, verbose: bool):
     """Run camera test scenarios."""
-    logger = ClickLogger()
+    logger = RichLogger()
 
     # Get test suite path
     test_suite_path = Path(__file__).parent.parent.parent.parent / "test_suite"
@@ -227,13 +235,16 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
     if list_configs:
         try:
             configs = list_available_configs()
-            click.echo("\nAvailable Test Configurations:")
-            click.echo("━" * 50)
+
+            table = Table(title="Available Test Configurations", box=box.ROUNDED, show_header=False)
+            table.add_column("Configuration", style="cyan", no_wrap=True)
+
             for config_name in configs:
-                click.echo(f"  • {config_name}")
-            click.echo("━" * 50)
-            click.echo(f"\nTotal: {len(configs)} configurations")
-            click.echo(f"\nRun a test: camera test --config <name>")
+                table.add_row(config_name)
+
+            console.print(table)
+            console.print(f"\n[dim]Total: {len(configs)} configurations[/]")
+            console.print("[cyan]Run a test: camera test --config <name>[/]")
             return
         except Exception as e:
             logger.error(f"Failed to list configs: {e}")
@@ -254,15 +265,16 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
             logger.info("Camera API must be running to execute tests")
             return
 
-        # Start API
-        logger.progress("Starting Camera API...")
+        # Start API with spinner
         try:
-            pm.start_camera_api(api_host, api_port, include_mocks=False)
-            if wait_for_service(api_host, api_port, timeout=10):
-                logger.success(f"Camera API started → http://{api_host}:{api_port}")
-            else:
-                logger.error("Camera API failed to start")
-                return
+            with console.status("[cyan]Starting Camera API...", spinner="dots") as status:
+                pm.start_camera_api(api_host, api_port, include_mocks=False)
+                if wait_for_service(api_host, api_port, timeout=10):
+                    status.update("[green]Camera API started")
+                    logger.success(f"Camera API started → http://{api_host}:{api_port}")
+                else:
+                    logger.error("Camera API failed to start")
+                    return
         except Exception as e:
             logger.error(f"Failed to start Camera API: {e}")
             return
@@ -276,19 +288,46 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
         logger.info(f"Description: {scenario.description}")
         click.echo("")
 
-        # Run the test scenario
+        # Run the test scenario with progress display
         async def run_test():
             async with CameraTestRunner(scenario.api_base_url) as runner:
                 monitor = HardwareMonitor(scenario.name)
-                result = await runner.execute_scenario(scenario, monitor)
+
+                # Create progress display
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    TimeElapsedColumn(),
+                    console=console,
+                ) as progress:
+                    # Add progress task
+                    task_id = progress.add_task(
+                        f"[cyan]Executing {scenario.name}...",
+                        total=len(scenario.operations)
+                    )
+
+                    # Progress callback
+                    def on_progress(op_index: int, op_total: int, op_name: str, success: bool):
+                        progress.update(
+                            task_id,
+                            completed=op_index + 1,
+                            description=f"[cyan]Operation {op_index + 1}/{op_total}: [{'green' if success else 'red'}]{op_name}"
+                        )
+
+                    # Execute with progress callback
+                    result = await runner.execute_scenario(scenario, monitor, progress_callback=on_progress)
+
                 return monitor, result
 
         # Execute test
         monitor, result = asyncio.run(run_test())
 
-        # Print summary
+        # Print summary using Rich formatting (CLI layer)
         click.echo("")
-        monitor.print_summary()
+        summary = monitor.get_summary()
+        print_test_summary(summary, monitor.devices_hung)
 
         # Determine exit based on success rate
         if result.success_rate >= scenario.expected_success_rate:
