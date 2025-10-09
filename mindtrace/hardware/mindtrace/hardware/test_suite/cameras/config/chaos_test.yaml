@@ -1,0 +1,39 @@
+# Chaos Test Configuration
+# Edge case discovery through random operations
+
+name: chaos_test
+description: Deliberately aggressive test to find edge cases and race conditions
+
+# API Configuration
+api:
+  base_url: http://localhost:8002
+  timeout: 30.0
+
+# Hardware Configuration
+hardware:
+  backend: Basler
+  camera_count: 2
+
+# Test Parameters
+test:
+  chaos_patterns:
+    - rapid_open_close
+    - config_during_capture
+    - concurrent_access
+    - timeout_injection
+  exposure_range:
+    min: 1000
+    max: 100000
+  max_concurrent_captures: 1
+
+# Expectations
+expectations:
+  total_timeout: 300.0  # 5 minutes
+  expected_success_rate: 0.70  # 70% - lower expectations for chaos
+
+# Tags
+tags:
+  - chaos
+  - edge-cases
+  - race-conditions
+  - aggressive

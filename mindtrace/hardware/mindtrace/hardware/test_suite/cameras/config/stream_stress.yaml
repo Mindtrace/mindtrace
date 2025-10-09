@@ -1,0 +1,34 @@
+# Stream Stress Test Configuration
+# Streaming stability and resource cleanup testing
+
+name: stream_stress
+description: Test streaming stability with repeated start/stop cycles
+
+# API Configuration
+api:
+  base_url: http://localhost:8002
+  timeout: 30.0
+
+# Hardware Configuration
+hardware:
+  backend: Basler
+  camera_count: 1
+
+# Test Parameters
+test:
+  stream_cycles: 10
+  stream_duration: 5.0  # seconds per cycle
+  stream_quality: 85
+  stream_fps: 30
+  exposure_us: 10000  # 10ms for streaming
+
+# Expectations
+expectations:
+  total_timeout: 300.0  # 5 minutes
+  expected_success_rate: 0.90  # 90% success expected
+
+# Tags
+tags:
+  - stream
+  - stress
+  - stability
