@@ -1,0 +1,35 @@
+# Soak Test Configuration
+# Long-duration stability testing
+
+name: soak_test
+description: Long-duration test for stability and resource leak detection
+
+# API Configuration
+api:
+  base_url: http://localhost:8002
+  timeout: 30.0
+
+# Hardware Configuration
+hardware:
+  backend: Basler
+  camera_count: 6
+
+# Test Parameters
+test:
+  capture_count: 5000
+  batch_capture_count: 500
+  exposure_us: 2000
+  delay_between_captures: 0.05  # 50ms
+  max_concurrent_captures: 3
+
+# Expectations
+expectations:
+  total_timeout: 30000.0  # ~8.3 hours
+  expected_success_rate: 0.85  # 85% success expected
+
+# Tags
+tags:
+  - soak
+  - long-duration
+  - stability
+  - resource-leak
