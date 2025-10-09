@@ -1,8 +1,11 @@
 """Camera service commands."""
 
+import asyncio
 import os
+import sys
 import time
 import webbrowser
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -187,10 +190,121 @@ def status():
 def logs():
     """View camera service logs."""
     logger = ClickLogger()
-    
+
     # This would need to be implemented to capture and display logs
     # For now, provide guidance
     logger.info("Log viewing not yet implemented.")
     logger.info("Logs can be found in:")
     logger.info("  - API logs: Check console output")
     logger.info("  - App logs: mindtrace/hardware/apps/camera_configurator/app.log")
+
+
+@camera.command()
+@click.option('--config', '-c', help='Test configuration to run (e.g., smoke_test)')
+@click.option('--list', 'list_configs', is_flag=True, help='List available test configurations')
+@click.option('--api-host', default='localhost', help='Camera API host')
+@click.option('--api-port', default=8002, type=int, help='Camera API port')
+@click.option('-v', '--verbose', is_flag=True, help='Enable verbose output')
+def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int, verbose: bool):
+    """Run camera test scenarios."""
+    logger = ClickLogger()
+
+    # Get test suite path
+    test_suite_path = Path(__file__).parent.parent.parent.parent / "test_suite"
+    sys.path.insert(0, str(test_suite_path.parent))
+
+    try:
+        from mindtrace.hardware.test_suite.cameras.config_loader import list_available_configs
+        from mindtrace.hardware.test_suite.cameras.scenario_factory import create_scenario_from_config
+        from mindtrace.hardware.test_suite.cameras.runner import CameraTestRunner
+        from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
+    except ImportError as e:
+        logger.error(f"Failed to import test suite: {e}")
+        logger.info("Make sure the test suite is properly installed")
+        return
+
+    # List available configs
+    if list_configs:
+        try:
+            configs = list_available_configs()
+            click.echo("\nAvailable Test Configurations:")
+            click.echo("━" * 50)
+            for config_name in configs:
+                click.echo(f"  • {config_name}")
+            click.echo("━" * 50)
+            click.echo(f"\nTotal: {len(configs)} configurations")
+            click.echo(f"\nRun a test: camera test --config <name>")
+            return
+        except Exception as e:
+            logger.error(f"Failed to list configs: {e}")
+            return
+
+    # Validate config argument
+    if not config:
+        logger.error("No test configuration specified")
+        click.echo("Use --list to see available configurations")
+        click.echo("Example: camera test --config smoke_test")
+        return
+
+    # Check if API is running
+    pm = ProcessManager()
+    if not pm.is_service_running('camera_api'):
+        logger.warning("Camera API is not running")
+        if not click.confirm("Start Camera API now?"):
+            logger.info("Camera API must be running to execute tests")
+            return
+
+        # Start API
+        logger.progress("Starting Camera API...")
+        try:
+            pm.start_camera_api(api_host, api_port, include_mocks=False)
+            if wait_for_service(api_host, api_port, timeout=10):
+                logger.success(f"Camera API started → http://{api_host}:{api_port}")
+            else:
+                logger.error("Camera API failed to start")
+                return
+        except Exception as e:
+            logger.error(f"Failed to start Camera API: {e}")
+            return
+
+    # Run test
+    logger.progress(f"Loading test configuration: {config}")
+
+    try:
+        scenario = create_scenario_from_config(config)
+        logger.info(f"Test: {scenario.name}")
+        logger.info(f"Description: {scenario.description}")
+        click.echo("")
+
+        # Run the test scenario
+        async def run_test():
+            async with CameraTestRunner(scenario.api_base_url) as runner:
+                monitor = HardwareMonitor(scenario.name)
+                result = await runner.execute_scenario(scenario, monitor)
+                return monitor, result
+
+        # Execute test
+        monitor, result = asyncio.run(run_test())
+
+        # Print summary
+        click.echo("")
+        monitor.print_summary()
+
+        # Determine exit based on success rate
+        if result.success_rate >= scenario.expected_success_rate:
+            logger.success(f"TEST PASSED (Success rate: {result.success_rate:.1%})")
+            sys.exit(0)
+        else:
+            logger.error(f"TEST FAILED (Success rate: {result.success_rate:.1%}, Expected: {scenario.expected_success_rate:.1%})")
+            sys.exit(2)
+
+    except FileNotFoundError as e:
+        logger.error(f"Test configuration not found: {config}")
+        click.echo("Use --list to see available configurations")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Test execution failed: {e}")
+        if verbose:
+            import traceback
+            click.echo(traceback.format_exc())
+        sys.exit(1)
