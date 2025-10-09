@@ -320,7 +320,8 @@ if success:
 ```
 
 **Requirements:**
-- Harvesters library (`harvesters>=1.4.0`)
+- Harvesters library (`harvesters>=1.4.3`)
+- GenICam Python bindings (`genicam>=1.5.0`)
 - Matrix Vision mvIMPACT Acquire SDK
 - GenTL Producer (.cti file) - automatically detected or configurable via `GENICAM_CTI_PATH`
 - Network interface configuration for GigE cameras
