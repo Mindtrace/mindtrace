@@ -431,14 +431,19 @@ class TestCameraManagerServiceBusinessLogic:
 
     @pytest.mark.asyncio
     async def test_configure_camera_inactive_camera_error(self, service_with_mock_manager):
-        """Test configure camera rejects inactive cameras."""
+        """Test configure camera rejects inactive cameras with graceful error response."""
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["ActiveCamera"]
 
         request = CameraConfigureRequest(camera="InactiveCamera", properties={"exposure": 1000})
 
-        with pytest.raises(CameraNotFoundError, match="InactiveCamera.*not initialized"):
-            await service.configure_camera(request)
+        # Graceful error handling: returns BoolResponse instead of raising
+        response = await service.configure_camera(request)
+
+        assert response.success is False
+        assert "InactiveCamera" in response.message
+        assert "not initialized" in response.message
+        assert response.data is False
 
     @pytest.mark.asyncio
     async def test_get_active_cameras_response_format(self, service_with_mock_manager):
@@ -512,7 +517,7 @@ class TestCameraManagerServiceErrorHandling:
 
     @pytest.mark.asyncio
     async def test_configuration_error_propagation(self, service_with_mock_manager):
-        """Test configuration errors are properly propagated."""
+        """Test configuration errors return graceful error response."""
         service, mock_manager = service_with_mock_manager
         mock_manager.active_cameras = ["TestCamera"]
 
@@ -523,8 +528,12 @@ class TestCameraManagerServiceErrorHandling:
 
         request = CameraConfigureRequest(camera="TestCamera", properties={"invalid_param": "bad_value"})
 
-        with pytest.raises(CameraConfigurationError, match="Invalid config"):
-            await service.configure_camera(request)
+        # Graceful error handling: returns BoolResponse instead of raising
+        response = await service.configure_camera(request)
+
+        assert response.success is False
+        assert "Invalid config" in response.message
+        assert response.data is False
 
 
 class TestCameraManagerServiceResponseModels:
