@@ -27,6 +27,7 @@ dependencies = [
   "mindtrace-datalake>=0.4.0",
   "mindtrace-storage>=0.4.0",
   "harvesters>=1.4.3",
+  "genicam>=1.5.0",
 ]
 
 [project.optional-dependencies]
