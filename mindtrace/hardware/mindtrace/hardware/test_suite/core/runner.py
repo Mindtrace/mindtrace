@@ -112,7 +112,7 @@ class HardwareTestRunner(Mindtrace):
             await self.client.aclose()
 
     async def execute_scenario(
-        self, scenario: HardwareScenario, monitor: Optional[HardwareMonitor] = None
+        self, scenario: HardwareScenario, monitor: Optional[HardwareMonitor] = None, progress_callback=None
     ) -> ScenarioResult:
         """
         Execute a test scenario.
@@ -120,6 +120,7 @@ class HardwareTestRunner(Mindtrace):
         Args:
             scenario: Scenario to execute
             monitor: Optional monitor for metrics collection
+            progress_callback: Optional callback function(op_index, op_total, op_name, success) for progress updates
 
         Returns:
             ScenarioResult with execution outcome
@@ -200,6 +201,10 @@ class HardwareTestRunner(Mindtrace):
                         success=success,
                         error=error,
                     )
+
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(idx, len(scenario.operations), operation.action.value, success)
 
             # Scenario completed
             duration = time.time() - start_time
