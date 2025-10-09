@@ -228,7 +228,7 @@ class HardwareMonitor:
         )
 
     def print_summary(self) -> None:
-        """Print formatted summary to console."""
+        """Print plain text summary to console (for non-Rich contexts)."""
         summary = self.get_summary()
 
         print("\n" + "=" * 70)
@@ -236,9 +236,9 @@ class HardwareMonitor:
         print("=" * 70)
         print(f"Duration: {summary.duration:.2f}s")
         print(f"Operations: {summary.total_operations} total")
-        print(f"  ✅ Success: {summary.successful_operations} ({summary.success_rate:.1%})")
-        print(f"  ❌ Failed: {summary.failed_operations}")
-        print(f"  ⏱️  Timeout: {summary.timeout_operations}")
+        print(f"  [✓] Success: {summary.successful_operations} ({summary.success_rate:.1%})")
+        print(f"  [✗] Failed: {summary.failed_operations}")
+        print(f"  [~] Timeout: {summary.timeout_operations}")
         print(f"\nPerformance:")
         print(f"  Avg time: {summary.average_operation_time:.3f}s")
         print(f"  Min time: {summary.min_operation_time:.3f}s")
@@ -246,10 +246,10 @@ class HardwareMonitor:
         print(f"  Ops/sec: {summary.operations_per_second:.2f}")
 
         if self.devices_hung:
-            print(f"\n⚠️  Hung Devices: {', '.join(sorted(self.devices_hung))}")
+            print(f"\n[!] Hung Devices: {', '.join(sorted(self.devices_hung))}")
 
         if summary.top_errors:
-            print(f"\n🔴 Top Errors:")
+            print(f"\n[!] Top Errors:")
             for error_type, count in summary.top_errors:
                 print(f"  {error_type}: {count}")
 
