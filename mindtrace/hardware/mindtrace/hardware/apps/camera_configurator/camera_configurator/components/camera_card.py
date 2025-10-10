@@ -1,38 +1,40 @@
 """Camera card component for displaying camera information and controls."""
 
 import reflex as rx
+
 from ..state.camera_state import CameraState
-from ..styles.theme import colors, spacing, css_spacing, radius, shadows, status_badges
+from ..styles.theme import colors, css_spacing, radius, spacing
+
 
 def camera_card(camera_name: str) -> rx.Component:
     """Camera card component with status and controls."""
-    
+
     def stream_display() -> rx.Component:
         """Display the MJPEG stream if streaming is active (Poseidon pattern)."""
         return rx.cond(
             (CameraState.current_streaming_camera == camera_name) & (CameraState.current_stream_url != ""),
-                rx.center(
-                    rx.box(
-                        rx.image(
-                            src=CameraState.current_stream_url,
-                            width="100%",
-                            max_width="480px",
-                            max_height="360px",
-                            border_radius="8px",
-                            border="1px solid #E5E7EB",
-                            alt="Live camera stream",
-                            object_fit="contain",
-                        ),
-                        background="white",
-                        padding="1rem",
-                        border_radius="8px",
-                        box_shadow="0 2px 4px rgba(0, 0, 0, 0.1)",
+            rx.center(
+                rx.box(
+                    rx.image(
+                        src=CameraState.current_stream_url,
                         width="100%",
+                        max_width="480px",
+                        max_height="360px",
+                        border_radius="8px",
+                        border="1px solid #E5E7EB",
+                        alt="Live camera stream",
+                        object_fit="contain",
                     ),
+                    background="white",
+                    padding="1rem",
+                    border_radius="8px",
+                    box_shadow="0 2px 4px rgba(0, 0, 0, 0.1)",
                     width="100%",
                 ),
-            )
-    
+                width="100%",
+            ),
+        )
+
     def camera_icon() -> rx.Component:
         """Camera icon with dynamic status indication."""
         return rx.box(
@@ -40,14 +42,14 @@ def camera_card(camera_name: str) -> rx.Component:
                 CameraState.camera_statuses.get(camera_name, "unknown") == "initialized",
                 rx.icon("video", size=24, color=colors["success"]),
                 rx.cond(
-                    CameraState.camera_statuses.get(camera_name, "unknown") == "available", 
+                    CameraState.camera_statuses.get(camera_name, "unknown") == "available",
                     rx.icon("camera", size=24, color=colors["warning"]),
                     rx.cond(
                         CameraState.camera_statuses.get(camera_name, "unknown") == "error",
                         rx.icon("camera-off", size=24, color=colors["error"]),
                         rx.icon("circle-help", size=24, color=colors["gray_400"]),
-                    )
-                )
+                    ),
+                ),
             ),
             width="60px",
             height="60px",
@@ -64,8 +66,8 @@ def camera_card(camera_name: str) -> rx.Component:
                         CameraState.camera_statuses.get(camera_name, "unknown") == "error",
                         colors["error"] + "15",
                         colors["gray_50"],
-                    )
-                )
+                    ),
+                ),
             ),
             border_radius=radius["lg"],
             border=rx.cond(
@@ -73,16 +75,16 @@ def camera_card(camera_name: str) -> rx.Component:
                 f"2px solid {colors['success']}50",
                 rx.cond(
                     CameraState.camera_statuses.get(camera_name, "unknown") == "available",
-                    f"2px solid {colors['warning']}50", 
+                    f"2px solid {colors['warning']}50",
                     rx.cond(
                         CameraState.camera_statuses.get(camera_name, "unknown") == "error",
                         f"2px solid {colors['error']}50",
                         f"1px solid {colors['border']}",
-                    )
-                )
+                    ),
+                ),
             ),
         )
-    
+
     def camera_header() -> rx.Component:
         """Camera header with name and status."""
         return rx.hstack(
@@ -108,7 +110,7 @@ def camera_card(camera_name: str) -> rx.Component:
             align="center",
             width="100%",
         )
-    
+
     def status_badge(camera_name: str) -> rx.Component:
         """Modern status badge for camera with enhanced styling."""
         return rx.cond(
@@ -233,11 +235,11 @@ def camera_card(camera_name: str) -> rx.Component:
                             border_radius=radius["full"],
                             padding=f"{css_spacing['xs']} {css_spacing['sm']}",
                         ),
-                    )
-                )
-            )
+                    ),
+                ),
+            ),
         )
-    
+
     def action_buttons(camera_name: str) -> rx.Component:
         """Action buttons for camera operations."""
         return rx.vstack(
@@ -254,14 +256,13 @@ def camera_card(camera_name: str) -> rx.Component:
                 ),
                 rx.button(
                     "Initialize",
-                    size="2", 
+                    size="2",
                     variant="solid",
                     color_scheme="blue",
                     width="100%",
                     on_click=lambda: CameraState.initialize_camera(camera_name),
                 ),
             ),
-            
             # Configuration button (only for initialized cameras)
             rx.cond(
                 CameraState.camera_statuses.get(camera_name, "unknown") == "initialized",
@@ -274,7 +275,6 @@ def camera_card(camera_name: str) -> rx.Component:
                     on_click=lambda: CameraState.open_config_modal(camera_name),
                 ),
             ),
-            
             # Capture button (only for initialized cameras)
             rx.cond(
                 CameraState.camera_statuses.get(camera_name, "unknown") == "initialized",
@@ -292,7 +292,6 @@ def camera_card(camera_name: str) -> rx.Component:
                     on_click=lambda: CameraState.capture_image(camera_name),
                 ),
             ),
-            
             # Stream button (only for initialized cameras)
             rx.cond(
                 CameraState.camera_statuses.get(camera_name, "unknown") == "initialized",
@@ -318,15 +317,14 @@ def camera_card(camera_name: str) -> rx.Component:
                     ),
                 ),
             ),
-            
             spacing=spacing["sm"],
             width="100%",
         )
-    
+
     def camera_info(camera_name: str) -> rx.Component:
         """Camera configuration information - removed as not needed."""
         return rx.fragment()
-    
+
     return rx.flex(
         camera_header(),
         stream_display(),

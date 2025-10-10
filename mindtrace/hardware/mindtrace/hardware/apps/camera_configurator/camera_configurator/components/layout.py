@@ -1,7 +1,9 @@
 """Layout components for the camera configurator following Reflex best practices."""
 
 import reflex as rx
-from ..styles.theme import colors, spacing, css_spacing, radius, shadows, layout
+
+from ..styles.theme import colors, css_spacing, layout, radius, shadows
+
 
 def main_layout(content: rx.Component) -> rx.Component:
     """Main application layout following Poseidon patterns with proper viewport handling."""
@@ -11,6 +13,7 @@ def main_layout(content: rx.Component) -> rx.Component:
         min_height="100vh",
         width="100%",
     )
+
 
 def page_container(content: rx.Component, title: str = "") -> rx.Component:
     """Proper page container using Reflex container with consistent max-width and centering."""
@@ -37,6 +40,7 @@ def page_container(content: rx.Component, title: str = "") -> rx.Component:
         width="100%",
     )
 
+
 def header_card(content: rx.Component) -> rx.Component:
     """Header card with enhanced styling and proper spacing."""
     return rx.box(
@@ -49,6 +53,7 @@ def header_card(content: rx.Component) -> rx.Component:
         margin_bottom=layout["section_gap"],
         width="100%",
     )
+
 
 def control_panel(content: rx.Component) -> rx.Component:
     """Control panel with modern card styling and proper spacing."""

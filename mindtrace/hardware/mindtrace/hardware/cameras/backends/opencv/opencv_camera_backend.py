@@ -764,17 +764,19 @@ class OpenCVCameraBackend(CameraBackend):
             # If we can't get a valid exposure value, it's definitely not supported
             if current_exposure is None or current_exposure <= -1:
                 return False
-                
+
             # Now test if we can actually set exposure (the real test)
             # Try to set the same value we just read - this should always work if exposure control is supported
             async with self._io_lock:
                 set_success = await self._sdk(self.cap.set, cv2.CAP_PROP_EXPOSURE, float(current_exposure), timeout=2.0)
-            
+
             # If set operation failed, exposure control is not truly supported
             if not set_success:
-                self.logger.debug(f"Camera '{self.camera_name}' can read exposure but cannot set it - exposure control not supported")
+                self.logger.debug(
+                    f"Camera '{self.camera_name}' can read exposure but cannot set it - exposure control not supported"
+                )
                 return False
-                
+
             return True
         except Exception as e:
             self.logger.debug(f"Exposure control check failed for camera '{self.camera_name}': {e}")
@@ -854,7 +856,7 @@ class OpenCVCameraBackend(CameraBackend):
         # Many OpenCV cameras can read exposure but cannot set it
         if not await self.is_exposure_control_supported():
             return None
-            
+
         return [
             getattr(self.camera_config.cameras, "opencv_exposure_range_min", -13.0),
             getattr(self.camera_config.cameras, "opencv_exposure_range_max", -1.0),
@@ -1345,7 +1347,7 @@ class OpenCVCameraBackend(CameraBackend):
 
     async def get_trigger_modes(self) -> List[str]:
         """Get available trigger modes for OpenCV cameras.
-        
+
         Returns:
             List of available trigger modes (OpenCV only supports continuous)
         """
