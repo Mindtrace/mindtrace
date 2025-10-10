@@ -5,7 +5,7 @@ Contains all Pydantic models for API responses, ensuring consistent
 response formatting across all camera management endpoints.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ class BaseResponse(BaseModel):
 
     success: bool
     message: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class BoolResponse(BaseResponse):
@@ -109,6 +109,12 @@ class CameraCapabilities(BaseModel):
     gain_range: Optional[Tuple[float, float]] = None
     pixel_formats: Optional[List[str]] = None
     white_balance_modes: Optional[List[str]] = None
+    trigger_modes: Optional[List[str]] = None
+    width_range: Optional[Tuple[int, int]] = None
+    height_range: Optional[Tuple[int, int]] = None
+    bandwidth_limit_range: Optional[Tuple[float, float]] = None
+    packet_size_range: Optional[Tuple[int, int]] = None
+    inter_packet_delay_range: Optional[Tuple[int, int]] = None
     max_resolution: Optional[Tuple[int, int]] = None
     supports_roi: bool = False
     supports_trigger: bool = False
@@ -118,7 +124,7 @@ class CameraCapabilities(BaseModel):
 class CameraConfiguration(BaseModel):
     """Camera configuration model."""
 
-    exposure: Optional[float] = None
+    exposure_time: Optional[float] = None
     gain: Optional[float] = None
     roi: Optional[Tuple[int, int, int, int]] = None
     trigger_mode: Optional[str] = None
@@ -169,7 +175,7 @@ class CaptureResult(BaseModel):
     image_data: Optional[str] = None  # Base64 encoded image
     image_path: Optional[str] = None
     gcs_url: Optional[str] = None
-    capture_time: datetime = Field(default_factory=datetime.utcnow)
+    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     image_size: Optional[Tuple[int, int]] = None
     file_size_bytes: Optional[int] = None
 
@@ -196,7 +202,7 @@ class HDRCaptureResult(BaseModel):
     image_paths: Optional[List[str]] = None
     gcs_urls: Optional[List[str]] = None
     exposure_levels: List[float]
-    capture_time: datetime = Field(default_factory=datetime.utcnow)
+    capture_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     successful_captures: int
 
 
@@ -330,3 +336,41 @@ class ConfigFileResponse(BaseResponse):
     """Response model for configuration file operations."""
 
     data: ConfigFileOperationResult
+
+
+# Streaming Responses
+class StreamInfo(BaseModel):
+    """Stream information model."""
+
+    camera: str
+    streaming: bool
+    stream_url: Optional[str] = None
+    start_time: Optional[datetime] = None
+
+
+class StreamStatus(BaseModel):
+    """Stream status model."""
+
+    camera: str
+    streaming: bool
+    connected: bool
+    stream_url: Optional[str] = None
+    uptime_seconds: Optional[float] = None
+
+
+class StreamInfoResponse(BaseResponse):
+    """Response model for stream information."""
+
+    data: StreamInfo
+
+
+class StreamStatusResponse(BaseResponse):
+    """Response model for stream status."""
+
+    data: StreamStatus
+
+
+class ActiveStreamsResponse(BaseResponse):
+    """Response model for active streams list."""
+
+    data: List[str]  # List of camera names with active streams

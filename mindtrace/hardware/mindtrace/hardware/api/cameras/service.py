@@ -5,13 +5,15 @@ This service wraps AsyncCameraManager functionality in a Service-based
 architecture with comprehensive MCP tool integration and typed client access.
 """
 
+import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from mindtrace.hardware.api.cameras.models import (
     # Response models
     ActiveCamerasResponse,
+    ActiveStreamsResponse,
     # Requests
     BackendFilterRequest,
     # Data models
@@ -56,6 +58,13 @@ from mindtrace.hardware.api.cameras.models import (
     ListResponse,
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
+    StreamInfo,
+    StreamInfoResponse,
+    StreamStartRequest,
+    StreamStatus,
+    StreamStatusRequest,
+    StreamStatusResponse,
+    StreamStopRequest,
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
@@ -91,12 +100,10 @@ class CameraManagerService(Service):
         self.include_mocks = include_mocks
         self._camera_manager: Optional[AsyncCameraManager] = None
         self._startup_time = time.time()
+        self._active_streams: dict = {}  # Track active camera streams
 
         # Register all endpoints with their schemas
         self._register_endpoints()
-
-        # Register MCP tools for essential operations
-        self._register_mcp_tools()
 
     async def _get_camera_manager(self) -> AsyncCameraManager:
         """Get or create camera manager instance."""
@@ -112,6 +119,10 @@ class CameraManagerService(Service):
 
     async def shutdown_cleanup(self):
         """Cleanup camera manager on shutdown."""
+        # Stop all active streams
+        if hasattr(self, "_active_streams"):
+            self._active_streams.clear()
+
         if self._camera_manager is not None:
             try:
                 await self._camera_manager.__aexit__(None, None, None)
@@ -124,85 +135,36 @@ class CameraManagerService(Service):
     def _register_endpoints(self):
         """Register all service endpoints."""
         # Backend & Discovery
-        self.add_endpoint("backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"])
-        self.add_endpoint("backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"])
-        self.add_endpoint("cameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], methods=["POST"])
-
-        # Camera Lifecycle
-        self.add_endpoint("cameras/open", self.open_camera, ALL_SCHEMAS["open_camera"])
-        self.add_endpoint("cameras/open/batch", self.open_cameras_batch, ALL_SCHEMAS["open_cameras_batch"])
-        self.add_endpoint("cameras/close", self.close_camera, ALL_SCHEMAS["close_camera"])
-        self.add_endpoint("cameras/close/batch", self.close_cameras_batch, ALL_SCHEMAS["close_cameras_batch"])
-        self.add_endpoint("cameras/close/all", self.close_all_cameras, ALL_SCHEMAS["close_all_cameras"])
-        self.add_endpoint("cameras/active", self.get_active_cameras, ALL_SCHEMAS["get_active_cameras"], methods=["GET"])
-
-        # Camera Status & Information
-        self.add_endpoint("cameras/status", self.get_camera_status, ALL_SCHEMAS["get_camera_status"])
-        self.add_endpoint("cameras/info", self.get_camera_info, ALL_SCHEMAS["get_camera_info"])
-        self.add_endpoint("cameras/capabilities", self.get_camera_capabilities, ALL_SCHEMAS["get_camera_capabilities"])
         self.add_endpoint(
-            "system/diagnostics", self.get_system_diagnostics, ALL_SCHEMAS["get_system_diagnostics"], methods=["GET"]
-        )
-
-        # Camera Configuration
-        self.add_endpoint("cameras/configure", self.configure_camera, ALL_SCHEMAS["configure_camera"])
-        self.add_endpoint(
-            "cameras/configure/batch", self.configure_cameras_batch, ALL_SCHEMAS["configure_cameras_batch"]
+            "backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
         )
         self.add_endpoint(
-            "cameras/configuration", self.get_camera_configuration, ALL_SCHEMAS["get_camera_configuration"]
+            "backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
         )
-        self.add_endpoint("cameras/config/import", self.import_camera_config, ALL_SCHEMAS["import_camera_config"])
-        self.add_endpoint("cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"])
-
-        # Image Capture
-        self.add_endpoint("cameras/capture", self.capture_image, ALL_SCHEMAS["capture_image"])
-        self.add_endpoint("cameras/capture/batch", self.capture_images_batch, ALL_SCHEMAS["capture_images_batch"])
-        self.add_endpoint("cameras/capture/hdr", self.capture_hdr_image, ALL_SCHEMAS["capture_hdr_image"])
-        self.add_endpoint(
-            "cameras/capture/hdr/batch", self.capture_hdr_images_batch, ALL_SCHEMAS["capture_hdr_images_batch"]
-        )
-
-        # Network & Bandwidth
-        self.add_endpoint(
-            "network/bandwidth", self.get_bandwidth_settings, ALL_SCHEMAS["get_bandwidth_settings"], methods=["GET"]
-        )
-        self.add_endpoint("network/bandwidth/limit", self.set_bandwidth_limit, ALL_SCHEMAS["set_bandwidth_limit"])
-        self.add_endpoint(
-            "network/diagnostics", self.get_network_diagnostics, ALL_SCHEMAS["get_network_diagnostics"], methods=["GET"]
-        )
-
-    def _register_mcp_tools(self):
-        """Register essential MCP tools."""
-        # Essential camera operations
         self.add_endpoint(
             "cameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], methods=["POST"], as_tool=True
         )
+
+        # Camera Lifecycle
         self.add_endpoint("cameras/open", self.open_camera, ALL_SCHEMAS["open_camera"], as_tool=True)
+        self.add_endpoint(
+            "cameras/open/batch", self.open_cameras_batch, ALL_SCHEMAS["open_cameras_batch"], as_tool=True
+        )
         self.add_endpoint("cameras/close", self.close_camera, ALL_SCHEMAS["close_camera"], as_tool=True)
+        self.add_endpoint(
+            "cameras/close/batch", self.close_cameras_batch, ALL_SCHEMAS["close_cameras_batch"], as_tool=True
+        )
         self.add_endpoint("cameras/close/all", self.close_all_cameras, ALL_SCHEMAS["close_all_cameras"], as_tool=True)
         self.add_endpoint(
             "cameras/active", self.get_active_cameras, ALL_SCHEMAS["get_active_cameras"], methods=["GET"], as_tool=True
         )
 
-        # Core capture operations
-        self.add_endpoint("cameras/capture", self.capture_image, ALL_SCHEMAS["capture_image"], as_tool=True)
-        self.add_endpoint(
-            "cameras/capture/batch", self.capture_images_batch, ALL_SCHEMAS["capture_images_batch"], as_tool=True
-        )
-        self.add_endpoint("cameras/capture/hdr", self.capture_hdr_image, ALL_SCHEMAS["capture_hdr_image"], as_tool=True)
-
-        # Configuration operations
-        self.add_endpoint("cameras/configure", self.configure_camera, ALL_SCHEMAS["configure_camera"], as_tool=True)
-        self.add_endpoint(
-            "cameras/configuration",
-            self.get_camera_configuration,
-            ALL_SCHEMAS["get_camera_configuration"],
-            as_tool=True,
-        )
+        # Camera Status & Information
         self.add_endpoint("cameras/status", self.get_camera_status, ALL_SCHEMAS["get_camera_status"], as_tool=True)
-
-        # System operations
+        self.add_endpoint("cameras/info", self.get_camera_info, ALL_SCHEMAS["get_camera_info"], as_tool=True)
+        self.add_endpoint(
+            "cameras/capabilities", self.get_camera_capabilities, ALL_SCHEMAS["get_camera_capabilities"], as_tool=True
+        )
         self.add_endpoint(
             "system/diagnostics",
             self.get_system_diagnostics,
@@ -210,16 +172,72 @@ class CameraManagerService(Service):
             methods=["GET"],
             as_tool=True,
         )
-        self.add_endpoint(
-            "network/bandwidth/limit", self.set_bandwidth_limit, ALL_SCHEMAS["set_bandwidth_limit"], as_tool=True
-        )
 
-        # Configuration persistence
+        # Camera Configuration
+        self.add_endpoint("cameras/configure", self.configure_camera, ALL_SCHEMAS["configure_camera"], as_tool=True)
+        self.add_endpoint(
+            "cameras/configure/batch",
+            self.configure_cameras_batch,
+            ALL_SCHEMAS["configure_cameras_batch"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/configuration",
+            self.get_camera_configuration,
+            ALL_SCHEMAS["get_camera_configuration"],
+            as_tool=True,
+        )
         self.add_endpoint(
             "cameras/config/import", self.import_camera_config, ALL_SCHEMAS["import_camera_config"], as_tool=True
         )
         self.add_endpoint(
             "cameras/config/export", self.export_camera_config, ALL_SCHEMAS["export_camera_config"], as_tool=True
+        )
+
+        # Image Capture
+        self.add_endpoint("cameras/capture", self.capture_image, ALL_SCHEMAS["capture_image"], as_tool=True)
+        self.add_endpoint(
+            "cameras/capture/batch", self.capture_images_batch, ALL_SCHEMAS["capture_images_batch"], as_tool=True
+        )
+        self.add_endpoint("cameras/capture/hdr", self.capture_hdr_image, ALL_SCHEMAS["capture_hdr_image"], as_tool=True)
+        self.add_endpoint(
+            "cameras/capture/hdr/batch",
+            self.capture_hdr_images_batch,
+            ALL_SCHEMAS["capture_hdr_images_batch"],
+            as_tool=True,
+        )
+
+        # Streaming (REST API only - not as MCP tools)
+        self.add_endpoint("cameras/stream/start", self.start_stream, ALL_SCHEMAS["stream_start"])
+        self.add_endpoint("cameras/stream/stop", self.stop_stream, ALL_SCHEMAS["stream_stop"])
+        self.add_endpoint("cameras/stream/status", self.get_stream_status, ALL_SCHEMAS["stream_status"])
+        self.add_endpoint(
+            "cameras/stream/active", self.get_active_streams, ALL_SCHEMAS["get_active_streams"], methods=["GET"]
+        )
+        self.add_endpoint(
+            "cameras/stream/stop/all", self.stop_all_streams, ALL_SCHEMAS["stop_all_streams"], methods=["POST"]
+        )
+
+        # Video stream endpoints (serve actual video)
+        self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
+
+        # Network & Bandwidth
+        self.add_endpoint(
+            "network/bandwidth",
+            self.get_bandwidth_settings,
+            ALL_SCHEMAS["get_bandwidth_settings"],
+            methods=["GET"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "network/bandwidth/limit", self.set_bandwidth_limit, ALL_SCHEMAS["set_bandwidth_limit"], as_tool=True
+        )
+        self.add_endpoint(
+            "network/diagnostics",
+            self.get_network_diagnostics,
+            ALL_SCHEMAS["get_network_diagnostics"],
+            methods=["GET"],
+            as_tool=True,
         )
 
     # Backend & Discovery Operations
@@ -472,6 +490,12 @@ class CameraManagerService(Service):
             # Get capabilities from camera backend
             try:
                 exposure_range = await camera_proxy.get_exposure_range()
+                # For OpenCV cameras, explicitly disable exposure control as most don't support it
+                if request.camera.startswith("OpenCV:") and exposure_range is not None:
+                    # Double-check that exposure control is actually supported
+                    if hasattr(camera_proxy.backend, "is_exposure_control_supported"):
+                        if not await camera_proxy.backend.is_exposure_control_supported():
+                            exposure_range = None
             except Exception:
                 exposure_range = None
 
@@ -485,10 +509,68 @@ class CameraManagerService(Service):
             except Exception:
                 pixel_formats = None
 
+            try:
+                white_balance_modes = await camera_proxy.get_available_white_balance_modes()
+            except Exception:
+                white_balance_modes = None
+
+            # Get trigger modes (backend-specific implementation)
+            try:
+                backend = camera_proxy.backend
+                if hasattr(backend, "get_trigger_modes"):
+                    trigger_modes = await backend.get_trigger_modes()
+                else:
+                    # Default trigger modes for most cameras
+                    trigger_modes = ["continuous", "triggered"]
+            except Exception:
+                trigger_modes = None
+
+            try:
+                width_range = await camera_proxy.backend.get_width_range()
+            except Exception:
+                width_range = None
+
+            try:
+                height_range = await camera_proxy.backend.get_height_range()
+            except Exception:
+                height_range = None
+
+            # Network parameters (Basler-specific)
+            try:
+                if hasattr(camera_proxy.backend, "get_bandwidth_limit_range"):
+                    bandwidth_limit_range = await camera_proxy.backend.get_bandwidth_limit_range()
+                else:
+                    bandwidth_limit_range = None
+            except Exception:
+                bandwidth_limit_range = None
+
+            try:
+                if hasattr(camera_proxy.backend, "get_packet_size_range"):
+                    packet_size_range = await camera_proxy.backend.get_packet_size_range()
+                else:
+                    packet_size_range = None
+            except Exception:
+                packet_size_range = None
+
+            try:
+                if hasattr(camera_proxy.backend, "get_inter_packet_delay_range"):
+                    inter_packet_delay_range = await camera_proxy.backend.get_inter_packet_delay_range()
+                else:
+                    inter_packet_delay_range = None
+            except Exception:
+                inter_packet_delay_range = None
+
             capabilities = CameraCapabilities(
                 exposure_range=exposure_range,
                 gain_range=gain_range,
                 pixel_formats=pixel_formats,
+                white_balance_modes=white_balance_modes,
+                trigger_modes=trigger_modes,
+                width_range=width_range,
+                height_range=height_range,
+                bandwidth_limit_range=bandwidth_limit_range,
+                packet_size_range=packet_size_range,
+                inter_packet_delay_range=inter_packet_delay_range,
                 supports_roi=True,  # Most cameras support ROI
                 supports_trigger=True,  # Most cameras support trigger
                 supports_hdr=True,  # Our implementation supports HDR
@@ -584,7 +666,7 @@ class CameraManagerService(Service):
                 roi_tuple = None
 
             config = CameraConfiguration(
-                exposure=await camera_proxy.get_exposure(),
+                exposure_time=await camera_proxy.get_exposure(),
                 gain=await camera_proxy.get_gain(),
                 roi=roi_tuple,
                 trigger_mode=await camera_proxy.get_trigger_mode(),
@@ -665,7 +747,7 @@ class CameraManagerService(Service):
                 save_path=request.save_path, upload_to_gcs=request.upload_to_gcs, output_format=request.output_format
             )
 
-            result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.utcnow())
+            result = CaptureResult(success=True, image_path=request.save_path, capture_time=datetime.now(timezone.utc))
 
             return CaptureResponse(success=True, message=f"Image captured from camera '{request.camera}'", data=result)
         except Exception as e:
@@ -685,10 +767,10 @@ class CameraManagerService(Service):
 
             for camera, image in results.items():
                 if image is not None:
-                    capture_results[camera] = CaptureResult(success=True, capture_time=datetime.utcnow())
+                    capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
                     successful_count += 1
                 else:
-                    capture_results[camera] = CaptureResult(success=False, capture_time=datetime.utcnow())
+                    capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
 
             return BatchCaptureResponse(
                 success=successful_count > 0,
@@ -726,7 +808,7 @@ class CameraManagerService(Service):
                 image_paths=hdr_result["image_paths"],
                 gcs_urls=hdr_result["gcs_urls"],
                 exposure_levels=hdr_result["exposure_levels"],
-                capture_time=datetime.utcnow(),
+                capture_time=datetime.now(timezone.utc),
                 successful_captures=hdr_result["successful_captures"],
             )
 
@@ -762,7 +844,7 @@ class CameraManagerService(Service):
                         image_paths=hdr_data.get("image_paths"),
                         gcs_urls=hdr_data.get("gcs_urls"),
                         exposure_levels=hdr_data.get("exposure_levels", []),
-                        capture_time=datetime.utcnow(),
+                        capture_time=datetime.now(timezone.utc),
                         successful_captures=hdr_data.get("successful_captures", 0),
                     )
                     successful_count += 1
@@ -773,7 +855,7 @@ class CameraManagerService(Service):
                         image_paths=None,
                         gcs_urls=None,
                         exposure_levels=[],
-                        capture_time=datetime.utcnow(),
+                        capture_time=datetime.now(timezone.utc),
                         successful_captures=0,
                     )
 
@@ -842,6 +924,251 @@ class CameraManagerService(Service):
         except Exception as e:
             self.logger.error(f"Failed to get network diagnostics: {e}")
             raise
+
+    # Streaming Operations
+    async def start_stream(self, request: StreamStartRequest) -> StreamInfoResponse:
+        """Start camera stream with resilient state management."""
+        try:
+            manager = await self._get_camera_manager()
+
+            # More resilient camera check - try to initialize if not active
+            if request.camera not in manager.active_cameras:
+                self.logger.warning(f"Camera '{request.camera}' not in active cameras, attempting to initialize")
+                try:
+                    # Try to initialize the camera first
+                    camera_proxy = await manager.open(request.camera)
+                    self.logger.info(f"Successfully initialized camera '{request.camera}' for streaming")
+                except Exception as init_error:
+                    self.logger.error(f"Failed to initialize camera '{request.camera}': {init_error}")
+                    raise CameraNotFoundError(
+                        f"Camera '{request.camera}' is not available and could not be initialized"
+                    )
+            else:
+                camera_proxy = await manager.open(request.camera)
+
+            # Start streaming - return the actual stream URL
+            # Use the same host and port as the API service from environment variables
+            api_host = os.getenv("CAMERA_API_HOST", "localhost")
+            api_port = os.getenv("CAMERA_API_PORT", "8002")
+            stream_url = f"http://{api_host}:{api_port}/stream/{request.camera.replace(':', '_')}"
+
+            # Track this stream as active (always update, even if already exists)
+            self._active_streams[request.camera] = {
+                "stream_url": stream_url,
+                "start_time": datetime.now(timezone.utc),
+                "camera_proxy": camera_proxy,
+                "quality": request.quality,
+                "fps": request.fps,
+            }
+
+            stream_info = StreamInfo(
+                camera=request.camera, streaming=True, stream_url=stream_url, start_time=datetime.now(timezone.utc)
+            )
+
+            return StreamInfoResponse(
+                success=True, message=f"Stream started for camera '{request.camera}'", data=stream_info
+            )
+        except CameraNotFoundError:
+            # Re-raise camera not found errors
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to start stream for '{request.camera}': {e}")
+            # Return a more graceful error response instead of raising
+            return StreamInfoResponse(
+                success=False, message=f"Failed to start stream for '{request.camera}': {str(e)}", data=None
+            )
+
+    async def stop_stream(self, request: StreamStopRequest) -> BoolResponse:
+        """Stop camera stream with resilient state management."""
+        try:
+            # Remove from active streams regardless of camera state
+            was_streaming = request.camera in self._active_streams
+            if was_streaming:
+                del self._active_streams[request.camera]
+                self.logger.info(f"Removed camera '{request.camera}' from active streams")
+
+            # Don't require camera to be initialized for stopping streams
+            # The actual video streaming endpoint doesn't depend on _active_streams anyway
+            message = f"Stream stopped for camera '{request.camera}'"
+            if not was_streaming:
+                message = f"Stream was not active for camera '{request.camera}' (already stopped)"
+
+            return BoolResponse(success=True, message=message, data=True)
+        except Exception as e:
+            self.logger.warning(f"Exception during stop_stream for '{request.camera}': {e}")
+            # Always succeed for stop operations to prevent UI blocking
+            # The worst case is we don't update our tracking dict, but streaming still works
+            return BoolResponse(
+                success=True, message=f"Stream stop attempted for '{request.camera}': {str(e)}", data=True
+            )
+
+    async def get_stream_status(self, request: StreamStatusRequest) -> StreamStatusResponse:
+        """Get camera stream status with resilient state management."""
+        try:
+            manager = await self._get_camera_manager()
+
+            # More resilient camera connection check
+            is_connected = False
+            try:
+                if request.camera in manager.active_cameras:
+                    camera_proxy = await manager.open(request.camera)
+                    is_connected = await camera_proxy.check_connection()
+                else:
+                    self.logger.warning(f"Camera '{request.camera}' not in active cameras for status check")
+            except Exception as conn_error:
+                self.logger.warning(f"Could not check connection for '{request.camera}': {conn_error}")
+                is_connected = False
+
+            # Check if camera is actively streaming (from our tracking)
+            is_streaming = request.camera in self._active_streams
+            stream_url = None
+            uptime_seconds = 0.0
+
+            if is_streaming:
+                stream_info = self._active_streams[request.camera]
+                stream_url = stream_info["stream_url"]
+                uptime_seconds = (datetime.now(timezone.utc) - stream_info["start_time"]).total_seconds()
+
+            stream_status = StreamStatus(
+                camera=request.camera,
+                streaming=is_streaming,
+                connected=is_connected,
+                stream_url=stream_url,
+                uptime_seconds=uptime_seconds,
+            )
+
+            return StreamStatusResponse(
+                success=True, message=f"Retrieved stream status for camera '{request.camera}'", data=stream_status
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get stream status for '{request.camera}': {e}")
+            raise
+
+    async def get_active_streams(self) -> ActiveStreamsResponse:
+        """Get list of cameras with active streams."""
+        try:
+            # Return list of cameras with active streams
+            active_streams = list(self._active_streams.keys())
+
+            return ActiveStreamsResponse(
+                success=True, message=f"Found {len(active_streams)} active streams", data=active_streams
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get active streams: {e}")
+            raise
+
+    async def stop_all_streams(self) -> BoolResponse:
+        """Stop all active camera streams."""
+        try:
+            # Stop all active streams
+            stopped_count = len(self._active_streams)
+            self._active_streams.clear()
+
+            return BoolResponse(success=True, message=f"Stopped {stopped_count} active streams successfully", data=True)
+        except Exception as e:
+            self.logger.error(f"Failed to stop all streams: {e}")
+            raise
+
+    async def serve_camera_stream(self, camera_name: str):
+        """Serve MJPEG video stream for a specific camera."""
+        try:
+            manager = await self._get_camera_manager()
+
+            # Replace first underscore back to colon for camera name (Backend_device → Backend:device)
+            actual_camera_name = camera_name.replace("_", ":", 1)
+
+            # Check if camera is active
+            if actual_camera_name not in manager.active_cameras:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=404, detail=f"Camera '{actual_camera_name}' is not initialized")
+
+            # Don't check _active_streams since it's not shared across workers
+            # Just serve the stream if the camera is initialized
+            # The frontend will control when to show/hide the stream
+            self.logger.info(f"Serving stream for camera '{actual_camera_name}'")
+
+            camera_proxy = await manager.open(actual_camera_name)
+
+            # Check if camera is connected
+            is_connected = await camera_proxy.check_connection()
+            if not is_connected:
+                from fastapi import HTTPException
+
+                raise HTTPException(status_code=503, detail=f"Camera '{actual_camera_name}' is not connected")
+
+            # Create MJPEG streaming response
+            import asyncio
+
+            from fastapi.responses import StreamingResponse
+
+            async def generate_mjpeg_stream():
+                """Generate MJPEG stream frames."""
+                import cv2
+                import numpy as np
+
+                # Get dynamic streaming parameters
+                stream_info = self._active_streams.get(actual_camera_name, {})
+                quality = stream_info.get("quality", 85)
+                fps = stream_info.get("fps", 30)
+                frame_delay = 1.0 / fps
+
+                self.logger.info(f"Starting stream for '{actual_camera_name}' with quality={quality}, fps={fps}")
+
+                while True:
+                    try:
+                        # Capture frame from camera as numpy array
+                        frame_np = await camera_proxy.capture(output_format="numpy")
+
+                        if frame_np is not None:
+                            # Convert numpy array to JPEG bytes
+                            # Ensure it's uint8 and RGB/BGR
+                            if frame_np.dtype != np.uint8:
+                                frame_np = (frame_np * 255).astype(np.uint8)
+
+                            # Convert RGB to BGR if needed (OpenCV expects BGR)
+                            if len(frame_np.shape) == 3 and frame_np.shape[2] == 3:
+                                # Assuming RGB input, convert to BGR for cv2
+                                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                            else:
+                                frame_bgr = frame_np
+
+                            # Encode as JPEG with dynamic quality
+                            success, jpeg_data = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+
+                            if success:
+                                # Create MJPEG frame (Poseidon format)
+                                frame_data = jpeg_data.tobytes()
+                                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
+
+                        # Control frame rate with dynamic FPS
+                        await asyncio.sleep(frame_delay)
+
+                    except Exception as e:
+                        self.logger.warning(f"Frame capture error for {actual_camera_name}: {e}")
+                        # Check if camera is still active, if not, stop streaming
+                        if actual_camera_name not in manager.active_cameras:
+                            self.logger.info(f"Camera '{actual_camera_name}' no longer active, stopping stream")
+                            break
+                        # Send error frame or continue
+                        await asyncio.sleep(0.1)
+                        continue
+
+            return StreamingResponse(
+                generate_mjpeg_stream(),
+                media_type="multipart/x-mixed-replace; boundary=frame",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to serve stream for '{camera_name}': {e}")
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
 
     # Add remaining method stubs...
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:

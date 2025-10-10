@@ -590,7 +590,7 @@ class TestMockBaslerWhiteBalance:
         # Test setting different white balance modes
         wb_modes = await camera.get_wb_range()
         assert isinstance(wb_modes, list)
-        assert "auto" in wb_modes
+        assert "off" in wb_modes
 
         for mode in wb_modes:
             await camera.set_auto_wb_once(mode)
