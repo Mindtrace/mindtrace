@@ -2,22 +2,37 @@
   "cam1": {
     "features": {
       "W1": {
-        "type": "weld",
+        "label": "weld",
         "bbox": [100, 50, 180, 70],
-        "num_expected": 1,
-        "params": { "min_length_px": 50 }
+        "expected_count": 1,
+        "params": {},
+        "classification_rules": [
+          {
+            "type": "length_threshold",
+            "min_length_px": 50,
+            "fail_label": "Short"
+          }
+        ]
       },
       "W2": {
-        "type": "weld",
+        "label": "weld",
         "bbox": [100, 50, 180, 70],
-        "num_expected": 1,
-        "params": { "min_length_px": 50 }
+        "expected_count": 1,
+        "params": {},
+        "classification_rules": [
+          {
+            "type": "length_threshold",
+            "min_length_px": 50,
+            "fail_label": "Short"
+          }
+        ]
       },
       "H1": {
-        "type": "hole",
+        "label": "hole",
         "bbox": [200, 50, 230, 80],
-        "num_expected": 1,
-        "params": { "class_id": 2 }
+        "expected_count": 1,
+        "params": { "class_id": 2 },
+        "classification_rules": []
       }
     },
     "groups": [ ["W1", "W2"] ]
@@ -25,12 +40,20 @@
   "cam2": {
     "features": {
       "W3": {
-        "type": "weld",
+        "label": "weld",
         "bbox": [50, 50, 100, 60],
-        "num_expected": 1,
-        "params": { "min_length_px": 60 }
+        "expected_count": 1,
+        "params": {},
+        "classification_rules": [
+          {
+            "type": "length_threshold",
+            "min_length_px": 60,
+            "fail_label": "Short"
+          }
+        ]
       }
-    }
+    },
+    "groups": []
   }
 }
 

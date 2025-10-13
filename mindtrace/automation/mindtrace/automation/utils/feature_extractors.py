@@ -8,13 +8,7 @@ from .feature_models import Feature, FeatureConfig
 
 
 class BaseFeatureExtractor(ABC):
-    """Base for feature extractors.
-
-    Contract:
-    - Uses per-feature ROI and params from FeatureConfig
-    - Selection is pixels-only (no unit conversion)
-    - Returns Feature with bbox=[], found=0 when nothing is selected
-    """
+    """Base for feature extractors."""
 
     def __init__(self, utils: Any):
         self.utils = utils
@@ -31,10 +25,10 @@ class BaseFeatureExtractor(ABC):
     def _create_empty_feature(self, feature_id: str, config: FeatureConfig) -> Feature:
         return Feature(
             id=feature_id,
-            type=config.type,
+            label=config.label,
             bbox=[],
-            expected=config.num_expected,
-            found=0,
+            expected_count=config.expected_count,
+            found_count=0,
             params=config.params,
         )
 
@@ -92,7 +86,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
 
         x1, y1, x2, y2 = feature_config.bbox
         selected_indices = self._select_boxes_in_roi(
-            boxes, x1, y1, x2, y2, feature_config.num_expected, feature_config.params
+            boxes, x1, y1, x2, y2, feature_config.expected_count, feature_config.params
         )
         # Normalize selected boxes to shape (N,4)
         if isinstance(selected_indices, np.ndarray) and selected_indices.size > 0:
@@ -104,12 +98,19 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
             selected_boxes = np.empty((0, 4), dtype=boxes.dtype if isinstance(boxes, np.ndarray) else np.float32)
         found = int(selected_boxes.shape[0])
         union_bbox = self._compute_bbox(selected_boxes)
-        return Feature(id=feature_id, type=feature_config.type, bbox=union_bbox, expected=feature_config.num_expected, found=found, params=feature_config.params)
+        return Feature(
+            id=feature_id,
+            label=feature_config.label,
+            bbox=union_bbox,
+            expected_count=feature_config.expected_count,
+            found_count=found,
+            params=feature_config.params,
+        )
 
     def _select_boxes_in_roi(self, boxes: np.ndarray, x1: int, y1: int, x2: int, y2: int, expected: int, params: Dict[str, Any]) -> np.ndarray:
         """Return indices of selected boxes intersecting the ROI.
-
-        Pixels-only thresholds: none (simple top-N by overlap area)
+        
+        Selects top-N boxes by overlap area with the ROI.
         """
         ix1 = np.maximum(boxes[:, 0], x1)
         iy1 = np.maximum(boxes[:, 1], y1)
@@ -140,10 +141,10 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
     """Assign features from segmentation masks.
 
     Logic per feature:
-    - Resolve class_id (explicit for non-welds; welds may use provided default)
+    - Resolve class_id from config params or use provided default
     - Keep contours whose boundingRect intersects ROI
     - Sort by contour area (largest first)
-    - Select up to num_expected (no pairwise spacing rule)
+    - Select up to expected_count
     - Report union bbox; [] if none selected
     """
 
@@ -170,15 +171,22 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if class_id not in self.assigned_contours:
             self.assigned_contours[class_id] = set()
-        selected_contours = self._select_contours_in_roi(contours, feature_config.bbox, feature_config.num_expected, params, self.assigned_contours[class_id])
+        selected_contours = self._select_contours_in_roi(contours, feature_config.bbox, feature_config.expected_count, params, self.assigned_contours[class_id])
         found = len(selected_contours)
         combined_bbox = self._compute_contours_bbox(selected_contours) if found > 0 else []
-        return Feature(id=feature_id, type=feature_config.type, bbox=combined_bbox, expected=feature_config.num_expected, found=found, params=params)
+        return Feature(
+            id=feature_id,
+            label=feature_config.label,
+            bbox=combined_bbox,
+            expected_count=feature_config.expected_count,
+            found_count=found,
+            params=params,
+        )
 
     def _select_contours_in_roi(self, contours: List[np.ndarray], roi_bbox: List[int], expected: int, params: Dict[str, Any], assigned: set) -> List[Tuple[int, np.ndarray]]:
         """Return [(index, contour), ...] for selected contours intersecting ROI.
-
-        Pixels-only thresholds: none (simple top-N by area)
+        
+        Selects top-N contours by area that intersect with the ROI.
         """
         x1, y1, x2, y2 = roi_bbox
         roi_contours: List[Tuple[int, np.ndarray, float, float]] = []

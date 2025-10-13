@@ -7,20 +7,21 @@ from mindtrace.core.base.mindtrace_base import Mindtrace
 
 from .feature_models import Feature, FeatureConfig
 from .feature_extractors import BoxFeatureExtractor, MaskFeatureExtractor
+from .feature_classifier import FeatureClassifier
 
 
 class FeatureDetector(Mindtrace):
     """Assign expected features to predictions and report presence.
 
-    Cross-compares configured ROIs/types/counts (expected) with model outputs
-    (boxes or masks). Presence is derived from counts. Optionally, welds can
-    be annotated as "Short" when `min_length_px` is configured and the
-    measured length (max of bbox width/height) falls below that threshold.
+    Cross-compares configured ROIs/labels/counts (expected) with model outputs
+    (boxes or masks). Presence is derived from counts. Features can be classified
+    using configurable rules (e.g., size thresholds, aspect ratios).
     """
 
     def __init__(self, config_path: str, **kwargs: Any):
         super().__init__(**kwargs)
         self.config = self._load_config(config_path)
+        self.classifier = FeatureClassifier()
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         with open(config_path, "r") as f:
@@ -43,9 +44,10 @@ class FeatureDetector(Mindtrace):
                 try:
                     features[feat_id] = FeatureConfig(
                         bbox=feat_cfg.get("bbox", [0, 0, 0, 0]),
-                        num_expected=feat_cfg.get("num_expected", 1),
-                        type=feat_cfg.get("type", "unknown"),
+                        expected_count=feat_cfg.get("expected_count", 1),
+                        label=feat_cfg.get("label", "unknown"),
                         params=feat_cfg.get("params", {}),
+                        classification_rules=feat_cfg.get("classification_rules", []),
                     )
                 except ValueError as e:
                     self.logger.warning("Invalid feature config %s: %s", feat_id, e)
@@ -74,7 +76,7 @@ class FeatureDetector(Mindtrace):
         ordered_ids: List[str] = []
         for feat_id, feat_config in camera_cfg["features"].items():
             feature = extractor.extract(boxes_np, feat_config, feat_id)
-            self._classify_feature(feature, feat_config)
+            self.classifier.classify(feature, feat_config)
             features.append(feature)
             ordered_configs.append(feat_config)
             ordered_ids.append(feat_id)
@@ -94,7 +96,7 @@ class FeatureDetector(Mindtrace):
         ordered_configs: List[FeatureConfig] = []
         for feat_id, feat_config in camera_cfg["features"].items():
             feature = extractor.extract(mask, feat_config, feat_id, contours_cache=contours_cache)
-            self._classify_feature(feature, feat_config)
+            self.classifier.classify(feature, feat_config)
             features.append(feature)
             ordered_configs.append(feat_config)
 
@@ -152,25 +154,14 @@ class FeatureDetector(Mindtrace):
             contours_cache[cid] = contours
         return contours_cache
 
-    def _classify_feature(self, feature: Feature, config: FeatureConfig) -> None:
-        if not feature.is_present:
-            return
-        if feature.type == "weld":
-            raw_len = config.params.get("min_length_px")
-            min_length = float(raw_len) if isinstance(raw_len, (int, float)) else None
-            if min_length is not None:
-                x1, y1, x2, y2 = feature.bbox
-                length = max(x2 - x1, y2 - y1)
-                if length < min_length:
-                    feature.classification = "Short"
-
     def _feature_to_dict(self, feature: Feature) -> Dict[str, Any]:
+        """Convert a Feature object to a dictionary for output."""
         result = {
             "id": feature.id,
-            "type": feature.type,
+            "label": feature.label,
             "bbox": feature.bbox,
-            "expected": feature.expected,
-            "found": feature.found,
+            "expected": feature.expected_count,
+            "found": feature.found_count,
         }
         if feature.classification:
             result["classification"] = feature.classification
