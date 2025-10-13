@@ -6,9 +6,23 @@ from mindtrace.core import Mindtrace
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 
 class GenerateIdConfig(Mindtrace):
-    def __init__(self, label_studio: LabelStudio, **kwargs):
+    """Generate feature detection configuration from Label Studio annotations.
+    
+    This class exports Label Studio projects and converts annotations into
+    a generic feature detection configuration format.
+    """
+    
+    def __init__(self, label_studio: LabelStudio, label_separator: str = "_", **kwargs):
+        """Initialize the config generator.
+        
+        Args:
+            label_studio: Label Studio API instance
+            label_separator: Character(s) used to separate label prefix from ID (default: "_")
+            **kwargs: Additional arguments passed to Mindtrace base class
+        """
         super().__init__(**kwargs)
         self.label_studio = label_studio
+        self.label_separator = label_separator
 
     def export_projects(self, save_path: str, project_names: List[str]=None, project_prefix: str=None):
         if project_names and project_prefix:
@@ -45,12 +59,25 @@ class GenerateIdConfig(Mindtrace):
                 self.logger.warning(f"Project {name} export failed or was not found")
         return successful_projects
 
-    def build_id_config_from_exports(self, exports_root: str, output_path: str) -> Dict[str, Any]:
+    def build_id_config_from_exports(
+        self,
+        exports_root: str,
+        output_path: str,
+    ) -> Dict[str, Any]:
+        """Build feature detection config from exported Label Studio annotations.
+        
+        Args:
+            exports_root: Directory containing exported project folders
+            output_path: Path to write the generated config JSON
+            
+        Returns:
+            The generated configuration dictionary
+        """
         if not os.path.isdir(exports_root):
             raise ValueError(f"exports_root does not exist or is not a directory: {exports_root}")
 
         combined: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
-        global_prefixes: set[str] = set()
+        global_labels: set[str] = set()
 
         for entry in sorted(os.listdir(exports_root)):
             project_dir = os.path.join(exports_root, entry)
@@ -82,15 +109,27 @@ class GenerateIdConfig(Mindtrace):
                         if not labels:
                             continue
                         label_str = labels[0]
-                        if "_" not in label_str:
-                            self.logger.warning(f"Label '{label_str}' missing '_' separator; skipping")
+                        
+                        # Parse label using configurable separator
+                        if self.label_separator not in label_str:
+                            self.logger.warning(
+                                f"Label '{label_str}' missing '{self.label_separator}' separator; skipping"
+                            )
                             continue
-                        prefix, suffix = label_str.split("_", 1)
-                        if not suffix:
-                            self.logger.warning(f"Label '{label_str}' has empty id part; skipping")
+                        
+                        parts = label_str.split(self.label_separator, 1)
+                        if len(parts) != 2:
+                            self.logger.warning(f"Label '{label_str}' invalid format; skipping")
                             continue
-                        group_key = f"{prefix.lower()}s"
-                        global_prefixes.add(prefix.lower())
+                            
+                        label_prefix, feature_id = parts
+                        if not feature_id:
+                            self.logger.warning(f"Label '{label_str}' has empty ID part; skipping")
+                            continue
+                        
+                        label_lower = label_prefix.lower()
+                        global_labels.add(label_lower)
+                        
                         bbox = [
                             value.get("x"),
                             value.get("y"),
@@ -98,21 +137,22 @@ class GenerateIdConfig(Mindtrace):
                             value.get("height"),
                         ]
                         item = {
-                            "id": str(suffix),
+                            "id": str(feature_id),
                             "class_id": None,
+                            "label": label_lower,
                             "name": label_str,
                             "bbox": bbox,
                         }
-                        groups.setdefault(group_key, []).append(item)
+                        groups.setdefault(label_lower, []).append(item)
 
             if groups:
                 combined[entry] = groups
 
-        prefix_to_class: Dict[str, int] = {p: idx for idx, p in enumerate(sorted(global_prefixes))}
+        # Assign class IDs based on unique labels
+        label_to_class: Dict[str, int] = {lbl: idx for idx, lbl in enumerate(sorted(global_labels))}
         for project_groups in combined.values():
-            for group_key, items in project_groups.items():
-                prefix_lower = group_key[:-1]
-                class_id = prefix_to_class.get(prefix_lower)
+            for label, items in project_groups.items():
+                class_id = label_to_class.get(label)
                 for obj in items:
                     obj["class_id"] = class_id
 
