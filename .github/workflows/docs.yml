@@ -10,7 +10,6 @@ on:
   release:
     types: [published]
 
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref}}
   cancel-in-progress: true
@@ -53,6 +52,11 @@ jobs:
         if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
         run: |
           uv run mike deploy --push dev
+
+      - name: Set Default to Dev
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
+        run: |
+          uv run mike set-default dev --push
 
       - name: Deploy Feature Docs
         if: github.event_name == 'push' && github.ref == 'refs/heads/feature/docmentation'
