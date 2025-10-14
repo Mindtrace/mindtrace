@@ -17,7 +17,7 @@ class SensorConnectionStatus(str, Enum):
 class SensorInfo(BaseModel):
     """Information about a sensor."""
 
-    sensor_id: str = Field(..., description="Unique identifier for the sensor")
+    sensor_id: str = Field(..., description="Unique identifier for the sensor", min_length=1)
     backend_type: str = Field(..., description="Backend type (mqtt, http, serial)")
     address: str = Field(..., description="Sensor address (topic, endpoint, or port)")
     status: SensorConnectionStatus = Field(..., description="Connection status")
@@ -39,7 +39,7 @@ class SensorConnectionResponse(BaseModel):
     """Response from sensor connection operation."""
 
     success: bool = Field(..., description="Whether connection was successful")
-    sensor_id: str = Field(..., description="Unique identifier for the sensor")
+    sensor_id: str = Field(..., description="Unique identifier for the sensor", min_length=1)
     status: SensorConnectionStatus = Field(..., description="Connection status")
     message: Optional[str] = Field(None, description="Additional information or error message")
 
@@ -58,7 +58,7 @@ class SensorDataResponse(BaseModel):
     """Response containing sensor data."""
 
     success: bool = Field(..., description="Whether data read was successful")
-    sensor_id: str = Field(..., description="Unique identifier for the sensor")
+    sensor_id: str = Field(..., description="Unique identifier for the sensor", min_length=1)
     data: Optional[Dict[str, Any]] = Field(None, description="Sensor data payload")
     timestamp: Optional[float] = Field(None, description="Timestamp when data was read")
     message: Optional[str] = Field(None, description="Additional information or error message")

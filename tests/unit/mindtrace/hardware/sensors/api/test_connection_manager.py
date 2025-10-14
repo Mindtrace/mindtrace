@@ -27,29 +27,22 @@ from mindtrace.hardware.api.sensors.models import (
     SensorStatusResponse,
 )
 
-# Skip all connection manager tests due to missing service infrastructure
-pytestmark = pytest.mark.skip(
-    reason="Service infrastructure not implemented - SensorConnectionManager needs MCP client support"
-)
-
 
 class TestSensorConnectionManager:
     """Test cases for SensorConnectionManager class."""
 
     def test_connection_manager_initialization_default(self):
-        """Test connection manager initialization with default service name."""
+        """Test default connection manager initialization."""
         manager = SensorConnectionManager()
+        assert manager is not None
+        assert hasattr(manager, "url") and manager.url is not None
 
-        # Should call parent constructor with default service name
-        assert hasattr(manager, "_service_name") or hasattr(manager, "service_name")
-
-    def test_connection_manager_initialization_custom_service(self):
-        """Test connection manager initialization with custom service name."""
-        custom_name = "custom_sensor_service"
-        manager = SensorConnectionManager(service_name=custom_name)
-
-        # Should call parent constructor with custom service name
-        assert hasattr(manager, "_service_name") or hasattr(manager, "service_name")
+    def test_connection_manager_initialization_custom_url(self):
+        """Test connection manager initialization with custom url."""
+        url = "http://localhost:8998"
+        manager = SensorConnectionManager(url)
+        assert manager is not None
+        assert hasattr(manager, "url") and manager.url is not None and manager.url == url
 
     @pytest.mark.asyncio
     async def test_connect_sensor_success(self):

@@ -2,7 +2,9 @@
 
 from typing import Any, Dict, Optional
 
-from mindtrace.services import ConnectionManager as BaseConnectionManager
+from pydantic import BaseModel
+
+from mindtrace.services import ConnectionManager
 
 from .models import (
     SensorConnectionRequest,
@@ -16,16 +18,11 @@ from .models import (
 )
 
 
-class SensorConnectionManager(BaseConnectionManager):
+class SensorConnectionManager(ConnectionManager):
     """Strongly-typed connection manager for sensor service operations."""
 
-    def __init__(self, service_name: str = "sensor_manager"):
-        """Initialize the sensor connection manager.
-
-        Args:
-            service_name: Name of the sensor service to connect to
-        """
-        super().__init__(service_name)
+    async def call_endpoint(self, endpoint: str, request: BaseModel) -> Dict[str, Any]:
+        raise NotImplementedError
 
     async def connect_sensor(
         self, sensor_id: str, backend_type: str, config: Dict[str, Any], address: str
