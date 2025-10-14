@@ -33,8 +33,8 @@ cameras-basler = ["mindtrace-hardware[cameras-basler]"]
 cameras-all = ["mindtrace-hardware[cameras-all]"]
 hardware-all = ["mindtrace-hardware[hardware-all]"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest-cov>=6.1.1",
     "pytest-asyncio>=1.0.0",
     "pytest>=8.3.5",
