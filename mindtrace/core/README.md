@@ -50,7 +50,7 @@ The core module is organized into several submodules:
 ### Logging (`logging/`)
 - Structured logging configuration and utilities
 
-## API Reference
+
 
 ### Core Classes
 
@@ -78,7 +78,7 @@ print(config["MINDTRACE_DIR_PATHS"]["TEMP"])
 print(config.MINDTRACE_DIR_PATHS.TEMP)
 ```
 
-For detailed usage of the Config class—including how it’s used within the Mindtrace class—refer to the [Usage documentation](../../samples/core/config/README.md)
+For detailed usage of the Config class—including how it's used within the Mindtrace class—refer to the [Usage documentation](https://github.com/Mindtrace/mindtrace/tree/dev/samples/core/config)
 
 ### Observables
 
@@ -228,4 +228,3 @@ Dynamically instantiate a class from string reference.
 from mindtrace.core import instantiate_target
 instance = instantiate_target("my.module.MyClass", param="value")
 ```
-
