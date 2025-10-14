@@ -1,16 +1,58 @@
 site_name: Mindtrace Package Docs
+docs_dir: docs
 site_url: https://mindtrace.ai
 repo_url: https://github.com/Mindtrace/mindtrace
 nav:
   - Home: index.md
   - Mindtrace:
     - Core: core/README.md
-    - Jobs: jobs/README.md
-    - Database: database/README.md
     - Services: services/README.md
     - Hardware: hardware/README.md
     - Cluster: cluster/README.md
+    - Jobs: jobs/README.md
+    - Database: database/README.md
+    - Storage: storage/README.md
+    
+    
+  - API Reference: 
+    - Core: core/api.md
+    - Services: services/api.md
+    - Hardware: hardware/api.md
+    - Cluster: cluster/api.md
+    - Jobs: jobs/api.md
+    - Database: database/api.md
+    - Storage: storage/api.md
 
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_root_toc_entry: true
+            show_signature_annotations: true
+            show_signature_return_annotation: true
+            show_bases: true
+            show_submodules: true
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            show_signature: true
+            separate_signature: true
+            line_length: 80
+            max_depth: 3
+            filters: ["!^_"]
+            members_order: source
+            docstring_section_style: table
+            show_docstring_attributes: true
+            show_docstring_examples: true
+            show_docstring_parameters: true
+            show_docstring_raises: true
+            show_docstring_returns: true
+            show_docstring_summary: true
+  
 theme:
   name: material
   font:
@@ -22,7 +64,13 @@ theme:
     - navigation.tabs
     - navigation.footer
     - navigation.top
-    - navigation.sections
+    - navigation.expand
+    - navigation.tabs.sticky
+    - search.suggest
+    - search.highlight
+    - search.share
+
+    # - navigation.sections
   icon:
     repo: fontawesome/brands/github
   palette:
