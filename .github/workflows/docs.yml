@@ -5,7 +5,7 @@ on:
     branches:
       - dev
       - main
-      - feature/documentation
+      - feature/docmentation
   workflow_dispatch:
   release:
     types: [published]
@@ -55,7 +55,7 @@ jobs:
           uv run mike deploy --push dev
 
       - name: Deploy Feature Docs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/documentation'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/docmentation'
         run: |
           uv run mike deploy --push feature-docs
 
