@@ -1,7 +1,14 @@
 site_name: Mindtrace Package Docs
-docs_dir: docs
 site_url: https://mindtrace.ai
 repo_url: https://github.com/Mindtrace/mindtrace
+
+extra:
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/mindtrace-ai
+  generator: false
+
+  
 nav:
   - Home: index.md
   - Mindtrace:
@@ -58,6 +65,8 @@ theme:
   font:
     text: Inter
     code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
   logo: assets/logo.png
   favicon: assets/favicon.ico
   features:
@@ -71,8 +80,7 @@ theme:
     - search.share
 
     # - navigation.sections
-  icon:
-    repo: fontawesome/brands/github
+
   palette:
     # Dark Mode
     - scheme: slate
@@ -111,10 +119,6 @@ markdown_extensions:
   - admonition
   - pymdownx.details
 
-extra:
-  social:
-    - icon: fontawesome/brands/linkedin
-      link: https://www.linkedin.com/company/mindtrace-ai
-  generator: false
+
 
 copyright: Copyright &copy; 2025 Mindtrace
