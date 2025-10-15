@@ -17,7 +17,7 @@ class Orchestrator(Mindtrace):
     and abstracts backend implementation details.
     """
 
-    def __init__(self, orchestrator_dir: str | Path | None = None, backend: OrchestratorBackend | None = None, client_dir: str | Path | None = None) -> None:
+    def __init__(self, backend: OrchestratorBackend | None = None, orchestrator_dir: str | Path | None = None) -> None:
         """Initialize the orchestrator.
 
         Args:
