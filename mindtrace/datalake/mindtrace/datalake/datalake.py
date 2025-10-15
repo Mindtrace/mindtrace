@@ -155,8 +155,8 @@ class Datalake(Mindtrace):
         Raises:
             Exception: If database query fails
         """
-        entries = await self.datum_database.find(self.datum_database.get_raw_model().derived_from == datum_id)
-        return [entry.id for entry in entries]
+        entries = await self.datum_database.find({"derived_from": datum_id})
+        return [entry.id for entry in entries if entry.id is not None]
 
     async def get_indirectly_derived_data(self, datum_id: PydanticObjectId) -> list[PydanticObjectId]:
         """
