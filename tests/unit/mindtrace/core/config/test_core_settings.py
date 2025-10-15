@@ -42,6 +42,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -78,6 +79,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -128,6 +130,7 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -165,6 +168,7 @@ LOGGER_DIR = /test/logger_from_ini
 STRUCT_LOGGER_DIR = /test/structlog_from_ini
 CLUSTER_REGISTRY_DIR = /test/cluster_from_ini
 SERVER_PIDS_DIR = /test/pids_from_ini
+ORCHESTRATOR_LOCAL_CLIENT_DIR = /test/orchestrator_from_ini
 
 [MINDTRACE_LOGGER]
 USE_STRUCTLOG = True
@@ -248,6 +252,7 @@ class TestMindtraceModels:
             STRUCT_LOGGER_DIR="/test/structlog",
             CLUSTER_REGISTRY_DIR="/test/cluster",
             SERVER_PIDS_DIR="/test/pids",
+            ORCHESTRATOR_LOCAL_CLIENT_DIR="/test/orchestrator",
         )
         assert model.ROOT == "/test/root"
         assert model.TEMP_DIR == "/test/temp"
@@ -256,6 +261,7 @@ class TestMindtraceModels:
         assert model.STRUCT_LOGGER_DIR == "/test/structlog"
         assert model.CLUSTER_REGISTRY_DIR == "/test/cluster"
         assert model.SERVER_PIDS_DIR == "/test/pids"
+        assert model.ORCHESTRATOR_LOCAL_CLIENT_DIR == "/test/orchestrator"
 
     def test_mindtrace_models_validation(self):
         """Test that Mindtrace models validate correctly."""

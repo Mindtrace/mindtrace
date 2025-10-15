@@ -43,7 +43,7 @@ class LocalClient(OrchestratorBackend):
         self.broker_id = ifnone(broker_id, default="mindtrace.default_broker")
         if backend is None:
             if client_dir is None:
-                client_dir = self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]
+                client_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
             client_dir = Path(client_dir).expanduser().resolve()
             backend = Registry(registry_dir=client_dir)
 
@@ -54,7 +54,7 @@ class LocalClient(OrchestratorBackend):
         if client_dir is not None:
             results_dir = Path(client_dir).expanduser().resolve() / "results"
         else:
-            results_dir = Path(self.config["MINDTRACE_DEFAULT_ORCHESTRATOR_LOCAL_CLIENT_DIR"]).expanduser().resolve() / "results"
+            results_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]).expanduser().resolve() / "results"
         self._job_results: Registry[str, Any] = Registry(registry_dir=results_dir)
 
     @property
