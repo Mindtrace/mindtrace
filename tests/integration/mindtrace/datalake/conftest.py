@@ -1,16 +1,13 @@
 """Configuration and fixtures for datalake integration tests."""
 
 import asyncio
-import os
-import tempfile
 import shutil
+import tempfile
 from typing import Generator
 
 import pytest
-from motor.motor_asyncio import AsyncIOMotorClient
 
 from mindtrace.datalake import Datalake
-
 
 # Test configuration
 MONGO_URL = "mongodb://localhost:27018"
@@ -25,25 +22,6 @@ def event_loop():
     yield loop
     loop.close()
 
-
-# @pytest.fixture(scope="function")
-# async def mongo_client():
-#     """Create a MongoDB client for each test."""
-#     client = AsyncIOMotorClient(MONGO_URL)
-#     try:
-#         yield client
-#     finally:
-#         client.close()
-
-
-# @pytest.fixture(scope="function")
-# async def test_db(mongo_client):
-#     """Create a test database and clean it up after the test."""
-#     db = mongo_client[MONGO_DB]
-#     try:
-#         yield db
-#     finally:
-#         await mongo_client.drop_database(MONGO_DB)
 
 
 @pytest.fixture(scope="function")
@@ -63,13 +41,13 @@ async def datalake():
     datalake_instance = Datalake(MONGO_URL, MONGO_DB)
     await datalake_instance.initialize()
     yield datalake_instance
-    
+
 
 @pytest.fixture(scope="session", autouse=True)
 def suppress_pymongo_logs():
     """Suppress PyMongo debug logging during tests."""
     import logging
-    
+
     # Suppress all PyMongo related loggers
     loggers_to_suppress = [
         "pymongo",
