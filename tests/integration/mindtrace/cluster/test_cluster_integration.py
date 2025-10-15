@@ -360,7 +360,9 @@ def test_register_job_schema_to_worker_type():
             cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
             # Submit a job - it should be processed automatically
-            echo_job_schema = JobSchema(name="manual_registration_echo", input_schema=EchoInput, output_schema=EchoOutput)
+            echo_job_schema = JobSchema(
+                name="manual_registration_echo", input_schema=EchoInput, output_schema=EchoOutput
+            )
             job = job_from_schema(echo_job_schema, input_data={"message": "Manual registration test!"})
             result = cluster_cm.submit_job(job)
 
@@ -857,7 +859,9 @@ def test_query_worker_status_multiple_workers():
         assert worker2_status.status == WorkerStatusEnum.IDLE.value
 
         # Submit jobs to both workers
-        echo_job_schema = JobSchema(name="multiple_workers_status_echo", input_schema=EchoInput, output_schema=EchoOutput)
+        echo_job_schema = JobSchema(
+            name="multiple_workers_status_echo", input_schema=EchoInput, output_schema=EchoOutput
+        )
         job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!", "delay": 2})
         job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!", "delay": 2})
 

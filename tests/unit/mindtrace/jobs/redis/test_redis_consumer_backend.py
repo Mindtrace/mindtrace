@@ -128,9 +128,11 @@ def test_receive_message_uses_get_and_returns_dict(backend):
 
 def test_receive_message_unsupported_queue_type_returns_none(backend):
     backend, mock_conn = backend
+
     # Queue instance without get/pop attributes
     class Unsupported:
         pass
+
     mock_conn.queues = {"q": Unsupported()}
     mock_conn._local_lock = MagicMock().__enter__.return_value
     assert backend.receive_message("q") is None
@@ -161,7 +163,7 @@ def test_consume_finally_logs_info(backend):
     backend.receive_message = MagicMock(side_effect=KeyboardInterrupt)
     backend.logger = MagicMock()
     backend.consume(num_messages=1, block=True)
-    backend.logger.info.assert_called() 
+    backend.logger.info.assert_called()
 
 
 def test_consume_no_queues_returns_immediately(backend):
@@ -174,12 +176,14 @@ def test_consume_no_queues_returns_immediately(backend):
 
 def test_receive_message_general_exception_returns_none(backend):
     backend, mock_conn = backend
+
     class Bad:
         def pop(self, *a, **k):
             raise RuntimeError("boom")
+
     mock_conn.queues = {"q": Bad()}
     mock_conn._local_lock = MagicMock().__enter__.return_value
-    assert backend.receive_message("q") is None 
+    assert backend.receive_message("q") is None
 
 
 def test_consume_logs_when_processing_and_increments(backend):
@@ -199,7 +203,7 @@ def test_consume_until_empty_info_log_message(backend):
     backend.consume = MagicMock()
     backend.logger = MagicMock()
     backend.consume_until_empty(block=False)
-    backend.logger.info.assert_called_with("Stopped consuming messages from queues: ['q'] (queues empty).") 
+    backend.logger.info.assert_called_with("Stopped consuming messages from queues: ['q'] (queues empty).")
 
 
 def test_consume_normalizes_string_queues_and_handles_keyboardinterrupt(backend):
@@ -237,4 +241,4 @@ def test_receive_message_get_raises_empty_returns_none(backend):
     fake_queue.get.side_effect = Empty
     mock_conn.queues = {"q": fake_queue}
     mock_conn._local_lock = MagicMock().__enter__.return_value
-    assert backend.receive_message("q") is None 
+    assert backend.receive_message("q") is None

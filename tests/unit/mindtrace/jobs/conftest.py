@@ -1,13 +1,12 @@
-from datetime import datetime
-from pathlib import Path
 import tempfile
 import time
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.jobs import Consumer, Job, JobSchema, job_from_schema
-from mindtrace.jobs import LocalClient
+from mindtrace.jobs import Consumer, Job, JobSchema, LocalClient, job_from_schema
 from mindtrace.registry import Registry
 
 

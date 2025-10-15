@@ -5,7 +5,6 @@ These tests aim to evaluate LocalClient under heavy load: sequential throughput,
 concurrent publish/receive, mixed operations, and DLQ/misc paths where sensible.
 """
 
-import json
 import logging
 import sys
 import threading
@@ -19,8 +18,6 @@ import pytest
 from tqdm import tqdm
 
 from mindtrace.jobs.local.client import LocalClient
-from mindtrace.registry import Registry
-
 
 # Reduce logging noise in stress runs
 logging.getLogger("mindtrace.jobs").setLevel(logging.WARNING)
@@ -41,15 +38,15 @@ class TestLocalClientStress:
 
     @pytest.fixture
     def queue_name(self):
-        return f"stress-fifo"
+        return "stress-fifo"
 
     @pytest.fixture
     def priority_queue_name(self):
-        return f"stress-priority"
+        return "stress-priority"
 
     @pytest.fixture
     def stack_name(self):
-        return f"stress-stack"
+        return "stress-stack"
 
     @pytest.mark.slow
     def test_sequential_publish_receive_throughput(self, client: LocalClient, queue_name: str):
@@ -67,7 +64,7 @@ class TestLocalClientStress:
                 try:
                     client.publish(queue_name, msg)
                     publish_times.append(time.time() - t0)
-                except Exception as e:
+                except Exception:
                     failures += 1
                 pbar.update(1)
 
@@ -219,4 +216,4 @@ class TestLocalClientStress:
         with ThreadPoolExecutor(max_workers=20) as pool:
             for j in range(num_jobs):
                 pool.submit(setter_getter, j)
-        assert successes == num_jobs 
+        assert successes == num_jobs

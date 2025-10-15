@@ -61,4 +61,4 @@ def test_qsize_and_empty(mock_redis):
     assert queue.qsize() == 3
     assert not queue.empty()
     mock_redis.llen.return_value = 0
-    assert queue.empty() 
+    assert queue.empty()

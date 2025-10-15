@@ -21,11 +21,7 @@ class SampleJobOutput(BaseModel):
 
 def create_test_job_local(name: str = "test_job") -> Job:
     test_input = SampleJobInput()
-    schema = JobSchema(
-        name=f"{name}-schema", 
-        input_schema=SampleJobInput, 
-        output_schema=SampleJobOutput
-    )
+    schema = JobSchema(name=f"{name}-schema", input_schema=SampleJobInput, output_schema=SampleJobOutput)
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
     job.name = name

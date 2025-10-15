@@ -25,4 +25,4 @@ def temp_local_client():
         backend.register_materializer(LocalStack, StackArchiver)
 
         client = LocalClient(broker_id=f"test_broker_{int(time.time())}", backend=backend)
-        yield client 
+        yield client

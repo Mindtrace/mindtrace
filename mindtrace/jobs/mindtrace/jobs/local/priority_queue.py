@@ -38,7 +38,7 @@ class LocalPriorityQueue:
         items = []
         # Create a temporary queue to preserve order
         temp_queue = queue.PriorityQueue()
-        
+
         # Extract all items from the original queue
         while not self.priority_queue.empty():
             neg_priority, item = self.priority_queue.get()
@@ -46,11 +46,11 @@ class LocalPriorityQueue:
             priority = -neg_priority
             items.append({"item": item, "priority": priority})
             temp_queue.put((neg_priority, item))
-        
+
         # Restore the original queue
         while not temp_queue.empty():
             self.priority_queue.put(temp_queue.get())
-        
+
         return {"items": items}
 
     @classmethod

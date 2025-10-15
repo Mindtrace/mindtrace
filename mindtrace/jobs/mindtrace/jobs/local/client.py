@@ -1,8 +1,8 @@
 import json
-from pathlib import Path
 import threading
-from typing import TYPE_CHECKING, Any, Optional
 import uuid
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pydantic
 
@@ -12,10 +12,12 @@ from mindtrace.jobs.local.consumer_backend import LocalConsumerBackend
 from mindtrace.jobs.local.fifo_queue import LocalQueue
 from mindtrace.jobs.local.priority_queue import LocalPriorityQueue
 from mindtrace.jobs.local.stack import LocalStack
-from mindtrace.registry import LocalRegistryBackend, Registry, RegistryBackend
+from mindtrace.registry import Registry
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.consumers.consumer import Consumer
+
+LocalJobQueue = Union[LocalQueue, LocalStack, LocalPriorityQueue]
 
 
 class LocalClient(OrchestratorBackend):
@@ -26,9 +28,9 @@ class LocalClient(OrchestratorBackend):
     """
 
     def __init__(
-        self, 
+        self,
         client_dir: str | Path | None = None,
-        broker_id: str | None = None, 
+        broker_id: str | None = None,
         backend: Registry | None = None,
     ):
         """
@@ -47,14 +49,15 @@ class LocalClient(OrchestratorBackend):
             client_dir = Path(client_dir).expanduser().resolve()
             backend = Registry(registry_dir=client_dir)
 
-        self.queues: Registry[str, "Queue"] = backend
+        self.queues: Registry[str, LocalJobQueue] = backend
         self._lock = threading.Lock()
-        
+
         # Co-locate job results with the selected client directory when available
         if client_dir is not None:
             results_dir = Path(client_dir).expanduser().resolve() / "results"
         else:
-            results_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]).expanduser().resolve() / "results"
+            results_dir = self.config["MINDTRACE_DIR_PATHS"]["ORCHESTRATOR_LOCAL_CLIENT_DIR"]
+            results_dir = Path(results_dir).expanduser().resolve() / "results"
         self._job_results: Registry[str, Any] = Registry(registry_dir=results_dir)
 
     @property

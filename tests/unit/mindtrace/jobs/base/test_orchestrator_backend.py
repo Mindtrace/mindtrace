@@ -74,9 +74,7 @@ class TestOrchestratorBackend:
             def count_queue_messages(self, queue_name: str, **kwargs):
                 super().count_queue_messages(queue_name, **kwargs)
 
-            def move_to_dlq(
-                self, source_queue: str, dlq_name: str, message, error_details: str, **kwargs
-            ):
+            def move_to_dlq(self, source_queue: str, dlq_name: str, message, error_details: str, **kwargs):
                 super().move_to_dlq(source_queue, dlq_name, message, error_details, **kwargs)
 
         orchestrator = PartialOrchestrator()

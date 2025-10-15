@@ -36,17 +36,17 @@ class LocalQueue:
         items = []
         # Create a temporary queue to preserve order
         temp_queue = queue.Queue()
-        
+
         # Extract all items from the original queue
         while not self.queue.empty():
             item = self.queue.get()
             items.append(item)
             temp_queue.put(item)
-        
+
         # Restore the original queue
         while not temp_queue.empty():
             self.queue.put(temp_queue.get())
-        
+
         return {"items": items}
 
     @classmethod

@@ -52,7 +52,7 @@ class Registry(Mindtrace):
         # Display the registry contents
         print(registry)
 
-                          Registry at ~/.cache/mindtrace/my_registry          
+                          Registry at ~/.cache/mindtrace/my_registry
         ┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         ┃ Object     ┃ Class          ┃ Value         ┃ Metadata                      ┃
         ┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -109,7 +109,7 @@ class Registry(Mindtrace):
 
         print(registry.__str__(latest_only=False))  # prints all versions
 
-                    ~/.cache/mindtrace/my_registry     
+                    ~/.cache/mindtrace/my_registry
         ┏━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━┓
         ┃ Object   ┃ Version ┃ Class        ┃ Value ┃ Metadata ┃
         ┡━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━┩
@@ -133,7 +133,7 @@ class Registry(Mindtrace):
 
         from mindtrace.registry import Archiver
         from zenml.materializers.base_materializer import BaseMaterializer
-        
+
         class MyObject:
             def __init__(self, name: str, age: int):
                 self.name = name
@@ -162,15 +162,16 @@ class Registry(Mindtrace):
 
 
         # Put the above into a single file, then when your class is imported it will be compatible with the Registry
-        
+
         from mindtrace.registry import Registry
         from my_lib import MyObject  # Registers your custom Archiver to the Registry class here
-        
+
         registry = Registry()
         my_obj = MyObject(name="Edward", age=42)
-        
+
         registry["my_obj"] = my_obj
     """
+
     # Class-level default materializer registry and lock
     _default_materializers = {}
     _materializer_lock = threading.Lock()
@@ -512,9 +513,7 @@ class Registry(Mindtrace):
                 result[obj_name] = {}
                 for ver in self.list_versions(obj_name):
                     try:
-                        lock_context = (
-                            self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
-                        )
+                        lock_context = self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
                         with lock_context:
                             meta = self.backend.fetch_metadata(obj_name, ver)
                             result[obj_name][ver] = meta
@@ -565,7 +564,7 @@ class Registry(Mindtrace):
             materializer_class: Materializer class to register.
         """
         if isinstance(object_class, type):
-            object_class = f"{object_class.__module__}.{object_class.__name__}" 
+            object_class = f"{object_class.__module__}.{object_class.__name__}"
         if isinstance(materializer_class, type):
             materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
 

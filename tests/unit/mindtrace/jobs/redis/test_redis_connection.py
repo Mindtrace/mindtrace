@@ -205,7 +205,7 @@ def test_subscribe_to_events_priority_and_stack(monkeypatch):
         with patch("threading.Thread"):
             conn._subscribe_to_events()
         assert "qp" in conn.queues
-        assert "qs" in conn.queues 
+        assert "qs" in conn.queues
 
 
 def test_subscribe_to_events_unknown_type_and_delete_removal(monkeypatch):
@@ -237,7 +237,7 @@ def test_load_queue_metadata_handles_str_and_bytes(monkeypatch):
         ):
             conn._load_queue_metadata()
             assert "qb" in conn.queues
-            assert "qs" in conn.queues 
+            assert "qs" in conn.queues
 
 
 def test_connect_exhausted_logs_then_raises(monkeypatch):
@@ -251,7 +251,7 @@ def test_connect_exhausted_logs_then_raises(monkeypatch):
             with pytest.raises(redis.ConnectionError):
                 conn.connect(max_tries=1)
             # After exhausting retries, a debug log is emitted before raising
-            conn.logger.debug.assert_called() 
+            conn.logger.debug.assert_called()
 
 
 def test_connect_ping_false_triggers_else_branch(monkeypatch):
@@ -261,7 +261,7 @@ def test_connect_ping_false_triggers_else_branch(monkeypatch):
         mock_redis_cls.return_value = instance
         # __init__ calls connect(max_tries=1) and catches ConnectionError
         conn = RedisConnection(host="localhost", port=6379, db=0)
-        assert conn.connection is instance 
+        assert conn.connection is instance
 
 
 def test_connect_ping_failure(mock_redis):
