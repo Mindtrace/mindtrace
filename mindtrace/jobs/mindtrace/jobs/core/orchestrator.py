@@ -21,8 +21,8 @@ class Orchestrator(Mindtrace):
         """Initialize the orchestrator.
 
         Args:
-            orchestrator_dir: Optional directory to initialize a default local backend.
             backend: Optional orchestrator backend. When provided, it takes precedence over `orchestrator_dir`.
+            orchestrator_dir: Optional directory to initialize a default local backend.
         """
         super().__init__()
 
