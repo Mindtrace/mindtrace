@@ -97,7 +97,7 @@ Performance Notes:
 import asyncio
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
     PLCConnectionError,
@@ -171,7 +171,6 @@ class PLCManager(Mindtrace):
 
         self.plcs: Dict[str, BasePLC] = {}
         self.config = get_hardware_config()
-        self.logger = self.logger
 
         self.logger.info("PLC manager initialized")
 
