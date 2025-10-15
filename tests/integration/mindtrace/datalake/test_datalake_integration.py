@@ -144,6 +144,7 @@ class TestDatalakeIntegration:
 
         # Test direct derivation queries
         direct_children = await datalake.get_directly_derived_data(parent_datum.id)
+        assert child_datum.id is not None
         assert child_datum.id in direct_children
 
         direct_grandchildren = await datalake.get_directly_derived_data(child_datum.id)

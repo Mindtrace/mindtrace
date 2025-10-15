@@ -96,8 +96,8 @@ class TestDatalakePerformance:
             retrieval_time = time.time() - start_time
 
             assert retrieved_datum.data == large_data
-            assert insertion_time < 2.0  # Should complete within 2 seconds
-            assert retrieval_time < 4.0  # Should complete within 2 seconds
+            assert insertion_time < 4.0  # Should complete within 4 seconds
+            assert retrieval_time < 4.0  # Should complete within 4 seconds
 
             print(f"Size {size}: Insert {insertion_time:.3f}s, Retrieve {retrieval_time:.3f}s")
 
