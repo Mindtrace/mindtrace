@@ -1,22 +1,20 @@
 """Unit tests for the Datalake class with mocked dependencies."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
+import pytest
 from beanie import PydanticObjectId
 
+from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import Datum
-from mindtrace.database.core.exceptions import DocumentNotFoundError
 
 
-def create_mock_datum(data=None, registry_uri=None, registry_key=None, 
-                     derived_from=None, metadata=None, datum_id=None):
+def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
         datum_id = "507f1f77bcf86cd799439011"
-    
+
     mock_datum = MagicMock(spec=Datum)
     mock_datum.data = data
     mock_datum.registry_uri = registry_uri
@@ -53,6 +51,7 @@ class TestDatalakeUnit:
     @pytest.fixture
     def datalake(self, mock_database, mock_registry):
         """Create Datalake instance with mocked database and patched Datum model."""
+
         class _MockDatum:
             def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None):
                 self.id = PydanticObjectId()
@@ -62,9 +61,9 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
 
-        db_patcher = patch('mindtrace.datalake.datalake.MongoMindtraceODMBackend', return_value=mock_database)
-        registry_patcher = patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry)
-        datum_patcher = patch('mindtrace.datalake.datalake.Datum', _MockDatum)
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
+        datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
         datum_patcher.start()
         registry_patcher.start()
@@ -95,16 +94,13 @@ class TestDatalakeUnit:
         """Test adding datum with database storage."""
         test_data = {"test": "data"}
         test_metadata = {"source": "unit_test"}
-        
+
         # Mock the inserted datum
-        mock_datum = create_mock_datum(
-            data=test_data,
-            metadata=test_metadata
-        )
+        mock_datum = create_mock_datum(data=test_data, metadata=test_metadata)
         mock_database.insert.return_value = mock_datum
-        
+
         result = await datalake.add_datum(test_data, test_metadata)
-        
+
         # Verify database insert was called with correct datum
         mock_database.insert.assert_called_once()
         inserted_datum = mock_database.insert.call_args[0][0]
@@ -113,7 +109,7 @@ class TestDatalakeUnit:
         assert inserted_datum.registry_uri is None
         assert inserted_datum.registry_key is None
         assert inserted_datum.derived_from is None
-        
+
         assert result == mock_datum
 
     @pytest.mark.asyncio
@@ -122,25 +118,21 @@ class TestDatalakeUnit:
         test_data = {"large": "data"}
         test_metadata = {"source": "registry_test"}
         registry_uri = f"{(tmp_path / 'registry').as_posix()}"
-        
+
         # Mock the inserted datum
         mock_datum = create_mock_datum(
-            data=None,
-            registry_uri=registry_uri,
-            registry_key="test_key",
-            metadata=test_metadata
+            data=None, registry_uri=registry_uri, registry_key="test_key", metadata=test_metadata
         )
         mock_database.insert.return_value = mock_datum
-        
-        with patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry):
-            result = await datalake.add_datum(test_data, test_metadata, registry_uri=registry_uri)
-        
+
+        result = await datalake.add_datum(test_data, test_metadata, registry_uri=registry_uri)
+
         # Verify registry save was called
         mock_registry.save.assert_called_once()
         save_args, save_kwargs = mock_registry.save.call_args
         assert save_args[1] == test_data  # data
         assert save_kwargs.get("metadata") == test_metadata  # metadata
-        
+
         # Verify database insert was called with correct datum
         mock_database.insert.assert_called_once()
         inserted_datum = mock_database.insert.call_args[0][0]
@@ -148,7 +140,7 @@ class TestDatalakeUnit:
         assert inserted_datum.registry_uri == registry_uri
         assert inserted_datum.registry_key is not None
         assert inserted_datum.metadata == test_metadata
-        
+
         assert result == mock_datum
 
     @pytest.mark.asyncio
@@ -157,20 +149,16 @@ class TestDatalakeUnit:
         test_data = {"derived": "data"}
         test_metadata = {"source": "derivation_test"}
         parent_id = PydanticObjectId()
-        
-        mock_datum = create_mock_datum(
-            data=test_data,
-            metadata=test_metadata,
-            derived_from=parent_id
-        )
+
+        mock_datum = create_mock_datum(data=test_data, metadata=test_metadata, derived_from=parent_id)
         mock_database.insert.return_value = mock_datum
-        
+
         result = await datalake.add_datum(test_data, test_metadata, derived_from=parent_id)
-        
+
         # Verify database insert was called with correct datum
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.derived_from == parent_id
-        
+
         assert result == mock_datum
 
     @pytest.mark.asyncio
@@ -178,16 +166,12 @@ class TestDatalakeUnit:
         """Test getting datum from database storage."""
         datum_id = PydanticObjectId()
         test_data = {"test": "data"}
-        
-        mock_datum = create_mock_datum(
-            data=test_data,
-            metadata={"source": "test"},
-            datum_id=datum_id
-        )
+
+        mock_datum = create_mock_datum(data=test_data, metadata={"source": "test"}, datum_id=datum_id)
         mock_database.get.return_value = mock_datum
-        
+
         result = await datalake.get_datum(datum_id)
-        
+
         mock_database.get.assert_called_once_with(datum_id)
         assert result == mock_datum
         assert result.data == test_data
@@ -199,20 +183,19 @@ class TestDatalakeUnit:
         registry_uri = f"{(tmp_path / 'registry').as_posix()}"
         registry_key = "test_key"
         test_data = {"large": "data"}
-        
+
         mock_datum = create_mock_datum(
             data=None,
             registry_uri=registry_uri,
             registry_key=registry_key,
             metadata={"source": "registry"},
-            datum_id=datum_id
+            datum_id=datum_id,
         )
         mock_database.get.return_value = mock_datum
         mock_registry.load.return_value = test_data
-        
-        with patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry):
-            result = await datalake.get_datum(datum_id)
-        
+
+        result = await datalake.get_datum(datum_id)
+
         mock_database.get.assert_called_once_with(datum_id)
         mock_registry.load.assert_called_once_with(registry_key)
         assert result.data == test_data
@@ -223,7 +206,7 @@ class TestDatalakeUnit:
         """Test getting nonexistent datum."""
         datum_id = PydanticObjectId()
         mock_database.get.side_effect = DocumentNotFoundError("Not found")
-        
+
         with pytest.raises(DocumentNotFoundError):
             await datalake.get_datum(datum_id)
 
@@ -231,15 +214,12 @@ class TestDatalakeUnit:
     async def test_get_data(self, datalake, mock_database):
         """Test getting multiple data."""
         datum_ids = [PydanticObjectId() for _ in range(3)]
-        mock_data = [
-            create_mock_datum(data={"test": i}, metadata={}, datum_id=datum_ids[i])
-            for i in range(3)
-        ]
-        
+        mock_data = [create_mock_datum(data={"test": i}, metadata={}, datum_id=datum_ids[i]) for i in range(3)]
+
         # Mock get_datum calls
-        with patch.object(datalake, 'get_datum', side_effect=mock_data):
+        with patch.object(datalake, "get_datum", side_effect=mock_data):
             result = await datalake.get_data(datum_ids)
-        
+
         assert len(result) == 3
         for i, datum in enumerate(result):
             assert datum.data == {"test": i}
@@ -250,15 +230,15 @@ class TestDatalakeUnit:
         """Test getting directly derived data."""
         parent_id = PydanticObjectId()
         child_ids = [PydanticObjectId() for _ in range(2)]
-        
+
         mock_children = [
             create_mock_datum(data={"child": i}, metadata={}, derived_from=parent_id, datum_id=child_ids[i])
             for i in range(2)
         ]
         mock_database.find.return_value = mock_children
-        
+
         result = await datalake.get_directly_derived_data(parent_id)
-        
+
         mock_database.find.assert_called_once()
         assert result == child_ids
 
@@ -270,22 +250,22 @@ class TestDatalakeUnit:
         child1_id = PydanticObjectId()
         child2_id = PydanticObjectId()
         grandchild_id = PydanticObjectId()
-        
+
         # Mock get_directly_derived_data calls
-        with patch.object(datalake, 'get_directly_derived_data') as mock_get_direct:
+        with patch.object(datalake, "get_directly_derived_data") as mock_get_direct:
             mock_get_direct.side_effect = [
                 [child1_id, child2_id],  # root -> [child1, child2]
-                [grandchild_id],         # child1 -> [grandchild]
-                [],                      # child2 -> []
-                []                       # grandchild -> []
+                [grandchild_id],  # child1 -> [grandchild]
+                [],  # child2 -> []
+                [],  # grandchild -> []
             ]
-            
+
             result = await datalake.get_indirectly_derived_data(root_id)
-        
+
         # Should return all nodes in the tree
         expected_ids = [root_id, child1_id, child2_id, grandchild_id]
         assert set(result) == set(expected_ids)
-        
+
         # Verify the breadth-first search pattern
         assert mock_get_direct.call_count == 4
 
@@ -293,15 +273,13 @@ class TestDatalakeUnit:
     async def test_registry_caching(self, datalake, mock_database, mock_registry, tmp_path):
         """Test that registry instances are cached and reused."""
         registry_uri = f"{(tmp_path / 'registry').as_posix()}"
-        
+
         # First call should create registry
-        with patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry):
-            await datalake.add_datum({"test": "data1"}, {}, registry_uri=registry_uri)
-        
+        await datalake.add_datum({"test": "data1"}, {}, registry_uri=registry_uri)
+
         # Second call should reuse cached registry
-        with patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry):
-            await datalake.add_datum({"test": "data2"}, {}, registry_uri=registry_uri)
-        
+        await datalake.add_datum({"test": "data2"}, {}, registry_uri=registry_uri)
+
         # Registry should be cached
         assert registry_uri in datalake.registries
         assert datalake.registries[registry_uri] == mock_registry
@@ -311,20 +289,15 @@ class TestDatalakeUnit:
         """Test registry caching during datum retrieval."""
         datum_id = PydanticObjectId()
         registry_uri = f"{(tmp_path / 'registry').as_posix()}"
-        
+
         mock_datum = create_mock_datum(
-            data=None,
-            registry_uri=registry_uri,
-            registry_key="test_key",
-            metadata={},
-            datum_id=datum_id
+            data=None, registry_uri=registry_uri, registry_key="test_key", metadata={}, datum_id=datum_id
         )
         mock_database.get.return_value = mock_datum
         mock_registry.load.return_value = {"test": "data"}
-        
-        with patch('mindtrace.datalake.datalake.Registry', return_value=mock_registry):
-            await datalake.get_datum(datum_id)
-        
+
+        await datalake.get_datum(datum_id)
+
         # Registry should be cached
         assert registry_uri in datalake.registries
         assert datalake.registries[registry_uri] == mock_registry
@@ -333,12 +306,12 @@ class TestDatalakeUnit:
     async def test_empty_metadata_default(self, datalake, mock_database):
         """Test that empty metadata defaults to empty dict."""
         test_data = {"test": "data"}
-        
+
         mock_datum = create_mock_datum(data=test_data, metadata={})
         mock_database.insert.return_value = mock_datum
-        
+
         await datalake.add_datum(test_data, {})
-        
+
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.metadata == {}
 
@@ -346,17 +319,12 @@ class TestDatalakeUnit:
     async def test_complex_metadata(self, datalake, mock_database):
         """Test handling of complex metadata structures."""
         test_data = {"test": "data"}
-        complex_metadata = {
-            "nested": {"deep": {"value": 123}},
-            "list": [1, 2, 3],
-            "boolean": True,
-            "null": None
-        }
-        
+        complex_metadata = {"nested": {"deep": {"value": 123}}, "list": [1, 2, 3], "boolean": True, "null": None}
+
         mock_datum = create_mock_datum(data=test_data, metadata=complex_metadata)
         mock_database.insert.return_value = mock_datum
-        
+
         await datalake.add_datum(test_data, complex_metadata)
-        
+
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.metadata == complex_metadata
