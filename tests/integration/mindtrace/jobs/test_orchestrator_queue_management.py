@@ -14,7 +14,7 @@ class TestOrchestratorQueueManagement:
         client = LocalClient()
         orchestrator = Orchestrator(backend=client)
         queue_name = unique_queue_name("local-queue-mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
@@ -37,7 +37,7 @@ class TestOrchestratorQueueManagement:
         client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=client)
         queue_name = unique_queue_name("redis_queue_mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
@@ -60,7 +60,7 @@ class TestOrchestratorQueueManagement:
         client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=client)
         queue_name = unique_queue_name("rabbitmq_queue_mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
