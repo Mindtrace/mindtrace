@@ -6,14 +6,16 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
 
+from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
+
 
 @pytest.mark.integration
 def test_start_worker_from_git():
     """Integration test for starting a worker from a git repository."""
     # Use different ports to avoid conflicts with other tests
-    cluster_manager = ClusterManager.launch(host="localhost", port=8200, wait_for_launch=True, timeout=15)
+    cluster_manager = ClusterManager.launch(host="localhost", port=8212, wait_for_launch=True, timeout=15)
     node = Node.launch(
-        host="localhost", port=8201, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
+        host="localhost", port=8213, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
     )
 
     try:
@@ -24,13 +26,13 @@ def test_start_worker_from_git():
             worker_name="echoworker",
             worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
             worker_params={},
-            git_repo_url="https://github.com/Mindtrace/mindtrace.git",
-            git_branch="feature/cluster/git-and-docker",
+            git_repo_url=GIT_REPO_URL,
+            git_branch=GIT_REPO_BRANCH,
             job_type="echo",
         )
 
         # Launch worker on the node
-        worker_url = "http://localhost:8202"
+        worker_url = "http://localhost:8214"
         cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
         # Submit a job and verify it gets processed

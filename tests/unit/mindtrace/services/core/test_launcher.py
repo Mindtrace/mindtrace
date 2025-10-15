@@ -28,7 +28,7 @@ class TestLauncher:
         """Create mock server object."""
         server = Mock()
         server.unique_name = "test_server"
-        server.config = {"MINDTRACE_LOGGER_DIR": "/tmp/logs"}
+        server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
         server.app = Mock()  # Mock WSGI/ASGI app
         return server
 
@@ -384,7 +384,7 @@ class TestLauncherIntegration:
         """Test complex JSON init parameters parsing."""
         complex_params = {
             "database_url": "postgresql://user:pass@localhost/db",
-            "redis_config": {"host": "localhost", "port": 6379, "db": 0},
+            "redis_config": {"host": "localhost", "port": 6381, "db": 0},
             "feature_flags": ["flag1", "flag2"],
             "timeout": 30.5,
             "debug": True,
@@ -400,7 +400,7 @@ class TestLauncherIntegration:
 
         mock_server = Mock()
         mock_server.unique_name = "test_server"
-        mock_server.config = {"MINDTRACE_LOGGER_DIR": "/tmp/logs"}
+        mock_server.config = {"MINDTRACE_DIR_PATHS": {"LOGGER_DIR": "/tmp/logs"}}
         mock_server.app = Mock()
         mock_instantiate.return_value = mock_server
 
@@ -411,7 +411,7 @@ class TestLauncherIntegration:
         mock_instantiate.assert_called_once_with(
             "test.Server",
             database_url="postgresql://user:pass@localhost/db",
-            redis_config={"host": "localhost", "port": 6379, "db": 0},
+            redis_config={"host": "localhost", "port": 6381, "db": 0},
             feature_flags=["flag1", "flag2"],
             timeout=30.5,
             debug=True,

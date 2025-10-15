@@ -18,7 +18,7 @@ class TestConsumerIntegration:
     @pytest.mark.redis
     def test_consumer_with_redis_backend(self):
         """Test consumer functionality with Redis backend."""
-        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
 
         redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
@@ -41,7 +41,7 @@ class TestConsumerIntegration:
     @pytest.mark.rabbitmq
     def test_consumer_with_rabbitmq_backend(self):
         """Test consumer functionality with RabbitMQ backend."""
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(
@@ -88,7 +88,7 @@ class TestConsumerIntegration:
     @pytest.mark.redis
     def test_consumer_with_redis_backend_via_backend_args(self):
         """Test consumer functionality with Redis backend."""
-        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
 
         redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
@@ -114,7 +114,7 @@ class TestConsumerIntegration:
     @pytest.mark.rabbitmq
     def test_consumer_with_rabbitmq_backend_via_backend_args(self):
         """Test consumer functionality with RabbitMQ backend."""
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(
@@ -154,7 +154,7 @@ class TestConsumerIntegration:
     @pytest.mark.redis
     def test_fifo_order_redis_backend(self):
         """Test that Redis backend maintains FIFO order."""
-        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
         queue_name = f"fifo_redis_test_{int(time.time())}"
         schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
@@ -178,7 +178,7 @@ class TestConsumerIntegration:
     @pytest.mark.rabbitmq
     def test_fifo_order_rabbitmq_backend(self):
         """Test that RabbitMQ backend maintains FIFO order."""
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue_name = f"fifo_rabbitmq_test_{int(time.time())}"
         schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
@@ -224,7 +224,7 @@ class TestConsumerIntegration:
 
     @pytest.mark.redis
     def test_redis_queue_isolation(self, unique_queue_name):
-        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
         queue1 = unique_queue_name("redis_queue1")
         queue2 = unique_queue_name("redis_queue2")
@@ -254,7 +254,7 @@ class TestConsumerIntegration:
 
     @pytest.mark.rabbitmq
     def test_rabbitmq_queue_isolation(self, unique_queue_name):
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue1 = unique_queue_name("rabbitmq_queue1")
         queue2 = unique_queue_name("rabbitmq_queue2")
@@ -313,7 +313,7 @@ class TestConsumerIntegration:
 
     @pytest.mark.redis
     def test_redis_consume_until_empty_and_zero(self, unique_queue_name):
-        redis_client = RedisClient(host="localhost", port=6379, db=0)
+        redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
         queue = unique_queue_name("redis_consume_test")
         schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
@@ -328,7 +328,7 @@ class TestConsumerIntegration:
 
     @pytest.mark.rabbitmq
     def test_rabbitmq_consume_until_empty_and_zero(self, unique_queue_name):
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue = unique_queue_name("rabbitmq_consume_test")
         schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
@@ -358,7 +358,7 @@ class TestConsumerIntegration:
     @pytest.mark.rabbitmq
     def test_rabbitmq_consume_even_if_closed(self):
         """Test consumer functionality with RabbitMQ backend."""
-        rabbitmq_client = RabbitMQClient(host="localhost", port=5672, username="user", password="password")
+        rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(

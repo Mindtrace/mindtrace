@@ -1,13 +1,12 @@
-"""Populate the model registry with Ultralytics YOLO, YOLOE, and SAM models.
-"""
+"""Populate the model registry with Ultralytics YOLO, YOLOE, and SAM models."""
+
 import argparse
 import os
-from PIL import Image
 import tempfile
 
-import ultralytics
+from PIL import Image
 
-from mindtrace.registry import Registry, MinioRegistryBackend
+from mindtrace.registry import MinioRegistryBackend, Registry
 
 EXAMPLES = """
 Examples:
@@ -74,18 +73,7 @@ YOLOE_MODELS = [
     "yoloe-11",
 ]
 
-SAM_MODELS = [
-    "sam_b", 
-    "sam_l", 
-    "sam2_t", 
-    "sam2_s", 
-    "sam2_b", 
-    "sam2_l", 
-    "sam2.1_t", 
-    "sam2.1_s", 
-    "sam2.1_b", 
-    "sam2.1_l"
-]
+SAM_MODELS = ["sam_b", "sam_l", "sam2_t", "sam2_s", "sam2_b", "sam2_l", "sam2.1_t", "sam2.1_s", "sam2.1_b", "sam2.1_l"]
 
 
 def main():
@@ -138,11 +126,11 @@ def main():
         "--cache-models",
         action="store_true",
         help="Downloaded models will not be discarded after the script is run, but kept in the "
-            "'~/.cache/mindtrace/models' cache directory.",
+        "'~/.cache/mindtrace/models' cache directory.",
     )
     args = parser.parse_args()
 
-    registry = init_registry(args)
+    registry = init_registry(args, parser)
 
     with tempfile.TemporaryDirectory() as temp_dir:
         if args.cache_models:
@@ -154,7 +142,7 @@ def main():
         register_sam_models(registry, temp_dir)
 
 
-def init_registry(args: argparse.Namespace) -> Registry:
+def init_registry(args: argparse.Namespace, parser: argparse.ArgumentParser) -> Registry:
     if args.backend == "local":
         if not args.registry_path:
             parser.error("--registry-path is required for local backend")
@@ -186,7 +174,7 @@ def init_registry(args: argparse.Namespace) -> Registry:
 
 
 def register_test_image(registry: Registry):
-    print(f"\nRegistering Hopper image as images:hopper")
+    print("\nRegistering Hopper image as images:hopper")
     try:
         image = Image.open("tests/resources/hopper.png")
         registry.save(
@@ -194,7 +182,7 @@ def register_test_image(registry: Registry):
             image,
             metadata={
                 "Description": "Self-portrait of Edward Hopper in a suit and tie.",
-                "Source": "tests/resources/hopper.png"
+                "Source": "tests/resources/hopper.png",
             },
         )
         print("Registered: data:images:hopper")
@@ -204,6 +192,7 @@ def register_test_image(registry: Registry):
 
 def register_yolo_models(registry: Registry, dir_path: str):
     from ultralytics import YOLO
+
     print("\nRegistering YOLO models...")
     for version, variants in YOLO_MODELS.items():
         for size in YOLO_SIZES:
@@ -212,7 +201,7 @@ def register_yolo_models(registry: Registry, dir_path: str):
                 key = f"models:ultralytics:{version}:{size}{suffix}"
                 print(f"Registering {model_filename} as {key} (Task: {task})")
                 try:
-                    reg_key = key.replace("v", "")  # remove the v from the version name, if present
+                    key = key.replace("v", "")  # remove the v from the version name, if present
                     if key not in registry:
                         yolo = YOLO(os.path.join(dir_path, model_filename), task=None)
                         registry.save(key, yolo, metadata={"Task": task})
@@ -223,6 +212,7 @@ def register_yolo_models(registry: Registry, dir_path: str):
 
 def register_yolo_world_models(registry: Registry, dir_path: str):
     from ultralytics import YOLO
+
     print("\nRegistering YOLO-World models...")
     for model in YOLO_WORLD_MODELS:
         model_filename = f"{model}.pt"
@@ -241,6 +231,7 @@ def register_yolo_world_models(registry: Registry, dir_path: str):
 
 def register_yolo_e_models(registry: Registry, dir_path: str):
     from ultralytics import YOLOE
+
     print("\nRegistering YOLO-E models...")
     for model in YOLOE_MODELS:
         for size in YOLOE_SIZES:
@@ -259,10 +250,11 @@ def register_yolo_e_models(registry: Registry, dir_path: str):
 
 def register_sam_models(registry: Registry, dir_path: str):
     from ultralytics import SAM
+
     print("\nRegistering SAM models...")
     for model in SAM_MODELS:
         model_filename = f"{model}.pt"
-        key = f"models:ultralytics:{model.replace("_", ":")}"
+        key = f"models:ultralytics:{model.replace('_', ':')}"
         print(f"Registering {model_filename} as {key} (Task: Segmentation)")
         try:
             if key not in registry:
@@ -272,6 +264,6 @@ def register_sam_models(registry: Registry, dir_path: str):
         except Exception as e:
             print(f"Failed to register {key}: {e}")
 
- 
+
 if __name__ == "__main__":
     main()

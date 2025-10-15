@@ -12,6 +12,18 @@ from mindtrace.core import TaskSchema
 from mindtrace.services import ServerStatus, Service
 
 
+@pytest.fixture(autouse=True)
+def _set_minimal_env(monkeypatch):
+    """Provide minimal env so tests don't need to patch class config."""
+    monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://localhost:8000")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
+    monkeypatch.setenv("MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR", "/tmp/pids")
+    # Reload class-level config each test to pick up env
+    from mindtrace.core import CoreConfig
+
+    Service.config = CoreConfig()
+
+
 class SampleInput(BaseModel):
     message: str
     count: int = 1
@@ -145,11 +157,10 @@ class TestServiceInitialization:
         """Test _server_id_to_pid_file method."""
         test_uuid = UUID("12345678-1234-5678-1234-567812345678")
 
-        with patch.object(Service, "config", {"MINDTRACE_SERVER_PIDS_DIR_PATH": "/tmp/pids"}):
-            pid_file = Service._server_id_to_pid_file(test_uuid)
+        pid_file = Service._server_id_to_pid_file(test_uuid)
 
-            expected = f"/tmp/pids/Service_{test_uuid}_pid.txt"
-            assert pid_file == expected
+        expected = f"/tmp/pids/Service_{test_uuid}_pid.txt"
+        assert pid_file == expected
 
     def test_pid_file_to_server_id(self):
         """Test _pid_file_to_server_id method."""
@@ -276,6 +287,36 @@ class TestServiceProperties:
         assert heartbeat.server_id == service.id
         assert heartbeat.message is not None and "Heartbeat check successful" in heartbeat.message
         assert heartbeat.details is None
+
+    def test_endpoints_func(self):
+        """Test endpoints_func method."""
+        service = SampleService()
+        result = service.endpoints_func()
+
+        assert isinstance(result, dict)
+        assert "endpoints" in result
+        assert isinstance(result["endpoints"], list)
+        assert "test_task" in result["endpoints"]
+        assert "echo" in result["endpoints"]
+
+    def test_status_func(self):
+        """Test status_func method."""
+        service = SampleService()
+        result = service.status_func()
+
+        assert isinstance(result, dict)
+        assert "status" in result
+        assert result["status"] == service.status.value
+
+    def test_heartbeat_func(self):
+        """Test heartbeat_func method."""
+        service = SampleService()
+        result = service.heartbeat_func()
+
+        assert isinstance(result, dict)
+        assert "heartbeat" in result
+        assert isinstance(result["heartbeat"], type(service.heartbeat()))
+        assert result["heartbeat"].status == service.status
 
 
 class TestServiceMCP:
@@ -410,23 +451,30 @@ class TestServiceUrlBuilding:
         assert result == mock_default_url.return_value
         mock_default_url.assert_called_once()
 
-    @patch.object(Service, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"Service": "http://service.example.com:8080"}})
-    def test_default_url_service_specific(self):
-        """Test default_url returns service-specific URL from config."""
-        result = Service.default_url()
+    def test_default_url_service_specific(self, monkeypatch):
+        """Test default_url returns URL from SERVICE when set via env (no config patch)."""
+        monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
+        # Force reload of class-level config to pick up new env
+        from mindtrace.core import CoreConfig
 
+        Service.config = CoreConfig()
+        result = Service.default_url()
         assert str(result) == "http://service.example.com:8080"
 
-    @patch.object(Service, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {"ServerBase": "http://base.example.com:8080"}})
-    def test_default_url_server_base(self):
-        """Test default_url returns ServerBase URL when service-specific not found."""
-        result = Service.default_url()
-
+    @patch.object(Service, "default_url")
+    def test_default_url_server_base(self, mock_default_url):
+        """Test build_url uses default_url when no url/host/port provided (no config patch)."""
+        mock_default_url.return_value = parse_url("http://base.example.com:8080")
+        result = Service.build_url()
         assert str(result) == "http://base.example.com:8080"
 
-    @patch.object(Service, "config", {"MINDTRACE_DEFAULT_HOST_URLS": {}})
-    def test_default_url_fallback(self):
-        """Test default_url returns fallback URL when no config found."""
+    def test_default_url_fallback(self, monkeypatch):
+        """Test default_url returns fallback URL when no config/env found (no config patch)."""
+        # Ensure no env for SERVICE is set; rely on code fallback
+        monkeypatch.delenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", raising=False)
+        from mindtrace.core import CoreConfig
+
+        Service.config = CoreConfig()
         result = Service.default_url()
 
         assert str(result) == "http://localhost:8000"
@@ -449,9 +497,9 @@ class TestServiceMethods:
             # Restore original state
             Service._client_interface = original_interface
 
-    @patch.object(Service, "config", {"MINDTRACE_DEFAULT_LOG_DIR": "/tmp/logs"})
-    def test_default_log_file(self):
-        """Test default_log_file method."""
+    def test_default_log_file(self, monkeypatch):
+        """Test default_log_file method without patching config by setting env."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__LOGGER_DIR", "/tmp/logs")
         result = Service.default_log_file()
 
         expected = "/tmp/logs/Service_logs.txt"
@@ -894,3 +942,290 @@ class TestServiceGlobalEndpointPollution:
         assert "echo" not in service_methods, (
             f"Global pollution detected: Service connection manager has methods: {service_methods}"
         )
+
+
+class TestServiceInterruption:
+    """Test Service interruption handling during launch."""
+
+    def test_connect_with_interrupt_handling_process_exited_cleanly(self):
+        """Test _connect_with_interrupt_handling when process exits cleanly."""
+        mock_process = Mock()
+        mock_process.poll.return_value = 0  # Process has exited
+        mock_process.returncode = 0  # Clean exit
+
+        with pytest.raises(SystemExit, match="Service exited cleanly."):
+            Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+    def test_connect_with_interrupt_handling_process_error_exit(self):
+        """Test _connect_with_interrupt_handling when process exits with error."""
+        mock_process = Mock()
+        mock_process.poll.return_value = 0  # Process has exited
+        mock_process.returncode = 1  # Error exit
+
+        with pytest.raises(RuntimeError, match="Server exited with code 1"):
+            Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+    def test_connect_with_interrupt_handling_process_running(self):
+        """Test _connect_with_interrupt_handling when process is still running."""
+        mock_process = Mock()
+        mock_process.poll.return_value = None  # Process is still running
+
+        with patch.object(Service, "connect") as mock_connect:
+            mock_connection_manager = Mock()
+            mock_connect.return_value = mock_connection_manager
+
+            result = Service._connect_with_interrupt_handling("http://localhost:8000", mock_process, 30)
+
+            assert result == mock_connection_manager
+            mock_connect.assert_called_once_with(url="http://localhost:8000")
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_keyboard_interrupt_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method KeyboardInterrupt during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise KeyboardInterrupt
+            mock_timeout_handler = Mock()
+            mock_timeout_handler.run.side_effect = KeyboardInterrupt("User interrupted")
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with patch("mindtrace.services.core.service.logging.getLogger") as mock_get_logger:
+                        mock_logger = Mock()
+                        mock_get_logger.return_value = mock_logger
+
+                        with pytest.raises(KeyboardInterrupt, match="User interrupted"):
+                            Service.launch(wait_for_launch=True, timeout=30)
+
+                        # Should cleanup the server
+                        mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_system_exit_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method SystemExit during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise SystemExit
+            mock_timeout_handler = Mock()
+            mock_timeout_handler.run.side_effect = SystemExit("Service terminated")
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with patch("mindtrace.services.core.service.logging.getLogger") as mock_get_logger:
+                        mock_logger = Mock()
+                        mock_get_logger.return_value = mock_logger
+
+                        with pytest.raises(SystemExit, match="Service terminated"):
+                            Service.launch(wait_for_launch=True, timeout=30)
+
+                        # Should cleanup the server
+                        mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_general_exception_during_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method general exception during wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to raise a general exception
+            mock_timeout_handler = Mock()
+            test_exception = RuntimeError("Connection timeout")
+            mock_timeout_handler.run.side_effect = test_exception
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                with patch.object(Service, "_cleanup_server") as mock_cleanup:
+                    with pytest.raises(RuntimeError, match="Connection timeout"):
+                        Service.launch(wait_for_launch=True, timeout=30)
+
+                    # Should cleanup the server
+                    mock_cleanup.assert_called_with(test_uuid)
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_successful_wait_for_launch(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method successful wait_for_launch."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Mock the timeout handler to return a connection manager
+            mock_timeout_handler = Mock()
+            mock_connection_manager = Mock()
+            mock_timeout_handler.run.return_value = mock_connection_manager
+
+            with patch("mindtrace.services.core.service.Timeout", return_value=mock_timeout_handler):
+                result = Service.launch(wait_for_launch=True, timeout=30)
+
+                # Should return the connection manager
+                assert result == mock_connection_manager
+                # Should call timeout handler with correct parameters
+                mock_timeout_handler.run.assert_called_once()
+                call_args = mock_timeout_handler.run.call_args
+                assert call_args[0][0] == Service._connect_with_interrupt_handling
+                assert call_args[1]["process"] == mock_process
+                assert call_args[1]["timeout"] == 30
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_timeout_handler_configuration(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host, monkeypatch
+    ):
+        """Test launch method timeout handler configuration."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            # Ensure SERVICE host matches expected in assertion
+            monkeypatch.setenv("MINDTRACE_DEFAULT_HOST_URLS__SERVICE", "http://service.example.com:8080")
+            from mindtrace.core import CoreConfig
+
+            Service.config = CoreConfig()
+
+            with patch("mindtrace.services.core.service.Timeout") as mock_timeout_class:
+                mock_timeout_instance = Mock()
+                mock_timeout_class.return_value = mock_timeout_instance
+                mock_connection_manager = Mock()
+                mock_timeout_instance.run.return_value = mock_connection_manager
+
+                Service.launch(wait_for_launch=True, timeout=60, progress_bar=True)
+
+                # Should create Timeout with correct parameters
+                mock_timeout_class.assert_called_once_with(
+                    timeout=60,
+                    exceptions=(ConnectionRefusedError, requests.exceptions.ConnectionError, HTTPException),
+                    progress_bar=True,
+                    desc=f"Launching {Service.unique_name.split('.')[-1]} at http://service.example.com:8080",
+                )
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
+
+    @patch.object(Service, "status_at_host")
+    @patch("mindtrace.services.core.service.subprocess.Popen")
+    @patch("mindtrace.services.core.service.uuid.uuid1")
+    @patch("mindtrace.services.core.service.atexit.register")
+    @patch("mindtrace.services.core.service.signal.signal")
+    def test_launch_no_wait_for_launch_returns_none(
+        self, mock_signal, mock_atexit, mock_uuid, mock_popen, mock_status_at_host
+    ):
+        """Test launch method when wait_for_launch=False returns None."""
+        # Setup mocks
+        mock_status_at_host.return_value = ServerStatus.DOWN
+        test_uuid = UUID("12345678-1234-5678-1234-567812345678")
+        mock_uuid.return_value = test_uuid
+
+        # Mock process
+        mock_process = Mock()
+        mock_popen.return_value = mock_process
+
+        # Clear any existing active servers
+        original_servers = Service._active_servers.copy()
+        Service._active_servers.clear()
+
+        try:
+            result = Service.launch(wait_for_launch=False)
+
+            # Should return None when wait_for_launch=False
+            assert result is None
+
+        finally:
+            # Restore original state
+            Service._active_servers = original_servers
