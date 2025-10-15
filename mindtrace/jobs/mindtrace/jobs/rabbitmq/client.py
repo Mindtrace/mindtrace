@@ -29,14 +29,38 @@ class RabbitMQClient(OrchestratorBackend):
             password: Password for RabbitMQ authentication.
         """
         super().__init__()
-        self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
-        self.connection.connect()
-        self.channel = self.connection.get_channel()
-        self._host = self.connection.host
-        self._port = self.connection.port
-        self._username = self.connection.username
-        self._password = self.connection.password
-        self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
+        self._host = host
+        self._port = port
+        self._username = username
+        self._password = password
+        self._connection = None
+        self._channel = None
+
+    @property
+    def connection(self):
+        if self._connection is None:
+            self._connection = RabbitMQConnection(
+                host=self._host, port=self._port, username=self._username, password=self._password
+            )
+            self._connection.connect()
+        return self._connection
+
+    @property
+    def channel(self):
+        if self._channel is None:
+            self._channel = self.connection.get_channel()
+            try:
+                self._channel.exchange_declare(exchange="default", passive=True)
+            except pika.exceptions.ChannelClosedByBroker:
+                self._channel = self.connection.get_channel()
+                self._channel.exchange_declare(
+                    exchange="default", exchange_type="direct", durable=True, auto_delete=False
+                )
+        return self._channel
+
+    @channel.setter
+    def channel(self, value):
+        self._channel = value
 
     def create_connection(self):
         connection = RabbitMQConnection(
