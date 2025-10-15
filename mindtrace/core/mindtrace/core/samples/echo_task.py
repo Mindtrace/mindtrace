@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel
 
-from mindtrace.core import TaskSchema
+from mindtrace.core.types.task_schema import TaskSchema
 
 
 class EchoInput(BaseModel):

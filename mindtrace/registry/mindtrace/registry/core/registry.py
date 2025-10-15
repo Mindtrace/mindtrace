@@ -2,7 +2,7 @@ import shutil
 import threading
 import uuid
 from contextlib import contextmanager, nullcontext
-from pathlib import Path, PosixPath
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Type
 
@@ -16,7 +16,7 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):
-    '''A distributed concurrency-safe registry for storing and versioning objects.
+    """A distributed concurrency-safe registry for storing and versioning objects.
 
     This class provides a distributed concurrency-safe interface for storing, loading, and managing objects
     with versioning support. All operations are protected by distributed locks to ensure
@@ -170,7 +170,7 @@ class Registry(Mindtrace):
         my_obj = MyObject(name="Edward", age=42)
         
         registry["my_obj"] = my_obj
-    '''
+    """
     # Class-level default materializer registry and lock
     _default_materializers = {}
     _materializer_lock = threading.Lock()
@@ -194,7 +194,7 @@ class Registry(Mindtrace):
 
         if backend is None:
             if registry_dir is None:
-                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+                registry_dir = self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
@@ -204,7 +204,7 @@ class Registry(Mindtrace):
             name="local_artifact_store",
             id=None,  # Will be auto-generated
             config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve() / "artifact_store")
+                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
             ),
             flavor="local",
             type="artifact-store",
@@ -219,7 +219,6 @@ class Registry(Mindtrace):
 
         # Register the default materializers if there are none
         self._register_default_materializers()
-        
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
 
@@ -569,9 +568,6 @@ class Registry(Mindtrace):
             object_class = f"{object_class.__module__}.{object_class.__name__}" 
         if isinstance(materializer_class, type):
             materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
-        
-        if isinstance(materializer_class, type):
-            materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
 
         with self.get_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
@@ -740,13 +736,15 @@ class Registry(Mindtrace):
                     progress_bar=False,  # Don't show progress bar for lock acquisition
                     desc=f"Acquiring {'shared ' if shared else ''}lock for {lock_key}",
                 )
-                
+
                 def acquire_lock_with_retry():
                     """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
                     if not self.backend.acquire_lock(lock_key, lock_id, timeout, shared=shared):
-                        raise LockAcquisitionError(f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}")
+                        raise LockAcquisitionError(
+                            f"Failed to acquire {'shared ' if shared else ''}lock for {lock_key}"
+                        )
                     return True
-                
+
                 # Use the timeout handler to retry lock acquisition
                 timeout_handler.run(acquire_lock_with_retry)
                 yield
@@ -948,7 +946,7 @@ class Registry(Mindtrace):
 
     def _register_default_materializers(self, override_preexisting_materializers: bool = False):
         """Register default materializers from the class-level registry.
-        
+
         By default, the registry will only register materializers that are not already registered.
         """
         self.logger.info("Registering default materializers...")

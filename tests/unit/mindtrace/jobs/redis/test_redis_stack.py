@@ -15,7 +15,7 @@ def mock_redis():
 
 
 def test_push_calls_lpush(mock_redis):
-    queue = RedisStack("testq", host="localhost", port=6379, db=0)
+    queue = RedisStack("testq", host="localhost", port=6381, db=0)
     queue.push("item")
     assert mock_redis.lpush.called
 

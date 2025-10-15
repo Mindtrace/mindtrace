@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 import requests
 from fastapi import HTTPException
+from fastmcp import Client
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, Timeout, ifnone
@@ -18,9 +19,10 @@ class ConnectionManager(Mindtrace):
 
     def __init__(self, url: Url | None = None, server_id: UUID | None = None, server_pid_file: str | None = None):
         super().__init__()
-        self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["Service"]))
+        self.url = ifnone(url, default=parse_url(self.config["MINDTRACE_DEFAULT_HOST_URLS"]["SERVICE"]))
         self._server_id = server_id
         self._server_pid_file = server_pid_file
+        self._mcp_client: Client | None = None
 
     def shutdown(self, block: bool = True):
         """Shutdown the server.
@@ -138,3 +140,30 @@ class ConnectionManager(Mindtrace):
                 self.logger.exception("Exception occurred", exc_info=info)
                 return self.suppress
         return False
+
+    @property
+    def mcp_url(self) -> str:
+        """Return the MCP endpoint URL for this service instance using config paths."""
+        base = f"{str(self.url).rstrip('/')}/"
+        mount = str(self.config["MINDTRACE_MCP"]["MOUNT_PATH"]).strip("/")
+        app = str(self.config["MINDTRACE_MCP"]["HTTP_APP_PATH"]).strip("/")
+        return urljoin(urljoin(base, mount + "/"), app)
+
+    @property
+    def mcp_client(self) -> Client:
+        """Get an MCP client for this service.
+
+        Returns a FastMCP Client instance that can be used to interact with the service
+        through the MCP protocol. The client connects to the service's MCP endpoint.
+
+        Returns:
+            FastMCP Client instance for MCP protocol communication
+
+        Example::
+            cm = MyService.launch()
+            client = cm.mcp_client
+            # Use client for MCP protocol interactions
+        """
+        if self._mcp_client is None:
+            self._mcp_client = Client(self.mcp_url)
+        return self._mcp_client

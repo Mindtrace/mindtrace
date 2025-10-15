@@ -8,7 +8,7 @@ from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 
 @pytest.fixture
 def rabbitmq_conn():
-    conn = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
+    conn = RabbitMQConnection(host="localhost", port=5671, username="user", password="password")
     conn.logger = MagicMock()
     return conn
 
@@ -18,7 +18,7 @@ class TestRabbitMQConnection:
 
     def test_rabbitmq_mocked_initialization(self, mock_rabbitmq_connection):
         """Test RabbitMQ connection initialization with mocked components."""
-        connection = RabbitMQConnection(host="localhost", port=5672, username="user", password="password")
+        connection = RabbitMQConnection(host="localhost", port=5671, username="user", password="password")
         connection.connect()
 
         assert connection.connection is mock_rabbitmq_connection["conn_instance"]

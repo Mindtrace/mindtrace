@@ -25,12 +25,10 @@ class TestGitEnvironment:
         with tempfile.TemporaryDirectory() as temp_dir:
             yield temp_dir
 
-    @pytest.fixture
-    def mock_config(self):
-        """Mock config with temp directory."""
-        with patch("mindtrace.cluster.workers.environments.git_env.Mindtrace.config") as mock_config:
-            mock_config.__getitem__.return_value = "/tmp/mindtrace"
-            yield mock_config
+    @pytest.fixture(autouse=True)
+    def _env_config(self, monkeypatch):
+        """Provide TEMP_DIR via env so GitEnvironment picks it up through CoreConfig."""
+        monkeypatch.setenv("MINDTRACE_DIR_PATHS__TEMP_DIR", "/tmp/mindtrace")
 
     def test_initialization(self):
         """Test GitEnvironment initialization with all parameters."""
@@ -79,7 +77,7 @@ class TestGitEnvironment:
 
     @patch("tempfile.mkdtemp")
     @patch("pathlib.Path.mkdir")
-    def test_setup_success(self, mock_mkdir, mock_mkdtemp, git_env, mock_config):
+    def test_setup_success(self, mock_mkdir, mock_mkdtemp, git_env):
         """Test successful environment setup."""
         # Mock temp directory creation
         mock_mkdtemp.return_value = "/tmp/test-repo-123"
@@ -108,7 +106,7 @@ class TestGitEnvironment:
         git_env._sync_dependencies.assert_called_once_with("/tmp/test-repo-123/src")
 
     @patch("tempfile.mkdtemp")
-    def test_setup_failure_cleanup(self, mock_mkdtemp, git_env, mock_config):
+    def test_setup_failure_cleanup(self, mock_mkdtemp, git_env):
         """Test setup failure triggers cleanup."""
         # Mock temp directory creation
         mock_mkdtemp.return_value = "/tmp/test-repo-123"
