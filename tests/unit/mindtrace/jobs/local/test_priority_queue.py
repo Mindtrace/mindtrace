@@ -1,7 +1,7 @@
-import queue
 import json
-import tempfile
+import queue
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -103,19 +103,19 @@ class TestLocalPriorityQueue:
         """Test comprehensive push and pop operations."""
         pq = LocalPriorityQueue()
         test_items = [("item1", 1), ("item2", 2), ("item3", 3)]
-        
+
         for item, priority in test_items:
             pq.push(item, priority)
-        
+
         assert pq.qsize() == len(test_items)
         assert not pq.empty()
-        
+
         # Pop items and verify priority order (highest priority first)
         expected_order = ["item3", "item2", "item1"]  # Priority 3, 2, 1
         for expected_item in expected_order:
             item = pq.pop()
             assert item == expected_item
-        
+
         assert pq.empty()
         assert pq.qsize() == 0
 
@@ -127,7 +127,7 @@ class TestLocalPriorityQueue:
         pq.push("high", 10)
         pq.push("medium", 5)
         pq.push("very_high", 15)
-        
+
         # Should pop in priority order (highest first)
         assert pq.pop() == "very_high"
         assert pq.pop() == "high"
@@ -140,7 +140,7 @@ class TestLocalPriorityQueue:
         pq.push("first", 5)
         pq.push("second", 5)
         pq.push("third", 5)
-        
+
         # Should maintain FIFO order for same priority
         assert pq.pop() == "first"
         assert pq.pop() == "second"
@@ -152,7 +152,7 @@ class TestLocalPriorityQueue:
         pq.push("item1")
         pq.push("item2", 0)
         pq.push("item3", 1)
-        
+
         # Higher priority should come first
         assert pq.pop() == "item3"
         # Same priority should maintain FIFO
@@ -163,31 +163,31 @@ class TestLocalPriorityQueue:
         """Test serialization to and from dictionary."""
         pq = LocalPriorityQueue()
         test_items = [("item1", 1), ("item2", 5), ("item3", 3)]
-        
+
         for item, priority in test_items:
             pq.push(item, priority)
-        
+
         # Test to_dict
         queue_dict = pq.to_dict()
         assert isinstance(queue_dict, dict)
         assert "items" in queue_dict
         assert len(queue_dict["items"]) == len(test_items)
-        
+
         # Verify items have correct structure
         for item_data in queue_dict["items"]:
             assert "item" in item_data
             assert "priority" in item_data
             assert isinstance(item_data["priority"], int)
-        
+
         # Test from_dict
         restored_queue = LocalPriorityQueue.from_dict(queue_dict)
         assert restored_queue.qsize() == len(test_items)
-        
+
         # Verify items are in correct priority order
         restored_items = []
         while not restored_queue.empty():
             restored_items.append(restored_queue.pop())
-        
+
         # Should be in priority order: item2 (5), item3 (3), item1 (1)
         expected_order = ["item2", "item3", "item1"]
         assert restored_items == expected_order
@@ -214,10 +214,10 @@ class TestLocalPriorityQueue:
             ([{"key": "value"}, {"another": "item"}], 5),
             ({"numbers": [1, 2, 3, 4, 5]}, 15),
         ]
-        
+
         for item, priority in complex_items:
             pq.push(item, priority)
-        
+
         # Should pop in priority order
         assert pq.pop() == {"numbers": [1, 2, 3, 4, 5]}  # priority 15
         assert pq.pop() == {"nested": {"list": [1, 2, 3], "string": "test"}}  # priority 10
@@ -251,30 +251,30 @@ class TestPriorityQueueArchiver:
         test_items = [("item1", 1), ("item2", 5), ("item3", 3)]
         for item, priority in test_items:
             queue.push(item, priority)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create archiver
         archiver = PriorityQueueArchiver(uri=str(archiver_dir))
-        
+
         # Save queue
         archiver.save(queue)
-        
+
         # Verify file was created
         json_file = self.temp_dir / "test" / "priority_queue.json"
         assert json_file.exists()
-        
+
         # Load queue
         loaded_queue = archiver.load(LocalPriorityQueue)
         assert isinstance(loaded_queue, LocalPriorityQueue)
-        
+
         # Verify contents in priority order
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         # Should be in priority order: item2 (5), item3 (3), item1 (1)
         expected_order = ["item2", "item3", "item1"]
         assert loaded_items == expected_order
@@ -282,16 +282,16 @@ class TestPriorityQueueArchiver:
     def test_archiver_with_empty_queue(self):
         """Test archiver with empty queue."""
         queue = LocalPriorityQueue()
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = PriorityQueueArchiver(uri=str(archiver_dir))
-        
+
         # Save empty queue
         archiver.save(queue)
-        
+
         # Load empty queue
         loaded_queue = archiver.load(LocalPriorityQueue)
         assert loaded_queue.empty()
@@ -301,24 +301,24 @@ class TestPriorityQueueArchiver:
         """Test PriorityQueueArchiver integration with Registry."""
         # Register the materializer
         self.registry.register_materializer(LocalPriorityQueue, PriorityQueueArchiver)
-        
+
         # Create and save queue
         queue = LocalPriorityQueue()
         test_items = [("item1", 1), ("item2", 3), ("item3", 2)]
         for item, priority in test_items:
             queue.push(item, priority)
-        
+
         self.registry.save("test:priorityqueue", queue)
-        
+
         # Load queue from registry
         loaded_queue = self.registry.load("test:priorityqueue")
         assert isinstance(loaded_queue, LocalPriorityQueue)
-        
+
         # Verify contents in priority order
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         # Should be in priority order: item2 (3), item3 (2), item1 (1)
         expected_order = ["item2", "item3", "item1"]
         assert loaded_items == expected_order
@@ -327,19 +327,19 @@ class TestPriorityQueueArchiver:
         """Test that archiver preserves priority order."""
         queue = LocalPriorityQueue()
         test_items = [("first", 1), ("second", 3), ("third", 2)]
-        
+
         for item, priority in test_items:
             queue.push(item, priority)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = PriorityQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         loaded_queue = archiver.load(LocalPriorityQueue)
-        
+
         # Verify priority order is preserved
         expected_order = ["second", "third", "first"]  # Priority 3, 2, 1
         for expected_item in expected_order:
@@ -354,24 +354,24 @@ class TestPriorityQueueArchiver:
             ([{"key": "value"}, {"another": "item"}], 5),
             ({"numbers": [1, 2, 3, 4, 5]}, 15),
         ]
-        
+
         for item, priority in complex_items:
             queue.push(item, priority)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = PriorityQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         loaded_queue = archiver.load(LocalPriorityQueue)
-        
+
         # Verify complex objects are preserved in priority order
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         # Should be in priority order: 15, 10, 5
         expected_order = [
             {"numbers": [1, 2, 3, 4, 5]},
@@ -384,28 +384,28 @@ class TestPriorityQueueArchiver:
         """Test that archiver creates correct file structure."""
         queue = LocalPriorityQueue()
         queue.push("test_item", 5)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = PriorityQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         # Check that the directory and file exist
         json_file = archiver_dir / "priority_queue.json"
-        
+
         assert archiver_dir.exists()
         assert archiver_dir.is_dir()
         assert json_file.exists()
         assert json_file.is_file()
-        
+
         # Verify JSON content is valid
         with open(json_file, "r") as f:
             data = json.load(f)
-        
+
         assert isinstance(data, dict)
         assert "items" in data
         assert len(data["items"]) == 1
         assert data["items"][0]["item"] == "test_item"
-        assert data["items"][0]["priority"] == 5 
+        assert data["items"][0]["priority"] == 5

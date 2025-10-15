@@ -3,11 +3,11 @@ from typing import Any, Dict
 
 from pydantic import BaseModel
 
-from mindtrace.core import Mindtrace, TaskSchema
-from mindtrace.jobs.utils.schemas import job_from_schema
+from mindtrace.core import Mindtrace
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.local.client import LocalClient
 from mindtrace.jobs.types.job_specs import Job, JobSchema
+from mindtrace.jobs.utils.schemas import job_from_schema
 
 
 class Orchestrator(Mindtrace):
@@ -38,7 +38,7 @@ class Orchestrator(Mindtrace):
         """Send a job or task input model to the specified queue.
 
         Args:
-            queue_name: Name of the queue to publish to. For schema-backed publishes, this must match the registered 
+            queue_name: Name of the queue to publish to. For schema-backed publishes, this must match the registered
                 `schema.name`.
             job: Either a `Job` or a Pydantic `BaseModel` corresponding to the queue's registered `TaskSchema.input_schema`.
             **kwargs: Additional parameters passed to the backend (e.g., priority for priority queues).
@@ -93,7 +93,7 @@ class Orchestrator(Mindtrace):
     def register(self, schema: JobSchema, queue_type: str = "fifo") -> str:
         """Register a `JobSchema` and create its queue.
 
-        The created queue will be named `schema.name`. Subsequent publishes of a `BaseModel` corresponding to this 
+        The created queue will be named `schema.name`. Subsequent publishes of a `BaseModel` corresponding to this
         schema must target that queue name.
 
         Args:

@@ -19,6 +19,7 @@ class ExecutionStatus(str, Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+
 '''
 class JobSchema(BaseModel):
     """A job schema with strongly-typed input and output models"""
@@ -29,6 +30,7 @@ class JobSchema(BaseModel):
 '''
 
 JobSchema = TaskSchema  # TODO: Remove all references to JobSchema
+
 
 class Job(BaseModel):
     """A job instance ready for execution - system routes based on schema_name."""

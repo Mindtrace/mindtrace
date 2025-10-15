@@ -316,6 +316,7 @@ class TestLocalClient:
         not the queues registry. Using the queues registry lock can cause unintended lock coupling.
         """
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             client = LocalClient(client_dir=tmp)
 
@@ -324,7 +325,9 @@ class TestLocalClient:
 
             def failing_queue_get_lock(name, *args, **kwargs):
                 if name == "job-123":
-                    raise AssertionError("Queues registry lock used for job results; should use _job_results lock instead")
+                    raise AssertionError(
+                        "Queues registry lock used for job results; should use _job_results lock instead"
+                    )
                 return original_get_lock(name, *args, **kwargs)
 
             monkeypatch.setattr(client.queues, "get_lock", failing_queue_get_lock, raising=True)
@@ -340,6 +343,7 @@ class TestLocalClient:
         """
         import tempfile
         from pathlib import Path
+
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             client = LocalClient(client_dir=tmp_path)

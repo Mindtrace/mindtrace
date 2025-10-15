@@ -1,5 +1,3 @@
-from unittest.mock import Mock
-
 import pytest
 
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase

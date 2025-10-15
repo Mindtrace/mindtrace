@@ -162,7 +162,7 @@ class TestLocalConsumerBackend:
 
     def test_consumer_no_run_method(self, temp_local_client):
         """Test consumer with no run method set."""
-        orchestrator = Orchestrator(backend=temp_local_client)
+        _ = Orchestrator(backend=temp_local_client)
         consumer = EffectivelyAbstractConsumer()
 
         with pytest.raises(RuntimeError, match="Consumer not connected"):

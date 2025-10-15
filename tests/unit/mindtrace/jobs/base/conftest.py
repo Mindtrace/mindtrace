@@ -143,7 +143,8 @@ def mock_orchestrator():
 @pytest.fixture(scope="function")
 def test_message():
     """Provide a test message class for each test function."""
+
     class TestMessage(pydantic.BaseModel):
         data: str
-    
-    return TestMessage 
+
+    return TestMessage

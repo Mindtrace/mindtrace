@@ -1,8 +1,6 @@
 import time
 
-from pydantic import BaseModel
-
-from mindtrace.core import EchoInput, EchoOutput, echo_task, TaskSchema
+from mindtrace.core import EchoInput, EchoOutput, echo_task
 from mindtrace.services import Service
 
 

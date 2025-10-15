@@ -1,6 +1,5 @@
-from datetime import datetime
-from typing import TypeVar
 import uuid
+from datetime import datetime
 
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 

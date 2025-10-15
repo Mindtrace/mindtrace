@@ -1,7 +1,7 @@
 import json
 import queue
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -62,19 +62,19 @@ class TestLocalStack:
         """Test basic push and pop operations."""
         stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
-        
+
         for item in test_items:
             stack.push(item)
-        
+
         assert stack.qsize() == len(test_items)
         assert not stack.empty()
-        
+
         # Pop items and verify LIFO order (last in, first out)
         expected_order = ["item3", "item2", "item1"]  # LIFO order
         for expected_item in expected_order:
             item = stack.pop()
             assert item == expected_item
-        
+
         assert stack.empty()
         assert stack.qsize() == 0
 
@@ -86,7 +86,7 @@ class TestLocalStack:
         stack.push("second")
         stack.push("third")
         stack.push("fourth")
-        
+
         # Should pop in LIFO order (last in, first out)
         assert stack.pop() == "fourth"
         assert stack.pop() == "third"
@@ -99,7 +99,7 @@ class TestLocalStack:
         # Pop from empty stack with timeout
         with pytest.raises(Exception):  # queue.Empty
             stack.pop(block=True, timeout=0.1)
-        
+
         # Pop from empty stack without blocking
         with pytest.raises(Exception):  # queue.Empty
             stack.pop(block=False)
@@ -110,9 +110,9 @@ class TestLocalStack:
         test_items = ["item1", "item2", "item3"]
         for item in test_items:
             stack.push(item)
-        
+
         assert stack.qsize() == len(test_items)
-        
+
         cleaned_count = stack.clean()
         assert cleaned_count == len(test_items)
         assert stack.empty()
@@ -122,10 +122,10 @@ class TestLocalStack:
         """Test serialization to and from dictionary."""
         stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
-        
+
         for item in test_items:
             stack.push(item)
-        
+
         # Test to_dict
         stack_dict = stack.to_dict()
         assert isinstance(stack_dict, dict)
@@ -133,16 +133,16 @@ class TestLocalStack:
         # Items should be in LIFO order (as they would be popped from the stack)
         expected_lifo_order = ["item3", "item2", "item1"]  # LIFO order
         assert stack_dict["items"] == expected_lifo_order
-        
+
         # Test from_dict
         restored_stack = LocalStack.from_dict(stack_dict)
         assert restored_stack.qsize() == len(test_items)
-        
+
         # Verify items are in correct LIFO order
         restored_items = []
         while not restored_stack.empty():
             restored_items.append(restored_stack.pop())
-        
+
         # Should be in LIFO order: item3, item2, item1
         expected_order = ["item3", "item2", "item1"]
         assert restored_items == expected_order
@@ -169,10 +169,10 @@ class TestLocalStack:
             [{"key": "value"}, {"another": "item"}],
             {"numbers": [1, 2, 3, 4, 5]},
         ]
-        
+
         for item in complex_items:
             stack.push(item)
-        
+
         # Should pop in LIFO order
         assert stack.pop() == {"numbers": [1, 2, 3, 4, 5]}
         assert stack.pop() == [{"key": "value"}, {"another": "item"}]
@@ -206,30 +206,30 @@ class TestStackArchiver:
         test_items = ["item1", "item2", "item3"]
         for item in test_items:
             stack.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create archiver
         archiver = StackArchiver(uri=str(archiver_dir))
-        
+
         # Save stack
         archiver.save(stack)
-        
+
         # Verify file was created
         json_file = self.temp_dir / "test" / "stack.json"
         assert json_file.exists()
-        
+
         # Load stack
         loaded_stack = archiver.load(LocalStack)
         assert isinstance(loaded_stack, LocalStack)
-        
+
         # Verify contents in LIFO order
         loaded_items = []
         while not loaded_stack.empty():
             loaded_items.append(loaded_stack.pop())
-        
+
         # Should be in LIFO order: item3, item2, item1
         expected_order = ["item3", "item2", "item1"]
         assert loaded_items == expected_order
@@ -237,16 +237,16 @@ class TestStackArchiver:
     def test_archiver_with_empty_stack(self):
         """Test archiver with empty stack."""
         stack = LocalStack()
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = StackArchiver(uri=str(archiver_dir))
-        
+
         # Save empty stack
         archiver.save(stack)
-        
+
         # Load empty stack
         loaded_stack = archiver.load(LocalStack)
         assert loaded_stack.empty()
@@ -256,24 +256,24 @@ class TestStackArchiver:
         """Test StackArchiver integration with Registry."""
         # Register the materializer
         self.registry.register_materializer(LocalStack, StackArchiver)
-        
+
         # Create and save stack
         stack = LocalStack()
         test_items = ["item1", "item2", "item3"]
         for item in test_items:
             stack.push(item)
-        
+
         self.registry.save("test:stack", stack)
-        
+
         # Load stack from registry
         loaded_stack = self.registry.load("test:stack")
         assert isinstance(loaded_stack, LocalStack)
-        
+
         # Verify contents in LIFO order
         loaded_items = []
         while not loaded_stack.empty():
             loaded_items.append(loaded_stack.pop())
-        
+
         # Should be in LIFO order: item3, item2, item1
         expected_order = ["item3", "item2", "item1"]
         assert loaded_items == expected_order
@@ -282,19 +282,19 @@ class TestStackArchiver:
         """Test that archiver preserves LIFO order."""
         stack = LocalStack()
         test_items = ["first", "second", "third"]
-        
+
         for item in test_items:
             stack.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = StackArchiver(uri=str(archiver_dir))
         archiver.save(stack)
-        
+
         loaded_stack = archiver.load(LocalStack)
-        
+
         # Verify LIFO order is preserved
         expected_order = ["third", "second", "first"]  # LIFO order
         for expected_item in expected_order:
@@ -309,24 +309,24 @@ class TestStackArchiver:
             [{"key": "value"}, {"another": "item"}],
             {"numbers": [1, 2, 3, 4, 5]},
         ]
-        
+
         for item in complex_items:
             stack.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = StackArchiver(uri=str(archiver_dir))
         archiver.save(stack)
-        
+
         loaded_stack = archiver.load(LocalStack)
-        
+
         # Verify complex objects are preserved in LIFO order
         loaded_items = []
         while not loaded_stack.empty():
             loaded_items.append(loaded_stack.pop())
-        
+
         # Should be in LIFO order (last in, first out)
         expected_order = [
             {"numbers": [1, 2, 3, 4, 5]},
@@ -339,27 +339,27 @@ class TestStackArchiver:
         """Test that archiver creates correct file structure."""
         stack = LocalStack()
         stack.push("test_item")
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = StackArchiver(uri=str(archiver_dir))
         archiver.save(stack)
-        
+
         # Check that the directory and file exist
         json_file = archiver_dir / "stack.json"
-        
+
         assert archiver_dir.exists()
         assert archiver_dir.is_dir()
         assert json_file.exists()
         assert json_file.is_file()
-        
+
         # Verify JSON content is valid
         with open(json_file, "r") as f:
             data = json.load(f)
-        
+
         assert isinstance(data, dict)
         assert "items" in data
         assert len(data["items"]) == 1
-        assert data["items"][0] == "test_item" 
+        assert data["items"][0] == "test_item"

@@ -1,6 +1,6 @@
 import json
-from pathlib import Path
 import queue
+from pathlib import Path
 from typing import Any, ClassVar, Tuple, Type
 
 from zenml.enums import ArtifactType
@@ -37,11 +37,11 @@ class LocalStack:
         while not self.stack.empty():
             item = self.stack.get()
             items.append(item)
-        
+
         lifo_items = items  # items are already in LIFO order from popping
         for item in reversed(items):
             self.stack.put(item)
-        
+
         return {"items": lifo_items}
 
     @classmethod

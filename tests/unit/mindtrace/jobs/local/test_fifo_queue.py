@@ -1,6 +1,6 @@
 import queue
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -61,18 +61,18 @@ class TestLocalQueue:
         """Test comprehensive push and pop operations."""
         q = LocalQueue()
         test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
-        
+
         for item in test_items:
             q.push(item)
-        
+
         assert q.qsize() == len(test_items)
         assert not q.empty()
-        
+
         # Pop items and verify order (FIFO)
         for expected_item in test_items:
             item = q.pop()
             assert item == expected_item
-        
+
         assert q.empty()
         assert q.qsize() == 0
 
@@ -80,25 +80,25 @@ class TestLocalQueue:
         """Test serialization to and from dictionary."""
         q = LocalQueue()
         test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
-        
+
         for item in test_items:
             q.push(item)
-        
+
         # Test to_dict
         queue_dict = q.to_dict()
         assert isinstance(queue_dict, dict)
         assert "items" in queue_dict
         assert queue_dict["items"] == test_items
-        
+
         # Test from_dict
         restored_queue = LocalQueue.from_dict(queue_dict)
         assert restored_queue.qsize() == len(test_items)
-        
+
         # Verify items are in correct order
         restored_items = []
         while not restored_queue.empty():
             restored_items.append(restored_queue.pop())
-        
+
         assert restored_items == test_items
 
     def test_from_dict_empty(self):
@@ -143,45 +143,45 @@ class TestLocalQueueArchiver:
         test_items = ["item1", 42, {"key": "value"}, [1, 2, 3]]
         for item in test_items:
             queue.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create archiver
         archiver = LocalQueueArchiver(uri=str(archiver_dir))
-        
+
         # Save queue
         archiver.save(queue)
-        
+
         # Verify file was created
         json_file = self.temp_dir / "test" / "queue.json"
         assert json_file.exists()
-        
+
         # Load queue
         loaded_queue = archiver.load(LocalQueue)
         assert isinstance(loaded_queue, LocalQueue)
-        
+
         # Verify contents
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         assert loaded_items == test_items
 
     def test_archiver_with_empty_queue(self):
         """Test archiver with empty queue."""
         queue = LocalQueue()
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = LocalQueueArchiver(uri=str(archiver_dir))
-        
+
         # Save empty queue
         archiver.save(queue)
-        
+
         # Load empty queue
         loaded_queue = archiver.load(LocalQueue)
         assert loaded_queue.empty()
@@ -191,43 +191,43 @@ class TestLocalQueueArchiver:
         """Test LocalQueueArchiver integration with Registry."""
         # Register the materializer
         self.registry.register_materializer(LocalQueue, LocalQueueArchiver)
-        
+
         # Create and save queue
         queue = LocalQueue()
         test_items = ["item1", "item2", "item3"]
         for item in test_items:
             queue.push(item)
-        
+
         self.registry.save("test:queue", queue)
-        
+
         # Load queue from registry
         loaded_queue = self.registry.load("test:queue")
         assert isinstance(loaded_queue, LocalQueue)
-        
+
         # Verify contents
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         assert loaded_items == test_items
 
     def test_archiver_preserves_order(self):
         """Test that archiver preserves FIFO order."""
         queue = LocalQueue()
         test_items = ["first", "second", "third"]
-        
+
         for item in test_items:
             queue.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = LocalQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         loaded_queue = archiver.load(LocalQueue)
-        
+
         # Verify FIFO order is preserved
         for expected_item in test_items:
             item = loaded_queue.pop()
@@ -241,52 +241,53 @@ class TestLocalQueueArchiver:
             [{"key": "value"}, {"another": "item"}],
             {"numbers": [1, 2, 3, 4, 5]},
         ]
-        
+
         for item in complex_items:
             queue.push(item)
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = LocalQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         loaded_queue = archiver.load(LocalQueue)
-        
+
         # Verify complex objects are preserved
         loaded_items = []
         while not loaded_queue.empty():
             loaded_items.append(loaded_queue.pop())
-        
+
         assert loaded_items == complex_items
 
     def test_archiver_file_structure(self):
         """Test that archiver creates correct file structure."""
         queue = LocalQueue()
         queue.push("test_item")
-        
+
         # Create archiver directory
         archiver_dir = self.temp_dir / "test"
         archiver_dir.mkdir(parents=True, exist_ok=True)
-        
+
         archiver = LocalQueueArchiver(uri=str(archiver_dir))
         archiver.save(queue)
-        
+
         # Check that the directory and file exist
         archiver_dir = self.temp_dir / "test"
         json_file = archiver_dir / "queue.json"
-        
+
         assert archiver_dir.exists()
         assert archiver_dir.is_dir()
         assert json_file.exists()
         assert json_file.is_file()
-        
+
         # Verify JSON content is valid
         import json
+
         with open(json_file, "r") as f:
             data = json.load(f)
-        
+
         assert isinstance(data, dict)
         assert "items" in data
-        assert data["items"] == ["test_item"] 
+        assert data["items"] == ["test_item"]

@@ -226,7 +226,7 @@ def test_declare_queue_lock_acquire_failure(client):
     mock_conn.queues = {}
     mock_conn.connection.lock.return_value.acquire.return_value = False
     with pytest.raises(BlockingIOError):
-        client.declare_queue("q", queue_type="fifo") 
+        client.declare_queue("q", queue_type="fifo")
 
 
 def test_publish_no_priority_argument_on_priority_queue(client):
@@ -255,7 +255,7 @@ def test_publish_raises_propagates(client):
     msg = DummyModel(foo="bar")
     fake_queue.push.side_effect = RuntimeError("boom")
     with pytest.raises(RuntimeError):
-        client.publish("q", msg) 
+        client.publish("q", msg)
 
 
 def test_declare_queue_stack(client):
