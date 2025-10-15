@@ -259,6 +259,9 @@ def track_operation(
     logger: Any | None = None,
     logger_name: str | None = None,
     include_args: list[str] | None = None,
+    log_level: int = logging.DEBUG,
+    include_system_metrics: bool = False,
+    system_metrics: list[str] | None = None,
     **context: Any,
 ):
     """Unified function that works as both context manager and decorator.
@@ -280,6 +283,9 @@ def track_operation(
             for context manager or "mindtrace.methods.{name}" for decorator.
         include_args: List of argument names to include in the log context (decorator only).
             If None, no arguments are logged. Only works with bound methods (self as first arg).
+        log_level: Log level for the operation logs. Defaults to logging.DEBUG.
+        include_system_metrics: If True, include system metrics in the log context.
+        system_metrics: Optional list of metric names to include. If None, include all available metrics.
         **context: Additional context fields to bind to the logger for this operation.
     
     Yields (context manager):
@@ -351,15 +357,19 @@ def track_operation(
     class UnifiedTrack:
         """Unified object that can act as both context manager and decorator."""
         
-        def __init__(self, name, timeout, logger, logger_name, include_args, context):
+        def __init__(self, name, timeout, logger, logger_name, include_args, log_level, include_system_metrics, system_metrics, context):
             self.name = name
             self.timeout = timeout
             self.logger = logger
             self.logger_name = logger_name
             self.include_args = include_args
+            self.log_level = log_level
+            self.include_system_metrics = include_system_metrics
+            self.system_metrics = system_metrics
             self.context = context
             self.start_time = None
             self._structlog_logger = None  # Cache for structlog logger
+            self._metrics_collector = None
         
         def _get_structlog_logger(self):
             """Get a structlog logger, caching the result and warning only once."""
@@ -378,6 +388,30 @@ def track_operation(
                 self._structlog_logger = get_logger(logger_name, use_structlog=True)
             
             return self._structlog_logger
+        
+        def _get_metrics_collector(self):
+            """Get a metrics collector, caching the result."""
+            if self._metrics_collector is not None:
+                return self._metrics_collector
+            
+            if self.include_system_metrics:
+                try:
+                    from mindtrace.core.utils import SystemMetricsCollector
+                    self._metrics_collector = SystemMetricsCollector(metrics_to_collect=self.system_metrics)
+                except Exception:
+                    self._metrics_collector = None
+            
+            return self._metrics_collector
+        
+        def _get_metrics_snapshot(self):
+            """Get current metrics snapshot if available."""
+            collector = self._get_metrics_collector()
+            if collector is not None:
+                try:
+                    return collector()
+                except Exception:
+                    return None
+            return None
         
         def _determine_logger(self, args, op_name):
             """Determine the appropriate logger for the operation."""
@@ -410,22 +444,36 @@ def track_operation(
             """Async context manager entry."""
             # Get structlog logger (with caching and single warning)
             logger = self._get_structlog_logger()
-            bound = logger.bind(operation=self.name, **self.context)
+            
+            # Add metrics to context if enabled
+            context = dict(self.context)
+            metrics_snapshot = self._get_metrics_snapshot()
+            if metrics_snapshot is not None:
+                context["metrics"] = metrics_snapshot
+            
+            bound = logger.bind(operation=self.name, **context)
             
             self.start_time = _time.time()
-            bound.info(f"{self.name}_started")
+            bound.log(self.log_level, f"{self.name}_started")
             return bound
         
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             """Async context manager exit."""
             # Get structlog logger (with caching and single warning)
             logger = self._get_structlog_logger()
-            bound = logger.bind(operation=self.name, **self.context)
+            
+            # Add metrics to context if enabled
+            context = dict(self.context)
+            metrics_snapshot = self._get_metrics_snapshot()
+            if metrics_snapshot is not None:
+                context["metrics"] = metrics_snapshot
+            
+            bound = logger.bind(operation=self.name, **context)
             
             duration = _time.time() - self.start_time
             
             if exc_type is None:
-                bound.info(f"{self.name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+                bound.log(self.log_level, f"{self.name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
             elif isinstance(exc_val, _asyncio.TimeoutError):
                 bound.error(f"{self.name}_timeout", timeout_after=self.timeout, duration=duration, duration_ms=round(duration * 1000, 2))
                 if _HTTPException is not None:
@@ -463,8 +511,14 @@ def track_operation(
                 # Determine the appropriate logger
                 base_logger = self._determine_logger(args, op_name)
                 
-                bound = base_logger.bind(operation=op_name, **extracted_context, **self.context)
-                bound.info(f"{op_name}_started")
+                # Add metrics to context if enabled
+                context = dict(self.context)
+                metrics_snapshot = self._get_metrics_snapshot()
+                if metrics_snapshot is not None:
+                    context["metrics"] = metrics_snapshot
+                
+                bound = base_logger.bind(operation=op_name, **extracted_context, **context)
+                bound.log(self.log_level, f"{op_name}_started")
                 
                 try:
                     if self.timeout:
@@ -474,7 +528,7 @@ def track_operation(
                         result = await func(*args, **kwargs)
                     
                     duration = _time.time() - start_time
-                    bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+                    bound.log(self.log_level, f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
                     return result
                     
                 except _asyncio.TimeoutError:
@@ -504,13 +558,19 @@ def track_operation(
                 # Determine the appropriate logger
                 base_logger = self._determine_logger(args, op_name)
                 
-                bound = base_logger.bind(operation=op_name, **extracted_context, **self.context)
-                bound.info(f"{op_name}_started")
+                # Add metrics to context if enabled
+                context = dict(self.context)
+                metrics_snapshot = self._get_metrics_snapshot()
+                if metrics_snapshot is not None:
+                    context["metrics"] = metrics_snapshot
+                
+                bound = base_logger.bind(operation=op_name, **extracted_context, **context)
+                bound.log(self.log_level, f"{op_name}_started")
                 
                 try:
                     result = func(*args, **kwargs)
                     duration = _time.time() - start_time
-                    bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+                    bound.log(self.log_level, f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
                     return result
                 except Exception as e:
                     duration = _time.time() - start_time
@@ -526,5 +586,5 @@ def track_operation(
             # Return appropriate wrapper based on function type
             return async_wrapper if _asyncio.iscoroutinefunction(func) else sync_wrapper
     
-    return UnifiedTrack(name, timeout, logger, logger_name, include_args, context)
+    return UnifiedTrack(name, timeout, logger, logger_name, include_args, log_level, include_system_metrics, system_metrics, context)
 
