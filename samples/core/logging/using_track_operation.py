@@ -14,7 +14,7 @@ async def context_manager_example():
         log.info("data_fetched", records=42)
 
 # Example 2: Decorator usage async
-@track_operation("aprocess_data", batch_id="batch_123", timeout=3.0)
+@track_operation("aprocess_data", batch_id="batch_123", timeout=3.0, include_system_metrics=True)
 async def aprocess_data(data: list) -> list:
     """Process data with automatic logging."""
     await asyncio.sleep(0.1)  
