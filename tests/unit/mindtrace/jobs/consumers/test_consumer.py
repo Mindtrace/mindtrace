@@ -16,7 +16,7 @@ class TestConsumer:
         """Test basic consumer message processing."""
 
         orchestrator = Orchestrator(backend=temp_local_client)
-        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_schema = JobSchema(name="test-consumer-jobs", input_schema=sample_job_input, output_schema=sample_job_output)
         test_queue = orchestrator.register(test_schema)
 
         class TestWorker(Consumer):
@@ -48,7 +48,7 @@ class TestConsumer:
         """Test consumer error handling with failing jobs."""
 
         orchestrator = Orchestrator(backend=temp_local_client)
-        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_schema = JobSchema(name="test-consumer-jobs", input_schema=sample_job_input, output_schema=sample_job_output)
         test_queue = orchestrator.register(test_schema)
 
         class ErrorProneWorker(Consumer):
@@ -85,8 +85,8 @@ class TestConsumer:
     def test_consumer_multi_queue(self, temp_local_client, sample_job_input, sample_job_output, create_test_job_fixture):
         """Test consumer consuming from multiple queues."""
         orchestrator = Orchestrator(backend=temp_local_client)
-        schema1 = JobSchema(name="test-consumer-jobs:1", input=sample_job_input, output=sample_job_output)
-        schema2 = JobSchema(name="test-consumer-jobs:2", input=sample_job_input, output=sample_job_output)
+        schema1 = JobSchema(name="test-consumer-jobs:1", input_schema=sample_job_input, output_schema=sample_job_output)
+        schema2 = JobSchema(name="test-consumer-jobs:2", input_schema=sample_job_input, output_schema=sample_job_output)
         queue1 = orchestrator.register(schema1)
         queue2 = orchestrator.register(schema2)
 
@@ -119,7 +119,7 @@ class TestConsumer:
         """Test consume_until_empty functionality."""
 
         orchestrator = Orchestrator(backend=temp_local_client)
-        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_schema = JobSchema(name="test-consumer-jobs", input_schema=sample_job_input, output_schema=sample_job_output)
         test_queue = orchestrator.register(test_schema)
 
         class EmptyTestWorker(Consumer):
@@ -150,7 +150,7 @@ class TestConsumer:
         """Test that consumers receive properly structured dict messages."""
 
         orchestrator = Orchestrator(backend=temp_local_client)
-        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_schema = JobSchema(name="test-consumer-jobs", input_schema=sample_job_input, output_schema=sample_job_output)
         test_queue = orchestrator.register(test_schema)
 
         class StructureTestWorker(Consumer):
@@ -230,7 +230,7 @@ class TestConsumer:
         """Ensure connect raises RuntimeError if called twice on same Consumer."""
 
         orchestrator = Orchestrator(backend=temp_local_client)
-        test_schema = JobSchema(name="test-consumer-jobs", input=sample_job_input, output=sample_job_output)
+        test_schema = JobSchema(name="test-consumer-jobs", input_schema=sample_job_input, output_schema=sample_job_output)
         test_queue = orchestrator.register(test_schema)
 
         class DummyWorker(Consumer):

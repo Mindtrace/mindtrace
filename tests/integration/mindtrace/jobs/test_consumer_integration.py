@@ -21,7 +21,7 @@ class TestConsumerIntegration:
         redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
 
-        redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
+        redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput)
         redis_queue = orchestrator.register(redis_test_schema)
 
         consumer = SampleConsumer("redis_test_consumer_jobs")
@@ -45,7 +45,7 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(
-            name="rabbitmq_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput
+            name="rabbitmq_test_consumer_jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput
         )
         rabbitmq_queue = orchestrator.register(rabbitmq_test_schema)
 
@@ -68,7 +68,7 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(backend=local_client)
 
-        local_test_schema = JobSchema(name="local-test-consumer-jobs", input=SampleJobInput, output=SampleJobOutput)
+        local_test_schema = JobSchema(name="local-test-consumer-jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput)
         local_queue = orchestrator.register(local_test_schema)
 
         consumer = SampleConsumer("local-test-consumer-jobs")
@@ -91,7 +91,7 @@ class TestConsumerIntegration:
         redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
 
-        redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput)
+        redis_test_schema = JobSchema(name="redis_test_consumer_jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput)
         redis_queue = orchestrator.register(redis_test_schema)
 
         consumer = SampleConsumer("redis_test_consumer_jobs")
@@ -118,7 +118,7 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(
-            name="rabbitmq_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput
+            name="rabbitmq_test_consumer_jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput
         )
         rabbitmq_queue = orchestrator.register(rabbitmq_test_schema)
 
@@ -144,7 +144,7 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(backend=local_client)
 
-        local_test_schema = JobSchema(name="local-test-consumer-jobs", input=SampleJobInput, output=SampleJobOutput)
+        local_test_schema = JobSchema(name="local-test-consumer-jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput)
         local_queue = orchestrator.register(local_test_schema)
 
         consumer = SampleConsumer("local-test-consumer-jobs")
@@ -157,7 +157,7 @@ class TestConsumerIntegration:
         redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
         queue_name = f"fifo_redis_test_{int(time.time())}"
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         jobs = [create_test_job(f"job_{i}", f"schema_{i}") for i in range(3)]
@@ -181,7 +181,7 @@ class TestConsumerIntegration:
         rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue_name = f"fifo_rabbitmq_test_{int(time.time())}"
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         jobs = [create_test_job(f"job_{i}", f"schema_{i}") for i in range(3)]
@@ -204,7 +204,7 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(backend=local_client)
         queue_name = f"fifo-local-test-{int(time.time())}"
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         jobs = [create_test_job(f"job_{i}", f"schema_{i}") for i in range(3)]
@@ -228,8 +228,8 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=redis_client)
         queue1 = unique_queue_name("redis_queue1")
         queue2 = unique_queue_name("redis_queue2")
-        schema1 = JobSchema(name=queue1, input=SampleJobInput, output=SampleJobOutput)
-        schema2 = JobSchema(name=queue2, input=SampleJobInput, output=SampleJobOutput)
+        schema1 = JobSchema(name=queue1, input_schema=SampleJobInput, output_schema=SampleJobOutput)
+        schema2 = JobSchema(name=queue2, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema1)
         orchestrator.register(schema2)
 
@@ -258,8 +258,8 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue1 = unique_queue_name("rabbitmq_queue1")
         queue2 = unique_queue_name("rabbitmq_queue2")
-        schema1 = JobSchema(name=queue1, input=SampleJobInput, output=SampleJobOutput)
-        schema2 = JobSchema(name=queue2, input=SampleJobInput, output=SampleJobOutput)
+        schema1 = JobSchema(name=queue1, input_schema=SampleJobInput, output_schema=SampleJobOutput)
+        schema2 = JobSchema(name=queue2, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema1)
         orchestrator.register(schema2)
 
@@ -287,8 +287,8 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=local_client)
         queue1 = unique_queue_name("local-queue1")
         queue2 = unique_queue_name("local-queue2")
-        schema1 = JobSchema(name=queue1, input=SampleJobInput, output=SampleJobOutput)
-        schema2 = JobSchema(name=queue2, input=SampleJobInput, output=SampleJobOutput)
+        schema1 = JobSchema(name=queue1, input_schema=SampleJobInput, output_schema=SampleJobOutput)
+        schema2 = JobSchema(name=queue2, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema1)
         orchestrator.register(schema2)
 
@@ -316,7 +316,7 @@ class TestConsumerIntegration:
         redis_client = RedisClient(host="localhost", port=6380, db=0)
         orchestrator = Orchestrator(backend=redis_client)
         queue = unique_queue_name("redis_consume_test")
-        schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
         jobs = [create_test_job(f"job_{i}", queue) for i in range(3)]
         for job in jobs:
@@ -331,7 +331,7 @@ class TestConsumerIntegration:
         rabbitmq_client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
         orchestrator = Orchestrator(backend=rabbitmq_client)
         queue = unique_queue_name("rabbitmq_consume_test")
-        schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
         jobs = [create_test_job(f"job_{i}", queue) for i in range(3)]
         for job in jobs:
@@ -345,7 +345,7 @@ class TestConsumerIntegration:
         local_client = LocalClient()
         orchestrator = Orchestrator(backend=local_client)
         queue = unique_queue_name("local-consume-test")
-        schema = JobSchema(name=queue, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
         jobs = [create_test_job(f"job_{i}", queue) for i in range(3)]
         for job in jobs:
@@ -362,7 +362,7 @@ class TestConsumerIntegration:
         orchestrator = Orchestrator(backend=rabbitmq_client)
 
         rabbitmq_test_schema = JobSchema(
-            name="rabbitmq_test_consumer_jobs", input=SampleJobInput, output=SampleJobOutput
+            name="rabbitmq_test_consumer_jobs", input_schema=SampleJobInput, output_schema=SampleJobOutput
         )
         rabbitmq_queue = orchestrator.register(rabbitmq_test_schema)
 
