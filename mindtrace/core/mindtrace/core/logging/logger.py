@@ -1,12 +1,12 @@
 import logging
 import os
+import warnings
 import structlog
 from collections import OrderedDict
 from logging import Logger
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional, Generator, Callable, Any
-from contextlib import asynccontextmanager
 
 from mindtrace.core.config import CoreSettings
 from mindtrace.core.utils import ifnone
@@ -253,30 +253,40 @@ def get_logger(name: str | None = "mindtrace", use_structlog: bool | None = None
                 setup_logger(parent_name, use_structlog=use_structlog, **kwargs)
     return setup_logger(full_name, use_structlog=use_structlog, **kwargs)
 
-@asynccontextmanager
-async def track_operation(
-    name: str,
+def track_operation(
+    name: str = None,
     timeout: float | None = None,
     logger: Any | None = None,
     logger_name: str | None = None,
+    include_args: list[str] | None = None,
     **context: Any,
-) -> Generator[Any, None, None]:
-    """Asynchronously track an operation, logging start, completion, timeout, and errors.
+):
+    """Unified function that works as both context manager and decorator.
     
-    This context manager provides structured logging for async operations, automatically
-    logging operation start, completion, timeouts, and errors with duration metrics.
-    Requires structlog to be installed.
+    This function can be used in two ways:
+    1. As a context manager: `async with track_operation("name") as log:`
+    2. As a decorator: `@track_operation("name")`
+    
+    Provides structured logging for operations, automatically logging start, completion, 
+    timeout, and errors with duration metrics. Requires structlog to be installed.
     
     Args:
-        name: The name of the operation being tracked.
+        name: The name of the operation being tracked. When used as decorator, 
+            defaults to the function name if not provided.
         timeout: Optional timeout in seconds. If provided, raises asyncio.TimeoutError
             when exceeded. If FastAPI is available, raises HTTPException(504) instead.
         logger: Optional structlog logger instance. If None, creates a new logger.
-        logger_name: Optional logger name. If None, uses "mindtrace.operations.{name}".
+        logger_name: Optional logger name. If None, uses "mindtrace.operations.{name}" 
+            for context manager or "mindtrace.methods.{name}" for decorator.
+        include_args: List of argument names to include in the log context (decorator only).
+            If None, no arguments are logged. Only works with bound methods (self as first arg).
         **context: Additional context fields to bind to the logger for this operation.
     
-    Yields:
+    Yields (context manager):
         structlog.BoundLogger: A bound logger with operation context for logging.
+    
+    Returns (decorator):
+        Callable: The decorated method with automatic logging.
     
     Raises:
         asyncio.TimeoutError: If timeout is exceeded and FastAPI is not available.
@@ -284,7 +294,7 @@ async def track_operation(
         Exception: Re-raises any exception that occurs during operation execution.
     
     Examples:
-        Basic usage:
+        Context manager usage:
         .. code-block:: python
         
             import asyncio
@@ -297,6 +307,26 @@ async def track_operation(
                     log.info("Data fetched successfully", records_count=len(result))
                     return result
         
+        Decorator usage on async function:
+        .. code-block:: python
+        
+            @track_operation("process_data", batch_id="batch_123", timeout=5.0)
+            async def process_data(data: list) -> list:
+                # Method execution is automatically logged
+                return [item.upper() for item in data]
+        
+        Decorator usage on class method:
+        .. code-block:: python
+        
+            class DataProcessor:
+                def __init__(self):
+                    self.logger = structlog.get_logger("data_processor")
+                
+                @track_operation("process_batch", include_args=["batch_id"])
+                async def process_batch(self, batch_id: str, data: list):
+                    # Logs will include batch_id in context
+                    return await self._process_data(data)
+        
         With timeout:
         .. code-block:: python
         
@@ -308,211 +338,193 @@ async def track_operation(
                 except asyncio.TimeoutError:
                     # Operation timed out after 30 seconds
                     return None
-        
-        With custom logger:
-        .. code-block:: python
-            from mindtrace.core.logging.logger import get_logger
-            custom_logger = get_logger("my_service", use_structlog=True)
-            async with track_operation("process_data", logger=custom_logger, batch_id="batch_123") as log:
-                await process_batch()
-                log.info("Batch processed", status="completed")
-        
-        With custom logger name:
-        .. code-block:: python
-        
-            async with track_operation("fetch_data", logger_name="api.data_fetcher", user_id="123") as log:
-                result = await fetch_from_api()
-                log.info("Data fetched", records_count=len(result))
-                return result
     """
     import time as _time
     import asyncio as _asyncio
+    from functools import wraps
+    from inspect import signature
     try:
         from fastapi import HTTPException as _HTTPException
     except Exception:
         _HTTPException = None  # type: ignore
 
-    bound = (logger or get_logger(logger_name or f"mindtrace.operations.{name}", use_structlog=True)).bind(operation=name, **context)
-    start_time = _time.time()
-
-    try:
-        bound.info(f"{name}_started")
-        if timeout:
-            async with _asyncio.timeout(timeout):
-                yield bound
-        else:
-            yield bound
-
-        duration = _time.time() - start_time
-        bound.info(f"{name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
-    except _asyncio.TimeoutError:
-        duration = _time.time() - start_time
-        bound.error(f"{name}_timeout", timeout_after=timeout, duration=duration, duration_ms=round(duration * 1000, 2))
-        if _HTTPException is not None:
-            raise _HTTPException(status_code=504, detail="Operation timed out")  # type: ignore
-        raise
-    except Exception as e:  # noqa: BLE001
-        duration = _time.time() - start_time
-        bound.error(
-            f"{name}_failed",
-            error=str(e),
-            error_type=type(e).__name__,
-            duration=duration,
-            duration_ms=round(duration * 1000, 2),
-        )
-        raise
-
-
-def track_method(operation_name: str | None = None, include_args: list[str] | None = None, logger_name: str | None = None) -> Callable:
-    """Decorator to track execution of sync/async methods with structured logs.
-    
-    This decorator automatically logs method execution with start, completion, and error
-    events, including duration metrics. Works with both synchronous and asynchronous
-    methods. Requires structlog to be installed.
-    
-    Args:
-        operation_name: Custom name for the operation. If None, uses the method name.
-        include_args: List of argument names to include in the log context. If None,
-            no arguments are logged. Only works with bound methods (self as first arg).
-        logger_name: Optional logger name. If None, uses "mindtrace.methods.{class_name}".
-    
-    Returns:
-        Callable: The decorated method with automatic logging.
-    
-    Raises:
-        ImportError: If structlog is not installed.
-        Exception: Re-raises any exception that occurs during method execution.
-    
-    Examples:
-        Basic usage on a class method:
-        .. code-block:: python
+    class UnifiedTrack:
+        """Unified object that can act as both context manager and decorator."""
         
-            from mindtrace.core.logging.logger import track_method
-            import structlog
+        def __init__(self, name, timeout, logger, logger_name, include_args, context):
+            self.name = name
+            self.timeout = timeout
+            self.logger = logger
+            self.logger_name = logger_name
+            self.include_args = include_args
+            self.context = context
+            self.start_time = None
+            self._structlog_logger = None  # Cache for structlog logger
+        
+        def _get_structlog_logger(self):
+            """Get a structlog logger, caching the result and warning only once."""
+            if self._structlog_logger is not None:
+                return self._structlog_logger
             
-            class DataProcessor:
-                def __init__(self):
-                    self.logger = structlog.get_logger("data_processor")
+            # Check if provided logger supports .bind()
+            if self.logger and hasattr(self.logger, 'bind'):
+                self._structlog_logger = self.logger
+            else:
+                if self.logger:
+                    warnings.warn(f"Logger {self.logger} does not support .bind() method. Creating new structlog logger.", UserWarning)
                 
-                @track_method()
-                async def process_data(self, data: list, batch_id: str):
-                    # Method execution is automatically logged
-                    return [item.upper() for item in data]
+                # Get a proper structlog logger
+                logger_name = self.logger_name or f"mindtrace.operations.{self.name}"
+                self._structlog_logger = get_logger(logger_name, use_structlog=True)
+            
+            return self._structlog_logger
         
-        With custom operation name and argument tracking:
-        .. code-block:: python
-        
-            class APIClient:
-                def __init__(self):
-                    self.logger = structlog.get_logger("api_client")
+        def _determine_logger(self, args, op_name):
+            """Determine the appropriate logger for the operation."""
+            if self.logger and hasattr(self.logger, "bind"):
+                return self.logger
+            
+            # For class methods, try to use the class's logger if it exists
+            if args and hasattr(args[0], '__class__') and hasattr(args[0], 'logger'):
+                # This is a class method with a logger attribute, use it
+                class_logger = args[0].logger
+                if hasattr(class_logger, 'bind'):
+                    return class_logger
+                else:
+                    # Class logger doesn't support bind, create new one with same name
+                    warnings.warn(f"Logger {class_logger} does not support .bind() method. Creating new structlog logger.", UserWarning)
+                    logger_name = getattr(class_logger, 'name', None) or f"mindtrace.{args[0].__class__.__name__.lower()}"
+                    return get_logger(logger_name, use_structlog=True)
+            elif self.logger_name:
+                return get_logger(self.logger_name, use_structlog=True)
+            else:
+                # Only issue warning if we have a logger that doesn't support bind and no class logger to use
+                if self.logger:
+                    warnings.warn(f"Logger {self.logger} does not support .bind() method. Creating new structlog logger.", UserWarning)
                 
-                @track_method("api_request", include_args=["endpoint", "method"])
-                async def make_request(self, endpoint: str, method: str, data: dict):
-                    # Logs will include endpoint and method in context
-                    response = await self._send_request(endpoint, method, data)
-                    return response
+                # Fallback to the original pattern for standalone functions
+                return get_logger(f"mindtrace.methods.{op_name}", use_structlog=True)
         
-        On synchronous methods:
-        .. code-block:: python
+        # Context manager methods
+        async def __aenter__(self):
+            """Async context manager entry."""
+            # Get structlog logger (with caching and single warning)
+            logger = self._get_structlog_logger()
+            bound = logger.bind(operation=self.name, **self.context)
+            
+            self.start_time = _time.time()
+            bound.info(f"{self.name}_started")
+            return bound
         
-            class Calculator:
-                def __init__(self):
-                    self.logger = structlog.get_logger("calculator")
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            """Async context manager exit."""
+            # Get structlog logger (with caching and single warning)
+            logger = self._get_structlog_logger()
+            bound = logger.bind(operation=self.name, **self.context)
+            
+            duration = _time.time() - self.start_time
+            
+            if exc_type is None:
+                bound.info(f"{self.name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+            elif isinstance(exc_val, _asyncio.TimeoutError):
+                bound.error(f"{self.name}_timeout", timeout_after=self.timeout, duration=duration, duration_ms=round(duration * 1000, 2))
+                if _HTTPException is not None:
+                    raise _HTTPException(status_code=504, detail="Operation timed out")  # type: ignore
+                raise
+            else:
+                bound.error(
+                    f"{self.name}_failed",
+                    error=str(exc_val),
+                    error_type=type(exc_val).__name__,
+                    duration=duration,
+                    duration_ms=round(duration * 1000, 2),
+                )
+                raise
+        
+        # Decorator method
+        def __call__(self, func: Callable) -> Callable:
+            """Make the decorator callable."""
+            op_name = self.name or func.__name__
+            
+            def extract_context(inner_func: Callable, args: tuple, kwargs: dict) -> dict[str, Any]:
+                sig = signature(inner_func)
+                bound_args = sig.bind(*args, **kwargs)
+                bound_args.apply_defaults()
+                wanted = self.include_args or []
+                return {name: bound_args.arguments[name] for name in wanted if name in bound_args.arguments}
+
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                start_time = _time.time()
                 
-                @track_method("calculation", include_args=["operation"])
-                def calculate(self, operation: str, x: float, y: float):
-                    if operation == "add":
-                        return x + y
-                    elif operation == "multiply":
-                        return x * y
+                # Extract context from arguments if needed
+                extracted_context = extract_context(func, args, kwargs)
+                
+                # Determine the appropriate logger
+                base_logger = self._determine_logger(args, op_name)
+                
+                bound = base_logger.bind(operation=op_name, **extracted_context, **self.context)
+                bound.info(f"{op_name}_started")
+                
+                try:
+                    if self.timeout:
+                        async with _asyncio.timeout(self.timeout):
+                            result = await func(*args, **kwargs)
                     else:
-                        raise ValueError(f"Unknown operation: {operation}")
-        
-        With custom logger name:
-        .. code-block:: python
-        
-            class DataProcessor:
-                @track_method("process", logger_name="data.processor", include_args=["batch_id"])
-                async def process_batch(self, batch_id: str, data: list):
-                    # Uses logger name "data.processor" instead of default
-                    return await self._process_data(data)
-        
-        The decorator automatically logs:
-        - {operation_name}_started: When method execution begins
-        - {operation_name}_completed: When method completes successfully (with duration)
-        - {operation_name}_failed: When method raises an exception (with error details)
-        
-        All log entries include duration in seconds and milliseconds.
-    """
-
-    def decorator(func: Callable) -> Callable:
-        op_name = operation_name or func.__name__
-
-        def extract_context(inner_func: Callable, args: tuple, kwargs: dict) -> dict[str, Any]:
-            from inspect import signature
-
-            sig = signature(inner_func)
-            bound_args = sig.bind(*args, **kwargs)
-            bound_args.apply_defaults()
-            wanted = include_args or []
-            return {name: bound_args.arguments[name] for name in wanted if name in bound_args.arguments}
-
-        async def _async_impl(self, *args, **kwargs):
-            import time as _time
-
-            context = extract_context(func, (self,) + args, kwargs)
-            base_logger = getattr(self, "logger", None)
-            if not base_logger or not hasattr(base_logger, "bind"):
-                default_name = logger_name or f"mindtrace.methods.{self.__class__.__name__}"
-                base_logger = get_logger(default_name, use_structlog=True)
-            bound = base_logger.bind(operation=op_name, **context)
-            start = _time.time()
-            bound.info(f"{op_name}_started")
-            try:
-                result = await func(self, *args, **kwargs)
-                duration = _time.time() - start
-                bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
-                return result
-            except Exception as e:  # noqa: BLE001
-                duration = _time.time() - start
-                bound.error(
-                    f"{op_name}_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    duration=duration,
-                    duration_ms=round(duration * 1000, 2),
-                )
-                raise
-
-        def _sync_impl(self, *args, **kwargs):
-            import time as _time
-
-            context = extract_context(func, (self,) + args, kwargs)
-            base_logger = getattr(self, "logger", None)
-            if not base_logger or not hasattr(base_logger, "bind"):
-                default_name = logger_name or f"mindtrace.methods.{self.__class__.__name__}"
-                base_logger = get_logger(default_name, use_structlog=True)
-            bound = base_logger.bind(operation=op_name, **context)
-            start = _time.time()
-            bound.info(f"{op_name}_started")
-            try:
-                result = func(self, *args, **kwargs)
-                duration = _time.time() - start
-                bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
-                return result
-            except Exception as e:  # noqa: BLE001
-                duration = _time.time() - start
-                bound.error(
-                    f"{op_name}_failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    duration=duration,
-                    duration_ms=round(duration * 1000, 2),
-                )
-                raise
-
-        import asyncio as _asyncio
-        return _async_impl if _asyncio.iscoroutinefunction(func) else _sync_impl  # type: ignore[name-defined]
-
-    return decorator
+                        result = await func(*args, **kwargs)
+                    
+                    duration = _time.time() - start_time
+                    bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+                    return result
+                    
+                except _asyncio.TimeoutError:
+                    duration = _time.time() - start_time
+                    bound.error(f"{op_name}_timeout", timeout_after=self.timeout, duration=duration, duration_ms=round(duration * 1000, 2))
+                    if _HTTPException is not None:
+                        raise _HTTPException(status_code=504, detail="Operation timed out")  # type: ignore
+                    raise
+                except Exception as e:
+                    duration = _time.time() - start_time
+                    bound.error(
+                        f"{op_name}_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        duration=duration,
+                        duration_ms=round(duration * 1000, 2)
+                    )
+                    raise
+            
+            @wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                start_time = _time.time()
+                
+                # Extract context from arguments if needed
+                extracted_context = extract_context(func, args, kwargs)
+                
+                # Determine the appropriate logger
+                base_logger = self._determine_logger(args, op_name)
+                
+                bound = base_logger.bind(operation=op_name, **extracted_context, **self.context)
+                bound.info(f"{op_name}_started")
+                
+                try:
+                    result = func(*args, **kwargs)
+                    duration = _time.time() - start_time
+                    bound.info(f"{op_name}_completed", duration=duration, duration_ms=round(duration * 1000, 2))
+                    return result
+                except Exception as e:
+                    duration = _time.time() - start_time
+                    bound.error(
+                        f"{op_name}_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        duration=duration,
+                        duration_ms=round(duration * 1000, 2)
+                    )
+                    raise
+            
+            # Return appropriate wrapper based on function type
+            return async_wrapper if _asyncio.iscoroutinefunction(func) else sync_wrapper
+    
+    return UnifiedTrack(name, timeout, logger, logger_name, include_args, context)
 
