@@ -243,6 +243,7 @@ async def demonstrate_dual_backend():
     mongo_user = UserCreate(name="MongoDB User", age=30, email="mongo@example.com")
     mongo_inserted = await backend.insert_async(mongo_user)
     print(f"Inserted to MongoDB: {mongo_inserted.name}")
+    print(f"MongoDB ID: {mongo_inserted.id}")
 
     # Switch to Redis
     backend.switch_backend(BackendType.REDIS)
@@ -407,8 +408,8 @@ async def demonstrate_unified_document_model():
     await backend.delete_async(str(mongo_inserted2.id))
 
     backend.switch_backend(BackendType.REDIS)
-    await backend.delete_async(redis_inserted1.pk)
-    await backend.delete_async(redis_inserted2.pk)
+    await backend.delete_async(redis_inserted1.id)
+    await backend.delete_async(redis_inserted2.id)
 
     print("Unified document model demonstration completed!")
 
