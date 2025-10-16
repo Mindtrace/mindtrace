@@ -1,5 +1,5 @@
 from typing import Annotated, Any
-
+from datetime import datetime
 from beanie import Indexed
 from pydantic import Field
 
@@ -43,5 +43,9 @@ class Datum(MindtraceDocument):
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional metadata associated with this datum."
+    )
+    added_at: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp when this datum was added to the datalake."
     )
 
