@@ -10,6 +10,7 @@ from mindtrace.datalake.types import Datum
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
+import copy
 
 class Datalake(Mindtrace):
     """
@@ -39,7 +40,7 @@ class Datalake(Mindtrace):
         """
         self.mongo_db_name: str = mongo_db_name
         self.mongo_db_uri: str = mongo_db_uri
-        self.datum_database: MongoMindtraceODMBackend = MongoMindtraceODMBackend(
+        self.datum_database: MongoMindtraceODMBackend[Datum] = MongoMindtraceODMBackend(
             model_cls=Datum,
             db_name=self.mongo_db_name,
             db_uri=self.mongo_db_uri,
@@ -121,6 +122,7 @@ class Datalake(Mindtrace):
             return datum
         if datum.registry_uri not in self.registries:
             self.registries[datum.registry_uri] = Registry(backend=LocalRegistryBackend(uri=datum.registry_uri))
+        assert datum.registry_key is not None
         data = self.registries[datum.registry_uri].load(datum.registry_key)
         datum.data = data
         return datum
@@ -192,3 +194,55 @@ class Datalake(Mindtrace):
                         queue.append(child_id)
         
         return result
+
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any]) -> list[list[PydanticObjectId]]:
+        f"""
+        Query the data in the datalake using a list of queries.
+
+        Args:
+            query: A list of queries or a single query. 
+                If a list of queries is provided, the first query is the base query, 
+                and then the remaining queries are used to obtain derived data. 
+                So the base query might find images from a certain project, and then
+                a second query might find classification labels for those images.
+                If no classification label is found for an image, the image id is not included in the result.
+                The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
+                
+                The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
+                Currently only "latest" is supported, which finds the datum with the latest added_at timestamp.
+                If no strategy is provided, "latest" is used.
+
+                Otherwise, the queries have the same syntax as MongoDB filters: https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/query/specify-query/
+
+            If a single query is provided, it is used to find the base data and no derived data is obtained.
+
+        Returns:
+
+            List of lists of datum ids, where each sublist contains the id of the base datum and the ids of 
+            any derived data, with the length of each sublist equalling the length of query (or 1 if query is a dict)
+        """
+        if isinstance(query, dict):
+            query = [query]
+
+        assert len(query) > 0
+        entries = await self.datum_database.find(query[0])
+        result = []
+        for entry in entries:
+            this_entry = [entry.id]
+            for subquery in query[1:]:
+                subquery = copy.deepcopy(subquery)
+                strategy = subquery.pop("strategy", "latest")
+                if "derived_from" in subquery:
+                    subquery["derived_from"] = this_entry[subquery["derived_from"]].id
+
+                subquery_entries = await self.datum_database.find(subquery)
+                if not subquery_entries:
+                    break
+                if strategy == "latest":
+                    this_entry.append(max(subquery_entries, key=lambda x: x.added_at).id)
+                else:
+                    raise ValueError(f"Invalid strategy: {strategy}")
+            else:
+                result.append(this_entry)
+        return result
+
