@@ -8,10 +8,12 @@ from mindtrace.database import (
     MindtraceODMBackend,
 )
 
+
 class UserModel(BaseModel):
     name: str
     age: int
     email: str
+
 
 # Test concrete implementation of abstract base class
 class ConcreteBackend(MindtraceODMBackend):

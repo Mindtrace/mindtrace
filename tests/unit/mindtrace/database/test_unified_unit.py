@@ -514,78 +514,81 @@ def test_unified_model_to_redis_model():
 
 def test_unified_backend_auto_generation_with_field_default_factory():
     """Test auto-generation with field default_factory."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
-    from pydantic import Field
     from typing import List
-    
+
+    from pydantic import Field
+
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+
     # Test model with default_factory
     class DefaultFactoryUser(UnifiedMindtraceDocument):
         name: str
         tags: List[str] = Field(default_factory=list)
         scores: List[int] = Field(default_factory=lambda: [0, 0, 0])
-        
+
         class Meta:
             collection_name = "default_factory_users"
             indexed_fields = ["name"]
-    
+
     # Test MongoDB auto-generation with default_factory
     mongo_model = DefaultFactoryUser._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "default_factory_users"
-    
+
     # Test Redis auto-generation with default_factory
     redis_model = DefaultFactoryUser._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "mindtrace"
 
 
 def test_unified_backend_auto_generation_with_optional_indexed_fields():
     """Test auto-generation with optional indexed fields."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
     from typing import Optional
-    
+
+    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
+
     # Test model with optional indexed fields
     class OptionalIndexedUser(UnifiedMindtraceDocument):
         name: str
         email: Optional[str] = None
         phone: Optional[str] = None
-        
+
         class Meta:
             collection_name = "optional_indexed_users"
             indexed_fields = ["name", "email"]  # email is optional but indexed
-    
+
     # Test MongoDB auto-generation with optional indexed fields
     mongo_model = OptionalIndexedUser._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "optional_indexed_users"
-    
+
     # Test Redis auto-generation with optional indexed fields
     redis_model = OptionalIndexedUser._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "mindtrace"
 
 
 def test_unified_backend_get_active_backend_with_no_backends():
     """Test _get_active_backend with no backends configured."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceODMBackend, BackendType
-    
+    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+
     # Create a backend with valid configuration first
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Manually set backends to None to test the error condition
     backend.mongo_backend = None
     backend.redis_backend = None
     backend._active_backend = None
-    
+
     # Test that RuntimeError is raised when no backends are available
     with pytest.raises(RuntimeError, match="No backend available"):
         backend._get_active_backend()
@@ -593,15 +596,15 @@ def test_unified_backend_get_active_backend_with_no_backends():
 
 def test_unified_backend_switch_backend_with_unknown_type():
     """Test switch_backend with unknown backend type."""
-    from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceODMBackend, BackendType
-    
+    from mindtrace.database.backends.unified_odm_backend import BackendType, UnifiedMindtraceODMBackend
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Test that ValueError is raised when unknown backend type is provided
     with pytest.raises(ValueError, match="Unknown backend type"):
         backend.switch_backend("unknown_backend")
@@ -609,115 +612,119 @@ def test_unified_backend_switch_backend_with_unknown_type():
 
 def test_unified_backend_initialize_async_no_mongo_backend():
     """Test initialize_async when no MongoDB backend is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     with pytest.raises(ValueError, match="initialize_async.*called but no asynchronous.*backend is configured"):
         import asyncio
+
         asyncio.run(backend.initialize_async())
+
 
 def test_unified_backend_initialize_sync():
     """Test initialize_sync method."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # Should not raise
     backend.initialize_sync()
 
+
 def test_unified_backend_get_current_backend_type_unknown():
     """Test get_current_backend_type with unknown active backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Manually set an unknown active backend
     backend._active_backend = MagicMock()
-    
+
     with pytest.raises(RuntimeError, match="Unknown active backend"):
         backend.get_current_backend_type()
 
+
 def test_unified_backend_switch_backend_invalid_type():
     """Test switch_backend with invalid backend type."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     with pytest.raises(ValueError, match="Unknown backend type"):
         backend.switch_backend("invalid_type")
 
+
 def test_unified_backend_switch_backend_mongo_not_configured():
     """Test switch_backend to MongoDB when not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     with pytest.raises(ValueError, match="MongoDB backend is not configured"):
         backend.switch_backend(BackendType.MONGO)
 
+
 def test_unified_backend_switch_backend_redis_not_configured():
     """Test switch_backend to Redis when not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     with pytest.raises(ValueError, match="Redis backend is not configured"):
         backend.switch_backend(BackendType.REDIS)
 
+
 def test_unified_backend_get_active_backend_no_backends_available():
     """Test _get_active_backend when no backends are available."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Manually set backends to None
     backend.mongo_backend = None
     backend.redis_backend = None
     backend._active_backend = None
-    
+
     with pytest.raises(RuntimeError, match="No backend available"):
         backend._get_active_backend()
 
+
 def test_unified_backend_auto_generate_mongo_model_with_unique_fields():
     """Test _auto_generate_mongo_model with unique fields."""
-            
+
     mongo_model = UnifiedUserDoc._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "test_users"
-    
+
     # Check that email field has unique index
-    annotations = getattr(mongo_model, '__annotations__', {})
-    assert 'email' in annotations
+    annotations = getattr(mongo_model, "__annotations__", {})
+    assert "email" in annotations
+
 
 def test_unified_backend_auto_generate_redis_model_with_optional_fields():
     """Test _auto_generate_redis_model with optional fields."""
+
     # Create a model with optional fields
     class OptionalFieldDoc(UnifiedMindtraceDocument):
         name: str
@@ -730,13 +737,14 @@ def test_unified_backend_auto_generate_redis_model_with_optional_fields():
 
     redis_model = OptionalFieldDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "optional_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_default_factory():
     """Test _auto_generate_redis_model with default_factory."""
     from typing import List
-    
+
     class DefaultFactoryDoc(UnifiedMindtraceDocument):
         name: str
         tags: List[str] = Field(default_factory=list)
@@ -748,432 +756,431 @@ def test_unified_backend_auto_generate_redis_model_with_default_factory():
 
     redis_model = DefaultFactoryDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "default_factory_test"
 
 
 @pytest.mark.asyncio
 async def test_unified_backend_delete_async_sync_backend():
     """Test delete_async with synchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
         mock_backend.delete.return_value = None
         mock_get_backend.return_value = mock_backend
-        
+
         await backend.delete_async("test_id")
         mock_backend.delete.assert_called_once_with("test_id")
+
 
 @pytest.mark.asyncio
 async def test_unified_backend_delete_async_async_backend():
     """Test delete_async with asynchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = True
         mock_backend.delete = AsyncMock(side_effect=None)
         mock_get_backend.return_value = mock_backend
-        
+
         await backend.delete_async("test_id")
         mock_backend.delete.assert_called_once_with("test_id")
+
 
 @pytest.mark.asyncio
 async def test_unified_backend_all_async_sync_backend():
     """Test all_async with synchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
         mock_backend.all.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
         mock_get_backend.return_value = mock_backend
-        
+
         result = await backend.all_async()
         assert len(result) == 1
         assert result[0].name == "Test"
+
 
 @pytest.mark.asyncio
 async def test_unified_backend_all_async_async_backend():
     """Test all_async with asynchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = True
-        mock_backend.all = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None)
+        mock_backend.all = AsyncMock(
+            return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None
+        )
         mock_get_backend.return_value = mock_backend
-        
+
         result = await backend.all_async()
         assert len(result) == 1
         assert result[0].name == "Test"
 
+
 @pytest.mark.asyncio
 async def test_unified_backend_find_async_sync_backend():
     """Test find_async with synchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
         mock_backend.find.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
         mock_get_backend.return_value = mock_backend
-        
+
         result = await backend.find_async(name="Test")
         assert len(result) == 1
         assert result[0].name == "Test"
+
 
 @pytest.mark.asyncio
 async def test_unified_backend_find_async_async_backend():
     """Test find_async with asynchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = True
-        mock_backend.find = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None)
+        mock_backend.find = AsyncMock(
+            return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None
+        )
         mock_get_backend.return_value = mock_backend
-        
+
         result = await backend.find_async(name="Test")
         assert len(result) == 1
         assert result[0].name == "Test"
 
+
 def test_unified_backend_get_unified_model_no_model():
     """Test get_unified_model when no model is configured."""
-            
+
     # Create a backend with a model first, then manually set it to None
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # Manually set unified_model_cls to None to test the error condition
     backend.unified_model_cls = None
-    
+
     with pytest.raises(ValueError, match="No unified model class configured"):
         backend.get_unified_model()
 
+
 def test_unified_backend_get_mongo_backend_not_configured():
     """Test get_mongo_backend when MongoDB is not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     with pytest.raises(ValueError, match="MongoDB backend is not configured"):
         backend.get_mongo_backend()
 
+
 def test_unified_backend_get_redis_backend_not_configured():
     """Test get_redis_backend when Redis is not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     with pytest.raises(ValueError, match="Redis backend is not configured"):
         backend.get_redis_backend()
 
+
 def test_unified_backend_has_mongo_backend_true():
     """Test has_mongo_backend when MongoDB is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     assert backend.has_mongo_backend() is True
+
 
 def test_unified_backend_has_mongo_backend_false():
     """Test has_mongo_backend when MongoDB is not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     assert backend.has_mongo_backend() is False
+
 
 def test_unified_backend_has_redis_backend_true():
     """Test has_redis_backend when Redis is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     assert backend.has_redis_backend() is True
+
 
 def test_unified_backend_has_redis_backend_false():
     """Test has_redis_backend when Redis is not configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     assert backend.has_redis_backend() is False
+
 
 def test_unified_backend_get_mongo_backend_configured():
     """Test get_mongo_backend when MongoDB is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     mongo_backend = backend.get_mongo_backend()
     assert mongo_backend is not None
 
+
 def test_unified_backend_get_redis_backend_configured():
     """Test get_redis_backend when Redis is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     redis_backend = backend.get_redis_backend()
     assert redis_backend is not None
 
+
 def test_unified_backend_get_raw_model():
     """Test get_raw_model method."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.get_raw_model.return_value = UserCreate
         mock_get_backend.return_value = mock_backend
-        
+
         result = backend.get_raw_model()
         assert result == UserCreate
 
+
 def test_unified_backend_get_unified_model_configured():
     """Test get_unified_model when model is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     result = backend.get_unified_model()
     assert result == UnifiedUserDoc
 
 
 def test_unified_backend_initialize_async_context_warning():
     """Test initialize method when called from async context."""
-    import asyncio
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Mock asyncio.get_running_loop to simulate async context
     with patch("asyncio.get_running_loop") as mock_get_loop:
         mock_get_loop.return_value = MagicMock()
-        
+
         # Mock print to capture the warning
         with patch("builtins.print") as mock_print:
             backend.initialize()
-            mock_print.assert_called_with("Warning: initialize() called from async context. Use await initialize_async() instead.")
+            mock_print.assert_called_with(
+                "Warning: initialize() called from async context. Use await initialize_async() instead."
+            )
+
 
 def test_unified_backend_handle_async_call_sync_backend():
     """Test _handle_async_call with synchronous backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # Mock the backend to be synchronous
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = False
         mock_backend.test_method.return_value = "sync_result"
         mock_get_backend.return_value = mock_backend
-        
+
         result = backend._handle_async_call("test_method", "arg1", kwarg1="value1")
-        
+
         assert result == "sync_result"
         mock_backend.test_method.assert_called_once_with("arg1", kwarg1="value1")
 
+
 def test_unified_backend_handle_async_call_async_backend():
     """Test _handle_async_call with asynchronous backend."""
-    import asyncio
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Mock the backend to be asynchronous
-    with patch.object(backend, '_get_active_backend') as mock_get_backend:
+    with patch.object(backend, "_get_active_backend") as mock_get_backend:
         mock_backend = MagicMock()
         mock_backend.is_async.return_value = True
         mock_backend.test_method.return_value = "async_result"
         mock_get_backend.return_value = mock_backend
-        
+
         with patch("asyncio.run") as mock_asyncio_run:
             mock_asyncio_run.return_value = "async_result"
-            
+
             result = backend._handle_async_call("test_method", "arg1", kwarg1="value1")
-            
+
             assert result == "async_result"
             mock_asyncio_run.assert_called_once()
 
+
 def test_unified_backend_convert_unified_to_backend_data_mongo():
     """Test _convert_unified_to_backend_data for MongoDB backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.MONGO
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id field removed
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_redis():
     """Test _convert_unified_to_backend_data for Redis backend."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.REDIS
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id converted to pk
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert result.data['pk'] == "test123"
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert result.data["pk"] == "test123"
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_redis_none_id():
     """Test _convert_unified_to_backend_data for Redis backend with None id."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UnifiedUserDoc(id=None, name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.REDIS
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id field removed (not converted to pk)
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert 'pk' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert "pk" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_non_unified():
     """Test _convert_unified_to_backend_data with non-unified model."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UserCreate(name="John", age=30, email="john@example.com")
-    
+
     result = backend._convert_unified_to_backend_data(user)
-    
+
     # Should return the original object unchanged
     assert result == user
+
 
 def test_unified_backend_auto_generate_redis_model_with_callable_default_factory():
     """Test _auto_generate_redis_model with callable default_factory."""
     from typing import List
-    
+
     class CallableDefaultDoc(UnifiedMindtraceDocument):
         name: str
         tags: List[str] = Field(default_factory=list)
@@ -1185,11 +1192,13 @@ def test_unified_backend_auto_generate_redis_model_with_callable_default_factory
 
     redis_model = CallableDefaultDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "callable_default_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_ellipsis_default():
     """Test _auto_generate_redis_model with ellipsis default."""
+
     class EllipsisDefaultDoc(UnifiedMindtraceDocument):
         name: str = Field(default=...)
         age: int = Field(default=25)
@@ -1200,11 +1209,13 @@ def test_unified_backend_auto_generate_redis_model_with_ellipsis_default():
 
     redis_model = EllipsisDefaultDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "ellipsis_default_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_none_default_factory():
     """Test _auto_generate_redis_model with None default_factory."""
+
     class NoneDefaultFactoryDoc(UnifiedMindtraceDocument):
         name: str = Field(default_factory=None)
         age: int = Field(default=25)
@@ -1215,8 +1226,9 @@ def test_unified_backend_auto_generate_redis_model_with_none_default_factory():
 
     redis_model = NoneDefaultFactoryDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "none_default_factory_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_indexed_fields_and_defaults():
     """Test _auto_generate_redis_model with indexed fields that have defaults."""
@@ -1232,310 +1244,245 @@ def test_unified_backend_auto_generate_redis_model_with_indexed_fields_and_defau
 
     redis_model = IndexedDefaultFieldsDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, '__annotations__')
-    assert hasattr(redis_model, 'Meta')
-    
+    assert hasattr(redis_model, "__annotations__")
+    assert hasattr(redis_model, "Meta")
+
     # Check that fields are properly created with Redis Field instances
-    assert hasattr(redis_model, 'name')
-    assert hasattr(redis_model, 'age')
-    assert hasattr(redis_model, 'email')
+    assert hasattr(redis_model, "name")
+    assert hasattr(redis_model, "age")
+    assert hasattr(redis_model, "email")
+
 
 def test_unified_backend_auto_generate_mongo_model_with_no_fields():
     """Test _auto_generate_mongo_model with a class that has no fields."""
+
     class EmptyDoc(UnifiedMindtraceDocument):
         class Meta:
             collection_name = "empty_collection"
 
     mongo_model = EmptyDoc._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "empty_collection"
 
 
 def test_unified_backend_initialize_sync_no_redis_backend():
     """Test initialize_sync when no Redis backend is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     with pytest.raises(ValueError, match="initialize_sync.*called but no synchronous.*backend is configured"):
         backend.initialize_sync()
 
+
 def test_unified_backend_initialize_sync_with_redis_backend():
     """Test initialize_sync when Redis backend is configured."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # Mock the Redis backend initialize method
-    with patch.object(backend.redis_backend, 'initialize') as mock_init:
+    with patch.object(backend.redis_backend, "initialize") as mock_init:
         backend.initialize_sync()
         mock_init.assert_called_once()
 
+
 def test_unified_backend_get_active_backend_prefer_mongo_mongo_available():
     """Test _get_active_backend when preferring MongoDB and it's available."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     active_backend = backend._get_active_backend()
     assert active_backend == backend.mongo_backend
+
 
 def test_unified_backend_get_active_backend_prefer_redis_redis_available():
     """Test _get_active_backend when preferring Redis and it's available."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     active_backend = backend._get_active_backend()
     assert active_backend == backend.redis_backend
+
 
 def test_unified_backend_get_active_backend_prefer_mongo_redis_available():
     """Test _get_active_backend when preferring MongoDB but only Redis is available."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.MONGO
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.MONGO
     )
-    
+
     active_backend = backend._get_active_backend()
     assert active_backend == backend.redis_backend
 
+
 def test_unified_backend_get_active_backend_prefer_redis_mongo_available():
     """Test _get_active_backend when preferring Redis but only MongoDB is available."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.REDIS
+        preferred_backend=BackendType.REDIS,
     )
-    
+
     active_backend = backend._get_active_backend()
     assert active_backend == backend.mongo_backend
 
+
 def test_unified_backend_get_active_backend_cached():
     """Test _get_active_backend when result is cached."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # First call should set the cache
     active_backend1 = backend._get_active_backend()
     assert active_backend1 == backend.redis_backend
-    
+
     # Second call should use cached result
     active_backend2 = backend._get_active_backend()
     assert active_backend2 == backend.redis_backend
     assert active_backend1 is active_backend2
 
+
 def test_unified_backend_convert_unified_to_backend_data_mongo_with_id():
     """Test _convert_unified_to_backend_data for MongoDB with id field."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.MONGO
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id field removed
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_mongo_without_id():
     """Test _convert_unified_to_backend_data for MongoDB without id field."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.MONGO
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper without id field
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_redis_with_id():
     """Test _convert_unified_to_backend_data for Redis with id field."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.REDIS
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id converted to pk
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert result.data['pk'] == "test123"
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert result.data["pk"] == "test123"
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_redis_without_id():
     """Test _convert_unified_to_backend_data for Redis without id field."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.REDIS
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper without id field
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert 'pk' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert "pk" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
+
 
 def test_unified_backend_convert_unified_to_backend_data_redis_with_none_id():
     """Test _convert_unified_to_backend_data for Redis with None id field."""
-            
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=UnifiedUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     user = UnifiedUserDoc(id=None, name="John", age=30, email="john@example.com")
-    
-    with patch.object(backend, 'get_current_backend_type') as mock_get_type:
+
+    with patch.object(backend, "get_current_backend_type") as mock_get_type:
         mock_get_type.return_value = BackendType.REDIS
-        
+
         result = backend._convert_unified_to_backend_data(user)
-        
+
         # Should be a DataWrapper with id field removed (not converted to pk)
-        assert hasattr(result, 'data')
-        assert 'id' not in result.data
-        assert 'pk' not in result.data
-        assert result.data['name'] == "John"
-        assert result.data['age'] == 30
-        assert result.data['email'] == "john@example.com"
-
-def test_unified_backend_convert_unified_to_backend_data_non_unified():
-    """Test _convert_unified_to_backend_data with non-unified model."""
-            
-    backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=UnifiedUserDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
-    )
-    
-    user = UserCreate(name="John", age=30, email="john@example.com")
-    
-    result = backend._convert_unified_to_backend_data(user)
-    
-    # Should return the original object unchanged
-    assert result == user
-
-def test_unified_backend_auto_generate_redis_model_with_callable_default_factory():
-    """Test _auto_generate_redis_model with callable default_factory."""
-    from typing import List
-    
-    class CallableDefaultDoc(UnifiedMindtraceDocument):
-        name: str
-        tags: List[str] = Field(default_factory=list)
-        scores: List[int] = Field(default_factory=lambda: [1, 2, 3])
-
-        class Meta:
-            collection_name = "callable_default_test"
-            global_key_prefix = "callable_default_test"
-
-    redis_model = CallableDefaultDoc._auto_generate_redis_model()
-    assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
-    assert redis_model.Meta.global_key_prefix == "callable_default_test"
-
-def test_unified_backend_auto_generate_redis_model_with_ellipsis_default():
-    """Test _auto_generate_redis_model with ellipsis default."""
-    class EllipsisDefaultDoc(UnifiedMindtraceDocument):
-        name: str = Field(default=...)
-        age: int = Field(default=25)
-
-        class Meta:
-            collection_name = "ellipsis_default_test"
-            global_key_prefix = "ellipsis_default_test"
-
-    redis_model = EllipsisDefaultDoc._auto_generate_redis_model()
-    assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
-    assert redis_model.Meta.global_key_prefix == "ellipsis_default_test"
-
-def test_unified_backend_auto_generate_redis_model_with_none_default_factory():
-    """Test _auto_generate_redis_model with None default_factory."""
-    class NoneDefaultFactoryDoc(UnifiedMindtraceDocument):
-        name: str = Field(default_factory=None)
-        age: int = Field(default=25)
-
-        class Meta:
-            collection_name = "none_default_factory_test"
-            global_key_prefix = "none_default_factory_test"
-
-    redis_model = NoneDefaultFactoryDoc._auto_generate_redis_model()
-    assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
-    assert redis_model.Meta.global_key_prefix == "none_default_factory_test"
+        assert hasattr(result, "data")
+        assert "id" not in result.data
+        assert "pk" not in result.data
+        assert result.data["name"] == "John"
+        assert result.data["age"] == 30
+        assert result.data["email"] == "john@example.com"
 
 
 def test_unified_backend_auto_generate_redis_model_with_union_type_not_optional():
     """Test _auto_generate_redis_model with Union type that is not Optional."""
     from typing import Union
-    
+
     class UnionNotOptionalDoc(UnifiedMindtraceDocument):
         name: str
         value: Union[str, int]  # This is not Optional[str, None]
@@ -1546,13 +1493,14 @@ def test_unified_backend_auto_generate_redis_model_with_union_type_not_optional(
 
     redis_model = UnionNotOptionalDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "union_not_optional_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_union_type_three_args():
     """Test _auto_generate_redis_model with Union type that has more than 2 args."""
     from typing import Union
-    
+
     class UnionThreeArgsDoc(UnifiedMindtraceDocument):
         name: str
         value: Union[str, int, float]  # This has 3 args, not 2
@@ -1563,13 +1511,14 @@ def test_unified_backend_auto_generate_redis_model_with_union_type_three_args():
 
     redis_model = UnionThreeArgsDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "union_three_args_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_union_type_no_none():
     """Test _auto_generate_redis_model with Union type that doesn't contain None."""
     from typing import Union
-    
+
     class UnionNoNoneDoc(UnifiedMindtraceDocument):
         name: str
         value: Union[str, int]  # This doesn't contain None
@@ -1580,13 +1529,14 @@ def test_unified_backend_auto_generate_redis_model_with_union_type_no_none():
 
     redis_model = UnionNoNoneDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "union_no_none_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_union_type_none_first():
     """Test _auto_generate_redis_model with Union type where None is first."""
     from typing import Union
-    
+
     class UnionNoneFirstDoc(UnifiedMindtraceDocument):
         name: str
         value: Union[None, str]  # None is first
@@ -1597,11 +1547,13 @@ def test_unified_backend_auto_generate_redis_model_with_union_type_none_first():
 
     redis_model = UnionNoneFirstDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "union_none_first_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_field_info_no_default_attr():
     """Test _auto_generate_redis_model with field info that has no default attribute."""
+
     class NoDefaultAttrDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1611,22 +1563,24 @@ def test_unified_backend_auto_generate_redis_model_with_field_info_no_default_at
             global_key_prefix = "no_default_attr_test"
 
     # Mock the field info to not have a default attribute
-    with patch.object(NoDefaultAttrDoc, '__annotations__', {'name': str, 'age': int}):
-        with patch.object(NoDefaultAttrDoc, 'name', create=True) as mock_name:
-            with patch.object(NoDefaultAttrDoc, 'age', create=True) as mock_age:
+    with patch.object(NoDefaultAttrDoc, "__annotations__", {"name": str, "age": int}):
+        with patch.object(NoDefaultAttrDoc, "name", create=True) as mock_name:
+            with patch.object(NoDefaultAttrDoc, "age", create=True) as mock_age:
                 # Remove default attribute from mock objects
-                if hasattr(mock_name, 'default'):
-                    delattr(mock_name, 'default')
-                if hasattr(mock_age, 'default'):
-                    delattr(mock_age, 'default')
-                
+                if hasattr(mock_name, "default"):
+                    delattr(mock_name, "default")
+                if hasattr(mock_age, "default"):
+                    delattr(mock_age, "default")
+
                 redis_model = NoDefaultAttrDoc._auto_generate_redis_model()
                 assert redis_model is not None
-                assert hasattr(redis_model, 'Meta')
+                assert hasattr(redis_model, "Meta")
                 assert redis_model.Meta.global_key_prefix == "no_default_attr_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_field_info_no_default_factory_attr():
     """Test _auto_generate_redis_model with field info that has no default_factory attribute."""
+
     class NoDefaultFactoryAttrDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1636,22 +1590,24 @@ def test_unified_backend_auto_generate_redis_model_with_field_info_no_default_fa
             global_key_prefix = "no_default_factory_attr_test"
 
     # Mock the field info to not have a default_factory attribute
-    with patch.object(NoDefaultFactoryAttrDoc, '__annotations__', {'name': str, 'age': int}):
-        with patch.object(NoDefaultFactoryAttrDoc, 'name', create=True) as mock_name:
-            with patch.object(NoDefaultFactoryAttrDoc, 'age', create=True) as mock_age:
+    with patch.object(NoDefaultFactoryAttrDoc, "__annotations__", {"name": str, "age": int}):
+        with patch.object(NoDefaultFactoryAttrDoc, "name", create=True) as mock_name:
+            with patch.object(NoDefaultFactoryAttrDoc, "age", create=True) as mock_age:
                 # Remove default_factory attribute from mock objects
-                if hasattr(mock_name, 'default_factory'):
-                    delattr(mock_name, 'default_factory')
-                if hasattr(mock_age, 'default_factory'):
-                    delattr(mock_age, 'default_factory')
-                
+                if hasattr(mock_name, "default_factory"):
+                    delattr(mock_name, "default_factory")
+                if hasattr(mock_age, "default_factory"):
+                    delattr(mock_age, "default_factory")
+
                 redis_model = NoDefaultFactoryAttrDoc._auto_generate_redis_model()
                 assert redis_model is not None
-                assert hasattr(redis_model, 'Meta')
+                assert hasattr(redis_model, "Meta")
                 assert redis_model.Meta.global_key_prefix == "no_default_factory_attr_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_field_info_none_default_factory():
     """Test _auto_generate_redis_model with field info that has None default_factory."""
+
     class NoneDefaultFactoryDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1661,19 +1617,21 @@ def test_unified_backend_auto_generate_redis_model_with_field_info_none_default_
             global_key_prefix = "none_default_factory_test"
 
     # Mock the field info to have None default_factory
-    with patch.object(NoneDefaultFactoryDoc, '__annotations__', {'name': str, 'age': int}):
-        with patch.object(NoneDefaultFactoryDoc, 'name', create=True) as mock_name:
-            with patch.object(NoneDefaultFactoryDoc, 'age', create=True) as mock_age:
+    with patch.object(NoneDefaultFactoryDoc, "__annotations__", {"name": str, "age": int}):
+        with patch.object(NoneDefaultFactoryDoc, "name", create=True) as mock_name:
+            with patch.object(NoneDefaultFactoryDoc, "age", create=True) as mock_age:
                 mock_name.default_factory = None
                 mock_age.default_factory = None
-                
+
                 redis_model = NoneDefaultFactoryDoc._auto_generate_redis_model()
                 assert redis_model is not None
-                assert hasattr(redis_model, 'Meta')
+                assert hasattr(redis_model, "Meta")
                 assert redis_model.Meta.global_key_prefix == "none_default_factory_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_indexed_field_no_default():
     """Test _auto_generate_redis_model with indexed field that has no default."""
+
     class IndexedNoDefaultDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1685,11 +1643,13 @@ def test_unified_backend_auto_generate_redis_model_with_indexed_field_no_default
 
     redis_model = IndexedNoDefaultDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "indexed_no_default_test"
+
 
 def test_unified_backend_auto_generate_redis_model_with_non_indexed_field_no_default():
     """Test _auto_generate_redis_model with non-indexed field that has no default."""
+
     class NonIndexedNoDefaultDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1701,11 +1661,13 @@ def test_unified_backend_auto_generate_redis_model_with_non_indexed_field_no_def
 
     redis_model = NonIndexedNoDefaultDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "non_indexed_no_default_test"
+
 
 def test_unified_backend_auto_generate_mongo_model_with_no_meta_attrs():
     """Test _auto_generate_mongo_model with no meta attributes."""
+
     class NoMetaAttrsDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1715,12 +1677,14 @@ def test_unified_backend_auto_generate_mongo_model_with_no_meta_attrs():
 
     mongo_model = NoMetaAttrsDoc._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "unified_documents"  # Default value
     assert mongo_model.Settings.use_cache is False  # Default value
 
+
 def test_unified_backend_auto_generate_mongo_model_with_custom_meta_attrs():
     """Test _auto_generate_mongo_model with custom meta attributes."""
+
     class CustomMetaAttrsDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1731,12 +1695,14 @@ def test_unified_backend_auto_generate_mongo_model_with_custom_meta_attrs():
 
     mongo_model = CustomMetaAttrsDoc._auto_generate_mongo_model()
     assert mongo_model is not None
-    assert hasattr(mongo_model, 'Settings')
+    assert hasattr(mongo_model, "Settings")
     assert mongo_model.Settings.name == "custom_collection"
     assert mongo_model.Settings.use_cache is True
 
+
 def test_unified_backend_auto_generate_redis_model_with_custom_meta_attrs():
     """Test _auto_generate_redis_model with custom meta attributes."""
+
     class CustomMetaAttrsDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1747,13 +1713,15 @@ def test_unified_backend_auto_generate_redis_model_with_custom_meta_attrs():
 
     redis_model = CustomMetaAttrsDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "custom_prefix"
     assert redis_model.Meta.index_name == "custom_prefix:CustomMetaAttrsDocRedis:index"
     assert redis_model.Meta.model_key_prefix == "CustomMetaAttrsDocRedis"
 
+
 def test_unified_backend_auto_generate_redis_model_with_default_meta_attrs():
     """Test _auto_generate_redis_model with default meta attributes."""
+
     class DefaultMetaAttrsDoc(UnifiedMindtraceDocument):
         name: str
         age: int
@@ -1763,21 +1731,23 @@ def test_unified_backend_auto_generate_redis_model_with_default_meta_attrs():
 
     redis_model = DefaultMetaAttrsDoc._auto_generate_redis_model()
     assert redis_model is not None
-    assert hasattr(redis_model, 'Meta')
+    assert hasattr(redis_model, "Meta")
     assert redis_model.Meta.global_key_prefix == "mindtrace"  # Default value
     assert redis_model.Meta.index_name == "mindtrace:DefaultMetaAttrsDocRedis:index"
     assert redis_model.Meta.model_key_prefix == "DefaultMetaAttrsDocRedis"
 
+
 def test_unified_backend_get_meta_method():
     """Test get_meta method."""
-            
+
     meta = UnifiedUserDoc.get_meta()
     assert meta is not None
-    assert hasattr(meta, 'collection_name')
-    assert hasattr(meta, 'global_key_prefix')
-    assert hasattr(meta, 'use_cache')
-    assert hasattr(meta, 'indexed_fields')
-    assert hasattr(meta, 'unique_fields')
+    assert hasattr(meta, "collection_name")
+    assert hasattr(meta, "global_key_prefix")
+    assert hasattr(meta, "use_cache")
+    assert hasattr(meta, "indexed_fields")
+    assert hasattr(meta, "unique_fields")
+
 
 def test_unified_backend_get_meta_method_with_no_meta():
     """Test get_meta method when Meta is not defined."""
@@ -1785,70 +1755,75 @@ def test_unified_backend_get_meta_method_with_no_meta():
     # which means it will always return something
     pass
 
+
 def test_unified_backend_to_mongo_dict_with_id_field():
     """Test to_mongo_dict method with id field."""
-            
+
     user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
-    
+
     mongo_dict = user.to_mongo_dict()
-    
+
     # Should not contain 'id' field
-    assert 'id' not in mongo_dict
-    assert mongo_dict['name'] == "John"
-    assert mongo_dict['age'] == 30
-    assert mongo_dict['email'] == "john@example.com"
+    assert "id" not in mongo_dict
+    assert mongo_dict["name"] == "John"
+    assert mongo_dict["age"] == 30
+    assert mongo_dict["email"] == "john@example.com"
+
 
 def test_unified_backend_to_mongo_dict_without_id_field():
     """Test to_mongo_dict method without id field."""
-            
+
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
-    
+
     mongo_dict = user.to_mongo_dict()
-    
+
     # Should not contain 'id' field
-    assert 'id' not in mongo_dict
-    assert mongo_dict['name'] == "John"
-    assert mongo_dict['age'] == 30
-    assert mongo_dict['email'] == "john@example.com"
+    assert "id" not in mongo_dict
+    assert mongo_dict["name"] == "John"
+    assert mongo_dict["age"] == 30
+    assert mongo_dict["email"] == "john@example.com"
 
 
 def test_unified_backend_initialize_with_async_context_and_running_loop():
     """Test initialize method when called from async context with running loop."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Mock asyncio.get_running_loop to simulate running async context
-    with patch('asyncio.get_running_loop') as mock_get_loop:
+    with patch("asyncio.get_running_loop") as mock_get_loop:
         mock_get_loop.return_value = MagicMock()
-        
+
         # Mock print to capture the warning
-        with patch('builtins.print') as mock_print:
+        with patch("builtins.print") as mock_print:
             backend.initialize()
-            mock_print.assert_called_with("Warning: initialize() called from async context. Use await initialize_async() instead.")
+            mock_print.assert_called_with(
+                "Warning: initialize() called from async context. Use await initialize_async() instead."
+            )
+
 
 def test_unified_backend_initialize_with_no_running_loop():
     """Test initialize method when called from sync context (no running loop)."""
-            
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Mock asyncio.get_running_loop to raise RuntimeError (no running loop)
-    with patch('asyncio.get_running_loop') as mock_get_loop:
+    with patch("asyncio.get_running_loop") as mock_get_loop:
         mock_get_loop.side_effect = RuntimeError("No running event loop")
-        
+
         # Mock asyncio.run to capture the call
-        with patch('asyncio.run') as mock_asyncio_run:
+        with patch("asyncio.run") as mock_asyncio_run:
             # Mock the mongo backend initialize method
-            with patch.object(backend.mongo_backend, 'initialize') as mock_init:
+            with patch.object(backend.mongo_backend, "initialize") as mock_init:
                 backend.initialize()
                 mock_asyncio_run.assert_called_once()
                 mock_init.assert_called_once()
