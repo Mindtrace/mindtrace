@@ -115,7 +115,7 @@ def unified_backend_mongo_only(mock_mongo_backend):
     """Create a unified backend with only MongoDB configured."""
     return UnifiedMindtraceODMBackend(
         mongo_model_cls=MongoUserDoc,
-        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
         preferred_backend=BackendType.MONGO,
     )
@@ -125,7 +125,7 @@ def unified_backend_mongo_only(mock_mongo_backend):
 def unified_backend_redis_only(mock_redis_backend):
     """Create a unified backend with only Redis configured."""
     return UnifiedMindtraceODMBackend(
-        redis_model_cls=RedisUserDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
+        redis_model_cls=RedisUserDoc, redis_url="redis://localhost:6380", preferred_backend=BackendType.REDIS
     )
 
 
@@ -134,10 +134,10 @@ def unified_backend_both(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with both MongoDB and Redis configured."""
     return UnifiedMindtraceODMBackend(
         mongo_model_cls=MongoUserDoc,
-        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
         redis_model_cls=RedisUserDoc,
-        redis_url="redis://localhost:6379",
+        redis_url="redis://localhost:6380",
         preferred_backend=BackendType.MONGO,
     )
 
@@ -147,9 +147,9 @@ def unified_backend_with_unified_model(mock_mongo_backend, mock_redis_backend):
     """Create a unified backend with a unified document model."""
     return UnifiedMindtraceODMBackend(
         unified_model_cls=UnifiedUserDoc,
-        mongo_db_uri="mongodb://localhost:27017",
+        mongo_db_uri="mongodb://localhost:27018",
         mongo_db_name="test_db",
-        redis_url="redis://localhost:6379",
+        redis_url="redis://localhost:6380",
         preferred_backend=BackendType.MONGO,
     )
 

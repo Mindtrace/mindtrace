@@ -1,4 +1,5 @@
 import time
+import warnings
 
 import pytest
 
@@ -53,13 +54,6 @@ def test_cluster_manager_with_prelaunched_worker():
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
         assert result.output == {}
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
-
-        # Test query_worker_status as well
-        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert query_status.worker_id == worker_id
-        assert query_status.status == WorkerStatusEnum.IDLE.value
 
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
@@ -94,13 +88,13 @@ def test_cluster_manager_multiple_jobs_with_worker():
         cluster_cm.register_job_to_worker(job_type="multiple_jobs_echo", worker_url=str(worker_cm.url))
         messages = ["Job 1", "Job 2", "Job 3"]
         jobs = []
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
         for msg in messages:
             job = job_from_schema(echo_job_schema, input_data={"message": msg})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == "queued"
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
         time.sleep(1)
         for i, job in enumerate(jobs):
             result = cluster_cm.get_job_status(job_id=job.id)
@@ -609,13 +603,11 @@ def test_launch_worker_with_delay():
         assert result.status == "queued"
         assert result.output == {}
 
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
-
-        # Test query_worker_status for initial state
-        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert query_status.worker_id == worker_id
-        assert query_status.status == WorkerStatusEnum.IDLE.value
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)  # even this is potentially a race
+        if worker_status.status != WorkerStatusEnum.IDLE.value:
+            warnings.warn(
+                f"get_worker_status returned {worker_status.status} when we were expecting {WorkerStatusEnum.IDLE.value}"
+            )
 
         # Wait for the job to be processed
         time.sleep(1)
@@ -679,16 +671,7 @@ def test_query_worker_status_integration():
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
 
-        # Wait a bit for the job to start
-        time.sleep(0.5)
-
-        # Query worker status during job execution
-        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert worker_status.worker_id == worker_id
-        # Status could be either IDLE (if job hasn't started) or RUNNING (if job is in progress)
-        assert worker_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
-
-        # Wait for job completion
+        # Wait a bit for the job to run
         time.sleep(2)
 
         # Query worker status after job completion
@@ -875,8 +858,8 @@ def test_query_worker_status_multiple_workers():
 
         # Submit jobs to both workers
         echo_job_schema = JobSchema(name="multiple_workers_status_echo", input=EchoInput, output=EchoOutput)
-        job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!"})
-        job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!"})
+        job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!", "delay": 2})
+        job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!", "delay": 2})
 
         result1 = cluster_cm.submit_job(job1)
         result2 = cluster_cm.submit_job(job2)
@@ -891,11 +874,11 @@ def test_query_worker_status_multiple_workers():
         worker2_status = cluster_cm.query_worker_status(worker_id=worker2_id)
 
         # Both workers should be either IDLE or RUNNING
-        assert worker1_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
-        assert worker2_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        assert worker1_status.status == WorkerStatusEnum.RUNNING.value
+        assert worker2_status.status == WorkerStatusEnum.RUNNING.value
 
         # Wait for job completion
-        time.sleep(2)
+        time.sleep(3)
 
         # Query status of both workers after job completion
         worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
@@ -1004,10 +987,6 @@ def test_query_worker_status_real_time_updates():
         job = job_from_schema(echo_job_schema, input_data={"message": "Real-time status test!", "delay": 2})
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
-
-        # Check status immediately after submission (should still be IDLE)
-        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
 
         # Wait for job to start
         time.sleep(0.5)

@@ -17,7 +17,7 @@ class TestRedisQueue:
     def setup_method(self):
         """Set up a fresh queue for each test."""
         self.queue_name = f"test_queue_{uuid.uuid4().hex}"
-        self.queue = RedisQueue(self.queue_name, host="localhost", port=6379, db=0)
+        self.queue = RedisQueue(self.queue_name, host="localhost", port=6380, db=0)
 
     def test_push_and_pop(self):
         """Test basic push and pop operations."""
@@ -74,7 +74,7 @@ class TestRedisPriorityQueue:
     def setup_method(self):
         """Set up a fresh priority queue for each test."""
         self.queue_name = f"test_pqueue_{uuid.uuid4().hex}"
-        self.queue = RedisPriorityQueue(self.queue_name, host="localhost", port=6379, db=0)
+        self.queue = RedisPriorityQueue(self.queue_name, host="localhost", port=6380, db=0)
 
     def test_push_and_pop_with_priority(self):
         """Test items come out in priority order."""
@@ -170,7 +170,7 @@ class TestRedisStack:
     def setup_method(self):
         """Set up a fresh stack for each test."""
         self.stack_name = f"test_stack_{uuid.uuid4().hex}"
-        self.stack = RedisStack(self.stack_name, host="localhost", port=6379, db=0)
+        self.stack = RedisStack(self.stack_name, host="localhost", port=6380, db=0)
 
     def test_blocking_pop_with_timeout(self):
         """Test blocking pop with timeout."""
