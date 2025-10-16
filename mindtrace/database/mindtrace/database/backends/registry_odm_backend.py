@@ -12,27 +12,33 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
     Pass in a RegistryBackend to select the storage source. By default, a local directory store will be used.
 
     Args:
-        **kwargs: Additional configuration parameters (currently unused).
+        backend (RegistryBackend | None): Optional registry backend to use for storage.
+        **kwargs: Additional configuration parameters.
 
     Example:
         .. code-block:: python
 
-            from mindtrace.database.backends.local_odm_backend import LocalMindtraceODMBackend
+            from mindtrace.database.backends.registry_odm_backend import RegistryMindtraceODMBackend
+            from pydantic import BaseModel
 
-            # Create backend instance (for testing/development only)
+            class MyDocument(BaseModel):
+                name: str
+                value: int
+
+            # Create backend instance
             backend = RegistryMindtraceODMBackend()
 
-            try:
-                backend.insert(some_document)
-            except NotImplementedError:
-                print("Local backend does not support actual operations")
+            # Insert a document
+            doc = MyDocument(name="test", value=42)
+            doc_id = backend.insert(doc)
     """
 
     def __init__(self, backend: RegistryBackend | None = None, **kwargs):
-        """Initialize the local ODM backend.
+        """Initialize the registry ODM backend.
 
         Args:
-            **kwargs: Additional configuration parameters (currently unused).
+            backend (RegistryBackend | None): Optional registry backend to use for storage.
+            **kwargs: Additional configuration parameters.
         """
         super().__init__(**kwargs)
         self.registry = Registry(backend=backend, version_objects=False)
@@ -41,12 +47,12 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         """Determine if this backend operates asynchronously.
 
         Returns:
-            bool: Always returns False as this is a synchronous stub implementation.
+            bool: Always returns False as this is a synchronous implementation.
 
         Example:
             .. code-block:: python
 
-                backend = LocalMindtraceODMBackend()
+                backend = RegistryMindtraceODMBackend()
                 print(backend.is_async())  # Output: False
         """
         return False
@@ -57,17 +63,20 @@ class RegistryMindtraceODMBackend(MindtraceODMBackend):
         Args:
             obj (BaseModel): The document object to insert.
 
-        Raises:
-            NotImplementedError: Always raised as this backend doesn't support insert operations.
+        Returns:
+            str: The unique identifier assigned to the inserted document.
 
         Example:
             .. code-block:: python
 
-                backend = LocalMindtraceODMBackend()
-                try:
-                    backend.insert(document)
-                except NotImplementedError:
-                    print("Insert not supported in local backend")
+                from pydantic import BaseModel
+
+                class MyDocument(BaseModel):
+                    name: str
+
+                backend = RegistryMindtraceODMBackend()
+                doc_id = backend.insert(MyDocument(name="example"))
+                print(f"Inserted document with ID: {doc_id}")
         """
         unique_id = str(uuid.uuid1())
         self.registry[unique_id] = obj
