@@ -85,8 +85,8 @@ class TestDerivationMethods:
         # Verify database query
         mock_database.find.assert_called_once()
         query_call = mock_database.find.call_args[0][0]
-        # The query should be constructed using get_raw_model().derived_from
-        expected_query = mock_database.get_raw_model().derived_from == parent_id
+        # The query should be a dictionary with derived_from key
+        expected_query = {"derived_from": parent_id}
         assert query_call == expected_query
 
         assert result == [child_id]
