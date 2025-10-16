@@ -1325,13 +1325,12 @@ class TestRedisBackendEdgeCases:
     def test_redis_backend_connection_error(self, mock_get_redis):
         """Test Redis backend connection error handling."""
         from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-        from tests.fixtures.database_models import RedisDocModel
-        
+
         mock_get_redis.side_effect = Exception("Redis connection failed")
         
         with pytest.raises(Exception, match="Redis connection failed"):
             RedisMindtraceODMBackend(
-                model_cls=RedisDocModel,
+                model_cls=UserDoc,
                 redis_url="redis://localhost:6379"
             )
 
@@ -1339,7 +1338,6 @@ class TestRedisBackendEdgeCases:
         """Test Redis backend get with non-existent document."""
         with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
             from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-            from tests.fixtures.database_models import RedisDocModel
             from mindtrace.database import DocumentNotFoundError
             
             # Mock the Redis connection
@@ -1347,12 +1345,12 @@ class TestRedisBackendEdgeCases:
             mock_get_redis.return_value = mock_redis
             
             backend = RedisMindtraceODMBackend(
-                model_cls=RedisDocModel,
+                model_cls=UserDoc,
                 redis_url="redis://localhost:6379"
             )
             
             # Mock the model's get method to raise NotFoundError
-            with patch.object(RedisDocModel, 'get') as mock_get:
+            with patch.object(UserDoc, 'get') as mock_get:
                 from redis_om.model.model import NotFoundError
                 mock_get.side_effect = NotFoundError("Document not found")
                 
@@ -1363,7 +1361,6 @@ class TestRedisBackendEdgeCases:
         """Test Redis backend delete with non-existent document."""
         with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
             from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-            from tests.fixtures.database_models import RedisDocModel
             from mindtrace.database import DocumentNotFoundError
             
             # Mock the Redis connection
@@ -1371,12 +1368,12 @@ class TestRedisBackendEdgeCases:
             mock_get_redis.return_value = mock_redis
             
             backend = RedisMindtraceODMBackend(
-                model_cls=RedisDocModel,
+                model_cls=UserDoc,
                 redis_url="redis://localhost:6379"
             )
             
             # Mock the model's get method to raise NotFoundError
-            with patch.object(RedisDocModel, 'get') as mock_get:
+            with patch.object(UserDoc, 'get') as mock_get:
                 from redis_om.model.model import NotFoundError
                 mock_get.side_effect = NotFoundError("Document not found")
                 
