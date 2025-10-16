@@ -37,10 +37,22 @@ def temp_registry_dir() -> Generator[str, None, None]:
 @pytest.fixture(scope="function")
 async def datalake():
     """Create a Datalake instance for testing."""
-    # try:
+    # Clean up any existing data before starting
+    try:
+        from mindtrace.datalake.types import Datum
+        await Datum.delete_all()
+    except Exception:
+        pass  # Ignore cleanup errors
+    
     datalake_instance = Datalake(MONGO_URL, MONGO_DB)
     await datalake_instance.initialize()
     yield datalake_instance
+    
+    # Clean up: delete all data after each test
+    try:
+        await Datum.delete_all()
+    except Exception:
+        pass  # Ignore cleanup errors
 
 
 @pytest.fixture(scope="session", autouse=True)
