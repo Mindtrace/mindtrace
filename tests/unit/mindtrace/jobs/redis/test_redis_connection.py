@@ -193,7 +193,7 @@ def test_connect_and_close_logger_calls(monkeypatch):
 
 def test_subscribe_to_events_priority_and_stack(monkeypatch):
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
             [
@@ -210,7 +210,7 @@ def test_subscribe_to_events_priority_and_stack(monkeypatch):
 
 def test_subscribe_to_events_unknown_type_and_delete_removal(monkeypatch):
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
             [
@@ -227,7 +227,7 @@ def test_subscribe_to_events_unknown_type_and_delete_removal(monkeypatch):
 
 def test_load_queue_metadata_handles_str_and_bytes(monkeypatch):
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         mock_conn = MagicMock()
         mock_conn.hgetall.return_value = {b"qb": b"fifo", "qs": "stack"}
         conn.connection = mock_conn
@@ -246,7 +246,7 @@ def test_connect_exhausted_logs_then_raises(monkeypatch):
         instance.ping.side_effect = redis.ConnectionError
         mock_redis_cls.return_value = instance
         with patch("time.sleep"):
-            conn = RedisConnection(host="localhost", port=6379, db=0)
+            conn = RedisConnection(host="localhost", port=6381, db=0)
             conn.logger = MagicMock()
             with pytest.raises(redis.ConnectionError):
                 conn.connect(max_tries=1)
@@ -260,7 +260,7 @@ def test_connect_ping_false_triggers_else_branch(monkeypatch):
         instance.ping.return_value = False
         mock_redis_cls.return_value = instance
         # __init__ calls connect(max_tries=1) and catches ConnectionError
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         assert conn.connection is instance
 
 
@@ -269,13 +269,13 @@ def test_connect_ping_failure(mock_redis):
     mock_redis.ping.return_value = False
     # The constructor catches the ConnectionError and logs a warning
     # It doesn't re-raise the exception, so we check that connection fails
-    conn = RedisConnection(host="localhost", port=6379, db=0)
+    conn = RedisConnection(host="localhost", port=6381, db=0)
     assert not conn.is_connected()  # Should return False since ping failed
 
 
 def test_close_pubsub_error(mock_redis):
     """Test close method handles pubsub close errors gracefully."""
-    conn = RedisConnection(host="localhost", port=6379, db=0)
+    conn = RedisConnection(host="localhost", port=6381, db=0)
     # Simulate pubsub connection
     mock_pubsub = MagicMock()
     mock_pubsub.close.side_effect = Exception("pubsub close failed")
@@ -291,7 +291,7 @@ def test_del_method_exception_handling():
         mock_instance = MagicMock()
         mock_instance.ping.return_value = True
         mock_redis_cls.return_value = mock_instance
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         # Make close raise an exception
         conn.close = MagicMock(side_effect=Exception("close failed"))
         # This should not raise an exception
@@ -301,7 +301,7 @@ def test_del_method_exception_handling():
 def test_subscribe_to_events_shutdown_signal(monkeypatch):
     """Test that _subscribe_to_events respects shutdown signal."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
         # Set shutdown event before starting
         conn._shutdown_event.set()
 
@@ -322,7 +322,7 @@ def test_subscribe_to_events_shutdown_signal(monkeypatch):
 def test_subscribe_to_events_exception_handling(monkeypatch):
     """Test that _subscribe_to_events handles exceptions in the main loop."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         # Make pubsub.listen() raise an exception
         pubsub = MagicMock()
@@ -336,7 +336,7 @@ def test_subscribe_to_events_exception_handling(monkeypatch):
 def test_subscribe_to_events_non_message_type(monkeypatch):
     """Test that _subscribe_to_events handles non-message type events."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
@@ -370,7 +370,7 @@ def test_subscribe_to_events_non_message_type(monkeypatch):
 def test_subscribe_to_events_unknown_queue_type(monkeypatch):
     """Test _subscribe_to_events with unknown queue type in declare event."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
@@ -400,7 +400,7 @@ def test_subscribe_to_events_unknown_queue_type(monkeypatch):
 def test_subscribe_to_events_delete_nonexistent_queue(monkeypatch):
     """Test _subscribe_to_events with delete event for nonexistent queue."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
         pubsub.listen.return_value = iter([{"type": "message", "data": b'{"event": "delete", "queue": "nonexistent"}'}])
@@ -425,7 +425,7 @@ def test_subscribe_to_events_delete_nonexistent_queue(monkeypatch):
 def test_subscribe_to_events_pubsub_close_in_finally(monkeypatch):
     """Test that _subscribe_to_events closes pubsub in finally block."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         # Make pubsub.listen() raise an exception to trigger finally block
         pubsub = MagicMock()
@@ -441,7 +441,7 @@ def test_subscribe_to_events_pubsub_close_in_finally(monkeypatch):
 def test_subscribe_to_events_pubsub_close_exception_in_finally(monkeypatch):
     """Test that _subscribe_to_events handles pubsub close exception in finally block."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         # Make pubsub.listen() raise an exception to trigger finally block
         pubsub = MagicMock()
@@ -458,7 +458,7 @@ def test_subscribe_to_events_pubsub_close_exception_in_finally(monkeypatch):
 def test_subscribe_to_events_declare_stack_queue(monkeypatch):
     """Test _subscribe_to_events with declare event for stack queue type."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
@@ -486,7 +486,7 @@ def test_subscribe_to_events_declare_stack_queue(monkeypatch):
 def test_subscribe_to_events_declare_priority_queue(monkeypatch):
     """Test _subscribe_to_events with declare event for priority queue type."""
     with patch("mindtrace.jobs.redis.connection.redis.Redis"):
-        conn = RedisConnection(host="localhost", port=6379, db=0)
+        conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
         pubsub.listen.return_value = iter(
