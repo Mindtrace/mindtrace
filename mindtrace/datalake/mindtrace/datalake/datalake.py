@@ -233,7 +233,7 @@ class Datalake(Mindtrace):
                 subquery = copy.deepcopy(subquery)
                 strategy = subquery.pop("strategy", "latest")
                 if "derived_from" in subquery:
-                    subquery["derived_from"] = this_entry[subquery["derived_from"]].id
+                    subquery["derived_from"] = this_entry[subquery["derived_from"]]
 
                 subquery_entries = await self.datum_database.find(subquery)
                 if not subquery_entries:
