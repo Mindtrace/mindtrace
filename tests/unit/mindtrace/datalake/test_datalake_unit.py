@@ -1,5 +1,6 @@
 """Unit tests for the Datalake class with mocked dependencies."""
 
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,10 +11,12 @@ from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import Datum
 
 
-def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None):
+def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
         datum_id = "507f1f77bcf86cd799439011"
+    if added_at is None:
+        added_at = datetime.now()
 
     mock_datum = MagicMock(spec=Datum)
     mock_datum.data = data
@@ -22,6 +25,7 @@ def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_f
     mock_datum.derived_from = derived_from
     mock_datum.metadata = metadata or {}
     mock_datum.id = datum_id
+    mock_datum.added_at = added_at
     return mock_datum
 
 
@@ -53,13 +57,14 @@ class TestDatalakeUnit:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None):
+            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None):
                 self.id = PydanticObjectId()
                 self.data = data
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
 
         db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
@@ -328,3 +333,153 @@ class TestDatalakeUnit:
 
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.metadata == complex_metadata
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_populated_on_creation(self, datalake, mock_database):
+        """Test that added_at field is populated when creating a datum."""
+        test_data = {"test": "data"}
+        test_metadata = {"source": "test"}
+
+        mock_datum = create_mock_datum(data=test_data, metadata=test_metadata)
+        mock_database.insert.return_value = mock_datum
+
+        await datalake.add_datum(test_data, test_metadata)
+
+        # Verify that the inserted datum has added_at populated
+        inserted_datum = mock_database.insert.call_args[0][0]
+        assert inserted_datum.added_at is not None
+        assert isinstance(inserted_datum.added_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_retrieved_correctly(self, datalake, mock_database):
+        """Test that added_at field is correctly retrieved when getting a datum."""
+        datum_id = PydanticObjectId()
+        test_data = {"test": "data"}
+        test_metadata = {"source": "test"}
+        added_at_time = datetime(2024, 1, 15, 10, 30, 45)
+
+        mock_datum = create_mock_datum(
+            data=test_data, 
+            metadata=test_metadata, 
+            datum_id=datum_id,
+            added_at=added_at_time
+        )
+        mock_database.get.return_value = mock_datum
+
+        result = await datalake.get_datum(datum_id)
+
+        # Verify that the retrieved datum has the correct added_at value
+        assert result.added_at == added_at_time
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_with_registry_storage(self, datalake, mock_database, mock_registry, tmp_path):
+        """Test that added_at field works correctly with registry storage."""
+        test_data = {"large": "data"}
+        test_metadata = {"source": "registry_test"}
+        registry_uri = f"{(tmp_path / 'registry').as_posix()}"
+        added_at_time = datetime(2024, 2, 20, 14, 25, 30)
+
+        mock_datum = create_mock_datum(
+            data=None,
+            registry_uri=registry_uri,
+            registry_key="test_key",
+            metadata=test_metadata,
+            added_at=added_at_time
+        )
+        mock_database.insert.return_value = mock_datum
+
+        await datalake.add_datum(test_data, test_metadata, registry_uri=registry_uri)
+
+        # Verify that the inserted datum has added_at populated
+        inserted_datum = mock_database.insert.call_args[0][0]
+        assert inserted_datum.added_at is not None
+        assert isinstance(inserted_datum.added_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_with_derivation(self, datalake, mock_database):
+        """Test that added_at field works correctly with derived data."""
+        test_data = {"test": "data"}
+        test_metadata = {"source": "derivation_test"}
+        parent_id = PydanticObjectId()
+        added_at_time = datetime(2024, 3, 10, 9, 15, 20)
+
+        mock_datum = create_mock_datum(
+            data=test_data,
+            metadata=test_metadata,
+            derived_from=parent_id,
+            added_at=added_at_time
+        )
+        mock_database.insert.return_value = mock_datum
+
+        await datalake.add_datum(test_data, test_metadata, derived_from=parent_id)
+
+        # Verify that the inserted datum has added_at populated
+        inserted_datum = mock_database.insert.call_args[0][0]
+        assert inserted_datum.added_at is not None
+        assert isinstance(inserted_datum.added_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_chronological_ordering(self, datalake, mock_database):
+        """Test that added_at field can be used for chronological ordering."""
+        # Create multiple data with different added_at times
+        earlier_time = datetime(2024, 1, 1, 10, 0, 0)
+        later_time = datetime(2024, 1, 1, 11, 0, 0)
+
+        # First datum
+        mock_datum1 = create_mock_datum(
+            data={"test": "data1"},
+            metadata={"source": "test1"},
+            added_at=earlier_time
+        )
+        mock_database.insert.return_value = mock_datum1
+
+        await datalake.add_datum({"test": "data1"}, {"source": "test1"})
+
+        # Second datum
+        mock_datum2 = create_mock_datum(
+            data={"test": "data2"},
+            metadata={"source": "test2"},
+            added_at=later_time
+        )
+        mock_database.insert.return_value = mock_datum2
+
+        await datalake.add_datum({"test": "data2"}, {"source": "test2"})
+
+        # Verify that both data have added_at populated
+        first_inserted = mock_database.insert.call_args_list[0][0][0]
+        second_inserted = mock_database.insert.call_args_list[1][0][0]
+
+        assert first_inserted.added_at is not None
+        assert second_inserted.added_at is not None
+        assert isinstance(first_inserted.added_at, datetime)
+        assert isinstance(second_inserted.added_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_added_at_field_with_get_data(self, datalake, mock_database):
+        """Test that added_at field is preserved when getting multiple data."""
+        datum_ids = [PydanticObjectId() for _ in range(3)]
+        added_at_times = [
+            datetime(2024, 1, 1, 10, 0, 0),
+            datetime(2024, 1, 1, 11, 0, 0),
+            datetime(2024, 1, 1, 12, 0, 0)
+        ]
+
+        mock_data = [
+            create_mock_datum(
+                data={"test": i}, 
+                metadata={}, 
+                datum_id=datum_ids[i],
+                added_at=added_at_times[i]
+            )
+            for i in range(3)
+        ]
+
+        # Mock get_datum calls
+        with patch.object(datalake, 'get_datum', side_effect=mock_data):
+            result = await datalake.get_data(datum_ids)
+
+        # Verify that all retrieved data have added_at populated
+        assert len(result) == 3
+        for i, datum in enumerate(result):
+            assert datum.added_at == added_at_times[i]
+            assert isinstance(datum.added_at, datetime)

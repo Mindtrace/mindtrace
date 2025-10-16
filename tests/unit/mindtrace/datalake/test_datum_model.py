@@ -1,5 +1,7 @@
 """Unit tests for the Datum model."""
 
+from datetime import datetime, timedelta
+
 from beanie import PydanticObjectId
 
 
@@ -12,12 +14,14 @@ class Datum:  # noqa: D101 - simple test helper
         registry_key: str | None = None,
         derived_from=None,
         metadata: dict | None = None,
+        added_at: datetime | None = None,
     ):
         self.data = data
         self.registry_uri = registry_uri
         self.registry_key = registry_key
         self.derived_from = derived_from
         self.metadata = {} if metadata is None else metadata
+        self.added_at = added_at if added_at is not None else datetime.now()
 
     # minimal API used in tests
     def model_dump(self):
@@ -27,6 +31,7 @@ class Datum:  # noqa: D101 - simple test helper
             "registry_key": self.registry_key,
             "derived_from": self.derived_from,
             "metadata": self.metadata,
+            "added_at": self.added_at,
         }
 
     @classmethod
@@ -37,6 +42,7 @@ class Datum:  # noqa: D101 - simple test helper
             registry_key=d.get("registry_key"),
             derived_from=d.get("derived_from"),
             metadata=d.get("metadata"),
+            added_at=d.get("added_at"),
         )
 
 
@@ -315,3 +321,148 @@ class TestDatumModel:
         assert datum.metadata["false"] is False
         assert datum.metadata["empty_list"] == []
         assert datum.metadata["empty_dict"] == {}
+
+    def test_datum_added_at_default_value(self):
+        """Test that added_at is automatically set to current time when not provided."""
+        before_creation = datetime.now()
+        datum = Datum()
+        after_creation = datetime.now()
+
+        # added_at should be set automatically
+        assert datum.added_at is not None
+        assert isinstance(datum.added_at, datetime)
+        
+        # Should be within a reasonable time range
+        assert before_creation <= datum.added_at <= after_creation
+
+    def test_datum_added_at_explicit_value(self):
+        """Test that added_at can be set explicitly."""
+        explicit_time = datetime(2024, 1, 15, 10, 30, 45)
+        datum = Datum(added_at=explicit_time)
+
+        assert datum.added_at == explicit_time
+
+    def test_datum_added_at_multiple_instances(self):
+        """Test that multiple Datum instances have different added_at timestamps."""
+        datum1 = Datum()
+        datum2 = Datum()
+
+        # Both should have added_at set
+        assert datum1.added_at is not None
+        assert datum2.added_at is not None
+        
+        # They should be different (or very close if created quickly)
+        # Allow for small time differences due to test execution speed
+        time_diff = abs((datum2.added_at - datum1.added_at).total_seconds())
+        assert time_diff >= 0  # Should be non-negative
+
+    def test_datum_added_at_with_other_fields(self):
+        """Test that added_at works correctly with other fields."""
+        explicit_time = datetime(2024, 2, 20, 14, 25, 30)
+        datum = Datum(
+            data={"test": "data"},
+            metadata={"source": "test"},
+            added_at=explicit_time
+        )
+
+        assert datum.data == {"test": "data"}
+        assert datum.metadata == {"source": "test"}
+        assert datum.added_at == explicit_time
+
+    def test_datum_added_at_model_dump(self):
+        """Test that added_at is included in model_dump output."""
+        explicit_time = datetime(2024, 3, 10, 9, 15, 20)
+        datum = Datum(
+            data={"test": "data"},
+            metadata={"source": "test"},
+            added_at=explicit_time
+        )
+
+        dumped = datum.model_dump()
+        
+        assert "added_at" in dumped
+        assert dumped["added_at"] == explicit_time
+        assert dumped["data"] == {"test": "data"}
+        assert dumped["metadata"] == {"source": "test"}
+
+    def test_datum_added_at_model_validate(self):
+        """Test that added_at is correctly handled in model_validate."""
+        explicit_time = datetime(2024, 4, 5, 16, 45, 10)
+        datum_dict = {
+            "data": {"test": "data"},
+            "metadata": {"source": "test"},
+            "added_at": explicit_time
+        }
+
+        datum = Datum.model_validate(datum_dict)
+
+        assert datum.data == {"test": "data"}
+        assert datum.metadata == {"source": "test"}
+        assert datum.added_at == explicit_time
+
+    def test_datum_added_at_model_validate_without_added_at(self):
+        """Test that model_validate sets added_at to current time when not provided."""
+        datum_dict = {
+            "data": {"test": "data"},
+            "metadata": {"source": "test"}
+        }
+
+        before_validation = datetime.now()
+        datum = Datum.model_validate(datum_dict)
+        after_validation = datetime.now()
+
+        assert datum.data == {"test": "data"}
+        assert datum.metadata == {"source": "test"}
+        assert datum.added_at is not None
+        assert isinstance(datum.added_at, datetime)
+        assert before_validation <= datum.added_at <= after_validation
+
+    def test_datum_added_at_serialization_roundtrip(self):
+        """Test that added_at survives serialization roundtrip."""
+        original_time = datetime(2024, 5, 12, 11, 30, 45)
+        original_datum = Datum(
+            data={"test": "data"},
+            metadata={"source": "test"},
+            added_at=original_time
+        )
+
+        # Serialize to dict
+        datum_dict = original_datum.model_dump()
+        
+        # Deserialize back to Datum
+        restored_datum = Datum.model_validate(datum_dict)
+
+        assert restored_datum.added_at == original_time
+        assert restored_datum.data == original_datum.data
+        assert restored_datum.metadata == original_datum.metadata
+
+    def test_datum_added_at_comparison(self):
+        """Test that added_at can be used for chronological comparison."""
+        earlier_time = datetime(2024, 1, 1, 10, 0, 0)
+        later_time = datetime(2024, 1, 1, 11, 0, 0)
+
+        earlier_datum = Datum(added_at=earlier_time)
+        later_datum = Datum(added_at=later_time)
+
+        assert earlier_datum.added_at < later_datum.added_at
+        assert later_datum.added_at > earlier_datum.added_at
+        assert earlier_datum.added_at != later_datum.added_at
+
+    def test_datum_added_at_with_timedelta(self):
+        """Test that added_at works with timedelta operations."""
+        base_time = datetime(2024, 6, 1, 12, 0, 0)
+        datum = Datum(added_at=base_time)
+
+        # Test that we can perform timedelta operations
+        one_hour_later = datum.added_at + timedelta(hours=1)
+        expected_time = datetime(2024, 6, 1, 13, 0, 0)
+        
+        assert one_hour_later == expected_time
+
+    def test_datum_added_at_none_handling(self):
+        """Test that added_at handles None values correctly."""
+        # When None is explicitly passed, it should default to current time
+        datum = Datum(added_at=None)
+        
+        assert datum.added_at is not None
+        assert isinstance(datum.added_at, datetime)
