@@ -220,21 +220,23 @@ async def test_mongo_backend_find_with_complex_query():
     # Mock the find method to return results
     user1 = create_mock_mongo_user("John", 30, "john@example.com")
     user2 = create_mock_mongo_user("Jane", 25, "jane@example.com")
-    
-    with patch.object(UserDoc, 'find') as mock_find:
-        mock_cursor = MagicMock()
-        # to_list is async in this context
-        async def mock_to_list(*args, **kwargs):
-            return [user1, user2]
-        mock_cursor.to_list = mock_to_list
-        mock_find.return_value = mock_cursor
-        
-        # Test complex query
-        query = {"age": {"$gte": 25}, "name": {"$regex": "^J"}}
-        results = await backend.find(query)
-        assert len(results) == 2
-        assert results[0].name == "John"
-        assert results[1].name == "Jane"
+
+    # Mock the initialize method to avoid actual MongoDB connections
+    with patch.object(backend, 'initialize') as mock_init:
+        with patch.object(UserDoc, 'find') as mock_find:
+            mock_cursor = MagicMock()
+            # to_list is async in this context
+            async def mock_to_list(*args, **kwargs):
+                return [user1, user2]
+            mock_cursor.to_list = mock_to_list
+            mock_find.return_value = mock_cursor
+            
+            # Test complex query
+            query = {"age": {"$gte": 25}, "name": {"$regex": "^J"}}
+            results = await backend.find(query)
+            assert len(results) == 2
+            assert results[0].name == "John"
+            assert results[1].name == "Jane"
 
 
 @pytest.mark.asyncio
@@ -249,18 +251,20 @@ async def test_mongo_backend_find_with_kwargs():
     # Mock the find method to return results
     user = create_mock_mongo_user("John", 30, "john@example.com")
     
-    with patch.object(UserDoc, 'find') as mock_find:
-        mock_cursor = MagicMock()
-        # to_list is async in this context
-        async def mock_to_list(*args, **kwargs):
-            return [user]
-        mock_cursor.to_list = mock_to_list
-        mock_find.return_value = mock_cursor
-        
-        # Test with kwargs
-        results = await backend.find(name="John", age=30)
-        assert len(results) == 1
-        assert results[0].name == "John"
+    # Mock the initialize method to avoid actual MongoDB connections
+    with patch.object(backend, 'initialize') as mock_init:
+        with patch.object(UserDoc, 'find') as mock_find:
+            mock_cursor = MagicMock()
+            # to_list is async in this context
+            async def mock_to_list(*args, **kwargs):
+                return [user]
+            mock_cursor.to_list = mock_to_list
+            mock_find.return_value = mock_cursor
+            
+            # Test with kwargs
+            results = await backend.find(name="John", age=30)
+            assert len(results) == 1
+            assert results[0].name == "John"
 
 
 @pytest.mark.asyncio
@@ -272,17 +276,18 @@ async def test_mongo_backend_all_with_empty_results():
     backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
     backend.model_cls = UserDoc
     
-    # Mock the find_all method to return empty results
-    with patch.object(UserDoc, 'find_all') as mock_find_all:
-        mock_cursor = MagicMock()
-        # Create an async function that returns empty list
-        async def mock_to_list(*args, **kwargs):
-            return []
-        mock_cursor.to_list = mock_to_list
-        mock_find_all.return_value = mock_cursor
-        
-        results = await backend.all()
-        assert len(results) == 0
+    # Mock the initialize method to avoid actual MongoDB connections
+    with patch.object(backend, 'initialize') as mock_init:
+        with patch.object(UserDoc, 'find_all') as mock_find_all:
+            mock_cursor = MagicMock()
+            # Create an async function that returns empty list
+            async def mock_to_list(*args, **kwargs):
+                return []
+            mock_cursor.to_list = mock_to_list
+            mock_find_all.return_value = mock_cursor
+            
+            results = await backend.all()
+            assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -299,19 +304,20 @@ async def test_mongo_backend_all_with_multiple_results():
     user2 = create_mock_mongo_user("Jane", 25, "jane@example.com")
     user3 = create_mock_mongo_user("Bob", 35, "bob@example.com")
     
-    with patch.object(UserDoc, 'find_all') as mock_find_all:
-        mock_cursor = MagicMock()
-        # Create an async function that returns multiple results
-        async def mock_to_list(*args, **kwargs):
-            return [user1, user2, user3]
-        mock_cursor.to_list = mock_to_list
-        mock_find_all.return_value = mock_cursor
-        
-        results = await backend.all()
-        assert len(results) == 3
-        assert results[0].name == "John"
-        assert results[1].name == "Jane"
-        assert results[2].name == "Bob"
+    with patch.object(backend, 'initialize') as mock_init:
+        with patch.object(UserDoc, 'find_all') as mock_find_all:
+            mock_cursor = MagicMock()
+            # Create an async function that returns multiple results
+            async def mock_to_list(*args, **kwargs):
+                return [user1, user2, user3]
+            mock_cursor.to_list = mock_to_list
+            mock_find_all.return_value = mock_cursor
+            
+            results = await backend.all()
+            assert len(results) == 3
+            assert results[0].name == "John"
+            assert results[1].name == "Jane"
+            assert results[2].name == "Bob"
 
 # Add comprehensive test cases to cover missing lines
 @pytest.mark.asyncio
@@ -478,12 +484,11 @@ class TestMongoBackendEdgeCases:
     async def test_mongo_backend_initialize_error_handling(self, mock_init_beanie):
         """Test MongoDB backend initialization error handling."""
         from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
-        from tests.fixtures.database_models import MongoDocModel
-        
+
         mock_init_beanie.side_effect = Exception("Connection failed")
         
         backend = MongoMindtraceODMBackend(
-            model_cls=MongoDocModel,
+            model_cls=UserDoc,
             db_uri="mongodb://localhost:27017",
             db_name="test_db"
         )

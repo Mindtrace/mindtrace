@@ -614,10 +614,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_initialize_async_no_mongo_backend(self):
         """Test initialize_async when no MongoDB backend is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -628,10 +627,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_initialize_sync(self):
         """Test initialize_sync method."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -641,10 +639,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_get_current_backend_type_unknown(self):
         """Test get_current_backend_type with unknown active backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -658,10 +655,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_switch_backend_invalid_type(self):
         """Test switch_backend with invalid backend type."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -672,10 +668,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_switch_backend_mongo_not_configured(self):
         """Test switch_backend to MongoDB when not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -685,10 +680,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_switch_backend_redis_not_configured(self):
         """Test switch_backend to Redis when not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -699,10 +693,9 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_get_active_backend_no_backends_available(self):
         """Test _get_active_backend when no backends are available."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -718,9 +711,8 @@ class TestUnifiedBackendEdgeCases:
 
     def test_unified_backend_auto_generate_mongo_model_with_unique_fields(self):
         """Test _auto_generate_mongo_model with unique fields."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
-        mongo_model = UnifiedDocModel._auto_generate_mongo_model()
+                
+        mongo_model = UnifiedUserDoc._auto_generate_mongo_model()
         assert mongo_model is not None
         assert hasattr(mongo_model, 'Settings')
         assert mongo_model.Settings.name == "test_users"
@@ -772,10 +764,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_delete_async_sync_backend(self):
         """Test delete_async with synchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -792,10 +783,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_delete_async_async_backend(self):
         """Test delete_async with asynchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -813,10 +803,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_all_async_sync_backend(self):
         """Test all_async with synchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -824,7 +813,7 @@ class TestUnifiedBackendRemainingCoverage:
         with patch.object(backend, '_get_active_backend') as mock_get_backend:
             mock_backend = MagicMock()
             mock_backend.is_async.return_value = False
-            mock_backend.all.return_value = [UserModel(name="Test", age=25, email="test@example.com")]
+            mock_backend.all.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
             mock_get_backend.return_value = mock_backend
             
             result = await backend.all_async()
@@ -834,10 +823,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_all_async_async_backend(self):
         """Test all_async with asynchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -846,7 +834,7 @@ class TestUnifiedBackendRemainingCoverage:
         with patch.object(backend, '_get_active_backend') as mock_get_backend:
             mock_backend = MagicMock()
             mock_backend.is_async.return_value = True
-            mock_backend.all = AsyncMock(return_value=[UserModel(name="Test", age=25, email="test@example.com")], side_effect=None)
+            mock_backend.all = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None)
             mock_get_backend.return_value = mock_backend
             
             result = await backend.all_async()
@@ -856,10 +844,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_find_async_sync_backend(self):
         """Test find_async with synchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -867,7 +854,7 @@ class TestUnifiedBackendRemainingCoverage:
         with patch.object(backend, '_get_active_backend') as mock_get_backend:
             mock_backend = MagicMock()
             mock_backend.is_async.return_value = False
-            mock_backend.find.return_value = [UserModel(name="Test", age=25, email="test@example.com")]
+            mock_backend.find.return_value = [UserCreate(name="Test", age=25, email="test@example.com")]
             mock_get_backend.return_value = mock_backend
             
             result = await backend.find_async(name="Test")
@@ -877,10 +864,9 @@ class TestUnifiedBackendRemainingCoverage:
     @pytest.mark.asyncio
     async def test_unified_backend_find_async_async_backend(self):
         """Test find_async with asynchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -889,7 +875,7 @@ class TestUnifiedBackendRemainingCoverage:
         with patch.object(backend, '_get_active_backend') as mock_get_backend:
             mock_backend = MagicMock()
             mock_backend.is_async.return_value = True
-            mock_backend.find = AsyncMock(return_value=[UserModel(name="Test", age=25, email="test@example.com")], side_effect=None)
+            mock_backend.find = AsyncMock(return_value=[UserCreate(name="Test", age=25, email="test@example.com")], side_effect=None)
             mock_get_backend.return_value = mock_backend
             
             result = await backend.find_async(name="Test")
@@ -898,11 +884,10 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_unified_model_no_model(self):
         """Test get_unified_model when no model is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         # Create a backend with a model first, then manually set it to None
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -915,10 +900,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_mongo_backend_not_configured(self):
         """Test get_mongo_backend when MongoDB is not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -928,10 +912,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_redis_backend_not_configured(self):
         """Test get_redis_backend when Redis is not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -942,10 +925,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_has_mongo_backend_true(self):
         """Test has_mongo_backend when MongoDB is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -955,10 +937,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_has_mongo_backend_false(self):
         """Test has_mongo_backend when MongoDB is not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -967,10 +948,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_has_redis_backend_true(self):
         """Test has_redis_backend when Redis is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -979,10 +959,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_has_redis_backend_false(self):
         """Test has_redis_backend when Redis is not configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -992,10 +971,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_mongo_backend_configured(self):
         """Test get_mongo_backend when MongoDB is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1006,10 +984,9 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_redis_backend_configured(self):
         """Test get_redis_backend when Redis is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -1019,34 +996,32 @@ class TestUnifiedBackendRemainingCoverage:
 
     def test_unified_backend_get_raw_model(self):
         """Test get_raw_model method."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
         with patch.object(backend, '_get_active_backend') as mock_get_backend:
             mock_backend = MagicMock()
-            mock_backend.get_raw_model.return_value = UserModel
+            mock_backend.get_raw_model.return_value = UserCreate
             mock_get_backend.return_value = mock_backend
             
             result = backend.get_raw_model()
-            assert result == UserModel
+            assert result == UserCreate
 
     def test_unified_backend_get_unified_model_configured(self):
         """Test get_unified_model when model is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
         result = backend.get_unified_model()
-        assert result == UnifiedDocModel
+        assert result == UnifiedUserDoc
 
 
 # Additional tests for advanced coverage
@@ -1056,10 +1031,9 @@ class TestUnifiedBackendAdvancedCoverage:
     def test_unified_backend_initialize_async_context_warning(self):
         """Test initialize method when called from async context."""
         import asyncio
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1076,10 +1050,9 @@ class TestUnifiedBackendAdvancedCoverage:
 
     def test_unified_backend_handle_async_call_sync_backend(self):
         """Test _handle_async_call with synchronous backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -1099,10 +1072,9 @@ class TestUnifiedBackendAdvancedCoverage:
     def test_unified_backend_handle_async_call_async_backend(self):
         """Test _handle_async_call with asynchronous backend."""
         import asyncio
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1125,16 +1097,15 @@ class TestUnifiedBackendAdvancedCoverage:
 
     def test_unified_backend_convert_unified_to_backend_data_mongo(self):
         """Test _convert_unified_to_backend_data for MongoDB backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
         )
         
-        user = UnifiedDocModel(id="test123", name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.MONGO
@@ -1150,15 +1121,14 @@ class TestUnifiedBackendAdvancedCoverage:
 
     def test_unified_backend_convert_unified_to_backend_data_redis(self):
         """Test _convert_unified_to_backend_data for Redis backend."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UnifiedDocModel(id="test123", name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.REDIS
@@ -1175,15 +1145,14 @@ class TestUnifiedBackendAdvancedCoverage:
 
     def test_unified_backend_convert_unified_to_backend_data_redis_none_id(self):
         """Test _convert_unified_to_backend_data for Redis backend with None id."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UnifiedDocModel(id=None, name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id=None, name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.REDIS
@@ -1200,15 +1169,14 @@ class TestUnifiedBackendAdvancedCoverage:
 
     def test_unified_backend_convert_unified_to_backend_data_non_unified(self):
         """Test _convert_unified_to_backend_data with non-unified model."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UserModel(name="John", age=30, email="john@example.com")
+        user = UserCreate(name="John", age=30, email="john@example.com")
         
         result = backend._convert_unified_to_backend_data(user)
         
@@ -1302,10 +1270,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_initialize_sync_no_redis_backend(self):
         """Test initialize_sync when no Redis backend is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1316,10 +1283,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_initialize_sync_with_redis_backend(self):
         """Test initialize_sync when Redis backend is configured."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -1331,10 +1297,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_get_active_backend_prefer_mongo_mongo_available(self):
         """Test _get_active_backend when preferring MongoDB and it's available."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1345,10 +1310,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_get_active_backend_prefer_redis_redis_available(self):
         """Test _get_active_backend when preferring Redis and it's available."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -1358,10 +1322,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_get_active_backend_prefer_mongo_redis_available(self):
         """Test _get_active_backend when preferring MongoDB but only Redis is available."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.MONGO
         )
@@ -1371,10 +1334,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_get_active_backend_prefer_redis_mongo_available(self):
         """Test _get_active_backend when preferring Redis but only MongoDB is available."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.REDIS
@@ -1385,10 +1347,9 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_get_active_backend_cached(self):
         """Test _get_active_backend when result is cached."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
@@ -1404,16 +1365,15 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_mongo_with_id(self):
         """Test _convert_unified_to_backend_data for MongoDB with id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
         )
         
-        user = UnifiedDocModel(id="test123", name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.MONGO
@@ -1429,16 +1389,15 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_mongo_without_id(self):
         """Test _convert_unified_to_backend_data for MongoDB without id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
         )
         
-        user = UnifiedDocModel(name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.MONGO
@@ -1454,15 +1413,14 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_redis_with_id(self):
         """Test _convert_unified_to_backend_data for Redis with id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UnifiedDocModel(id="test123", name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.REDIS
@@ -1479,15 +1437,14 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_redis_without_id(self):
         """Test _convert_unified_to_backend_data for Redis without id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UnifiedDocModel(name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.REDIS
@@ -1504,15 +1461,14 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_redis_with_none_id(self):
         """Test _convert_unified_to_backend_data for Redis with None id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UnifiedDocModel(id=None, name="John", age=30, email="john@example.com")
+        user = UnifiedUserDoc(id=None, name="John", age=30, email="john@example.com")
         
         with patch.object(backend, 'get_current_backend_type') as mock_get_type:
             mock_get_type.return_value = BackendType.REDIS
@@ -1529,15 +1485,14 @@ class TestUnifiedBackendLastMissingLines:
 
     def test_unified_backend_convert_unified_to_backend_data_non_unified(self):
         """Test _convert_unified_to_backend_data with non-unified model."""
-        from tests.fixtures.database_models import UnifiedDocModel, UserModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             redis_url="redis://localhost:6379",
             preferred_backend=BackendType.REDIS
         )
         
-        user = UserModel(name="John", age=30, email="john@example.com")
+        user = UserCreate(name="John", age=30, email="john@example.com")
         
         result = backend._convert_unified_to_backend_data(user)
         
@@ -1834,9 +1789,8 @@ class TestFinalCoverage100Percent:
 
     def test_unified_backend_get_meta_method(self):
         """Test get_meta method."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
-        meta = UnifiedDocModel.get_meta()
+                
+        meta = UnifiedUserDoc.get_meta()
         assert meta is not None
         assert hasattr(meta, 'collection_name')
         assert hasattr(meta, 'global_key_prefix')
@@ -1852,9 +1806,8 @@ class TestFinalCoverage100Percent:
 
     def test_unified_backend_to_mongo_dict_with_id_field(self):
         """Test to_mongo_dict method with id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
-        user = UnifiedDocModel(id="test123", name="John", age=30, email="john@example.com")
+                
+        user = UnifiedUserDoc(id="test123", name="John", age=30, email="john@example.com")
         
         mongo_dict = user.to_mongo_dict()
         
@@ -1866,9 +1819,8 @@ class TestFinalCoverage100Percent:
 
     def test_unified_backend_to_mongo_dict_without_id_field(self):
         """Test to_mongo_dict method without id field."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
-        user = UnifiedDocModel(name="John", age=30, email="john@example.com")
+                
+        user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
         
         mongo_dict = user.to_mongo_dict()
         
@@ -1884,10 +1836,9 @@ class TestVeryLastUnifiedBackendLines:
 
     def test_unified_backend_initialize_with_async_context_and_running_loop(self):
         """Test initialize method when called from async context with running loop."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
@@ -1904,10 +1855,9 @@ class TestVeryLastUnifiedBackendLines:
 
     def test_unified_backend_initialize_with_no_running_loop(self):
         """Test initialize method when called from sync context (no running loop)."""
-        from tests.fixtures.database_models import UnifiedDocModel
-        
+                
         backend = UnifiedMindtraceODMBackend(
-            unified_model_cls=UnifiedDocModel,
+            unified_model_cls=UnifiedUserDoc,
             mongo_db_uri="mongodb://localhost:27017",
             mongo_db_name="test_db",
             preferred_backend=BackendType.MONGO
