@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""
-Camera Setup and Configuration Script
+"""Camera Setup and Configuration Script
 
 This script provides a unified interface for installing and configuring all
 camera SDKs and related network settings for the Mindtrace hardware system.
-It combines Basler and Daheng SDK installation with firewall configuration
+It combines Basler SDK installation with firewall configuration
 for camera network communication.
 
 Features:
-- Combined installation of all camera SDKs (Basler Pylon + Daheng Galaxy)
+- Combined installation of all camera SDKs (Basler Pylon)
 - Firewall configuration for camera network communication
 - Cross-platform support (Windows and Linux)
 - Individual SDK uninstallation support
@@ -61,18 +60,16 @@ import subprocess
 import sys
 from typing import Optional
 
-from mindtrace.core.base.mindtrace_base import Mindtrace
+from mindtrace.core import Mindtrace
 from mindtrace.hardware.cameras.setup.setup_basler import install_pylon_sdk, uninstall_pylon_sdk
-from mindtrace.hardware.cameras.setup.setup_daheng import install_daheng_sdk, uninstall_daheng_sdk
 from mindtrace.hardware.core.config import get_hardware_config
 
 
 class CameraSystemSetup(Mindtrace):
-    """
-    Unified camera system setup and configuration manager.
+    """Unified camera system setup and configuration manager.
 
-    This class handles the installation and configuration of all camera SDKs
-    and related network settings for the Mindtrace hardware system.
+    This class handles the installation and configuration of all camera SDKs and related network settings for the
+    Mindtrace hardware system.
     """
 
     def __init__(self):
@@ -91,8 +88,7 @@ class CameraSystemSetup(Mindtrace):
         self.logger.debug(f"Network timeout: {self.hardware_config.get_config().network.timeout_seconds}s")
 
     def install_all_sdks(self, release_version: str = "v1.0-stable") -> bool:
-        """
-        Install all camera SDKs.
+        """Install all camera SDKs.
 
         Args:
             release_version: SDK release version to install
@@ -113,14 +109,6 @@ class CameraSystemSetup(Mindtrace):
         else:
             self.logger.error("Basler Pylon SDK installation failed")
 
-        # Install Daheng Galaxy SDK
-        self.logger.info("Installing Daheng Galaxy SDK")
-        if install_daheng_sdk(release_version):
-            self.logger.info("Daheng Galaxy SDK installation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Daheng Galaxy SDK installation failed")
-
         # Log summary
         if success_count == total_sdks:
             self.logger.info(f"All {total_sdks} camera SDKs installed successfully")
@@ -133,8 +121,7 @@ class CameraSystemSetup(Mindtrace):
             return False
 
     def uninstall_all_sdks(self) -> bool:
-        """
-        Uninstall all camera SDKs.
+        """Uninstall all camera SDKs.
 
         Returns:
             True if all uninstallations successful, False otherwise
@@ -152,14 +139,6 @@ class CameraSystemSetup(Mindtrace):
         else:
             self.logger.error("Basler Pylon SDK uninstallation failed")
 
-        # Uninstall Daheng Galaxy SDK
-        self.logger.info("Uninstalling Daheng Galaxy SDK")
-        if uninstall_daheng_sdk():
-            self.logger.info("Daheng Galaxy SDK uninstallation completed successfully")
-            success_count += 1
-        else:
-            self.logger.error("Daheng Galaxy SDK uninstallation failed")
-
         # Log summary
         if success_count == total_sdks:
             self.logger.info(f"All {total_sdks} camera SDKs uninstalled successfully")
@@ -172,11 +151,10 @@ class CameraSystemSetup(Mindtrace):
             return False
 
     def configure_firewall(self, ip_range: Optional[str] = None) -> bool:
-        """
-        Configure firewall rules to allow camera communication.
+        """Configure firewall rules to allow camera communication.
 
-        This method configures platform-specific firewall rules to allow
-        communication with GigE Vision cameras on the specified IP range.
+        This method configures platform-specific firewall rules to allow communication with GigE Vision cameras on the
+        specified IP range.
 
         Args:
             ip_range: IP range to allow (uses config default if None)
@@ -204,8 +182,7 @@ class CameraSystemSetup(Mindtrace):
             return False
 
     def _configure_windows_firewall(self, ip_range: str) -> bool:
-        """
-        Configure Windows firewall rules.
+        """Configure Windows firewall rules.
 
         Args:
             ip_range: IP range to allow
@@ -248,8 +225,7 @@ class CameraSystemSetup(Mindtrace):
             return False
 
     def _configure_linux_firewall(self, ip_range: str) -> bool:
-        """
-        Configure Linux UFW firewall rules.
+        """Configure Linux UFW firewall rules.
 
         Args:
             ip_range: IP range to allow
@@ -298,11 +274,10 @@ class CameraSystemSetup(Mindtrace):
 
 
 def configure_firewall(ip_range: Optional[str] = None) -> bool:
-    """
-    Configure firewall rules to allow camera communication.
+    """Configure firewall rules to allow camera communication.
 
-    This function provides a simple interface to configure firewall rules
-    for camera network communication. It works on both Windows and Linux.
+    This function provides a simple interface to configure firewall rules for camera network communication. It works on
+    both Windows and Linux.
 
     Args:
         ip_range: IP range to allow (uses config default if None)
