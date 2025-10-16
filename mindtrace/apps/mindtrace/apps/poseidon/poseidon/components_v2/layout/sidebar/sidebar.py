@@ -1,14 +1,27 @@
 # poseidon/components_v2/layout/sidebar.py
 import reflex as rx
+from collections import OrderedDict
 from poseidon.styles.global_styles import SP, T
 from poseidon.state.line_scope import ScopeState
 
 NAV = [
-    {"label": "Home",              "icon": "home",          "href": "/"},
-    {"label": "Create Line",       "icon": "plus",          "href": "/create-line"},
-    {"label": "Lines Deployed",    "icon": "shield-check",  "href": "/lines"},
-    {"label": "Lines in Progress", "icon": "loader-circle", "href": "/lines-in-progress"},
-    {"label": "Settings",          "icon": "cog",           "href": "/settings"},  # pinned to bottom
+    # Main
+    {"section": "Main", "label": "Home", "icon": "home", "href": "/"},
+
+    # Data Viewer - Line view should be line data
+    {"section": "Data Viewer", "label": "Line view", "icon": "folder-kanban", "href": "/line-view"}, 
+    {"section": "Data Viewer", "label": "Plant view", "icon": "scan-eye", "href": "/plant-view"},
+
+    # Analytics
+    {"section": "Analytics", "label": "Line insights", "icon": "database", "href": "/line-insights"},
+    {"section": "Analytics", "label": "Plant insights", "icon": "trending-up-down", "href": "/plant-insights"},
+
+    # Audit & Reports
+    {"section": "Audit & Reports", "label": "Alerts", "icon": "badge-alert", "href": "/alerts"},
+    # {"section": "Audit & Reports", "label": "Agent", "icon": "person-standing", "href": "/agent"},
+
+    # pinned to bottom
+    {"label": "Settings", "icon": "cog", "href": "/settings"},
 ]
 
 SIDEBAR_W   = "80px"
@@ -90,24 +103,73 @@ def _nav_link(item: dict, *, active: bool):
     )
     return rx.tooltip(link, content=label, side="right")
 
+def _section_heading(title: str):
+    return rx.text(
+        title,
+        font_size="9px",
+        weight="bold",
+        color=T.colors.fg_muted,
+        letter_spacing=".08em",
+        text_transform="uppercase",
+        margin_bottom=SP.space_2,
+        opacity="0.9",
+        text_align="center",
+    )
+
 def Sidebar(*, active: str):
     settings_item = next((i for i in NAV if i["label"] == "Settings"), None)
     main_items    = [i for i in NAV if i["label"] != "Settings"]
 
-    main_nodes    = [_nav_link(i, active=(i["label"] == active)) for i in main_items]
-    settings_node = _nav_link(settings_item, active=(settings_item and settings_item["label"] == active)) if settings_item else rx.fragment()
+    grouped: "OrderedDict[str, list[dict]]" = OrderedDict()
+    for item in main_items:
+        section = item.get("section", "")
+        grouped.setdefault(section, []).append(item)
+
+    section_nodes = []
+    for section_title, items in grouped.items():
+        heading = _section_heading(section_title) if section_title else rx.fragment()
+        tiles = [_nav_link(i, active=(i["label"] == active)) for i in items]
+        section_nodes.append(
+            rx.vstack(
+                heading,
+                *tiles,
+                align="stretch",
+                gap="10px",
+            )
+        )
+
+    sections_stack = rx.vstack(
+        *section_nodes,
+        gap=SP.space_3,
+        width="100%",
+    )
+
+    settings_node = (
+        _nav_link(settings_item, active=(settings_item and settings_item["label"] == active))
+        if settings_item else rx.fragment()
+    )
 
     return rx.box(
         rx.vstack(
-            *main_nodes,
-            rx.spacer(),
+            rx.box(
+                sections_stack,
+                overflow_y="auto",
+                flex="1 1 0",
+                min_height=0,
+                padding=SP.space_3,
+                padding_bottom=SP.space_2,
+                overscroll_behavior="contain",
+            ),
             rx.divider(margin=f"{SP.space_3} 0"),
-            settings_node,
-            gap="10px",
-            padding=SP.space_3,
-            width="100%",
+            rx.box(
+                settings_node,
+                padding=SP.space_3,
+                padding_top=SP.space_2,
+            ),
             height="100%",
+            width="100%",
             align_items="stretch",
+            gap="0",
         ),
         width=SIDEBAR_W,
         min_width=SIDEBAR_W,

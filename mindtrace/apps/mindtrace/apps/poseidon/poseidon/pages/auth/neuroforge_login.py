@@ -8,7 +8,7 @@ Modern split login page (Mindtrace-style).
 
 import reflex as rx
 
-from poseidon.components_v2.branding import logo_neuroforge  # (unused, but keep if referenced elsewhere)
+from poseidon.components_v2.branding import logo_inspectra  # (unused, but keep if referenced elsewhere)
 from poseidon.components_v2.core import loader
 from poseidon.components_v2.layout import main_css_animation
 from poseidon.state.auth import AuthState
@@ -74,7 +74,7 @@ def _left_panel() -> rx.Component:
             # Big circular logo
             rx.box(
                 rx.image(src="/mindtrace-logo.png", width="auto", height="160px"),
-                logo_neuroforge(),
+                logo_inspectra(),
                 # width="200px",
                 # height="200px",
                 # border_radius="9999px",

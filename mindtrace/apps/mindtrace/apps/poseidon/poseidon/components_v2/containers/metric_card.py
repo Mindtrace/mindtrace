@@ -2,6 +2,7 @@
 Metric Card Component
 
 A reusable card component for displaying key metrics with title, value, and optional subtitle.
+Exact layout & styles aligned to provided CSS spec.
 """
 
 import reflex as rx
@@ -9,7 +10,22 @@ from typing import Optional
 from poseidon.styles.global_styles import THEME as T
 
 
-def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading: bool = False, empty: bool = False, empty_message: str = "No data") -> rx.Component:
+def metric_card(
+    title: str,
+    value: str,
+    subtitle: Optional[str] = None,
+    *,
+    loading: bool = False,
+    empty: bool = False,
+    empty_message: str = "No data",
+    # New optional visual props to match the spec:
+    icon: str = "bar-chart-3",          # 24x24 visual
+    accent: str = "#5BB98B",            # icon / accent color
+    delta: Optional[str] = None,        # e.g. "+3.4%"
+    delta_note: Optional[str] = None,   # e.g. "since last week"
+    width: str = "213.6px",
+    height: str = "128px",
+) -> rx.Component:
     """Create a metric card for displaying key metrics."""
 
     loading_overlay = rx.box(
@@ -20,10 +36,7 @@ def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading:
         ),
         style={
             "position": "absolute",
-            "top": 0,
-            "left": 0,
-            "right": 0,
-            "bottom": 0,
+            "inset": 0,
             "display": "flex",
             "align_items": "center",
             "justify_content": "center",
@@ -46,10 +59,7 @@ def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading:
         ),
         style={
             "position": "absolute",
-            "top": 0,
-            "left": 0,
-            "right": 0,
-            "bottom": 0,
+            "inset": 0,
             "display": "flex",
             "align_items": "center",
             "justify_content": "center",
@@ -59,47 +69,124 @@ def metric_card(title: str, value: str, subtitle: Optional[str] = None, loading:
         },
     )
 
-    overlay = rx.cond(
-        loading,
-        loading_overlay,
-        rx.cond(empty, empty_overlay, None),
-    )
+    overlay = rx.cond(loading, loading_overlay, rx.cond(empty, empty_overlay, None))
 
-    return rx.card(
+    # --- Top (icon + text block) ---
+    top_row = rx.hstack(
+        # 24x24 icon
+        rx.box(
+            rx.icon(tag=icon, size=24, color=accent),
+            width="24px",
+            height="24px",
+            flex_shrink="0",
+            position="relative",
+        ),
+        # Text stack (heading + subtitle)
         rx.vstack(
-            rx.text(
-                title,
-                font_size=T.typography.fs_sm,
-                color=T.colors.fg_muted,
-                font_weight=T.typography.fw_500,
-            ),
+            # Heading: 20/28, medium-ish (510 ≈ 500)
             rx.text(
                 value,
-                font_size=T.typography.fs_3xl,
-                font_weight=T.typography.fw_700,
-                color=T.colors.fg,
+                font_family="'SF Pro', ui-sans-serif, system-ui",
+                font_size="20px",
+                line_height="28px",
+                letter_spacing="-0.08px",
+                font_weight="500",
+                color="#1C2024",
             ),
             rx.cond(
                 subtitle,
                 rx.text(
                     subtitle,
-                    font_size=T.typography.fs_sm,
-                    color=T.colors.fg_subtle,
+                    font_family="'SF Pro', ui-sans-serif, system-ui",
+                    font_size="14px",
+                    line_height="20px",
+                    font_weight="400",
+                    color="#1C2024",
                 ),
                 rx.fragment(),
             ),
-            spacing="2",
             align="start",
+            spacing="1",
+            width="auto",
         ),
-        overlay,
-        padding=T.spacing.space_4,
-        background=T.colors.surface,
-        border=f"1px solid {T.colors.border}",
-        border_radius=T.radius.r_lg,
-        box_shadow=T.shadows.shadow_1,
+        align="center",
+        spacing="4",       # 16px gap
         width="100%",
+    )
+
+    # --- Metric row (delta + note) ---
+    metric_row = rx.cond(
+        rx.var(bool(delta) or bool(delta_note)),
+        rx.hstack(
+            rx.cond(
+                delta,
+                rx.text(
+                    delta,
+                    font_family="'SF Pro', ui-sans-serif, system-ui",
+                    font_size="14px",
+                    line_height="20px",
+                    font_weight="400",
+                    color="#218358",   # green from spec
+                ),
+                rx.fragment(),
+            ),
+            rx.cond(
+                delta_note,
+                rx.text(
+                    delta_note,
+                    font_family="'SF Pro', ui-sans-serif, system-ui",
+                    font_size="14px",
+                    line_height="20px",
+                    font_weight="400",
+                    color="rgba(0, 7, 20, 0.623529)",
+                ),
+                rx.fragment(),
+            ),
+            align="center",
+            spacing="1",   # 4px gap
+            width="100%",
+        ),
+        rx.fragment(),
+    )
+
+    return rx.card(
+        # Content
+        rx.vstack(
+            top_row,
+            metric_row,
+            spacing="2",         # 8px gap
+            align="start",
+            width="100%",
+            height="100%",
+            justify="center",
+        ),
+        # Overlays
+        overlay,
+        # Card chrome copied from CSS
+        padding="24px",
+        background="#FFFFFF",
+        border="1px solid rgba(0, 0, 51, 0.0588235)",
+        border_radius="8px",
+        width=width,
+        height=height,
         style={
             "position": "relative",
             "overflow": "hidden",
+            # Multi-shadow stack, verbatim from spec
+            "box_shadow": (
+                "0px 1px 3px rgba(0,0,0,0.05), "
+                "0px 2px 1px -1px rgba(0,0,0,0.05), "
+                "0px 1px 4px rgba(0,0,45,0.0901961), "
+                "0px 0px 0px 0.5px rgba(0,0,0,0.05)"
+            ),
+            # Auto-layout bits from spec:
+            "box_sizing": "border-box",
+            "display": "flex",
+            "flex_direction": "column",
+            "justify_content": "center",
+            "align_items": "flex-start",
+            "gap": "8px",
+            "align_self": "stretch",
+            "flex_grow": 1,
         },
     )

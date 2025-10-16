@@ -19,9 +19,10 @@ def Header(
             rx.hstack(
                 rx.vstack(
                     rx.text(
-                        "NeuroForge",
+                        "Inspectra",
                         font_size="26px",
                         style=COMPONENT_VARIANTS["logo"]["title"],
+                        color="#60CCA5",
                     ),
                     align="start",
                     margin_left="1rem",

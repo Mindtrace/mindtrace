@@ -41,6 +41,13 @@ from poseidon.pages.neuroforge_examples import neuroforge_examples
 from poseidon.pages.neuroforge_stepper import index as neuroforge_stepper
 from poseidon.pages.neuroforge_lines_in_progress import neuroforge_lines_in_progress
 
+# Inspectra
+from poseidon.pages.inspectra_index import index as inspectra_index
+from poseidon.pages.inspectra_line_view import inspectra_line_view
+from poseidon.pages.inspectra_plant_view import inspectra_plant_view
+from poseidon.pages.inspectra_alerts import index as inspectra_alerts
+from poseidon.pages.inspectra_line_insights import inspectra_line_insights
+
 
 # Create app with comprehensive styling configuration
 app = rx.App(
@@ -138,28 +145,35 @@ def with_shell(body_fn, *, title, active, header_right_fn=None, subheader_fn=Non
 # )
 
 
-app.add_page(neuroforge_login_page, route="/login", title="NeuroForge")
-app.add_page(with_shell(neuroforge_index, title="NeuroForge", active="Home"), route="/")
+# app.add_page(neuroforge_login_page, route="/login", title="NeuroForge")
+# app.add_page(with_shell(neuroforge_index, title="NeuroForge", active="Home"), route="/")
 
-app.add_page(
-    with_shell(neuroforge_create_line, title="NeuroForge", active="Create Line"),  # or "Home" if you prefer
-    route="/stepper",
-)
+# app.add_page(
+#     with_shell(neuroforge_create_line, title="NeuroForge", active="Create Line"),  # or "Home" if you prefer
+#     route="/stepper",
+# )
 
-app.add_page(
-    with_shell(neuroforge_stepper, title="NeuroForge", active="Create Line"),  # or "Home" if you prefer
-    route="/create-line",
-)
+# app.add_page(
+#     with_shell(neuroforge_stepper, title="NeuroForge", active="Create Line"),  # or "Home" if you prefer
+#     route="/create-line",
+# )
 
-app.add_page(
-    with_shell(neuroforge_lines, title="NeuroForge", active="Lines Deployed"),  # <-- was "Lines"
-    route="/lines",
-)
+# app.add_page(
+#     with_shell(neuroforge_lines, title="NeuroForge", active="Lines Deployed"),  # <-- was "Lines"
+#     route="/lines",
+# )
 
-app.add_page(
-    with_shell(neuroforge_lines_in_progress, title="NeuroForge", active="Lines in Progress"),  # <-- was "Lines"
-    route="/lines-in-progress",
-)
+# app.add_page(
+#     with_shell(neuroforge_lines_in_progress, title="NeuroForge", active="Lines in Progress"),  # <-- was "Lines"
+#     route="/lines-in-progress",
+# )
+
+app.add_page(neuroforge_login_page, route="/login", title="Inspectra")
+app.add_page(with_shell(inspectra_index, title="Inspectra", active="Home"), route="/")
+app.add_page(with_shell(inspectra_line_view, title="Inspectra", active="Line view"), route="/line-view")
+app.add_page(with_shell(inspectra_plant_view, title="Inspectra", active="Plant view"), route="/plant-view")
+app.add_page(with_shell(inspectra_alerts, title="Inspectra", active="Alerts"), route="/alerts")
+app.add_page(with_shell(inspectra_line_insights, title="Inspectra", active="Line insights"), route="/line-insights")
 
 
 from poseidon.backend.database.init import rebuild_all_models
