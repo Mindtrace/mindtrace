@@ -475,23 +475,19 @@ async def test_mongo_backend_get_with_none_result():
                 await backend.get("test_id")
 
 
-# Tests for MongoDB backend edge cases
-class TestMongoBackendEdgeCases:
-    """Test edge cases in MongoDB backend."""
+@patch("mindtrace.database.backends.mongo_odm_backend.init_beanie")
+@pytest.mark.asyncio
+async def test_mongo_backend_initialize_error_handling(mock_init_beanie):
+    """Test MongoDB backend initialization error handling."""
+    from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
 
-    @patch("mindtrace.database.backends.mongo_odm_backend.init_beanie")
-    @pytest.mark.asyncio
-    async def test_mongo_backend_initialize_error_handling(self, mock_init_beanie):
-        """Test MongoDB backend initialization error handling."""
-        from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
-
-        mock_init_beanie.side_effect = Exception("Connection failed")
-        
-        backend = MongoMindtraceODMBackend(
-            model_cls=UserDoc,
-            db_uri="mongodb://localhost:27017",
-            db_name="test_db"
-        )
-        
-        with pytest.raises(Exception, match="Connection failed"):
-            await backend.initialize()
+    mock_init_beanie.side_effect = Exception("Connection failed")
+    
+    backend = MongoMindtraceODMBackend(
+        model_cls=UserDoc,
+        db_uri="mongodb://localhost:27017",
+        db_name="test_db"
+    )
+    
+    with pytest.raises(Exception, match="Connection failed"):
+        await backend.initialize()
