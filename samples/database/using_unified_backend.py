@@ -408,8 +408,8 @@ async def demonstrate_unified_document_model():
     await backend.delete_async(str(mongo_inserted2.id))
 
     backend.switch_backend(BackendType.REDIS)
-    await backend.delete_async(redis_inserted1.id)
-    await backend.delete_async(redis_inserted2.id)
+    await backend.delete_async(redis_inserted1.pk)
+    await backend.delete_async(redis_inserted2.pk)
 
     print("Unified document model demonstration completed!")
 
