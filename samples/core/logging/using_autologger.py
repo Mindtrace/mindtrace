@@ -20,30 +20,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(name)s: %(message)s'
 )
 
-# Setup structlog (if available)
-try:
-    import structlog
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer()
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-    STRUCTLOG_AVAILABLE = True
-except ImportError:
-    STRUCTLOG_AVAILABLE = False
-    print("Note: structlog not available, using stdlib logging only")
+
 
 class DataProcessor(Mindtrace):
     """Data processor with both stdlib and structlog support."""
@@ -154,11 +131,6 @@ def demonstrate_stdlib_logging():
 
 def demonstrate_structlog_logging():
     """Demonstrate structlog logging format."""
-    if not STRUCTLOG_AVAILABLE:
-        print("\n" + "="*80)
-        print("STRUCTLOG NOT AVAILABLE - SKIPPING")
-        print("="*80)
-        return
     
     print("\n" + "="*80)
     print("STRUCTLOG LOGGING FORMAT (Structured JSON)")
