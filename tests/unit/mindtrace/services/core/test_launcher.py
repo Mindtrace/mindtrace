@@ -109,10 +109,9 @@ class TestLauncher:
         # Verify server instantiation with empty init params
         mock_instantiate.assert_called_once_with("test.Server")
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_invalid_json(self, mock_base_init, mock_instantiate, mock_setup_logger):
+    def test_launcher_init_invalid_json(self, mock_base_init, mock_instantiate):
         """Test Launcher initialization with invalid JSON init parameters."""
         options = Mock()
         options.bind = "127.0.0.1:8080"
@@ -129,7 +128,6 @@ class TestLauncher:
     def test_load_config(self, mock_options, mock_server):
         """Test load_config method."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -169,7 +167,6 @@ class TestLauncher:
         options.init_params = None
 
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -192,7 +189,6 @@ class TestLauncher:
     def test_load_config_filters_unsupported_settings(self, mock_options, mock_server):
         """Test load_config only sets supported settings."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -218,7 +214,6 @@ class TestLauncher:
     def test_load(self, mock_options, mock_server):
         """Test load method returns the application."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -362,10 +357,9 @@ class TestMain:
 class TestLauncherIntegration:
     """Integration tests for the Launcher with more realistic scenarios."""
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_complex_init_params_parsing(self, mock_base_init, mock_instantiate, mock_setup_logger):
+    def test_complex_init_params_parsing(self, mock_base_init, mock_instantiate):
         """Test complex JSON init parameters parsing."""
         complex_params = {
             "database_url": "postgresql://user:pass@localhost/db",
