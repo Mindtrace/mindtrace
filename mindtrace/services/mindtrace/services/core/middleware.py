@@ -1,13 +1,13 @@
 import time
-import uuid
 import traceback
+import uuid
 from typing import Any, Optional
 
+import structlog.contextvars
 from fastapi import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
-import structlog.contextvars
 
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
@@ -53,7 +53,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if request.url.path in filtered_paths:
             # Just pass through without logging
             return await call_next(request)
-        
+
         # Clear any existing context variables
         structlog.contextvars.clear_contextvars()
 

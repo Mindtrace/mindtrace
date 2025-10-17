@@ -1,12 +1,10 @@
 import argparse
 import json
-import logging
 from argparse import RawTextHelpFormatter
-from pathlib import Path
 
 from gunicorn.app.base import BaseApplication
 
-from mindtrace.core import instantiate_target, setup_logger
+from mindtrace.core import instantiate_target
 
 
 class Launcher(BaseApplication):
