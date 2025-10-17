@@ -331,7 +331,7 @@ class TestDatumModel:
         # added_at should be set automatically
         assert datum.added_at is not None
         assert isinstance(datum.added_at, datetime)
-        
+
         # Should be within a reasonable time range
         assert before_creation <= datum.added_at <= after_creation
 
@@ -350,7 +350,7 @@ class TestDatumModel:
         # Both should have added_at set
         assert datum1.added_at is not None
         assert datum2.added_at is not None
-        
+
         # They should be different (or very close if created quickly)
         # Allow for small time differences due to test execution speed
         time_diff = abs((datum2.added_at - datum1.added_at).total_seconds())
@@ -359,11 +359,7 @@ class TestDatumModel:
     def test_datum_added_at_with_other_fields(self):
         """Test that added_at works correctly with other fields."""
         explicit_time = datetime(2024, 2, 20, 14, 25, 30)
-        datum = Datum(
-            data={"test": "data"},
-            metadata={"source": "test"},
-            added_at=explicit_time
-        )
+        datum = Datum(data={"test": "data"}, metadata={"source": "test"}, added_at=explicit_time)
 
         assert datum.data == {"test": "data"}
         assert datum.metadata == {"source": "test"}
@@ -372,14 +368,10 @@ class TestDatumModel:
     def test_datum_added_at_model_dump(self):
         """Test that added_at is included in model_dump output."""
         explicit_time = datetime(2024, 3, 10, 9, 15, 20)
-        datum = Datum(
-            data={"test": "data"},
-            metadata={"source": "test"},
-            added_at=explicit_time
-        )
+        datum = Datum(data={"test": "data"}, metadata={"source": "test"}, added_at=explicit_time)
 
         dumped = datum.model_dump()
-        
+
         assert "added_at" in dumped
         assert dumped["added_at"] == explicit_time
         assert dumped["data"] == {"test": "data"}
@@ -388,11 +380,7 @@ class TestDatumModel:
     def test_datum_added_at_model_validate(self):
         """Test that added_at is correctly handled in model_validate."""
         explicit_time = datetime(2024, 4, 5, 16, 45, 10)
-        datum_dict = {
-            "data": {"test": "data"},
-            "metadata": {"source": "test"},
-            "added_at": explicit_time
-        }
+        datum_dict = {"data": {"test": "data"}, "metadata": {"source": "test"}, "added_at": explicit_time}
 
         datum = Datum.model_validate(datum_dict)
 
@@ -402,10 +390,7 @@ class TestDatumModel:
 
     def test_datum_added_at_model_validate_without_added_at(self):
         """Test that model_validate sets added_at to current time when not provided."""
-        datum_dict = {
-            "data": {"test": "data"},
-            "metadata": {"source": "test"}
-        }
+        datum_dict = {"data": {"test": "data"}, "metadata": {"source": "test"}}
 
         before_validation = datetime.now()
         datum = Datum.model_validate(datum_dict)
@@ -420,15 +405,11 @@ class TestDatumModel:
     def test_datum_added_at_serialization_roundtrip(self):
         """Test that added_at survives serialization roundtrip."""
         original_time = datetime(2024, 5, 12, 11, 30, 45)
-        original_datum = Datum(
-            data={"test": "data"},
-            metadata={"source": "test"},
-            added_at=original_time
-        )
+        original_datum = Datum(data={"test": "data"}, metadata={"source": "test"}, added_at=original_time)
 
         # Serialize to dict
         datum_dict = original_datum.model_dump()
-        
+
         # Deserialize back to Datum
         restored_datum = Datum.model_validate(datum_dict)
 
@@ -456,13 +437,13 @@ class TestDatumModel:
         # Test that we can perform timedelta operations
         one_hour_later = datum.added_at + timedelta(hours=1)
         expected_time = datetime(2024, 6, 1, 13, 0, 0)
-        
+
         assert one_hour_later == expected_time
 
     def test_datum_added_at_none_handling(self):
         """Test that added_at handles None values correctly."""
         # When None is explicitly passed, it should default to current time
         datum = Datum(added_at=None)
-        
+
         assert datum.added_at is not None
         assert isinstance(datum.added_at, datetime)

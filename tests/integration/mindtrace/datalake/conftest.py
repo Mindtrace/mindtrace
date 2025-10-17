@@ -23,7 +23,6 @@ def event_loop():
     loop.close()
 
 
-
 @pytest.fixture(scope="function")
 def temp_registry_dir() -> Generator[str, None, None]:
     """Create a temporary directory for registry testing."""
@@ -40,14 +39,15 @@ async def datalake():
     # Clean up any existing data before starting
     try:
         from mindtrace.datalake.types import Datum
+
         await Datum.delete_all()
     except Exception:
         pass  # Ignore cleanup errors
-    
+
     datalake_instance = Datalake(MONGO_URL, MONGO_DB)
     await datalake_instance.initialize()
     yield datalake_instance
-    
+
     # Clean up: delete all data after each test
     try:
         await Datum.delete_all()
