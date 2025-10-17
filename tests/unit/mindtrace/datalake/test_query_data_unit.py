@@ -91,17 +91,18 @@ class TestQueryDataUnit:
         mock_database.find.return_value = [datum1, datum2]
 
         # Test single query
-        query = {"metadata.project": "test_project"}
+        query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Verify database call
-        mock_database.find.assert_called_once_with(query)
+        expected_query = {"metadata.project": "test_project"}
+        mock_database.find.assert_called_once_with(expected_query)
         
         # Verify result format
         assert len(result) == 2
-        assert all(len(row) == 1 for row in result)
-        assert result[0][0] == datum1.id
-        assert result[1][0] == datum2.id
+        assert all(isinstance(row, dict) for row in result)
+        assert result[0]["image_id"] == datum1.id
+        assert result[1]["image_id"] == datum2.id
 
     @pytest.mark.asyncio
     async def test_single_query_list(self, datalake, mock_database):
@@ -115,16 +116,17 @@ class TestQueryDataUnit:
         mock_database.find.return_value = [datum]
 
         # Test single query as list
-        query = [{"metadata.project": "test_project"}]
+        query = [{"metadata.project": "test_project", "column": "image_id"}]
         result = await datalake.query_data(query)
 
         # Verify database call
-        mock_database.find.assert_called_once_with(query[0])
+        expected_query = {"metadata.project": "test_project"}
+        mock_database.find.assert_called_once_with(expected_query)
         
         # Verify result format
         assert len(result) == 1
-        assert len(result[0]) == 1
-        assert result[0][0] == datum.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == datum.id
 
     @pytest.mark.asyncio
     async def test_multi_query_with_derivation(self, datalake, mock_database):
@@ -152,8 +154,8 @@ class TestQueryDataUnit:
 
         # Test multi-query
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
@@ -170,9 +172,9 @@ class TestQueryDataUnit:
 
         # Verify result format
         assert len(result) == 1
-        assert len(result[0]) == 2
-        assert result[0][0] == base_datum.id
-        assert result[0][1] == derived_datum.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        assert result[0]["label_id"] == derived_datum.id
 
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_latest(self, datalake, mock_database):
@@ -212,8 +214,8 @@ class TestQueryDataUnit:
 
         # Test multi-query with latest strategy
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "latest"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
@@ -222,9 +224,9 @@ class TestQueryDataUnit:
 
         # Verify result format - should select the latest (new_derived)
         assert len(result) == 1
-        assert len(result[0]) == 2
-        assert result[0][0] == base_datum.id
-        assert result[0][1] == new_derived.id  # Should be the latest one
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        assert result[0]["label_id"] == new_derived.id  # Should be the latest one
 
     @pytest.mark.asyncio
     async def test_multi_query_missing_derived_data(self, datalake, mock_database):
@@ -244,8 +246,8 @@ class TestQueryDataUnit:
 
         # Test multi-query
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
@@ -290,9 +292,9 @@ class TestQueryDataUnit:
 
         # Test complex multi-query
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"},
-            {"derived_from": 1, "data.type": "bbox"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}
         ]
         result = await datalake.query_data(query)
 
@@ -311,21 +313,22 @@ class TestQueryDataUnit:
 
         # Verify result format
         assert len(result) == 1
-        assert len(result[0]) == 3
-        assert result[0][0] == base_datum.id
-        assert result[0][1] == level1_datum.id
-        assert result[0][2] == level2_datum.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        assert result[0]["label_id"] == level1_datum.id
+        assert result[0]["bbox_id"] == level2_datum.id
 
     @pytest.mark.asyncio
     async def test_query_with_empty_result(self, datalake, mock_database):
         """Test query that returns no results."""
         mock_database.find.return_value = []
 
-        query = {"metadata.project": "nonexistent_project"}
+        query = {"metadata.project": "nonexistent_project", "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Verify database call
-        mock_database.find.assert_called_once_with(query)
+        expected_query = {"metadata.project": "nonexistent_project"}
+        mock_database.find.assert_called_once_with(expected_query)
 
         # Verify result
         assert result == []
@@ -356,8 +359,8 @@ class TestQueryDataUnit:
 
         # Test query with invalid strategy
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "invalid"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"}
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
@@ -401,16 +404,16 @@ class TestQueryDataUnit:
 
         # Test query without explicit strategy (should default to "latest")
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
         # Verify result - should select the latest (new_derived)
         assert len(result) == 1
-        assert len(result[0]) == 2
-        assert result[0][0] == base_datum.id
-        assert result[0][1] == new_derived.id  # Should be the latest one
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        assert result[0]["label_id"] == new_derived.id  # Should be the latest one
 
     @pytest.mark.asyncio
     async def test_query_with_complex_data_filters(self, datalake, mock_database):
@@ -447,17 +450,24 @@ class TestQueryDataUnit:
             "data.type": "image",
             "data.size": {"$gt": 600},
             "data.tags": {"$in": ["nature"]},
-            "data.location.city": "Paris"
+            "data.location.city": "Paris",
+            "column": "image_id"
         }
         result = await datalake.query_data(query)
 
         # Verify database call
-        mock_database.find.assert_called_once_with(query)
+        expected_query = {
+            "data.type": "image",
+            "data.size": {"$gt": 600},
+            "data.tags": {"$in": ["nature"]},
+            "data.location.city": "Paris"
+        }
+        mock_database.find.assert_called_once_with(expected_query)
 
         # Verify result
         assert len(result) == 1
-        assert len(result[0]) == 1
-        assert result[0][0] == datum1.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == datum1.id
 
     @pytest.mark.asyncio
     async def test_query_with_complex_metadata_filters(self, datalake, mock_database):
@@ -483,17 +493,25 @@ class TestQueryDataUnit:
             "metadata.tags": {"$in": ["nature"]},
             "metadata.location.city": "Paris",
             "metadata.quality": {"$gte": 0.9},
-            "metadata.models": {"$in": ["resnet50"]}
+            "metadata.models": {"$in": ["resnet50"]},
+            "column": "image_id"
         }
         result = await datalake.query_data(query)
 
         # Verify database call
-        mock_database.find.assert_called_once_with(query)
+        expected_query = {
+            "metadata.project": "test_project",
+            "metadata.tags": {"$in": ["nature"]},
+            "metadata.location.city": "Paris",
+            "metadata.quality": {"$gte": 0.9},
+            "metadata.models": {"$in": ["resnet50"]}
+        }
+        mock_database.find.assert_called_once_with(expected_query)
 
         # Verify result
         assert len(result) == 1
-        assert len(result[0]) == 1
-        assert result[0][0] == datum1.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == datum1.id
 
     @pytest.mark.asyncio
     async def test_query_with_multiple_base_results(self, datalake, mock_database):
@@ -533,8 +551,8 @@ class TestQueryDataUnit:
 
         # Test multi-query
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
@@ -543,15 +561,15 @@ class TestQueryDataUnit:
 
         # Verify result format
         assert len(result) == 2
-        assert all(len(row) == 2 for row in result)
+        assert all(isinstance(row, dict) for row in result)
         
         # Verify first result
-        assert result[0][0] == base1.id
-        assert result[0][1] == derived1.id
+        assert result[0]["image_id"] == base1.id
+        assert result[0]["label_id"] == derived1.id
         
         # Verify second result
-        assert result[1][0] == base2.id
-        assert result[1][1] == derived2.id
+        assert result[1]["image_id"] == base2.id
+        assert result[1]["label_id"] == derived2.id
 
     @pytest.mark.asyncio
     async def test_query_with_mixed_derivation_indices(self, datalake, mock_database):
@@ -588,9 +606,9 @@ class TestQueryDataUnit:
 
         # Test query with mixed derivation indices
         query = [
-            {"metadata.project": "test_project"},  # Index 0: base
-            {"derived_from": 0, "data.type": "classification"},  # Index 1: derived from 0
-            {"derived_from": 1, "data.type": "bbox"}  # Index 2: derived from 1
+            {"metadata.project": "test_project", "column": "image_id"},  # Index 0: base
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},  # Index 1: derived from 0
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}  # Index 2: derived from 1
         ]
         result = await datalake.query_data(query)
 
@@ -609,10 +627,10 @@ class TestQueryDataUnit:
 
         # Verify result format
         assert len(result) == 1
-        assert len(result[0]) == 3
-        assert result[0][0] == base_datum.id
-        assert result[0][1] == level1_datum.id
-        assert result[0][2] == level2_datum.id
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        assert result[0]["label_id"] == level1_datum.id
+        assert result[0]["bbox_id"] == level2_datum.id
 
     @pytest.mark.asyncio
     async def test_query_with_empty_query_list(self, datalake, mock_database):
@@ -620,6 +638,28 @@ class TestQueryDataUnit:
         query = []
 
         with pytest.raises(AssertionError):
+            await datalake.query_data(query)
+
+    @pytest.mark.asyncio
+    async def test_query_without_column_raises_error(self, datalake, mock_database):
+        """Test query without column raises ValueError."""
+        query = {"metadata.project": "test_project"}
+
+        with pytest.raises(ValueError, match="column must be provided"):
+            await datalake.query_data(query)
+
+    @pytest.mark.asyncio
+    async def test_multi_query_without_column_raises_error(self, datalake, mock_database):
+        """Test multi-query without column in subquery raises ValueError."""
+        base_datum = create_mock_datum(datum_id=PydanticObjectId())
+        mock_database.find.return_value = [base_datum]
+
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification"}  # Missing column
+        ]
+
+        with pytest.raises(ValueError, match="column must be provided"):
             await datalake.query_data(query)
 
     @pytest.mark.asyncio
@@ -635,14 +675,14 @@ class TestQueryDataUnit:
         ]
 
         query = [
-            {"metadata.project": "p"},
-            {"derived_from": 0, "strategy": "earliest"},
+            {"metadata.project": "p", "column": "image_id"},
+            {"derived_from": "image_id", "strategy": "earliest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
         assert len(result) == 1
-        assert len(result[0]) == 2
-        assert result[0][1] == older.id
+        assert isinstance(result[0], dict)
+        assert result[0]["label_id"] == older.id
 
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_random(self, datalake, mock_database):
@@ -658,12 +698,12 @@ class TestQueryDataUnit:
 
         with patch("mindtrace.datalake.datalake.random.choice", return_value=b):
             result = await datalake.query_data([
-                {"metadata.project": "p"},
-                {"derived_from": 0, "strategy": "random"},
+                {"metadata.project": "p", "column": "image_id"},
+                {"derived_from": "image_id", "strategy": "random", "column": "label_id"},
             ])
 
         assert len(result) == 1
-        assert result[0][1] == b.id
+        assert result[0]["label_id"] == b.id
 
     @pytest.mark.asyncio
     async def test_datums_wanted_latest_single_query(self, datalake, mock_database):
@@ -674,10 +714,10 @@ class TestQueryDataUnit:
 
         mock_database.find.return_value = [d1, d2, d3]
 
-        result = await datalake.query_data({"metadata.project": "p"}, datums_wanted=2)
+        result = await datalake.query_data({"metadata.project": "p", "column": "image_id"}, datums_wanted=2)
 
         # Latest two should be selected: d3 and d2 (order not asserted)
-        result_ids = {row[0] for row in result}
+        result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
         assert result_ids == {d2.id, d3.id}
 
@@ -690,9 +730,9 @@ class TestQueryDataUnit:
 
         mock_database.find.return_value = [d1, d2, d3]
 
-        result = await datalake.query_data([{"metadata.project": "p", "strategy": "earliest"}], datums_wanted=2)
+        result = await datalake.query_data([{"metadata.project": "p", "strategy": "earliest", "column": "image_id"}], datums_wanted=2)
 
-        result_ids = {row[0] for row in result}
+        result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
         assert result_ids == {d1.id, d2.id}
 
@@ -706,8 +746,8 @@ class TestQueryDataUnit:
         mock_database.find.return_value = [d1, d2, d3]
 
         with patch("mindtrace.datalake.datalake.random.sample", return_value=[d1, d3]):
-            result = await datalake.query_data([{"metadata.project": "p", "strategy": "random"}], datums_wanted=2)
+            result = await datalake.query_data([{"metadata.project": "p", "strategy": "random", "column": "image_id"}], datums_wanted=2)
 
-        result_ids = {row[0] for row in result}
+        result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
         assert result_ids == {d1.id, d3.id}

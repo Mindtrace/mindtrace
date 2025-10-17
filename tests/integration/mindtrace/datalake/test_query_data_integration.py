@@ -29,15 +29,15 @@ class TestQueryDataIntegration:
         )
 
         # Query for all images in test_project
-        query = {"metadata.project": "test_project"}
+        query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query)
 
-        # Should return 2 results, each as a single-element list
+        # Should return 2 results, each as a dictionary
         assert len(result) == 2
-        assert all(len(row) == 1 for row in result)
+        assert all(isinstance(row, dict) for row in result)
         
         # Extract the IDs and verify they match our expected data
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         assert datum1.id in result_ids
         assert datum2.id in result_ids
         assert datum3.id not in result_ids
@@ -60,12 +60,12 @@ class TestQueryDataIntegration:
         )
 
         # Query for images with size > 600
-        query = {"data.type": "image", "data.size": {"$gt": 600}}
+        query = {"data.type": "image", "data.size": {"$gt": 600}, "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Should return 2 results (test1.jpg with size 1024 and test3.jpg with size 800)
         assert len(result) == 2
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         assert datum1.id in result_ids
         assert datum3.id in result_ids
         assert datum2.id not in result_ids
@@ -99,18 +99,19 @@ class TestQueryDataIntegration:
 
         # Query for images and their classification labels
         query = [
-            {"metadata.project": "test_project"},  # Base query: find images
-            {"derived_from": 0, "data.type": "classification"}  # Derived query: find classifications
+            {"metadata.project": "test_project", "column": "image_id"},  # Base query: find images
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}  # Derived query: find classifications
         ]
         result = await datalake.query_data(query)
 
         # Should return 2 results, each with 2 elements [image_id, label_id]
         assert len(result) == 2
-        assert all(len(row) == 2 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Verify the relationships
         for row in result:
-            image_id, label_id = row
+            image_id = row["image_id"]
+            label_id = row["label_id"]
             assert image_id in [image1.id, image2.id]
             assert label_id in [label1.id, label2.id]
 
@@ -139,15 +140,16 @@ class TestQueryDataIntegration:
 
         # Query with latest strategy
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "latest"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
         # Should return 1 result with the latest label
         assert len(result) == 1
-        assert len(result[0]) == 2
-        image_id, label_id = result[0]
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
         assert image_id == image.id
         assert label_id == new_label.id  # Should be the latest one
 
@@ -173,16 +175,17 @@ class TestQueryDataIntegration:
 
         # Query for images and their classification labels
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
         # Should return only 1 result (image1 with its label)
         # image2 should be excluded because it has no classification
         assert len(result) == 1
-        assert len(result[0]) == 2
-        image_id, label_id = result[0]
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
         assert image_id == image1.id
         assert label_id == label1.id
 
@@ -229,19 +232,21 @@ class TestQueryDataIntegration:
 
         # Query for images -> classifications -> bounding boxes
         query = [
-            {"metadata.project": "test_project"},  # Base: images
-            {"derived_from": 0, "data.type": "classification"},  # Level 1: classifications
-            {"derived_from": 1, "data.type": "bbox"}  # Level 2: bounding boxes
+            {"metadata.project": "test_project", "column": "image_id"},  # Base: images
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},  # Level 1: classifications
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}  # Level 2: bounding boxes
         ]
         result = await datalake.query_data(query)
 
         # Should return 2 results, each with 3 elements [image_id, label_id, bbox_id]
         assert len(result) == 2
-        assert all(len(row) == 3 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Verify the relationships
         for row in result:
-            image_id, label_id, bbox_id = row
+            image_id = row["image_id"]
+            label_id = row["label_id"]
+            bbox_id = row["bbox_id"]
             assert image_id in [image1.id, image2.id]
             assert label_id in [label1.id, label2.id]
             assert bbox_id in [bbox1.id, bbox2.id]
@@ -256,7 +261,7 @@ class TestQueryDataIntegration:
         )
 
         # Query for non-existent project
-        query = {"metadata.project": "nonexistent_project"}
+        query = {"metadata.project": "nonexistent_project", "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Should return empty list
@@ -278,8 +283,8 @@ class TestQueryDataIntegration:
 
         # Query with invalid strategy
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "invalid"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"}
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
@@ -302,12 +307,12 @@ class TestQueryDataIntegration:
         )
 
         # Query for registry-stored data
-        query = {"metadata.project": "test_project", "metadata.storage": "registry"}
+        query = {"metadata.project": "test_project", "metadata.storage": "registry", "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Should return 2 results
         assert len(result) == 2
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         assert datum1.id in result_ids
         assert datum2.id in result_ids
 
@@ -329,12 +334,12 @@ class TestQueryDataIntegration:
         )
 
         # Query for all images in project
-        query = {"metadata.project": "test_project"}
+        query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query)
 
         # Should return both results
         assert len(result) == 2
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         assert db_datum.id in result_ids
         assert registry_datum.id in result_ids
 
@@ -375,13 +380,14 @@ class TestQueryDataIntegration:
             "metadata.project": "test_project",
             "metadata.tags": {"$in": ["nature"]},
             "metadata.location.city": "Paris",
-            "metadata.quality": {"$gte": 0.9}
+            "metadata.quality": {"$gte": 0.9},
+            "column": "image_id"
         }
         result = await datalake.query_data(query)
 
         # Should return 2 results (datum1 and datum3)
         assert len(result) == 2
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         assert datum1.id in result_ids
         assert datum3.id in result_ids
         assert datum2.id not in result_ids
@@ -411,15 +417,16 @@ class TestQueryDataIntegration:
 
         # Query with earliest strategy
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "earliest"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"}
         ]
         result = await datalake.query_data(query)
 
         # Should return 1 result with the earliest label
         assert len(result) == 1
-        assert len(result[0]) == 2
-        image_id, label_id = result[0]
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
         assert image_id == image.id
         assert label_id == old_label.id  # Should be the earliest one
 
@@ -446,15 +453,15 @@ class TestQueryDataIntegration:
 
         # Query with random strategy (run multiple times to test randomness)
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification", "strategy": "random"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"}
         ]
         
         # Run the query multiple times to ensure it can select different results
         results = []
         for _ in range(10):
             result = await datalake.query_data(query)
-            results.append(result[0][1])  # Get the selected label ID
+            results.append(result[0]["label_id"])  # Get the selected label ID
 
         # Should return 1 result each time
         assert len(results) == 10  # We ran the query 10 times
@@ -477,15 +484,15 @@ class TestQueryDataIntegration:
             await asyncio.sleep(0.01)  # Ensure different timestamps
 
         # Query with datums_wanted=3
-        query = {"metadata.project": "test_project"}
+        query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query, datums_wanted=3)
 
         # Should return exactly 3 results
         assert len(result) == 3
-        assert all(len(row) == 1 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Should be the latest 3 (since default strategy is "latest")
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         expected_latest = [img.id for img in images[-3:]]  # Last 3 images
         assert set(result_ids) == set(expected_latest)
 
@@ -503,15 +510,15 @@ class TestQueryDataIntegration:
             await asyncio.sleep(0.01)  # Ensure different timestamps
 
         # Query with earliest strategy and datums_wanted=2
-        query = [{"metadata.project": "test_project", "strategy": "earliest"}]
+        query = [{"metadata.project": "test_project", "strategy": "earliest", "column": "image_id"}]
         result = await datalake.query_data(query, datums_wanted=2)
 
         # Should return exactly 2 results
         assert len(result) == 2
-        assert all(len(row) == 1 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Should be the earliest 2
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         expected_earliest = [img.id for img in images[:2]]  # First 2 images
         assert set(result_ids) == set(expected_earliest)
 
@@ -528,15 +535,15 @@ class TestQueryDataIntegration:
             images.append(image)
 
         # Query with random strategy and datums_wanted=2
-        query = [{"metadata.project": "test_project", "strategy": "random"}]
+        query = [{"metadata.project": "test_project", "strategy": "random", "column": "image_id"}]
         result = await datalake.query_data(query, datums_wanted=2)
 
         # Should return exactly 2 results
         assert len(result) == 2
-        assert all(len(row) == 1 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Should select from all available images
-        result_ids = [row[0] for row in result]
+        result_ids = [row["image_id"] for row in result]
         all_image_ids = [img.id for img in images]
         assert all(rid in all_image_ids for rid in result_ids)
         assert len(set(result_ids)) == 2  # Should be 2 different images
@@ -566,17 +573,18 @@ class TestQueryDataIntegration:
 
         # Query with datums_wanted=2 and multi-query
         query = [
-            {"metadata.project": "test_project"},
-            {"derived_from": 0, "data.type": "classification"}
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 
         # Should return 2 results, each with 2 elements [image_id, label_id]
         assert len(result) == 2
-        assert all(len(row) == 2 for row in result)
+        assert all(isinstance(row, dict) for row in result)
 
         # Verify relationships
         for row in result:
-            image_id, label_id = row
+            image_id = row["image_id"]
+            label_id = row["label_id"]
             assert image_id in [img.id for img in images]
             assert label_id in [label.id for label in labels]
