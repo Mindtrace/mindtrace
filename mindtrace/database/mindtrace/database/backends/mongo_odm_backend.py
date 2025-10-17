@@ -1,6 +1,6 @@
 from typing import List, Type, TypeVar
 
-from beanie import Document, init_beanie, PydanticObjectId
+from beanie import Document, PydanticObjectId, init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
