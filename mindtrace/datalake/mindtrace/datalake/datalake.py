@@ -212,6 +212,10 @@ class Datalake(Mindtrace):
                 - "latest": The data/datum with the latest added_at timestamp
                 - "earliest": The data/datum with the earliest added_at timestamp
                 - "random": Randomly selected data/datum
+                For these three strategies, if no data is found, the entire row (including the base datum) is not included in the result.
+                - "missing": if any data is found, the entire row (including the base datum) is not included in the result.
+                  This allows us to search for "images we haven't classified yet", for instance.
+                  This is not available for the base query.
                 If no strategy is provided, "latest" is used.
 
                 Otherwise, the queries have the same syntax as MongoDB filters: https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/query/specify-query/
@@ -231,6 +235,8 @@ class Datalake(Mindtrace):
         assert len(query) > 0
         base_query = copy.deepcopy(query[0])
         base_strategy = base_query.pop("strategy", "latest")
+        if base_strategy == "missing":
+            raise ValueError("Invalid strategy: missing")
         base_column = base_query.pop("column", None)
         if base_column is None:
             raise ValueError("column must be provided")
@@ -258,14 +264,20 @@ class Datalake(Mindtrace):
                     subquery["derived_from"] = this_entry[subquery["derived_from"]]
 
                 subquery_entries = await self.datum_database.find(subquery)
-                if not subquery_entries:
-                    break
+                if strategy == "missing":
+                    if subquery_entries:
+                        break
+                else:
+                    if not subquery_entries:
+                        break
                 if strategy == "latest":
                     this_entry[column] = max(subquery_entries, key=lambda x: x.added_at).id
                 elif strategy == "earliest":
                     this_entry[column] = min(subquery_entries, key=lambda x: x.added_at).id
                 elif strategy == "random":
                     this_entry[column] = random.choice(subquery_entries).id
+                elif strategy == "missing":
+                    pass
                 else:
                     raise ValueError(f"Invalid strategy: {strategy}")
             else:

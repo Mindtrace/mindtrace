@@ -588,3 +588,160 @@ class TestQueryDataIntegration:
             label_id = row["label_id"]
             assert image_id in [img.id for img in images]
             assert label_id in [label.id for label in labels]
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_no_derived_data(self, datalake):
+        """Test multi-query with missing strategy when no derived data exists."""
+        # Add base images
+        image1 = await datalake.add_datum(
+            data={"type": "image", "filename": "test1.jpg"},
+            metadata={"project": "test_project"}
+        )
+        image2 = await datalake.add_datum(
+            data={"type": "image", "filename": "test2.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Don't add any classification labels for these images
+
+        # Query for images that don't have classification labels
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 2 results (both images) because neither has classification labels
+        assert len(result) == 2
+        assert all(isinstance(row, dict) for row in result)
+        
+        result_ids = [row["image_id"] for row in result]
+        assert image1.id in result_ids
+        assert image2.id in result_ids
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_derived_data_exists(self, datalake):
+        """Test multi-query with missing strategy when derived data exists."""
+        # Add base images
+        image1 = await datalake.add_datum(
+            data={"type": "image", "filename": "test1.jpg"},
+            metadata={"project": "test_project"}
+        )
+        image2 = await datalake.add_datum(
+            data={"type": "image", "filename": "test2.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Add classification label only for image1
+        await datalake.add_datum(
+            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            metadata={"model": "resnet50"},
+            derived_from=image1.id
+        )
+
+        # Query for images that don't have classification labels
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result (only image2) because image1 has a classification label
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == image2.id
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_complex_scenario(self, datalake):
+        """Test multi-query with missing strategy in a complex scenario."""
+        # Add multiple images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"}
+            )
+            images.append(image)
+
+        # Add classification labels for only some images (images 0, 2, 4)
+        for i in [0, 2, 4]:
+            await datalake.add_datum(
+                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                metadata={"model": "resnet50"},
+                derived_from=images[i].id
+            )
+
+        # Query for images that don't have classification labels
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 2 results (images 1 and 3) because they don't have classification labels
+        assert len(result) == 2
+        assert all(isinstance(row, dict) for row in result)
+        
+        result_ids = [row["image_id"] for row in result]
+        expected_ids = [images[1].id, images[3].id]
+        assert set(result_ids) == set(expected_ids)
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_multiple_derivation_levels(self, datalake):
+        """Test multi-query with missing strategy across multiple derivation levels."""
+        # Add base images
+        image1 = await datalake.add_datum(
+            data={"type": "image", "filename": "test1.jpg"},
+            metadata={"project": "test_project"}
+        )
+        image2 = await datalake.add_datum(
+            data={"type": "image", "filename": "test2.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Add classification labels for both images
+        label1 = await datalake.add_datum(
+            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            metadata={"model": "resnet50"},
+            derived_from=image1.id
+        )
+        label2 = await datalake.add_datum(
+            data={"type": "classification", "label": "dog", "confidence": 0.90},
+            metadata={"model": "resnet50"},
+            derived_from=image2.id
+        )
+
+        # Add bounding box only for label1
+        await datalake.add_datum(
+            data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+            metadata={"model": "yolo"},
+            derived_from=label1.id
+        )
+
+        # Query for images that don't have bounding boxes (through classification)
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "data.type": "bbox", "strategy": "missing", "column": "bbox_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result (only image2) because image1 has a bounding box
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == image2.id
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_invalid_for_base_query(self, datalake):
+        """Test that missing strategy is not allowed for base query."""
+        # Add test data
+        await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Test that missing strategy in base query raises error
+        query = [{"metadata.project": "test_project", "strategy": "missing", "column": "image_id"}]
+
+        with pytest.raises(ValueError, match="Invalid strategy: missing"):
+            await datalake.query_data(query)

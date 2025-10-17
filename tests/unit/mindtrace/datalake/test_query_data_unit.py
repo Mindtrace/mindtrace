@@ -649,6 +649,129 @@ class TestQueryDataUnit:
             await datalake.query_data(query)
 
     @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_no_derived_data(self, datalake, mock_database):
+        """Test multi-query with missing strategy when no derived data exists."""
+        # Mock base data
+        base_datum = create_mock_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock database calls - no derived data found
+        mock_database.find.side_effect = [
+            [base_datum],  # First query: find base data
+            []  # Second query: no derived data found
+        ]
+
+        # Test multi-query with missing strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result because no derived data was found (missing strategy)
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base_datum.id
+        # label_id should not be present since no derived data was found
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_derived_data_exists(self, datalake, mock_database):
+        """Test multi-query with missing strategy when derived data exists."""
+        # Mock base data
+        base_datum = create_mock_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock derived data
+        derived_datum = create_mock_datum(
+            data={"type": "classification", "label": "cat"},
+            metadata={"model": "resnet50"},
+            derived_from=base_datum.id,
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock database calls - derived data found
+        mock_database.find.side_effect = [
+            [base_datum],  # First query: find base data
+            [derived_datum]  # Second query: derived data found
+        ]
+
+        # Test multi-query with missing strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 0 results because derived data was found (missing strategy excludes it)
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_multiple_base_results(self, datalake, mock_database):
+        """Test multi-query with missing strategy with multiple base results."""
+        # Mock multiple base data
+        base1 = create_mock_datum(
+            data={"type": "image", "filename": "test1.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+        base2 = create_mock_datum(
+            data={"type": "image", "filename": "test2.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock derived data only for base1
+        derived1 = create_mock_datum(
+            data={"type": "classification", "label": "cat"},
+            metadata={"model": "resnet50"},
+            derived_from=base1.id,
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock database calls
+        mock_database.find.side_effect = [
+            [base1, base2],  # First query: find base data
+            [derived1],  # Second query for base1: derived data found
+            []  # Second query for base2: no derived data found
+        ]
+
+        # Test multi-query with missing strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result (only base2) because base1 has derived data
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        assert result[0]["image_id"] == base2.id
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_missing_invalid_for_base_query(self, datalake, mock_database):
+        """Test that missing strategy is not allowed for base query."""
+        # Mock base data
+        base_datum = create_mock_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        mock_database.find.return_value = [base_datum]
+
+        # Test that missing strategy in base query raises error
+        query = [{"metadata.project": "test_project", "strategy": "missing", "column": "image_id"}]
+
+        with pytest.raises(ValueError, match="Invalid strategy: missing"):
+            await datalake.query_data(query)
+
+    @pytest.mark.asyncio
     async def test_multi_query_without_column_raises_error(self, datalake, mock_database):
         """Test multi-query without column in subquery raises ValueError."""
         base_datum = create_mock_datum(datum_id=PydanticObjectId())
