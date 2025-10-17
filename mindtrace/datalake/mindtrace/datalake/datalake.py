@@ -11,7 +11,7 @@ from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 import copy
-
+import random
 class Datalake(Mindtrace):
     """
     A data lake implementation that manages both database-stored and registry-stored data.
@@ -195,7 +195,7 @@ class Datalake(Mindtrace):
         
         return result
 
-    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any]) -> list[list[PydanticObjectId]]:
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None) -> list[list[PydanticObjectId]]:
         f"""
         Query the data in the datalake using a list of queries.
 
@@ -209,12 +209,16 @@ class Datalake(Mindtrace):
                 The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
                 
                 The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
-                Currently only "latest" is supported, which finds the datum with the latest added_at timestamp.
+                - "latest": The data/datum with the latest added_at timestamp
+                - "earliest": The data/datum with the earliest added_at timestamp
+                - "random": Randomly selected data/datum
                 If no strategy is provided, "latest" is used.
 
                 Otherwise, the queries have the same syntax as MongoDB filters: https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/query/specify-query/
 
             If a single query is provided, it is used to find the base data and no derived data is obtained.
+
+            datums_wanted: The number of datums to return for each query. If None, all datums are returned.
 
         Returns:
 
@@ -225,7 +229,18 @@ class Datalake(Mindtrace):
             query = [query]
 
         assert len(query) > 0
+        base_strategy = query[0].pop("strategy", "latest")
         entries = await self.datum_database.find(query[0])
+        if datums_wanted is not None:
+            assert datums_wanted > 0, "datums_wanted must be greater than 0"
+            if base_strategy == "latest":
+                entries = sorted(entries, key=lambda x: x.added_at)[-datums_wanted:] # I believe entries starts approximately sorted by added_at
+            elif base_strategy == "earliest":
+                entries = sorted(entries, key=lambda x: x.added_at)[:datums_wanted]
+            elif base_strategy == "random":
+                entries = random.sample(entries, datums_wanted)
+            else:
+                raise ValueError(f"Invalid strategy: {base_strategy}")
         result = []
         for entry in entries:
             this_entry = [entry.id]
@@ -240,6 +255,10 @@ class Datalake(Mindtrace):
                     break
                 if strategy == "latest":
                     this_entry.append(max(subquery_entries, key=lambda x: x.added_at).id)
+                elif strategy == "earliest":
+                    this_entry.append(min(subquery_entries, key=lambda x: x.added_at).id)
+                elif strategy == "random":
+                    this_entry.append(random.choice(subquery_entries).id)
                 else:
                     raise ValueError(f"Invalid strategy: {strategy}")
             else:

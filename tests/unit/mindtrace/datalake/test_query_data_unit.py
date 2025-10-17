@@ -621,3 +621,93 @@ class TestQueryDataUnit:
 
         with pytest.raises(AssertionError):
             await datalake.query_data(query)
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_earliest(self, datalake, mock_database):
+        """Test multi-query with earliest strategy selects the oldest by added_at."""
+        base = create_mock_datum(datum_id=PydanticObjectId())
+        older = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
+        newer = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+
+        mock_database.find.side_effect = [
+            [base],
+            [newer, older],
+        ]
+
+        query = [
+            {"metadata.project": "p"},
+            {"derived_from": 0, "strategy": "earliest"},
+        ]
+        result = await datalake.query_data(query)
+
+        assert len(result) == 1
+        assert len(result[0]) == 2
+        assert result[0][1] == older.id
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_random(self, datalake, mock_database):
+        """Test multi-query with random strategy uses random.choice."""
+        base = create_mock_datum(datum_id=PydanticObjectId())
+        a = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
+        b = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+
+        mock_database.find.side_effect = [
+            [base],
+            [a, b],
+        ]
+
+        with patch("mindtrace.datalake.datalake.random.choice", return_value=b):
+            result = await datalake.query_data([
+                {"metadata.project": "p"},
+                {"derived_from": 0, "strategy": "random"},
+            ])
+
+        assert len(result) == 1
+        assert result[0][1] == b.id
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_latest_single_query(self, datalake, mock_database):
+        """Base selection uses latest strategy when datums_wanted is provided."""
+        d1 = create_mock_datum(added_at=datetime.now() - timedelta(hours=3), datum_id=PydanticObjectId())
+        d2 = create_mock_datum(added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
+        d3 = create_mock_datum(added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+
+        mock_database.find.return_value = [d1, d2, d3]
+
+        result = await datalake.query_data({"metadata.project": "p"}, datums_wanted=2)
+
+        # Latest two should be selected: d3 and d2 (order not asserted)
+        result_ids = {row[0] for row in result}
+        assert len(result) == 2
+        assert result_ids == {d2.id, d3.id}
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_earliest_single_query(self, datalake, mock_database):
+        """Base selection supports earliest strategy for datums_wanted."""
+        d1 = create_mock_datum(added_at=datetime.now() - timedelta(hours=3), datum_id=PydanticObjectId())
+        d2 = create_mock_datum(added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
+        d3 = create_mock_datum(added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+
+        mock_database.find.return_value = [d1, d2, d3]
+
+        result = await datalake.query_data([{"metadata.project": "p", "strategy": "earliest"}], datums_wanted=2)
+
+        result_ids = {row[0] for row in result}
+        assert len(result) == 2
+        assert result_ids == {d1.id, d2.id}
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_random_single_query(self, datalake, mock_database):
+        """Base selection supports random strategy for datums_wanted using random.sample."""
+        d1 = create_mock_datum(added_at=datetime.now() - timedelta(hours=3), datum_id=PydanticObjectId())
+        d2 = create_mock_datum(added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
+        d3 = create_mock_datum(added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+
+        mock_database.find.return_value = [d1, d2, d3]
+
+        with patch("mindtrace.datalake.datalake.random.sample", return_value=[d1, d3]):
+            result = await datalake.query_data([{"metadata.project": "p", "strategy": "random"}], datums_wanted=2)
+
+        result_ids = {row[0] for row in result}
+        assert len(result) == 2
+        assert result_ids == {d1.id, d3.id}

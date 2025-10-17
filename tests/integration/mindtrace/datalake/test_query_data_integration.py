@@ -385,3 +385,198 @@ class TestQueryDataIntegration:
         assert datum1.id in result_ids
         assert datum3.id in result_ids
         assert datum2.id not in result_ids
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_earliest(self, datalake):
+        """Test multi-query with earliest strategy."""
+        # Add base image
+        image = await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Add multiple classification labels with different timestamps
+        await asyncio.sleep(0.01)
+        old_label = await datalake.add_datum(
+            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            metadata={"model": "old_model"},
+            derived_from=image.id
+        )
+        await asyncio.sleep(0.01)
+        new_label = await datalake.add_datum(
+            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            metadata={"model": "new_model"},
+            derived_from=image.id
+        )
+
+        # Query with earliest strategy
+        query = [
+            {"metadata.project": "test_project"},
+            {"derived_from": 0, "data.type": "classification", "strategy": "earliest"}
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result with the earliest label
+        assert len(result) == 1
+        assert len(result[0]) == 2
+        image_id, label_id = result[0]
+        assert image_id == image.id
+        assert label_id == old_label.id  # Should be the earliest one
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_random(self, datalake):
+        """Test multi-query with random strategy."""
+        # Add base image
+        image = await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"}
+        )
+
+        # Add multiple classification labels
+        label1 = await datalake.add_datum(
+            data={"type": "classification", "label": "label1", "confidence": 0.7},
+            metadata={"model": "model1"},
+            derived_from=image.id
+        )
+        label2 = await datalake.add_datum(
+            data={"type": "classification", "label": "label2", "confidence": 0.8},
+            metadata={"model": "model2"},
+            derived_from=image.id
+        )
+
+        # Query with random strategy (run multiple times to test randomness)
+        query = [
+            {"metadata.project": "test_project"},
+            {"derived_from": 0, "data.type": "classification", "strategy": "random"}
+        ]
+        
+        # Run the query multiple times to ensure it can select different results
+        results = []
+        for _ in range(10):
+            result = await datalake.query_data(query)
+            results.append(result[0][1])  # Get the selected label ID
+
+        # Should return 1 result each time
+        assert len(results) == 10  # We ran the query 10 times
+        
+        # Should select from the available labels
+        selected_labels = set(results)
+        assert selected_labels.issubset({label1.id, label2.id})
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_parameter(self, datalake):
+        """Test datums_wanted parameter limits the number of results."""
+        # Add multiple images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)  # Ensure different timestamps
+
+        # Query with datums_wanted=3
+        query = {"metadata.project": "test_project"}
+        result = await datalake.query_data(query, datums_wanted=3)
+
+        # Should return exactly 3 results
+        assert len(result) == 3
+        assert all(len(row) == 1 for row in result)
+
+        # Should be the latest 3 (since default strategy is "latest")
+        result_ids = [row[0] for row in result]
+        expected_latest = [img.id for img in images[-3:]]  # Last 3 images
+        assert set(result_ids) == set(expected_latest)
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_earliest_strategy(self, datalake):
+        """Test datums_wanted with earliest strategy."""
+        # Add multiple images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)  # Ensure different timestamps
+
+        # Query with earliest strategy and datums_wanted=2
+        query = [{"metadata.project": "test_project", "strategy": "earliest"}]
+        result = await datalake.query_data(query, datums_wanted=2)
+
+        # Should return exactly 2 results
+        assert len(result) == 2
+        assert all(len(row) == 1 for row in result)
+
+        # Should be the earliest 2
+        result_ids = [row[0] for row in result]
+        expected_earliest = [img.id for img in images[:2]]  # First 2 images
+        assert set(result_ids) == set(expected_earliest)
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_random_strategy(self, datalake):
+        """Test datums_wanted with random strategy."""
+        # Add multiple images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"}
+            )
+            images.append(image)
+
+        # Query with random strategy and datums_wanted=2
+        query = [{"metadata.project": "test_project", "strategy": "random"}]
+        result = await datalake.query_data(query, datums_wanted=2)
+
+        # Should return exactly 2 results
+        assert len(result) == 2
+        assert all(len(row) == 1 for row in result)
+
+        # Should select from all available images
+        result_ids = [row[0] for row in result]
+        all_image_ids = [img.id for img in images]
+        assert all(rid in all_image_ids for rid in result_ids)
+        assert len(set(result_ids)) == 2  # Should be 2 different images
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_multi_query(self, datalake):
+        """Test datums_wanted with multi-query derivation."""
+        # Add base images
+        images = []
+        for i in range(3):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)
+
+        # Add classification labels for each image
+        labels = []
+        for image in images:
+            label = await datalake.add_datum(
+                data={"type": "classification", "label": f"label_{image.id}"},
+                metadata={"model": "resnet50"},
+                derived_from=image.id
+            )
+            labels.append(label)
+
+        # Query with datums_wanted=2 and multi-query
+        query = [
+            {"metadata.project": "test_project"},
+            {"derived_from": 0, "data.type": "classification"}
+        ]
+        result = await datalake.query_data(query, datums_wanted=2)
+
+        # Should return 2 results, each with 2 elements [image_id, label_id]
+        assert len(result) == 2
+        assert all(len(row) == 2 for row in result)
+
+        # Verify relationships
+        for row in result:
+            image_id, label_id = row
+            assert image_id in [img.id for img in images]
+            assert label_id in [label.id for label in labels]
