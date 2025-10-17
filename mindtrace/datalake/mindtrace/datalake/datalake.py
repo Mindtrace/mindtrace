@@ -195,7 +195,7 @@ class Datalake(Mindtrace):
         
         return result
 
-    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None) -> list[list[PydanticObjectId]]:
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None) -> list[dict[str, Any]]:
         f"""
         Query the data in the datalake using a list of queries.
 
@@ -222,15 +222,19 @@ class Datalake(Mindtrace):
 
         Returns:
 
-            List of lists of datum ids, where each sublist contains the id of the base datum and the ids of 
-            any derived data, with the length of each sublist equalling the length of query (or 1 if query is a dict)
+            List of dictionaries, where each dictionary contains the data of the base datum and the data of 
+            any derived data, with the number of entries of each dictionary equalling the length of query (or 1 if query is a dict)
         """
         if isinstance(query, dict):
             query = [query]
 
         assert len(query) > 0
-        base_strategy = query[0].pop("strategy", "latest")
-        entries = await self.datum_database.find(query[0])
+        base_query = copy.deepcopy(query[0])
+        base_strategy = base_query.pop("strategy", "latest")
+        base_column = base_query.pop("column", None)
+        if base_column is None:
+            raise ValueError("column must be provided")
+        entries = await self.datum_database.find(base_query)
         if datums_wanted is not None:
             assert datums_wanted > 0, "datums_wanted must be greater than 0"
             if base_strategy == "latest":
@@ -243,10 +247,13 @@ class Datalake(Mindtrace):
                 raise ValueError(f"Invalid strategy: {base_strategy}")
         result = []
         for entry in entries:
-            this_entry = [entry.id]
+            this_entry = {base_column: entry.id}
             for subquery in query[1:]:
                 subquery = copy.deepcopy(subquery)
                 strategy = subquery.pop("strategy", "latest")
+                column = subquery.pop("column", None)
+                if column is None:
+                    raise ValueError("column must be provided")
                 if "derived_from" in subquery:
                     subquery["derived_from"] = this_entry[subquery["derived_from"]]
 
@@ -254,11 +261,11 @@ class Datalake(Mindtrace):
                 if not subquery_entries:
                     break
                 if strategy == "latest":
-                    this_entry.append(max(subquery_entries, key=lambda x: x.added_at).id)
+                    this_entry[column] = max(subquery_entries, key=lambda x: x.added_at).id
                 elif strategy == "earliest":
-                    this_entry.append(min(subquery_entries, key=lambda x: x.added_at).id)
+                    this_entry[column] = min(subquery_entries, key=lambda x: x.added_at).id
                 elif strategy == "random":
-                    this_entry.append(random.choice(subquery_entries).id)
+                    this_entry[column] = random.choice(subquery_entries).id
                 else:
                     raise ValueError(f"Invalid strategy: {strategy}")
             else:
