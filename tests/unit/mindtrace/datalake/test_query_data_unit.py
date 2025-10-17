@@ -10,7 +10,9 @@ from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import Datum
 
 
-def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None):
+def create_mock_datum(
+    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None
+):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
         datum_id = PydanticObjectId()
@@ -80,12 +82,12 @@ class TestQueryDataUnit:
         datum1 = create_mock_datum(
             data={"type": "image", "filename": "test1.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
         datum2 = create_mock_datum(
             data={"type": "image", "filename": "test2.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         mock_database.find.return_value = [datum1, datum2]
@@ -97,7 +99,7 @@ class TestQueryDataUnit:
         # Verify database call
         expected_query = {"metadata.project": "test_project"}
         mock_database.find.assert_called_once_with(expected_query)
-        
+
         # Verify result format
         assert len(result) == 2
         assert all(isinstance(row, dict) for row in result)
@@ -108,9 +110,7 @@ class TestQueryDataUnit:
     async def test_single_query_list(self, datalake, mock_database):
         """Test single query with list input (single element)."""
         datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         mock_database.find.return_value = [datum]
@@ -122,7 +122,7 @@ class TestQueryDataUnit:
         # Verify database call
         expected_query = {"metadata.project": "test_project"}
         mock_database.find.assert_called_once_with(expected_query)
-        
+
         # Verify result format
         assert len(result) == 1
         assert isinstance(result[0], dict)
@@ -133,9 +133,7 @@ class TestQueryDataUnit:
         """Test multi-query with derived data."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock derived data
@@ -143,29 +141,29 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [derived_datum]  # Second query: find derived data
+            [derived_datum],  # Second query: find derived data
         ]
 
         # Test multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 2
-        
+
         # First call should be the base query
         first_call = mock_database.find.call_args_list[0][0][0]
         assert first_call == {"metadata.project": "test_project"}
-        
+
         # Second call should have derived_from replaced with actual ID
         second_call = mock_database.find.call_args_list[1][0][0]
         assert second_call == {"derived_from": base_datum.id, "data.type": "classification"}
@@ -181,41 +179,39 @@ class TestQueryDataUnit:
         """Test multi-query with latest strategy."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock multiple derived data with different timestamps
         old_time = datetime.now() - timedelta(hours=1)
         new_time = datetime.now()
-        
+
         old_derived = create_mock_datum(
             data={"type": "classification", "label": "old"},
             metadata={"model": "old_model"},
             derived_from=base_datum.id,
             datum_id=PydanticObjectId(),
-            added_at=old_time
+            added_at=old_time,
         )
-        
+
         new_derived = create_mock_datum(
             data={"type": "classification", "label": "new"},
             metadata={"model": "new_model"},
             derived_from=base_datum.id,
             datum_id=PydanticObjectId(),
-            added_at=new_time
+            added_at=new_time,
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [old_derived, new_derived]  # Second query: find derived data (multiple)
+            [old_derived, new_derived],  # Second query: find derived data (multiple)
         ]
 
         # Test multi-query with latest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -233,21 +229,19 @@ class TestQueryDataUnit:
         """Test multi-query where derived data is missing."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            []  # Second query: no derived data found
+            [],  # Second query: no derived data found
         ]
 
         # Test multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -262,9 +256,7 @@ class TestQueryDataUnit:
         """Test complex multi-query with multiple derivation levels."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock level 1 derived data
@@ -272,7 +264,7 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock level 2 derived data
@@ -280,21 +272,21 @@ class TestQueryDataUnit:
             data={"type": "bbox", "x": 10, "y": 20},
             metadata={"model": "yolo"},
             derived_from=level1_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # Query 1: find base data
             [level1_datum],  # Query 2: find level 1 derived data
-            [level2_datum]  # Query 3: find level 2 derived data
+            [level2_datum],  # Query 3: find level 2 derived data
         ]
 
         # Test complex multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -338,9 +330,7 @@ class TestQueryDataUnit:
         """Test query with invalid strategy raises error."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock derived data
@@ -348,19 +338,19 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [derived_datum]  # Second query: find derived data
+            [derived_datum],  # Second query: find derived data
         ]
 
         # Test query with invalid strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"},
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
@@ -371,41 +361,39 @@ class TestQueryDataUnit:
         """Test query with default strategy (latest)."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock multiple derived data
         old_time = datetime.now() - timedelta(hours=1)
         new_time = datetime.now()
-        
+
         old_derived = create_mock_datum(
             data={"type": "classification", "label": "old"},
             metadata={"model": "old_model"},
             derived_from=base_datum.id,
             datum_id=PydanticObjectId(),
-            added_at=old_time
+            added_at=old_time,
         )
-        
+
         new_derived = create_mock_datum(
             data={"type": "classification", "label": "new"},
             metadata={"model": "new_model"},
             derived_from=base_datum.id,
             datum_id=PydanticObjectId(),
-            added_at=new_time
+            added_at=new_time,
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [old_derived, new_derived]  # Second query: find derived data (multiple)
+            [old_derived, new_derived],  # Second query: find derived data (multiple)
         ]
 
         # Test query without explicit strategy (should default to "latest")
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -425,22 +413,22 @@ class TestQueryDataUnit:
                 "filename": "test1.jpg",
                 "size": 1024,
                 "tags": ["nature", "outdoor"],
-                "location": {"city": "Paris", "country": "France"}
+                "location": {"city": "Paris", "country": "France"},
             },
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
-        
-        datum2 = create_mock_datum(
+
+        _ = create_mock_datum(
             data={
                 "type": "image",
                 "filename": "test2.jpg",
                 "size": 512,
                 "tags": ["urban", "indoor"],
-                "location": {"city": "London", "country": "UK"}
+                "location": {"city": "London", "country": "UK"},
             },
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         mock_database.find.return_value = [datum1]
@@ -451,7 +439,7 @@ class TestQueryDataUnit:
             "data.size": {"$gt": 600},
             "data.tags": {"$in": ["nature"]},
             "data.location.city": "Paris",
-            "column": "image_id"
+            "column": "image_id",
         }
         result = await datalake.query_data(query)
 
@@ -460,7 +448,7 @@ class TestQueryDataUnit:
             "data.type": "image",
             "data.size": {"$gt": 600},
             "data.tags": {"$in": ["nature"]},
-            "data.location.city": "Paris"
+            "data.location.city": "Paris",
         }
         mock_database.find.assert_called_once_with(expected_query)
 
@@ -480,9 +468,9 @@ class TestQueryDataUnit:
                 "tags": ["nature", "outdoor"],
                 "location": {"city": "Paris", "country": "France"},
                 "quality": 0.95,
-                "models": ["resnet50", "vgg16"]
+                "models": ["resnet50", "vgg16"],
             },
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         mock_database.find.return_value = [datum1]
@@ -494,7 +482,7 @@ class TestQueryDataUnit:
             "metadata.location.city": "Paris",
             "metadata.quality": {"$gte": 0.9},
             "metadata.models": {"$in": ["resnet50"]},
-            "column": "image_id"
+            "column": "image_id",
         }
         result = await datalake.query_data(query)
 
@@ -504,7 +492,7 @@ class TestQueryDataUnit:
             "metadata.tags": {"$in": ["nature"]},
             "metadata.location.city": "Paris",
             "metadata.quality": {"$gte": 0.9},
-            "metadata.models": {"$in": ["resnet50"]}
+            "metadata.models": {"$in": ["resnet50"]},
         }
         mock_database.find.assert_called_once_with(expected_query)
 
@@ -520,12 +508,12 @@ class TestQueryDataUnit:
         base1 = create_mock_datum(
             data={"type": "image", "filename": "test1.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
         base2 = create_mock_datum(
             data={"type": "image", "filename": "test2.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock derived data for each base
@@ -533,26 +521,26 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base1.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
         derived2 = create_mock_datum(
             data={"type": "classification", "label": "dog"},
             metadata={"model": "resnet50"},
             derived_from=base2.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base1, base2],  # First query: find base data
             [derived1],  # Second query for base1: find derived data
-            [derived2]  # Second query for base2: find derived data
+            [derived2],  # Second query for base2: find derived data
         ]
 
         # Test multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -562,11 +550,11 @@ class TestQueryDataUnit:
         # Verify result format
         assert len(result) == 2
         assert all(isinstance(row, dict) for row in result)
-        
+
         # Verify first result
         assert result[0]["image_id"] == base1.id
         assert result[0]["label_id"] == derived1.id
-        
+
         # Verify second result
         assert result[1]["image_id"] == base2.id
         assert result[1]["label_id"] == derived2.id
@@ -576,9 +564,7 @@ class TestQueryDataUnit:
         """Test query with mixed derivation indices (not just sequential)."""
         # Mock base data
         base_datum = create_mock_datum(
-            data={"type": "image"},
-            metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
 
         # Mock level 1 derived data
@@ -586,7 +572,7 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock level 2 derived data (derived from level 1, not base)
@@ -594,21 +580,25 @@ class TestQueryDataUnit:
             data={"type": "bbox", "x": 10, "y": 20},
             metadata={"model": "yolo"},
             derived_from=level1_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # Query 1: find base data
             [level1_datum],  # Query 2: find level 1 derived data
-            [level2_datum]  # Query 3: find level 2 derived data (derived from level 1)
+            [level2_datum],  # Query 3: find level 2 derived data (derived from level 1)
         ]
 
         # Test query with mixed derivation indices
         query = [
             {"metadata.project": "test_project", "column": "image_id"},  # Index 0: base
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},  # Index 1: derived from 0
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}  # Index 2: derived from 1
+            {
+                "derived_from": "image_id",
+                "data.type": "classification",
+                "column": "label_id",
+            },  # Index 1: derived from 0
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},  # Index 2: derived from 1
         ]
         result = await datalake.query_data(query)
 
@@ -655,19 +645,19 @@ class TestQueryDataUnit:
         base_datum = create_mock_datum(
             data={"type": "image", "filename": "test.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls - no derived data found
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            []  # Second query: no derived data found
+            [],  # Second query: no derived data found
         ]
 
         # Test multi-query with missing strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -684,7 +674,7 @@ class TestQueryDataUnit:
         base_datum = create_mock_datum(
             data={"type": "image", "filename": "test.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock derived data
@@ -692,19 +682,19 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls - derived data found
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [derived_datum]  # Second query: derived data found
+            [derived_datum],  # Second query: derived data found
         ]
 
         # Test multi-query with missing strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -718,12 +708,12 @@ class TestQueryDataUnit:
         base1 = create_mock_datum(
             data={"type": "image", "filename": "test1.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
         base2 = create_mock_datum(
             data={"type": "image", "filename": "test2.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock derived data only for base1
@@ -731,20 +721,20 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base1.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base1, base2],  # First query: find base data
             [derived1],  # Second query for base1: derived data found
-            []  # Second query for base2: no derived data found
+            [],  # Second query for base2: no derived data found
         ]
 
         # Test multi-query with missing strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -760,7 +750,7 @@ class TestQueryDataUnit:
         base_datum = create_mock_datum(
             data={"type": "image", "filename": "test.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         mock_database.find.return_value = [base_datum]
@@ -779,7 +769,7 @@ class TestQueryDataUnit:
 
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification"}  # Missing column
+            {"derived_from": "image_id", "data.type": "classification"},  # Missing column
         ]
 
         with pytest.raises(ValueError, match="column must be provided"):
@@ -789,8 +779,12 @@ class TestQueryDataUnit:
     async def test_multi_query_with_strategy_earliest(self, datalake, mock_database):
         """Test multi-query with earliest strategy selects the oldest by added_at."""
         base = create_mock_datum(datum_id=PydanticObjectId())
-        older = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
-        newer = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+        older = create_mock_datum(
+            derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId()
+        )
+        newer = create_mock_datum(
+            derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId()
+        )
 
         mock_database.find.side_effect = [
             [base],
@@ -811,8 +805,12 @@ class TestQueryDataUnit:
     async def test_multi_query_with_strategy_random(self, datalake, mock_database):
         """Test multi-query with random strategy uses random.choice."""
         base = create_mock_datum(datum_id=PydanticObjectId())
-        a = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId())
-        b = create_mock_datum(derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId())
+        a = create_mock_datum(
+            derived_from=base.id, added_at=datetime.now() - timedelta(hours=2), datum_id=PydanticObjectId()
+        )
+        b = create_mock_datum(
+            derived_from=base.id, added_at=datetime.now() - timedelta(hours=1), datum_id=PydanticObjectId()
+        )
 
         mock_database.find.side_effect = [
             [base],
@@ -820,10 +818,12 @@ class TestQueryDataUnit:
         ]
 
         with patch("mindtrace.datalake.datalake.random.choice", return_value=b):
-            result = await datalake.query_data([
-                {"metadata.project": "p", "column": "image_id"},
-                {"derived_from": "image_id", "strategy": "random", "column": "label_id"},
-            ])
+            result = await datalake.query_data(
+                [
+                    {"metadata.project": "p", "column": "image_id"},
+                    {"derived_from": "image_id", "strategy": "random", "column": "label_id"},
+                ]
+            )
 
         assert len(result) == 1
         assert result[0]["label_id"] == b.id
@@ -853,7 +853,9 @@ class TestQueryDataUnit:
 
         mock_database.find.return_value = [d1, d2, d3]
 
-        result = await datalake.query_data([{"metadata.project": "p", "strategy": "earliest", "column": "image_id"}], datums_wanted=2)
+        result = await datalake.query_data(
+            [{"metadata.project": "p", "strategy": "earliest", "column": "image_id"}], datums_wanted=2
+        )
 
         result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
@@ -869,7 +871,9 @@ class TestQueryDataUnit:
         mock_database.find.return_value = [d1, d2, d3]
 
         with patch("mindtrace.datalake.datalake.random.sample", return_value=[d1, d3]):
-            result = await datalake.query_data([{"metadata.project": "p", "strategy": "random", "column": "image_id"}], datums_wanted=2)
+            result = await datalake.query_data(
+                [{"metadata.project": "p", "strategy": "random", "column": "image_id"}], datums_wanted=2
+            )
 
         result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
@@ -882,12 +886,12 @@ class TestQueryDataUnit:
         datum1 = create_mock_datum(
             data={"type": "image", "filename": "test1.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
         datum2 = create_mock_datum(
             data={"type": "image", "filename": "test2.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         mock_database.find.return_value = [datum1, datum2]
@@ -910,7 +914,7 @@ class TestQueryDataUnit:
         base_datum = create_mock_datum(
             data={"type": "image", "filename": "test.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock derived data
@@ -918,19 +922,19 @@ class TestQueryDataUnit:
             data={"type": "classification", "label": "cat"},
             metadata={"model": "resnet50"},
             derived_from=base_datum.id,
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            [derived_datum]  # Second query: find derived data
+            [derived_datum],  # Second query: find derived data
         ]
 
         # Test with transpose=True
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query, transpose=True)
 
@@ -962,19 +966,19 @@ class TestQueryDataUnit:
         base_datum = create_mock_datum(
             data={"type": "image", "filename": "test.jpg"},
             metadata={"project": "test_project"},
-            datum_id=PydanticObjectId()
+            datum_id=PydanticObjectId(),
         )
 
         # Mock database calls - no derived data found
         mock_database.find.side_effect = [
             [base_datum],  # First query: find base data
-            []  # Second query: no derived data found
+            [],  # Second query: no derived data found
         ]
 
         # Test with transpose=True and missing strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query, transpose=True)
 
@@ -994,7 +998,7 @@ class TestQueryDataUnit:
             datum = create_mock_datum(
                 data={"type": "image", "filename": f"test{i}.jpg"},
                 metadata={"project": "test_project"},
-                datum_id=PydanticObjectId()
+                datum_id=PydanticObjectId(),
             )
             datums.append(datum)
 

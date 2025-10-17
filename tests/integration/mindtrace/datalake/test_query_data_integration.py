@@ -1,11 +1,8 @@
 """Integration tests for the query_data method in the Datalake class."""
 
 import asyncio
-import pytest
-from datetime import datetime, timedelta
-from beanie import PydanticObjectId
 
-from mindtrace.datalake import Datalake
+import pytest
 
 
 class TestQueryDataIntegration:
@@ -16,16 +13,13 @@ class TestQueryDataIntegration:
         """Test basic single query functionality."""
         # Add some test data
         datum1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project", "category": "nature"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project", "category": "nature"}
         )
         datum2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project", "category": "urban"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project", "category": "urban"}
         )
         datum3 = await datalake.add_datum(
-            data={"type": "image", "filename": "test3.jpg"},
-            metadata={"project": "other_project", "category": "nature"}
+            data={"type": "image", "filename": "test3.jpg"}, metadata={"project": "other_project", "category": "nature"}
         )
 
         # Query for all images in test_project
@@ -35,7 +29,7 @@ class TestQueryDataIntegration:
         # Should return 2 results, each as a dictionary
         assert len(result) == 2
         assert all(isinstance(row, dict) for row in result)
-        
+
         # Extract the IDs and verify they match our expected data
         result_ids = [row["image_id"] for row in result]
         assert datum1.id in result_ids
@@ -55,16 +49,13 @@ class TestQueryDataIntegration:
         """Test single query filtering on data content."""
         # Add test data with different data structures
         datum1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg", "size": 1024},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg", "size": 1024}, metadata={"project": "test_project"}
         )
         datum2 = await datalake.add_datum(
-            data={"type": "video", "filename": "test2.mp4", "size": 2048},
-            metadata={"project": "test_project"}
+            data={"type": "video", "filename": "test2.mp4", "size": 2048}, metadata={"project": "test_project"}
         )
         datum3 = await datalake.add_datum(
-            data={"type": "image", "filename": "test3.jpg", "size": 800},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test3.jpg", "size": 800}, metadata={"project": "test_project"}
         )
 
         # Query for images with size > 600
@@ -91,12 +82,10 @@ class TestQueryDataIntegration:
         """Test multi-query with derived data."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add classification labels derived from images
@@ -104,19 +93,23 @@ class TestQueryDataIntegration:
         label1 = await datalake.add_datum(
             data={"type": "classification", "label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
-            derived_from=image1.id
+            derived_from=image1.id,
         )
         await asyncio.sleep(0.01)
         label2 = await datalake.add_datum(
             data={"type": "classification", "label": "dog", "confidence": 0.87},
             metadata={"model": "resnet50"},
-            derived_from=image2.id
+            derived_from=image2.id,
         )
 
         # Query for images and their classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},  # Base query: find images
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}  # Derived query: find classifications
+            {
+                "derived_from": "image_id",
+                "data.type": "classification",
+                "column": "label_id",
+            },  # Derived query: find classifications
         ]
         result = await datalake.query_data(query)
 
@@ -146,8 +139,7 @@ class TestQueryDataIntegration:
         """Test multi-query with latest strategy."""
         # Add base image
         image = await datalake.add_datum(
-            data={"type": "image", "filename": "test.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add multiple classification labels with different timestamps
@@ -155,19 +147,20 @@ class TestQueryDataIntegration:
         old_label = await datalake.add_datum(
             data={"type": "classification", "label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
-            derived_from=image.id
+            derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
             data={"type": "classification", "label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
-            derived_from=image.id
+            derived_from=image.id,
         )
+        assert old_label.id != new_label.id
 
         # Query with latest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -194,25 +187,24 @@ class TestQueryDataIntegration:
         """Test multi-query where some base data has no derived data."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
+        assert image1.id != image2.id
 
         # Add classification label only for image1
         label1 = await datalake.add_datum(
             data={"type": "classification", "label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
-            derived_from=image1.id
+            derived_from=image1.id,
         )
 
         # Query for images and their classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -230,12 +222,10 @@ class TestQueryDataIntegration:
         """Test complex multi-query with multiple derivation levels."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add classification labels (level 1 derivation)
@@ -243,13 +233,13 @@ class TestQueryDataIntegration:
         label1 = await datalake.add_datum(
             data={"type": "classification", "label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
-            derived_from=image1.id
+            derived_from=image1.id,
         )
         await asyncio.sleep(0.01)
         label2 = await datalake.add_datum(
             data={"type": "classification", "label": "dog", "confidence": 0.87},
             metadata={"model": "resnet50"},
-            derived_from=image2.id
+            derived_from=image2.id,
         )
 
         # Add bounding boxes derived from classifications (level 2 derivation)
@@ -257,20 +247,24 @@ class TestQueryDataIntegration:
         bbox1 = await datalake.add_datum(
             data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
             metadata={"model": "yolo"},
-            derived_from=label1.id
+            derived_from=label1.id,
         )
         await asyncio.sleep(0.01)
         bbox2 = await datalake.add_datum(
             data={"type": "bbox", "x": 30, "y": 40, "width": 120, "height": 90},
             metadata={"model": "yolo"},
-            derived_from=label2.id
+            derived_from=label2.id,
         )
 
         # Query for images -> classifications -> bounding boxes
         query = [
             {"metadata.project": "test_project", "column": "image_id"},  # Base: images
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},  # Level 1: classifications
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"}  # Level 2: bounding boxes
+            {
+                "derived_from": "image_id",
+                "data.type": "classification",
+                "column": "label_id",
+            },  # Level 1: classifications
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},  # Level 2: bounding boxes
         ]
         result = await datalake.query_data(query)
 
@@ -291,10 +285,7 @@ class TestQueryDataIntegration:
     async def test_query_with_empty_result(self, datalake):
         """Test query that returns no results."""
         # Add some data
-        await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
-        )
+        await datalake.add_datum(data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"})
 
         # Query for non-existent project
         query = {"metadata.project": "nonexistent_project", "column": "image_id"}
@@ -313,19 +304,16 @@ class TestQueryDataIntegration:
         """Test query with invalid strategy raises error."""
         # Add test data
         image = await datalake.add_datum(
-            data={"type": "image", "filename": "test.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
         await datalake.add_datum(
-            data={"type": "classification", "label": "cat"},
-            metadata={"model": "resnet50"},
-            derived_from=image.id
+            data={"type": "classification", "label": "cat"}, metadata={"model": "resnet50"}, derived_from=image.id
         )
 
         # Query with invalid strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"},
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
@@ -339,12 +327,12 @@ class TestQueryDataIntegration:
         datum1 = await datalake.add_datum(
             data={"type": "large_image", "filename": "large1.jpg", "pixels": "x" * 1000},
             metadata={"project": "test_project", "storage": "registry"},
-            registry_uri=registry_uri
+            registry_uri=registry_uri,
         )
         datum2 = await datalake.add_datum(
             data={"type": "large_image", "filename": "large2.jpg", "pixels": "y" * 1000},
             metadata={"project": "test_project", "storage": "registry"},
-            registry_uri=registry_uri
+            registry_uri=registry_uri,
         )
 
         # Query for registry-stored data
@@ -363,7 +351,7 @@ class TestQueryDataIntegration:
         # Add database-stored data
         db_datum = await datalake.add_datum(
             data={"type": "image", "filename": "db_image.jpg"},
-            metadata={"project": "test_project", "storage": "database"}
+            metadata={"project": "test_project", "storage": "database"},
         )
 
         # Add registry-stored data
@@ -371,7 +359,7 @@ class TestQueryDataIntegration:
         registry_datum = await datalake.add_datum(
             data={"type": "image", "filename": "registry_image.jpg"},
             metadata={"project": "test_project", "storage": "registry"},
-            registry_uri=registry_uri
+            registry_uri=registry_uri,
         )
 
         # Query for all images in project
@@ -394,8 +382,8 @@ class TestQueryDataIntegration:
                 "project": "test_project",
                 "tags": ["nature", "outdoor"],
                 "location": {"city": "Paris", "country": "France"},
-                "quality": 0.95
-            }
+                "quality": 0.95,
+            },
         )
         datum2 = await datalake.add_datum(
             data={"type": "image"},
@@ -403,8 +391,8 @@ class TestQueryDataIntegration:
                 "project": "test_project",
                 "tags": ["urban", "indoor"],
                 "location": {"city": "London", "country": "UK"},
-                "quality": 0.87
-            }
+                "quality": 0.87,
+            },
         )
         datum3 = await datalake.add_datum(
             data={"type": "image"},
@@ -412,8 +400,8 @@ class TestQueryDataIntegration:
                 "project": "test_project",
                 "tags": ["nature", "indoor"],
                 "location": {"city": "Paris", "country": "France"},
-                "quality": 0.92
-            }
+                "quality": 0.92,
+            },
         )
 
         # Query with complex filters
@@ -422,7 +410,7 @@ class TestQueryDataIntegration:
             "metadata.tags": {"$in": ["nature"]},
             "metadata.location.city": "Paris",
             "metadata.quality": {"$gte": 0.9},
-            "column": "image_id"
+            "column": "image_id",
         }
         result = await datalake.query_data(query)
 
@@ -438,8 +426,7 @@ class TestQueryDataIntegration:
         """Test multi-query with earliest strategy."""
         # Add base image
         image = await datalake.add_datum(
-            data={"type": "image", "filename": "test.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add multiple classification labels with different timestamps
@@ -447,19 +434,20 @@ class TestQueryDataIntegration:
         old_label = await datalake.add_datum(
             data={"type": "classification", "label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
-            derived_from=image.id
+            derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
             data={"type": "classification", "label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
-            derived_from=image.id
+            derived_from=image.id,
         )
+        assert old_label.id != new_label.id
 
         # Query with earliest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -476,28 +464,27 @@ class TestQueryDataIntegration:
         """Test multi-query with random strategy."""
         # Add base image
         image = await datalake.add_datum(
-            data={"type": "image", "filename": "test.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add multiple classification labels
         label1 = await datalake.add_datum(
             data={"type": "classification", "label": "label1", "confidence": 0.7},
             metadata={"model": "model1"},
-            derived_from=image.id
+            derived_from=image.id,
         )
         label2 = await datalake.add_datum(
             data={"type": "classification", "label": "label2", "confidence": 0.8},
             metadata={"model": "model2"},
-            derived_from=image.id
+            derived_from=image.id,
         )
 
         # Query with random strategy (run multiple times to test randomness)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"},
         ]
-        
+
         # Run the query multiple times to ensure it can select different results
         results = []
         for _ in range(10):
@@ -506,7 +493,7 @@ class TestQueryDataIntegration:
 
         # Should return 1 result each time
         assert len(results) == 10  # We ran the query 10 times
-        
+
         # Should select from the available labels
         selected_labels = set(results)
         assert selected_labels.issubset({label1.id, label2.id})
@@ -518,8 +505,7 @@ class TestQueryDataIntegration:
         images = []
         for i in range(5):
             image = await datalake.add_datum(
-                data={"type": "image", "filename": f"test{i}.jpg"},
-                metadata={"project": "test_project"}
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
             )
             images.append(image)
             await asyncio.sleep(0.01)  # Ensure different timestamps
@@ -551,8 +537,7 @@ class TestQueryDataIntegration:
         images = []
         for i in range(5):
             image = await datalake.add_datum(
-                data={"type": "image", "filename": f"test{i}.jpg"},
-                metadata={"project": "test_project"}
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
             )
             images.append(image)
             await asyncio.sleep(0.01)  # Ensure different timestamps
@@ -577,8 +562,7 @@ class TestQueryDataIntegration:
         images = []
         for i in range(5):
             image = await datalake.add_datum(
-                data={"type": "image", "filename": f"test{i}.jpg"},
-                metadata={"project": "test_project"}
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
             )
             images.append(image)
 
@@ -603,8 +587,7 @@ class TestQueryDataIntegration:
         images = []
         for i in range(3):
             image = await datalake.add_datum(
-                data={"type": "image", "filename": f"test{i}.jpg"},
-                metadata={"project": "test_project"}
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
             )
             images.append(image)
             await asyncio.sleep(0.01)
@@ -615,14 +598,14 @@ class TestQueryDataIntegration:
             label = await datalake.add_datum(
                 data={"type": "classification", "label": f"label_{image.id}"},
                 metadata={"model": "resnet50"},
-                derived_from=image.id
+                derived_from=image.id,
             )
             labels.append(label)
 
         # Query with datums_wanted=2 and multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 
@@ -642,12 +625,10 @@ class TestQueryDataIntegration:
         """Test multi-query with missing strategy when no derived data exists."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
         # Don't add any classification labels for these images
@@ -655,14 +636,14 @@ class TestQueryDataIntegration:
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
         # Should return 2 results (both images) because neither has classification labels
         assert len(result) == 2
         assert all(isinstance(row, dict) for row in result)
-        
+
         result_ids = [row["image_id"] for row in result]
         assert image1.id in result_ids
         assert image2.id in result_ids
@@ -680,25 +661,23 @@ class TestQueryDataIntegration:
         """Test multi-query with missing strategy when derived data exists."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add classification label only for image1
         await datalake.add_datum(
             data={"type": "classification", "label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
-            derived_from=image1.id
+            derived_from=image1.id,
         )
 
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -721,8 +700,7 @@ class TestQueryDataIntegration:
         images = []
         for i in range(5):
             image = await datalake.add_datum(
-                data={"type": "image", "filename": f"test{i}.jpg"},
-                metadata={"project": "test_project"}
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
             )
             images.append(image)
 
@@ -731,20 +709,20 @@ class TestQueryDataIntegration:
             await datalake.add_datum(
                 data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
-                derived_from=images[i].id
+                derived_from=images[i].id,
             )
 
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
         # Should return 2 results (images 1 and 3) because they don't have classification labels
         assert len(result) == 2
         assert all(isinstance(row, dict) for row in result)
-        
+
         result_ids = [row["image_id"] for row in result]
         expected_ids = [images[1].id, images[3].id]
         assert set(result_ids) == set(expected_ids)
@@ -754,38 +732,36 @@ class TestQueryDataIntegration:
         """Test multi-query with missing strategy across multiple derivation levels."""
         # Add base images
         image1 = await datalake.add_datum(
-            data={"type": "image", "filename": "test1.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
         image2 = await datalake.add_datum(
-            data={"type": "image", "filename": "test2.jpg"},
-            metadata={"project": "test_project"}
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
         # Add classification labels for both images
         label1 = await datalake.add_datum(
             data={"type": "classification", "label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
-            derived_from=image1.id
+            derived_from=image1.id,
         )
-        label2 = await datalake.add_datum(
+        await datalake.add_datum(
             data={"type": "classification", "label": "dog", "confidence": 0.90},
             metadata={"model": "resnet50"},
-            derived_from=image2.id
+            derived_from=image2.id,
         )
 
         # Add bounding box only for label1
         await datalake.add_datum(
             data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
             metadata={"model": "yolo"},
-            derived_from=label1.id
+            derived_from=label1.id,
         )
 
         # Query for images that don't have bounding boxes (through classification)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "strategy": "missing", "column": "bbox_id"}
+            {"derived_from": "label_id", "data.type": "bbox", "strategy": "missing", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -798,10 +774,7 @@ class TestQueryDataIntegration:
     async def test_multi_query_with_strategy_missing_invalid_for_base_query(self, datalake):
         """Test that missing strategy is not allowed for base query."""
         # Add test data
-        await datalake.add_datum(
-            data={"type": "image", "filename": "test.jpg"},
-            metadata={"project": "test_project"}
-        )
+        await datalake.add_datum(data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"})
 
         # Test that missing strategy in base query raises error
         query = [{"metadata.project": "test_project", "strategy": "missing", "column": "image_id"}]
