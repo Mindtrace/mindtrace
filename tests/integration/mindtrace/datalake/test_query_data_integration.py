@@ -42,6 +42,14 @@ class TestQueryDataIntegration:
         assert datum2.id in result_ids
         assert datum3.id not in result_ids
 
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 2
+        assert datum1.id in result_transposed["image_id"]
+        assert datum2.id in result_transposed["image_id"]
+
     @pytest.mark.asyncio
     async def test_single_query_with_data_filter(self, datalake):
         """Test single query filtering on data content."""
@@ -69,6 +77,14 @@ class TestQueryDataIntegration:
         assert datum1.id in result_ids
         assert datum3.id in result_ids
         assert datum2.id not in result_ids
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 2
+        assert datum1.id in result_transposed["image_id"]
+        assert datum3.id in result_transposed["image_id"]
 
     @pytest.mark.asyncio
     async def test_multi_query_with_derivation(self, datalake):
@@ -115,6 +131,16 @@ class TestQueryDataIntegration:
             assert image_id in [image1.id, image2.id]
             assert label_id in [label1.id, label2.id]
 
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert "label_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 2
+        assert len(result_transposed["label_id"]) == 2
+        assert all(img_id in [image1.id, image2.id] for img_id in result_transposed["image_id"])
+        assert all(label_id in [label1.id, label2.id] for label_id in result_transposed["label_id"])
+
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_latest(self, datalake):
         """Test multi-query with latest strategy."""
@@ -152,6 +178,16 @@ class TestQueryDataIntegration:
         label_id = result[0]["label_id"]
         assert image_id == image.id
         assert label_id == new_label.id  # Should be the latest one
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert "label_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 1
+        assert len(result_transposed["label_id"]) == 1
+        assert result_transposed["image_id"][0] == image.id
+        assert result_transposed["label_id"][0] == new_label.id
 
     @pytest.mark.asyncio
     async def test_multi_query_missing_derived_data(self, datalake):
@@ -266,6 +302,11 @@ class TestQueryDataIntegration:
 
         # Should return empty list
         assert result == []
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert result_transposed == {}
 
     @pytest.mark.asyncio
     async def test_query_with_invalid_strategy(self, datalake):
@@ -496,6 +537,13 @@ class TestQueryDataIntegration:
         expected_latest = [img.id for img in images[-3:]]  # Last 3 images
         assert set(result_ids) == set(expected_latest)
 
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, datums_wanted=3, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 3
+        assert set(result_transposed["image_id"]) == set(expected_latest)
+
     @pytest.mark.asyncio
     async def test_datums_wanted_with_earliest_strategy(self, datalake):
         """Test datums_wanted with earliest strategy."""
@@ -619,6 +667,14 @@ class TestQueryDataIntegration:
         assert image1.id in result_ids
         assert image2.id in result_ids
 
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 2
+        assert image1.id in result_transposed["image_id"]
+        assert image2.id in result_transposed["image_id"]
+
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_missing_derived_data_exists(self, datalake):
         """Test multi-query with missing strategy when derived data exists."""
@@ -650,6 +706,13 @@ class TestQueryDataIntegration:
         assert len(result) == 1
         assert isinstance(result[0], dict)
         assert result[0]["image_id"] == image2.id
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 1
+        assert result_transposed["image_id"][0] == image2.id
 
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_missing_complex_scenario(self, datalake):

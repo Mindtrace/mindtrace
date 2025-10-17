@@ -874,3 +874,137 @@ class TestQueryDataUnit:
         result_ids = {row["image_id"] for row in result}
         assert len(result) == 2
         assert result_ids == {d1.id, d3.id}
+
+    @pytest.mark.asyncio
+    async def test_query_data_with_transpose_single_query(self, datalake, mock_database):
+        """Test query_data with transpose=True for single query."""
+        # Mock data
+        datum1 = create_mock_datum(
+            data={"type": "image", "filename": "test1.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+        datum2 = create_mock_datum(
+            data={"type": "image", "filename": "test2.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        mock_database.find.return_value = [datum1, datum2]
+
+        # Test with transpose=True
+        query = {"metadata.project": "test_project", "column": "image_id"}
+        result = await datalake.query_data(query, transpose=True)
+
+        # Should return dictionary of lists
+        assert isinstance(result, dict)
+        assert "image_id" in result
+        assert len(result["image_id"]) == 2
+        assert datum1.id in result["image_id"]
+        assert datum2.id in result["image_id"]
+
+    @pytest.mark.asyncio
+    async def test_query_data_with_transpose_multi_query(self, datalake, mock_database):
+        """Test query_data with transpose=True for multi-query."""
+        # Mock base data
+        base_datum = create_mock_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock derived data
+        derived_datum = create_mock_datum(
+            data={"type": "classification", "label": "cat"},
+            metadata={"model": "resnet50"},
+            derived_from=base_datum.id,
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock database calls
+        mock_database.find.side_effect = [
+            [base_datum],  # First query: find base data
+            [derived_datum]  # Second query: find derived data
+        ]
+
+        # Test with transpose=True
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query, transpose=True)
+
+        # Should return dictionary of lists
+        assert isinstance(result, dict)
+        assert "image_id" in result
+        assert "label_id" in result
+        assert len(result["image_id"]) == 1
+        assert len(result["label_id"]) == 1
+        assert result["image_id"][0] == base_datum.id
+        assert result["label_id"][0] == derived_datum.id
+
+    @pytest.mark.asyncio
+    async def test_query_data_with_transpose_empty_result(self, datalake, mock_database):
+        """Test query_data with transpose=True for empty result."""
+        mock_database.find.return_value = []
+
+        query = {"metadata.project": "nonexistent_project", "column": "image_id"}
+        result = await datalake.query_data(query, transpose=True)
+
+        # Should return empty dictionary
+        assert isinstance(result, dict)
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_query_data_with_transpose_missing_strategy(self, datalake, mock_database):
+        """Test query_data with transpose=True and missing strategy."""
+        # Mock base data
+        base_datum = create_mock_datum(
+            data={"type": "image", "filename": "test.jpg"},
+            metadata={"project": "test_project"},
+            datum_id=PydanticObjectId()
+        )
+
+        # Mock database calls - no derived data found
+        mock_database.find.side_effect = [
+            [base_datum],  # First query: find base data
+            []  # Second query: no derived data found
+        ]
+
+        # Test with transpose=True and missing strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"}
+        ]
+        result = await datalake.query_data(query, transpose=True)
+
+        # Should return dictionary with only image_id (no label_id since missing strategy)
+        assert isinstance(result, dict)
+        assert "image_id" in result
+        assert "label_id" not in result
+        assert len(result["image_id"]) == 1
+        assert result["image_id"][0] == base_datum.id
+
+    @pytest.mark.asyncio
+    async def test_query_data_with_transpose_datums_wanted(self, datalake, mock_database):
+        """Test query_data with transpose=True and datums_wanted parameter."""
+        # Mock multiple data
+        datums = []
+        for i in range(5):
+            datum = create_mock_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"},
+                metadata={"project": "test_project"},
+                datum_id=PydanticObjectId()
+            )
+            datums.append(datum)
+
+        mock_database.find.return_value = datums
+
+        # Test with transpose=True and datums_wanted=3
+        query = {"metadata.project": "test_project", "column": "image_id"}
+        result = await datalake.query_data(query, datums_wanted=3, transpose=True)
+
+        # Should return dictionary with 3 items
+        assert isinstance(result, dict)
+        assert "image_id" in result
+        assert len(result["image_id"]) == 3

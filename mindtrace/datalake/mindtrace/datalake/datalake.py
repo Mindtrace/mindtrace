@@ -1,6 +1,7 @@
-from typing import Annotated, Any, Dict, Optional
+from typing import Annotated, Any, Dict, Optional, Literal, overload
 from uuid import uuid4
 
+from collections import defaultdict
 # from pydantic import PydanticModelId
 from beanie import PydanticObjectId
 
@@ -195,7 +196,14 @@ class Datalake(Mindtrace):
         
         return result
 
-    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None) -> list[dict[str, Any]]:
+    @overload
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None, transpose: bool = False) -> list[dict[str, Any]]:
+        ...
+    @overload
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None, transpose: Literal[True] = True) -> dict[str, list]:
+        ...
+
+    async def query_data(self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None=None, transpose: bool = False) -> list[dict[str, Any]] | dict[str, list]:
         f"""
         Query the data in the datalake using a list of queries.
 
@@ -224,10 +232,14 @@ class Datalake(Mindtrace):
 
             datums_wanted: The number of datums to return for each query. If None, all datums are returned.
 
-        Returns:
+            transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
 
-            List of dictionaries, where each dictionary contains the data of the base datum and the data of 
-            any derived data, with the number of entries of each dictionary equalling the length of query (or 1 if query is a dict)
+        Returns:
+            If transpose is False:
+                A list of dictionaries, where each dictionary contains the data of the base datum and the data of
+                any derived data, with the number of entries of each dictionary equalling the length of query (minus any entries with the "missing" strategy)
+            If transpose is True:
+                A dictionary of lists, where the keys are the columns and the values are the lists of values.
         """
         if isinstance(query, dict):
             query = [query]
@@ -251,7 +263,9 @@ class Datalake(Mindtrace):
                 entries = random.sample(entries, datums_wanted)
             else:
                 raise ValueError(f"Invalid strategy: {base_strategy}")
-        result = []
+        
+        result_dict = defaultdict(list)
+        result_list = []
         for entry in entries:
             this_entry = {base_column: entry.id}
             for subquery in query[1:]:
@@ -281,6 +295,10 @@ class Datalake(Mindtrace):
                 else:
                     raise ValueError(f"Invalid strategy: {strategy}")
             else:
-                result.append(this_entry)
-        return result
-
+                for key, value in this_entry.items():
+                    result_dict[key].append(value)
+                result_list.append(this_entry)
+        if transpose:
+            return result_dict
+        else:
+            return result_list
