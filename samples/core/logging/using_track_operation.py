@@ -38,6 +38,12 @@ class DataProcessor:
         await asyncio.sleep(0.1)  # Simulate processing
         return [item.upper() for item in data]
 
+    @classmethod
+    @track_operation("classmethod_process_batch", include_args=["batch_id"], timeout=2.0)
+    def process_batch_classmethod(cls, batch_id: str, data: list):
+        """Process batch with automatic logging."""
+        return [item.upper() for item in data]
+
 async def main():
     print("=== Context Manager Usage ===")
     await context_manager_example()
@@ -50,9 +56,13 @@ async def main():
     result = process_data(["hello", "world"])
     print(f"Processed: {result}")
     
-    print("\n=== Class Method Decorator Usage ===")
+    print("\n=== Instance Method Decorator Usage ===")
     processor = DataProcessor()
     result = await processor.process_batch("batch_456", ["test", "data"])
+    print(f"Batch processed: {result}")
+
+    print("\n=== Class Method Decorator Usage ====")
+    result = DataProcessor.process_batch_classmethod("batch_456", ["test", "data"])
     print(f"Batch processed: {result}")
 
 if __name__ == "__main__":
