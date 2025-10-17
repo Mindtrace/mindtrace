@@ -46,15 +46,17 @@ class MindtraceMeta(type):
     def logger(cls):
         # Check if we need to recreate the logger due to kwargs changes
         current_kwargs = cls._logger_kwargs or {}
-        
+
         # Compare current kwargs with cached kwargs
-        if (cls._logger is not None and 
-            cls._cached_logger_kwargs is not None and 
-            cls._cached_logger_kwargs != current_kwargs):
+        if (
+            cls._logger is not None
+            and cls._cached_logger_kwargs is not None
+            and cls._cached_logger_kwargs != current_kwargs
+        ):
             # Logger exists but kwargs have changed - recreate it
             cls._logger = None
             cls._cached_logger_kwargs = None
-        
+
         if cls._logger is None:
             # Use stored logger kwargs if available, otherwise use defaults
             kwargs = current_kwargs
@@ -333,14 +335,14 @@ class Mindtrace(metaclass=MindtraceMeta):
                     if _can_use_track_operation(instance.logger):
                         # Use track_operation for structlog loggers
                         from mindtrace.core.logging.logger import track_operation
-                        
+
                         # Extract argument names for include_args
                         sig = inspect.signature(function)
                         param_names = list(sig.parameters.keys())
                         # Remove 'self' if present
-                        if param_names and param_names[0] == 'self':
+                        if param_names and param_names[0] == "self":
                             param_names = param_names[1:]
-                        
+
                         return track_operation(
                             name=function.__name__,
                             logger=instance.logger,
@@ -354,11 +356,11 @@ class Mindtrace(metaclass=MindtraceMeta):
                 # For static methods, check the provided logger
                 if _can_use_track_operation(self.logger):
                     from mindtrace.core.logging.logger import track_operation
-                    
+
                     # Extract argument names for include_args
                     sig = inspect.signature(function)
                     param_names = list(sig.parameters.keys())
-                    
+
                     return track_operation(
                         name=function.__name__,
                         logger=self.logger,
@@ -600,11 +602,11 @@ class Mindtrace(metaclass=MindtraceMeta):
                 track_op = None
                 if _can_use_track_operation(self.logger):
                     from mindtrace.core.logging.logger import track_operation
-                    
+
                     # Extract argument names for include_args
                     sig = inspect.signature(function)
                     param_names = list(sig.parameters.keys())
-                    
+
                     track_op = track_operation(
                         name=function.__name__,
                         logger=self.logger,

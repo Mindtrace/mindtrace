@@ -1,6 +1,4 @@
 import json
-import logging
-from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 import pytest
@@ -34,9 +32,7 @@ class TestLauncher:
 
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_with_init_params(
-        self, mock_base_init, mock_instantiate, mock_options, mock_server
-    ):
+    def test_launcher_init_with_init_params(self, mock_base_init, mock_instantiate, mock_options, mock_server):
         """Test Launcher initialization with init parameters."""
         # Setup mocks
         mock_instantiate.return_value = mock_server
