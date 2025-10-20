@@ -163,3 +163,22 @@ def test_receive_message_exception(backend):
         backend.logger = MagicMock()
         with pytest.raises(RuntimeError):
             backend.receive_message(mock_channel, "q", block=False)
+
+
+def test_consume_infinite_messages_exception_handling_with_continue(backend):
+    """Test exception handling in _consume_infinite_messages with continue."""
+    # First call raises a regular exception (caught), second call raises KeyboardInterrupt to break the loop
+    backend.receive_message = MagicMock(side_effect=[Exception("Test exception"), KeyboardInterrupt])
+    backend.logger = MagicMock()
+
+    mock_channel = MagicMock()
+
+    # Call the infinite consumer directly and break out via KeyboardInterrupt
+    with pytest.raises(KeyboardInterrupt):
+        backend._consume_infinite_messages(mock_channel, ["q"])
+
+    # Verify that the exception was logged by the except block
+    backend.logger.error.assert_called()
+    error_call = backend.logger.error.call_args[0][0]
+    assert "Error during infinite consumption" in error_call
+    assert "Test exception" in error_call

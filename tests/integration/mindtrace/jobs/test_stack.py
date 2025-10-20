@@ -8,7 +8,7 @@ from mindtrace.jobs.local.stack import LocalStack
 from mindtrace.jobs.redis.stack import RedisStack
 from mindtrace.jobs.types.job_specs import Job, JobSchema
 
-from ..conftest import job_from_schema
+from .conftest import job_from_schema
 
 
 class SampleJobInput(BaseModel):
@@ -21,7 +21,7 @@ class SampleJobOutput(BaseModel):
 
 def create_test_job_local(name: str = "test_job") -> Job:
     test_input = SampleJobInput()
-    schema = JobSchema(name=f"{name}_schema", input=SampleJobInput, output=SampleJobOutput)
+    schema = JobSchema(name=f"{name}-schema", input_schema=SampleJobInput, output_schema=SampleJobOutput)
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
     job.name = name

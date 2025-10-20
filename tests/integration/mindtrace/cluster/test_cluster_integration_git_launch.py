@@ -19,7 +19,7 @@ def test_start_worker_from_git():
     )
 
     try:
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
 
         # Register worker type with git repository information
         cluster_manager.register_worker_type(
