@@ -1,20 +1,20 @@
 import pytest
 
+from mindtrace.jobs import Orchestrator
 from mindtrace.jobs.local.client import LocalClient
-from mindtrace.jobs.orchestrator import Orchestrator
 from mindtrace.jobs.rabbitmq.client import RabbitMQClient
 from mindtrace.jobs.redis.client import RedisClient
 from mindtrace.jobs.types.job_specs import JobSchema
 
-from ..conftest import SampleJobInput, SampleJobOutput, create_test_job
+from .conftest import SampleJobInput, SampleJobOutput, create_test_job
 
 
 class TestOrchestratorQueueManagement:
     def test_local_backend_clean_and_delete_queue(self, unique_queue_name):
         client = LocalClient()
-        orchestrator = Orchestrator(client)
-        queue_name = unique_queue_name("local_queue_mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        orchestrator = Orchestrator(backend=client)
+        queue_name = unique_queue_name("local-queue-mgmt")
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
@@ -35,9 +35,9 @@ class TestOrchestratorQueueManagement:
     @pytest.mark.redis
     def test_redis_backend_clean_and_delete_queue(self, unique_queue_name):
         client = RedisClient(host="localhost", port=6380, db=0)
-        orchestrator = Orchestrator(client)
+        orchestrator = Orchestrator(backend=client)
         queue_name = unique_queue_name("redis_queue_mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
@@ -58,9 +58,9 @@ class TestOrchestratorQueueManagement:
     @pytest.mark.rabbitmq
     def test_rabbitmq_backend_clean_and_delete_queue(self, unique_queue_name):
         client = RabbitMQClient(host="localhost", port=5673, username="user", password="password")
-        orchestrator = Orchestrator(client)
+        orchestrator = Orchestrator(backend=client)
         queue_name = unique_queue_name("rabbitmq_queue_mgmt")
-        schema = JobSchema(name=queue_name, input=SampleJobInput, output=SampleJobOutput)
+        schema = JobSchema(name=queue_name, input_schema=SampleJobInput, output_schema=SampleJobOutput)
         orchestrator.register(schema)
 
         # Publish jobs
