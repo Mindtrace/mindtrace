@@ -1327,3 +1327,406 @@ def test_acquire_lock_generic_exception(backend, monkeypatch):
     # Attempt to acquire lock - should proceed despite the exception and return True
     result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
     assert result is True
+
+
+def test_init_bucket_creation(monkeypatch):
+    """Test bucket creation during initialization (line 120)."""
+    class MockMinio:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def bucket_exists(self, bucket):
+            return False  # Bucket doesn't exist
+
+        def make_bucket(self, bucket):
+            pass
+
+        def stat_object(self, bucket, object_name):
+            raise S3Error(
+                code="NoSuchKey",
+                message="Object does not exist",
+                resource=f"/{bucket}/{object_name}",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name=bucket,
+                object_name=object_name,
+            )
+
+        def put_object(self, bucket, object_name, data, length, content_type=None):
+            pass
+
+    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
+    
+    # This should trigger bucket creation
+    backend = MinioRegistryBackend(
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+        endpoint="localhost:9100",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket="test-bucket",
+        secure=False,
+    )
+    assert backend.bucket == "test-bucket"
+
+
+def test_init_metadata_file_creation(monkeypatch):
+    """Test metadata file creation during initialization (lines 126-136)."""
+    class MockMinio:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def bucket_exists(self, bucket):
+            return True
+
+        def make_bucket(self, bucket):
+            pass
+
+        def stat_object(self, bucket, object_name):
+            raise S3Error(
+                code="NoSuchKey",
+                message="Object does not exist",
+                resource=f"/{bucket}/{object_name}",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name=bucket,
+                object_name=object_name,
+            )
+
+        def put_object(self, bucket, object_name, data, length, content_type=None):
+            pass
+
+    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
+    
+    # This should trigger metadata file creation
+    backend = MinioRegistryBackend(
+        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+        endpoint="localhost:9100",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket="test-bucket",
+        secure=False,
+    )
+    assert backend.bucket == "test-bucket"
+
+
+def test_init_metadata_file_other_error(monkeypatch):
+    """Test handling of non-NoSuchKey S3Error during initialization (lines 134-136)."""
+    class MockMinio:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def bucket_exists(self, bucket):
+            return True
+
+        def make_bucket(self, bucket):
+            pass
+
+        def stat_object(self, bucket, object_name):
+            raise S3Error(
+                code="InternalError",
+                message="Internal server error",
+                resource=f"/{bucket}/{object_name}",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name=bucket,
+                object_name=object_name,
+            )
+
+    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
+    
+    # This should raise the S3Error
+    with pytest.raises(S3Error) as exc_info:
+        MinioRegistryBackend(
+            uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+            endpoint="localhost:9100",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="test-bucket",
+            secure=False,
+        )
+    assert exc_info.value.code == "InternalError"
+
+
+def test_delete_objects_with_list(backend, monkeypatch):
+    """Test delete method with object listing (lines 229-234)."""
+    class MockObject:
+        def __init__(self, name):
+            self.object_name = name
+
+    def mock_list_objects(bucket, prefix, recursive=True):
+        return [MockObject(f"{prefix}/file1.txt"), MockObject(f"{prefix}/file2.txt")]
+
+    def mock_remove_object(bucket, object_name):
+        pass
+
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+
+    # This should trigger the object deletion loop
+    backend.delete("test:object", "1.0.0")
+
+
+def test_save_metadata_validation(backend):
+    """Test save_metadata with object name validation (line 244)."""
+    # This should trigger the validate_object_name call
+    with pytest.raises(ValueError, match="Object names cannot contain underscores"):
+        backend.save_metadata("invalid_name", "1.0.0", {"test": "data"})
+
+
+def test_save_metadata_success(backend, monkeypatch):
+    """Test successful save_metadata operation (lines 244-252)."""
+    def mock_put_object(bucket, object_name, data, length, content_type=None):
+        pass
+
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    metadata = {"name": "test:object", "version": "1.0.0", "description": "Test object"}
+    backend.save_metadata("test:object", "1.0.0", metadata)
+
+
+def test_fetch_metadata_success(backend, monkeypatch):
+    """Test successful fetch_metadata operation (lines 264-275)."""
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "name": "test:object",
+                    "version": "1.0.0",
+                    "description": "Test object"
+                }).encode()
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    result = backend.fetch_metadata("test:object", "1.0.0")
+    assert result["name"] == "test:object"
+    assert result["version"] == "1.0.0"
+    assert result["description"] == "Test object"
+
+
+def test_fetch_metadata_nosuchkey(backend, monkeypatch):
+    """Test fetch_metadata when object doesn't exist (lines 264-275)."""
+    def mock_get_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    with pytest.raises(S3Error) as exc_info:
+        backend.fetch_metadata("test:object", "1.0.0")
+    assert exc_info.value.code == "NoSuchKey"
+
+
+def test_fetch_metadata_other_error(backend, monkeypatch):
+    """Test fetch_metadata with other S3Error (lines 264-275)."""
+    def mock_get_object(bucket, object_name):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    with pytest.raises(S3Error) as exc_info:
+        backend.fetch_metadata("test:object", "1.0.0")
+    assert exc_info.value.code == "InternalError"
+
+
+def test_list_objects_success(backend, monkeypatch):
+    """Test successful list_objects operation (lines 339-340)."""
+    class MockObject:
+        def __init__(self, name):
+            self.object_name = name
+
+    def mock_list_objects(bucket, prefix, recursive=True):
+        if prefix == "_meta_":
+            return [MockObject("_meta_test_object1@1.0.0.json"), MockObject("_meta_test_object2@2.0.0.json")]
+        return []
+
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+
+    result = backend.list_objects()
+    assert "test:object1" in result
+    assert "test:object2" in result
+
+
+def test_list_versions_success(backend, monkeypatch):
+    """Test successful list_versions operation (lines 360-361)."""
+    class MockObject:
+        def __init__(self, name):
+            self.object_name = name
+
+    def mock_list_objects(bucket, prefix, recursive=True):
+        if prefix == "_meta_test_object@":
+            return [MockObject("_meta_test_object@1.0.0.json"), MockObject("_meta_test_object@2.0.0.json")]
+        return []
+
+    monkeypatch.setattr(backend.client, "list_objects", mock_list_objects)
+
+    result = backend.list_versions("test:object")
+    assert "1.0.0" in result
+    assert "2.0.0" in result
+
+
+def test_has_object_true(backend, monkeypatch):
+    """Test has_object when object exists (lines 379-387)."""
+    def mock_list_objects():
+        return ["test:object"]
+
+    def mock_list_versions(name):
+        if name == "test:object":
+            return ["1.0.0", "2.0.0"]
+        return []
+
+    monkeypatch.setattr(backend, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend, "list_versions", mock_list_versions)
+
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is True
+
+
+def test_has_object_false(backend, monkeypatch):
+    """Test has_object when object doesn't exist (lines 379-387)."""
+    def mock_list_objects():
+        return []  # No objects exist
+
+    monkeypatch.setattr(backend, "list_objects", mock_list_objects)
+
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_has_object_wrong_version(backend, monkeypatch):
+    """Test has_object when object exists but version doesn't (lines 379-387)."""
+    def mock_list_objects():
+        return ["test:object"]
+
+    def mock_list_versions(name):
+        if name == "test:object":
+            return ["2.0.0"]  # Different version
+        return []
+
+    monkeypatch.setattr(backend, "list_objects", mock_list_objects)
+    monkeypatch.setattr(backend, "list_versions", mock_list_versions)
+
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_acquire_lock_success(backend, monkeypatch):
+    """Test successful lock acquisition (lines 398-405)."""
+    def mock_get_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    def mock_put_object(bucket, object_name, data, length, content_type=None):
+        pass
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is True
+
+
+def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
+    """Test acquire_lock when exclusive lock already exists (lines 417-420)."""
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "lock_id": "existing-lock-id",
+                    "expires_at": time.time() + 3600,  # Expires in 1 hour
+                    "shared": False  # This is an exclusive lock
+                }).encode()
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)  # Try to get shared lock when exclusive exists
+
+
+def test_acquire_lock_existing_shared_lock(backend, monkeypatch):
+    """Test acquire_lock when shared lock already exists (lines 417-420)."""
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "lock_id": "existing-lock-id",
+                    "expires_at": time.time() + 3600,  # Expires in 1 hour
+                    "shared": True  # This is a shared lock
+                }).encode()
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    with pytest.raises(LockAcquisitionError):
+        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)  # Try to get exclusive lock when shared exists
+
+
+def test_release_lock_success(backend, monkeypatch):
+    """Test successful lock release (lines 520-522)."""
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "lock_id": "test-lock-id",
+                    "expires_at": time.time() + 3600,
+                    "shared": False
+                }).encode()
+        return MockResponse()
+
+    def mock_remove_object(bucket, object_name):
+        pass
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+
+    result = backend.release_lock("test-key", "test-lock-id")
+    assert result is True
+
+
+def test_release_lock_wrong_id(backend, monkeypatch):
+    """Test release_lock with wrong lock ID (lines 525, 529-530)."""
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps({
+                    "lock_id": "different-lock-id",
+                    "expires_at": time.time() + 3600,
+                    "shared": False
+                }).encode()
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    result = backend.release_lock("test-key", "test-lock-id")
+    assert result is False
