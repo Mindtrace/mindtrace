@@ -81,9 +81,10 @@ def test_path():
 
 
 @pytest.fixture
-def non_versioned_registry(temp_registry_dir):
+def non_versioned_registry():
     """Create a registry with versioning disabled."""
-    return Registry(registry_dir=temp_registry_dir, version_objects=False)
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(registry_dir=temp_dir, version_objects=False)
 
 
 def test_registry_initialization(registry, temp_registry_dir):
