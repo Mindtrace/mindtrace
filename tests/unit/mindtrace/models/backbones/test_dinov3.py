@@ -9,10 +9,11 @@ This module tests the DinoV3 model functionality including:
 """
 
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
-from pathlib import Path
 from PIL import Image
 
 from mindtrace.models.backbones.dinov3 import DinoV3

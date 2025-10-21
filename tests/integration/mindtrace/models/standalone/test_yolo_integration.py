@@ -12,7 +12,6 @@ This script:
 
 import sys
 import time
-import os
 from pathlib import Path
 
 from PIL import Image
