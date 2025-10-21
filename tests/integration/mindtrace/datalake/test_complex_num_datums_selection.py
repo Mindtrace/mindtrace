@@ -66,7 +66,7 @@ class TestComplexNumDatumsSelection:
             image_id = row["image_id"]
             label_id = row["label_id"]
             bbox_id = row["bbox_id"]
-            
+
             # Verify the relationships are correct
             assert image_id in expected_ids
             assert label_id in [label.id for label in classification_labels]

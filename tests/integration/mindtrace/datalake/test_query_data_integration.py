@@ -859,7 +859,7 @@ class TestQueryDataIntegration:
             bbox = await datalake.add_datum(
                 data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
                 metadata={"model": "yolo"},
-                derived_from=classification_labels[i].id if i < 3 else classification_labels[i-1].id,
+                derived_from=classification_labels[i].id if i < 3 else classification_labels[i - 1].id,
             )
             bbox_labels.append(bbox)
 
@@ -1090,7 +1090,7 @@ class TestQueryDataIntegration:
         image1 = await datalake.add_datum(
             data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
         )
-        image2 = await datalake.add_datum(
+        _ = await datalake.add_datum(
             data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
         )
 
@@ -1191,7 +1191,14 @@ class TestQueryDataIntegration:
         )
 
         # Query with quickest strategy
-        query = [{"metadata.project": "test_project", "metadata.storage": "registry", "strategy": "quickest", "column": "image_id"}]
+        query = [
+            {
+                "metadata.project": "test_project",
+                "metadata.storage": "registry",
+                "strategy": "quickest",
+                "column": "image_id",
+            }
+        ]
         result = await datalake.query_data(query)
 
         # Should return 2 results
