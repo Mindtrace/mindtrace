@@ -24,13 +24,11 @@ class DinoV3Output:
 
 
 class DinoV3(nn.Module, TransformerBackboneBase):
-
     def __init__(self):
         super().__init__()
         self.model = None
         self.processor = None
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model_config = None
         self.blocks = None
         self.num_features = None
@@ -40,7 +38,9 @@ class DinoV3(nn.Module, TransformerBackboneBase):
         self.adapter_rank = None
         self.adapter_dropout = None
 
-    def load_model(self, architecture: str, adapter_mode: bool = True, adapter_rank: int = 16, adapter_dropout: float = 0.1):
+    def load_model(
+        self, architecture: str, adapter_mode: bool = True, adapter_rank: int = 16, adapter_dropout: float = 0.1
+    ):
         """
         Load the DinoV3 model with the specified architecture and adapter configuration.
 
@@ -66,25 +66,22 @@ class DinoV3(nn.Module, TransformerBackboneBase):
                 target_modules=["k_proj", "q_proj", "v_proj"],
                 lora_dropout=adapter_dropout,
                 bias="none",
-                task_type="FEATURE_EXTRACTION"
+                task_type="FEATURE_EXTRACTION",
             )
 
             # Add LoRA modules to the model
-            self.model = get_peft_model(
-                AutoModel.from_pretrained(architecture, output_attentions=True), lora_config)
+            self.model = get_peft_model(AutoModel.from_pretrained(architecture, output_attentions=True), lora_config)
             print(self.model.print_trainable_parameters())
         else:
             print("Loading model without adapters")
-            self.model = AutoModel.from_pretrained(
-                architecture, output_attentions=True)
+            self.model = AutoModel.from_pretrained(architecture, output_attentions=True)
 
         # Move model to device and set up configuration
         self.model = self.model.to(self.device)
         self.model_config = self.model.config
         self.blocks = self.model.layer
         self.num_features = self.embed_dim = self.model_config.hidden_size
-        self.norm = nn.LayerNorm(
-            self.model_config.hidden_size, eps=self.model_config.layer_norm_eps).to(self.device)
+        self.norm = nn.LayerNorm(self.model_config.hidden_size, eps=self.model_config.layer_norm_eps).to(self.device)
 
         # Enable gradient computation for normalization layers
         if adapter_mode:
@@ -116,16 +113,12 @@ class DinoV3(nn.Module, TransformerBackboneBase):
             # shape: [batch_size, 3, 224, 224]
             pixel_values = inputs["pixel_values"]
             pixel_values = pixel_values.to(self.device)
-            pixel_values = pixel_values.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = pixel_values.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
         else:
             # Use input tensor directly
-            pixel_values = x.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = x.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
 
         position_embeddings = self.model.rope_embeddings(pixel_values)
 
@@ -171,16 +164,12 @@ class DinoV3(nn.Module, TransformerBackboneBase):
             # shape: [batch_size, 3, 224, 224]
             pixel_values = inputs["pixel_values"]
             pixel_values = pixel_values.to(self.device)
-            pixel_values = pixel_values.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = pixel_values.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
         else:
             # Use input tensor directly
-            pixel_values = x.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = x.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
 
         position_embeddings = self.model.rope_embeddings(pixel_values)
 
@@ -208,8 +197,7 @@ class DinoV3(nn.Module, TransformerBackboneBase):
 
         # Extract cls tokens and patch tokens
         cls_tokens_per_layer = [out[:, 0] for out in normalized_outputs]
-        patch_tokens_per_layer = [
-            out[:, self.model_config.num_register_tokens + 1:, :] for out in normalized_outputs]
+        patch_tokens_per_layer = [out[:, self.model_config.num_register_tokens + 1 :, :] for out in normalized_outputs]
 
         return DinoV3Output(cls_tokens=cls_tokens_per_layer, patch_tokens=patch_tokens_per_layer)
 
@@ -242,18 +230,15 @@ class DinoV3(nn.Module, TransformerBackboneBase):
 
         # Register hook on the last layer's attention module
         last_layer = self.model.layer[-1]
-        hook_handle = last_layer.attention.register_forward_hook(
-            attention_hook)
+        hook_handle = last_layer.attention.register_forward_hook(attention_hook)
 
         try:
             x = x.to(self.device)
             inputs = self.processor(images=x, return_tensors="pt")
             pixel_values = inputs["pixel_values"]  # shape: [1, 3, 224, 224]
 
-            pixel_values = pixel_values.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = pixel_values.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
             position_embeddings = self.model.rope_embeddings(pixel_values)
 
             # Forward pass through all layers
@@ -323,10 +308,8 @@ class DinoV3(nn.Module, TransformerBackboneBase):
             inputs = self.processor(images=x, return_tensors="pt")
             pixel_values = inputs["pixel_values"]  # shape: [1, 3, 224, 224]
 
-            pixel_values = pixel_values.to(
-                self.model.embeddings.patch_embeddings.weight.dtype)
-            hidden_states = self.model.embeddings(
-                pixel_values, bool_masked_pos=None)
+            pixel_values = pixel_values.to(self.model.embeddings.patch_embeddings.weight.dtype)
+            hidden_states = self.model.embeddings(pixel_values, bool_masked_pos=None)
             position_embeddings = self.model.rope_embeddings(pixel_values)
 
             # Forward pass through all layers
@@ -356,6 +339,7 @@ class DinoV3(nn.Module, TransformerBackboneBase):
         Returns:
             numpy.ndarray: Concatenated image with attention map, shape (H, W, C).
         """
+
         def unnormalize_image(image_tensor):
             """Unnormalize image tensor assuming ImageNet normalization."""
             # ImageNet normalization: mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
@@ -386,27 +370,26 @@ class DinoV3(nn.Module, TransformerBackboneBase):
             font_scale = 0.5
             font_color = (255, 255, 255)  # White color
             font_thickness = 1
-            text_size = cv2.getTextSize(
-                predictions, font, font_scale, font_thickness)[0]
+            text_size = cv2.getTextSize(predictions, font, font_scale, font_thickness)[0]
 
             # Extend the image at the bottom
             padding = 20  # Extra padding above and below the text
-            extended_img = np.zeros((image.shape[0] + text_size[1] + 2*padding,
-                                    image.shape[1], 3), dtype=np.uint8)
+            extended_img = np.zeros((image.shape[0] + text_size[1] + 2 * padding, image.shape[1], 3), dtype=np.uint8)
 
             # Copy the original image to the top of the extended image
-            extended_img[:image.shape[0], :, :] = image
+            extended_img[: image.shape[0], :, :] = image
 
             # Fill the extended part with black color
-            extended_img[image.shape[0]:, :, :] = 0
+            extended_img[image.shape[0] :, :, :] = 0
 
             # Calculate position for centered text at the bottom
             text_x = (extended_img.shape[1] - text_size[0]) // 2
             text_y = image.shape[0] + text_size[1] + padding
 
             # Add the text
-            cv2.putText(extended_img, predictions, (text_x, text_y), font,
-                        font_scale, font_color, font_thickness, cv2.LINE_AA)
+            cv2.putText(
+                extended_img, predictions, (text_x, text_y), font, font_scale, font_color, font_thickness, cv2.LINE_AA
+            )
 
             return extended_img
 
@@ -459,24 +442,22 @@ class DinoV3(nn.Module, TransformerBackboneBase):
 
         # Interpolate attention map to original image size
         attentions_tensor = torch.from_numpy(attentions).unsqueeze(0)
-        attentions_resized = torch.nn.functional.interpolate(
-            attentions_tensor, scale_factor=patch_size, mode="nearest"
-        )
-        attentions_resized = attentions_resized.mean(
-            dim=1)  # Average over heads
+        attentions_resized = torch.nn.functional.interpolate(attentions_tensor, scale_factor=patch_size, mode="nearest")
+        attentions_resized = attentions_resized.mean(dim=1)  # Average over heads
 
         # Normalize attention map
-        attentions_norm = ((attentions_resized - attentions_resized.min()) /
-                           (attentions_resized.max() - attentions_resized.min()))[0].cpu().numpy()
+        attentions_norm = (
+            ((attentions_resized - attentions_resized.min()) / (attentions_resized.max() - attentions_resized.min()))[0]
+            .cpu()
+            .numpy()
+        )
 
         # Convert image to numpy and denormalize
-        image_np = unnormalize_image(x).squeeze(
-            0).permute(1, 2, 0).cpu().numpy()
+        image_np = unnormalize_image(x).squeeze(0).permute(1, 2, 0).cpu().numpy()
         image_np = (image_np * 255).astype(np.uint8)
 
         # Apply colormap to attention
-        heatmap = cv2.applyColorMap(
-            np.uint8(attentions_norm * 255), cv2.COLORMAP_JET)
+        heatmap = cv2.applyColorMap(np.uint8(attentions_norm * 255), cv2.COLORMAP_JET)
 
         # Overlay attention on image
         out_img = show_cam_on_image(image_np, heatmap)

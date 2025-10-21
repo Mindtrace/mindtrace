@@ -8,7 +8,6 @@ This module tests the DinoV3 model functionality including:
 - Error handling
 """
 
-
 from pathlib import Path
 
 import numpy as np
@@ -107,8 +106,7 @@ class TestDinoV3:
         architecture = "facebook/dinov3-vits16-pretrain-lvd1689m"
 
         # Test loading with adapters
-        dinov3_model.load_model(
-            architecture, adapter_mode=True, adapter_rank=8)
+        dinov3_model.load_model(architecture, adapter_mode=True, adapter_rank=8)
 
         assert dinov3_model.model is not None
         assert dinov3_model.processor is not None
@@ -119,8 +117,7 @@ class TestDinoV3:
     def test_forward_with_preprocessor(self, loaded_dinov3_model, test_image_tensor):
         """Test forward pass using preprocessor."""
         # Test with tensor input
-        output = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Check output properties
         assert isinstance(output, torch.Tensor)
@@ -134,8 +131,7 @@ class TestDinoV3:
     def test_forward_with_direct_tensor(self, loaded_dinov3_model, test_image_tensor):
         """Test forward pass using direct tensor input."""
         # Test with preprocessed tensor
-        output = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=False)
+        output = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=False)
 
         # Check output properties
         assert isinstance(output, torch.Tensor)
@@ -152,12 +148,10 @@ class TestDinoV3:
         image_array = test_image_tensor.squeeze(0).permute(1, 2, 0).numpy()
 
         # Convert back to tensor format [batch_size, channels, height, width]
-        tensor_from_numpy = torch.from_numpy(
-            image_array).permute(2, 0, 1).unsqueeze(0).float()
+        tensor_from_numpy = torch.from_numpy(image_array).permute(2, 0, 1).unsqueeze(0).float()
 
         # Test with tensor created from numpy array
-        output = loaded_dinov3_model.forward(
-            tensor_from_numpy, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(tensor_from_numpy, use_preprocessor=True)
 
         # Check output properties
         assert isinstance(output, torch.Tensor)
@@ -178,8 +172,7 @@ class TestDinoV3:
         cpu_tensor = torch.randn(1, 3, 224, 224)
 
         # Test forward pass
-        output = loaded_dinov3_model.forward(
-            cpu_tensor, use_preprocessor=False)
+        output = loaded_dinov3_model.forward(cpu_tensor, use_preprocessor=False)
 
         # Check that output is on model's device
         assert output.device.type == loaded_dinov3_model.device.type
@@ -187,12 +180,10 @@ class TestDinoV3:
     def test_forward_output_shape_consistency(self, loaded_dinov3_model, test_image_tensor):
         """Test that output shapes are consistent across different input types."""
         # Test with preprocessor
-        output_preprocessor = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output_preprocessor = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Test without preprocessor
-        output_direct = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=False)
+        output_direct = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=False)
 
         # All outputs should have the same shape
         assert output_preprocessor.shape == output_direct.shape
@@ -203,8 +194,7 @@ class TestDinoV3:
         loaded_dinov3_model.train()
 
         # Test forward pass
-        output = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Compute a simple loss and check gradients
         loss = output.sum()
@@ -234,13 +224,11 @@ class TestDinoV3:
 
         # Warm up
         for _ in range(3):
-            _ = loaded_dinov3_model.forward(
-                test_image_tensor, use_preprocessor=True)
+            _ = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Time the forward pass
         start_time = time.time()
-        output = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
         end_time = time.time()
 
         # Check that forward pass completes in reasonable time (< 5 seconds)
@@ -250,8 +238,7 @@ class TestDinoV3:
     def test_forward_with_different_batch_sizes(self, loaded_dinov3_model, test_batch_tensor):
         """Test forward pass with different batch sizes."""
         # Test with batch tensor
-        output = loaded_dinov3_model.forward(
-            test_batch_tensor, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(test_batch_tensor, use_preprocessor=True)
 
         # Check output shape
         assert output.shape[0] == 3  # batch size
@@ -259,8 +246,7 @@ class TestDinoV3:
 
         # Test with single image tensor
         single_tensor = test_batch_tensor[0:1]  # Take first image
-        output_single = loaded_dinov3_model.forward(
-            single_tensor, use_preprocessor=True)
+        output_single = loaded_dinov3_model.forward(single_tensor, use_preprocessor=True)
 
         # Check output shape
         assert output_single.shape[0] == 1  # batch size
@@ -274,8 +260,7 @@ class TestDinoV3:
         loaded_dinov3_model.zero_grad()
 
         # Perform forward pass
-        output = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Check that output is valid
         assert isinstance(output, torch.Tensor)
@@ -292,15 +277,13 @@ class TestDinoV3:
         initial_state = loaded_dinov3_model.training
 
         # Perform forward pass
-        output1 = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output1 = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Check model state hasn't changed
         assert loaded_dinov3_model.training == initial_state
 
         # Perform another forward pass
-        output2 = loaded_dinov3_model.forward(
-            test_image_tensor, use_preprocessor=True)
+        output2 = loaded_dinov3_model.forward(test_image_tensor, use_preprocessor=True)
 
         # Check that outputs have the same shape
         assert output1.shape == output2.shape, "Output shapes should be consistent"
@@ -308,14 +291,12 @@ class TestDinoV3:
         # Note: Due to potential randomness in the model, we only check shapes
         # In a deterministic setup, outputs should be identical
         print(f"Output shapes match: {output1.shape == output2.shape}")
-        print(
-            f"Output difference norm: {torch.norm(output1 - output2).item():.6f}")
+        print(f"Output difference norm: {torch.norm(output1 - output2).item():.6f}")
 
     def test_get_last_self_attention(self, loaded_dinov3_model, test_image_tensor):
         """Test getting attention weights from the last layer."""
         # Test getting attention weights
-        attn_weights = loaded_dinov3_model.get_last_self_attention(
-            test_image_tensor)
+        attn_weights = loaded_dinov3_model.get_last_self_attention(test_image_tensor)
 
         # Check that attention weights are returned
         if attn_weights is not None:
@@ -327,23 +308,18 @@ class TestDinoV3:
             assert attn_weights.device.type == loaded_dinov3_model.device.type
 
             # Check attention weights properties
-            assert not torch.isnan(attn_weights).any(
-            ), "Attention weights contain NaN"
-            assert not torch.isinf(attn_weights).any(
-            ), "Attention weights contain infinite values"
+            assert not torch.isnan(attn_weights).any(), "Attention weights contain NaN"
+            assert not torch.isinf(attn_weights).any(), "Attention weights contain infinite values"
 
             # Attention weights should sum to 1 across the last dimension (softmax)
             attn_sum = attn_weights.sum(dim=-1)
-            assert torch.allclose(attn_sum, torch.ones_like(
-                attn_sum), atol=1e-6), "Attention weights don't sum to 1"
+            assert torch.allclose(attn_sum, torch.ones_like(attn_sum), atol=1e-6), "Attention weights don't sum to 1"
 
             print(f"✅ Attention weights shape: {attn_weights.shape}")
-            print(
-                f"✅ Attention weights mean: {attn_weights.mean().item():.4f}")
+            print(f"✅ Attention weights mean: {attn_weights.mean().item():.4f}")
             print(f"✅ Attention weights std: {attn_weights.std().item():.4f}")
         else:
-            print(
-                "⚠️ No attention weights returned - model might not be configured for attention output")
+            print("⚠️ No attention weights returned - model might not be configured for attention output")
 
 
 if __name__ == "__main__":

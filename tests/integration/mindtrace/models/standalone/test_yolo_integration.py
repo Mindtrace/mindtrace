@@ -25,13 +25,12 @@ sys.path.insert(0, str(project_root))
 
 def get_test_image():
     """Get a real test image for testing."""
-    test_image_path = project_root / "tests" / \
-        "resources" / "datasets" / "test" / "cat1.jpg"
+    test_image_path = project_root / "tests" / "resources" / "datasets" / "test" / "cat1.jpg"
     if test_image_path.exists():
         return Image.open(test_image_path)
     else:
         # Fallback to synthetic image if real image not found
-        return Image.new('RGB', (640, 640))
+        return Image.new("RGB", (640, 640))
 
 
 def test_detection_workflow():
@@ -69,8 +68,7 @@ def test_detection_workflow():
 
         # Test training (1 epoch)
         print("Starting training for 1 epoch...")
-        _ = yolo.train(
-            "coco128.yaml", epochs=1, batch=4, imgsz=320)
+        _ = yolo.train("coco128.yaml", epochs=1, batch=4, imgsz=320)
         print("✓ Training completed successfully")
 
         return True
@@ -116,8 +114,7 @@ def test_classification_workflow():
         # Test training (quick params) on tiny local classification dataset directory
         print("Starting training (quick) for 1 epoch on tiny classification directory...")
         data_dir = project_root / "tests" / "resources" / "datasets" / "cls"
-        _ = yolo.train(str(data_dir), epochs=1, imgsz=224, batch=2,
-                       workers=0, fraction=1.0, val=False, cache=True)
+        _ = yolo.train(str(data_dir), epochs=1, imgsz=224, batch=2, workers=0, fraction=1.0, val=False, cache=True)
         print("✓ Training completed successfully")
 
         return True
@@ -162,8 +159,7 @@ def test_segmentation_workflow():
 
         # Test training (1 epoch)
         print("Starting training for 1 epoch...")
-        _ = yolo.train(
-            "coco128-seg.yaml", epochs=1, batch=4, imgsz=320)
+        _ = yolo.train("coco128-seg.yaml", epochs=1, batch=4, imgsz=320)
         print("✓ Training completed successfully")
 
         return True
@@ -181,22 +177,22 @@ def test_config_management():
         # Test detection config
         yolo_detect = YOLOModel("yolov8n.pt")
         config = yolo_detect.get_config()
-        assert config['task'] == 'detect'
-        assert config['conf'] == 0.25
+        assert config["task"] == "detect"
+        assert config["conf"] == 0.25
         print("✓ Detection config loaded correctly")
 
         # Test classification config
         yolo_cls = YOLOModel("yolov8n-cls.pt")
         config = yolo_cls.get_config()
-        assert config['task'] == 'classify'
-        assert config['top_k'] == 5
+        assert config["task"] == "classify"
+        assert config["top_k"] == 5
         print("✓ Classification config loaded correctly")
 
         # Test segmentation config
         yolo_seg = YOLOModel("yolov8n-seg.pt")
         config = yolo_seg.get_config()
-        assert config['task'] == 'segment'
-        assert config['visualization']['mask_alpha'] == 0.5
+        assert config["task"] == "segment"
+        assert config["visualization"]["mask_alpha"] == 0.5
         print("✓ Segmentation config loaded correctly")
 
         return True
@@ -220,16 +216,16 @@ def main():
     results = {}
 
     # Test configuration management
-    results['config'] = test_config_management()
+    results["config"] = test_config_management()
 
     # Test detection workflow
-    results['detection'] = test_detection_workflow()
+    results["detection"] = test_detection_workflow()
 
     # Test classification workflow
-    results['classification'] = test_classification_workflow()
+    results["classification"] = test_classification_workflow()
 
     # Test segmentation workflow
-    results['segmentation'] = test_segmentation_workflow()
+    results["segmentation"] = test_segmentation_workflow()
 
     # Print summary
     print("\n" + "=" * 50)

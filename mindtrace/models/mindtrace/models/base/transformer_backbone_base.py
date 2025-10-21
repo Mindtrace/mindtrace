@@ -15,23 +15,18 @@ class TransformerBackboneBase(ABC):
 
     @abstractmethod
     def load_model(self, architecture: str):
-
         pass
 
     @abstractmethod
-    def get_intermediate_layers(self, x: torch.Tensor, num_layers: int)  -> Any:
+    def get_intermediate_layers(self, x: torch.Tensor, num_layers: int) -> Any:
         """Return the feature representation for input `x`."""
         pass
 
     @abstractmethod
     def get_last_self_attention(self, x: torch.Tensor, layer: int) -> Any:
-        """ Get the attention weight for a layer"""
+        """Get the attention weight for a layer"""
         pass
-
 
     @abstractmethod
     def plot_attention_map(self, x: torch.Tensor):
-
         pass
-
-

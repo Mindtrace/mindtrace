@@ -55,23 +55,19 @@ class YOLOModel(StandaloneBase):
         """
         # If no config path provided, determine default based on model name
         if config_path is None:
-            if 'cls' in self.model_name.lower():
-                config_path = os.path.join(os.path.dirname(
-                    __file__), 'configs', 'classification_config.yaml')
-            elif 'seg' in self.model_name.lower():
-                config_path = os.path.join(os.path.dirname(
-                    __file__), 'configs', 'segmentation_config.yaml')
+            if "cls" in self.model_name.lower():
+                config_path = os.path.join(os.path.dirname(__file__), "configs", "classification_config.yaml")
+            elif "seg" in self.model_name.lower():
+                config_path = os.path.join(os.path.dirname(__file__), "configs", "segmentation_config.yaml")
             else:
-                config_path = os.path.join(os.path.dirname(
-                    __file__), 'configs', 'detection_config.yaml')
+                config_path = os.path.join(os.path.dirname(__file__), "configs", "detection_config.yaml")
 
         # Load configuration from file
         if not os.path.exists(config_path):
-            raise FileNotFoundError(
-                f"Configuration file not found: {config_path}")
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
 
             if not config:
@@ -81,11 +77,9 @@ class YOLOModel(StandaloneBase):
             return config
 
         except yaml.YAMLError as e:
-            raise ValueError(
-                f"Invalid YAML configuration file {config_path}: {e}")
+            raise ValueError(f"Invalid YAML configuration file {config_path}: {e}")
         except Exception as e:
-            raise ValueError(
-                f"Error loading configuration file {config_path}: {e}")
+            raise ValueError(f"Error loading configuration file {config_path}: {e}")
 
     def load_model(self, architecture: str = None, weights: str = None):
         """
@@ -111,16 +105,16 @@ class YOLOModel(StandaloneBase):
             self.is_loaded = True
 
             # Determine task type from model
-            if hasattr(self.model, 'task'):
+            if hasattr(self.model, "task"):
                 self.task_type = self.model.task
             else:
                 # Infer from model name
-                if 'cls' in model_to_load.lower():
-                    self.task_type = 'classify'
-                elif 'seg' in model_to_load.lower():
-                    self.task_type = 'segment'
+                if "cls" in model_to_load.lower():
+                    self.task_type = "classify"
+                elif "seg" in model_to_load.lower():
+                    self.task_type = "segment"
                 else:
-                    self.task_type = 'detect'
+                    self.task_type = "detect"
 
             print(f"Successfully loaded YOLO model: {model_to_load}")
             print(f"Task type: {self.task_type}")
@@ -152,21 +146,41 @@ class YOLOModel(StandaloneBase):
         default_kwargs = self.config.copy()
 
         # Remove non-prediction parameters
-        for key in ['task', 'model', 'visualization']:
+        for key in ["task", "model", "visualization"]:
             default_kwargs.pop(key, None)
 
         # Remove visualization-specific parameters that shouldn't be passed to ultralytics
-        if 'visualization' in self.config:
-            for key in ['top_k', 'show_labels', 'show_conf', 'show_boxes', 'show_masks',
-                        'box_color', 'label_color', 'mask_alpha', 'box_thickness', 'font_size']:
+        if "visualization" in self.config:
+            for key in [
+                "top_k",
+                "show_labels",
+                "show_conf",
+                "show_boxes",
+                "show_masks",
+                "box_color",
+                "label_color",
+                "mask_alpha",
+                "box_thickness",
+                "font_size",
+            ]:
                 default_kwargs.pop(key, None)
 
         # Update with user-provided parameters
         default_kwargs.update(kwargs)
 
         # Remove any remaining visualization parameters that might have been passed in kwargs
-        for key in ['top_k', 'show_labels', 'show_conf', 'show_boxes', 'show_masks',
-                    'box_color', 'label_color', 'mask_alpha', 'box_thickness', 'font_size']:
+        for key in [
+            "top_k",
+            "show_labels",
+            "show_conf",
+            "show_boxes",
+            "show_masks",
+            "box_color",
+            "label_color",
+            "mask_alpha",
+            "box_thickness",
+            "font_size",
+        ]:
             default_kwargs.pop(key, None)
 
         try:
@@ -213,28 +227,28 @@ class YOLOModel(StandaloneBase):
             training_kwargs = self.config.copy()
 
             # Remove non-training parameters
-            for key in ['task', 'model', 'visualization']:
+            for key in ["task", "model", "visualization"]:
                 training_kwargs.pop(key, None)
 
             # Remove epochs from config to avoid conflict with parameter
-            training_kwargs.pop('epochs', None)
+            training_kwargs.pop("epochs", None)
             # Remove visualization-related keys that may appear at top-level
-            training_kwargs.pop('top_k', None)
+            training_kwargs.pop("top_k", None)
 
             # Update with user-provided parameters
             training_kwargs.update(kwargs)
 
             # Run training
-            results = self.model.train(
-                data=data, epochs=epochs, **training_kwargs)
+            results = self.model.train(data=data, epochs=epochs, **training_kwargs)
             print("Training completed successfully!")
             return results
         except Exception as e:
             print(f"Error during training: {e}")
             raise e
 
-    def plot_predictions(self, x: Any, predictions: Any = None, save_path: str = None,
-                         show: bool = True, figsize: tuple = (12, 8)):
+    def plot_predictions(
+        self, x: Any, predictions: Any = None, save_path: str = None, show: bool = True, figsize: tuple = (12, 8)
+    ):
         """
         Visualize model predictions based on task type.
 
@@ -262,7 +276,7 @@ class YOLOModel(StandaloneBase):
                 fig, ax = plt.subplots(1, 1, figsize=figsize)
 
                 # Get the original image
-                if hasattr(result, 'orig_img'):
+                if hasattr(result, "orig_img"):
                     img = result.orig_img
                 else:
                     # Load image if path provided
@@ -278,16 +292,15 @@ class YOLOModel(StandaloneBase):
                 ax.imshow(img)
 
                 # Task-specific visualization
-                if self.task_type == 'detect':
+                if self.task_type == "detect":
                     self._plot_detection(ax, result)
-                elif self.task_type == 'classify':
+                elif self.task_type == "classify":
                     self._plot_classification(ax, result)
-                elif self.task_type == 'segment':
+                elif self.task_type == "segment":
                     self._plot_segmentation(ax, result, img)
 
-                ax.set_title(
-                    f"YOLO {self.task_type.title()} Predictions - Image {i+1}")
-                ax.axis('off')
+                ax.set_title(f"YOLO {self.task_type.title()} Predictions - Image {i + 1}")
+                ax.axis("off")
 
                 # Save plot if requested
                 if save_path:
@@ -299,7 +312,7 @@ class YOLOModel(StandaloneBase):
                         final_path = target_dir / filename
                     else:
                         final_path = base_path
-                    plt.savefig(final_path, bbox_inches='tight', dpi=150)
+                    plt.savefig(final_path, bbox_inches="tight", dpi=150)
 
                 # Show plot if requested
                 if show:
@@ -313,7 +326,7 @@ class YOLOModel(StandaloneBase):
 
     def _plot_detection(self, ax, result):
         """Plot detection results (bounding boxes)."""
-        viz_config = self.config.get('visualization', {})
+        viz_config = self.config.get("visualization", {})
 
         if result.boxes is not None and len(result.boxes) > 0:
             boxes = result.boxes.xyxy.cpu().numpy()  # x1, y1, x2, y2
@@ -326,34 +339,39 @@ class YOLOModel(StandaloneBase):
                 height = y2 - y1
 
                 # Create rectangle
-                rect = patches.Rectangle((x1, y1), width, height,
-                                         linewidth=viz_config.get(
-                                             'box_thickness', 2),
-                                         edgecolor=viz_config.get(
-                                             'box_color', 'red'),
-                                         facecolor='none')
+                rect = patches.Rectangle(
+                    (x1, y1),
+                    width,
+                    height,
+                    linewidth=viz_config.get("box_thickness", 2),
+                    edgecolor=viz_config.get("box_color", "red"),
+                    facecolor="none",
+                )
                 ax.add_patch(rect)
 
                 # Add label
-                if viz_config.get('show_labels', True):
-                    class_name = self.class_names[
-                        cls] if cls in self.class_names else f"Class {cls}"
-                    if viz_config.get('show_conf', True):
+                if viz_config.get("show_labels", True):
+                    class_name = self.class_names[cls] if cls in self.class_names else f"Class {cls}"
+                    if viz_config.get("show_conf", True):
                         label = f"{class_name}: {conf:.2f}"
                     else:
                         label = class_name
 
-                    ax.text(x1, y1 - 5, label,
-                            fontsize=viz_config.get('font_size', 10),
-                            color=viz_config.get('label_color', 'red'),
-                            bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
+                    ax.text(
+                        x1,
+                        y1 - 5,
+                        label,
+                        fontsize=viz_config.get("font_size", 10),
+                        color=viz_config.get("label_color", "red"),
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8),
+                    )
 
     def _plot_classification(self, ax, result):
         """Plot classification results."""
-        viz_config = self.config.get('visualization', {})
+        viz_config = self.config.get("visualization", {})
 
         if result.probs is not None:
-            top_k = viz_config.get('top_k', 5)
+            top_k = viz_config.get("top_k", 5)
             top_indices = result.probs.top5
             top_confidences = result.probs.top5conf
 
@@ -362,41 +380,42 @@ class YOLOModel(StandaloneBase):
             for i, (idx, conf) in enumerate(zip(top_indices, top_confidences)):
                 if i >= top_k:
                     break
-                class_name = self.class_names[
-                    idx] if idx in self.class_names else f"Class {idx}"
-                text_lines.append(f"{i+1}. {class_name}: {conf:.3f}")
+                class_name = self.class_names[idx] if idx in self.class_names else f"Class {idx}"
+                text_lines.append(f"{i + 1}. {class_name}: {conf:.3f}")
 
             # Add text box
             text_str = "\n".join(text_lines)
-            ax.text(0.02, 0.98, text_str, transform=ax.transAxes,
-                    fontsize=viz_config.get('font_size', 12),
-                    color=viz_config.get('label_color', 'blue'),
-                    verticalalignment='top',
-                    bbox=dict(boxstyle="round,pad=0.5", facecolor='white', alpha=0.8))
+            ax.text(
+                0.02,
+                0.98,
+                text_str,
+                transform=ax.transAxes,
+                fontsize=viz_config.get("font_size", 12),
+                color=viz_config.get("label_color", "blue"),
+                verticalalignment="top",
+                bbox=dict(boxstyle="round,pad=0.5", facecolor="white", alpha=0.8),
+            )
 
     def _plot_segmentation(self, ax, result, img):
         """Plot segmentation results (masks + bounding boxes)."""
-        viz_config = self.config.get('visualization', {})
+        viz_config = self.config.get("visualization", {})
 
         # Plot masks if available
-        if result.masks is not None and len(result.masks) > 0 and viz_config.get('show_masks', True):
+        if result.masks is not None and len(result.masks) > 0 and viz_config.get("show_masks", True):
             masks = result.masks.data.cpu().numpy()
             for mask in masks:
                 # Resize mask to match original image dimensions
                 if mask.shape != img.shape[:2]:
-                    mask_resized = cv2.resize(
-                        mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    mask_resized = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
                 else:
                     mask_resized = mask
 
                 # Create colored mask
                 colored_mask = np.zeros((*mask_resized.shape, 4))
-                colored_mask[:, :, 3] = mask_resized * \
-                    viz_config.get('mask_alpha', 0.5)  # Alpha channel
+                colored_mask[:, :, 3] = mask_resized * viz_config.get("mask_alpha", 0.5)  # Alpha channel
                 colored_mask[:, :, 0] = mask_resized  # Red channel
 
-                ax.imshow(colored_mask, alpha=viz_config.get(
-                    'mask_alpha', 0.5))
+                ax.imshow(colored_mask, alpha=viz_config.get("mask_alpha", 0.5))
 
         # Plot bounding boxes (same as detection)
         self._plot_detection(ax, result)
@@ -428,10 +447,7 @@ class YOLOModel(StandaloneBase):
             Dictionary containing model information
         """
         if not self.is_loaded:
-            return {
-                "is_loaded": False,
-                "error": "Model not loaded"
-            }
+            return {"is_loaded": False, "error": "Model not loaded"}
 
         info = {
             "model_name": self.model_name,
@@ -440,7 +456,7 @@ class YOLOModel(StandaloneBase):
             "num_classes": len(self.class_names) if self.class_names else 0,
             "class_names": list(self.class_names.values()) if self.class_names else [],
             "model_type": type(self.model).__name__ if self.model else None,
-            "config": self.config
+            "config": self.config,
         }
 
         return info

@@ -48,7 +48,7 @@ class TestYOLOModel:
         # Teardown - cleanup any temporary files if needed
         pass
 
-    def create_test_image(self, size=(640, 640), color='RGB'):
+    def create_test_image(self, size=(640, 640), color="RGB"):
         """Create a test image for testing."""
         return Image.new(color, size)
 
@@ -57,102 +57,98 @@ class TestYOLOModel:
         # Test detection model initialization
         yolo_detect = YOLOModel("yolov8n.pt")
         assert yolo_detect.model_name == "yolov8n.pt"
-        assert yolo_detect.config['task'] == 'detect'
+        assert yolo_detect.config["task"] == "detect"
 
         # Test classification model initialization
         yolo_cls = YOLOModel("yolov8n-cls.pt")
         assert yolo_cls.model_name == "yolov8n-cls.pt"
-        assert yolo_cls.config['task'] == 'classify'
+        assert yolo_cls.config["task"] == "classify"
 
         # Test segmentation model initialization
         yolo_seg = YOLOModel("yolov8n-seg.pt")
         assert yolo_seg.model_name == "yolov8n-seg.pt"
-        assert yolo_seg.config['task'] == 'segment'
+        assert yolo_seg.config["task"] == "segment"
 
     def test_config_loading(self):
         """Test configuration loading from files."""
         yolo = YOLOModel("yolov8n.pt")
 
         # Test that config is loaded correctly
-        assert 'task' in yolo.config
-        assert 'conf' in yolo.config
-        assert 'visualization' in yolo.config
-        assert yolo.config['task'] == 'detect'
-        assert yolo.config['conf'] == 0.25
+        assert "task" in yolo.config
+        assert "conf" in yolo.config
+        assert "visualization" in yolo.config
+        assert yolo.config["task"] == "detect"
+        assert yolo.config["conf"] == 0.25
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_detection_model_loading(self, mock_yolo):
         """Test detection model loading."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'detect'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "detect"
         mock_yolo.return_value = mock_model
 
         yolo = YOLOModel("yolov8n.pt")
         yolo.load_model()
 
         assert yolo.is_loaded is True
-        assert yolo.task_type == 'detect'
-        assert yolo.class_names == {0: 'person', 1: 'bicycle', 2: 'car'}
+        assert yolo.task_type == "detect"
+        assert yolo.class_names == {0: "person", 1: "bicycle", 2: "car"}
         mock_yolo.assert_called_once_with("yolov8n.pt")
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_classification_model_loading(self, mock_yolo):
         """Test classification model loading."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'cat', 1: 'dog', 2: 'bird'}
-        mock_model.task = 'classify'
+        mock_model.names = {0: "cat", 1: "dog", 2: "bird"}
+        mock_model.task = "classify"
         mock_yolo.return_value = mock_model
 
         yolo = YOLOModel("yolov8n-cls.pt")
         yolo.load_model()
 
         assert yolo.is_loaded is True
-        assert yolo.task_type == 'classify'
-        assert yolo.class_names == {0: 'cat', 1: 'dog', 2: 'bird'}
+        assert yolo.task_type == "classify"
+        assert yolo.class_names == {0: "cat", 1: "dog", 2: "bird"}
         mock_yolo.assert_called_once_with("yolov8n-cls.pt")
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_segmentation_model_loading(self, mock_yolo):
         """Test segmentation model loading."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'segment'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "segment"
         mock_yolo.return_value = mock_model
 
         yolo = YOLOModel("yolov8n-seg.pt")
         yolo.load_model()
 
         assert yolo.is_loaded is True
-        assert yolo.task_type == 'segment'
-        assert yolo.class_names == {0: 'person', 1: 'bicycle', 2: 'car'}
+        assert yolo.task_type == "segment"
+        assert yolo.class_names == {0: "person", 1: "bicycle", 2: "car"}
         mock_yolo.assert_called_once_with("yolov8n-seg.pt")
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_detection_prediction(self, mock_yolo):
         """Test detection prediction."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'detect'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "detect"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.boxes = MagicMock()
         mock_result.boxes.xyxy = MagicMock()
-        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([
-                                                                              [10, 10, 50, 50]])
+        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([[10, 10, 50, 50]])
         mock_result.boxes.conf = MagicMock()
-        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([
-                                                                              0.8])
+        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([0.8])
         mock_result.boxes.cls = MagicMock()
-        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([
-                                                                             0])
-        mock_result.orig_img = np.random.randint(
-            0, 255, (640, 640, 3), dtype=np.uint8)
+        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([0])
+        mock_result.orig_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -168,21 +164,20 @@ class TestYOLOModel:
         assert results[0] == mock_result
         mock_model.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_classification_prediction(self, mock_yolo):
         """Test classification prediction."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'cat', 1: 'dog', 2: 'bird'}
-        mock_model.task = 'classify'
+        mock_model.names = {0: "cat", 1: "dog", 2: "bird"}
+        mock_model.task = "classify"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.probs = MagicMock()
         mock_result.probs.top5 = [0, 1, 2, 3, 4]
         mock_result.probs.top5conf = [0.9, 0.8, 0.7, 0.6, 0.5]
-        mock_result.orig_img = np.random.randint(
-            0, 255, (224, 224, 3), dtype=np.uint8)
+        mock_result.orig_img = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -198,32 +193,27 @@ class TestYOLOModel:
         assert results[0] == mock_result
         mock_model.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_segmentation_prediction(self, mock_yolo):
         """Test segmentation prediction."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'segment'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "segment"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.boxes = MagicMock()
         mock_result.boxes.xyxy = MagicMock()
-        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([
-                                                                              [10, 10, 50, 50]])
+        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([[10, 10, 50, 50]])
         mock_result.boxes.conf = MagicMock()
-        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([
-                                                                              0.8])
+        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([0.8])
         mock_result.boxes.cls = MagicMock()
-        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([
-                                                                             0])
+        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([0])
         mock_result.masks = MagicMock()
         mock_result.masks.data = MagicMock()
-        mock_result.masks.data.cpu.return_value.numpy.return_value = np.random.rand(
-            1, 640, 640)
-        mock_result.orig_img = np.random.randint(
-            0, 255, (640, 640, 3), dtype=np.uint8)
+        mock_result.masks.data.cpu.return_value.numpy.return_value = np.random.rand(1, 640, 640)
+        mock_result.orig_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -239,30 +229,26 @@ class TestYOLOModel:
         assert results[0] == mock_result
         mock_model.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
-    @patch('matplotlib.pyplot.show')
-    @patch('matplotlib.pyplot.savefig')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
+    @patch("matplotlib.pyplot.show")
+    @patch("matplotlib.pyplot.savefig")
     def test_detection_plotting(self, mock_savefig, mock_show, mock_yolo):
         """Test detection plotting and saving."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'detect'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "detect"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.boxes = MagicMock()
         mock_result.boxes.xyxy = MagicMock()
-        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([
-                                                                              [10, 10, 50, 50]])
+        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([[10, 10, 50, 50]])
         mock_result.boxes.conf = MagicMock()
-        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([
-                                                                              0.8])
+        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([0.8])
         mock_result.boxes.cls = MagicMock()
-        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([
-                                                                             0])
-        mock_result.orig_img = np.random.randint(
-            0, 255, (640, 640, 3), dtype=np.uint8)
+        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([0])
+        mock_result.orig_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -279,23 +265,22 @@ class TestYOLOModel:
         # Verify plot was saved
         mock_savefig.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
-    @patch('matplotlib.pyplot.show')
-    @patch('matplotlib.pyplot.savefig')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
+    @patch("matplotlib.pyplot.show")
+    @patch("matplotlib.pyplot.savefig")
     def test_classification_plotting(self, mock_savefig, mock_show, mock_yolo):
         """Test classification plotting and saving."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'cat', 1: 'dog', 2: 'bird'}
-        mock_model.task = 'classify'
+        mock_model.names = {0: "cat", 1: "dog", 2: "bird"}
+        mock_model.task = "classify"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.probs = MagicMock()
         mock_result.probs.top5 = [0, 1, 2, 3, 4]
         mock_result.probs.top5conf = [0.9, 0.8, 0.7, 0.6, 0.5]
-        mock_result.orig_img = np.random.randint(
-            0, 255, (224, 224, 3), dtype=np.uint8)
+        mock_result.orig_img = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -312,34 +297,29 @@ class TestYOLOModel:
         # Verify plot was saved
         mock_savefig.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
-    @patch('matplotlib.pyplot.show')
-    @patch('matplotlib.pyplot.savefig')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
+    @patch("matplotlib.pyplot.show")
+    @patch("matplotlib.pyplot.savefig")
     def test_segmentation_plotting(self, mock_savefig, mock_show, mock_yolo):
         """Test segmentation plotting and saving."""
         # Mock the YOLO model and results
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'segment'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "segment"
 
         # Mock prediction results
         mock_result = MagicMock()
         mock_result.boxes = MagicMock()
         mock_result.boxes.xyxy = MagicMock()
-        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([
-                                                                              [10, 10, 50, 50]])
+        mock_result.boxes.xyxy.cpu.return_value.numpy.return_value = np.array([[10, 10, 50, 50]])
         mock_result.boxes.conf = MagicMock()
-        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([
-                                                                              0.8])
+        mock_result.boxes.conf.cpu.return_value.numpy.return_value = np.array([0.8])
         mock_result.boxes.cls = MagicMock()
-        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([
-                                                                             0])
+        mock_result.boxes.cls.cpu.return_value.numpy.return_value = np.array([0])
         mock_result.masks = MagicMock()
         mock_result.masks.data = MagicMock()
-        mock_result.masks.data.cpu.return_value.numpy.return_value = np.random.rand(
-            1, 640, 640)
-        mock_result.orig_img = np.random.randint(
-            0, 255, (640, 640, 3), dtype=np.uint8)
+        mock_result.masks.data.cpu.return_value.numpy.return_value = np.random.rand(1, 640, 640)
+        mock_result.orig_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
 
         mock_model.return_value = [mock_result]
         mock_yolo.return_value = mock_model
@@ -356,13 +336,13 @@ class TestYOLOModel:
         # Verify plot was saved
         mock_savefig.assert_called_once()
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_detection_training(self, mock_yolo):
         """Test detection training for 1 epoch."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'detect'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "detect"
 
         # Mock training results
         mock_training_result = MagicMock()
@@ -378,18 +358,18 @@ class TestYOLOModel:
         # Verify training was called
         mock_model.train.assert_called_once()
         call_args = mock_model.train.call_args
-        assert call_args[1]['epochs'] == 1
-        assert call_args[1]['data'] == "coco128.yaml"
+        assert call_args[1]["epochs"] == 1
+        assert call_args[1]["data"] == "coco128.yaml"
 
         assert results == mock_training_result
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_classification_training(self, mock_yolo):
         """Test classification training for 1 epoch."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'cat', 1: 'dog', 2: 'bird'}
-        mock_model.task = 'classify'
+        mock_model.names = {0: "cat", 1: "dog", 2: "bird"}
+        mock_model.task = "classify"
 
         # Mock training results
         mock_training_result = MagicMock()
@@ -405,18 +385,18 @@ class TestYOLOModel:
         # Verify training was called
         mock_model.train.assert_called_once()
         call_args = mock_model.train.call_args
-        assert call_args[1]['epochs'] == 1
-        assert call_args[1]['data'] == "imagenet"
+        assert call_args[1]["epochs"] == 1
+        assert call_args[1]["data"] == "imagenet"
 
         assert results == mock_training_result
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_segmentation_training(self, mock_yolo):
         """Test segmentation training for 1 epoch."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'segment'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "segment"
 
         # Mock training results
         mock_training_result = MagicMock()
@@ -432,8 +412,8 @@ class TestYOLOModel:
         # Verify training was called
         mock_model.train.assert_called_once()
         call_args = mock_model.train.call_args
-        assert call_args[1]['epochs'] == 1
-        assert call_args[1]['data'] == "coco128-seg.yaml"
+        assert call_args[1]["epochs"] == 1
+        assert call_args[1]["data"] == "coco128-seg.yaml"
 
         assert results == mock_training_result
 
@@ -443,23 +423,23 @@ class TestYOLOModel:
 
         # Test before loading
         info = yolo.get_model_info()
-        assert info['is_loaded'] is False
-        assert 'error' in info
+        assert info["is_loaded"] is False
+        assert "error" in info
 
         # Test after loading (mocked)
-        with patch('mindtrace.models.standalone.yolo.yolo.YOLO') as mock_yolo:
+        with patch("mindtrace.models.standalone.yolo.yolo.YOLO") as mock_yolo:
             mock_model = MagicMock()
-            mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-            mock_model.task = 'detect'
+            mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+            mock_model.task = "detect"
             mock_yolo.return_value = mock_model
 
             yolo.load_model()
             info = yolo.get_model_info()
 
-            assert info['is_loaded'] is True
-            assert info['task_type'] == 'detect'
-            assert info['num_classes'] == 3
-            assert 'config' in info
+            assert info["is_loaded"] is True
+            assert info["task_type"] == "detect"
+            assert info["num_classes"] == 3
+            assert "config" in info
 
     def test_config_management(self):
         """Test configuration management methods."""
@@ -467,32 +447,31 @@ class TestYOLOModel:
 
         # Test getting config
         config = yolo.get_config()
-        assert 'task' in config
-        assert config['task'] == 'detect'
+        assert "task" in config
+        assert config["task"] == "detect"
 
         # Test setting config
-        custom_config_path = os.path.join(
-            os.path.dirname(__file__), "test_config.yaml")
-        with open(custom_config_path, 'w') as f:
+        custom_config_path = os.path.join(os.path.dirname(__file__), "test_config.yaml")
+        with open(custom_config_path, "w") as f:
             f.write("task: detect\nconf: 0.5\nimgsz: 512\n")
 
         try:
             yolo.set_config(custom_config_path)
             config = yolo.get_config()
-            assert config['conf'] == 0.5
-            assert config['imgsz'] == 512
+            assert config["conf"] == 0.5
+            assert config["imgsz"] == 512
         finally:
             # Cleanup
             if os.path.exists(custom_config_path):
                 os.remove(custom_config_path)
 
-    @patch('mindtrace.models.standalone.yolo.yolo.YOLO')
+    @patch("mindtrace.models.standalone.yolo.yolo.YOLO")
     def test_export_model(self, mock_yolo):
         """Test model export functionality."""
         # Mock the YOLO model
         mock_model = MagicMock()
-        mock_model.names = {0: 'person', 1: 'bicycle', 2: 'car'}
-        mock_model.task = 'detect'
+        mock_model.names = {0: "person", 1: "bicycle", 2: "car"}
+        mock_model.task = "detect"
         mock_model.export.return_value = "/path/to/exported_model.onnx"
         mock_yolo.return_value = mock_model
 
