@@ -781,3 +781,421 @@ class TestQueryDataIntegration:
 
         with pytest.raises(ValueError, match="Invalid strategy: missing"):
             await datalake.query_data(query)
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_incomplete_derived_data(self, datalake):
+        """Test datums_wanted parameter when some entries don't have all derived data."""
+        # Add base images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)  # Ensure different timestamps
+
+        # Add classification labels only for first 3 images
+        labels = []
+        for i in range(3):
+            label = await datalake.add_datum(
+                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                metadata={"model": "resnet50"},
+                derived_from=images[i].id,
+            )
+            labels.append(label)
+
+        # Query with datums_wanted=4 and multi-query
+        # This should return only 3 results (the ones with classification labels)
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+        ]
+        result = await datalake.query_data(query, datums_wanted=4)
+
+        # Should return only 3 results (not 4) because only 3 images have classification labels
+        assert len(result) == 3
+        assert all(isinstance(row, dict) for row in result)
+
+        # Verify relationships - all results should have both image_id and label_id
+        for row in result:
+            image_id = row["image_id"]
+            label_id = row["label_id"]
+            assert image_id in [img.id for img in images[:3]]  # Only first 3 images
+            assert label_id in [label.id for label in labels]
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, datums_wanted=4, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert "label_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 3
+        assert len(result_transposed["label_id"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_partial_derived_data_complex(self, datalake):
+        """Test datums_wanted with complex scenario where some entries have partial derived data."""
+        # Add base images
+        images = []
+        for i in range(6):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)
+
+        # Add classification labels for images 0, 1, 2, 4 (skip 3 and 5)
+        classification_labels = []
+        for i in [0, 1, 2, 4]:
+            label = await datalake.add_datum(
+                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                metadata={"model": "resnet50"},
+                derived_from=images[i].id,
+            )
+            classification_labels.append(label)
+
+        # Add bounding boxes only for images 0, 2 (subset of those with classifications)
+        bbox_labels = []
+        for i in [0, 2]:
+            bbox = await datalake.add_datum(
+                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                metadata={"model": "yolo"},
+                derived_from=classification_labels[i].id if i < 3 else classification_labels[i-1].id,
+            )
+            bbox_labels.append(bbox)
+
+        # Query with datums_wanted=5 and multi-query chain
+        # This should return only 2 results (images 0 and 2) because only they have both classification and bbox
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+        ]
+        result = await datalake.query_data(query, datums_wanted=5)
+
+        # Should return only 2 results (not 5) because only 2 images have complete derivation chain
+        assert len(result) == 2
+        assert all(isinstance(row, dict) for row in result)
+
+        # Verify all results have complete chain
+        for row in result:
+            image_id = row["image_id"]
+            label_id = row["label_id"]
+            bbox_id = row["bbox_id"]
+            assert image_id in [images[0].id, images[2].id]
+            assert label_id in [label.id for label in classification_labels]
+            assert bbox_id in [bbox.id for bbox in bbox_labels]
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_missing_strategy(self, datalake):
+        """Test datums_wanted with missing strategy to find entries without derived data."""
+        # Add base images
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)
+
+        # Add classification labels only for images 0, 2, 4
+        for i in [0, 2, 4]:
+            await datalake.add_datum(
+                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                metadata={"model": "resnet50"},
+                derived_from=images[i].id,
+            )
+
+        # Query for images that don't have classification labels, with datums_wanted=3
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
+        ]
+        result = await datalake.query_data(query, datums_wanted=3)
+
+        # Should return 2 results (images 1 and 3) because they don't have classification labels
+        assert len(result) == 2
+        assert all(isinstance(row, dict) for row in result)
+
+        result_ids = [row["image_id"] for row in result]
+        expected_ids = [images[1].id, images[3].id]
+        assert set(result_ids) == set(expected_ids)
+
+    @pytest.mark.asyncio
+    async def test_datums_wanted_with_quickest_strategy(self, datalake):
+        """Test datums_wanted with quickest strategy (no sorting, takes first entries)."""
+        # Add base images with different timestamps
+        images = []
+        for i in range(5):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)  # Ensure different timestamps
+
+        # Query with quickest strategy and datums_wanted=3
+        query = [{"metadata.project": "test_project", "strategy": "quickest", "column": "image_id"}]
+        result = await datalake.query_data(query, datums_wanted=3)
+
+        # Should return exactly 3 results
+        assert len(result) == 3
+        assert all(isinstance(row, dict) for row in result)
+
+        # With quickest strategy, should get the first 3 entries as they come from database
+        # (no sorting applied)
+        result_ids = [row["image_id"] for row in result]
+        assert len(result_ids) == 3
+        assert all(rid in [img.id for img in images] for rid in result_ids)
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, datums_wanted=3, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_multi_query_with_strategy_quickest(self, datalake):
+        """Test multi-query with quickest strategy selects first entry without sorting."""
+        # Add base image
+        image = await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
+        )
+
+        # Add multiple classification labels with different timestamps
+        await asyncio.sleep(0.01)
+        old_label = await datalake.add_datum(
+            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            metadata={"model": "old_model"},
+            derived_from=image.id,
+        )
+        await asyncio.sleep(0.01)
+        new_label = await datalake.add_datum(
+            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            metadata={"model": "new_model"},
+            derived_from=image.id,
+        )
+        assert old_label.id != new_label.id
+
+        # Query with quickest strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result with the first label (database order, not sorted by timestamp)
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
+        assert image_id == image.id
+        # The exact label depends on database order, but should be one of the two
+        assert label_id in [old_label.id, new_label.id]
+
+        # Test transpose=True
+        result_transposed = await datalake.query_data(query, transpose=True)
+        assert isinstance(result_transposed, dict)
+        assert "image_id" in result_transposed
+        assert "label_id" in result_transposed
+        assert len(result_transposed["image_id"]) == 1
+        assert len(result_transposed["label_id"]) == 1
+        assert result_transposed["image_id"][0] == image.id
+        assert result_transposed["label_id"][0] in [old_label.id, new_label.id]
+
+    @pytest.mark.asyncio
+    async def test_quickest_strategy_with_multiple_base_entries(self, datalake):
+        """Test quickest strategy with multiple base entries."""
+        # Add multiple images
+        images = []
+        for i in range(4):
+            image = await datalake.add_datum(
+                data={"type": "image", "filename": f"test{i}.jpg"}, metadata={"project": "test_project"}
+            )
+            images.append(image)
+            await asyncio.sleep(0.01)  # Ensure different timestamps
+
+        # Query with quickest strategy and datums_wanted=3
+        query = [{"metadata.project": "test_project", "strategy": "quickest", "column": "image_id"}]
+        result = await datalake.query_data(query, datums_wanted=3)
+
+        # Should return exactly 3 results (first 3 in database order)
+        assert len(result) == 3
+        assert all(isinstance(row, dict) for row in result)
+
+        result_ids = [row["image_id"] for row in result]
+        assert len(result_ids) == 3
+        assert all(rid in [img.id for img in images] for rid in result_ids)
+
+    @pytest.mark.asyncio
+    async def test_quickest_strategy_with_derived_data_chain(self, datalake):
+        """Test quickest strategy with multi-level derivation chain."""
+        # Add base image
+        image = await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
+        )
+
+        # Add multiple classification labels
+        await asyncio.sleep(0.01)
+        label1 = await datalake.add_datum(
+            data={"type": "classification", "label": "label1", "confidence": 0.7},
+            metadata={"model": "model1"},
+            derived_from=image.id,
+        )
+        await asyncio.sleep(0.01)
+        label2 = await datalake.add_datum(
+            data={"type": "classification", "label": "label2", "confidence": 0.8},
+            metadata={"model": "model2"},
+            derived_from=image.id,
+        )
+
+        # Add bounding boxes derived from each label
+        bbox1 = await datalake.add_datum(
+            data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+            metadata={"model": "yolo"},
+            derived_from=label1.id,
+        )
+        bbox2 = await datalake.add_datum(
+            data={"type": "bbox", "x": 30, "y": 40, "width": 120, "height": 90},
+            metadata={"model": "yolo"},
+            derived_from=label2.id,
+        )
+
+        # Query with quickest strategy for both levels
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "label_id", "data.type": "bbox", "strategy": "quickest", "column": "bbox_id"},
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return 1 result with complete chain
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
+        bbox_id = result[0]["bbox_id"]
+
+        assert image_id == image.id
+        # Should be one of the labels (first in database order)
+        assert label_id in [label1.id, label2.id]
+        # Should be the bbox derived from the selected label
+        if label_id == label1.id:
+            assert bbox_id == bbox1.id
+        else:
+            assert bbox_id == bbox2.id
+
+    @pytest.mark.asyncio
+    async def test_quickest_strategy_with_missing_derived_data(self, datalake):
+        """Test quickest strategy when some entries don't have derived data."""
+        # Add base images
+        image1 = await datalake.add_datum(
+            data={"type": "image", "filename": "test1.jpg"}, metadata={"project": "test_project"}
+        )
+        image2 = await datalake.add_datum(
+            data={"type": "image", "filename": "test2.jpg"}, metadata={"project": "test_project"}
+        )
+
+        # Add classification label only for image1
+        label1 = await datalake.add_datum(
+            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            metadata={"model": "resnet50"},
+            derived_from=image1.id,
+        )
+
+        # Query with quickest strategy
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+        ]
+        result = await datalake.query_data(query)
+
+        # Should return only 1 result (image1 with its label)
+        # image2 should be excluded because it has no classification
+        assert len(result) == 1
+        assert isinstance(result[0], dict)
+        image_id = result[0]["image_id"]
+        label_id = result[0]["label_id"]
+        assert image_id == image1.id
+        assert label_id == label1.id
+
+    @pytest.mark.asyncio
+    async def test_quickest_strategy_comparison_with_other_strategies(self, datalake):
+        """Test that quickest strategy behaves differently from latest/earliest strategies."""
+        # Add base image
+        image = await datalake.add_datum(
+            data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
+        )
+
+        # Add multiple classification labels with different timestamps
+        await asyncio.sleep(0.01)
+        old_label = await datalake.add_datum(
+            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            metadata={"model": "old_model"},
+            derived_from=image.id,
+        )
+        await asyncio.sleep(0.01)
+        new_label = await datalake.add_datum(
+            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            metadata={"model": "new_model"},
+            derived_from=image.id,
+        )
+
+        # Test with latest strategy
+        query_latest = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
+        ]
+        result_latest = await datalake.query_data(query_latest)
+
+        # Test with earliest strategy
+        query_earliest = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"},
+        ]
+        result_earliest = await datalake.query_data(query_earliest)
+
+        # Test with quickest strategy
+        query_quickest = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+        ]
+        result_quickest = await datalake.query_data(query_quickest)
+
+        # All should return 1 result
+        assert len(result_latest) == 1
+        assert len(result_earliest) == 1
+        assert len(result_quickest) == 1
+
+        # Latest should select new_label (most recent)
+        assert result_latest[0]["label_id"] == new_label.id
+
+        # Earliest should select old_label (oldest)
+        assert result_earliest[0]["label_id"] == old_label.id
+
+        # Quickest should select based on database order (could be either)
+        assert result_quickest[0]["label_id"] in [old_label.id, new_label.id]
+
+    @pytest.mark.asyncio
+    async def test_quickest_strategy_with_registry_data(self, datalake, temp_registry_dir):
+        """Test quickest strategy with data stored in registry."""
+        # Add data stored in registry
+        registry_uri = temp_registry_dir
+        datum1 = await datalake.add_datum(
+            data={"type": "large_image", "filename": "large1.jpg", "pixels": "x" * 1000},
+            metadata={"project": "test_project", "storage": "registry"},
+            registry_uri=registry_uri,
+        )
+        datum2 = await datalake.add_datum(
+            data={"type": "large_image", "filename": "large2.jpg", "pixels": "y" * 1000},
+            metadata={"project": "test_project", "storage": "registry"},
+            registry_uri=registry_uri,
+        )
+
+        # Query with quickest strategy
+        query = [{"metadata.project": "test_project", "metadata.storage": "registry", "strategy": "quickest", "column": "image_id"}]
+        result = await datalake.query_data(query)
+
+        # Should return 2 results
+        assert len(result) == 2
+        result_ids = [row["image_id"] for row in result]
+        assert datum1.id in result_ids
+        assert datum2.id in result_ids

@@ -228,6 +228,7 @@ class Datalake(Mindtrace):
                 - "latest": The data/datum with the latest added_at timestamp
                 - "earliest": The data/datum with the earliest added_at timestamp
                 - "random": Randomly selected data/datum
+                - "quickest": The first data/datum we find (so "quickest" to run)
                 For these three strategies, if no data is found, the entire row (including the base datum) is not included in the result.
                 - "missing": if any data is found, the entire row (including the base datum) is not included in the result.
                   This allows us to search for "images we haven't classified yet", for instance.
@@ -264,13 +265,13 @@ class Datalake(Mindtrace):
         if datums_wanted is not None:
             assert datums_wanted > 0, "datums_wanted must be greater than 0"
             if base_strategy == "latest":
-                entries = sorted(entries, key=lambda x: x.added_at)[
-                    -datums_wanted:
-                ]  # I believe entries starts approximately sorted by added_at
+                entries = sorted(entries, key=lambda x: x.added_at, reverse=True)
             elif base_strategy == "earliest":
-                entries = sorted(entries, key=lambda x: x.added_at)[:datums_wanted]
+                entries = sorted(entries, key=lambda x: x.added_at)
             elif base_strategy == "random":
-                entries = random.sample(entries, datums_wanted)
+                random.shuffle(entries)
+            elif base_strategy == "quickest":
+                pass
             else:
                 raise ValueError(f"Invalid strategy: {base_strategy}")  # pragma: no cover
 
@@ -300,6 +301,8 @@ class Datalake(Mindtrace):
                     this_entry[column] = min(subquery_entries, key=lambda x: x.added_at).id
                 elif strategy == "random":
                     this_entry[column] = random.choice(subquery_entries).id
+                elif strategy == "quickest":
+                    this_entry[column] = subquery_entries[0].id
                 elif strategy == "missing":
                     pass
                 else:
@@ -308,6 +311,8 @@ class Datalake(Mindtrace):
                 for key, value in this_entry.items():
                     result_dict[key].append(value)
                 result_list.append(this_entry)
+            if datums_wanted is not None and len(result_list) >= datums_wanted:
+                break
         if transpose:
             return result_dict
         else:
