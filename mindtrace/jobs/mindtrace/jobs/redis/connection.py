@@ -4,16 +4,16 @@ import time
 
 import redis
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.redis.priority import RedisPriorityQueue
 from mindtrace.jobs.redis.stack import RedisStack
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConnection(BrokerConnectionBase):
-    METADATA_KEY = "mtrix:queue_metadata"  # Centralized metadata key
-    EVENTS_CHANNEL = "mtrix:queue_events"  # Pub/Sub channel for queue events
+    METADATA_KEY = "mindtrace:queue_metadata"  # Centralized metadata key
+    EVENTS_CHANNEL = "mindtrace:queue_events"  # Pub/Sub channel for queue events
     """Singleton class for Redis connection.
     This class establishes and maintains a connection to the Redis server. It uses a retry loop and a PING command to
     verify connectivity.

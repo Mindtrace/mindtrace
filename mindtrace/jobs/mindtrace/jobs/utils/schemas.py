@@ -1,15 +1,7 @@
 import uuid
 from datetime import datetime
-from typing import TypeVar
 
 from mindtrace.jobs.types.job_specs import Job, JobSchema
-
-T = TypeVar("T")
-
-
-def ifnone(val: T | None, default: T) -> T:
-    """Return default if val is None, otherwise return val."""
-    return default if val is None else val
 
 
 def job_from_schema(schema: JobSchema, input_data) -> Job:
@@ -23,10 +15,10 @@ def job_from_schema(schema: JobSchema, input_data) -> Job:
         Job: A complete Job instance ready for submission
     """
 
-    if isinstance(input_data, schema.input):
+    if isinstance(input_data, schema.input_schema):
         payload = input_data
     else:
-        payload = schema.input(**input_data)
+        payload = schema.input_schema(**input_data)
 
     job = Job(
         id=str(uuid.uuid4()),

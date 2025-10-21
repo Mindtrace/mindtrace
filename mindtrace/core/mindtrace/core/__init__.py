@@ -4,6 +4,7 @@ from mindtrace.core.logging.logger import setup_logger
 from mindtrace.core.observables.context_listener import ContextListener
 from mindtrace.core.observables.event_bus import EventBus
 from mindtrace.core.observables.observable_context import ObservableContext
+from mindtrace.core.samples.echo_task import EchoInput, EchoOutput, echo_task
 from mindtrace.core.types.task_schema import TaskSchema
 from mindtrace.core.utils.checks import check_libs, first_not_none, ifnone, ifnone_url
 from mindtrace.core.utils.conversions import (
@@ -40,6 +41,9 @@ __all__ = [
     "CoreConfig",
     "cv2_to_pil",
     "discord_file_to_pil",
+    "EchoInput",
+    "EchoOutput",
+    "echo_task",
     "EventBus",
     "first_not_none",
     "get_class",
