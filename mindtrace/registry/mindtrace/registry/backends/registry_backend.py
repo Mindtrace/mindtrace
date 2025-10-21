@@ -107,7 +107,7 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """Check if a specific object version exists in the backend.
 
         Args:
-            model_name: Name of the model.
+            name: Name of the object.
             version: Version string.
 
         Returns:
