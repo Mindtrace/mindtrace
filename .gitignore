@@ -82,6 +82,37 @@ target/
 profile_default/
 ipython_config.py
 
+# Model files and weights
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.pb
+*.trt
+*.engine
+*.weights
+*.h5
+*.hdf5
+*.pkl
+*.model
+*.bin
+*.mlmodel
+*.caffemodel
+*.prototxt
+*.params
+*.json
+*.ckpt*
+*.meta
+*.index
+*.data*
+*.pb
+*.savedmodel
+
+# prediction plots
+saved_plots/
+
+# training runs
+runs/
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:

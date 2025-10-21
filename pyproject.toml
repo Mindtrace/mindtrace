@@ -26,6 +26,12 @@ dependencies = [
   "mindtrace-ui>=0.4.0",
   "mindtrace-datalake>=0.4.0",
   "mindtrace-storage>=0.4.0",
+  "transformers>=4.57.0",
+  "torch>=2.8.0",
+  "peft>=0.17.1",
+  "matplotlib>=3.10.7",
+  "pillow>=11.3.0",
+  "ultralytics>=8.3.213",
 ]
 
 [project.optional-dependencies]

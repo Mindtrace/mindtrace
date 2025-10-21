@@ -1,0 +1,59 @@
+# Detection Configuration
+task: detect
+model: yolov8n.pt
+imgsz: 640
+conf: 0.25
+iou: 0.7
+max_det: 300
+agnostic_nms: false
+half: false
+verbose: false
+
+# Visualization settings
+visualization:
+  show_boxes: true
+  show_labels: true
+  show_conf: true
+  box_color: red
+  label_color: red
+  box_thickness: 2
+  font_size: 10
+
+# Training settings
+batch: 16
+epochs: 100
+device: ""
+workers: 8
+project: runs/train
+name: exp
+exist_ok: false
+pretrained: true
+optimizer: auto
+seed: 0
+deterministic: true
+single_cls: false
+rect: false
+cos_lr: false
+close_mosaic: 10
+resume: false
+amp: true
+fraction: 1.0
+profile: false
+freeze: null
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+box: 7.5
+cls: 0.5
+dfl: 1.5
+pose: 12.0
+kobj: 2.0
+label_smoothing: 0.0
+nbs: 64
+overlap_mask: true
+mask_ratio: 4
+val: true
