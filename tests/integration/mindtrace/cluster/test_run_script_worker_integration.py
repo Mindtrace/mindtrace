@@ -22,8 +22,8 @@ def test_run_script_worker_simple():
         # Define job schema for run script worker
         sample_vbrain_schema = JobSchema(
             name="sample_vbrain",
-            input=RunScriptWorkerInput,
-            output=RunScriptWorkerOutput,
+            input_schema=RunScriptWorkerInput,
+            output_schema=RunScriptWorkerOutput,
         )
 
         # Register the worker type with the cluster
@@ -88,8 +88,8 @@ def test_run_script_worker_git_environment():
         # Define job schema for run script worker
         sample_vbrain_schema = JobSchema(
             name="sample_vbrain",
-            input=RunScriptWorkerInput,
-            output=RunScriptWorkerOutput,
+            input_schema=RunScriptWorkerInput,
+            output_schema=RunScriptWorkerOutput,
         )
 
         # Register the worker type with the cluster
@@ -159,8 +159,8 @@ def test_run_script_worker_docker_environment():
         # Define job schema for run script worker
         sample_vbrain_schema = JobSchema(
             name="sample_vbrain",
-            input=RunScriptWorkerInput,
-            output=RunScriptWorkerOutput,
+            input_schema=RunScriptWorkerInput,
+            output_schema=RunScriptWorkerOutput,
         )
 
         # Register the worker type with the cluster
@@ -232,8 +232,8 @@ def test_run_script_worker_both_environments():
         # Define job schema for run script worker
         sample_vbrain_schema = JobSchema(
             name="sample_vbrain",
-            input=RunScriptWorkerInput,
-            output=RunScriptWorkerOutput,
+            input_schema=RunScriptWorkerInput,
+            output_schema=RunScriptWorkerOutput,
         )
 
         # Register the worker type with the cluster

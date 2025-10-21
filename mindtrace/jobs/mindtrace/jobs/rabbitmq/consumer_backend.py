@@ -3,9 +3,9 @@ import time
 import traceback
 from typing import Optional
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RabbitMQConsumerBackend(ConsumerBackendBase):
