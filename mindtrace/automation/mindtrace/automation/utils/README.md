@@ -99,13 +99,48 @@ for feature in features:
     print(f"{feature.id}: {feature.status}")
     print(f"  Found: {feature.found_count}/{feature.expected_count}")
     print(f"  BBox: {feature.bbox}")
+
+# Detect from segmentation masks
+mask = model.predict(image)  # Returns HxW array where pixel values = class IDs
+features = detector.detect_from_segmentation_mask(
+    mask=mask,
+    class_id=1,  # Extract class 1 (e.g., defects)
+    camera_key='cam1'
+)
+
+# Resolution scaling for segmentation masks
+# Use when config annotations are at different resolution than model inference
+detector.set_resolution_scale(
+    config_resolution=(3536, 3536),  # Original annotation resolution
+    model_resolution=(640, 640)       # Model inference resolution
+)
+
+mask_640 = model.predict(resized_image)  # 640x640 mask
+features = detector.detect_from_segmentation_mask(
+    mask=mask_640,
+    class_id=1,
+    camera_key='cam1'
+)
+# Bboxes in features are automatically scaled back to 3536x3536
 ```
 
 **Detection Logic:**
+
+*For Bounding Boxes:*
 - **Overlap Matching**: Any prediction with overlap area > 0 with a configured ROI is a potential match
 - **Top-N Selection**: Selects predictions with largest overlap area, up to `expected_count`
 - **Union BBox**: Reports union bbox of all selected predictions for each feature
+
+*For Segmentation Masks:*
+- **Contour Extraction**: Uses cv2.findContours to extract regions for specified class ID
+- **ROI Matching**: Contours whose bounding rectangles intersect configured ROIs are potential matches
+- **Top-N Selection**: Selects largest contours (by area) within each ROI, up to `expected_count`
+- **Resolution Scaling**: Automatically handles coordinate conversion between config and model resolutions
+- **Noise Filtering**: Zero-area contours are automatically filtered out
+
+*Common Features:*
 - **Groups**: Features can be grouped to share the same union bbox (e.g., multiple features on a single component)
+- **Classification**: Optional rule-based classification applied to detected features
 
 ### 3. Feature Models
 
