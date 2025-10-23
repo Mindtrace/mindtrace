@@ -34,8 +34,11 @@ class LocalRegistryBackend(RegistryBackend):
 
         Args:
             uri (str | Path): The base directory path where all object files and metadata will be stored.
+                              Supports "file://" URI scheme which will be automatically stripped.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
+        if isinstance(uri, str) and uri.startswith("file://"):
+            uri = uri[len("file://"):]
         super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
