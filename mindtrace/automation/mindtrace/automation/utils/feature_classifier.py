@@ -11,16 +11,16 @@ class FeatureClassifier:
     
     Example config with classification rules:
         {
-            "Feature_1": {
+            "feature_1": {
                 "bbox": [100, 100, 200, 200],
                 "expected_count": 1,
-                "label": "weld",
+                "label": "defect",
                 "params": {"class_id": 0},
                 "classification_rules": [
                     {
                         "type": "length_threshold",
                         "min_length_px": 50,
-                        "fail_label": "Short"
+                        "fail_label": "TooShort"
                     }
                 ]
             }
@@ -86,7 +86,7 @@ class FeatureClassifier:
             - fail_label: Label to apply if below threshold (default: "Short")
         
         Example:
-            {"type": "length_threshold", "min_length_px": 50, "fail_label": "Short"}
+            {"type": "length_threshold", "min_length_px": 50, "fail_label": "TooShort"}
         """
         if not isinstance(feature.bbox, list) or len(feature.bbox) != 4:
             return None

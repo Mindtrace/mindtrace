@@ -1,8 +1,8 @@
 {
   "cam1": {
     "features": {
-      "W1": {
-        "label": "weld",
+      "feature_1": {
+        "label": "defect",
         "bbox": [100, 50, 180, 70],
         "expected_count": 1,
         "params": {},
@@ -10,12 +10,12 @@
           {
             "type": "length_threshold",
             "min_length_px": 50,
-            "fail_label": "Short"
+            "fail_label": "TooShort"
           }
         ]
       },
-      "W2": {
-        "label": "weld",
+      "feature_2": {
+        "label": "defect",
         "bbox": [100, 50, 180, 70],
         "expected_count": 1,
         "params": {},
@@ -23,24 +23,24 @@
           {
             "type": "length_threshold",
             "min_length_px": 50,
-            "fail_label": "Short"
+            "fail_label": "TooShort"
           }
         ]
       },
-      "H1": {
-        "label": "hole",
+      "item_A": {
+        "label": "item",
         "bbox": [200, 50, 230, 80],
         "expected_count": 1,
         "params": { "class_id": 2 },
         "classification_rules": []
       }
     },
-    "groups": [ ["W1", "W2"] ]
+    "groups": [ ["feature_1", "feature_2"] ]
   },
   "cam2": {
     "features": {
-      "W3": {
-        "label": "weld",
+      "feature_3": {
+        "label": "defect",
         "bbox": [50, 50, 100, 60],
         "expected_count": 1,
         "params": {},
@@ -48,7 +48,7 @@
           {
             "type": "length_threshold",
             "min_length_px": 60,
-            "fail_label": "Short"
+            "fail_label": "TooShort"
           }
         ]
       }

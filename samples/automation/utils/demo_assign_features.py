@@ -36,11 +36,11 @@ def run_boxes():
     # Each value is a NumPy array shaped (N, 4) with format [x1, y1, x2, y2]
     inputs = {
         "cam1": np.asarray([
-            [112, 55, 125, 65],          # weld W1 (overlaps ROI [100,50,180,70])
-            [150, 55, 165, 65],          # weld W2 (overlaps same ROI)
-            [205, 55, 225, 75],          # hole H1 (overlaps ROI [200,50,230,80])
+            [112, 55, 125, 65],          # feature_1 (overlaps ROI [100,50,180,70])
+            [150, 55, 165, 65],          # feature_2 (overlaps same ROI)
+            [205, 55, 225, 75],          # item_A (overlaps ROI [200,50,230,80])
         ]),
-        "cam2": np.asarray([]).reshape(0, 4)  # cam2: no detections → W3 missing
+        "cam2": np.asarray([]).reshape(0, 4)  # cam2: no detections → feature_3 missing
     }
 
     results = det.detect(inputs=inputs)
@@ -48,11 +48,11 @@ def run_boxes():
     
     # Explain what happened
     print("\nExplanation:")
-    print("- W1 and W2: Both found in cam1 (overlapping same ROI)")
-    print("- W1 and W2: Grouped together, so they share a union bbox")
-    print("- H1: Found in cam1 (separate ROI)")
-    print("- W3: Missing in cam2 (no boxes detected)")
-    print("- All welds are short (< threshold), so classified as 'Short'")
+    print("- feature_1 and feature_2: Both found in cam1 (overlapping same ROI)")
+    print("- feature_1 and feature_2: Grouped together, so they share a union bbox")
+    print("- item_A: Found in cam1 (separate ROI)")
+    print("- feature_3: Missing in cam2 (no boxes detected)")
+    print("- All defects are short (< threshold), so classified as 'TooShort'")
 
 
 def run_masks():
@@ -63,13 +63,13 @@ def run_masks():
 
     # Create test masks
     mask1 = np.zeros((200, 300), dtype=np.uint8)
-    # Draw two separate regions for welds (class_id=1, using default)
+    # Draw two separate regions for defects (class_id=1, using default)
     cv2.rectangle(mask1, (112, 55), (125, 65), color=1, thickness=-1)
     cv2.rectangle(mask1, (150, 55), (165, 65), color=1, thickness=-1)
-    # Draw hole region (class_id=2, specified in config)
+    # Draw item region (class_id=2, specified in config)
     cv2.rectangle(mask1, (205, 55), (225, 75), color=2, thickness=-1)
 
-    mask2 = np.zeros((200, 300), dtype=np.uint8)  # cam2: empty → W3 missing
+    mask2 = np.zeros((200, 300), dtype=np.uint8)  # cam2: empty → feature_3 missing
 
     inputs = {
         "cam1": mask1,
@@ -81,10 +81,10 @@ def run_masks():
     
     # Explain what happened
     print("\nExplanation:")
-    print("- W1 and W2: Both found as separate contours in cam1")
-    print("- W1 and W2: Grouped together with shared union bbox")
-    print("- H1: Found in cam1 (uses class_id=2 from config)")
-    print("- W3: Missing in cam2 (no mask pixels)")
+    print("- feature_1 and feature_2: Both found as separate contours in cam1")
+    print("- feature_1 and feature_2: Grouped together with shared union bbox")
+    print("- item_A: Found in cam1 (uses class_id=2 from config)")
+    print("- feature_3: Missing in cam2 (no mask pixels)")
 
 
 def run_overlap_test():
@@ -92,9 +92,9 @@ def run_overlap_test():
     print("\n\n### TESTING BBOX OVERLAP LOGIC ###")
     det = FeatureDetector(CONFIG_PATH)
     
-    print("\nROI for W1/W2: [100, 50, 180, 70]")
+    print("\nROI for feature_1/feature_2: [100, 50, 180, 70]")
     print("\nTest cases:")
-    
+
     test_cases = [
         {
             "name": "Full overlap",
@@ -117,15 +117,17 @@ def run_overlap_test():
             "expected": "Not found (no area overlap)"
         }
     ]
-    
+
     for test in test_cases:
         inputs = {"cam1": test["boxes"]}
         results = det.detect(inputs=inputs)
-        w1_status = results["cam1"]["present"]["W1"]
+        # Get feature_1 from the results
+        feature_1 = next(f for f in results["cam1"] if f.id == "feature_1")
+        status = "Present" if feature_1.is_present else "Missing"
         print(f"\n{test['name']}:")
         print(f"  Box: {test['boxes'][0].tolist()}")
         print(f"  Expected: {test['expected']}")
-        print(f"  Result: {w1_status}")
+        print(f"  Result: {status}")
 
 
 def run_measurement_test():
@@ -139,13 +141,10 @@ def run_measurement_test():
     }
     
     results = det.detect(inputs=inputs)
-    
+
     print("\nFeature detected:")
-    print(f"  Bbox: {results['cam1']['features'][0]['bbox']}")
-    
-    # Get the Feature object to calculate measurements
-    features = det.detect_from_boxes(inputs["cam1"], "cam1")
-    feature = features[0]  # W1
+    feature = results['cam1'][0]  # feature_1
+    print(f"  Bbox: {feature.bbox}")
     
     # Measurements in pixels only
     measurements_px = feature.get_measurements()
