@@ -66,7 +66,7 @@ import asyncio
 from abc import abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from mindtrace.core.base.mindtrace_base import MindtraceABC
+from mindtrace.core import MindtraceABC
 from mindtrace.hardware.core.config import get_hardware_config
 from mindtrace.hardware.core.exceptions import (
     PLCTagError,

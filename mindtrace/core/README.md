@@ -64,14 +64,64 @@ class MyProcessor(Mindtrace):
 ```
 
 #### `Config`
-Configuration management with validation and defaults.
+The Config class in Mindtrace provides a configuration layer designed to unify various sources of configuration— Pydantic models, Settings, Dict objects in a single, easy-to-use object with attribute access, and dynamic overrides.
 
 ```python
-config = Config({
-    "param1": "value1",
-    "param2": 42
-})
+from mindtrace.core.config import Config
+
+# Pass a dictionary
+config = Config({"MINDTRACE_DIR_PATHS":{"TEMP":"~/tmp"}})
+
+# Access config values
+print(config["MINDTRACE_DIR_PATHS"]["TEMP"])      
+# Attribute-style access
+print(config.MINDTRACE_DIR_PATHS.TEMP)
 ```
+
+For detailed usage of the Config class—including how it’s used within the Mindtrace class—refer to the [Usage documentation](../../samples/core/config/README.md)
+
+#### `Logging`
+The `get_logger` function provides a unified way to configure logging across your application. It can return either a standard Python logger or a structlog
+ logger, based on user-defined arguments or below [CoreConfig](../core/mindtrace/core/config/config.ini) settings (lower priority).
+```
+[MINDTRACE_DIR_PATHS]
+STRUCT_LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/structlogs
+LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/logs
+[MINDTRACE_LOGGER]
+USE_STRUCTLOG = False
+```
+
+##### Basic Logger
+
+Setup basic logger to produce logs in `~/.cache/mindtrace/logs`. 
+Here, by default propogation is set to true, and you should be able to see logs in `tail -f ~/.cache/mindtrace/logs/mindtrace.log` and `tail -f ~/.cache/mindtrace/logs/modules/mindtrace.core.module.log` files
+
+```python
+from mindtrace.core.logging.logger import get_logger
+
+# Create a standard logger
+logger = get_logger("core.module")
+logger.info("Logger configured with custom settings.")
+```
+
+##### Structured Logger
+Setup structlog to log structured events: dictionaries of key-value pairs that can later be searched, filtered, or transformed (e.g., into JSON).
+Here, by default propogation is set to true, and you should be able to see structured logs in `tail -f ~/.cache/mindtrace/structlogs/mindtrace.log` and `tail -f ~/.cache/mindtrace/structlogs/modules/mindtrace.core.module.log` files
+```python
+from mindtrace.core.logging.logger import get_logger
+
+# Create a structlog logger with custom bindings
+slogger = get_logger(
+    "core.module",
+    use_structlog=True,
+    structlog_bind={"service": "my-service"},
+)
+
+slogger.info("Structured log", user_id="123")
+```
+In above example, we illustrate structlog’s ability to 
+- bind context to a logger, which ensures that certain fields are automatically included in every log message. This is especially useful for adding consistent metadata like service name, environment, or version without repeating it in every log call.
+- Extra fields like user_id="123" can be passed per log call, allowing dynamic, event-specific data to be added.
 
 ### Observables
 

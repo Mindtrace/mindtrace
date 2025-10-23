@@ -51,7 +51,7 @@ class GitEnvironment(Mindtrace):
         """Setup git environment and return working directory."""
         try:
             # Create temp directory
-            base_dir = pathlib.Path(self.config["MINDTRACE_TEMP_DIR"])
+            base_dir = pathlib.Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
             base_dir.mkdir(parents=True, exist_ok=True)
             self.temp_dir = tempfile.mkdtemp(dir=base_dir)
 

@@ -1,13 +1,13 @@
 """
 PLC backends for different manufacturers and protocols.
 
-This module contains implementations for various PLC types including
-Allen Bradley, Siemens, Modbus, and other industrial protocols.
+This module contains implementations for various PLC types including Allen Bradley, Siemens, Modbus, and other
+industrial protocols.
 """
 
 # Import available backends
 try:
-    from .allen_bradley import AllenBradleyPLC  # noqa
+    from mindtrace.hardware.plcs.backends.allen_bradley import AllenBradleyPLC  # noqa
 
     ALLEN_BRADLEY_AVAILABLE = True
 except ImportError:
