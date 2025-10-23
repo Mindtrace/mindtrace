@@ -102,11 +102,8 @@ class MinioRegistryBackend(RegistryBackend):
             secure: Whether to use HTTPS.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
-        if uri is not None:
-            self._uri = Path(uri).expanduser().resolve()
-        else:
-            self._uri = Path(self.config["MINDTRACE_MINIO_REGISTRY_URI"]).expanduser().resolve()
-        super().__init__(uri=self._uri, **kwargs)
+        super().__init__(uri=uri, **kwargs)
+        self._uri = Path(uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
@@ -277,14 +274,14 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete object metadata from MinIO.
 
         Args:
-            model_name: Name of the object.
+            name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{model_name.replace(':', '_')}@{version}.json"
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
             self.client.remove_object(self.bucket, meta_path)

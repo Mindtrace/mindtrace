@@ -30,8 +30,8 @@ class MathsOutput(BaseModel):
 
 maths_schema = JobSchema(
     name="maths_operations",
-    input=MathsInput,
-    output=MathsOutput,
+    input_schema=MathsInput,
+    output_schema=MathsOutput,
 )
 
 
