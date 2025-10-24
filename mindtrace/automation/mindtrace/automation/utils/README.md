@@ -104,7 +104,7 @@ for feature in features:
 mask = model.predict(image)  # Returns HxW array where pixel values = class IDs
 features = detector.detect_from_segmentation_mask(
     mask=mask,
-    class_id=1,  # Extract class 1 (e.g., defects)
+    class_id=1,  # Extract class 1
     camera_key='cam1'
 )
 
@@ -358,10 +358,11 @@ all_predictions = {
 # Detect for all cameras
 results = detector.detect(all_predictions)
 
-for camera_key, result in results.items():
+for camera_key, features in results.items():
     print(f"\n{camera_key}:")
-    for feature in result['features']:
-        print(f"  {feature['id']}: {result['present'][feature['id']]}")
+    for feature in features:
+        status = "Present" if feature.is_present else "Missing"
+        print(f"  {feature.id}: {status}")
 ```
 
 ### Example 3: With Classification Rules
@@ -394,25 +395,3 @@ features = detector.detect_from_boxes(predictions, camera_key='cam1')
 for feature in features:
     print(f"{feature.id}: {feature.status}")  # "Present", "TooShort", or "Missing"
 ```
-
-## Testing
-
-The system has been validated with:
-- ✅ Real Label Studio project data with multiple features
-- ✅ GCP synced images (3536x3536 px)
-- ✅ Perfect match predictions (100% overlap)
-- ✅ Missing feature detection
-- ✅ Noise filtering (extra predictions ignored)
-- ✅ Partial overlap detection (any overlap > 0)
-
-## Requirements
-
-- Python 3.12+
-- numpy (for predictions as arrays)
-- opencv-python (for segmentation mask processing)
-- Label Studio SDK (for export functionality)
-
-## See Also
-
-- [Label Studio README](../label_studio/README.md) - Label Studio API integration
-- [FeatureDetector Tests](../../../../tests/unit/mindtrace/automation/utils/) - Unit tests
