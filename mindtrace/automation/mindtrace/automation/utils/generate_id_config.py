@@ -3,8 +3,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from mindtrace.core import Mindtrace
 from mindtrace.automation.label_studio.label_studio_api import LabelStudio
+from mindtrace.core import Mindtrace
+
 
 class GenerateIdConfig(Mindtrace):
     """Generate camera-based feature detection configuration from Label Studio annotations.
@@ -53,15 +54,15 @@ class GenerateIdConfig(Mindtrace):
             return None
 
         # Extract filename from path (works for both local and GCS paths)
-        filename = image_path.split('/')[-1]
+        filename = image_path.split("/")[-1]
 
         # Try to match camX pattern (case insensitive)
-        match = re.search(r'cam(\d+)', filename, re.IGNORECASE)
+        match = re.search(r"cam(\d+)", filename, re.IGNORECASE)
         if match:
             return f"cam{match.group(1)}"
 
         # Fallback: use filename without extension
-        return filename.rsplit('.', 1)[0] if '.' in filename else filename
+        return filename.rsplit(".", 1)[0] if "." in filename else filename
 
     def export_project(self, project_name: str, export_path: str) -> str:
         """Export a single Label Studio project to JSON.
@@ -87,9 +88,7 @@ class GenerateIdConfig(Mindtrace):
 
         try:
             self.label_studio.export_annotations(
-                project_name=project_name,
-                export_location=export_path,
-                export_type="JSON"
+                project_name=project_name, export_location=export_path, export_type="JSON"
             )
             self.logger.info(f"Exported project '{project_name}' to {export_path}")
             return export_path
@@ -176,9 +175,7 @@ class GenerateIdConfig(Mindtrace):
 
                     # Parse label using configurable separator
                     if self.label_separator not in label_str:
-                        self.logger.warning(
-                            f"Label '{label_str}' missing '{self.label_separator}' separator; skipping"
-                        )
+                        self.logger.warning(f"Label '{label_str}' missing '{self.label_separator}' separator; skipping")
                         continue
 
                     parts = label_str.split(self.label_separator, 1)
@@ -246,7 +243,7 @@ class GenerateIdConfig(Mindtrace):
                         "label": label,
                         "bbox": item["bbox"],
                         "expected_count": 1,
-                        "params": {"class_id": class_id}
+                        "params": {"class_id": class_id},
                     }
 
             config[camera_id] = {"features": features}
@@ -263,9 +260,3 @@ class GenerateIdConfig(Mindtrace):
         self.logger.info(f"Wrote config to {output_path}")
 
         return config
-        
-            
-
-                
-                
-        

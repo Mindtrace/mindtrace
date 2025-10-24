@@ -3,11 +3,12 @@ from typing import Any, Dict, List
 
 import cv2
 import numpy as np
+
 from mindtrace.core.base.mindtrace_base import Mindtrace
 
-from .feature_models import Feature, FeatureConfig
-from .feature_extractors import BoxFeatureExtractor, MaskFeatureExtractor
 from .feature_classifier import FeatureClassifier
+from .feature_extractors import BoxFeatureExtractor, MaskFeatureExtractor
+from .feature_models import Feature, FeatureConfig
 
 
 class FeatureDetector(Mindtrace):
@@ -23,7 +24,7 @@ class FeatureDetector(Mindtrace):
         self.config = self._load_config(config_path)
         self.classifier = FeatureClassifier()
         self.config_resolution = (None, None)  # (width, height) from config
-        self.model_resolution = (None, None)   # (width, height) for model inference
+        self.model_resolution = (None, None)  # (width, height) for model inference
 
     def _load_config(self, config_path: str) -> Dict[str, Any]:
         with open(config_path, "r") as f:
@@ -72,9 +73,7 @@ class FeatureDetector(Mindtrace):
         """
         self.config_resolution = config_resolution
         self.model_resolution = model_resolution
-        self.logger.info(
-            f"Resolution scaling set: config={config_resolution}, model={model_resolution}"
-        )
+        self.logger.info(f"Resolution scaling set: config={config_resolution}, model={model_resolution}")
 
     def _scale_bbox_to_model(self, bbox: List[int]) -> List[int]:
         """Scale bbox from config resolution to model resolution.
@@ -94,12 +93,7 @@ class FeatureDetector(Mindtrace):
         scale_x = model_w / config_w
         scale_y = model_h / config_h
 
-        return [
-            int(bbox[0] * scale_x),
-            int(bbox[1] * scale_y),
-            int(bbox[2] * scale_x),
-            int(bbox[3] * scale_y)
-        ]
+        return [int(bbox[0] * scale_x), int(bbox[1] * scale_y), int(bbox[2] * scale_x), int(bbox[3] * scale_y)]
 
     def _scale_bbox_to_config(self, bbox: List[int]) -> List[int]:
         """Scale bbox from model resolution to config resolution.
@@ -119,12 +113,7 @@ class FeatureDetector(Mindtrace):
         scale_x = config_w / model_w
         scale_y = config_h / model_h
 
-        return [
-            int(bbox[0] * scale_x),
-            int(bbox[1] * scale_y),
-            int(bbox[2] * scale_x),
-            int(bbox[3] * scale_y)
-        ]
+        return [int(bbox[0] * scale_x), int(bbox[1] * scale_y), int(bbox[2] * scale_x), int(bbox[3] * scale_y)]
 
     def detect_from_boxes(self, boxes: Any, camera_key: str) -> List[Feature]:
         """Detect features from bounding boxes using the resolved camera key.
@@ -175,12 +164,7 @@ class FeatureDetector(Mindtrace):
         self._apply_shared_union_bbox_with_groups(self.config.get(camera_key, {}), features)
         return features
 
-    def detect_from_segmentation_mask(
-        self,
-        mask: np.ndarray,
-        class_id: int,
-        camera_key: str
-    ) -> List[Feature]:
+    def detect_from_segmentation_mask(self, mask: np.ndarray, class_id: int, camera_key: str) -> List[Feature]:
         """Detect features from a segmentation mask with resolution scaling support.
 
         This method processes a segmentation mask where each pixel value represents a class ID.
@@ -267,7 +251,7 @@ class FeatureDetector(Mindtrace):
                 expected_count=feat_config.expected_count,
                 label=feat_config.label,
                 params=feat_config.params,
-                classification_rules=feat_config.classification_rules
+                classification_rules=feat_config.classification_rules,
             )
             scaled_features[feat_id] = scaled_config
 
@@ -332,9 +316,11 @@ class FeatureDetector(Mindtrace):
         if len(items) == 0:
             return {}
         first_val = items[0][1]
-        is_mask = isinstance(first_val, np.ndarray) and not (
-            first_val.ndim == 2 and first_val.shape[1] == 4
-        ) and not (first_val.ndim == 1 and first_val.size == 4)
+        is_mask = (
+            isinstance(first_val, np.ndarray)
+            and not (first_val.ndim == 2 and first_val.shape[1] == 4)
+            and not (first_val.ndim == 1 and first_val.size == 4)
+        )
         results: Dict[str, List[Feature]] = {}
         for key, data in items:
             resolved_key = key
@@ -347,9 +333,9 @@ class FeatureDetector(Mindtrace):
             results[key] = features
         return results
 
-    
-
-    def _extract_all_contours(self, mask: np.ndarray, features: Dict[str, FeatureConfig], class_id: int) -> Dict[int, List[np.ndarray]]:
+    def _extract_all_contours(
+        self, mask: np.ndarray, features: Dict[str, FeatureConfig], class_id: int
+    ) -> Dict[int, List[np.ndarray]]:
         required_classes = set()
         for feat_config in features.values():
             cid = feat_config.params.get("class_id")
@@ -415,5 +401,3 @@ class FeatureDetector(Mindtrace):
             for idx in indices:
                 if features[idx].is_present:
                     features[idx].bbox = union_bbox
-
-
