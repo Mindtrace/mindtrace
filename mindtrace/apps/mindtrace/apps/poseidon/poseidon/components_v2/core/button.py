@@ -65,6 +65,7 @@ def button(
     is_disabled = disabled | loading
 
     button_styles = {
+        "background": "#184937",
         **base_styles,
         **variant_styles,
         **size_styles,

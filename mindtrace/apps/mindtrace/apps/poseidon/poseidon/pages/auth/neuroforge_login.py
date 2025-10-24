@@ -41,7 +41,7 @@ def _right_panel() -> rx.Component:
                 spacing="3",
             ),
             rx.box(height="10px"),
-            rx.text("Unparalleled knowledge of AI technologies", weight="bold", size="4"),
+            rx.text("The intelligence layer that turns inspection data into insight", weight="bold", size="4"),
 
             rx.box(height="18px"),
 
@@ -60,7 +60,7 @@ def _right_panel() -> rx.Component:
         ),
         color="white",
         padding="36px",
-        background="linear-gradient(135deg, #3B82F6 0%, #60A5FA 40%, #2563EB 100%)",
+        background="linear-gradient(135deg, #3D7A59 0%, #256347 45%, #184937 100%)",
         background_size="200% 200%",
         animation="loginGradient 18s ease infinite",
         height="100%",
@@ -73,8 +73,8 @@ def _left_panel() -> rx.Component:
         rx.vstack(
             # Big circular logo
             rx.box(
-                rx.image(src="/mindtrace-logo.png", width="auto", height="160px"),
-                logo_inspectra(),
+                rx.image(src="/Inspectra.svg", width="auto", height="160px"),
+                # logo_inspectra(),
                 # width="200px",
                 # height="200px",
                 # border_radius="9999px",
@@ -102,7 +102,7 @@ def _left_panel() -> rx.Component:
             ),
 
             # "Forgot password?"
-            rx.link("Forgot password?", href="/forgot-password", color="var(--indigo-11)", margin_top="8px"),
+            rx.link("Forgot password?", href="/forgot-password", color="#184937", margin_top="8px"),
 
             spacing="4",
             align="center",

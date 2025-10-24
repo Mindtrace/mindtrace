@@ -9,7 +9,7 @@ class DashboardState(rx.State):
     # top metric strip (dummy)
     top_metrics: List[Dict[str, str]] = [
         {"icon": "book-open-check", "value": "94.2%",   "label": "Avg Yield Rate",   "delta": "+2.1%",  "trend": "up"},
-        {"icon": "clock",           "value": "18,432 h","label": "Total Uptime",     "delta": "+1.2%",  "trend": "up"},
+        {"icon": "clock",           "value": "96.4%","label": "First Pass Yield",     "delta": "+1.2%",  "trend": "up"},
         {"icon": "percent",         "value": "2.4M",    "label": "Total Parts",      "delta": "+15.2%", "trend": "up"},
         {"icon": "bell-ring",       "value": "3",       "label": "Alerts",           "delta": "-8.3%",  "trend": "down"},
         {"icon": "alert-triangle",  "value": "1,247",   "label": "Total Defects",    "delta": "-8.3%",  "trend": "down"},
@@ -160,9 +160,22 @@ def _css() -> rx.Component:
 
           /* table-like list */
           .nf-table { width:100%; }
-          .nf-th, .nf-tr { display:grid; grid-template-columns: 2fr 1.2fr .9fr .9fr .7fr 1.1fr 1fr; gap:12px; align-items:center; }
-          .nf-th { padding:12px 16px; color:#64748b; font-weight:700; }
-          .nf-row { padding:12px 16px; border-top:1px solid rgba(15,23,42,.06); background:#fff; }
+          .nf-th, .nf-tr {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 0.8fr 1.2fr;
+            gap: 12px;
+            align-items: center;
+            }
+          .nf-th { padding:12px 16px; color:#000; font-weight:700; }
+          .nf-row {
+            padding: 14px 16px;
+            border-top: 1px solid rgba(15,23,42,.06);
+            background: #fff;
+            }
+
+            .nf-row:nth-child(even) {
+            background: #f9fafb;
+            }
           .nf-cell-ellipsis { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
           .nf-badge { padding:4px 10px; border-radius:999px; font-weight:700; font-size:.82rem; display:inline-block; text-align:center; }
           .nf-badge.excellent { background:#d1fae5; color:#065f46; }
@@ -240,11 +253,11 @@ def _trend_tabs() -> rx.Component:
             class_name=rx.cond(DashboardState.metric == "Defect Rate", "nf-tab active", "nf-tab"),
             on_click=DashboardState.set_metric_defects,
         ),
-        rx.button(
-            "Uptime",
-            class_name=rx.cond(DashboardState.metric == "Uptime", "nf-tab active", "nf-tab"),
-            on_click=DashboardState.set_metric_uptime,
-        ),
+        # rx.button(
+        #     "Uptime",
+        #     class_name=rx.cond(DashboardState.metric == "Uptime", "nf-tab active", "nf-tab"),
+        #     on_click=DashboardState.set_metric_uptime,
+        # ),
         class_name="nf-tabs",
     )
 
@@ -298,26 +311,24 @@ def _table_header() -> rx.Component:
         rx.text("Plant Name", as_="span"),
         rx.text("Region", as_="span"),
         rx.text("Yield Rate", as_="span"),
-        rx.text("Uptime", as_="span"),
         rx.text("Alerts", as_="span"),
         rx.text("Parts Produced", as_="span"),
-        rx.text("Status", as_="span"),
         class_name="nf-th nf-tr",
         role="row",
     )
 
+
 def _table_row(r):  # r is Var[dict]
     return rx.box(
-        rx.text(r["plant"],  as_="span", class_name="nf-cell-ellipsis"),
+        rx.text(r["plant"], as_="span", class_name="nf-cell-ellipsis"),
         rx.text(r["region"], as_="span"),
         rx.text(r["yield_s"], as_="span"),
-        rx.text(r["uptime_s"], as_="span"),
         rx.text(r["alerts"], as_="span"),
         rx.text(r["parts_produced_s"], as_="span"),
-        _status_badge(r["status"], r["status_class"]),
         class_name="nf-row nf-tr",
         role="row",
     )
+
 
 def _site_performance_table() -> rx.Component:
     pager = rx.box(

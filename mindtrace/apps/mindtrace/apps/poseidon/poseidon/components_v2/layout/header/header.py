@@ -6,6 +6,61 @@ from poseidon.components_v2.layout.header.scope_selector import ScopeSelector
 from poseidon.styles.global_styles import T
 from poseidon.styles.variants import COMPONENT_VARIANTS
 
+def _css() -> rx.Component:
+    return rx.html("""
+    <style>
+    .bell-icon:hover {
+  background: rgba(24,73,55,0.1);
+  border-radius: 50%;
+  transition: background 0.2s ease;
+}
+</style>
+    """),
+
+def NotificationDropdown() -> rx.Component:
+    alerts = [
+        {"icon": "alert-triangle", "title": "Defect rate exceeded threshold", "time": "1 min ago"},
+        {"icon": "wrench", "title": "Maintenance scheduled", "time": "10 mins ago"},
+        {"icon": "circle-alert", "title": "Model anomaly detected", "time": "30 mins ago"},
+    ]
+
+    items = [
+        rx.hstack(
+            rx.icon(a["icon"], color="#184937", size=16),
+            rx.box(
+                rx.text(a["title"], weight="medium", size="1", color="#0f172a"),
+                rx.text(a["time"], size="1", color="#64748b"),
+            ),
+            spacing="3",
+            align="start",
+        )
+        for a in alerts
+    ]
+
+    return rx.dropdown_menu.root(
+        rx.dropdown_menu.trigger(
+            rx.icon("bell", size=22, color="#184937", cursor="pointer", class_name="bell-icon"),
+        ),
+        rx.dropdown_menu.content(
+            rx.box(
+                rx.text("Notifications", weight="bold", size="2", color="#184937"),
+                rx.divider(margin_y="4px"),
+                *items,
+                spacing="3",
+                display="flex",
+                flex_direction="column",
+                gap="8px",
+            ),
+            bg="white",
+            padding="12px",
+            border_radius="8px",
+            box_shadow="0 2px 8px rgba(0,0,0,.08)",
+            min_width="280px",
+        ),
+        align="end",
+    )
+
+
 
 def Header(
     *,
@@ -36,8 +91,9 @@ def Header(
         )
 
     left = rx.hstack(
-        rx.image(src="/mindtrace-logo.png", height="64px", width="auto"),
-        logo_neuroforge(),
+        rx.image(src="/Inspectra.svg", height="64px", width="auto"),
+        rx.text('Global Operations View', weight="bold", size="5", color="#184937", margin_left="8px"),
+        # logo_neuroforge(),
         # rx.text(title, weight="medium", size="4"),
         gap="0",
         align="center",
@@ -46,11 +102,13 @@ def Header(
     right_children: list[rx.Component] = []
     if right_slot is not None:
         right_children.append(right_slot)
-    if show_scope_selector:
-        right_children.append(ScopeSelector())
+    # if show_scope_selector:
+    right_children.append(ScopeSelector())
+    right_children.append(NotificationDropdown())
     right_children.append(ProfileMenu())
 
     return rx.hstack(
+        _css(),
         left,
         rx.spacer(),
         *right_children,

@@ -13,8 +13,8 @@ def logo_inspectra() -> rx.Component:
             # Brand text section
             rx.text(
                 "Inspectra",
-                style=COMPONENT_VARIANTS["logo"]["title"]
-                
+                style=COMPONENT_VARIANTS["logo"]["title"],
+                color="#60CCA5",
             ),
             spacing="1",
             align="center",

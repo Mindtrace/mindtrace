@@ -1,5 +1,6 @@
 import reflex as rx
 from typing import List, Dict, Literal, Optional
+from datetime import datetime, date, timedelta
 
 # ────────────────────────── Types / Data ──────────────────────────
 Severity = Literal["Critical", "High", "Medium", "Low"]
@@ -61,6 +62,26 @@ MOCK_ALERTS: List[Alert] = [
      "description": "Throughput improvement (+4%)", "severity": "Low", "status": "Acknowledged", "tone": "gray"},
 ]
 
+MONTHS = {
+    "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+    "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+}
+
+def _parse_alert_dt(alert: Alert) -> datetime:
+    """Build a datetime from alert['timestamp_day'] like '15 JAN' and 'timestamp_time' like '02:00 PM'.
+    Assumes current year."""
+    day_str = alert.get("timestamp_day", "").strip()
+    time_str = alert.get("timestamp_time", "").strip()
+    try:
+        day_part, mon_abbr = day_str.split()
+        day = int(day_part)
+        month = MONTHS.get(mon_abbr.upper(), 1)
+        year = datetime.now().year
+        t = datetime.strptime(time_str, "%I:%M %p").time()
+        return datetime(year, month, day, t.hour, t.minute, t.second)
+    except Exception:
+        return datetime(1970, 1, 1)
+
 # ────────────────────────── STATE (in-memory + modal) ──────────────────────────
 class AlertsState(rx.State):
     # Filters
@@ -69,6 +90,8 @@ class AlertsState(rx.State):
     plant: str = "All Plants"
     line: str = "All Lines"
     timeframe: str = "Last 24h"
+    start_date: str = ""   # YYYY-MM-DD
+    end_date: str = ""     # YYYY-MM-DD
 
     # Pagination
     offset: int = 0
@@ -77,13 +100,13 @@ class AlertsState(rx.State):
     # Data
     alerts: List[Alert] = MOCK_ALERTS
 
-    # Modal state (copy fields to avoid dict indexing with Vars)
+    # Modal state
     modal_open: bool = False
-    sel_idx: Optional[int] = None  # index into alerts for mutation
+    sel_idx: Optional[int] = None
     sel_title_line: str = ""
     sel_title_desc: str = ""
-    sel_severity: str = ""     # Critical/High/Medium/Low
-    sel_status: str = ""       # Unacknowledged/Acknowledged/Escalated
+    sel_severity: str = ""
+    sel_status: str = ""
     sel_plant: str = ""
     sel_line: str = ""
 
@@ -107,12 +130,32 @@ class AlertsState(rx.State):
     def line_options(self) -> List[str]:
         return ["All Lines"] + sorted({a["line"] for a in self.alerts})
 
-    # Filtering
-    def _time_ok(self, _a: Alert) -> bool:
+    # -------- Date helpers & filtering ----------
+    def _time_ok(self, a: Alert) -> bool:
+        if not self.start_date and not self.end_date:
+            return True
+        adt = _parse_alert_dt(a)
+        if self.start_date:
+            try:
+                sdt = datetime.strptime(self.start_date, "%Y-%m-%d")
+                if adt < sdt:
+                    return False
+            except ValueError:
+                pass
+        if self.end_date:
+            try:
+                edt = datetime.strptime(self.end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+                if adt > edt:
+                    return False
+            except ValueError:
+                pass
         return True
 
+    # Primary filtered/ordered data (single definition; depends on dates explicitly)
     @rx.var
     def filtered_alerts(self) -> List[Alert]:
+        _ = (self.start_date, self.end_date)  # ensure reactivity on date fields
+
         data = self.alerts
         if self.severity != "All":
             data = [a for a in data if a["severity"] == self.severity]
@@ -122,8 +165,30 @@ class AlertsState(rx.State):
             data = [a for a in data if a["plant"] == self.plant]
         if self.line != "All Lines":
             data = [a for a in data if a["line"] == self.line]
+
         data = [a for a in data if self._time_ok(a)]
-        return list(data)
+
+        status_pri = {"Unacknowledged": 0, "Escalated": 1, "Acknowledged": 2}
+        sev_pri = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+        data = sorted(
+            data,
+            key=lambda a: (
+                status_pri.get(a["status"], 9),
+                sev_pri.get(a["severity"], 9),
+            ),
+        )
+        return data
+
+    # Pagination events
+    @rx.event
+    def prev_page(self):
+        self.offset = max(self.offset - self.limit, 0)
+
+    @rx.event
+    def next_page(self):
+        if self.offset + self.limit < self.total_items:
+            self.offset += self.limit
+
 
     # Pagination deriveds
     @rx.var
@@ -172,28 +237,62 @@ class AlertsState(rx.State):
         setattr(self, key, value)
         self.offset = 0
 
+    # Date setters
+    @rx.event
+    def set_start_date(self, v: str):
+        self.start_date = v
+        self.offset = 0
+
+    @rx.event
+    def set_end_date(self, v: str):
+        self.end_date = v
+        self.offset = 0
+
+    # Quick presets
+    @rx.event
+    def set_range_today(self):
+        today = date.today()
+        self.start_date = today.isoformat()
+        self.end_date = today.isoformat()
+        self.offset = 0
+
+    @rx.event
+    def set_range_last_days(self, days: int):
+        today = date.today()
+        start = today - timedelta(days=days - 1)
+        self.start_date = start.isoformat()
+        self.end_date = today.isoformat()
+        self.offset = 0
+
+    @rx.event
+    def set_range_this_month(self):
+        today = date.today()
+        start = today.replace(day=1)
+        if start.month == 12:
+            next_month_first = start.replace(year=start.year + 1, month=1, day=1)
+        else:
+            next_month_first = start.replace(month=start.month + 1, day=1)
+        last = next_month_first - timedelta(days=1)
+        self.start_date = start.isoformat()
+        self.end_date = last.isoformat()
+        self.offset = 0
+
+    @rx.event
+    def clear_dates(self):
+        self.start_date, self.end_date = "", ""
+        self.offset = 0
+
     @rx.event
     def clear_filters(self):
         self.severity, self.status = "All", "All"
         self.plant, self.line = "All Plants", "All Lines"
         self.timeframe = "Last 24h"
+        self.start_date, self.end_date = "", ""
         self.offset = 0
-
-    # Pagination events
-    @rx.event
-    def prev_page(self):
-        self.offset = max(self.offset - self.limit, 0)
-
-    @rx.event
-    def next_page(self):
-        if self.offset + self.limit < self.total_items:
-            self.offset += self.limit
 
     # ── Modal events
     @rx.event
     def open_details(self, alert: dict):
-        """Open modal for this alert and copy fields into dedicated state vars."""
-        # Find an index in the full alerts list (first match by 3-tuple)
         idx = next(
             (i for i, a in enumerate(self.alerts)
              if a["plant"] == alert["plant"]
@@ -208,7 +307,6 @@ class AlertsState(rx.State):
         self.sel_status = alert["status"]
         self.sel_plant = alert["plant"]
         self.sel_line = alert["line"]
-        # Demo metrics (you can compute these per alert if you have data)
         self.sel_defect_rate = "8.5%" if "Defect rate" in alert["description"] else "5.2%"
         self.sel_uptime = "92.3%"
         self.sel_threshold = "5%"
@@ -221,25 +319,22 @@ class AlertsState(rx.State):
 
     @rx.event
     def acknowledge(self):
-        """Set status to Acknowledged in modal + table."""
         self.sel_status = "Acknowledged"
-        # Update the corresponding row in base data
         if self.sel_idx is not None and 0 <= self.sel_idx < len(self.alerts):
             self.alerts[self.sel_idx]["status"] = "Acknowledged"
 
     @rx.event
     def escalate(self):
-        """Set status to Escalated in modal + table."""
         self.sel_status = "Escalated"
         if self.sel_idx is not None and 0 <= self.sel_idx < len(self.alerts):
             self.alerts[self.sel_idx]["status"] = "Escalated"
-    
+
     @rx.var
     def sel_title(self) -> str:
         if not self.sel_title_line and not self.sel_title_desc:
             return ""
         return f"{self.sel_title_line} - {self.sel_title_desc}"
-    
+
     # ── escalate sub-modal state
     escalate_open: bool = False
     escalate_to: str = ""
@@ -249,43 +344,7 @@ class AlertsState(rx.State):
         "Operations Head",
         "Maintenance Team",
     ]
-    
-    # ---------- Sorting: Critical/High first, Acknowledged last ----------
-    @rx.var
-    def filtered_alerts(self) -> List[Alert]:
-        data = self.alerts
-        if self.severity != "All":
-            data = [a for a in data if a["severity"] == self.severity]
-        if self.status != "All":
-            data = [a for a in data if a["status"] == self.status]
-        if self.plant != "All Plants":
-            data = [a for a in data if a["plant"] == self.plant]
-        if self.line != "All Lines":
-            data = [a for a in data if a["line"] == self.line]
-        data = [a for a in data if self._time_ok(a)]
 
-        # Priority: status then severity
-        status_pri = {"Unacknowledged": 0, "Escalated": 1, "Acknowledged": 2}
-        sev_pri = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-        data = sorted(
-            data,
-            key=lambda a: (
-                status_pri.get(a["status"], 9),
-                sev_pri.get(a["severity"], 9),
-            ),
-        )
-        return data
-
-    # ---------- Acknowledge should close the main modal ----------
-    @rx.event
-    def acknowledge(self):
-        """Set status to Acknowledged, update table, and close modal."""
-        self.sel_status = "Acknowledged"
-        if self.sel_idx is not None and 0 <= self.sel_idx < len(self.alerts):
-            self.alerts[self.sel_idx]["status"] = "Acknowledged"
-        self.modal_open = False  # close the main modal
-
-    # ---------- Escalate sub-modal handlers ----------
     @rx.event
     def open_escalate(self):
         self.escalate_open = True
@@ -301,18 +360,10 @@ class AlertsState(rx.State):
 
     @rx.event
     def confirm_escalate(self):
-        # If nothing chosen, you could early return or default; we proceed.
         self.sel_status = "Escalated"
         if self.sel_idx is not None and 0 <= self.sel_idx < len(self.alerts):
             self.alerts[self.sel_idx]["status"] = "Escalated"
-        self.escalate_open = False  # close small popup
-        # keep the main modal open after escalation (per your mock)
-    
-    @rx.var
-    def sel_title(self) -> str:
-        if not self.sel_title_line and not self.sel_title_desc:
-            return ""
-        return f"{self.sel_title_line} - {self.sel_title_desc}"
+        self.escalate_open = False  # keep main modal open per your mock
 
     @rx.var
     def escalate_alert_summary(self) -> str:
@@ -321,8 +372,6 @@ class AlertsState(rx.State):
     @rx.var
     def escalate_line_summary(self) -> str:
         return f"Line:  {self.sel_title_line}" if self.sel_title_line else ""
-        
-
 
 # ────────────────────────── UI Helpers ──────────────────────────
 def _pill(text: str, tone: str) -> rx.Component:
@@ -390,7 +439,7 @@ def _filter_select(label: str, value, items, on_change) -> rx.Component:
         width="100%",
     )
 
-# Table column styles (fixed layout)
+# Header + body table (aligned)
 COL_STYLES = [
     {"min_width": "140px", "width": "160px"},
     {"min_width": "160px", "width": "200px"},
@@ -399,7 +448,6 @@ COL_STYLES = [
     {"min_width": "180px", "width": "220px"},
     {"min_width": "100px", "width": "120px", "text_align": "right"},
 ]
-
 def _col_style(i: int) -> Dict[str, str]:
     return COL_STYLES[i] if i < len(COL_STYLES) else {}
 
@@ -427,7 +475,7 @@ def _alert_row(alert: Alert) -> rx.Component:
                 rx.icon("arrow-up"),
                 rx.icon(
                     "eye",
-                    on_click=lambda a=alert: AlertsState.open_details(a),  # open modal with this alert
+                    on_click=lambda a=alert: AlertsState.open_details(a),
                     cursor="pointer",
                 ),
                 justify="end",
@@ -464,11 +512,9 @@ def _timeline_item(label: str, ago: str, tone: str) -> rx.Component:
     )
 
 def details_modal() -> rx.Component:
-    # Render only when open (simple overlay + centered card)
     return rx.cond(
         AlertsState.modal_open,
         rx.box(
-            # Dimmed backdrop
             rx.box(
                 position="fixed",
                 inset="0",
@@ -476,9 +522,7 @@ def details_modal() -> rx.Component:
                 z_index="49",
                 on_click=AlertsState.close_details,
             ),
-            # Modal card
             rx.box(
-                # Header
                 rx.hstack(
                     rx.hstack(
                         rx.text(AlertsState.sel_title, weight="bold"),
@@ -492,21 +536,16 @@ def details_modal() -> rx.Component:
                     margin_bottom="6px",
                 ),
                 rx.text("View detailed alert information, current metrics, and event timeline.", color="#6B7280"),
-
-                # Alert Information
                 rx.box(
                     rx.text("Alert Information", weight="medium", margin_top="18px", margin_bottom="8px"),
                     rx.grid(
                         rx.vstack(rx.text("Plant", size="2", color="#6B7280"), rx.text(AlertsState.sel_plant)),
                         rx.vstack(rx.text("Line", size="2", color="#6B7280"), rx.text(AlertsState.sel_line)),
-                        rx.vstack(rx.text("Status", size="2", color="#6B7280"),
-                                  _status_badge(AlertsState.sel_status)),
+                        rx.vstack(rx.text("Status", size="2", color="#6B7280"), _status_badge(AlertsState.sel_status)),
                         columns="1fr 1fr 1fr",
                         gap="16px",
                     ),
                 ),
-
-                # Current Metrics
                 rx.box(
                     rx.text("Current Metrics", weight="medium", margin_top="18px", margin_bottom="8px"),
                     rx.grid(
@@ -518,35 +557,18 @@ def details_modal() -> rx.Component:
                         gap="16px",
                     ),
                 ),
-
-                # Event Timeline
                 rx.box(
                     rx.text("Event Timeline", weight="medium", margin_top="18px", margin_bottom="8px"),
                     rx.vstack(
-                        rx.foreach(
-                            AlertsState.timeline,
-                            lambda ev: _timeline_item(ev["label"], ev["ago"], ev["tone"]),
-                        ),
+                        rx.foreach(AlertsState.timeline, lambda ev: _timeline_item(ev["label"], ev["ago"], ev["tone"])),
                         gap="6px",
                     ),
                 ),
-
-                # Footer actions
                 rx.hstack(
-                    rx.button(
-                        rx.icon("check-circle"),
-                        rx.text("Acknowledge"),
-                        variant="soft",
-                        color_scheme="green",
-                        on_click=AlertsState.acknowledge,   # closes main modal now
-                    ),
-                    rx.button(
-                        rx.icon("arrow-up"),
-                        rx.text("Escalate"),
-                        variant="soft",
-                        color_scheme="red",
-                        on_click=AlertsState.open_escalate,  # opens small popup
-                    ),
+                    rx.button(rx.icon("check-circle"), rx.text("Acknowledge"),
+                              variant="soft", color_scheme="green", on_click=AlertsState.acknowledge),
+                    rx.button(rx.icon("arrow-up"), rx.text("Escalate"),
+                              variant="soft", color_scheme="red", on_click=AlertsState.open_escalate),
                     justify="end",
                     padding_top="14px",
                 ),
@@ -564,12 +586,11 @@ def details_modal() -> rx.Component:
         ),
         None,
     )
-    
+
 def escalate_popup() -> rx.Component:
     return rx.cond(
         AlertsState.escalate_open,
         rx.box(
-            # subtle overlay above the main modal
             rx.box(
                 position="fixed",
                 inset="0",
@@ -577,9 +598,7 @@ def escalate_popup() -> rx.Component:
                 z_index="59",
                 on_click=AlertsState.close_escalate,
             ),
-            # small centered card
             rx.box(
-                # Header
                 rx.hstack(
                     rx.text("Escalate Alert", weight="bold"),
                     rx.icon("x", cursor="pointer", on_click=AlertsState.close_escalate),
@@ -587,18 +606,11 @@ def escalate_popup() -> rx.Component:
                     align="center",
                     margin_bottom="6px",
                 ),
-                rx.text(
-                    "Escalate this alert to appropriate personnel with additional context.",
-                    color="#6B7280",
-                ),
-
-                # Summary
+                rx.text("Escalate this alert to appropriate personnel with additional context.", color="#6B7280"),
                 rx.box(
                     rx.text(AlertsState.escalate_alert_summary, weight="medium", margin_top="14px"),
                     rx.text(AlertsState.escalate_line_summary, color="#374151"),
                 ),
-
-                # Escalate to
                 rx.box(
                     rx.text("Escalate To", weight="medium", margin_top="16px", margin_bottom="6px"),
                     rx.box(
@@ -615,27 +627,20 @@ def escalate_popup() -> rx.Component:
                         direction="column",
                     ),
                 ),
-
-                # Footer
                 rx.hstack(
                     rx.spacer(),
                     rx.button("Cancel", variant="surface", on_click=AlertsState.close_escalate),
-                    rx.button(
-                        "Escalate",
-                        variant="soft",
-                        color_scheme="red",
-                        on_click=AlertsState.confirm_escalate,
-                        disabled=rx.cond(AlertsState.escalate_to != "", False, True),
-                    ),
+                    rx.button("Escalate", variant="soft", color_scheme="red",
+                              on_click=AlertsState.confirm_escalate,
+                              disabled=rx.cond(AlertsState.escalate_to != "", False, True)),
                     gap="10px",
                     margin_top="14px",
                 ),
-
                 position="fixed",
                 left="50%",
                 top="50%",
                 transform="translate(-50%, -50%)",
-                z_index="60",                           # above main modal (50)
+                z_index="60",
                 width="min(640px, 92vw)",
                 background_color="#FFFFFF",
                 border_radius="14px",
@@ -645,7 +650,6 @@ def escalate_popup() -> rx.Component:
         ),
         None,
     )
-
 
 # ────────────────────────── Sections ──────────────────────────
 def filters_section() -> rx.Component:
@@ -677,17 +681,6 @@ def filters_section() -> rx.Component:
         box_shadow="0 1px 0 rgba(0,0,0,0.04)",
         width="100%",
     )
-
-# Header + body table (aligned)
-COL_STYLES = [
-    {"min_width": "140px", "width": "160px"},
-    {"min_width": "160px", "width": "200px"},
-    {"min_width": "360px", "width": "100%"},
-    {"min_width": "140px", "width": "160px"},
-    {"min_width": "180px", "width": "220px"},
-    {"min_width": "100px", "width": "120px", "text_align": "right"},
-]
-def _col_style(i: int) -> Dict[str, str]: return COL_STYLES[i]
 
 def table_section() -> rx.Component:
     return rx.table.root(
@@ -732,18 +725,56 @@ def pagination() -> rx.Component:
 
 # ────────────────────────── Page ──────────────────────────
 def index() -> rx.Component:
-    return rx.vstack(
+    header = rx.hstack(
+        # Left: title + subtitle
         rx.vstack(
             rx.text("Alerts", size="6", weight="bold"),
             rx.text("Active alerts requiring attention", color="#6B7280"),
+            align_items="start",
+            gap="2px",
+        ),
+        # Right: date pickers + quick presets + clear
+        rx.vstack(
             rx.hstack(
-                rx.button(rx.icon("calendar"), rx.text("Date range"), variant="soft"),
-                rx.button("Clear all", variant="surface", on_click=AlertsState.clear_filters),
-                justify="end",
-                margin_top="12px",
+                rx.input(
+                    type_="date",
+                    value=AlertsState.start_date,
+                    on_change=AlertsState.set_start_date,
+                    style={"minWidth": "150px"},
+                ),
+                rx.text("—"),
+                rx.input(
+                    type_="date",
+                    value=AlertsState.end_date,
+                    on_change=AlertsState.set_end_date,
+                    style={"minWidth": "150px"},
+                ),
+                align="center",
+                gap="8px",
+                width="100%",
             ),
+            rx.hstack(
+                rx.button("Today",      size="1", variant="soft", on_click=AlertsState.set_range_today),
+                rx.button("Last 7d",    size="1", variant="soft", on_click=lambda: AlertsState.set_range_last_days(7)),
+                rx.button("Last 30d",   size="1", variant="soft", on_click=lambda: AlertsState.set_range_last_days(30)),
+                rx.button("This month", size="1", variant="soft", on_click=AlertsState.set_range_this_month),
+                rx.button("Clear dates",size="1", variant="surface", on_click=AlertsState.clear_dates),
+                rx.button("Clear all",  size="1", variant="surface", on_click=AlertsState.clear_filters),
+                wrap="wrap",
+                gap="6px",
+            ),
+            align_items="end",
             gap="6px",
         ),
+        justify="between",
+        align="end",
+        width="100%",
+        gap="12px",
+        padding_bottom="6px",
+    )
+
+    return rx.vstack(
+        header,
         filters_section(),
         rx.box(
             table_section(),
@@ -754,7 +785,7 @@ def index() -> rx.Component:
             width="100%",
         ),
         pagination(),
-        details_modal(),  # ← modal overlay renders on top when open
+        details_modal(),
         escalate_popup(),
         gap="16px",
         width="100%",

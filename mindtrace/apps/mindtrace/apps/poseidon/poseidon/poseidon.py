@@ -47,6 +47,7 @@ from poseidon.pages.inspectra_line_view import inspectra_line_view
 from poseidon.pages.inspectra_plant_view import inspectra_plant_view
 from poseidon.pages.inspectra_alerts import index as inspectra_alerts
 from poseidon.pages.inspectra_line_insights import inspectra_line_insights
+from poseidon.pages.inspectra_report_builder import strategic_report_builder as inspectra_report_builder
 
 
 # Create app with comprehensive styling configuration
@@ -174,6 +175,7 @@ app.add_page(with_shell(inspectra_line_view, title="Inspectra", active="Line vie
 app.add_page(with_shell(inspectra_plant_view, title="Inspectra", active="Plant view"), route="/plant-view")
 app.add_page(with_shell(inspectra_alerts, title="Inspectra", active="Alerts"), route="/alerts")
 app.add_page(with_shell(inspectra_line_insights, title="Inspectra", active="Line insights"), route="/line-insights")
+app.add_page(with_shell(inspectra_report_builder, title="Inspectra", active="Reports"), route="/reports")
 
 
 from poseidon.backend.database.init import rebuild_all_models
