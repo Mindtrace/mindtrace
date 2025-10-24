@@ -16,16 +16,160 @@ from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
 class Registry(Mindtrace):
-    """A thread-safe registry for storing and versioning objects.
+    """A distributed concurrency-safe registry for storing and versioning objects.
 
-    This class provides a thread-safe interface for storing, loading, and managing objects
-    with versioning support. All operations are protected by a reentrant lock to ensure
-    thread safety while allowing recursive lock acquisition.
+    This class provides a distributed concurrency-safe interface for storing, loading, and managing objects
+    with versioning support. All operations are protected by distributed locks to ensure
+    safety across multiple processes and machines while allowing recursive lock acquisition.
 
     The registry uses a backend for actual storage operations and maintains an artifact
     store for temporary storage during save/load operations. It also manages materializers
     for different object types and provides both a high-level API and a dictionary-like
     interface.
+    Example::
+
+        from mindtrace.registry import Registry
+
+        registry = Registry("~/.cache/mindtrace/my_registry")  # Uses the default registry directory in ~/.cache/mindtrace/registry
+
+        # Save some objects to the registry
+        registry.save("test:int", 42)
+        registry.save("test:float", 3.14)
+        registry.save("test:list", [1, 2, 3])
+        registry.save("test:dict", {"a": 1, "b": 2})
+        registry.save("test:str", "Hello, World!", metadata={"description": "A helpful comment"})
+
+        # Print the contents of the registry
+        print(registry)
+
+        # Load an object from the registry
+        object = registry.load("test:int")
+
+        # Using dictionary-style syntax, the following is equivalent to the above:
+        registry["test:int"] = object
+        object = registry["test:int"]
+
+        # Display the registry contents
+        print(registry)
+
+                          Registry at ~/.cache/mindtrace/my_registry
+        ┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        ┃ Object     ┃ Class          ┃ Value         ┃ Metadata                      ┃
+        ┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+        │ test:dict  │ builtins.dict  │ <dict>        │ (none)                        │
+        │ test:float │ builtins.float │ 3.14          │ (none)                        │
+        │ test:int   │ builtins.int   │ 42            │ (none)                        │
+        │ test:list  │ builtins.list  │ <list>        │ (none)                        │
+        │ test:str   │ builtins.str   │ Hello, World! │ description=A helpful comment │
+        └────────────┴────────────────┴───────────────┴───────────────────────────────┘
+
+        # Get information about an object
+        registry.info("test:int")
+
+        # Delete an object
+        del registry["test:int"]  # equivalent to registry.delete("test:int")
+
+    Example: Using a local directory as the registry store::
+
+        from mindtrace.registry import Registry
+
+        registry = Registry(registry_dir="~/.cache/mindtrace/my_registry")
+
+    Example: Using Minio as the registry store::
+
+        from mindtrace.registry import Registry, MinioRegistryBackend
+
+        # Connect to a remote MinIO registry (expected to be non-local in practice)
+        minio_backend = MinioRegistryBackend(
+            uri="~/.cache/mindtrace/minio_registry",
+            endpoint="localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket="minio-registry",
+            secure=False
+        )
+        registry = Registry(backend=minio_backend)
+
+    Example: Using versioning::
+
+        from mindtrace.registry import Registry
+
+        # Versioning follows semantic versioning conventions
+        registry = Registry(version_objects=True, registry_dir="~/.cache/mindtrace/my_registry")
+        registry.save("test:int", 42)  # version = "1"
+        registry.save("test:int", 43)  # version = "2"  # auto-increments version number
+        registry.save("test:int", 44, version="2.1")  # version = "2.1"
+        registry.save("test:int", 45)  # version = "2.2"  # auto-increments version number
+        registry.save("test:int", 46, version="2.2")  # Error: version "2.2" already exists
+
+        # Use the "@" symbol in the name to specify a version when using dictionary-style syntax
+        object = registry["test:int@2.1"]
+        registry["test:int@2.3"] = 47
+        registry["test:int"] = 48  # auto-increments version number
+
+        print(registry.__str__(latest_only=False))  # prints all versions
+
+                    ~/.cache/mindtrace/my_registry
+        ┏━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━┓
+        ┃ Object   ┃ Version ┃ Class        ┃ Value ┃ Metadata ┃
+        ┡━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━┩
+        │ test:int │ v1      │ builtins.int │ 42    │ (none)   │
+        │ test:int │ v2      │ builtins.int │ 43    │ (none)   │
+        │ test:int │ v2.1    │ builtins.int │ 44    │ (none)   │
+        │ test:int │ v2.2    │ builtins.int │ 45    │ (none)   │
+        │ test:int │ v2.3    │ builtins.int │ 47    │ (none)   │
+        │ test:int │ v2.4    │ builtins.int │ 48    │ (none)   │
+        └──────────┴─────────┴──────────────┴───────┴──────────┘
+
+    Example: Registering your own materializers::
+
+        # In order to use the Registry with a custom class, define an Archiver for your custom class:
+
+        import json
+        from pathlib import Path
+        from typing import Any, ClassVar, Tuple, Type
+
+        from zenml.enums import ArtifactType
+
+        from mindtrace.registry import Archiver
+        from zenml.materializers.base_materializer import BaseMaterializer
+
+        class MyObject:
+            def __init__(self, name: str, age: int):
+                self.name = name
+                self.age = age
+
+            def __str__(self):
+                return f"MyObject(name={self.name}, age={self.age})"
+
+        class MyObjectArchiver(Archiver):  # May also derive from zenml.BaseMaterializer
+            ASSOCIATED_TYPES: ClassVar[Tuple[Type[Any], ...]] = (MyObject,)
+            ASSOCIATED_ARTIFACT_TYPE: ClassVar[ArtifactType] = ArtifactType.DATA
+
+            def __init__(self, uri: str, **kwargs):
+                super().__init__(uri=uri, **kwargs)
+
+            def save(self, my_object: MyObject):
+                with open(Path(self.uri) / "my_object.json", "w") as f:
+                    json.dump(my_object, f)
+
+            def load(self, data_type: Type[Any]) -> MyObject:
+                with open(Path(self.uri) / "my_object.json", "r") as f:
+                    return MyObject(**json.load(f))
+
+        # Then register the archiver with the Registry:
+        Registry.register_materializer(MyObject, MyObjectArchiver)
+
+
+        # Put the above into a single file, then when your class is imported it will be compatible with the Registry
+
+        from mindtrace.registry import Registry
+        from my_lib import MyObject  # Registers your custom Archiver to the Registry class here
+
+        registry = Registry()
+        my_obj = MyObject(name="Edward", age=42)
+
+        registry["my_obj"] = my_obj
     """
 
     # Class-level default materializer registry and lock
@@ -36,7 +180,7 @@ class Registry(Mindtrace):
         self,
         registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
-        version_objects: bool = True,
+        version_objects: bool = False,
         **kwargs,
     ):
         """Initialize the registry.
@@ -51,7 +195,7 @@ class Registry(Mindtrace):
 
         if backend is None:
             if registry_dir is None:
-                registry_dir = self.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]
+                registry_dir = self.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
@@ -61,7 +205,7 @@ class Registry(Mindtrace):
             name="local_artifact_store",
             id=None,  # Will be auto-generated
             config=LocalArtifactStoreConfig(
-                path=str(Path(self.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve() / "artifact_store")
+                path=str(Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve() / "artifact_store")
             ),
             flavor="local",
             type="artifact-store",
@@ -76,7 +220,6 @@ class Registry(Mindtrace):
 
         # Register the default materializers if there are none
         self._register_default_materializers()
-
         # Warm the materializer cache to reduce lock contention
         self._warm_materializer_cache()
 
@@ -170,7 +313,7 @@ class Registry(Mindtrace):
 
         # Acquire a lock for the entire save operation to prevent race conditions
         # Use a special lock name that covers all operations for this object
-        with self._get_object_lock(name, "save_operation"):
+        with self.get_lock(name, "save_operation"):
             if not self.version_objects or version is None:
                 version = self._next_version(name)
             else:
@@ -182,7 +325,7 @@ class Registry(Mindtrace):
 
             try:
                 # Save to temp location first
-                with self._get_object_lock(name, temp_version):
+                with self.get_lock(name, temp_version):
                     try:
                         metadata = {
                             "class": object_class,
@@ -252,7 +395,7 @@ class Registry(Mindtrace):
             raise ValueError(f"Object {name} version {version} does not exist.")
 
         # Acquire shared lock for reading if requested
-        lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
         with lock_context:
             metadata = self.info(name=name, version=version, acquire_lock=acquire_lock)
             if not metadata.get("class"):
@@ -267,7 +410,7 @@ class Registry(Mindtrace):
         init_params.update(kwargs)
 
         # Now acquire lock for the actual load operation
-        lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
         with lock_context:
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
@@ -324,7 +467,7 @@ class Registry(Mindtrace):
             versions = [version]
 
         for ver in versions:
-            with self._get_object_lock(name, version):
+            with self.get_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
         self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
@@ -370,9 +513,7 @@ class Registry(Mindtrace):
                 result[obj_name] = {}
                 for ver in self.list_versions(obj_name):
                     try:
-                        lock_context = (
-                            self._get_object_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
-                        )
+                        lock_context = self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
                         with lock_context:
                             meta = self.backend.fetch_metadata(obj_name, ver)
                             result[obj_name][ver] = meta
@@ -384,7 +525,7 @@ class Registry(Mindtrace):
             # Return info for a specific object
             if version == "latest":
                 version = self._latest(name)
-            lock_context = self._get_object_lock(name, version, shared=True) if acquire_lock else nullcontext()
+            lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
             with lock_context:
                 info = self.backend.fetch_metadata(name, version)
                 info.update({"version": version})
@@ -392,7 +533,7 @@ class Registry(Mindtrace):
         else:  # name is not None and version is None, return all versions for the given object name
             result = {}
             for ver in self.list_versions(name):
-                lock_context = self._get_object_lock(name, ver, shared=True) if acquire_lock else nullcontext()
+                lock_context = self.get_lock(name, ver, shared=True) if acquire_lock else nullcontext()
                 with lock_context:
                     info = self.backend.fetch_metadata(name, ver)
                     info.update({"version": ver})
@@ -427,7 +568,7 @@ class Registry(Mindtrace):
         if isinstance(materializer_class, type):
             materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
 
-        with self._get_object_lock("_registry", "materializers"):
+        with self.get_lock("_registry", "materializers"):
             self.backend.register_materializer(object_class, materializer_class)
 
             # Update cache
@@ -449,7 +590,7 @@ class Registry(Mindtrace):
                 return self._materializer_cache[object_class]
 
         # Cache miss - need to check backend (slow path)
-        with self._get_object_lock("_registry", "materializers", shared=True):
+        with self.get_lock("_registry", "materializers", shared=True):
             materializer = self.backend.registered_materializer(object_class)
 
             # Cache the result (even if None)
@@ -464,7 +605,7 @@ class Registry(Mindtrace):
         Returns:
             Dictionary mapping object classes to their registered materializer classes.
         """
-        with self._get_object_lock("_registry", "materializers", shared=True):
+        with self.get_lock("_registry", "materializers", shared=True):
             return self.backend.registered_materializers()
 
     def list_objects(self) -> List[str]:
@@ -473,7 +614,7 @@ class Registry(Mindtrace):
         Returns:
             List of object names.
         """
-        with self._get_object_lock("_registry", "objects", shared=True):
+        with self.get_lock("_registry", "objects", shared=True):
             return self.backend.list_objects()
 
     def list_versions(self, object_name: str) -> List[str]:
@@ -551,7 +692,7 @@ class Registry(Mindtrace):
         obj = source_registry.load(name=name, version=version)
 
         # Save to current registry with lock
-        with self._get_object_lock(target_name, target_version):
+        with self.get_lock(target_name, target_version):
             self.save(
                 name=target_name,
                 obj=obj,
@@ -563,7 +704,7 @@ class Registry(Mindtrace):
 
         self.logger.debug(f"Downloaded {name}@{version} from source registry to {target_name}@{target_version}")
 
-    def _get_object_lock(self, name: str, version: str, shared: bool = False) -> contextmanager:
+    def get_lock(self, name: str, version: str | None = None, shared: bool = False) -> contextmanager:
         """Get a distributed lock for a specific object version.
 
         Args:
@@ -574,9 +715,12 @@ class Registry(Mindtrace):
         Returns:
             A context manager that handles lock acquisition and release.
         """
-        if version == "latest":
-            version = self._latest(name)
-        lock_key = f"{name}@{version}"
+        if version is None:
+            lock_key = f"{name}"
+        else:
+            if version == "latest":
+                version = self._latest(name)
+            lock_key = f"{name}@{version}"
         lock_id = str(uuid.uuid4())
         timeout = self.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
 
@@ -662,7 +806,8 @@ class Registry(Mindtrace):
             table = Table(title=f"Registry at {self.backend.uri}")  # type: ignore
 
             table.add_column("Object", style="bold cyan")
-            table.add_column("Version", style="green")
+            if self.version_objects:
+                table.add_column("Version", style="green")
             table.add_column("Class", style="magenta")
             table.add_column("Value", style="yellow")
             table.add_column("Metadata", style="dim")
@@ -693,13 +838,21 @@ class Registry(Mindtrace):
                         # For non-basic types, just show the class name wrapped in angle brackets
                         value_str = f"<{class_name.split('.')[-1]}>"
 
-                    table.add_row(
-                        object_name,
-                        f"v{version}",
-                        class_name,
-                        value_str,
-                        metadata_str,
-                    )
+                    if self.version_objects:
+                        table.add_row(
+                            object_name,
+                            f"v{version}",
+                            class_name,
+                            value_str,
+                            metadata_str,
+                        )
+                    else:
+                        table.add_row(
+                            object_name,
+                            class_name,
+                            value_str,
+                            metadata_str,
+                        )
 
             with console.capture() as capture:
                 console.print(table)
@@ -805,7 +958,7 @@ class Registry(Mindtrace):
         """Warm the materializer cache to reduce lock contention during operations."""
         try:
             # Get all registered materializers and cache them
-            with self._get_object_lock("_registry", "materializers", shared=True):
+            with self.get_lock("_registry", "materializers", shared=True):
                 all_materializers = self.backend.registered_materializers()
 
                 with self._materializer_cache_lock:
@@ -993,7 +1146,7 @@ class Registry(Mindtrace):
                 raise KeyError(f"Object {name} version {version} does not exist")
 
             # Use a single exclusive lock for both reading and deleting
-            with self._get_object_lock(name, version):
+            with self.get_lock(name, version):
                 value = self.load(name=name, version=version, acquire_lock=False)
                 self.delete(name=name, version=version)
                 return value
@@ -1020,7 +1173,7 @@ class Registry(Mindtrace):
                     name, version = key.split("@", 1)
                 else:
                     name, version = key, None
-                with self._get_object_lock(name, version or "latest"):
+                with self.get_lock(name, version or "latest"):
                     self[key] = default
             return default
 

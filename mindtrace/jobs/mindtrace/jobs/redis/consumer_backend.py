@@ -3,9 +3,9 @@ import time
 from queue import Empty
 from typing import Optional
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConsumerBackend(ConsumerBackendBase):
@@ -24,6 +24,11 @@ class RedisConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
+
+        # Guard against empty queue list to avoid infinite loop
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
 
         messages_consumed = 0
         try:
@@ -76,6 +81,19 @@ class RedisConsumerBackend(ConsumerBackendBase):
             self.consume(num_messages=1, queues=queues, block=block)
 
         self.logger.info(f"Stopped consuming messages from queues: {queues} (queues empty).")
+
+    def close(self):
+        """Close the Redis connection and clean up resources."""
+        if hasattr(self, "connection") and self.connection is not None:
+            self.connection.close()
+            self.connection = None
+
+    def __del__(self):
+        """Ensure cleanup happens when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def set_poll_timeout(self, timeout: int) -> None:
         """Set the polling timeout for Redis operations."""

@@ -73,6 +73,7 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
     - Select up to num_expected (no pairwise spacing rule)
     - Report union bbox; [] if none selected
     """
+
     def __init__(self, utils: Any):
         super().__init__(utils)
         self.used_indices: Set[int]
@@ -107,9 +108,11 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
             params=feature_config.params,
         )
 
-    def _select_boxes_in_roi(self, boxes: np.ndarray, x1: int, y1: int, x2: int, y2: int, expected: int, params: Dict[str, Any]) -> np.ndarray:
+    def _select_boxes_in_roi(
+        self, boxes: np.ndarray, x1: int, y1: int, x2: int, y2: int, expected: int, params: Dict[str, Any]
+    ) -> np.ndarray:
         """Return indices of selected boxes intersecting the ROI.
-        
+
         Selects top-N boxes by overlap area with the ROI.
         """
         ix1 = np.maximum(boxes[:, 0], x1)
@@ -134,8 +137,6 @@ class BoxFeatureExtractor(BaseFeatureExtractor):
         selected_idx = candidates[topk_idx_rel]
         return selected_idx[np.argsort(area[selected_idx])[::-1]]
 
-    
-
 
 class MaskFeatureExtractor(BaseFeatureExtractor):
     """Assign features from segmentation masks.
@@ -156,7 +157,14 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
     def _reset_state(self) -> None:
         self.assigned_contours = {}
 
-    def extract(self, mask: np.ndarray, feature_config: FeatureConfig, feature_id: str, contours_cache: Dict[int, List[np.ndarray]] | None = None, **kwargs: Any) -> Feature:
+    def extract(
+        self,
+        mask: np.ndarray,
+        feature_config: FeatureConfig,
+        feature_id: str,
+        contours_cache: Dict[int, List[np.ndarray]] | None = None,
+        **kwargs: Any,
+    ) -> Feature:
         params = feature_config.params or {}
         class_id = params.get("class_id")
         if class_id is None:
@@ -171,7 +179,9 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if class_id not in self.assigned_contours:
             self.assigned_contours[class_id] = set()
-        selected_contours = self._select_contours_in_roi(contours, feature_config.bbox, feature_config.expected_count, params, self.assigned_contours[class_id])
+        selected_contours = self._select_contours_in_roi(
+            contours, feature_config.bbox, feature_config.expected_count, params, self.assigned_contours[class_id]
+        )
         found = len(selected_contours)
         combined_bbox = self._compute_contours_bbox(selected_contours) if found > 0 else []
         return Feature(
@@ -183,9 +193,11 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
             params=params,
         )
 
-    def _select_contours_in_roi(self, contours: List[np.ndarray], roi_bbox: List[int], expected: int, params: Dict[str, Any], assigned: set) -> List[Tuple[int, np.ndarray]]:
+    def _select_contours_in_roi(
+        self, contours: List[np.ndarray], roi_bbox: List[int], expected: int, params: Dict[str, Any], assigned: set
+    ) -> List[Tuple[int, np.ndarray]]:
         """Return [(index, contour), ...] for selected contours intersecting ROI.
-        
+
         Selects top-N contours by area that intersect with the ROI.
         """
         x1, y1, x2, y2 = roi_bbox
@@ -207,10 +219,11 @@ class MaskFeatureExtractor(BaseFeatureExtractor):
             assigned.add(idx)
         return [(idx, contour) for idx, contour, _, _ in selected]
 
-    
-
     def _compute_contours_bbox(self, selected_contours: List[Tuple[int, np.ndarray]]) -> List[int]:
         all_points = np.vstack([contour.reshape(-1, 2) for _, contour in selected_contours])
-        return [int(np.min(all_points[:, 0])), int(np.min(all_points[:, 1])), int(np.max(all_points[:, 0])), int(np.max(all_points[:, 1]))]
-
-
+        return [
+            int(np.min(all_points[:, 0])),
+            int(np.min(all_points[:, 1])),
+            int(np.max(all_points[:, 0])),
+            int(np.max(all_points[:, 1])),
+        ]
