@@ -18,6 +18,41 @@ class TestDatalakeIntegration:
         assert datalake.registries == {}
 
     @pytest.mark.asyncio
+    async def test_datalake_create_class_method(self):
+        """Test that Datalake.create() class method works correctly with real database."""
+        mongo_db_uri = "mongodb://localhost:27018"
+        mongo_db_name = "datalake_test_db"
+
+        # Create datalake using the create() class method
+        datalake = await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify the instance is properly initialized
+        assert isinstance(datalake, Datalake)
+        assert datalake.mongo_db_uri == mongo_db_uri
+        assert datalake.mongo_db_name == mongo_db_name
+        assert datalake.datum_database is not None
+        assert datalake.registries == {}
+
+        # Test that the datalake is ready to use by adding and retrieving a datum
+        test_data = {"test": "create_method", "value": 123}
+        test_metadata = {"source": "integration_test", "method": "create"}
+
+        # Add datum
+        datum = await datalake.add_datum(test_data, test_metadata)
+
+        assert datum.id is not None
+        assert datum.data == test_data
+        assert datum.metadata == test_metadata
+
+        # Retrieve datum to ensure everything works
+        retrieved_datum = await datalake.get_datum(datum.id)
+
+        assert retrieved_datum is not None
+        assert retrieved_datum.id == datum.id
+        assert retrieved_datum.data == test_data
+        assert retrieved_datum.metadata == test_metadata
+
+    @pytest.mark.asyncio
     async def test_add_and_get_datum_database_storage(self, datalake: Datalake):
         """Test adding and retrieving a datum stored in the database."""
         await datalake.initialize()
