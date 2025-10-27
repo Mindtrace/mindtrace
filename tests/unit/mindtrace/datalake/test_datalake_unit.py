@@ -468,3 +468,190 @@ class TestDatalakeUnit:
         for i, datum in enumerate(result):
             assert datum.added_at == added_at_times[i]
             assert isinstance(datum.added_at, datetime)
+
+    @pytest.mark.asyncio
+    async def test_create_class_method_success(self, mock_database, mock_registry):
+        """Test successful creation of Datalake instance using create() class method."""
+        mongo_db_uri = "mongodb://test:27017"
+        mongo_db_name = "test_db"
+
+        class _MockDatum:
+            def __init__(
+                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+            ):
+                self.id = PydanticObjectId()
+                self.data = data
+                self.registry_uri = registry_uri
+                self.registry_key = registry_key
+                self.derived_from = derived_from
+                self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
+
+        with (
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
+            patch("mindtrace.datalake.datalake.Datum", _MockDatum),
+        ):
+            result = await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify the returned instance is a Datalake
+        assert isinstance(result, Datalake)
+
+        # Verify the instance is properly initialized
+        assert result.mongo_db_uri == mongo_db_uri
+        assert result.mongo_db_name == mongo_db_name
+        assert result.datum_database == mock_database
+        assert result.registries == {}
+
+        # Verify initialize was called
+        mock_database.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_class_method_with_different_parameters(self, mock_database, mock_registry):
+        """Test create() class method with different MongoDB parameters."""
+        mongo_db_uri = "mongodb://localhost:27018"
+        mongo_db_name = "production_db"
+
+        class _MockDatum:
+            def __init__(
+                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+            ):
+                self.id = PydanticObjectId()
+                self.data = data
+                self.registry_uri = registry_uri
+                self.registry_key = registry_key
+                self.derived_from = derived_from
+                self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
+
+        with (
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
+            patch("mindtrace.datalake.datalake.Datum", _MockDatum),
+        ):
+            result = await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify the returned instance has correct parameters
+        assert result.mongo_db_uri == mongo_db_uri
+        assert result.mongo_db_name == mongo_db_name
+        assert result.datum_database == mock_database
+        assert result.registries == {}
+
+        # Verify initialize was called
+        mock_database.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_class_method_initialization_failure(self, mock_database, mock_registry):
+        """Test create() class method when initialization fails."""
+        mongo_db_uri = "mongodb://test:27017"
+        mongo_db_name = "test_db"
+
+        # Make initialize raise an exception
+        mock_database.initialize.side_effect = Exception("Database connection failed")
+
+        class _MockDatum:
+            def __init__(
+                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+            ):
+                self.id = PydanticObjectId()
+                self.data = data
+                self.registry_uri = registry_uri
+                self.registry_key = registry_key
+                self.derived_from = derived_from
+                self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
+
+        with (
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
+            patch("mindtrace.datalake.datalake.Datum", _MockDatum),
+        ):
+            # Should raise the exception from initialize
+            with pytest.raises(Exception, match="Database connection failed"):
+                await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify initialize was called
+        mock_database.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_class_method_returns_initialized_instance(self, mock_database, mock_registry):
+        """Test that create() class method returns a fully initialized instance."""
+        mongo_db_uri = "mongodb://test:27017"
+        mongo_db_name = "test_db"
+
+        class _MockDatum:
+            def __init__(
+                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+            ):
+                self.id = PydanticObjectId()
+                self.data = data
+                self.registry_uri = registry_uri
+                self.registry_key = registry_key
+                self.derived_from = derived_from
+                self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
+
+        with (
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
+            patch("mindtrace.datalake.datalake.Datum", _MockDatum),
+        ):
+            result = await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify the instance is ready to use (can call methods without additional initialization)
+        assert hasattr(result, "datum_database")
+        assert hasattr(result, "registries")
+        assert hasattr(result, "mongo_db_uri")
+        assert hasattr(result, "mongo_db_name")
+
+        # Verify all attributes are properly set
+        assert result.mongo_db_uri == mongo_db_uri
+        assert result.mongo_db_name == mongo_db_name
+        assert result.datum_database == mock_database
+        assert result.registries == {}
+
+        # Verify initialize was called exactly once
+        mock_database.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_class_method_multiple_calls(self, mock_database, mock_registry):
+        """Test multiple calls to create() class method create independent instances."""
+        mongo_db_uri = "mongodb://test:27017"
+        mongo_db_name = "test_db"
+
+        class _MockDatum:
+            def __init__(
+                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+            ):
+                self.id = PydanticObjectId()
+                self.data = data
+                self.registry_uri = registry_uri
+                self.registry_key = registry_key
+                self.derived_from = derived_from
+                self.metadata = metadata or {}
+                self.added_at = added_at if added_at is not None else datetime.now()
+
+        with (
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
+            patch("mindtrace.datalake.datalake.Datum", _MockDatum),
+        ):
+            # Create two instances
+            result1 = await Datalake.create(mongo_db_uri, mongo_db_name)
+            result2 = await Datalake.create(mongo_db_uri, mongo_db_name)
+
+        # Verify both instances are created successfully
+        assert isinstance(result1, Datalake)
+        assert isinstance(result2, Datalake)
+
+        # Verify they are different instances
+        assert result1 is not result2
+
+        # Verify both have correct attributes
+        assert result1.mongo_db_uri == mongo_db_uri
+        assert result2.mongo_db_uri == mongo_db_uri
+        assert result1.mongo_db_name == mongo_db_name
+        assert result2.mongo_db_name == mongo_db_name
+
+        # Verify initialize was called twice (once for each instance)
+        assert mock_database.initialize.call_count == 2

@@ -53,6 +53,15 @@ class Datalake(Mindtrace):
     async def initialize(self):
         await self.datum_database.initialize()
 
+    @classmethod
+    async def create(cls, mongo_db_uri: str, mongo_db_name: str) -> "Datalake":
+        """
+        Create a Datalake instance from a configuration dictionary.
+        """
+        datalake = cls(mongo_db_uri=mongo_db_uri, mongo_db_name=mongo_db_name)
+        await datalake.initialize()
+        return datalake
+
     async def add_datum(
         self,
         data: Any,
