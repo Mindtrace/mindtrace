@@ -139,16 +139,16 @@ class SystemMetricsCollector:
         """
         return {metric: self.AVAILABLE_METRICS[metric]() for metric in self.metrics_to_collect}
 
-    async def _update_metrics(self) -> None:
+    def _update_metrics(self) -> None:
         """Update the metrics cache with the latest system metrics."""
-        self.metrics_cache = await asyncio.to_thread(self._collect_metrics)
+        self.metrics_cache = self._collect_metrics()
 
     def _start_periodic_metrics_collection(self) -> None:
         """Start periodic system metrics collection."""
         self._event = threading.Event()
         while not self._event.is_set():
-            asyncio.run(self._update_metrics())
-            threading.Event().wait(self.interval)
+            self._update_metrics()
+            self._event.wait(self.interval)
 
     def __enter__(self):
         return self
