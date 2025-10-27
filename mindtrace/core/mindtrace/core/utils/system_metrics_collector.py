@@ -128,7 +128,8 @@ class SystemMetricsCollector:
                         break
                     time.sleep(1)
         """
-        self._event.set()
+        if self._event is not None:
+            self._event.set()
 
     def _collect_metrics(self) -> dict[str, float | list | dict]:
         """Collect the specified system metrics.
