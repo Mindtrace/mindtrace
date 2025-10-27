@@ -16,7 +16,6 @@ The Mindtrace Datalake is a core component of the Mindtrace platform that provid
 - **Flexible Data Formats**: Return data as list of dictionaries or transposed dictionary of lists
 - **Registry Caching**: Automatic caching of registry instances for performance
 - **Timestamp Tracking**: Automatic `added_at` timestamps for chronological ordering
-- **Comprehensive Testing**: 99% test coverage with 116 unit tests and 44 integration tests
 
 ## Installation
 
@@ -313,18 +312,12 @@ result = await datalake.query_data([
 ```
 
 #### Derivation References
-Use column names (strings) instead of integer indices for `derived_from`:
+Use column names (strings) for `derived_from`:
 ```python
 # ✅ Correct - uses column name
 query = [
     {"metadata.project": "cv", "column": "image_id"},
     {"derived_from": "image_id", "data.type": "classification", "column": "label_id"}
-]
-
-# ❌ Incorrect - uses integer index (old format)
-query = [
-    {"metadata.project": "cv", "column": "image_id"},
-    {"derived_from": 0, "data.type": "classification", "column": "label_id"}
 ]
 ```
 
