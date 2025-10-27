@@ -16,10 +16,10 @@ class MindtraceMeta(type):
     """Metaclass for Mindtrace class.
 
     The MindtraceMeta metaclass enables classes deriving from Mindtrace to automatically use the same default logger within
-    class methods as it does within instance methods. I.e. consider the following class:
+    class methods as it does within instance methods. i.e. consider the following class:
 
-    Example, logging in both class methods and instance methods::
-
+    Usage:
+        ```python
         from mindtrace.core import Mindtrace
 
         class MyClass(Mindtrace):
@@ -32,6 +32,7 @@ class MindtraceMeta(type):
             @classmethod
             def class_method(cls):
                 cls.logger.info(f"Using logger: {cls.logger.name}")  # Using logger: mindtrace.my_module.MyClass
+        ```
     """
 
     def __init__(cls, name, bases, attr_dict):
@@ -73,8 +74,8 @@ class Mindtrace(metaclass=MindtraceMeta):
     The class automatically provides logging capabilities for both class methods and instance methods.
     For example:
 
-    .. code-block:: python
-
+    Usage:
+        ```python
         from mindtrace.core import Mindtrace
 
         class MyClass(Mindtrace):
@@ -87,7 +88,7 @@ class Mindtrace(metaclass=MindtraceMeta):
             @classmethod
             def class_method(cls):
                 cls.logger.info(f"Using logger: {cls.logger.name}")  # Using logger: mindtrace.my_module.MyClass
-
+        ```
     The logging functionality is automatically provided through the MindtraceMeta metaclass,
     which ensures consistent logging behavior across all method types.
     """
@@ -205,28 +206,28 @@ class Mindtrace(metaclass=MindtraceMeta):
             self: The instance of the class that the method is being called on. Self only needs to be passed in if the
                 wrapped method does not have self as the first argument. Refer to the example below for more details.
 
-        Example::
-
+        Usage:
+            ```python
             from mindtrace.core import Mindtrace
 
-            class MyClass(Mindtrace):
-                def __init__(self):
-                    super().__init__()
+                class MyClass(Mindtrace):
+                    def __init__(self):
+                        super().__init__()
 
-                @Mindtrace.autolog()
-                def divide(self, arg1, arg2):
-                    self.logger.info("We are about to divide")
-                    result = arg1 / arg2
-                    self.logger.info("We have divided")
-                    return result
+                    @Mindtrace.autolog()
+                    def divide(self, arg1, arg2):
+                        self.logger.info("We are about to divide")
+                        result = arg1 / arg2
+                        self.logger.info("We have divided")
+                        return result
 
-            my_instance = MyClass()
-            my_instance.divide(1, 2)
-            my_instance.divide(1, 0)
-
+                my_instance = MyClass()
+                my_instance.divide(1, 2)
+                my_instance.divide(1, 0)
+            ```
         The resulting log file should contain something similar to the following:
 
-        .. code-block:: text
+        ```text
 
             MyClass - DEBUG - Calling divide with args: (1, 2) and kwargs: {}
             MyClass - INFO - We are about to divide
@@ -237,29 +238,30 @@ class Mindtrace(metaclass=MindtraceMeta):
             MyClass - ERROR - division by zero
             Traceback (most recent call last):
             ...
-
+        ```
         If the wrapped method does not have self as the first argument, self must be passed in as an argument to the
         autolog decorator.
 
-        .. code-block:: python
+        Usage:
+            ```python
+                from fastapi import FastAPI
+                from mindtrace.core import Mindtrace
 
-            from fastapi import FastAPI
-            from mindtrace.core import Mindtrace
+                class MyClass(Mindtrace):
+                    def __init__():
+                        super().__init__()
 
-            class MyClass(Mindtrace):
-                def __init__():
-                    super().__init__()
+                    def create_app(self):
+                        app_ = FastAPI()
 
-                def create_app(self):
-                    app_ = FastAPI()
+                        @Mindtrace.autolog(self=self)  # self must be passed in as an argument as it is not captured in status()
+                        @app_.post("/status")
+                        def status():
+                            return {"status": "Available"}
 
-                    @Mindtrace.autolog(self=self)  # self must be passed in as an argument as it is not captured in status()
-                    @app_.post("/status")
-                    def status():
-                        return {"status": "Available"}
+                        return app_
 
-                    return app_
-
+            ```
         """
         prefix_formatter = ifnone(
             prefix_formatter,
@@ -363,7 +365,8 @@ class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
     such as logging, configuration, and context management. Use this class instead of
     Mindtrace when you need to define abstract methods or properties in your class.
 
-    Example:
+    Usage:
+        ```python
         from mindtrace.core import MindtraceABC
         from abc import abstractmethod
 
@@ -375,6 +378,7 @@ class MindtraceABC(Mindtrace, ABC, metaclass=MindtraceABCMeta):
             def process_data(self, data):
                 '''Must be implemented by concrete subclasses.'''
                 pass
+        ```
 
     Note:
         Without this class, attempting to create a class that inherits from both Mindtrace class and ABC
