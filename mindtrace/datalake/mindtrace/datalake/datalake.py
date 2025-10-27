@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import random
 from collections import defaultdict
@@ -144,7 +145,7 @@ class Datalake(Mindtrace):
         Raises:
             Exception: If registry operations fail during data loading
         """
-        return [await self.get_datum(datum_id) for datum_id in datum_ids]
+        return await asyncio.gather(*[self.get_datum(datum_id) for datum_id in datum_ids])
 
     async def get_directly_derived_data(self, datum_id: PydanticObjectId) -> list[PydanticObjectId]:
         """
