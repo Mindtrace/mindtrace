@@ -4,8 +4,8 @@ import pika.exceptions
 from pika import BlockingConnection, ConnectionParameters, PlainCredentials, exceptions
 from pika.adapters.blocking_connection import BlockingChannel
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RabbitMQConnection(BrokerConnectionBase):

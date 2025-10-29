@@ -25,8 +25,14 @@ class MINDTRACE_DIR_PATHS(BaseModel):
     TEMP_DIR: str
     REGISTRY_DIR: str
     LOGGER_DIR: str
+    STRUCT_LOGGER_DIR: str
     CLUSTER_REGISTRY_DIR: str
     SERVER_PIDS_DIR: str
+    ORCHESTRATOR_LOCAL_CLIENT_DIR: str
+
+
+class MINDTRACE_LOGGER(BaseModel):
+    USE_STRUCTLOG: bool
 
 
 class MINDTRACE_DEFAULT_HOST_URLS(BaseModel):
@@ -48,6 +54,10 @@ class MINDTRACE_CLUSTER(BaseModel):
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: SecretStr
     MINIO_BUCKET: str
+    RABBITMQ_HOST: str
+    RABBITMQ_PORT: int
+    RABBITMQ_USERNAME: str
+    RABBITMQ_PASSWORD: str
 
 
 class MINDTRACE_MCP(BaseModel):
@@ -74,6 +84,7 @@ class CoreSettings(BaseSettings):
     MINDTRACE_MCP: MINDTRACE_MCP
     MINDTRACE_WORKER: MINDTRACE_WORKER
     MINDTRACE_TEST_PARAM: str = ""
+    MINDTRACE_LOGGER: MINDTRACE_LOGGER
 
     model_config = {
         "env_nested_delimiter": "__",
