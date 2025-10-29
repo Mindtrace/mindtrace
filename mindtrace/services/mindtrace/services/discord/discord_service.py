@@ -368,11 +368,11 @@ class DiscordService(Service):
         Returns:
             Bot status information
         """
-        if self.discord_client.bot is None:
+        if self.discord_client.bot is None or self.discord_client.bot.user is None:
             return DiscordStatusOutput(bot_name=None, guild_count=0, user_count=0, latency=0.0, status="not_started")
 
         return DiscordStatusOutput(
-            bot_name=self.discord_client.bot.user.name if self.discord_client.bot.user else None,
+            bot_name=self.discord_client.bot.user.name,
             guild_count=len(self.discord_client.bot.guilds),
             user_count=len(self.discord_client.bot.users),
             latency=0.0

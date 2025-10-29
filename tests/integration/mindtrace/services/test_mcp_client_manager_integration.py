@@ -42,7 +42,7 @@ async def test_mcp_client_manager_connect_integration(echo_mcp_manager):
 @pytest.mark.asyncio
 async def test_mcp_client_manager_launch_integration():
     host = "localhost"
-    port = 8094
+    port = 8095
     base_url = f"http://{host}:{port}"
     mcp_client = EchoService.mcp.launch(host=host, port=port, wait_for_launch=True, timeout=30)
 
