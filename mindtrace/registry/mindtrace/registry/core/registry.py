@@ -1093,9 +1093,29 @@ class Registry(Mindtrace):
         By default, the registry will only register materializers that are not already registered.
         """
         self.logger.info("Registering default materializers...")
-        for object_class, materializer_class in self.get_default_materializers().items():
-            if override_preexisting_materializers or object_class not in self.backend.registered_materializers():
-                self.register_materializer(object_class, materializer_class)
+        
+        # Use batch registration for better performance 
+        default_materializers = self.get_default_materializers()
+        existing_materializers = self.backend.registered_materializers()
+        
+        # Filter materializers that need to be registered
+        materializers_to_register = {}
+        for object_class, materializer_class in default_materializers.items():
+            if override_preexisting_materializers or object_class not in existing_materializers:
+                # Ensure materializer_class is a string for JSON serialization
+                if isinstance(materializer_class, type):
+                    materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+                materializers_to_register[object_class] = materializer_class
+        
+        if materializers_to_register:
+            # Register all materializers in one batch operation
+            with self.get_lock("_registry", "materializers"):
+                self.backend.register_materializers_batch(materializers_to_register)
+                
+                # Update cache
+                with self._materializer_cache_lock:
+                    self._materializer_cache.update(materializers_to_register)
+        
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):

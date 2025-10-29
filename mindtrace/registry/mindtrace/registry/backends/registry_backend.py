@@ -125,6 +125,18 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         """
         pass
 
+    def register_materializers_batch(self, materializers: Dict[str, str]):
+        """Register multiple materializers in a single operation for better performance.
+        
+        Default implementation loops through and calls register_materializer for each. Subclasses can override this 
+        method to provide optimized batch operations.
+        
+        Args:
+            materializers: Dictionary mapping object classes to materializer classes.
+        """
+        for object_class, materializer_class in materializers.items():
+            self.register_materializer(object_class, materializer_class)
+
     @abstractmethod
     def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.
@@ -158,7 +170,9 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         Raises:
             ValueError: If the object name contains invalid characters
         """
-        if "_" in name:
+        if not name or not name.strip():
+            raise ValueError("Object names cannot be empty.")
+        elif "_" in name:
             raise ValueError("Object names cannot contain underscores. Use colons (':') for namespacing.")
         elif "@" in name:
             raise ValueError("Object names cannot contain '@'.")
