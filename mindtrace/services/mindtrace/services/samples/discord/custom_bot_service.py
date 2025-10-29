@@ -40,9 +40,9 @@ class CustomDiscordService(DiscordService):
         self.register_event_handler(DiscordEventType.MESSAGE, CustomEventHandler())
 
         # Register slash commands immediately
-        print("Registering slash commands...")
+        self.logger.info("Registering slash commands...")
         self._register_commands()
-        print(f"Registered {len(self.discord_client.bot.tree.get_commands())} slash commands")
+        self.logger.info(f"Registered {len(self.discord_client.bot.tree.get_commands())} slash commands")
 
     def _register_commands(self):
         """Register the actual slash commands."""
@@ -50,7 +50,7 @@ class CustomDiscordService(DiscordService):
         @self.discord_client.bot.tree.command(name="info", description="Get server information")
         async def info_command(interaction: discord.Interaction):
             """Get server information."""
-            print(f"Info command called by {interaction.user}")
+            self.logger.info(f"Info command called by {interaction.user}")
             if not interaction.guild:
                 await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
                 return
