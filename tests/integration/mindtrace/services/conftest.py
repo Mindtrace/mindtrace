@@ -1,8 +1,9 @@
 import pytest_asyncio
 
 from mindtrace.services import Gateway
-from mindtrace.services.sample.echo_mcp import EchoService as echo_mcp_service
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.discord import DiscordService
+from mindtrace.services.samples.echo_mcp import EchoService as echo_mcp_service
+from mindtrace.services.samples.echo_service import EchoService
 
 
 @pytest_asyncio.fixture(scope="session")
@@ -65,4 +66,33 @@ async def echo_mcp_manager():
             yield cm
     except Exception as e:
         print(f"Echo MCP service launch failed: {e}")
+        raise
+
+
+@pytest_asyncio.fixture(scope="session")
+async def discord_service_manager():
+    """Launch DiscordService and provide a connection manager for testing.
+
+    This fixture uses the DiscordService.launch context manager to properly start and stop the service, yielding a
+    connection manager that tests can use to interact with the running service.
+
+    Uses the testing Discord token from MINDTRACE_TESTING_API_KEYS__DISCORD.
+    Session-scoped for performance - service is launched once and reused across all tests in the session.
+    """
+    try:
+        # Get the testing token from config
+        from mindtrace.core.config import CoreConfig
+
+        config = CoreConfig()
+        testing_token = config.get_secret("MINDTRACE_TESTING_API_KEYS", "DISCORD")
+
+        if testing_token is None:
+            raise RuntimeError(
+                "No testing Discord token found. Please set MINDTRACE_TESTING_API_KEYS__DISCORD in your config."
+            )
+
+        with DiscordService.launch(url="http://localhost:8094", token=testing_token, timeout=30) as cm:
+            yield cm
+    except Exception as e:
+        print(f"Discord service launch failed: {e}")
         raise
