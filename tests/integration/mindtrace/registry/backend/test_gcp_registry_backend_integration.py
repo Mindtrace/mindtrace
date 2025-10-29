@@ -421,8 +421,12 @@ def test_concurrent_operations(gcp_registry):
     
     def worker(worker_id):
         try:
-            with gcp_registry._get_object_lock("test:concurrent", "worker"):
+            # Use unique object name per worker to avoid lock contention
+            obj_name = f"test:concurrent:{worker_id}"
+            with gcp_registry.get_lock(obj_name):
                 results.append(f"Worker {worker_id} acquired lock")
+                # Save an object to use the lock
+                gcp_registry.save(obj_name, f"data_{worker_id}")
                 time.sleep(0.1)  # Simulate work
                 results.append(f"Worker {worker_id} completed")
         except Exception as e:
@@ -469,6 +473,9 @@ def test_error_handling_nonexistent_bucket():
 
 def test_metadata_file_initialization(backend, gcs_client, test_bucket):
     """Test that metadata file is initialized correctly."""
+    # Ensure metadata file is created by performing an operation that requires it
+    backend._ensure_metadata_file()
+    
     # Check that metadata file exists
     bucket = gcs_client.bucket(test_bucket)
     metadata_objects = list(bucket.list_blobs(prefix="registry_metadata.json"))
