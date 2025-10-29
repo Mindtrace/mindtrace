@@ -154,7 +154,7 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
+                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -188,8 +188,8 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                async with httpx.AsyncClient(timeout=30) as client:
-                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
+                async with httpx.AsyncClient(timeout=60) as client:
+                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 

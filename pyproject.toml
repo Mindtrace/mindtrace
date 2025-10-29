@@ -33,12 +33,16 @@ cameras-basler = ["mindtrace-hardware[cameras-basler]"]
 cameras-all = ["mindtrace-hardware[cameras-all]"]
 hardware-all = ["mindtrace-hardware[hardware-all]"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest-cov>=6.1.1",
     "pytest-asyncio>=1.0.0",
     "pytest>=8.3.5",
+    "pytest-mock>=3.12.0",
+    "pytest-timeout>=2.3.1",
     "httpx>=0.27.2",
+    "aioresponses>=0.7.6",
+    "fakeredis>=2.24.1",
     "pre-commit>=4.2.0",
     "twine>=6.1.0",
 ]

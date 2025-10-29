@@ -7,5 +7,5 @@ from mindtrace.jobs import JobSchema
 if __name__ == "__main__":
     cluster_manager = ClusterManager.connect("http://localhost:8002")
     worker_cm = EchoWorker.connect("http://localhost:8003")
-    echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+    echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
     cluster_manager.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))

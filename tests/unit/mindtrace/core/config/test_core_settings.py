@@ -41,8 +41,10 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -77,8 +79,10 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -127,8 +131,10 @@ class TestCoreSettings:
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
                 "MINDTRACE_DIR_PATHS__LOGGER_DIR": "/test/logger",
+                "MINDTRACE_DIR_PATHS__STRUCT_LOGGER_DIR": "/test/structlog",
                 "MINDTRACE_DIR_PATHS__CLUSTER_REGISTRY_DIR": "/test/cluster",
                 "MINDTRACE_DIR_PATHS__SERVER_PIDS_DIR": "/test/pids",
+                "MINDTRACE_DIR_PATHS__ORCHESTRATOR_LOCAL_CLIENT_DIR": "/test/orchestrator",
                 "MINDTRACE_DEFAULT_HOST_URLS__SERVICE": "http://localhost:8000",
                 "MINDTRACE_DEFAULT_HOST_URLS__CLUSTER_MANAGER": "http://localhost:8001",
                 "MINDTRACE_MINIO__MINIO_REGISTRY_URI": "http://localhost:9000",
@@ -166,8 +172,13 @@ ROOT = /test/root_from_ini
 TEMP_DIR = /test/temp_from_ini
 REGISTRY_DIR = /test/registry_from_ini
 LOGGER_DIR = /test/logger_from_ini
+STRUCT_LOGGER_DIR = /test/structlog_from_ini
 CLUSTER_REGISTRY_DIR = /test/cluster_from_ini
 SERVER_PIDS_DIR = /test/pids_from_ini
+ORCHESTRATOR_LOCAL_CLIENT_DIR = /test/orchestrator_from_ini
+
+[MINDTRACE_LOGGER]
+USE_STRUCTLOG = True
 
 [MINDTRACE_DEFAULT_HOST_URLS]
 SERVICE = http://localhost:8000
@@ -186,6 +197,10 @@ MINIO_ENDPOINT = localhost:9000
 MINIO_ACCESS_KEY = minioadmin
 MINIO_SECRET_KEY = minioadmin
 MINIO_BUCKET = mindtrace
+RABBITMQ_PORT = 5672
+RABBITMQ_HOST = localhost
+RABBITMQ_USERNAME = user
+RABBITMQ_PASSWORD = password
 
 [MINDTRACE_MCP]
 MOUNT_PATH = /mnt
@@ -247,15 +262,19 @@ class TestMindtraceModels:
             TEMP_DIR="/test/temp",
             REGISTRY_DIR="/test/registry",
             LOGGER_DIR="/test/logger",
+            STRUCT_LOGGER_DIR="/test/structlog",
             CLUSTER_REGISTRY_DIR="/test/cluster",
             SERVER_PIDS_DIR="/test/pids",
+            ORCHESTRATOR_LOCAL_CLIENT_DIR="/test/orchestrator",
         )
         assert model.ROOT == "/test/root"
         assert model.TEMP_DIR == "/test/temp"
         assert model.REGISTRY_DIR == "/test/registry"
         assert model.LOGGER_DIR == "/test/logger"
+        assert model.STRUCT_LOGGER_DIR == "/test/structlog"
         assert model.CLUSTER_REGISTRY_DIR == "/test/cluster"
         assert model.SERVER_PIDS_DIR == "/test/pids"
+        assert model.ORCHESTRATOR_LOCAL_CLIENT_DIR == "/test/orchestrator"
 
     def test_mindtrace_models_validation(self):
         """Test that Mindtrace models validate correctly."""

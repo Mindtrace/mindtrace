@@ -1,8 +1,8 @@
 import time
 from typing import TYPE_CHECKING
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
-from mindtrace.jobs.utils.checks import ifnone
 
 if TYPE_CHECKING:  # pragma: no cover
     from mindtrace.jobs.local.client import LocalClient

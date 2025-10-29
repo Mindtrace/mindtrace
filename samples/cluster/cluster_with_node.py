@@ -17,7 +17,7 @@ def main():
         )
         worker_url = "http://localhost:8004"
         node.launch_worker(worker_type="echoworker", worker_url=worker_url)
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_manager.register_job_to_worker(job_type="echo", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 3})
         cluster_manager.submit_job(job)
