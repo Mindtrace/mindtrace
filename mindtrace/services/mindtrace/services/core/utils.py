@@ -207,15 +207,19 @@ def generate_connection_manager(
 
         method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
 
+        # Replace dots with underscores to make it a valid identifier
+        method_name = endpoint_name.replace(".", "_")
+
         # Set up sync method
-        method.__name__ = endpoint_name
+        method.__name__ = method_name
         method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
-        setattr(ServiceConnectionManager, endpoint_name, method)
+        setattr(ServiceConnectionManager, method_name, method)
 
         # Set up async method
-        amethod.__name__ = f"a{endpoint_name}"
+        async_method_name = f"a{method_name}"
+        amethod.__name__ = async_method_name
         amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
-        setattr(ServiceConnectionManager, f"a{endpoint_name}", amethod)
+        setattr(ServiceConnectionManager, async_method_name, amethod)
 
     ServiceConnectionManager.__name__ = class_name
     return ServiceConnectionManager

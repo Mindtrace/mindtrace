@@ -13,7 +13,7 @@ import asyncio
 import time
 
 from mindtrace.services import ServerStatus, generate_connection_manager
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.samples.echo_service import EchoService
 
 
 def sync_example():
