@@ -240,14 +240,14 @@ class GCPRegistryBackend(RegistryBackend):
         finally:
             os.unlink(temp_path)
 
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete object metadata from GCS.
 
         Args:
-            model_name: Name of the object.
+            name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{model_name.replace(':', '_')}@{version}.json"
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         self.gcs.delete(meta_path)
 
@@ -336,6 +336,44 @@ class GCPRegistryBackend(RegistryBackend):
             raise e
         else:
             self.logger.debug(f"Registered materializer for {object_class}: {materializer_class}")
+
+    def register_materializers_batch(self, materializers: Dict[str, str]):
+        """Register multiple materializers in a single operation for better performance.
+        
+        Args:
+            materializers: Dictionary mapping object classes to materializer classes.
+        """
+        try:
+            # Download current metadata
+            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+                temp_path = f.name
+
+            try:
+                self.gcs.download(self._metadata_path, temp_path)
+                with open(temp_path, 'r') as f:
+                    metadata = json.load(f)
+            except Exception:
+                # If metadata doesn't exist, create new metadata
+                metadata = {"materializers": {}}
+
+            # Update metadata with all materializers
+            metadata["materializers"].update(materializers)
+
+            # Upload updated metadata
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(metadata, f)
+                temp_path = f.name
+
+            try:
+                self.gcs.upload(temp_path, self._metadata_path)
+            finally:
+                os.unlink(temp_path)
+
+        except Exception as e:
+            self.logger.error(f"Error registering materializers batch: {e}")
+            raise e
+        else:
+            self.logger.debug(f"Registered {len(materializers)} materializers in batch")
 
     def registered_materializer(self, object_class: str) -> str | None:
         """Get the registered materializer for an object class.
