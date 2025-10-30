@@ -35,6 +35,7 @@ from mindtrace.services.core.types import (
     StatusSchema,
 )
 from mindtrace.services.core.utils import generate_connection_manager
+from mindtrace.core.logging.logger import track_operation
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.
@@ -574,9 +575,18 @@ class Service(Mindtrace):
         self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
+        wrapped = track_operation(
+            name=func.__name__,
+            service_name=self.name,
+            logger=self.logger,
+            log_level=autolog_kwargs.get("log_level", logging.INFO),
+            include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
+            system_metrics=autolog_kwargs.get("system_metrics"),
+        )(func)
+
         self.app.add_api_route(
             "/" + path,
-            endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
+            endpoint=wrapped,
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
