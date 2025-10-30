@@ -426,8 +426,13 @@ def track_operation(
                     from mindtrace.core.utils import SystemMetricsCollector
 
                     self._metrics_collector = SystemMetricsCollector(metrics_to_collect=self.system_metrics)
-                except Exception:
+                except Exception as e:
                     self._metrics_collector = None
+                    warnings.warn(
+                        f"Failed to initialize SystemMetricsCollector; metrics will be omitted: {e}",
+                        UserWarning,
+                            )
+                    
 
             return self._metrics_collector
 
@@ -437,7 +442,11 @@ def track_operation(
             if collector is not None:
                 try:
                     return collector()
-                except Exception:
+                except Exception as e:
+                    warnings.warn(
+                        f"Failed to collect system metrics snapshot; omitting metrics: {e}",
+                        UserWarning,
+                    )
                     return None
             return None
 
