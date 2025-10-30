@@ -431,8 +431,7 @@ def track_operation(
                     warnings.warn(
                         f"Failed to initialize SystemMetricsCollector; metrics will be omitted: {e}",
                         UserWarning,
-                            )
-                    
+                    )
 
             return self._metrics_collector
 
