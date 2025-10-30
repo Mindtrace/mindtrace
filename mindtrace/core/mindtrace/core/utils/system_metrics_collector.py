@@ -106,7 +106,7 @@ class SystemMetricsCollector:
                 from mindtrace.core.utils import SystemMetricsCollector
 
                 system_metrics = SystemMetricsCollector(interval=3)
-                with _ in range(10):
+                for _ in range(10):
                    print(system_metrics())
                    time.sleep(1)
 
