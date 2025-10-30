@@ -22,6 +22,7 @@ from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
@@ -35,7 +36,6 @@ from mindtrace.services.core.types import (
     StatusSchema,
 )
 from mindtrace.services.core.utils import generate_connection_manager
-from mindtrace.core.logging.logger import track_operation
 
 T = TypeVar("T", bound="Service")  # A generic variable that can be 'Service', or any subclass.
 C = TypeVar("C", bound="ConnectionManager")  # '' '' '' 'ConnectionManager', or any subclass.

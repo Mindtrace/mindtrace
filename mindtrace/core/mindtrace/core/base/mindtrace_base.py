@@ -2,7 +2,6 @@
 
 import inspect
 import logging
-import time
 import traceback
 from abc import ABC, ABCMeta
 from functools import wraps
@@ -10,7 +9,7 @@ from typing import Callable, Optional
 
 from mindtrace.core.config import CoreConfig, SettingsLike
 from mindtrace.core.logging.logger import get_logger
-from mindtrace.core.utils import SystemMetricsCollector, ifnone
+from mindtrace.core.utils import ifnone
 
 
 class MindtraceMeta(type):
@@ -373,7 +372,7 @@ class Mindtrace(metaclass=MindtraceMeta):
             return wrapper
 
         return decorator
-   
+
 
 class MindtraceABCMeta(MindtraceMeta, ABCMeta):
     """Metaclass that combines MindtraceMeta and ABC metaclasses.
