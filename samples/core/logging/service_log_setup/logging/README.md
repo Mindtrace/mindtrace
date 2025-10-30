@@ -15,7 +15,7 @@ This setup tails logs from these absolute directories (configured in Mindtrace `
 From this directory:
 
 ```bash
-cd samples/logging
+cd samples/core/logging/service_log_setup/logging
 cp env.example .env  # then edit .env if needed
 docker compose --env-file .env up -d
 ```
