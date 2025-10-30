@@ -122,11 +122,12 @@ class SystemMetricsCollector:
 
                 i = 0
                 with SystemMetricsCollector(interval=3) as system_metrics:
-                    print(system_metrics())
-                    i += 1
-                    if i > 10:
-                        break
-                    time.sleep(1)
+                    while i<=10:
+                        print(system_metrics())
+                        i += 1
+                        if i > 10:
+                            break
+                        time.sleep(1)
         """
         if self._event is not None:
             self._event.set()
