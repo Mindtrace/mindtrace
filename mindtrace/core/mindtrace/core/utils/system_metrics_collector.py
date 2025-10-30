@@ -6,8 +6,8 @@ import psutil
 class SystemMetricsCollector:
     """Class for collecting various system metrics.
 
-    This class allows the collection of system metrics like CPU usage, memory usage, disk usage, network I/O, etc.
-    Users can specify which metrics to collect and whether to collect metrics periodically.
+    This class allows collection of CPU, memory, disk usage, network I/O, etc. Users can
+    specify which metrics to collect and optionally enable periodic background updates.
 
     Available metrics include:
         - "cpu_percent": Overall CPU usage percentage.
@@ -17,31 +17,35 @@ class SystemMetricsCollector:
         - "network_io": Network I/O statistics (bytes sent and received).
         - "load_average": System load average (if available).
 
-    Example Usage::
+    Example Usage:
 
         from time import sleep
         from mindtrace.core.utils import SystemMetricsCollector
 
-        # Collect All Metrics (default behavior)
-        metrics_collector = SystemMetricsCollector()
-        metrics = metrics_collector()  # Equivalent to metrics_collector.fetch()
+        with SystemMetricsCollector(interval=3) as collector:
+            for _ in range(10):
+                print(collector())
+                sleep(1)
 
-        # Collect Specific Metrics Only
-        metrics_to_collect = ["cpu_percent", "memory_percent", "network_io"]
-        metrics_collector = SystemMetricsCollector(metrics_to_collect=metrics_to_collect)
-        metrics = metrics_collector()
+    Alternative (manual stop):
 
-        # Get Metrics on Demand
-        for _ in range(3):
-            current_metrics = metrics_collector()
-            print(current_metrics)
+        from time import sleep
+        from mindtrace.core.utils import SystemMetricsCollector
 
-        # Set Interval for Periodic Metrics Collection
-        metrics_collector = SystemMetricsCollector(interval=5)  # Will only update metrics every 5 seconds
-        for _ in range(15):
-            current_metrics = metrics_collector()
-            print(current_metrics)
-            sleep(1)
+        collector = SystemMetricsCollector(interval=3)
+        try:
+            for _ in range(10):
+                print(collector())
+                sleep(1)
+        finally:
+            collector.stop()
+
+    On-demand usage (no background thread):
+
+        from mindtrace.core.utils import SystemMetricsCollector
+
+        collector = SystemMetricsCollector()  # no interval; collected on demand
+        print(collector())
     """
 
     AVAILABLE_METRICS = {
@@ -95,39 +99,10 @@ class SystemMetricsCollector:
         return self.metrics_cache if self.metrics_cache else self._collect_metrics()
 
     def stop(self):
-        """Stop the automatic metrics collection background thread.
+        """Stop the background collection thread if running.
 
-        If using a set interval to automatically refresh metrics, it is important to close the background thread when
-        you are finished with it. I.e.
-
-            Manually closing the thread::
-
-                import time
-                from mindtrace.core.utils import SystemMetricsCollector
-
-                system_metrics = SystemMetricsCollector(interval=3)
-                for _ in range(10):
-                   print(system_metrics())
-                   time.sleep(1)
-
-                $ Manually stop the background thread
-                system_metrics.stop()
-
-        The recommended solution is to do the same automatically through using the collector as a context manager:
-
-            Using a context manager::
-
-                import time
-                from mindtrace.core.utils import SystemMetricsCollector
-
-                i = 0
-                with SystemMetricsCollector(interval=3) as system_metrics:
-                    while i<=10:
-                        print(system_metrics())
-                        i += 1
-                        if i > 10:
-                            break
-                        time.sleep(1)
+        Prefer using the context manager (`with SystemMetricsCollector(...) as collector:`)
+        which stops the thread automatically on exit.
         """
         if self._event is not None:
             self._event.set()
