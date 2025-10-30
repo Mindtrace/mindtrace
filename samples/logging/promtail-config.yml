@@ -29,38 +29,31 @@ scrape_configs:
           # Path to your structured log files (mounted from host)
           __path__: /var/log/mindtrace/structlogs/modules/*.log
     pipeline_stages:
-      # Stage 1: Extract JSON from log line
-      # The logs have format: [timestamp] LEVEL: logger: {json}
-      - regex:
-          expression: '^\[(?P<log_timestamp>[^\]]+)\]\s+(?P<log_level>\w+):\s+(?P<log_logger>[^:]+):\s+(?P<json_content>.*)$'
-      
-      # Stage 2: Parse the JSON content
+      # Parse JSON log line directly (logs are pure JSON)
       - json:
           expressions:
-            level: level           # Log level (INFO, ERROR, etc.)
-            logger: logger         # Logger name (e.g., "mindtrace.services.middleware")
-            event: event           # Event message (e.g., "request initiated")
-            service: service       # Service name (if present)
-            duration_ms: duration_ms  # Operation duration
-            operation: operation   # Operation name (if present)
-            request_id: request_id # Request correlation ID
-            timestamp: timestamp   # Log timestamp
-          source: json_content     # Parse from the extracted JSON
-      
-      # Stage 3: Create Labels
-      # These fields become searchable labels in Grafana
+            level: level
+            logger: logger
+            event: event
+            service: service              # legacy, if present
+            service_name: service_name    # preferred
+            operation: operation
+            request_id: request_id
+            timestamp: timestamp
+
+      # Promote selected fields to labels
       - labels:
-          level:      # Filter by log level: {level="ERROR"}
-          logger:     # Filter by logger: {logger="mindtrace.services.*"}
-          event:      # Filter by event: {event="request initiated"}
-          service:    # Filter by service: {service="EchoService"}
-          operation:  # Filter by operation: {operation="echo"}
-          request_id: # Track requests: {request_id="abc123"}
-      
-      # Stage 4: Parse Timestamps
-      # Convert timestamp to proper format for Loki
+          level:
+          logger:
+          event:
+          service:
+          service_name:
+          operation:
+          request_id:
+
+      # Use the embedded timestamp
       - timestamp:
-          source: timestamp        # Use the timestamp field from JSON
-          format: RFC3339Nano     # Expected format (ISO 8601 with nanoseconds)
-          action_on_failure: skip # Skip logs with invalid timestamps
+          source: timestamp
+          format: RFC3339Nano
+          action_on_failure: skip
 
