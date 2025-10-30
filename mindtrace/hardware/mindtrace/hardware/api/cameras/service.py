@@ -68,6 +68,8 @@ from mindtrace.hardware.api.cameras.models import (
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
+from fastapi.middleware.cors import CORSMiddleware
+
 from mindtrace.hardware.api.cameras.schemas import ALL_SCHEMAS
 from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
 from mindtrace.hardware.core.exceptions import (
@@ -96,6 +98,15 @@ class CameraManagerService(Service):
             summary="Camera Management Service",
             description="REST API and MCP tools for comprehensive camera management and control",
             **kwargs,
+        )
+
+        # Enable CORS for cross-origin requests from frontend
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
         )
 
         self.include_mocks = include_mocks
