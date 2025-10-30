@@ -30,6 +30,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: Any,
+        service_name: str,
         *,
         log_metrics: bool = False,
         metrics_interval: Optional[int] = None,
@@ -41,6 +42,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         self.logger = logger or get_logger("mindtrace.services.middleware", use_structlog=True)
         self.log_metrics = log_metrics
         self.add_request_id_header = add_request_id_header
+        self.service_name = service_name
         self.metrics_collector = (
             SystemMetricsCollector(interval=metrics_interval, metrics_to_collect=metrics_to_collect)
             if log_metrics
@@ -73,6 +75,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             status="started",
             path=str(request.url.path),
             method=request.method,
+            service_name=self.service_name,
             client_ip=request.client.host if request.client else None,
             user_agent=request.headers.get("user-agent"),
         )
@@ -95,6 +98,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             log_fields = {
                 "function_name": "request_handler",
                 "status": "completed",
+                "service_name": self.service_name,
                 "path": str(request.url.path),
                 "method": request.method,
                 "status_code": response.status_code,
@@ -128,6 +132,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             log_fields = {
                 "function_name": "request_handler",
                 "status": "failed",
+                "service_name": self.service_name,
                 "path": str(request.url.path),
                 "method": request.method,
                 "error": str(e),

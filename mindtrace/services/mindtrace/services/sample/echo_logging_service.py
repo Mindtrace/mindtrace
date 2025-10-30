@@ -26,6 +26,7 @@ class EchoService(Service):
         super().__init__(*args, **kwargs)
         self.app.add_middleware(
             RequestLoggingMiddleware,
+            service_name=self.name,
             log_metrics=True,
             add_request_id_header=True,
             logger=self.logger,
