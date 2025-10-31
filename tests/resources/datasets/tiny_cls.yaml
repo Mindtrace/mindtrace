@@ -1,0 +1,7 @@
+path: /home/yash/codebase/mindtrace_model_bank/mindtrace/tests/integration/mindtrace/models/standalone/datasets/cls
+train: ${path}/train
+val: ${path}/val
+names:
+  0: cat
+  1: dog
+
