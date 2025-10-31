@@ -1,6 +1,4 @@
 import json
-import logging
-from pathlib import Path
 from unittest.mock import Mock, call, patch
 
 import pytest
@@ -32,17 +30,12 @@ class TestLauncher:
         server.app = Mock()  # Mock WSGI/ASGI app
         return server
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_with_init_params(
-        self, mock_base_init, mock_instantiate, mock_setup_logger, mock_options, mock_server
-    ):
+    def test_launcher_init_with_init_params(self, mock_base_init, mock_instantiate, mock_options, mock_server):
         """Test Launcher initialization with init parameters."""
         # Setup mocks
         mock_instantiate.return_value = mock_server
-        mock_logger = Mock()
-        mock_setup_logger.return_value = mock_logger
 
         # Create launcher
         launcher = Launcher(mock_options)
@@ -59,23 +52,16 @@ class TestLauncher:
         # Verify server instantiation
         mock_instantiate.assert_called_once_with("test.server.TestServer", param1="value1", param2=42)
 
-        # Verify logger setup
-        mock_setup_logger.assert_called_once_with(
-            name="test_server", stream_level=logging.INFO, file_level=logging.DEBUG, log_dir=Path("/tmp/logs")
-        )
-
         # Verify server configuration
-        assert mock_server.logger == mock_logger
         assert mock_server.url == "127.0.0.1:8080"
         assert launcher.application == mock_server.app
 
         # Verify BaseApplication initialization
         mock_base_init.assert_called_once()
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_without_init_params(self, mock_base_init, mock_instantiate, mock_setup_logger, mock_server):
+    def test_launcher_init_without_init_params(self, mock_base_init, mock_instantiate, mock_server):
         """Test Launcher initialization without init parameters."""
         # Setup options without init_params
         options = Mock()
@@ -103,10 +89,9 @@ class TestLauncher:
         }
         assert launcher.gunicorn_options == expected_options
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_empty_init_params(self, mock_base_init, mock_instantiate, mock_setup_logger, mock_server):
+    def test_launcher_init_empty_init_params(self, mock_base_init, mock_instantiate, mock_server):
         """Test Launcher initialization with empty init parameters string."""
         options = Mock()
         options.bind = "127.0.0.1:8080"
@@ -124,10 +109,9 @@ class TestLauncher:
         # Verify server instantiation with empty init params
         mock_instantiate.assert_called_once_with("test.Server")
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_launcher_init_invalid_json(self, mock_base_init, mock_instantiate, mock_setup_logger):
+    def test_launcher_init_invalid_json(self, mock_base_init, mock_instantiate):
         """Test Launcher initialization with invalid JSON init parameters."""
         options = Mock()
         options.bind = "127.0.0.1:8080"
@@ -144,7 +128,6 @@ class TestLauncher:
     def test_load_config(self, mock_options, mock_server):
         """Test load_config method."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -184,7 +167,6 @@ class TestLauncher:
         options.init_params = None
 
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -207,7 +189,6 @@ class TestLauncher:
     def test_load_config_filters_unsupported_settings(self, mock_options, mock_server):
         """Test load_config only sets supported settings."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -233,7 +214,6 @@ class TestLauncher:
     def test_load(self, mock_options, mock_server):
         """Test load method returns the application."""
         with (
-            patch("mindtrace.services.core.launcher.setup_logger"),
             patch("mindtrace.services.core.launcher.instantiate_target", return_value=mock_server),
             patch("mindtrace.services.core.launcher.BaseApplication.__init__"),
         ):
@@ -377,14 +357,13 @@ class TestMain:
 class TestLauncherIntegration:
     """Integration tests for the Launcher with more realistic scenarios."""
 
-    @patch("mindtrace.services.core.launcher.setup_logger")
     @patch("mindtrace.services.core.launcher.instantiate_target")
     @patch("mindtrace.services.core.launcher.BaseApplication.__init__")
-    def test_complex_init_params_parsing(self, mock_base_init, mock_instantiate, mock_setup_logger):
+    def test_complex_init_params_parsing(self, mock_base_init, mock_instantiate):
         """Test complex JSON init parameters parsing."""
         complex_params = {
             "database_url": "postgresql://user:pass@localhost/db",
-            "redis_config": {"host": "localhost", "port": 6379, "db": 0},
+            "redis_config": {"host": "localhost", "port": 6381, "db": 0},
             "feature_flags": ["flag1", "flag2"],
             "timeout": 30.5,
             "debug": True,
@@ -411,7 +390,7 @@ class TestLauncherIntegration:
         mock_instantiate.assert_called_once_with(
             "test.Server",
             database_url="postgresql://user:pass@localhost/db",
-            redis_config={"host": "localhost", "port": 6379, "db": 0},
+            redis_config={"host": "localhost", "port": 6381, "db": 0},
             feature_flags=["flag1", "flag2"],
             timeout=30.5,
             debug=True,

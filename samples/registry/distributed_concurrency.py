@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 def create_registry():
     """Create a new Registry instance with MinIO backend."""
     backend = MinioRegistryBackend(
-        endpoint="localhost:9000",
+        endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
         bucket="mindtrace-registry",

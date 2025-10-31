@@ -2,7 +2,7 @@ import time
 
 from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 
 def main():
@@ -11,7 +11,7 @@ def main():
         host="localhost", port=8003, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
     )
     try:
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_manager.register_worker_type(
             worker_name="echoworker",
             worker_class="mindtrace.cluster.workers.echo_worker.EchoWorker",
