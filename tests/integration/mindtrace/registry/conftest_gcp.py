@@ -75,8 +75,8 @@ def backend(temp_dir, test_bucket):
 
 @pytest.fixture
 def gcp_registry(backend):
-    """Create a Registry instance with GCP backend."""
-    return Registry(backend=backend)
+    """Create a Registry."""
+    return Registry(backend=backend, version_objects=True)
 
 
 @pytest.fixture

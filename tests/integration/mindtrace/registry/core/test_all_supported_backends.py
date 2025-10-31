@@ -130,7 +130,15 @@ def backend(backend_type, temp_dir, test_bucket, gcp_backend_session):
 @pytest.fixture
 def registry(backend):
     """Create a Registry instance with the backend."""
-    return Registry(backend=backend, version_objects=True)
+    reg = Registry(backend=backend, version_objects=True)
+    # GCP operations are slower; increase lock timeout to avoid false timeouts
+    try:
+        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        if isinstance(backend, GCPRegistryBackend):
+            reg.config["MINDTRACE_LOCK_TIMEOUT"] = 30
+    except Exception:
+        pass
+    return reg
 
 
 @pytest.fixture
