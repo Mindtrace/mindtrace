@@ -193,6 +193,21 @@ def test_invalid_object_name(backend):
         backend.push("invalid_name", "1.0.0", "some_path")
 
 
+def test_register_materializer_metadata_not_exists(backend):
+    """Test register_materializer when metadata file doesn't exist (line 248)."""
+    # Ensure metadata file doesn't exist
+    if backend.metadata_path.exists():
+        backend.metadata_path.unlink()
+    
+    # Register a materializer - should create metadata file
+    backend.register_materializer("test.Object", "TestMaterializer")
+    
+    # Verify metadata file was created and materializer was registered
+    assert backend.metadata_path.exists()
+    materializer = backend.registered_materializer("test.Object")
+    assert materializer == "TestMaterializer"
+
+
 def test_register_materializer_error(backend):
     """Test error handling when registering a materializer fails."""
     # Create the metadata file first
