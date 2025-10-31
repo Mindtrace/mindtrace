@@ -76,7 +76,7 @@ def backend(temp_dir, test_bucket):
 @pytest.fixture
 def gcp_registry(backend):
     """Create a Registry instance with GCP backend."""
-    return Registry(backend=backend)
+    return Registry(backend=backend, version_objects=True)
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ def test_init(backend, test_bucket, gcs_client):
     assert gcs_client.bucket(test_bucket).exists()
 
 
-def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket):
+def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket, temp_dir):
     """Test pushing and pulling objects."""
     # Push the object
     backend.push("test:object", "1.0.0", sample_object_dir)
@@ -126,9 +126,9 @@ def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket):
     objects = list(bucket.list_blobs(prefix="objects/test:object/1.0.0/"))
     assert len(objects) == 3  # file1.txt, file2.txt, subdir/file3.txt
     
-    # Download to a new location
-    download_dir = backend.uri / "download"
-    download_dir.mkdir()
+    # Download to a new local directory (don't rely on backend.uri being a filesystem path)
+    download_dir = temp_dir / "download"
+    download_dir.mkdir(parents=True, exist_ok=True)
     backend.pull("test:object", "1.0.0", str(download_dir))
     
     # Verify the download
@@ -331,6 +331,8 @@ def test_shared_locks(backend):
 
 def test_exclusive_lock_conflict(backend):
     """Test that exclusive locks conflict with shared locks."""
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    
     lock_key = "test:conflict"
     shared_lock_id = "shared-lock"
     exclusive_lock_id = "exclusive-lock"
@@ -340,9 +342,9 @@ def test_exclusive_lock_conflict(backend):
     shared_success = backend.acquire_lock(lock_key, shared_lock_id, timeout, shared=True)
     assert shared_success
     
-    # Try to acquire exclusive lock (should fail)
-    exclusive_success = backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-    assert not exclusive_success
+    # Try to acquire exclusive lock (should raise LockAcquisitionError)
+    with pytest.raises(LockAcquisitionError, match="currently held as shared"):
+        backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
     
     # Release shared lock
     backend.release_lock(lock_key, shared_lock_id)
