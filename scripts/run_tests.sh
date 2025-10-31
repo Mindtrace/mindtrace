@@ -20,6 +20,9 @@ MODULES=()
 
 export MINDTRACE_TEST_PARAM="test_1234"
 
+# Get project root directory (where tests/conftest.py is located)
+PROJECT_ROOT=$(pwd)
+
 # Parse all arguments in a single pass
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -81,8 +84,9 @@ if [ ${#SPECIFIC_PATHS[@]} -gt 0 ]; then
     coverage erase
     
     # Run pytest on the specific paths with coverage
-    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
-    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
+    # Use --rootdir to ensure tests/conftest.py fixtures are discoverable
+    echo "Running: pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning --rootdir=\"$PROJECT_ROOT\" ${PYTEST_ARGS[*]} ${SPECIFIC_PATHS[*]}"
+    pytest -rs --cov=mindtrace --cov-report term-missing -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" "${SPECIFIC_PATHS[@]}"
     EXIT_CODE=$?
     
     # Stop docker containers if they were started
@@ -160,7 +164,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
     for module in "${MODULES[@]}"; do
         echo "Running integration tests for $module..."
         if [ -d "tests/integration/mindtrace/$module" ]; then
-            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
+            pytest -rs --cov=mindtrace/$module --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace/$module
             if [ $? -ne 0 ]; then
                 echo "Integration tests for $module failed. Stopping test execution."
                 OVERALL_EXIT_CODE=1
@@ -170,7 +174,7 @@ if [ "$RUN_INTEGRATION" = true ]; then
         fi
     done
     if [ ${#MODULES[@]} -eq 0 ]; then
-        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/integration/mindtrace
+        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/integration/mindtrace
         if [ $? -ne 0 ]; then
             echo "Integration tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
@@ -191,7 +195,7 @@ fi
 if [ "$RUN_UTILS" = true ]; then
     echo "Running tests/utils directory tests..."
     if [ -d "tests/utils" ]; then
-        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning "${PYTEST_ARGS[@]}" tests/utils
+        pytest -rs --cov=mindtrace --cov-report term-missing --cov-append -W ignore::DeprecationWarning --rootdir="$PROJECT_ROOT" "${PYTEST_ARGS[@]}" tests/utils
         if [ $? -ne 0 ]; then
             echo "tests/utils directory tests failed. Stopping test execution."
             OVERALL_EXIT_CODE=1
