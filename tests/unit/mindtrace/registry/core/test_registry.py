@@ -2165,6 +2165,71 @@ def test_save_registry_metadata_exception_handling(registry, monkeypatch):
             registry._save_registry_metadata({"materializers": {"test": "materializer"}})
 
 
+def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
+    """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
+    # Create a fresh registry that hasn't been initialized yet
+    # We'll patch _get_registry_metadata to raise an exception during initialization
+    original_get_metadata = Registry._get_registry_metadata
+    save_calls = []
+    
+    def failing_get_metadata(self):
+        raise OSError("Cannot read metadata file")
+    
+    def mock_save_metadata(self, metadata):
+        save_calls.append(metadata)
+        # Don't actually save to avoid side effects
+    
+    # Patch before creating registry
+    monkeypatch.setattr(Registry, '_get_registry_metadata', failing_get_metadata)
+    monkeypatch.setattr(Registry, '_save_registry_metadata', mock_save_metadata)
+    
+    # Create registry - should handle exception and save the provided value
+    registry = Registry(registry_dir=temp_registry_dir, version_objects=False)
+    
+    # Verify that save was called (exception handler saved the value)
+    assert len(save_calls) > 0
+    # Verify the registry uses the provided value
+    assert registry.version_objects is False
+
+
+def test_get_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _get_registry_metadata fallback when backend doesn't have _metadata_path (line 329)."""
+    # Create a mock backend without _metadata_path
+    class MockBackend:
+        def registered_materializers(self):
+            return {"test.Object": "TestMaterializer"}
+    
+    registry.backend = MockBackend()
+    
+    # Should return fallback with just materializers
+    result = registry._get_registry_metadata()
+    assert result == {"materializers": {"test.Object": "TestMaterializer"}}
+
+
+def test_save_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _save_registry_metadata fallback when backend doesn't have _metadata_path (lines 382-384)."""
+    # Create a mock backend without _metadata_path but with register_materializer
+    class MockBackend:
+        def registered_materializers(self):
+            return {}
+        
+        def register_materializer(self, object_class, materializer_class):
+            # Track registrations
+            if not hasattr(self, '_materializers'):
+                self._materializers = {}
+            self._materializers[object_class] = materializer_class
+    
+    mock_backend = MockBackend()
+    registry.backend = mock_backend
+    
+    # Save metadata with materializers
+    registry._save_registry_metadata({"materializers": {"test.Object": "TestMaterializer"}})
+    
+    # Verify register_materializer was called
+    assert hasattr(mock_backend, '_materializers')
+    assert mock_backend._materializers["test.Object"] == "TestMaterializer"
+
+
 def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
     """Test clear_registry_metadata with GCP backend."""
     # Mock the backend to have gcs attribute
