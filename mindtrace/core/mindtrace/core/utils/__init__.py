@@ -4,6 +4,7 @@ from mindtrace.core.utils.dynamic import instantiate_target
 from mindtrace.core.utils.ini import load_ini_as_dict
 from mindtrace.core.utils.lambdas import named_lambda
 from mindtrace.core.utils.paths import expand_tilde, expand_tilde_str
+from mindtrace.core.utils.system_metrics_collector import SystemMetricsCollector
 
 __all__ = [
     "check_libs",
@@ -17,4 +18,5 @@ __all__ = [
     "expand_tilde",
     "expand_tilde_str",
     "load_ini_as_dict",
+    "SystemMetricsCollector",
 ]

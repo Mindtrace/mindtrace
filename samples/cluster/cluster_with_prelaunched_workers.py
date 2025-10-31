@@ -3,14 +3,14 @@ import time
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 
 def main():
     cluster_manager = ClusterManager.launch(host="localhost", port=8002, wait_for_launch=True)
     worker_cm = EchoWorker.launch(host="localhost", port=8003, wait_for_launch=True)
     try:
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_manager.register_job_to_worker(job_type="echo", worker_url=str(worker_cm.url))
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 3})
         cluster_manager.submit_job(job)

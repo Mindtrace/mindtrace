@@ -4,16 +4,16 @@ import time
 
 import redis
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.connection_base import BrokerConnectionBase
 from mindtrace.jobs.redis.fifo_queue import RedisQueue
 from mindtrace.jobs.redis.priority import RedisPriorityQueue
 from mindtrace.jobs.redis.stack import RedisStack
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConnection(BrokerConnectionBase):
-    METADATA_KEY = "mtrix:queue_metadata"  # Centralized metadata key
-    EVENTS_CHANNEL = "mtrix:queue_events"  # Pub/Sub channel for queue events
+    METADATA_KEY = "mindtrace:queue_metadata"  # Centralized metadata key
+    EVENTS_CHANNEL = "mindtrace:queue_events"  # Pub/Sub channel for queue events
     """Singleton class for Redis connection.
     This class establishes and maintains a connection to the Redis server. It uses a retry loop and a PING command to
     verify connectivity.
@@ -51,7 +51,10 @@ class RedisConnection(BrokerConnectionBase):
         except redis.ConnectionError as e:
             self.logger.warning(f"Error connecting to Redis: {str(e)}")
         self.queues = {}
-        self._local_lock = threading.Lock()  # Thread lock for local state modificationse events.
+        self._local_lock = threading.Lock()  # Thread lock for local state modifications
+        self._shutdown_event = threading.Event()  # Event to signal shutdown to background thread
+        self._pubsub = None  # Store pubsub instance for proper cleanup
+        self._event_thread = None  # Store thread reference for cleanup
         self._load_queue_metadata()  # Load previously declared queues from metadata.
         self._start_event_listener()  # Start a background thread to listen for queue events.
 
@@ -92,7 +95,26 @@ class RedisConnection(BrokerConnectionBase):
             return False
 
     def close(self):
-        """Close the connection to the Redis server."""
+        """Close the connection to the Redis server and shutdown background thread."""
+        # Signal the background thread to shutdown
+        self._shutdown_event.set()
+
+        # Close pubsub connection if it exists
+        with self._local_lock:
+            if self._pubsub is not None:
+                try:
+                    self._pubsub.close()
+                except Exception as e:
+                    self.logger.error(f"Error closing pubsub connection: {str(e)}")
+                self._pubsub = None
+
+        # Wait for the background thread to finish (with timeout)
+        if self._event_thread is not None and self._event_thread.is_alive():
+            self._event_thread.join(timeout=1.0)
+            if self._event_thread.is_alive():
+                self.logger.warning("Background event thread did not shutdown gracefully")
+
+        # Close main Redis connection
         if self.connection is not None:
             try:
                 self.connection.close()
@@ -101,16 +123,29 @@ class RedisConnection(BrokerConnectionBase):
             self.connection = None  # type: ignore
             self.logger.debug(f"{self.name} closed Redis connection.")
 
+    def __del__(self):
+        """Ensure cleanup happens when the object is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _start_event_listener(self):
         """Start a background thread to subscribe to queue events and update local state."""
-        thread = threading.Thread(target=self._subscribe_to_events, daemon=True)
-        thread.start()
+        self._event_thread = threading.Thread(target=self._subscribe_to_events, daemon=True)
+        self._event_thread.start()
 
     def _subscribe_to_events(self):
-        pubsub = self.connection.pubsub()
-        pubsub.subscribe(self.EVENTS_CHANNEL)
-        for message in pubsub.listen():
-            if message["type"] == "message":
+        try:
+            self._pubsub = self.connection.pubsub()
+            self._pubsub.subscribe(self.EVENTS_CHANNEL)
+
+            for message in self._pubsub.listen():
+                if self._shutdown_event.is_set():
+                    break
+                if message["type"] != "message":
+                    continue
+
                 try:
                     data = json.loads(message["data"].decode("utf-8"))
                     event = data.get("event")
@@ -147,6 +182,16 @@ class RedisConnection(BrokerConnectionBase):
                                 del self.queues[qname]
                 except Exception:
                     pass
+        except Exception as e:
+            self.logger.error(f"Event listener thread exception: {str(e)}")
+        finally:
+            with self._local_lock:
+                if self._pubsub is not None:
+                    try:
+                        self._pubsub.close()
+                    except Exception:
+                        pass
+                    self._pubsub = None
 
     def _load_queue_metadata(self):
         """Load all declared queues from the centralized metadata hash."""
