@@ -86,18 +86,21 @@ class GCPRegistryBackend(RegistryBackend):
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""
         try:
-            self.gcs.exists(self._metadata_path)
+            if not self.gcs.exists(self._metadata_path):
+                # Create empty metadata file if it doesn't exist
+                data = json.dumps({"materializers": {}}).encode()
+                with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
+                    f.write(data)
+                    temp_path = f.name
+                
+                try:
+                    self.gcs.upload(temp_path, self._metadata_path)
+                finally:
+                    os.unlink(temp_path)
         except Exception:
-            # Create empty metadata file if it doesn't exist
-            data = json.dumps({"materializers": {}}).encode()
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-                f.write(data)
-                temp_path = f.name
-            
-            try:
-                self.gcs.upload(temp_path, self._metadata_path)
-            finally:
-                os.unlink(temp_path)
+            # If we can't check existence or create the file, log and continue
+            # This ensures the method doesn't raise exceptions
+            self.logger.debug("Could not ensure metadata file exists, continuing anyway")
 
     def _object_key(self, name: str, version: str) -> str:
         """Convert object name and version to a storage key.
@@ -443,7 +446,9 @@ class GCPRegistryBackend(RegistryBackend):
         lock_key = self._lock_key(key)
 
         try:
-            # Check if lock exists and is not expired
+            blob = self.gcs._bucket().blob(lock_key)
+            generation_match = 0  # Initialize to default value (create from scratch)
+            # Check if lock exists and handle it appropriately
             try:
                 with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
                     temp_path = f.name
@@ -453,7 +458,10 @@ class GCPRegistryBackend(RegistryBackend):
                     with open(temp_path, 'r') as f:
                         metadata = json.load(f)
                     
-                    if time.time() < metadata.get("expires_at", 0):
+                    expires_at = metadata.get("expires_at", 0)
+                    
+                    if time.time() < expires_at:
+                        # Lock is still valid
                         # If there's an active exclusive lock, we can't acquire a shared lock
                         if shared and not metadata.get("shared", False):
                             raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
@@ -463,27 +471,40 @@ class GCPRegistryBackend(RegistryBackend):
                         # If there's already a shared lock and we want a shared lock, we can share it
                         if shared and metadata.get("shared", False):
                             return True
+                    else:
+                        # Lock is expired - reload blob to get current generation and atomically replace
+                        try:
+                            blob.reload()
+                            generation_match = blob.generation
+                        except gexc.NotFound:
+                            # Lock was deleted between download and reload, create from scratch
+                            generation_match = 0
                 finally:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)
+            except gexc.NotFound:
+                # Lock doesn't exist, we can create it
+                generation_match = 0
+            except LockAcquisitionError:
+                # Re-raise LockAcquisitionError
+                raise
             except Exception:
-                # Lock doesn't exist or is invalid, we can proceed
-                pass
+                # Other error - try to create from scratch (generation_match=0 means file must not exist)
+                generation_match = 0
 
             # Create lock metadata
             metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
 
-            # Try to create lock object atomically using if_generation_match=0
+            # Try to create/update lock object atomically
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
 
             try:
-                blob = self.gcs._bucket().blob(lock_key)
-                blob.upload_from_filename(temp_path, if_generation_match=0)
+                blob.upload_from_filename(temp_path, if_generation_match=generation_match)
                 return True
             except gexc.PreconditionFailed:
-                # Lock already exists
+                # Lock was modified by another process (race condition)
                 return False
             except Exception as e:
                 self.logger.debug(f"Lock acquisition failed: {e}")
