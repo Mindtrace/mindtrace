@@ -146,6 +146,9 @@ class CameraManagerService(Service):
 
     def _register_endpoints(self):
         """Register all service endpoints."""
+        # Health check endpoint
+        self.add_endpoint("health", self.health_check, None, methods=["GET"])
+
         # Backend & Discovery
         self.add_endpoint(
             "backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
@@ -931,22 +934,57 @@ class CameraManagerService(Service):
                 output_format=request.output_format,
             )
 
+            # Safely extract values with defaults to prevent Pydantic validation errors
+            # Ensure images is None or List[str], not numpy arrays or other types
+            images = hdr_result.get("images")
+            if images is not None and not isinstance(images, list):
+                images = None  # Invalid type, set to None
+            elif images is not None:
+                # Ensure all elements are strings (base64 encoded)
+                images = [str(img) if isinstance(img, str) else None for img in images]
+                images = [img for img in images if img is not None]  # Remove None values
+                if not images:
+                    images = None
+
             result = HDRCaptureResult(
-                success=hdr_result["success"],
-                images=hdr_result["images"],
-                image_paths=hdr_result["image_paths"],
-                gcs_urls=hdr_result["gcs_urls"],
-                exposure_levels=hdr_result["exposure_levels"],
+                success=hdr_result.get("success", False),
+                images=images,
+                image_paths=hdr_result.get("image_paths"),
+                gcs_urls=hdr_result.get("gcs_urls"),
+                exposure_levels=hdr_result.get("exposure_levels", []),
                 capture_time=datetime.now(timezone.utc),
-                successful_captures=hdr_result["successful_captures"],
+                successful_captures=hdr_result.get("successful_captures", 0),
             )
 
             return HDRCaptureResponse(
-                success=True, message=f"HDR image captured from camera '{request.camera}'", data=result
+                success=result.success, message=f"HDR image captured from camera '{request.camera}'", data=result
             )
+        except CameraNotFoundError as e:
+            # Return not found error as failed response
+            self.logger.warning(f"Camera not found: {e}")
+            result = HDRCaptureResult(
+                success=False,
+                images=None,
+                image_paths=None,
+                gcs_urls=None,
+                exposure_levels=[],
+                capture_time=datetime.now(timezone.utc),
+                successful_captures=0,
+            )
+            return HDRCaptureResponse(success=False, message=str(e), data=result)
         except Exception as e:
             self.logger.error(f"Failed to capture HDR image from '{request.camera}': {e}")
-            raise
+            # Return error response instead of raising to prevent 500 errors
+            result = HDRCaptureResult(
+                success=False,
+                images=None,
+                image_paths=None,
+                gcs_urls=None,
+                exposure_levels=[],
+                capture_time=datetime.now(timezone.utc),
+                successful_captures=0,
+            )
+            return HDRCaptureResponse(success=False, message=f"HDR capture failed: {str(e)}", data=result)
 
     async def capture_hdr_images_batch(self, request: CaptureHDRBatchRequest) -> BatchHDRCaptureResponse:
         """Capture HDR images from multiple cameras."""
@@ -1339,7 +1377,27 @@ class CameraManagerService(Service):
 
             raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
 
-    # Add remaining method stubs...
+    # Health Check
+    async def health_check(self) -> dict:
+        """Health check endpoint for container healthcheck."""
+        try:
+            manager = await self._get_camera_manager()
+            return {
+                "status": "healthy",
+                "service": "camera-manager",
+                "backends": manager.backends(),
+                "active_cameras": len(manager.active_cameras),
+                "uptime_seconds": time.time() - self._startup_time,
+            }
+        except Exception as e:
+            self.logger.error(f"Health check failed: {e}")
+            return {
+                "status": "unhealthy",
+                "service": "camera-manager",
+                "error": str(e),
+            }
+
+    # System Diagnostics
     async def get_system_diagnostics(self) -> SystemDiagnosticsResponse:
         """Get system diagnostics information."""
         try:
