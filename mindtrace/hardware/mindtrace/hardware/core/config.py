@@ -491,7 +491,7 @@ class HardwareConfigManager(Mindtrace):
 
         # Basler multicast settings
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_ENABLED"):
-            self._config.cameras.basler_multicast_enabled = env_val.lower() == "true"
+            self._config.cameras.basler_multicast_enabled = env_val.lower() == "false"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_MULTICAST_GROUP"):
             self._config.cameras.basler_multicast_group = env_val

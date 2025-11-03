@@ -40,6 +40,9 @@ from mindtrace.hardware.api.cameras.models import (
     CameraInfoResponse,
     CameraOpenBatchRequest,
     CameraOpenRequest,
+    CameraPerformanceSettings,
+    CameraPerformanceSettingsRequest,
+    CameraPerformanceSettingsResponse,
     CameraQueryRequest,
     CameraStatus,
     CameraStatusResponse,
@@ -252,6 +255,20 @@ class CameraManagerService(Service):
             self.get_network_diagnostics,
             ALL_SCHEMAS["get_network_diagnostics"],
             methods=["GET"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/performance/settings",
+            self.get_performance_settings,
+            ALL_SCHEMAS["get_performance_settings"],
+            methods=["GET"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/performance/settings",
+            self.set_performance_settings,
+            ALL_SCHEMAS["set_performance_settings"],
+            methods=["POST"],
             as_tool=True,
         )
 
@@ -891,7 +908,10 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
             results = await manager.batch_capture(
-                request.cameras, upload_to_gcs=request.upload_to_gcs, output_format=request.output_format
+                request.cameras,
+                save_path_pattern=request.save_path_pattern,
+                upload_to_gcs=request.upload_to_gcs,
+                output_format=request.output_format,
             )
 
             capture_results = {}
@@ -899,7 +919,16 @@ class CameraManagerService(Service):
 
             for camera, image in results.items():
                 if image is not None:
-                    capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
+                    # When save_path_pattern is provided, image is the file path
+                    # Otherwise it's the numpy/PIL image data
+                    if request.save_path_pattern:
+                        # Image is the file path string
+                        capture_results[camera] = CaptureResult(
+                            success=True, image_path=image, capture_time=datetime.now(timezone.utc)
+                        )
+                    else:
+                        # Image is numpy/PIL data (cannot be serialized in JSON, so we return success only)
+                        capture_results[camera] = CaptureResult(success=True, capture_time=datetime.now(timezone.utc))
                     successful_count += 1
                 else:
                     capture_results[camera] = CaptureResult(success=False, capture_time=datetime.now(timezone.utc))
@@ -1090,6 +1119,70 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Failed to get network diagnostics: {e}")
+            raise
+
+    async def get_performance_settings(self) -> CameraPerformanceSettingsResponse:
+        """Get current camera performance settings (timeout, retries, concurrent captures)."""
+        try:
+            manager = await self._get_camera_manager()
+
+            # Get timeout and retry settings from first active camera, or use defaults
+            timeout_ms = 5000
+            retrieve_retry_count = 3
+
+            if manager.active_cameras:
+                first_camera_name = list(manager.active_cameras)[0]
+                camera = manager._cameras.get(first_camera_name)
+                if camera and hasattr(camera, '_backend'):
+                    timeout_ms = getattr(camera._backend, 'timeout_ms', 5000)
+                    retrieve_retry_count = getattr(camera._backend, 'retrieve_retry_count', 3)
+
+            settings = CameraPerformanceSettings(
+                timeout_ms=timeout_ms,
+                retrieve_retry_count=retrieve_retry_count,
+                max_concurrent_captures=manager.max_concurrent_captures,
+            )
+
+            return CameraPerformanceSettingsResponse(
+                success=True, message="Performance settings retrieved successfully", data=settings
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get performance settings: {e}")
+            raise
+
+    async def set_performance_settings(self, request: CameraPerformanceSettingsRequest) -> BoolResponse:
+        """Update camera performance settings (timeout, retries, concurrent captures)."""
+        try:
+            manager = await self._get_camera_manager()
+            updates = []
+
+            # Update timeout_ms for all active cameras
+            if request.timeout_ms is not None:
+                for camera_name in manager.active_cameras:
+                    camera = manager._cameras.get(camera_name)
+                    if camera and hasattr(camera, '_backend'):
+                        camera._backend.timeout_ms = request.timeout_ms
+                        # Update derived timeout as well
+                        camera._backend._op_timeout_s = max(1.0, float(request.timeout_ms) / 1000.0)
+                updates.append(f"timeout_ms={request.timeout_ms}ms")
+
+            # Update retrieve_retry_count for all active cameras
+            if request.retrieve_retry_count is not None:
+                for camera_name in manager.active_cameras:
+                    camera = manager._cameras.get(camera_name)
+                    if camera and hasattr(camera, '_backend'):
+                        camera._backend.retrieve_retry_count = request.retrieve_retry_count
+                updates.append(f"retrieve_retry_count={request.retrieve_retry_count}")
+
+            # Update max_concurrent_captures
+            if request.max_concurrent_captures is not None:
+                manager.max_concurrent_captures = request.max_concurrent_captures
+                updates.append(f"max_concurrent_captures={request.max_concurrent_captures}")
+
+            message = f"Performance settings updated: {', '.join(updates)}" if updates else "No settings updated"
+            return BoolResponse(success=True, message=message, data=True)
+        except Exception as e:
+            self.logger.error(f"Failed to set performance settings: {e}")
             raise
 
     # Streaming Operations
