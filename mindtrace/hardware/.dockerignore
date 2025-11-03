@@ -1,0 +1,94 @@
+# =============================================================================
+# Mindtrace Hardware - Docker Ignore
+# =============================================================================
+# Optimize Docker build context by excluding unnecessary files
+# =============================================================================
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Documentation
+docs/_build/
+*.md
+!README.md
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Development files
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Application data (shouldn't be in image)
+logs/
+data/
+*.db
+*.sqlite
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Configuration files (use env vars instead)
+.env
+.env.local
+*.local
+
+# Camera-specific artifacts
+uploaded_files/
+*.jpg
+*.png
+*.mp4
+*.avi
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Hardware setup scripts (not needed in container)
+mindtrace/hardware/cameras/setup/
+
+# Apps (not needed for API service)
+mindtrace/hardware/apps/
+
+# CLI (use service API instead)
+mindtrace/hardware/cli/

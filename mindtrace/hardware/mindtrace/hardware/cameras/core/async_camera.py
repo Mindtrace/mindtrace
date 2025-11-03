@@ -593,14 +593,18 @@ class AsyncCamera(Mindtrace):
         """
         return await self._backend.get_image_quality_enhancement()
 
-    async def save_config(self, path: str):
+    async def save_config(self, path: str) -> bool:
         """Export current camera configuration to a file via backend.
 
         Args:
             path: Destination file path (backend-specific JSON).
+
+        Returns:
+            bool: True if export succeeds, raises exception on failure.
         """
         async with self._lock:
             await self._backend.export_config(path)
+            return True
 
     async def load_config(self, path: str):
         """Import camera configuration from a file via backend.
