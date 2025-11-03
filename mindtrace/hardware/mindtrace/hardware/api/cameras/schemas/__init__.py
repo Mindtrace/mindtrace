@@ -36,7 +36,9 @@ from mindtrace.hardware.api.cameras.schemas.lifecycle_schemas import (
 from mindtrace.hardware.api.cameras.schemas.network_schemas import (
     GetBandwidthSettingsSchema,
     GetNetworkDiagnosticsSchema,
+    GetPerformanceSettingsSchema,
     SetBandwidthLimitSchema,
+    SetPerformanceSettingsSchema,
 )
 from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
     GetActiveStreamsSchema,
@@ -79,6 +81,8 @@ ALL_SCHEMAS = {
     "get_bandwidth_settings": GetBandwidthSettingsSchema,
     "set_bandwidth_limit": SetBandwidthLimitSchema,
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
+    "get_performance_settings": GetPerformanceSettingsSchema,
+    "set_performance_settings": SetPerformanceSettingsSchema,
     # Streaming
     "stream_start": StreamStartSchema,
     "stream_stop": StreamStopSchema,
@@ -119,6 +123,8 @@ __all__ = [
     "GetBandwidthSettingsSchema",
     "SetBandwidthLimitSchema",
     "GetNetworkDiagnosticsSchema",
+    "GetPerformanceSettingsSchema",
+    "SetPerformanceSettingsSchema",
     # Streaming
     "StreamStartSchema",
     "StreamStopSchema",

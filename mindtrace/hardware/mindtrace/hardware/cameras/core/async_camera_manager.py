@@ -563,9 +563,23 @@ class AsyncCameraManager(Mindtrace):
         return results
 
     async def batch_capture(
-        self, camera_names: List[str], upload_to_gcs: bool = False, output_format: str = "numpy"
+        self,
+        camera_names: List[str],
+        save_path_pattern: Optional[str] = None,
+        upload_to_gcs: bool = False,
+        output_format: str = "numpy",
     ) -> Dict[str, Any]:
-        """Capture from multiple cameras with network bandwidth management."""
+        """Capture from multiple cameras with network bandwidth management.
+
+        Args:
+            camera_names: List of camera names to capture from
+            save_path_pattern: Optional path pattern for saving images. Use {camera} placeholder for camera name
+            upload_to_gcs: Whether to upload to GCS
+            output_format: Output format for images
+
+        Returns:
+            Dictionary mapping camera names to captured images or file paths
+        """
         results = {}
 
         async def capture_from_camera(camera_name: str) -> Tuple[str, Any]:
@@ -574,8 +588,23 @@ class AsyncCameraManager(Mindtrace):
                     if camera_name not in self._cameras:
                         raise KeyError(f"Camera '{camera_name}' is not initialized. Use open() first.")
                     camera = self._cameras[camera_name]
-                    image = await camera.capture(upload_to_gcs=upload_to_gcs, output_format=output_format)
-                    return camera_name, image
+
+                    # Generate save path for this camera if pattern provided
+                    save_path = None
+                    if save_path_pattern:
+                        # Replace {camera} placeholder with camera name (sanitized for filesystem)
+                        safe_camera_name = camera_name.replace(":", "_").replace("/", "_")
+                        save_path = save_path_pattern.replace("{camera}", safe_camera_name)
+
+                    image = await camera.capture(
+                        save_path=save_path, upload_to_gcs=upload_to_gcs, output_format=output_format
+                    )
+
+                    # When save_path_pattern is provided, return the file path instead of image data
+                    if save_path_pattern and save_path:
+                        return camera_name, save_path
+                    else:
+                        return camera_name, image
             except Exception as e:
                 self.logger.error(f"Capture failed for '{camera_name}': {e}")
                 return camera_name, None
