@@ -1,4 +1,5 @@
 services:
+
   minio:
     image: minio/minio
     ports:
@@ -43,6 +44,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
   mongodb:
     image: mongo:latest
     ports:
@@ -53,6 +55,8 @@ services:
       - mongodb_test_data:/data/db
 
   pypylon-runtime:
+    profiles:
+      - pypylon
     build:
       context: ..
       dockerfile: tests/docker/pypylon-runtime.Dockerfile

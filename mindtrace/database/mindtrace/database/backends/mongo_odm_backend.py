@@ -1,6 +1,6 @@
 from typing import List, Type, TypeVar
 
-from beanie import Document, init_beanie
+from beanie import Document, PydanticObjectId, init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from pymongo.errors import DuplicateKeyError
@@ -44,7 +44,7 @@ class MindtraceDocument(Document):
 ModelType = TypeVar("ModelType", bound=MindtraceDocument)
 
 
-class MongoMindtraceODMBackend(MindtraceODMBackend):
+class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
     """
     MongoDB implementation of the Mindtrace ODM backend.
 
@@ -77,7 +77,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
             user = await backend.insert(User(name="John", email="john@example.com"))
     """
 
-    def __init__(self, model_cls: Type[ModelType], db_uri: str, db_name: str):
+    def __init__(self, model_cls: Type[T], db_uri: str, db_name: str):
         """
         Initialize the MongoDB ODM backend.
 
@@ -87,7 +87,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
             db_name (str): Name of the MongoDB database to use.
         """
         super().__init__()
-        self.model_cls = model_cls
+        self.model_cls: Type[T] = model_cls
         self.client = AsyncIOMotorClient(db_uri)
         self.db_name = db_name
         self._is_initialized = False
@@ -126,7 +126,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         """
         return True
 
-    async def insert(self, obj: BaseModel) -> ModelType:
+    async def insert(self, obj: BaseModel) -> T:
         """
         Insert a new document into the MongoDB collection.
 
@@ -158,7 +158,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         except Exception as e:
             raise DuplicateInsertError(str(e))
 
-    async def get(self, id: str) -> ModelType:
+    async def get(self, id: str | PydanticObjectId) -> T:
         """
         Retrieve a document by its unique identifier.
 
@@ -212,7 +212,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         else:
             raise DocumentNotFoundError(f"Object with id {id} not found")
 
-    async def all(self) -> List[ModelType]:
+    async def all(self) -> List[T]:
         """
         Retrieve all documents from the collection.
 
@@ -230,7 +230,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         await self.initialize()
         return await self.model_cls.find_all().to_list()
 
-    async def find(self, *args, **kwargs):
+    async def find(self, *args, **kwargs) -> List[T]:
         """
         Find documents matching the specified criteria.
 
@@ -253,7 +253,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         await self.initialize()
         return await self.model_cls.find(*args, **kwargs).to_list()
 
-    async def aggregate(self, pipeline: list):
+    async def aggregate(self, pipeline: list) -> List[T]:
         """
         Execute a MongoDB aggregation pipeline.
 
@@ -276,7 +276,7 @@ class MongoMindtraceODMBackend(MindtraceODMBackend):
         await self.initialize()
         return await self.model_cls.get_motor_collection().aggregate(pipeline).to_list(None)
 
-    def get_raw_model(self) -> Type[ModelType]:
+    def get_raw_model(self) -> Type[T]:
         """
         Get the raw document model class used by this backend.
 

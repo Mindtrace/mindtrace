@@ -292,7 +292,7 @@ class TestGenerateConnectionManager:
         _ = manager.test_endpoint(test_param="value")
 
         # Verify httpx call
-        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"input": "data"}, timeout=30)
+        mock_httpx.post.assert_called_once_with("http://test.com/test_endpoint", json={"input": "data"}, timeout=60)
 
         # Verify input schema was called
         mock_input_schema.assert_called_once_with(test_param="value")
@@ -330,7 +330,7 @@ class TestGenerateConnectionManager:
         _ = await manager.atest_endpoint(async_param="value")
 
         # Verify async client call
-        mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"async": "data"}, timeout=30)
+        mock_client.post.assert_called_once_with("http://test.com/test_endpoint", json={"async": "data"}, timeout=60)
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_http_error(self, mock_httpx, mock_service_class):
@@ -378,7 +378,7 @@ class TestGenerateConnectionManager:
         _ = manager.no_input_endpoint(raw_param="value")
 
         # Should pass kwargs directly as payload (but since input_schema is None, it creates empty payload)
-        mock_httpx.post.assert_called_once_with("http://test.com/no_input_endpoint", json={}, timeout=30)
+        mock_httpx.post.assert_called_once_with("http://test.com/no_input_endpoint", json={}, timeout=60)
 
     @patch("mindtrace.services.core.utils.httpx")
     def test_generated_method_empty_response(self, mock_httpx, mock_service_class):
@@ -425,7 +425,7 @@ class TestGenerateConnectionManager:
 
         # Should pass kwargs directly and return raw response
         mock_httpx.post.assert_called_once_with(
-            "http://test.com/test_endpoint", json={"raw_param": "value"}, timeout=30
+            "http://test.com/test_endpoint", json={"raw_param": "value"}, timeout=60
         )
 
         # Should not call schemas
@@ -458,7 +458,7 @@ class TestGenerateConnectionManager:
 
         # Should pass kwargs directly as payload
         mock_httpx.post.assert_called_once_with(
-            "http://test.com/no_input_endpoint", json={"raw_param": "value"}, timeout=30
+            "http://test.com/no_input_endpoint", json={"raw_param": "value"}, timeout=60
         )
 
     @patch("mindtrace.services.core.utils.httpx")
@@ -489,7 +489,7 @@ class TestGenerateConnectionManager:
 
         # Should pass kwargs directly as payload
         mock_client.post.assert_called_once_with(
-            "http://test.com/no_input_endpoint", json={"async_param": "value"}, timeout=30
+            "http://test.com/no_input_endpoint", json={"async_param": "value"}, timeout=60
         )
 
     @patch("mindtrace.services.core.utils.httpx")
