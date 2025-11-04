@@ -2,7 +2,7 @@ from abc import abstractmethod
 
 from pydantic import BaseModel
 
-from mindtrace.core.base import MindtraceABC
+from mindtrace.core import MindtraceABC
 
 
 class MindtraceODMBackend(MindtraceABC):

@@ -43,11 +43,6 @@ class MindtraceDocument(Document):
 
 ModelType = TypeVar("ModelType", bound=MindtraceDocument)
 
-class MindtraceDocument(Document):
-    class Settings:
-        use_cache = False
-
-ModelType = TypeVar("ModelType", bound=MindtraceDocument)
 
 class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
     """

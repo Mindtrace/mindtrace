@@ -42,11 +42,6 @@ class MindtraceRedisDocument(JsonModel):
 
 ModelType = TypeVar("ModelType", bound=MindtraceRedisDocument)
 
-class MindtraceRedisDocument(JsonModel):
-    class Meta:
-        global_key_prefix = "mindtrace"
-
-ModelType = TypeVar("ModelType", bound=MindtraceRedisDocument)
 
 class RedisMindtraceODMBackend(MindtraceODMBackend):
     """
