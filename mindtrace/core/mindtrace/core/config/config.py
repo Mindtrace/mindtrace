@@ -150,7 +150,7 @@ class Config(dict):
     It supports user provided arguments and environment variable overrides, path normalization by expanding the `~` character.
 
     Key Features:
-    -------------
+    
     - Accepts multiple configuration formats: `dict`, `BaseModel`, `BaseSettings`, or lists of these.
     - Attr-style and dict-style access to nested keys.
     - Supports secret fields using `pydantic.SecretStr`, preserving masking them by default.
