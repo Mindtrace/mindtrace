@@ -9,8 +9,38 @@ from mindtrace.core.config import CoreSettings
 
 
 def default_formatter(fmt: Optional[str] = None) -> logging.Formatter:
-    """
-    Returns a logging formatter with a default format if none is specified.
+    """Create a logging formatter with a standardized default format.
+
+    This function returns a Python logging Formatter instance configured with
+    a default format string that includes timestamp, log level, logger name,
+    and message. If a custom format string is provided, it will be used instead.
+
+    Args:
+        fmt: Optional custom format string. If None, uses the default format:
+            `"[%(asctime)s] %(levelname)s: %(name)s: %(message)s"`
+            - `%(asctime)s`: Timestamp when the log record was created
+            - `%(levelname)s`: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            - `%(name)s`: Name of the logger
+            - `%(message)s`: The actual log message
+
+    Returns:
+        logging.Formatter: Configured formatter instance ready to use with handlers.
+
+    Examples:
+        Use default format:
+        ```python
+        formatter = default_formatter()
+        handler.setFormatter(formatter)
+        # Output: [2024-01-15 10:30:45,123] INFO: mindtrace.core: Operation completed
+        ```
+
+        Use custom format:
+        ```python
+        custom_fmt = "%(levelname)s - %(message)s"
+        formatter = default_formatter(fmt=custom_fmt)
+        handler.setFormatter(formatter)
+        # Output: INFO - Operation completed
+        ```
     """
     default_fmt = "[%(asctime)s] %(levelname)s: %(name)s: %(message)s"
     return logging.Formatter(fmt or default_fmt)
@@ -97,12 +127,12 @@ def get_logger(name: str | None = "mindtrace", **kwargs) -> logging.Logger:
         logging.Logger: A configured logger instance.
 
     Example:
-        .. code-block:: python
+    ```python
+    from mindtrace.core.logging.logger import get_logger
 
-            from mindtrace.core.logging.logger import get_logger
-
-            logger = get_logger("core.module", stream_level=logging.INFO, propagate=True)
-            logger.info("Logger configured with custom settings.")
+    logger = get_logger("core.module", stream_level=logging.INFO, propagate=True)
+    logger.info("Logger configured with custom settings.")
+    ```
     """
     if not name:
         name = "mindtrace"
