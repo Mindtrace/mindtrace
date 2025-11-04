@@ -150,7 +150,7 @@ class Config(dict):
     It supports user provided arguments and environment variable overrides, path normalization by expanding the `~` character.
 
     Key Features:
-    
+
     - Accepts multiple configuration formats: `dict`, `BaseModel`, `BaseSettings`, or lists of these.
     - Attr-style and dict-style access to nested keys.
     - Supports secret fields using `pydantic.SecretStr`, preserving masking them by default.
@@ -197,10 +197,10 @@ class Config(dict):
         ```python
         # Attribute style access
         print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
-        
+
         # Dict style access
         print(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
-        
+
         # Get method
         print(config.get("MINDTRACE_DIR_PATHS").get("TEMP_DIR"))
         ```
@@ -209,7 +209,7 @@ class Config(dict):
         ```python
         # Save config to JSON
         config.save_json("saved_config.json")
-        
+
         # Load config back
         reloaded = Config.load_json("saved_config.json")
         ```
@@ -408,7 +408,7 @@ class Config(dict):
             Load from JSON file:
             ```python
             from mindtrace.core.config import Config
-            
+
             # Load configuration from JSON file
             config = Config.load_json("config.json")
             print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
@@ -418,7 +418,7 @@ class Config(dict):
             ```python
             import os
             os.environ["MINDTRACE_DEFAULT_HOST_URLS__SERVICE"] = "http://env-override:8000"
-            
+
             config = Config.load_json("config.json")
             # Environment variable will override the value from JSON
             print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)  # http://env-override:8000
@@ -527,7 +527,7 @@ class Config(dict):
             ```python
             original = Config({"API_URL": "http://prod:8000", "DEBUG": False})
             cloned = original.clone_with_overrides({"DEBUG": True})
-            
+
             print(original.DEBUG)  # False (unchanged)
             print(cloned.DEBUG)   # True (new value)
             ```
@@ -611,7 +611,7 @@ class Config(dict):
 
             # Access masked value
             print(config.OPENAI)  # ********
-            
+
             # Get real value
             print(config.get_secret("OPENAI"))  # sk-abc123
             ```
@@ -792,7 +792,7 @@ class CoreConfig(Config):
         Basic usage with default CoreSettings:
         ```python
         from mindtrace.core.config import CoreConfig
-        
+
         # Loads CoreSettings with env overrides
         config = CoreConfig()
         print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
@@ -812,7 +812,7 @@ class CoreConfig(Config):
         ```python
         import os
         os.environ["MINDTRACE_DEFAULT_HOST_URLS__SERVICE"] = "http://custom:8000"
-        
+
         config = CoreConfig()
         # Environment variable overrides the INI file value
         print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)  # http://custom:8000

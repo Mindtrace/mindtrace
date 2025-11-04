@@ -304,7 +304,7 @@ def cv2_to_pil(image: "np.ndarray") -> Image:
         A PIL image.
 
     Example:
-        ```python   
+        ```python
 
         import cv2
         from mindtrace.core import cv2_to_pil
