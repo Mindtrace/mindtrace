@@ -1,5 +1,5 @@
 import reflex as rx
-from inspectra.state.auth_state import AuthState
+
 
 def index() -> rx.Component:
     return rx.vstack(

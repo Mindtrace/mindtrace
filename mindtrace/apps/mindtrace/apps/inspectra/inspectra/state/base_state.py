@@ -1,5 +1,6 @@
 import reflex as rx
 
+
 class BaseState(rx.State):
     """Base Reflex state with shared helpers."""
 

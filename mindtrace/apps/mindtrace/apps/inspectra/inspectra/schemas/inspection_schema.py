@@ -1,9 +1,11 @@
-from pydantic import BaseModel, Field
-from typing import Optional
-from bson import ObjectId
 from datetime import datetime
+from typing import Optional
+
+from bson import ObjectId
+from pydantic import BaseModel, Field
 
 from inspectra.schemas.user_schema import PyObjectId
+
 
 class InspectionSchema(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id")

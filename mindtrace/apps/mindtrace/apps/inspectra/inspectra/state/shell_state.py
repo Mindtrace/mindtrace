@@ -1,5 +1,5 @@
 import reflex as rx
-from inspectra.state.auth_state import AuthState
+
 
 class ShellState(rx.State):
     """App shell state."""
@@ -11,8 +11,4 @@ class ShellState(rx.State):
     @rx.var
     def is_public(self) -> bool:
         path = self.current_path
-        return (
-            path.endswith("/login")
-            or path.endswith("/forgot-password")
-            or path == "/"
-        )
+        return path.endswith("/login") or path.endswith("/forgot-password") or path == "/"

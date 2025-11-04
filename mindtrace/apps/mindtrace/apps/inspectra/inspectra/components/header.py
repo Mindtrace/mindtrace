@@ -1,6 +1,9 @@
-import reflex as rx
 from typing import Optional
+
+import reflex as rx
+
 from inspectra.styles.global_styles import T
+
 
 def NotificationDropdown() -> rx.Component:
     alerts = [
@@ -41,6 +44,7 @@ def NotificationDropdown() -> rx.Component:
         ),
         align="end",
     )
+
 
 def Header(
     title: Optional[str] = None,

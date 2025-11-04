@@ -1,4 +1,5 @@
 import reflex as rx
+
 from inspectra.components.app_shell import AppShell
 from inspectra.pages.index import index
 from inspectra.pages.login import login
@@ -13,10 +14,13 @@ app = rx.App(
     ),
 )
 
+
 def wrap_in_shell(page_fn):
     def _page_wrapper(*args, **kwargs):
         return AppShell(page_fn(*args, **kwargs))
+
     return _page_wrapper
+
 
 # Inject global CSS
 app.head_components.append(global_css())
@@ -28,4 +32,3 @@ app.add_page(wrap_in_shell(index), route="/reports")
 
 # Login — no AppShell
 app.add_page(login, route="/login")
-

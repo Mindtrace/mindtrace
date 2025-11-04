@@ -1,114 +1,166 @@
+from dataclasses import dataclass
+from typing import Literal
+
 import reflex as rx
 
-# ─────────────────────────────────────────────────────────────
-# 🎨 TOKENS — Global constants used throughout Inspectra
-# ─────────────────────────────────────────────────────────────
-class Tokens:
-    """App-wide design tokens for Inspectra."""
-    # Colors
-    primary = "#184937"       # Inspectra green
-    primary_light = "#60CCA5"
-    surface = "#ffffff"
-    background = "#f9fafb"
-    border = "rgba(0,0,0,0.1)"
+# ───────────────────────────────────────────────
+# 🎨 COLOR TOKENS
+# ───────────────────────────────────────────────
 
-    # Typography
-    font_family = "Inter, system-ui, sans-serif"
-
-    # Layout
-    header_h = "72px"
-    sidebar_w = "120px"
-    border_radius = "12px"
-
-    # Spacing
-    space_1 = "4px"
-    space_2 = "8px"
-    space_3 = "12px"
-    space_4 = "16px"
-    space_5 = "20px"
-    space_6 = "24px"
-    space_8 = "32px"
-    space_10 = "40px"
-
-    # Z-index
-    z_header = 100
-    z_overlay = 1000
+ColorRole = Literal[
+    "brand",
+    "brand_light",
+    "surface",
+    "background",
+    "border",
+    "text_primary",
+    "text_secondary",
+    "error",
+]
 
 
-T = Tokens  # shorthand alias used by other components
+@dataclass(frozen=True)
+class ColorTokens:
+    """Semantic color palette."""
 
-# ─────────────────────────────────────────────────────────────
-# ⚙️ Shared style primitives (spacers, layout helpers)
-# ─────────────────────────────────────────────────────────────
-class SP:
-    """Common spacing primitives."""
-    space_1 = T.space_1
-    space_2 = T.space_2
-    space_3 = T.space_3
-    space_4 = T.space_4
-    space_6 = T.space_6
-    space_8 = T.space_8
-    space_10 = T.space_10
+    brand: str = "#184937"  # Inspectra green
+    brand_light: str = "#60CCA5"
+    surface: str = "#ffffff"
+    background: str = "#f9fafb"
+    border: str = "rgba(0,0,0,0.1)"
+    text_primary: str = "#0f172a"
+    text_secondary: str = "#475569"
+    error: str = "#dc2626"
 
 
-# ─────────────────────────────────────────────────────────────
-# 🧱 COMPONENT VARIANTS — for branding, logo, cards, etc.
-# ─────────────────────────────────────────────────────────────
-COMPONENT_VARIANTS = {
-    "logo": {
-        "title": {
-            "font_weight": "700",
-            "font_size": "22px",
-            "letter_spacing": "-0.02em",
-            "color": T.primary_light,
-        },
-        "subtitle": {
-            "font_weight": "500",
-            "font_size": "14px",
-            "color": "#64748b",
-        },
-    },
-    "card": {
-        "base": {
-            "background": T.surface,
-            "border_radius": T.border_radius,
-            "box_shadow": "0 2px 8px rgba(0,0,0,0.05)",
-            "border": f"1px solid {T.border}",
-            "padding": T.space_6,
-        }
-    },
-}
+# ───────────────────────────────────────────────
+# 📏 SPACING + LAYOUT TOKENS
+# ───────────────────────────────────────────────
 
-# ─────────────────────────────────────────────────────────────
-# 💅 Base <style> injection for app (applied once globally)
-# ─────────────────────────────────────────────────────────────
+SpaceSize = Literal["xs", "sm", "md", "lg", "xl", "2xl"]
+
+
+@dataclass(frozen=True)
+class SpacingTokens:
+    """Semantic spacing scale."""
+
+    xs: str = "4px"
+    sm: str = "8px"
+    md: str = "16px"
+    lg: str = "24px"
+    xl: str = "32px"
+    _2xl: str = "40px"  # double underscore since identifiers can’t start with numbers
+
+
+@dataclass(frozen=True)
+class RadiusTokens:
+    """Border radius scale."""
+
+    sm: str = "6px"
+    md: str = "12px"
+    lg: str = "20px"
+
+
+@dataclass(frozen=True)
+class ZIndexTokens:
+    header: int = 100
+    overlay: int = 1000
+
+
+# ───────────────────────────────────────────────
+# ✍️ TYPOGRAPHY TOKENS
+# ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class TypographyTokens:
+    """Font families, sizes, weights."""
+
+    font_family: str = "Inter, system-ui, sans-serif"
+    size_sm: str = "14px"
+    size_md: str = "16px"
+    size_lg: str = "20px"
+    weight_regular: str = "400"
+    weight_medium: str = "500"
+    weight_bold: str = "700"
+
+
+# ───────────────────────────────────────────────
+# 🧱 LAYOUT TOKENS
+# ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class LayoutTokens:
+    header_h: str = "72px"
+    sidebar_w: str = "120px"
+
+
+# ───────────────────────────────────────────────
+# 🎯 DESIGN SYSTEM ROOT
+# ───────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class DesignSystem:
+    """Single source of truth for design tokens."""
+
+    color: ColorTokens = ColorTokens()
+    space: SpacingTokens = SpacingTokens()
+    radius: RadiusTokens = RadiusTokens()
+    text: TypographyTokens = TypographyTokens()
+    layout: LayoutTokens = LayoutTokens()
+    z: ZIndexTokens = ZIndexTokens()
+
+
+DS = DesignSystem()  # Shorthand alias
+
+
+# ───────────────────────────────────────────────
+# 💅 GLOBAL CSS INJECTION
+# ───────────────────────────────────────────────
+
+
 def global_css() -> rx.Component:
-    """Injects global CSS variables for Inspectra theme."""
+    """Inject global CSS variables for Inspectra theme."""
+    c, s, r, t, l = DS.color, DS.space, DS.radius, DS.text, DS.layout
+
     return rx.html(f"""
     <style>
         :root {{
-            --color-primary: {T.primary};
-            --color-primary-light: {T.primary_light};
-            --color-surface: {T.surface};
-            --color-background: {T.background};
-            --border-color: {T.border};
-            --radius: {T.border_radius};
-            --font-family: {T.font_family};
-            --header-h: {T.header_h};
+            --color-brand: {c.brand};
+            --color-brand-light: {c.brand_light};
+            --color-surface: {c.surface};
+            --color-background: {c.background};
+            --color-border: {c.border};
+            --text-primary: {c.text_primary};
+            --text-secondary: {c.text_secondary};
+
+            --font-family: {t.font_family};
+
+            --space-xs: {s.xs};
+            --space-sm: {s.sm};
+            --space-md: {s.md};
+            --space-lg: {s.lg};
+            --space-xl: {s.xl};
+
+            --radius-sm: {r.sm};
+            --radius-md: {r.md};
+            --radius-lg: {r.lg};
+
+            --header-h: {l.header_h};
+            --sidebar-w: {l.sidebar_w};
         }}
 
         html, body {{
             font-family: var(--font-family);
             background: var(--color-background);
-            color: #0f172a;
+            color: var(--text-primary);
             margin: 0;
             padding: 0;
         }}
 
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {{
-            width: 10px;
-        }}
+        ::-webkit-scrollbar {{ width: 10px; }}
         ::-webkit-scrollbar-thumb {{
             background: rgba(0,0,0,0.15);
             border-radius: 5px;
@@ -117,7 +169,6 @@ def global_css() -> rx.Component:
             background: rgba(0,0,0,0.3);
         }}
 
-        /* Buttons, cards, and icons share a soft hover */
         .clickable:hover {{
             opacity: .85;
             cursor: pointer;

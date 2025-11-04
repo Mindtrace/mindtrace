@@ -1,10 +1,11 @@
 import reflex as rx
+
 from inspectra.components.header import Header
 from inspectra.components.sidebar import Sidebar
-from inspectra.state.shell_state import ShellState
 from inspectra.state.auth_state import AuthState
-from inspectra.utils.get_active_label import get_active_label
+from inspectra.state.shell_state import ShellState
 from inspectra.styles.global_styles import T
+from inspectra.utils.get_active_label import get_active_label
 
 
 def AppShell(content: rx.Component) -> rx.Component:

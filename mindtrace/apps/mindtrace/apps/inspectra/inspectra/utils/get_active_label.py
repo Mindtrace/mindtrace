@@ -4,17 +4,23 @@ import reflex as rx
 def get_active_label(path: rx.Var[str]) -> rx.Var[str]:
     """Map current path to sidebar label."""
     return rx.cond(
-        path.endswith("/line-insights"), "Line insights",
+        path.endswith("/line-insights"),
+        "Line insights",
         rx.cond(
-            path.endswith("/line-view"), "Line view",
+            path.endswith("/line-view"),
+            "Line view",
             rx.cond(
-                path.endswith("/plant-view"), "Plant view",
+                path.endswith("/plant-view"),
+                "Plant view",
                 rx.cond(
-                    path.endswith("/alerts"), "Alerts",
+                    path.endswith("/alerts"),
+                    "Alerts",
                     rx.cond(
-                        path.endswith("/reports"), "Reports",
+                        path.endswith("/reports"),
+                        "Reports",
                         rx.cond(
-                            path.endswith("/settings"), "Settings",
+                            path.endswith("/settings"),
+                            "Settings",
                             "Home",
                         ),
                     ),

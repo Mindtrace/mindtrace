@@ -1,6 +1,8 @@
 import reflex as rx
+
 from inspectra.state.auth_state import AuthState
 from inspectra.styles.global_styles import T
+
 
 def _left_panel() -> rx.Component:
     """Left side with form."""
@@ -27,6 +29,7 @@ def _left_panel() -> rx.Component:
         bg=T.surface,
         height="100%",
     )
+
 
 def _right_panel() -> rx.Component:
     """Right marketing gradient panel."""
@@ -55,6 +58,7 @@ def _right_panel() -> rx.Component:
         display="flex",
         align_items="center",
     )
+
 
 def login() -> rx.Component:
     """Full login page layout."""

@@ -1,6 +1,8 @@
-import reflex as rx
 from collections import OrderedDict
-from inspectra.styles.global_styles import T, SP
+
+import reflex as rx
+
+from inspectra.styles.global_styles import SP, T
 
 # ──────────────────────────────── Navigation Data ────────────────────────────────
 NAV = [
@@ -12,6 +14,7 @@ NAV = [
     {"section": "Audit & Reports", "label": "Reports", "icon": "trending-up-down", "href": "/reports"},
     {"label": "Settings", "icon": "cog", "href": "/settings"},
 ]
+
 
 # ──────────────────────────────── Tile Component ────────────────────────────────
 def _tile(label: str, icon: str, *, active: bool):
@@ -29,7 +32,7 @@ def _tile(label: str, icon: str, *, active: bool):
                 place_items="center",
                 border_radius=T.border_radius,
                 bg=bg_color,
-                border=rx.cond(active, f"1px solid {T.primary}", f"1px solid rgba(0,0,0,0.05)"),
+                border=rx.cond(active, f"1px solid {T.primary}", "1px solid rgba(0,0,0,0.05)"),
             ),
             rx.text(label, font_size="11px", color=text_color, text_align="center", weight="medium"),
             align="center",
@@ -48,10 +51,12 @@ def _tile(label: str, icon: str, *, active: bool):
         width="84px",
     )
 
+
 # ──────────────────────────────── Navigation Sections ────────────────────────────────
 def _nav_link(item: dict, *, active: bool):
     tile = _tile(item["label"], item["icon"], active=active)
     return rx.link(tile, href=item.get("href", "#"), text_decoration="none", width="100%")
+
 
 def _section_heading(title: str):
     return rx.text(
@@ -64,6 +69,7 @@ def _section_heading(title: str):
         margin_bottom="8px",
         margin_top="6px",
     )
+
 
 # ──────────────────────────────── Sidebar ────────────────────────────────
 def Sidebar(*, active: str):
