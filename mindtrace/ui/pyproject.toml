@@ -12,18 +12,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
-    "mindtrace-core",
-    # Reflex dependencies for Poseidon app
-    "reflex>=0.4.0",
-    "fastapi>=0.110.0",
-    "uvicorn>=0.27.1",
-    "sqlmodel>=0.0.16",
-    "python-multipart>=0.0.9",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "pydantic-settings>=2.9.1",
-    "pydantic>=2.11.1",
-    "beanie>=1.29.0",
+    "mindtrace-core"
 ]
 
 [project.urls]
