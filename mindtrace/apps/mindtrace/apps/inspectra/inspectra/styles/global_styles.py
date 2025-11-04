@@ -123,7 +123,7 @@ DS = DesignSystem()  # Shorthand alias
 
 def global_css() -> rx.Component:
     """Inject global CSS variables for Inspectra theme."""
-    c, s, r, t, l = DS.color, DS.space, DS.radius, DS.text, DS.layout
+    c, s, r, t, layout = DS.color, DS.space, DS.radius, DS.text, DS.layout
 
     return rx.html(f"""
     <style>
@@ -148,30 +148,8 @@ def global_css() -> rx.Component:
             --radius-md: {r.md};
             --radius-lg: {r.lg};
 
-            --header-h: {l.header_h};
-            --sidebar-w: {l.sidebar_w};
-        }}
-
-        html, body {{
-            font-family: var(--font-family);
-            background: var(--color-background);
-            color: var(--text-primary);
-            margin: 0;
-            padding: 0;
-        }}
-
-        ::-webkit-scrollbar {{ width: 10px; }}
-        ::-webkit-scrollbar-thumb {{
-            background: rgba(0,0,0,0.15);
-            border-radius: 5px;
-        }}
-        ::-webkit-scrollbar-thumb:hover {{
-            background: rgba(0,0,0,0.3);
-        }}
-
-        .clickable:hover {{
-            opacity: .85;
-            cursor: pointer;
+            --header-h: {layout.header_h};
+            --sidebar-w: {layout.sidebar_w};
         }}
     </style>
     """)
