@@ -23,4 +23,4 @@ class ConfigArchiver(Archiver):
 
     def load(self, data_type: Type[Any]) -> Config:
         with open(Path(self.uri) / "config.json", "r") as f:
-            return Config(**json.load(f))
+            return Config(json.load(f))

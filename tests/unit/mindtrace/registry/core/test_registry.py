@@ -31,7 +31,7 @@ def temp_registry_dir():
 @pytest.fixture
 def registry(temp_registry_dir):
     """Create a Registry instance with a temporary directory."""
-    return Registry(registry_dir=temp_registry_dir)
+    return Registry(registry_dir=temp_registry_dir, version_objects=True)
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ def test_registry_default_directory():
     registry = Registry()
 
     # Verify that it uses the default from config
-    expected_dir = Path(registry.config["MINDTRACE_DEFAULT_REGISTRY_DIR"]).expanduser().resolve()
+    expected_dir = Path(registry.config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"]).expanduser().resolve()
     assert registry.backend.uri == expected_dir
     assert registry.backend.uri.is_absolute()
     assert registry.backend.uri.exists()
@@ -227,7 +227,9 @@ def test_save_and_load_path(registry, test_path):
     assert registry.has_object("test:path", "1.0.0")
 
     # Load the path
-    with TemporaryDirectory(dir=Path(registry.config["MINDTRACE_TEMP_DIR"]).expanduser().resolve()) as temp_dir:
+    with TemporaryDirectory(
+        dir=Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
+    ) as temp_dir:
         loaded_path = registry.load("test:path", version="1.0.0", output_dir=temp_dir)
 
         # Verify the loaded path is a Path object
@@ -1028,22 +1030,30 @@ def test_dict_like_interface_clear(registry):
 
 def test_dict_like_interface_pop(registry):
     """Test the pop() method."""
-    # Test with default value
-    assert registry.pop("nonexistent", "default") == "default"
+    # Reduce timeout for faster test execution
+    original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
+    registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.01  # 10ms
 
-    # Test with existing value
-    registry["test:str"] = "hello"
-    assert registry.pop("test:str") == "hello"
-    assert "test:str" not in registry
+    try:
+        # Test with default value
+        assert registry.pop("nonexistent", "default") == "default"
 
-    # Test with version
-    registry["test:str@1.0.0"] = "hello v1"
-    assert registry.pop("test:str@1.0.0") == "hello v1"
-    assert "test:str@1.0.0" not in registry
+        # Test with existing value
+        registry["test:str"] = "hello"
+        assert registry.pop("test:str") == "hello"
+        assert "test:str" not in registry
 
-    # Test without default value
-    with pytest.raises(KeyError):
-        registry.pop("nonexistent")
+        # Test with version
+        registry["test:str@1.0.0"] = "hello v1"
+        assert registry.pop("test:str@1.0.0") == "hello v1"
+        assert "test:str@1.0.0" not in registry
+
+        # Test without default value
+        with pytest.raises(KeyError):
+            registry.pop("nonexistent")
+    finally:
+        # Restore original timeout
+        registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
 
 
 def test_dict_like_interface_setdefault(registry):
@@ -1260,23 +1270,31 @@ def test_non_versioned_delete(non_versioned_registry, test_config):
 
 def test_non_versioned_dict_interface(non_versioned_registry, test_config):
     """Test dictionary interface in non-versioned mode."""
-    # Test __setitem__ and __getitem__
-    non_versioned_registry["test:config"] = test_config
-    assert non_versioned_registry["test:config"] == test_config
+    # Reduce timeout for faster test execution
+    original_timeout = non_versioned_registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
+    non_versioned_registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.01  # 10ms
 
-    # Test update
-    new_config = {"new": "value"}
-    non_versioned_registry.update({"test:config": new_config})
-    assert non_versioned_registry["test:config"] == new_config
+    try:
+        # Test __setitem__ and __getitem__
+        non_versioned_registry["test:config"] = test_config
+        assert non_versioned_registry["test:config"] == test_config
 
-    # Test pop
-    value = non_versioned_registry.pop("test:config")
-    assert value == new_config
-    assert "test:config" not in non_versioned_registry
+        # Test update
+        new_config = {"new": "value"}
+        non_versioned_registry.update({"test:config": new_config})
+        assert non_versioned_registry["test:config"] == new_config
 
-    # Test setdefault
-    non_versioned_registry.setdefault("test:config", test_config)
-    assert non_versioned_registry["test:config"] == test_config
+        # Test pop
+        value = non_versioned_registry.pop("test:config")
+        assert value == new_config
+        assert "test:config" not in non_versioned_registry
+
+        # Test setdefault
+        non_versioned_registry.setdefault("test:config", test_config)
+        assert non_versioned_registry["test:config"] == test_config
+    finally:
+        # Restore original timeout
+        non_versioned_registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
 
 
 def test_non_versioned_version_handling(non_versioned_registry, test_config):
@@ -1302,7 +1320,7 @@ def test_download_basic(registry, test_config):
     """Test basic download functionality between registries."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1322,7 +1340,7 @@ def test_download_with_rename(registry, test_config):
     """Test downloading with a different target name."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("source:config", test_config, version="1.0.0")
@@ -1345,7 +1363,7 @@ def test_download_with_reversion(registry, test_config):
     """Test downloading with a different target version."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1366,7 +1384,7 @@ def test_download_with_metadata(registry, test_config):
     """Test downloading preserves metadata."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object with metadata
         metadata = {"key": "value", "number": 42}
@@ -1384,7 +1402,7 @@ def test_download_nonexistent_object(registry):
     """Test downloading a nonexistent object raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Attempt to download nonexistent object
         with pytest.raises(ValueError, match="Object test:config version 1.0.0 does not exist in source registry"):
@@ -1402,7 +1420,7 @@ def test_download_latest_version(registry, test_config):
     """Test downloading the latest version of an object."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save multiple versions
         source_reg.save("test:float", 1.0)
@@ -1420,13 +1438,14 @@ def test_download_with_materializer(registry):
     """Test downloading an object with a custom materializer."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-            CUSTOM_KEY="custom_value",
+            {
+                "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+                "CUSTOM_KEY": "custom_value",
+            }
         )
 
         # Save object with ConfigArchiver materializer
@@ -1438,8 +1457,8 @@ def test_download_with_materializer(registry):
         # Verify object content
         loaded_config = registry.load("test:config", version="1.0.0")
         assert isinstance(loaded_config, Config)
-        assert loaded_config["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_config["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_config["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_config["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1447,7 +1466,7 @@ def test_download_version_conflict(registry, test_config):
     """Test downloading when target version already exists."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1482,7 +1501,7 @@ def test_download_latest_version_nonexistent(registry):
     """Test downloading a non-existent object with version 'latest'."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Try to download a non-existent object with version "latest"
         with pytest.raises(ValueError, match="No versions found for object nonexistent in source registry"):
@@ -1493,13 +1512,14 @@ def test_download_vs_dict_assignment(registry):
     """Test that download and dictionary-style assignment produce the same result."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
-            MINDTRACE_TEMP_DIR="/custom/temp/dir",
-            MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-            CUSTOM_KEY="custom_value",
+            {
+                "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+                "CUSTOM_KEY": "custom_value",
+            }
         )
 
         # Save object to source registry
@@ -1507,8 +1527,8 @@ def test_download_vs_dict_assignment(registry):
 
         # Create two target registries
         with TemporaryDirectory() as target_dir1, TemporaryDirectory() as target_dir2:
-            target_reg1 = Registry(registry_dir=target_dir1)
-            target_reg2 = Registry(registry_dir=target_dir2)
+            target_reg1 = Registry(registry_dir=target_dir1, version_objects=True)
+            target_reg2 = Registry(registry_dir=target_dir2, version_objects=True)
 
             # Transfer using download method (without specifying target_version)
             target_reg1.download(source_reg, "test:config", version="1.0.0")
@@ -1538,11 +1558,11 @@ def test_update_with_registry(registry):
     """Test updating a registry with objects from another registry."""
     # Create source registry with multiple objects
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create and save multiple objects to source registry
-        config1 = Config(MINDTRACE_TEMP_DIR="/dir1")
-        config2 = Config(MINDTRACE_TEMP_DIR="/dir2")
+        config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
+        config2 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir2"}})
         source_reg.save("config1", config1, version="1.0.0")
         source_reg.save("config2", config2, version="1.0.0")
         source_reg.save("config2", config2, version="2.0.0")  # Multiple versions
@@ -1565,7 +1585,7 @@ def test_update_with_existing_objects(registry):
     """Test that updating with existing objects raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create and save object to source registry with multiple versions
         source_reg.save("test:int", 1, version="1.0.0")
@@ -1591,9 +1611,10 @@ def test_distributed_lock_save_concurrent(registry):
 
     # Create a test object
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
     )
 
     # Function to perform save with delay
@@ -1610,8 +1631,8 @@ def test_distributed_lock_save_concurrent(registry):
     # Verify that all saves completed successfully
     for i in range(5):
         loaded_obj = registry.load(f"testobj:{i}")
-        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_obj["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1621,9 +1642,10 @@ def test_distributed_lock_save_conflict(registry):
     from mindtrace.registry.core.exceptions import LockTimeoutError
 
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
     )
 
     # First save should succeed
@@ -1647,8 +1669,8 @@ def test_distributed_lock_save_conflict(registry):
 
     # Original object should still be intact
     loaded_obj = registry.load("test:conflict", version="1.0.0")
-    assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-    assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+    assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+    assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
     assert loaded_obj["CUSTOM_KEY"] == "custom_value"
 
 
@@ -1657,17 +1679,18 @@ def test_distributed_lock_load_concurrent(registry):
 
     # Create and save a test object
     test_obj = Config(
-        MINDTRACE_TEMP_DIR="/custom/temp/dir",
-        MINDTRACE_DEFAULT_REGISTRY_DIR="/custom/registry/dir",
-        CUSTOM_KEY="custom_value",
+        {
+            "MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/temp/dir", "REGISTRY_DIR": "/custom/registry/dir"},
+            "CUSTOM_KEY": "custom_value",
+        }
     )
     registry.save("test:concurrent:load", test_obj)
 
     # Function to perform load
     def load_object():
         loaded_obj = registry.load("test:concurrent:load")
-        assert loaded_obj["MINDTRACE_TEMP_DIR"] == "/custom/temp/dir"
-        assert loaded_obj["MINDTRACE_DEFAULT_REGISTRY_DIR"] == "/custom/registry/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["TEMP_DIR"] == "/custom/temp/dir"
+        assert loaded_obj["MINDTRACE_DIR_PATHS"]["REGISTRY_DIR"] == "/custom/registry/dir"
         assert loaded_obj["CUSTOM_KEY"] == "custom_value"
         return True
 
@@ -1737,17 +1760,25 @@ def test_distributed_lock_load_concurrent(registry):
 
 def test_lock_timeout_error(registry):
     """Test that TimeoutError is raised when lock acquisition fails."""
-    # Mock the backend's acquire_lock method to simulate failure
-    with patch.object(registry.backend, "acquire_lock", return_value=False):
-        # Test exclusive lock timeout
-        with pytest.raises(TimeoutError, match="Timeout of 5 seconds reached"):
-            with registry._get_object_lock("test_key", "1.0"):
-                pass
+    # Temporarily reduce timeout to speed up test
+    original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
+    registry.config["MINDTRACE_LOCK_TIMEOUT"] = 0.1  # 100ms instead of 5s
 
-        # Test shared lock timeout
-        with pytest.raises(TimeoutError, match="Timeout of 5 seconds reached"):
-            with registry._get_object_lock("test_key", "1.0", shared=True):
-                pass
+    try:
+        # Mock the backend's acquire_lock method to simulate failure
+        with patch.object(registry.backend, "acquire_lock", return_value=False):
+            # Test exclusive lock timeout
+            with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
+                with registry.get_lock("test_key", "1.0"):
+                    pass
+
+            # Test shared lock timeout
+            with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
+                with registry.get_lock("test_key", "1.0", shared=True):
+                    pass
+    finally:
+        # Restore original timeout
+        registry.config["MINDTRACE_LOCK_TIMEOUT"] = original_timeout
 
 
 def test_lock_success(registry):
@@ -1758,7 +1789,7 @@ def test_lock_success(registry):
         patch.object(registry.backend, "release_lock", return_value=True) as mock_release,
     ):
         # Test exclusive lock
-        with registry._get_object_lock("test_key", "1.0"):
+        with registry.get_lock("test_key", "1.0"):
             mock_acquire.assert_called_once()
             assert not mock_acquire.call_args[1].get("shared", False)
 
@@ -1770,7 +1801,7 @@ def test_lock_success(registry):
         mock_release.reset_mock()
 
         # Test shared lock
-        with registry._get_object_lock("test_key", "1.0", shared=True):
+        with registry.get_lock("test_key", "1.0", shared=True):
             mock_acquire.assert_called_once()
             assert mock_acquire.call_args[1].get("shared", False)
 
@@ -1783,7 +1814,7 @@ def test_lock_timeout_value(registry):
     # Mock the backend's acquire_lock method
     with patch.object(registry.backend, "acquire_lock", return_value=True) as mock_acquire:
         # Test with default timeout
-        with registry._get_object_lock("test_key", "1.0"):
+        with registry.get_lock("test_key", "1.0"):
             mock_acquire.assert_called_once()
             # timeout is the third positional argument (index 2)
             assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
@@ -1795,7 +1826,7 @@ def test_lock_timeout_value(registry):
         original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
         try:
             registry.config["MINDTRACE_LOCK_TIMEOUT"] = 60
-            with registry._get_object_lock("test_key", "1.0"):
+            with registry.get_lock("test_key", "1.0"):
                 mock_acquire.assert_called_once()
                 # timeout is the third positional argument (index 2)
                 assert mock_acquire.call_args[0][2] == 60

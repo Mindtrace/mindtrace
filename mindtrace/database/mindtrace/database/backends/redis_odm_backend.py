@@ -90,6 +90,7 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
         super().__init__()
         self.model_cls = model_cls
         self.redis = get_redis_connection(url=redis_url)
+        self.model_cls.Meta.database = self.redis
         self._is_initialized = False
 
     def initialize(self):

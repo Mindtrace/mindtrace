@@ -1,7 +1,11 @@
-"""
-Camera API Service module.
-"""
+"""Hardware API modules."""
 
-from .app import CameraAPIService, camera_api_service, app
+from mindtrace.hardware.api.cameras import CameraManagerConnectionManager, CameraManagerService
+from mindtrace.hardware.api.sensors import SensorConnectionManager, SensorManagerService
 
-__all__ = ["app"]
+__all__ = [
+    "CameraManagerService",
+    "CameraManagerConnectionManager",
+    "SensorManagerService",
+    "SensorConnectionManager",
+]

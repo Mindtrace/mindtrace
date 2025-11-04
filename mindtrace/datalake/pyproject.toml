@@ -1,7 +1,8 @@
 [project]
 name = "mindtrace-datalake"
-version = "0.3.0"
+version = "0.5.0"
 description = "Datalake functionality for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}

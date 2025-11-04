@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-apps"
-version = "0.3.0"
+version = "0.5.0"
 description = "Applications for Mindtrace"
 license = "Apache-2.0"
 authors = [

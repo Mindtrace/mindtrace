@@ -119,7 +119,7 @@ def generate_connection_manager(
         pass  # Methods will be added dynamically
 
     # Create a temporary service instance to get the endpoints
-    temp_service = service_cls()
+    temp_service = service_cls(live_service=False)
 
     # Store service class and endpoints
     ServiceConnectionManager._service_class = service_cls
@@ -154,7 +154,7 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
+                res = httpx.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -188,8 +188,8 @@ def generate_connection_manager(
                         payload = input_schema(**kwargs).model_dump() if input_schema is not None else {}
                 else:
                     payload = kwargs
-                async with httpx.AsyncClient(timeout=30) as client:
-                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=30)
+                async with httpx.AsyncClient(timeout=60) as client:
+                    res = await client.post(str(self.url).rstrip("/") + endpoint_path, json=payload, timeout=60)
                 if res.status_code != 200:
                     raise HTTPException(res.status_code, res.text)
 
@@ -207,15 +207,19 @@ def generate_connection_manager(
 
         method, amethod = make_method(endpoint_path, endpoint.input_schema, endpoint.output_schema)
 
+        # Replace dots with underscores to make it a valid identifier
+        method_name = endpoint_name.replace(".", "_")
+
         # Set up sync method
-        method.__name__ = endpoint_name
+        method.__name__ = method_name
         method.__doc__ = f"Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
-        setattr(ServiceConnectionManager, endpoint_name, method)
+        setattr(ServiceConnectionManager, method_name, method)
 
         # Set up async method
-        amethod.__name__ = f"a{endpoint_name}"
+        async_method_name = f"a{method_name}"
+        amethod.__name__ = async_method_name
         amethod.__doc__ = f"Async version: Calls the `{endpoint_name}` pipeline at `{endpoint_path}`"
-        setattr(ServiceConnectionManager, f"a{endpoint_name}", amethod)
+        setattr(ServiceConnectionManager, async_method_name, amethod)
 
     ServiceConnectionManager.__name__ = class_name
     return ServiceConnectionManager

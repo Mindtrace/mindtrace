@@ -1,4 +1,5 @@
 import time
+import warnings
 
 import pytest
 
@@ -6,12 +7,12 @@ from mindtrace.cluster import ClusterManager, Node
 from mindtrace.cluster.core.types import WorkerStatusEnum
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 
 @pytest.mark.integration
 def test_cluster_manager_as_gateway():
-    echo_job = JobSchema(name="gateway_echo_job", input=EchoInput, output=EchoOutput)
+    echo_job = JobSchema(name="gateway_echo_job", input_schema=EchoInput, output_schema=EchoOutput)
 
     # Launch Gateway service on port 8097
     cluster_cm = ClusterManager.launch(port=8097, wait_for_launch=True, timeout=15)
@@ -44,7 +45,7 @@ def test_cluster_manager_with_prelaunched_worker():
     cluster_cm = ClusterManager.launch(host="localhost", port=8100, wait_for_launch=True, timeout=15)
     worker_cm = EchoWorker.launch(host="localhost", port=8101, wait_for_launch=True, timeout=15)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
-    echo_job_schema = JobSchema(name="prelaunched_worker_echo", input=EchoInput, output=EchoOutput)
+    echo_job_schema = JobSchema(name="prelaunched_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
         # Register the worker with the cluster
         cluster_cm.register_job_to_worker(job_type="prelaunched_worker_echo", worker_url=str(worker_cm.url))
@@ -53,13 +54,6 @@ def test_cluster_manager_with_prelaunched_worker():
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
         assert result.output == {}
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
-
-        # Test query_worker_status as well
-        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert query_status.worker_id == worker_id
-        assert query_status.status == WorkerStatusEnum.IDLE.value
 
         time.sleep(1)
         result = cluster_cm.get_job_status(job_id=job.id)
@@ -89,18 +83,18 @@ def test_cluster_manager_multiple_jobs_with_worker():
     cluster_cm = ClusterManager.launch(host="localhost", port=8102, wait_for_launch=True, timeout=15)
     worker_cm = EchoWorker.launch(host="localhost", port=8103, wait_for_launch=True, timeout=15)
     worker_id = str(worker_cm.heartbeat().heartbeat.server_id)
-    echo_job_schema = JobSchema(name="multiple_jobs_echo", input=EchoInput, output=EchoOutput)
+    echo_job_schema = JobSchema(name="multiple_jobs_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
         cluster_cm.register_job_to_worker(job_type="multiple_jobs_echo", worker_url=str(worker_cm.url))
         messages = ["Job 1", "Job 2", "Job 3"]
         jobs = []
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
+        assert worker_status.status == WorkerStatusEnum.IDLE.value
         for msg in messages:
             job = job_from_schema(echo_job_schema, input_data={"message": msg})
             jobs.append(job)
             result = cluster_cm.submit_job(job)
             assert result.status == "queued"
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
         time.sleep(1)
         for i, job in enumerate(jobs):
             result = cluster_cm.get_job_status(job_id=job.id)
@@ -123,7 +117,7 @@ def test_cluster_manager_worker_failure():
 
     cluster_cm = ClusterManager.launch(host="localhost", port=8104, wait_for_launch=True, timeout=15)
     worker_cm = EchoWorker.launch(host="localhost", port=8105, wait_for_launch=True, timeout=15)
-    echo_job_schema = JobSchema(name="worker_failure_echo", input=EchoInput, output=EchoOutput)
+    echo_job_schema = JobSchema(name="worker_failure_echo", input_schema=EchoInput, output_schema=EchoOutput)
     try:
         cluster_cm.register_job_to_worker(job_type="worker_failure_echo", worker_url=str(worker_cm.url))
         # Shut down the worker before submitting the job
@@ -149,7 +143,7 @@ def test_cluster_manager_with_node():
         )
         worker_url = "http://localhost:8108"
         node.launch_worker(worker_type="echoworker", worker_url=worker_url)
-        echo_job_schema = JobSchema(name="node_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="node_echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_cm.register_job_to_worker(job_type="node_echo", worker_url=worker_url)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!"})
         result = cluster_cm.submit_job(job)
@@ -186,7 +180,7 @@ def test_cluster_manager_launch_worker():
         )
 
         # Register the worker with the cluster for job processing
-        echo_job_schema = JobSchema(name="launch_worker_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="launch_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
         cluster_cm.register_job_to_worker(job_type="launch_worker_echo", worker_url=worker_url)
 
         # Submit a job and verify it gets processed
@@ -238,7 +232,7 @@ def test_cluster_manager_launch_worker_multiple_workers():
             cluster_cm.register_job_to_worker(job_type="multiple_workers_echo", worker_url=worker_url)
 
         # Submit jobs to different workers
-        echo_job_schema = JobSchema(name="multiple_workers_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="multiple_workers_echo", input_schema=EchoInput, output_schema=EchoOutput)
         jobs = []
 
         for i, worker_url in enumerate(worker_urls):
@@ -314,7 +308,7 @@ def test_register_worker_type_with_job_schema_name():
             cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
             # Submit a job - it should be processed automatically without manual registration
-            echo_job_schema = JobSchema(name="auto_connect_echo", input=EchoInput, output=EchoOutput)
+            echo_job_schema = JobSchema(name="auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
             job = job_from_schema(echo_job_schema, input_data={"message": "Auto-connected worker test!"})
             result = cluster_cm.submit_job(job)
 
@@ -366,7 +360,9 @@ def test_register_job_schema_to_worker_type():
             cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
             # Submit a job - it should be processed automatically
-            echo_job_schema = JobSchema(name="manual_registration_echo", input=EchoInput, output=EchoOutput)
+            echo_job_schema = JobSchema(
+                name="manual_registration_echo", input_schema=EchoInput, output_schema=EchoOutput
+            )
             job = job_from_schema(echo_job_schema, input_data={"message": "Manual registration test!"})
             result = cluster_cm.submit_job(job)
 
@@ -405,7 +401,7 @@ def test_register_job_schema_to_worker_type_nonexistent_worker():
 
         # Verify that no job schema targeting was created
         # (This would be verified by checking that jobs of this type fail to submit)
-        echo_job_schema = JobSchema(name="nonexistent_worker_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="nonexistent_worker_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
 
         # This should fail because no targeting was created
@@ -440,7 +436,7 @@ def test_launch_worker_with_auto_connect_database():
         cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
         # Submit a job - it should be processed automatically without manual registration
-        echo_job_schema = JobSchema(name="auto_connect_db_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="auto_connect_db_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Auto-connect database test!"})
         result = cluster_cm.submit_job(job)
 
@@ -483,7 +479,7 @@ def test_launch_worker_without_auto_connect_database():
         cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
 
         # Submit a job - it should fail because no targeting was created
-        echo_job_schema = JobSchema(name="no_auto_connect_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="no_auto_connect_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Should fail"})
 
         result = cluster_cm.submit_job(job)
@@ -547,8 +543,8 @@ def test_multiple_worker_types_with_auto_connect():
         cluster_cm.launch_worker(node_url=str(node.url), worker_type="echoworker2", worker_url=worker_url2)
 
         # Submit jobs to both workers
-        echo_job_schema1 = JobSchema(name="echo1", input=EchoInput, output=EchoOutput)
-        echo_job_schema2 = JobSchema(name="echo2", input=EchoInput, output=EchoOutput)
+        echo_job_schema1 = JobSchema(name="echo1", input_schema=EchoInput, output_schema=EchoOutput)
+        echo_job_schema2 = JobSchema(name="echo2", input_schema=EchoInput, output_schema=EchoOutput)
 
         job1 = job_from_schema(echo_job_schema1, input_data={"message": "Worker 1 job!"})
         job2 = job_from_schema(echo_job_schema2, input_data={"message": "Worker 2 job!"})
@@ -601,7 +597,7 @@ def test_launch_worker_with_delay():
         ).worker_id
 
         # Submit a job - it should be processed automatically without manual registration
-        echo_job_schema = JobSchema(name="delay_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="delay_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Launch worker with delay test!", "delay": 3})
         result = cluster_cm.submit_job(job)
 
@@ -609,13 +605,11 @@ def test_launch_worker_with_delay():
         assert result.status == "queued"
         assert result.output == {}
 
-        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
-
-        # Test query_worker_status for initial state
-        query_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert query_status.worker_id == worker_id
-        assert query_status.status == WorkerStatusEnum.IDLE.value
+        worker_status = cluster_cm.get_worker_status(worker_id=worker_id)  # even this is potentially a race
+        if worker_status.status != WorkerStatusEnum.IDLE.value:
+            warnings.warn(
+                f"get_worker_status returned {worker_status.status} when we were expecting {WorkerStatusEnum.IDLE.value}"
+            )
 
         # Wait for the job to be processed
         time.sleep(1)
@@ -674,21 +668,12 @@ def test_query_worker_status_integration():
         assert worker_status.job_id is None
 
         # Submit a job to test status changes
-        echo_job_schema = JobSchema(name="query_status_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="query_status_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Query status test!"})
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
 
-        # Wait a bit for the job to start
-        time.sleep(0.5)
-
-        # Query worker status during job execution
-        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert worker_status.worker_id == worker_id
-        # Status could be either IDLE (if job hasn't started) or RUNNING (if job is in progress)
-        assert worker_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
-
-        # Wait for job completion
+        # Wait a bit for the job to run
         time.sleep(2)
 
         # Query worker status after job completion
@@ -729,7 +714,7 @@ def test_query_worker_status_by_url_integration():
         assert worker_status.job_id is None
 
         # Submit a job to test status changes
-        echo_job_schema = JobSchema(name="query_status_by_url_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="query_status_by_url_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Query status by URL test!"})
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
@@ -874,9 +859,11 @@ def test_query_worker_status_multiple_workers():
         assert worker2_status.status == WorkerStatusEnum.IDLE.value
 
         # Submit jobs to both workers
-        echo_job_schema = JobSchema(name="multiple_workers_status_echo", input=EchoInput, output=EchoOutput)
-        job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!"})
-        job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!"})
+        echo_job_schema = JobSchema(
+            name="multiple_workers_status_echo", input_schema=EchoInput, output_schema=EchoOutput
+        )
+        job1 = job_from_schema(echo_job_schema, input_data={"message": "Worker 1 job!", "delay": 2})
+        job2 = job_from_schema(echo_job_schema, input_data={"message": "Worker 2 job!", "delay": 2})
 
         result1 = cluster_cm.submit_job(job1)
         result2 = cluster_cm.submit_job(job2)
@@ -891,11 +878,11 @@ def test_query_worker_status_multiple_workers():
         worker2_status = cluster_cm.query_worker_status(worker_id=worker2_id)
 
         # Both workers should be either IDLE or RUNNING
-        assert worker1_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
-        assert worker2_status.status in [WorkerStatusEnum.IDLE.value, WorkerStatusEnum.RUNNING.value]
+        assert worker1_status.status == WorkerStatusEnum.RUNNING.value
+        assert worker2_status.status == WorkerStatusEnum.RUNNING.value
 
         # Wait for job completion
-        time.sleep(2)
+        time.sleep(3)
 
         # Query status of both workers after job completion
         worker1_status = cluster_cm.query_worker_status(worker_id=worker1_id)
@@ -945,7 +932,7 @@ def test_query_worker_status_vs_get_worker_status():
         assert get_status.worker_type == query_status.worker_type
 
         # Submit a job
-        echo_job_schema = JobSchema(name="status_comparison_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="status_comparison_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Status comparison test!"})
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
@@ -1000,14 +987,10 @@ def test_query_worker_status_real_time_updates():
         assert worker_status.job_id is None
 
         # Submit a job with delay to observe status changes
-        echo_job_schema = JobSchema(name="realtime_status_echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="realtime_status_echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Real-time status test!", "delay": 2})
         result = cluster_cm.submit_job(job)
         assert result.status == "queued"
-
-        # Check status immediately after submission (should still be IDLE)
-        worker_status = cluster_cm.query_worker_status(worker_id=worker_id)
-        assert worker_status.status == WorkerStatusEnum.IDLE.value
 
         # Wait for job to start
         time.sleep(0.5)

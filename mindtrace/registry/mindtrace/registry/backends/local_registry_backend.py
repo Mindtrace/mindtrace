@@ -34,8 +34,11 @@ class LocalRegistryBackend(RegistryBackend):
 
         Args:
             uri (str | Path): The base directory path where all object files and metadata will be stored.
+                              Supports "file://" URI scheme which will be automatically stripped.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
+        if isinstance(uri, str) and uri.startswith("file://"):
+            uri = uri[len("file://") :]
         super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
@@ -171,14 +174,14 @@ class LocalRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete metadata for a object version.
 
         Args:
-            model_name: Name of the object.
+            name: Name of the object.
             version: Version of the object.
         """
-        meta_path = self.uri / f"_meta_{model_name.replace(':', '_')}@{version}.yaml"
+        meta_path = self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         if meta_path.exists():
             meta_path.unlink()

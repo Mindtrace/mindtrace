@@ -7,7 +7,7 @@ from abc import ABC, ABCMeta
 from functools import wraps
 from typing import Callable, Optional
 
-from mindtrace.core.config import Config
+from mindtrace.core.config import CoreConfig, SettingsLike
 from mindtrace.core.logging.logger import get_logger
 from mindtrace.core.utils import ifnone
 
@@ -37,11 +37,30 @@ class MindtraceMeta(type):
     def __init__(cls, name, bases, attr_dict):
         super().__init__(name, bases, attr_dict)
         cls._logger = None
+        cls._config = None
+        cls._logger_kwargs = None
+        cls._cached_logger_kwargs = None  # Store the kwargs used to create the current logger
 
     @property
     def logger(cls):
+        # Check if we need to recreate the logger due to kwargs changes
+        current_kwargs = cls._logger_kwargs or {}
+
+        # Compare current kwargs with cached kwargs
+        if (
+            cls._logger is not None
+            and cls._cached_logger_kwargs is not None
+            and cls._cached_logger_kwargs != current_kwargs
+        ):
+            # Logger exists but kwargs have changed - recreate it
+            cls._logger = None
+            cls._cached_logger_kwargs = None
+
         if cls._logger is None:
-            cls._logger = get_logger(cls.unique_name)
+            # Use stored logger kwargs if available, otherwise use defaults
+            kwargs = current_kwargs
+            cls._logger = get_logger(cls.unique_name, **kwargs)
+            cls._cached_logger_kwargs = kwargs.copy()  # Store a copy for comparison
         return cls._logger
 
     @logger.setter
@@ -51,6 +70,16 @@ class MindtraceMeta(type):
     @property
     def unique_name(self) -> str:
         return self.__module__ + "." + self.__name__
+
+    @property
+    def config(cls):
+        if cls._config is None:
+            cls._config = CoreConfig()
+        return cls._config
+
+    @config.setter
+    def config(cls, new_config):
+        cls._config = new_config
 
 
 class Mindtrace(metaclass=MindtraceMeta):
@@ -81,19 +110,19 @@ class Mindtrace(metaclass=MindtraceMeta):
     which ensures consistent logging behavior across all method types.
     """
 
-    config = Config()
-
-    def __init__(self, suppress: bool = False, **kwargs):
+    def __init__(self, suppress: bool = False, *, config_overrides: SettingsLike | None = None, **kwargs):
         """
         Initialize the Mindtrace object.
 
         Args:
-            suppress (bool): Whether to suppress exceptions in context manager use.
+            suppress: Whether to suppress exceptions in context manager use.
+            config_overrides: Additional settings to override the default config.
             **kwargs: Additional keyword arguments. Logger-related kwargs are passed to `get_logger`.
                 Valid logger kwargs: log_dir, logger_level, stream_level, file_level,
                 file_mode, propagate, max_bytes, backup_count
         """
         # Initialize parent classes first (cooperative inheritance)
+        self.config = CoreConfig(config_overrides)
         try:
             super().__init__(**kwargs)
         except TypeError:
@@ -107,6 +136,12 @@ class Mindtrace(metaclass=MindtraceMeta):
                 "propagate",
                 "max_bytes",
                 "backup_count",
+                "use_structlog",
+                "structlog_json",
+                "structlog_pre_chain",
+                "structlog_processors",
+                "structlog_renderer",
+                "structlog_bind",
             }
             remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
             try:
@@ -128,8 +163,17 @@ class Mindtrace(metaclass=MindtraceMeta):
             "propagate",
             "max_bytes",
             "backup_count",
+            "use_structlog",
+            "structlog_json",
+            "structlog_pre_chain",
+            "structlog_processors",
+            "structlog_renderer",
+            "structlog_bind",
         }
         logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
+
+        # Store logger kwargs in the class for class-level logger
+        type(self)._logger_kwargs = logger_kwargs
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)

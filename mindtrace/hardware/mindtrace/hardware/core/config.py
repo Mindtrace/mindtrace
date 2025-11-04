@@ -30,7 +30,8 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_OPENCV_WIDTH: OpenCV default frame width
     - MINDTRACE_HW_CAMERA_OPENCV_HEIGHT: OpenCV default frame height
     - MINDTRACE_HW_CAMERA_OPENCV_FPS: OpenCV default frame rate
-    - MINDTRACE_HW_CAMERA_DAHENG_ENABLED: Enable Daheng backend
+    - MINDTRACE_HW_CAMERA_PIXEL_FORMAT: Default pixel format (BGR8, RGB8, etc.)
+    - MINDTRACE_HW_CAMERA_BUFFER_COUNT: Number of frame buffers for cameras
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
@@ -48,18 +49,6 @@ Environment Variables:
     - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
     - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
-    - MINDTRACE_HW_GCS_DEFAULT_BUCKET: Default GCS bucket name for image uploads
-    - MINDTRACE_HW_GCS_PROJECT_ID: Default GCP project ID
-    - MINDTRACE_HW_GCS_CREDENTIALS_PATH: Path to service account credentials file
-    - MINDTRACE_HW_GCS_CREATE_IF_MISSING: Create bucket if it doesn't exist
-    - MINDTRACE_HW_GCS_LOCATION: Default bucket location (US, EU, ASIA, etc.)
-    - MINDTRACE_HW_GCS_STORAGE_CLASS: Default storage class (STANDARD, NEARLINE, COLDLINE, ARCHIVE)
-    - MINDTRACE_HW_GCS_DEFAULT_IMAGE_FORMAT: Default image format for uploads (jpg, png)
-    - MINDTRACE_HW_GCS_DEFAULT_IMAGE_QUALITY: Default JPEG quality (1-100)
-    - MINDTRACE_HW_GCS_AUTO_UPLOAD: Automatically upload captured images to GCS
-    - MINDTRACE_HW_GCS_UPLOAD_METADATA: Include automatic metadata with uploads
-    - MINDTRACE_HW_GCS_RETRY_COUNT: Number of retry attempts for GCS operations
-    - MINDTRACE_HW_GCS_TIMEOUT_SECONDS: GCS operation timeout in seconds
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -75,9 +64,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import structlog
-
-logger = structlog.get_logger(__name__)
+from mindtrace.core import Mindtrace
 
 
 @dataclass
@@ -117,6 +104,10 @@ class CameraSettings:
         # Image enhancement settings (for quality enhancement)
         enhancement_gamma: Gamma correction value for image enhancement
         enhancement_contrast: Contrast factor for image enhancement
+
+        # Basler-specific settings
+        pixel_format: Default pixel format (BGR8, RGB8, etc.)
+        buffer_count: Number of frame buffers for cameras
     """
 
     # Core camera settings
@@ -151,6 +142,10 @@ class CameraSettings:
     enhancement_gamma: float = 2.2
     enhancement_contrast: float = 1.2
 
+    # Basler-specific settings
+    pixel_format: str = "BGR8"
+    buffer_count: int = 25
+
 
 @dataclass
 class CameraBackends:
@@ -158,14 +153,12 @@ class CameraBackends:
     Configuration for camera backends.
 
     Attributes:
-        daheng_enabled: Enable Daheng camera backend
         basler_enabled: Enable Basler camera backend
         opencv_enabled: Enable OpenCV camera backend
         mock_enabled: Enable mock camera backend for testing
         discovery_timeout: Camera discovery timeout in seconds
     """
 
-    daheng_enabled: bool = True
     basler_enabled: bool = True
     opencv_enabled: bool = True
     mock_enabled: bool = False
@@ -259,39 +252,6 @@ class ActuatorSettings:
 
 
 @dataclass
-class GCSSettings:
-    """
-    Configuration for Google Cloud Storage integration.
-    
-    Attributes:
-        default_bucket: Default GCS bucket name for image uploads
-        project_id: Default GCP project ID
-        credentials_path: Path to service account credentials file
-        create_if_missing: Create bucket if it doesn't exist
-        location: Default bucket location (US, EU, ASIA, etc.)
-        storage_class: Default storage class (STANDARD, NEARLINE, COLDLINE, ARCHIVE)
-        default_image_format: Default image format for uploads (jpg, png)
-        default_image_quality: Default JPEG quality (1-100)
-        auto_upload: Automatically upload captured images to GCS
-        upload_metadata: Include automatic metadata with uploads
-        retry_count: Number of retry attempts for GCS operations
-        timeout_seconds: GCS operation timeout in seconds
-    """
-    default_bucket: str = "paz-test-bucket"
-    project_id: str = "paz-portal"
-    credentials_path: str = "/home/yasser/mindtrace/mindtrace/paz-portal-d20d839355a2.json"
-    create_if_missing: bool = False
-    location: str = "US"
-    storage_class: str = "STANDARD"
-    default_image_format: str = "jpg"
-    default_image_quality: int = 95
-    auto_upload: bool = False
-    upload_metadata: bool = True
-    retry_count: int = 3
-    timeout_seconds: float = 30.0
-
-
-@dataclass
 class PLCSettings:
     """
     Configuration for PLC components.
@@ -342,6 +302,24 @@ class PLCBackends:
 
 
 @dataclass
+class GCSSettings:
+    """
+    Configuration for Google Cloud Storage integration.
+
+    Attributes:
+        enabled: Enable GCS integration
+        bucket_name: GCS bucket name
+        credentials_path: Path to service account JSON
+        auto_upload: Auto-upload captured images
+    """
+
+    enabled: bool = False
+    bucket_name: str = "mindtrace-camera-data"
+    credentials_path: str = ""
+    auto_upload: bool = False
+
+
+@dataclass
 class HardwareConfig:
     """
     Main hardware configuration container.
@@ -355,7 +333,7 @@ class HardwareConfig:
         actuators: Actuator component configuration
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
-        gcs: Google Cloud Storage configuration
+        gcs: Google Cloud Storage settings
     """
 
     cameras: CameraSettings = field(default_factory=CameraSettings)
@@ -369,7 +347,7 @@ class HardwareConfig:
     gcs: GCSSettings = field(default_factory=GCSSettings)
 
 
-class HardwareConfigManager:
+class HardwareConfigManager(Mindtrace):
     """
     Hardware configuration manager for Mindtrace project.
 
@@ -382,29 +360,32 @@ class HardwareConfigManager:
         _config: Internal configuration data structure
     """
 
-    def __init__(self, config_file: Optional[str] = None):
+    def __init__(self, config_file: Optional[str] = None, **kwargs):
         """
         Initialize hardware configuration manager.
 
         Args:
             config_file: Path to configuration file (uses environment variable or default if None)
         """
+        super().__init__(**kwargs)
         self.config_file = config_file or os.getenv("MINDTRACE_HW_CONFIG", "hardware_config.json")
         self._config = HardwareConfig()
+        self.logger.info(f"hardware_config_manager_initialized file={self.config_file}")
         self._load_config()
 
     def _load_config(self):
         """Load configuration from environment variables and config file."""
+        self.logger.debug(f"hardware_config_load_start file={self.config_file}")
         self._load_from_env()
 
         if os.path.exists(Path(self.config_file).expanduser()):
             try:
                 self._load_from_file(str(Path(self.config_file).expanduser()))
-                logger.info("hardware_config_loaded", source="file", file=self.config_file)
+                self.logger.debug(f"hardware_config_loaded source=file file={self.config_file}")
             except Exception as e:
-                logger.warning("hardware_config_load_failed", source="file", file=self.config_file, error=str(e))
+                self.logger.warning(f"hardware_config_load_failed source=file file={self.config_file} error={e}")
         else:
-            logger.info("hardware_config_file_not_found", file=self.config_file, message="Using default configuration")
+            self.logger.info(f"hardware_config_file_not_found file={self.config_file} Using default configuration.")
 
     def _load_from_env(self):
         """Load configuration from environment variables with MINDTRACE_HW_ prefix."""
@@ -413,52 +394,98 @@ class HardwareConfigManager:
             self._config.cameras.image_quality_enhancement = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_RETRY_COUNT"):
-            self._config.cameras.retrieve_retry_count = int(env_val)
+            try:
+                self._config.cameras.retrieve_retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DEFAULT_EXPOSURE"):
-            self._config.cameras.exposure_time = float(env_val)
+            try:
+                self._config.cameras.exposure_time = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_WHITE_BALANCE"):
             self._config.cameras.white_balance = env_val
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT"):
-            self._config.cameras.timeout_ms = int(env_val)
+            try:
+                self._config.cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_WIDTH"):
-            self._config.cameras.opencv_default_width = int(env_val)
+            try:
+                self._config.cameras.opencv_default_width = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_HEIGHT"):
-            self._config.cameras.opencv_default_height = int(env_val)
+            try:
+                self._config.cameras.opencv_default_height = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_FPS"):
-            self._config.cameras.opencv_default_fps = int(env_val)
+            try:
+                self._config.cameras.opencv_default_fps = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_OPENCV_EXPOSURE"):
-            self._config.cameras.opencv_default_exposure = float(env_val)
+            try:
+                self._config.cameras.opencv_default_exposure = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_TIMEOUT_MS"):
-            self._config.cameras.timeout_ms = int(env_val)
+            try:
+                self._config.cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_INDEX"):
-            self._config.cameras.max_camera_index = int(env_val)
+            try:
+                self._config.cameras.max_camera_index = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MOCK_COUNT"):
-            self._config.cameras.mock_camera_count = int(env_val)
+            try:
+                self._config.cameras.mock_camera_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_GAMMA"):
-            self._config.cameras.enhancement_gamma = float(env_val)
+            try:
+                self._config.cameras.enhancement_gamma = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_ENHANCEMENT_CONTRAST"):
-            self._config.cameras.enhancement_contrast = float(env_val)
+            try:
+                self._config.cameras.enhancement_contrast = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Basler-specific settings
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_PIXEL_FORMAT"):
+            self._config.cameras.pixel_format = str(env_val)
+
+        if env_val := os.getenv("MINDTRACE_HW_CAMERA_BUFFER_COUNT"):
+            try:
+                self._config.cameras.buffer_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Network bandwidth management
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_MAX_CONCURRENT_CAPTURES"):
-            self._config.cameras.max_concurrent_captures = int(env_val)
+            try:
+                self._config.cameras.max_concurrent_captures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Camera backends
-        if env_val := os.getenv("MINDTRACE_HW_CAMERA_DAHENG_ENABLED"):
-            self._config.backends.daheng_enabled = env_val.lower() == "true"
-
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_BASLER_ENABLED"):
             self._config.backends.basler_enabled = env_val.lower() == "true"
 
@@ -469,7 +496,10 @@ class HardwareConfigManager:
             self._config.backends.mock_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_CAMERA_DISCOVERY_TIMEOUT"):
-            self._config.backends.discovery_timeout = float(env_val)
+            try:
+                self._config.backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Path settings
         if env_val := os.getenv("MINDTRACE_HW_PATHS_LIB_DIR"):
@@ -501,13 +531,22 @@ class HardwareConfigManager:
             self._config.network.firewall_rule_name = env_val
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
-            self._config.network.timeout_seconds = float(env_val)
+            try:
+                self._config.network.timeout_seconds = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
-            self._config.network.firewall_timeout = float(env_val)
+            try:
+                self._config.network.firewall_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
-            self._config.network.retry_count = int(env_val)
+            try:
+                self._config.network.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
             self._config.network.network_interface = env_val
@@ -523,42 +562,72 @@ class HardwareConfigManager:
             self._config.sensors.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_POLLING_INTERVAL"):
-            self._config.sensors.polling_interval = float(env_val)
+            try:
+                self._config.sensors.polling_interval = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_TIMEOUT"):
-            self._config.sensors.timeout = float(env_val)
+            try:
+                self._config.sensors.timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_SENSOR_RETRY_COUNT"):
-            self._config.sensors.retry_count = int(env_val)
+            try:
+                self._config.sensors.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # Actuator settings
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_AUTO_DISCOVERY"):
             self._config.actuators.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_DEFAULT_SPEED"):
-            self._config.actuators.default_speed = float(env_val)
+            try:
+                self._config.actuators.default_speed = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_TIMEOUT"):
-            self._config.actuators.timeout = float(env_val)
+            try:
+                self._config.actuators.timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_ACTUATOR_RETRY_COUNT"):
-            self._config.actuators.retry_count = int(env_val)
+            try:
+                self._config.actuators.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # PLC settings
         if env_val := os.getenv("MINDTRACE_HW_PLC_AUTO_DISCOVERY"):
             self._config.plcs.auto_discovery = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_CONNECTION_TIMEOUT"):
-            self._config.plcs.connection_timeout = float(env_val)
+            try:
+                self._config.plcs.connection_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_READ_TIMEOUT"):
-            self._config.plcs.read_timeout = float(env_val)
+            try:
+                self._config.plcs.read_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_WRITE_TIMEOUT"):
-            self._config.plcs.write_timeout = float(env_val)
+            try:
+                self._config.plcs.write_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_COUNT"):
-            self._config.plcs.retry_count = int(env_val)
+            try:
+                self._config.plcs.retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         # PLC backends
         if env_val := os.getenv("MINDTRACE_HW_PLC_ALLEN_BRADLEY_ENABLED"):
@@ -574,22 +643,53 @@ class HardwareConfigManager:
             self._config.plc_backends.mock_enabled = env_val.lower() == "true"
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_DISCOVERY_TIMEOUT"):
-            self._config.plc_backends.discovery_timeout = float(env_val)
+            try:
+                self._config.plc_backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RETRY_DELAY"):
-            self._config.plcs.retry_delay = float(env_val)
+            try:
+                self._config.plcs.retry_delay = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_MAX_CONCURRENT_CONNECTIONS"):
-            self._config.plc_backends.max_concurrent_connections = int(env_val)
+            try:
+                self._config.plc_backends.max_concurrent_connections = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_KEEP_ALIVE_INTERVAL"):
-            self._config.plc_backends.keep_alive_interval = float(env_val)
+            try:
+                self._config.plc_backends.keep_alive_interval = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_RECONNECT_ATTEMPTS"):
-            self._config.plc_backends.reconnect_attempts = int(env_val)
+            try:
+                self._config.plc_backends.reconnect_attempts = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_PLC_DEFAULT_SCAN_RATE"):
-            self._config.plc_backends.default_scan_rate = int(env_val)
+            try:
+                self._config.plc_backends.default_scan_rate = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # GCS settings
+        if env_val := os.getenv("MINDTRACE_HW_GCS_ENABLED"):
+            self._config.gcs.enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_BUCKET_NAME"):
+            self._config.gcs.bucket_name = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_CREDENTIALS_PATH"):
+            self._config.gcs.credentials_path = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_GCS_AUTO_UPLOAD"):
+            self._config.gcs.auto_upload = env_val.lower() == "true"
 
     def _load_from_file(self, config_file: str):
         """
@@ -598,48 +698,33 @@ class HardwareConfigManager:
         Args:
             config_file: Path to JSON configuration file
         """
+        self.logger.debug(f"hardware_config_file_load_start file={config_file}")
         with open(config_file, "r") as f:
             config_data = json.load(f)
+        self.logger.debug(f"hardware_config_file_parsed file={config_file}")
 
-        if "cameras" in config_data:
-            for key, value in config_data["cameras"].items():
-                if hasattr(self._config.cameras, key):
-                    setattr(self._config.cameras, key, value)
+        sections = (
+            ("cameras", self._config.cameras),
+            ("backends", self._config.backends),
+            ("paths", self._config.paths),
+            ("network", self._config.network),
+            ("sensors", self._config.sensors),
+            ("actuators", self._config.actuators),
+            ("plcs", self._config.plcs),
+            ("plc_backends", self._config.plc_backends),
+            ("gcs", self._config.gcs),
+        )
 
-        if "backends" in config_data:
-            for key, value in config_data["backends"].items():
-                if hasattr(self._config.backends, key):
-                    setattr(self._config.backends, key, value)
-
-        if "paths" in config_data:
-            for key, value in config_data["paths"].items():
-                if hasattr(self._config.paths, key):
-                    setattr(self._config.paths, key, value)
-
-        if "network" in config_data:
-            for key, value in config_data["network"].items():
-                if hasattr(self._config.network, key):
-                    setattr(self._config.network, key, value)
-
-        if "sensors" in config_data:
-            for key, value in config_data["sensors"].items():
-                if hasattr(self._config.sensors, key):
-                    setattr(self._config.sensors, key, value)
-
-        if "actuators" in config_data:
-            for key, value in config_data["actuators"].items():
-                if hasattr(self._config.actuators, key):
-                    setattr(self._config.actuators, key, value)
-
-        if "plcs" in config_data:
-            for key, value in config_data["plcs"].items():
-                if hasattr(self._config.plcs, key):
-                    setattr(self._config.plcs, key, value)
-
-        if "plc_backends" in config_data:
-            for key, value in config_data["plc_backends"].items():
-                if hasattr(self._config.plc_backends, key):
-                    setattr(self._config.plc_backends, key, value)
+        for section_name, target in sections:
+            section_data = config_data.get(section_name)
+            if isinstance(section_data, dict):
+                self.logger.debug(
+                    f"hardware_config_section_merge section={section_name} keys={list(section_data.keys())}"
+                )
+                for key, value in section_data.items():
+                    if hasattr(target, key):
+                        setattr(target, key, value)
+        self.logger.debug(f"hardware_config_file_load_complete file={config_file}")
 
     def save_to_file(self, config_file: Optional[str] = None):
         """
@@ -656,7 +741,7 @@ class HardwareConfigManager:
         with open(Path(file_path).expanduser(), "w") as f:
             json.dump(config_dict, f, indent=2)
 
-        logger.info("hardware_config_saved", file=file_path)
+        self.logger.debug(f"hardware_config_saved file={file_path}")
 
     def get_config(self) -> HardwareConfig:
         """

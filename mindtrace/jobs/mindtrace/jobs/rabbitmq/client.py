@@ -6,11 +6,11 @@ import pika.exceptions
 import pydantic
 from pika import BasicProperties, DeliveryMode
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.orchestrator_backend import OrchestratorBackend
 from mindtrace.jobs.consumers.consumer import Consumer
 from mindtrace.jobs.rabbitmq.connection import RabbitMQConnection
 from mindtrace.jobs.rabbitmq.consumer_backend import RabbitMQConsumerBackend
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RabbitMQClient(OrchestratorBackend):
@@ -29,14 +29,45 @@ class RabbitMQClient(OrchestratorBackend):
             password: Password for RabbitMQ authentication.
         """
         super().__init__()
-        self.connection = RabbitMQConnection(host=host, port=port, username=username, password=password)
-        self.connection.connect()
-        self.channel = self.connection.get_channel()
-        self._host = self.connection.host
-        self._port = self.connection.port
-        self._username = self.connection.username
-        self._password = self.connection.password
-        self.declare_exchange(exchange="default", exchange_type="direct", durable=True, auto_delete=False)
+        self._host = host
+        self._port = port
+        self._username = username
+        self._password = password
+        self._connection = None
+        self._channel = None
+
+    @property
+    def connection(self):
+        if self._connection is None:
+            self._connection = RabbitMQConnection(
+                host=self._host, port=self._port, username=self._username, password=self._password
+            )
+            self._connection.connect()
+        return self._connection
+
+    @property
+    def channel(self):
+        if self._channel is None:
+            self._channel = self.connection.get_channel()
+            try:
+                self._channel.exchange_declare(exchange="default", passive=True)
+            except pika.exceptions.ChannelClosedByBroker:
+                self._channel = self.connection.get_channel()
+                self._channel.exchange_declare(
+                    exchange="default", exchange_type="direct", durable=True, auto_delete=False
+                )
+        return self._channel
+
+    @channel.setter
+    def channel(self, value):
+        self._channel = value
+
+    def create_connection(self):
+        connection = RabbitMQConnection(
+            host=self._host, port=self._port, username=self._username, password=self._password
+        )
+        connection.connect()
+        return connection.get_channel()
 
     @property
     def consumer_backend_args(self):
@@ -202,6 +233,7 @@ class RabbitMQClient(OrchestratorBackend):
         Returns:
             str: The generated job ID for the message.
         """
+        channel = self.create_connection()
         job_id = str(uuid.uuid1())
         exchange = kwargs.get("exchange", "default")
         routing_key = kwargs.get("routing_key", queue_name)
@@ -212,7 +244,7 @@ class RabbitMQClient(OrchestratorBackend):
         self.logger.info(f"exchange: {exchange}, routing_key: {routing_key}")
         try:
             message_dict = message.model_dump()
-            self.channel.basic_publish(
+            channel.basic_publish(
                 exchange=exchange,
                 routing_key=routing_key,
                 body=json.dumps(message_dict).encode("utf-8"),

@@ -22,6 +22,7 @@ from fastmcp import FastMCP
 from urllib3.util.url import Url, parse_url
 
 from mindtrace.core import Mindtrace, TaskSchema, Timeout, ifnone, ifnone_url, named_lambda
+from mindtrace.core.logging.logger import track_operation
 from mindtrace.services.core.connection_manager import ConnectionManager
 from mindtrace.services.core.mcp_client_manager import MCPClientManager
 from mindtrace.services.core.types import (
@@ -58,6 +59,8 @@ class Service(Mindtrace):
         description: str | None = None,
         terms_of_service: str | None = None,
         license_info: Dict[str, str | Any] | None = None,
+        live_service: bool = True,
+        **kwargs,
     ):
         """Initialize server instance. This is for internal use by the launch() method.
 
@@ -69,11 +72,14 @@ class Service(Mindtrace):
             description: Description of the server
             terms_of_service: Terms of service for the server
             license_info: License information for the server
+            live_service: bool: set to True when launching via .launch(),
+                set to False when querying endpoints in mindtrace.services.core.utils.py::generate_connection_manager
+                Used to allow Service subclasses to have expensive __init__() methods without making .connect() slow
 
         Warning: Services should be created via the ServiceClass.launch() method. The __init__ method here should be
         considered private internal use.
         """
-        super().__init__()
+        super().__init__(**kwargs)
         self._status: ServerStatus = ServerStatus.AVAILABLE
         self._endpoints: dict[str, TaskSchema] = {}
         self.id, self.pid_file = self._generate_id_and_pid_file()
@@ -195,7 +201,7 @@ class Service(Mindtrace):
 
     @classmethod
     def _server_id_to_pid_file(cls, server_id: UUID) -> str:
-        return os.path.join(cls.config["MINDTRACE_SERVER_PIDS_DIR_PATH"], f"{cls.__name__}_{server_id}_pid.txt")
+        return os.path.join(cls.config["MINDTRACE_DIR_PATHS"]["SERVER_PIDS_DIR"], f"{cls.__name__}_{server_id}_pid.txt")
 
     @classmethod
     def _pid_file_to_server_id(cls, pid_file: str) -> UUID:
@@ -484,7 +490,7 @@ class Service(Mindtrace):
         3. Fallback to localhost:8000
         """
         default_urls = cls.config["MINDTRACE_DEFAULT_HOST_URLS"]
-        server_url = default_urls.get(cls.__name__) or default_urls.get("ServerBase", "http://localhost:8000")
+        server_url = default_urls.get(cls.__name__.upper()) or default_urls.get("ServerBase", "http://localhost:8000")
         return parse_url(server_url)
 
     @classmethod
@@ -526,8 +532,8 @@ class Service(Mindtrace):
         - mount_path: "/mcp-server"
         - http_app_path: "/mcp"
         """
-        mcp_http_app_path = str(cls.config.get("MINDTRACE_MCP_HTTP_APP_PATH", "/mcp"))
-        mcp_mount_path = str(cls.config.get("MINDTRACE_MCP_MOUNT_PATH", "/mcp-server"))
+        mcp_http_app_path = str(cls.config["MINDTRACE_MCP"]["HTTP_APP_PATH"])
+        mcp_mount_path = str(cls.config["MINDTRACE_MCP"]["MOUNT_PATH"])
         if not mcp_http_app_path.startswith("/"):
             mcp_http_app_path = "/" + mcp_http_app_path
         if not mcp_mount_path.startswith("/"):
@@ -542,7 +548,7 @@ class Service(Mindtrace):
     @classmethod
     def default_log_file(cls) -> str:
         """Get the default log file for this server type."""
-        return os.path.join(cls.config["MINDTRACE_DEFAULT_LOG_DIR"], f"{cls.__name__}_logs.txt")
+        return os.path.join(cls.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"], f"{cls.__name__}_logs.txt")
 
     def add_endpoint(
         self,
@@ -558,18 +564,29 @@ class Service(Mindtrace):
         """Register a new endpoint with optional role."""
         path = path.removeprefix("/")
         api_route_kwargs = ifnone(api_route_kwargs, default={})
-        autolog_kwargs = ifnone(autolog_kwargs, default={})
+        # Merge and override default autolog_kwargs
+        default_autolog_kwargs = {
+            "log_level": logging.INFO,
+            "include_duration": True,
+            "include_system_metrics": True,
+            "system_metrics": ["cpu_percent", "memory_percent"],
+        }
+        autolog_kwargs = {**default_autolog_kwargs, **(autolog_kwargs or {})}
         self._endpoints[path] = schema
         if as_tool:
             self.add_tool(tool_name=path, func=func)
-        else:
-            # Warn if the function has no docstring
-            if not func.__doc__:
-                service_name = getattr(self, "name", self.__class__.__name__)
-                self.logger.warning(f"Function '{path}' for service '{service_name}' has no docstring.")
+        wrapped = track_operation(
+            name=func.__name__,
+            service_name=self.name,
+            logger=self.logger,
+            log_level=autolog_kwargs.get("log_level", logging.INFO),
+            include_system_metrics=autolog_kwargs.get("include_system_metrics", False),
+            system_metrics=autolog_kwargs.get("system_metrics"),
+        )(func)
+
         self.app.add_api_route(
             "/" + path,
-            endpoint=Mindtrace.autolog(self=self, **autolog_kwargs)(func),
+            endpoint=wrapped,
             methods=ifnone(methods, default=["POST"]),
             **api_route_kwargs,
         )
