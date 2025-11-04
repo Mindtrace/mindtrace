@@ -13,8 +13,8 @@ def main():
     try:
         sample_vbrain_schema = JobSchema(
             name="sample_vbrain",
-            input=RunScriptWorkerInput,
-            output=RunScriptWorkerOutput,
+            input_schema=RunScriptWorkerInput,
+            output_schema=RunScriptWorkerOutput,
         )
         cluster_manager.register_worker_type(
             worker_name="runscriptworker",

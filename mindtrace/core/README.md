@@ -80,6 +80,63 @@ print(config.MINDTRACE_DIR_PATHS.TEMP)
 
 For detailed usage of the Config class—including how it's used within the Mindtrace class—refer to the [Usage documentation](https://github.com/Mindtrace/mindtrace/tree/dev/samples/core/config)
 
+#### `Logging`
+The `get_logger` function provides a unified way to configure logging across your application. It can return either a standard Python logger or a structlog
+ logger, based on user-defined arguments or below [CoreConfig](../core/mindtrace/core/config/config.ini) settings (lower priority).
+```
+[MINDTRACE_DIR_PATHS]
+STRUCT_LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/structlogs
+LOGGER_DIR = ${MINDTRACE_DIR_PATHS:ROOT}/logs
+[MINDTRACE_LOGGER]
+USE_STRUCTLOG = False
+```
+
+##### Basic Logger
+
+Setup basic logger to produce logs in `~/.cache/mindtrace/logs`. 
+Here, by default propogation is set to true, and you should be able to see logs in `tail -f ~/.cache/mindtrace/logs/mindtrace.log` and `tail -f ~/.cache/mindtrace/logs/modules/mindtrace.core.module.log` files
+
+```python
+from mindtrace.core.logging.logger import get_logger
+
+# Create a standard logger
+logger = get_logger("core.module")
+logger.info("Logger configured with custom settings.")
+```
+
+##### Structured Logger
+Setup structlog to log structured events: dictionaries of key-value pairs that can later be searched, filtered, or transformed (e.g., into JSON).
+Here, by default propogation is set to true, and you should be able to see structured logs in `tail -f ~/.cache/mindtrace/structlogs/mindtrace.log` and `tail -f ~/.cache/mindtrace/structlogs/modules/mindtrace.core.module.log` files
+```python
+from mindtrace.core.logging.logger import get_logger
+
+# Create a structlog logger with custom bindings
+slogger = get_logger(
+    "core.module",
+    use_structlog=True,
+    structlog_bind={"service": "my-service"},
+)
+
+slogger.info("Structured log", user_id="123")
+```
+In above example, we illustrate structlog’s ability to 
+- bind context to a logger, which ensures that certain fields are automatically included in every log message. This is especially useful for adding consistent metadata like service name, environment, or version without repeating it in every log call.
+- Extra fields like user_id="123" can be passed per log call, allowing dynamic, event-specific data to be added.
+
+##### Mindtrace autolog
+`Mindtrace.autolog` automatically logs function execution (start, end, duration, exceptions, and optional system metrics).
+It supports sync, async, and static functions with both standard and structured logging formats. See a full usage example [here](/samples/core/logging/using_autologger.py)
+
+```python
+from mindtrace.core import Mindtrace
+
+class DataProcessor(Mindtrace):
+    @Mindtrace.autolog()
+    def process_data(self, data_list, batch_size=100):
+        # Function automatically logged
+        return [item * 2 for item in data_list]
+```
+
 ### Observables
 
 The Observables module enables lightweight observability and reactivity for class objects, automatically turning selected properties into observable variables. This framework allows external components (listeners) to be notified whenever specific values change, without hard-coding the coupling between the source and observers.

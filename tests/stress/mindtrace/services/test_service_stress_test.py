@@ -19,7 +19,7 @@ from statistics import mean, median
 import pytest
 from tqdm import tqdm
 
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.samples.echo_service import EchoService
 
 # Suppress verbose HTTP logging during stress tests
 logging.getLogger("httpx").setLevel(logging.WARNING)

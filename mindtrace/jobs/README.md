@@ -83,7 +83,7 @@ class MathsOutput(BaseModel):
     result: float = 0.0
     operation_performed: str = ""
 
-schema = JobSchema(name="maths_operations", input=MathsInput(), output=MathsOutput())
+schema = JobSchema(name="maths_operations", input_schema=MathsInput, output_schema=MathsOutput)
 orchestrator.register(schema)
 
 # Create a consumer

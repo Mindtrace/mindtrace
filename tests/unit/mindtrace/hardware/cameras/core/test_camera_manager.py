@@ -349,6 +349,7 @@ def test_submit_coro_cancellation_path(monkeypatch):
     try:
         # Mock run_coroutine_threadsafe to return a future that raises an exception
         def mock_run_coro_threadsafe(coro, loop):
+            coro.close()
             # Create a future that will raise an exception when result() is called
             fut = Future()
             fut.set_exception(RuntimeError("Simulated coroutine failure"))
@@ -417,6 +418,7 @@ def test_submit_coro_cancel_exception_handling(monkeypatch):
     try:
         # Mock run_coroutine_threadsafe to return a future that behaves badly
         def mock_run_coro_threadsafe(coro, loop):
+            coro.close()
             # Create a future that will timeout and then fail to cancel
             fut = Future()
 

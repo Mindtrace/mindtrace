@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from mindtrace.services import Gateway
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.samples.echo_service import EchoService
 
 
 class TestGatewayCoreFunctionality:
