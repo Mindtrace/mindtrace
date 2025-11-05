@@ -11,6 +11,7 @@ dependencies = [
     "pydantic[email]>=2.11.9",
     "reflex>=0.8.18",
     "python-dotenv>=1.0.1",
+    "mindtrace-storage>=0.5.0",
 ]
 
 [project.urls]
