@@ -13,7 +13,7 @@ It also performs one tool call ("echo").
 import argparse
 import asyncio
 
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 
 
 async def run_with_client(mcp_client, message: str):
