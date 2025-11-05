@@ -18,6 +18,7 @@ class TestCoreSettings:
         # Check that the class has the expected field definitions
         model_fields = CoreSettings.model_fields
         assert "MINDTRACE_API_KEYS" in model_fields
+        assert "MINDTRACE_TESTING_API_KEYS" in model_fields
         assert "MINDTRACE_DIR_PATHS" in model_fields
         assert "MINDTRACE_DEFAULT_HOST_URLS" in model_fields
         assert "MINDTRACE_MINIO" in model_fields
@@ -35,6 +36,7 @@ class TestCoreSettings:
                 "MINDTRACE_API_KEYS__OPENAI": "test_key",
                 "MINDTRACE_API_KEYS__DISCORD": "discord_key",
                 "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
+                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
                 "MINDTRACE_DIR_PATHS__ROOT": "/test/root",
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
@@ -72,6 +74,7 @@ class TestCoreSettings:
                 "MINDTRACE_API_KEYS__OPENAI": "test_key",
                 "MINDTRACE_API_KEYS__DISCORD": "discord_key",
                 "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
+                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
                 "MINDTRACE_DIR_PATHS__ROOT": "/test/root",
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
@@ -123,6 +126,7 @@ class TestCoreSettings:
                 "MINDTRACE_API_KEYS__OPENAI": "test_key",
                 "MINDTRACE_API_KEYS__DISCORD": "discord_key",
                 "MINDTRACE_API_KEYS__ROBOFLOW": "roboflow_key",
+                "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key",
                 "MINDTRACE_DIR_PATHS__ROOT": "~/test/path",
                 "MINDTRACE_DIR_PATHS__TEMP_DIR": "/test/temp",
                 "MINDTRACE_DIR_PATHS__REGISTRY_DIR": "/test/registry",
@@ -159,6 +163,9 @@ class TestCoreSettings:
 OPENAI = test_key_from_ini
 DISCORD = discord_key_from_ini
 ROBOFLOW = roboflow_key_from_ini
+
+[MINDTRACE_TESTING_API_KEYS]
+DISCORD = test_discord_key_from_ini
 
 [MINDTRACE_DIR_PATHS]
 ROOT = /test/root_from_ini
@@ -217,7 +224,13 @@ value = ini_value
                 return load_ini_as_dict(Path(temp_ini_path))
 
             with patch("mindtrace.core.config.config.load_ini_settings", mock_load_ini_settings):
-                with patch.dict(os.environ, {"MINDTRACE_TEST_PARAM": "env_value"}):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "MINDTRACE_TEST_PARAM": "env_value",
+                        "MINDTRACE_TESTING_API_KEYS__DISCORD": "test_discord_key_from_env",
+                    },
+                ):
                     settings = CoreSettings()
                     # Environment should override INI
                     assert settings.MINDTRACE_TEST_PARAM == "env_value"
@@ -281,3 +294,20 @@ class TestMindtraceModels:
         assert api_keys.OPENAI.get_secret_value() == "test_key"
         assert api_keys.DISCORD.get_secret_value() == "discord_key"
         assert api_keys.ROBOFLOW.get_secret_value() == "roboflow_key"
+
+    def test_mindtrace_testing_api_keys_model(self):
+        """Test MINDTRACE_TESTING_API_KEYS model."""
+        from mindtrace.core.config.config import MINDTRACE_TESTING_API_KEYS
+
+        # Test with Discord key
+        model = MINDTRACE_TESTING_API_KEYS(DISCORD="test_discord_key")
+        assert model.DISCORD.get_secret_value() == "test_discord_key"
+
+        # Test with None (should be allowed since it's Optional)
+        model_none = MINDTRACE_TESTING_API_KEYS(DISCORD=None)
+        assert model_none.DISCORD is None
+
+        # Test deserialization
+        data = {"DISCORD": "test_discord_key"}
+        model_deserialized = MINDTRACE_TESTING_API_KEYS(**data)
+        assert model_deserialized.DISCORD.get_secret_value() == "test_discord_key"

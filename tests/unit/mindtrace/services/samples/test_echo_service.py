@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService, echo_task
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput, EchoService, echo_task
 
 
 class TestEchoInput:
@@ -79,7 +79,7 @@ class TestEchoOutput:
 class TestEchoService:
     """Test suite for EchoService class."""
 
-    @patch("mindtrace.services.sample.echo_service.Service.__init__")
+    @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_echo_service_initialization(self, mock_super_init):
         """Test EchoService initialization."""
         mock_super_init.return_value = None
@@ -94,7 +94,7 @@ class TestEchoService:
             # Verify add_endpoint was called with correct parameters
             mock_add_endpoint.assert_called_once_with("echo", service.echo, schema=echo_task)
 
-    @patch("mindtrace.services.sample.echo_service.Service.__init__")
+    @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_echo_service_initialization_with_args(self, mock_super_init):
         """Test EchoService initialization with arguments."""
         mock_super_init.return_value = None
@@ -163,7 +163,7 @@ class TestEchoService:
         assert result.echoed == "zero delay"
         mock_sleep.assert_not_called()
 
-    @patch("mindtrace.services.sample.echo_service.Service.__init__")
+    @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_echo_service_inheritance(self, mock_super_init):
         """Test that EchoService properly inherits from Service."""
         from mindtrace.services import Service
@@ -184,7 +184,7 @@ class TestEchoService:
         assert isinstance(result, EchoOutput)
         assert result.echoed == "test"
 
-    @patch("mindtrace.services.sample.echo_service.Service.__init__")
+    @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_echo_service_endpoint_configuration(self, mock_super_init):
         """Test that the echo endpoint is configured correctly."""
         mock_super_init.return_value = None
@@ -231,7 +231,7 @@ class TestEchoServiceIntegration:
         result = service.echo(test_input)
         assert isinstance(result, EchoOutput)
 
-    @patch("mindtrace.services.sample.echo_service.Service.__init__")
+    @patch("mindtrace.services.samples.echo_service.Service.__init__")
     def test_service_with_mock_dependencies(self, mock_super_init):
         """Test EchoService with all dependencies mocked."""
         mock_super_init.return_value = None
