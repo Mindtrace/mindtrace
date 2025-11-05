@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 from mindtrace.automation.label_studio.exceptions import ProjectAlreadyExistsError, StorageAlreadyExistsError
+from mindtrace.automation.label_studio.label_studio_api import LabelStudio
 from mindtrace.core.config import Config
 
 url = "http://localhost:8080"

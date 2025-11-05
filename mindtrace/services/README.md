@@ -183,7 +183,7 @@ The Model Context Protocol (MCP) is a protocol for exposing service functionalit
 ### Example: EchoService with MCP
 See [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py):
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 
 # Launch the service
 connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
@@ -225,7 +225,7 @@ Each `Service` subclass automatically receives a class-level `mcp` helper (MCPCl
 Connect to a running service:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -243,7 +243,7 @@ asyncio.run(main())
 Launch a new service and get a connected client:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -265,7 +265,7 @@ asyncio.run(main())
 Get the MCP client from a connection manager instance:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -304,7 +304,7 @@ Follow these steps to set up and use a remote MCP server with Cursor:
    Start your Mindtrace service with MCP enabled. For example, to launch the EchoService:
 
    ```python
-   from mindtrace.services.sample.echo_mcp import EchoService
+   from mindtrace.services.samples.echo_mcp import EchoService
    connection_manager = EchoService.launch(port=8080, host="localhost")
    ```
 
