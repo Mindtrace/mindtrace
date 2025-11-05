@@ -22,6 +22,10 @@ def gcs_client():
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
+    if not credentials_path:
+        pytest.skip("No GCP credentials path provided")
+    if not os.path.exists(credentials_path):
+        pytest.skip(f"GCP credentials path does not exist: {credentials_path}")
     
     client = storage.Client(project=project_id)
     yield client
