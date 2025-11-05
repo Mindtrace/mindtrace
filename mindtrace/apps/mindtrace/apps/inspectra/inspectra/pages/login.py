@@ -1,4 +1,5 @@
 import reflex as rx
+
 from inspectra.state.auth_state import AuthState
 from inspectra.styles.global_styles import DS
 
@@ -9,7 +10,6 @@ def _left_panel() -> rx.Component:
     return rx.box(
         rx.vstack(
             rx.image(src="/Inspectra.svg", height="120px", width="auto"),
-
             rx.text(
                 "THE HOME OF BRAIN-INSPIRED AI",
                 weight="bold",
@@ -23,7 +23,6 @@ def _left_panel() -> rx.Component:
                 size="2",
                 margin_bottom=DS.space_px.md,
             ),
-
             # Login form
             rx.form(
                 rx.vstack(
@@ -69,7 +68,6 @@ def _left_panel() -> rx.Component:
                 ),
                 on_submit=AuthState.login,
             ),
-
             rx.link(
                 "Forgot password?",
                 href="/forgot-password",

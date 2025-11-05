@@ -1,7 +1,8 @@
 from collections import OrderedDict
-import reflex as rx
-from inspectra.styles.global_styles import DS
 
+import reflex as rx
+
+from inspectra.styles.global_styles import DS
 
 # ──────────────────────────────── Navigation Data ────────────────────────────────
 NAV = [

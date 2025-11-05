@@ -1,0 +1,22 @@
+[project]
+name = "inspectra"
+version = "0.1.0"
+description = "Inspectra app"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mindtrace-core>=0.5.0",
+    "mindtrace-database>=0.5.0",
+    "passlib>=1.7.4",
+    "pydantic[email]>=2.11.9",
+    "reflex>=0.8.18",
+    "python-dotenv>=1.0.1",
+]
+
+[project.urls]
+Homepage = "https://mindtrace.ai"
+Repository = "https://github.com/mindtrace/mindtrace/blob/dev/mindtrace/apps/inspectra"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

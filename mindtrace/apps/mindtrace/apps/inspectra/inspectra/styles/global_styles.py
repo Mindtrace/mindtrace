@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Literal
+
 import reflex as rx
 
 # ───────────────────────────────────────────────
@@ -21,6 +22,7 @@ ColorRole = Literal[
 @dataclass(frozen=True)
 class ColorTokens:
     """Semantic color palette."""
+
     brand: str = "#184937"  # Inspectra green
     brand_light: str = "#60CCA5"
     surface: str = "#ffffff"
@@ -41,6 +43,7 @@ SpaceSize = Literal["xs", "sm", "md", "lg", "xl", "2xl"]
 @dataclass(frozen=True)
 class SpacingTokens:
     """Pixel-based spacing scale (for CSS props)."""
+
     xs: str = "4px"
     sm: str = "8px"
     md: str = "16px"
@@ -52,17 +55,19 @@ class SpacingTokens:
 @dataclass(frozen=True)
 class ReflexSpacingTokens:
     """Radix token-based spacing (for rx.vstack / rx.hstack)."""
-    xs: str = "1"   # ~4px
-    sm: str = "2"   # ~8px
-    md: str = "4"   # ~16px
-    lg: str = "5"   # ~24px
-    xl: str = "6"   # ~32px
-    _2xl: str = "7" # ~40px
+
+    xs: str = "1"  # ~4px
+    sm: str = "2"  # ~8px
+    md: str = "4"  # ~16px
+    lg: str = "5"  # ~24px
+    xl: str = "6"  # ~32px
+    _2xl: str = "7"  # ~40px
 
 
 @dataclass(frozen=True)
 class RadiusTokens:
     """Border radius scale."""
+
     sm: str = "6px"
     md: str = "12px"
     lg: str = "20px"
@@ -78,9 +83,11 @@ class ZIndexTokens:
 # ✍️ TYPOGRAPHY TOKENS
 # ───────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class TypographyTokens:
     """Font families, sizes, weights."""
+
     font_family: str = "Inter, system-ui, sans-serif"
     size_sm: str = "14px"
     size_md: str = "16px"
@@ -94,6 +101,7 @@ class TypographyTokens:
 # 🧱 LAYOUT TOKENS
 # ───────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class LayoutTokens:
     header_h: str = "72px"
@@ -104,9 +112,11 @@ class LayoutTokens:
 # 🎯 DESIGN SYSTEM ROOT
 # ───────────────────────────────────────────────
 
+
 @dataclass(frozen=True)
 class DesignSystem:
     """Single source of truth for design tokens."""
+
     color: ColorTokens = ColorTokens()
     space_px: SpacingTokens = SpacingTokens()
     space_token: ReflexSpacingTokens = ReflexSpacingTokens()
@@ -122,6 +132,7 @@ DS = DesignSystem()
 # ───────────────────────────────────────────────
 # 💅 GLOBAL CSS INJECTION
 # ───────────────────────────────────────────────
+
 
 def global_css() -> rx.Component:
     """Inject global CSS variables for Inspectra theme."""

@@ -1,5 +1,7 @@
 from typing import Optional
+
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
 
 
