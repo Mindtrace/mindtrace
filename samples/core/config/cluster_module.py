@@ -1,22 +1,24 @@
+from pathlib import Path
+
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings
-from pathlib import Path
+
 from mindtrace.core import Mindtrace
 from mindtrace.core.config import CoreConfig, SettingsLike
+
 
 class MINDTRACE_CLUSTER(BaseModel):
     DEFAULT_REDIS_URL: str
     MINIO_ENDPOINT: str
     MINIO_ACCESS_KEY: SecretStr
     MINIO_SECRET_KEY: SecretStr
-    MINIO_BUCKET: str 
+    MINIO_BUCKET: str
+
 
 class ClusterSettings(BaseSettings):
     MINDTRACE_CLUSTER: MINDTRACE_CLUSTER
-    model_config = {
-        "env_nested_delimiter": "__", 
-        "env_file": Path(__file__).parent / "cluster.env"
-    }
+    model_config = {"env_nested_delimiter": "__", "env_file": Path(__file__).parent / "cluster.env"}
+
 
 class ClusterConfig(CoreConfig):
     """Cluster-scoped Config.
@@ -39,9 +41,11 @@ class ClusterConfig(CoreConfig):
             extras = [ClusterSettings(), extra_settings]
         super().__init__(extra_settings=extras)
 
+
 class Cluster(Mindtrace):
     def __init__(self, config_override: SettingsLike = None):
         self.config = ClusterConfig(config_override)
+
 
 if __name__ == "__main__":
     cluster = Cluster()

@@ -243,6 +243,7 @@ async def demonstrate_dual_backend():
     mongo_user = UserCreate(name="MongoDB User", age=30, email="mongo@example.com")
     mongo_inserted = await backend.insert_async(mongo_user)
     print(f"Inserted to MongoDB: {mongo_inserted.name}")
+    print(f"MongoDB ID: {mongo_inserted.id}")
 
     # Switch to Redis
     backend.switch_backend(BackendType.REDIS)

@@ -1,6 +1,6 @@
 import pytest_asyncio
 
-from mindtrace.services.sample.echo_service import EchoService
+from mindtrace.services.samples.echo_service import EchoService
 
 
 @pytest_asyncio.fixture
