@@ -1,26 +1,27 @@
 from collections import OrderedDict
-
 import reflex as rx
+from inspectra.styles.global_styles import DS
 
-from inspectra.styles.global_styles import SP, T
 
 # ──────────────────────────────── Navigation Data ────────────────────────────────
 NAV = [
     {"section": "Main", "label": "Home", "icon": "home", "href": "/"},
-    {"section": "Data Viewer", "label": "Plant view", "icon": "scan-eye", "href": "/plant-view"},
-    {"section": "Data Viewer", "label": "Line view", "icon": "folder-kanban", "href": "/line-view"},
+    {"section": "Data Viewer", "label": "Plant view", "icon": "scan_eye", "href": "/plant-view"},
+    {"section": "Data Viewer", "label": "Line view", "icon": "folder_kanban", "href": "/line-view"},
     {"section": "Analytics", "label": "Line insights", "icon": "database", "href": "/line-insights"},
-    {"section": "Audit & Reports", "label": "Alerts", "icon": "badge-alert", "href": "/alerts"},
-    {"section": "Audit & Reports", "label": "Reports", "icon": "trending-up-down", "href": "/reports"},
+    {"section": "Audit & Reports", "label": "Alerts", "icon": "badge_alert", "href": "/alerts"},
+    {"section": "Audit & Reports", "label": "Reports", "icon": "trending_up_down", "href": "/reports"},
     {"label": "Settings", "icon": "cog", "href": "/settings"},
 ]
 
 
 # ──────────────────────────────── Tile Component ────────────────────────────────
-def _tile(label: str, icon: str, *, active: bool):
-    bg_color = rx.cond(active, T.primary, "transparent")
-    icon_color = rx.cond(active, "#ffffff", "#1a1a1a")
-    text_color = rx.cond(active, "#ffffff", "#1a1a1a")
+def _tile(label: str, icon: str, *, active: bool) -> rx.Component:
+    """Sidebar tile with semantic color and hover motion."""
+    bg_color = rx.cond(active, DS.color.brand, "transparent")
+    icon_color = rx.cond(active, DS.color.surface, DS.color.text_primary)
+    text_color = rx.cond(active, DS.color.surface, DS.color.text_primary)
+    border_color = rx.cond(active, DS.color.brand, DS.color.border)
 
     return rx.box(
         rx.vstack(
@@ -30,20 +31,27 @@ def _tile(label: str, icon: str, *, active: bool):
                 height="42px",
                 display="grid",
                 place_items="center",
-                border_radius=T.border_radius,
+                border_radius=DS.radius.md,
                 bg=bg_color,
-                border=rx.cond(active, f"1px solid {T.primary}", "1px solid rgba(0,0,0,0.05)"),
+                border=f"1px solid {border_color}",
+                transition="all .15s ease",
             ),
-            rx.text(label, font_size="11px", color=text_color, text_align="center", weight="medium"),
+            rx.text(
+                label,
+                font_size=DS.text.size_sm,
+                color=text_color,
+                text_align="center",
+                weight="medium",
+            ),
             align="center",
             justify="center",
-            gap=SP.space_2,
+            spacing=DS.space_token.sm,
             width="100%",
         ),
-        border_radius=T.border_radius,
-        padding=f"{SP.space_2} {SP.space_2}",
+        border_radius=DS.radius.md,
+        padding=f"{DS.space_px.xs} {DS.space_px.sm}",
         _hover={
-            "bg": rx.cond(active, T.primary, "rgba(0,0,0,0.05)"),
+            "bg": rx.cond(active, DS.color.brand, "rgba(0,0,0,0.04)"),
             "cursor": "pointer",
             "transition": "all .15s ease",
         },
@@ -53,26 +61,28 @@ def _tile(label: str, icon: str, *, active: bool):
 
 
 # ──────────────────────────────── Navigation Sections ────────────────────────────────
-def _nav_link(item: dict, *, active: bool):
+def _nav_link(item: dict, *, active: bool) -> rx.Component:
     tile = _tile(item["label"], item["icon"], active=active)
     return rx.link(tile, href=item.get("href", "#"), text_decoration="none", width="100%")
 
 
-def _section_heading(title: str):
+def _section_heading(title: str) -> rx.Component:
+    """Section heading with semantic text colors."""
     return rx.text(
         title.upper(),
-        font_size="13px",
+        font_size=DS.text.size_sm,
         weight="bold",
-        color="#666",
+        color=DS.color.text_secondary,
         letter_spacing=".06em",
         text_align="center",
-        margin_bottom="8px",
-        margin_top="6px",
+        margin_bottom=DS.space_px.xs,
+        margin_top=DS.space_px.xs,
     )
 
 
 # ──────────────────────────────── Sidebar ────────────────────────────────
-def Sidebar(*, active: str):
+def Sidebar(*, active: str) -> rx.Component:
+    """Main vertical navigation sidebar."""
     grouped = OrderedDict()
     for item in NAV:
         section = item.get("section", "")
@@ -88,31 +98,45 @@ def Sidebar(*, active: str):
                     heading,
                     *tiles,
                     align="stretch",
-                    gap="10px",
-                    padding_y="8px",
+                    spacing=DS.space_token.md,
+                    padding_y=DS.space_px.sm,
                 ),
-                border_bottom=rx.cond(i == len(grouped) - 1, "none", "1px solid rgba(0,0,0,0.1)"),
-                padding_bottom="12px",
+                border_bottom=rx.cond(
+                    i == len(grouped) - 1,
+                    "none",
+                    f"1px solid {DS.color.border}",
+                ),
+                padding_bottom=DS.space_px.sm,
             )
         )
 
     footer = rx.box(
-        _nav_link({"label": "Settings", "icon": "cog", "href": "/settings"}, active=(active == "Settings")),
-        padding="16px 12px",
-        border_top="1px solid rgba(0,0,0,0.1)",
+        _nav_link(
+            {"label": "Settings", "icon": "cog", "href": "/settings"},
+            active=(active == "Settings"),
+        ),
+        padding=f"{DS.space_px.md} {DS.space_px.sm}",
+        border_top=f"1px solid {DS.color.border}",
     )
 
     return rx.box(
-        rx.vstack(*sections, align="stretch", gap="16px", padding="18px 12px", flex="1 1 0", overflow_y="auto"),
+        rx.vstack(
+            *sections,
+            align="stretch",
+            spacing=DS.space_token.lg,
+            padding=f"{DS.space_px.lg} {DS.space_px.sm}",
+            flex="1 1 0",
+            overflow_y="auto",
+        ),
         footer,
         display="flex",
         flex_direction="column",
         justify_content="space-between",
-        height=f"calc(100vh - {T.header_h})",
-        width=T.sidebar_w,
-        min_width=T.sidebar_w,
-        bg=T.surface,
-        border_right=f"1px solid {T.border}",
+        height=f"calc(100vh - {DS.layout.header_h})",
+        width=DS.layout.sidebar_w,
+        min_width=DS.layout.sidebar_w,
+        bg=DS.color.surface,
+        border_right=f"1px solid {DS.color.border}",
         position="sticky",
-        top=T.header_h,
+        top=DS.layout.header_h,
     )
