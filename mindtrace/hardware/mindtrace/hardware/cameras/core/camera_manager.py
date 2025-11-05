@@ -210,7 +210,12 @@ class CameraManager(Mindtrace):
             return result_future.result()
 
     def _submit_coro(self, coro, timeout: float | None = None):
-        fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        try:
+            fut = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except Exception:
+            # If scheduling fails, close the coroutine to prevent warnings
+            coro.close()
+            raise
         try:
             return fut.result(timeout=timeout)
         except Exception:
