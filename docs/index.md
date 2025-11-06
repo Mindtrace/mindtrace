@@ -1,8 +1,5 @@
 ---
 title: "Welcome to Mindtrace"
-hide:
-  - navigation
-  - toc
 ---
 
 # :material-rocket-launch: Welcome to **Mindtrace**
@@ -16,7 +13,7 @@ It seamlessly connects **hardware, data, and machine learning**, empowering team
 
 ---
 
-## :material-star: Core Features
+## :material-star: Features
 
 
 -   :fontawesome-solid-network-wired: **Unified Architecture**  
