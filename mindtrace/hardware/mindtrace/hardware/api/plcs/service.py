@@ -113,9 +113,6 @@ class PLCManagerService(Service):
 
     def _register_endpoints(self):
         """Register all service endpoints."""
-        # Health check endpoint
-        self.add_endpoint("health", self.health_check, None, methods=["GET"])
-
         # Backend & Discovery
         self.add_endpoint(
             "backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
