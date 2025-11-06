@@ -9,7 +9,7 @@ The Mindtrace Hardware Component provides a unified, industrial-grade interface 
 ## 🎯 Overview
 
 **Key Differentiators:**
-- **Service-Based Architecture**: Modern REST API with MCP integration and 25 comprehensive endpoints
+- **Service-Based Architecture**: Modern REST APIs with MCP integration (25 camera + 19 PLC endpoints)
 - **Multi-Level Interfaces**: From simple synchronous to industrial async with bandwidth management
 - **Network Bandwidth Management**: Critical for GigE cameras with intelligent concurrent capture limiting
 - **Unified Configuration System**: Single configuration for all hardware components
@@ -94,8 +94,14 @@ mindtrace/hardware/
 └── mindtrace/hardware/
     ├── __init__.py           # Lazy imports: CameraManager, PLCManager
     ├── api/                  # Service layer
-    │   └── cameras/          # CameraManagerService + client
-    │       ├── service.py         # 25 endpoints + 16 MCP tools
+    │   ├── cameras/          # CameraManagerService + client
+    │   │   ├── service.py         # 25 endpoints + 16 MCP tools
+    │   │   ├── launcher.py        # Service launcher and startup
+    │   │   ├── connection_manager.py # Python client
+    │   │   ├── models/            # Request/response models
+    │   │   └── schemas/           # TaskSchema definitions
+    │   └── plcs/             # PLCManagerService + client
+    │       ├── service.py         # 19 endpoints + 16 MCP tools
     │       ├── launcher.py        # Service launcher and startup
     │       ├── connection_manager.py # Python client
     │       ├── models/            # Request/response models
@@ -399,6 +405,13 @@ camera_settings.timeout_ms = 5000
 
 The PLC system provides comprehensive industrial automation support with async operations and multiple driver types for different PLC families.
 
+## Interface Hierarchy
+
+| Interface | Async | Multi-PLC | Batch Ops | Service API | Use Case |
+|-----------|-------|-----------|-----------|-------------|----------|
+| **PLCManager** | ✅ | ✅ | ✅ | ❌ | Multi-PLC automation systems |
+| **PLCManagerService** | ✅ | ✅ | ✅ | ✅ | Service-based integration |
+
 ## Core Interface
 
 ```python
@@ -452,6 +465,72 @@ batch_data = [
 
 results = await manager.read_tags_batch(batch_data)
 # Returns: {'ProductionPLC': {...}, 'PackagingPLC': {...}, 'QualityPLC': {...}}
+```
+
+## Service Architecture
+
+The PLCManagerService provides enterprise-grade PLC management with REST API and MCP integration.
+
+### Launch Service
+```python
+from mindtrace.hardware.api import PLCManagerService
+
+# Launch with REST API + MCP
+PLCManagerService.launch(
+    port=8003,
+    block=True
+)
+```
+
+### Programmatic Client
+```python
+from mindtrace.hardware.api import PLCManagerConnectionManager
+
+async def service_example():
+    client = PLCManagerConnectionManager("http://localhost:8003")
+
+    # Connect to PLC
+    await client.connect_plc(
+        plc_name="RTU_LUBE_SYSTEM",
+        backend="AllenBradley",
+        ip_address="192.168.160.3",
+        plc_type="logix"
+    )
+
+    # Read tags
+    values = await client.read_tags(
+        plc="RTU_LUBE_SYSTEM",
+        tags=["Robot_Status", "Robot_Position_X"]
+    )
+
+    # Write tags
+    await client.write_tags(
+        plc="RTU_LUBE_SYSTEM",
+        tags=[("Robot_Command", 1), ("Target_X", 150.0)]
+    )
+```
+
+### Key Service Endpoints
+
+| Category | Essential Endpoints | Description |
+|----------|-------------------|-------------|
+| **Discovery** | `discover_backends`, `discover_plcs` | Backend and PLC discovery |
+| **Lifecycle** | `connect_plc`, `disconnect_plc`, `get_active_plcs` | PLC management |
+| **Tag Operations** | `tag_read`, `tag_write`, `tag_list` | Tag read/write operations |
+| **System** | `get_plc_status`, `get_system_diagnostics` | Monitoring |
+
+### MCP Integration
+
+16 essential PLC operations are automatically exposed as MCP tools:
+
+```json
+{
+  "mcpServers": {
+    "mindtrace_plcs": {
+      "url": "http://localhost:8003/mcp-server/mcp/"
+    }
+  }
+}
 ```
 
 ## Configuration
