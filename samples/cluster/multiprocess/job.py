@@ -3,14 +3,14 @@ import time
 from mindtrace.cluster import ClusterManager
 from mindtrace.cluster.workers.echo_worker import EchoWorker
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 
 def main():
     cluster_manager = ClusterManager.connect("http://localhost:8002")
     worker_cm = EchoWorker.connect("http://localhost:8003")
     try:
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
         job = job_from_schema(echo_job_schema, input_data={"message": "Hello, World!", "delay": 60})
         cluster_manager.submit_job(job)
         print(cluster_manager.get_job_status(job_id=job.id))

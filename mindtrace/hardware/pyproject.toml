@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.4.0"
+version = "0.5.0"
 description = "Hardware integration for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -21,6 +21,7 @@ dependencies = [
     "numpy>=1.24.0",
     "pycomm3>=1.2.14",
     "python-snap7[cli]>=2.0.2",
+    "aiomqtt>=2.4.0",
 ]
 
 [project.scripts]

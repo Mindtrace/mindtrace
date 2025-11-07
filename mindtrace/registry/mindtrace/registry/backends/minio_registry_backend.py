@@ -274,14 +274,14 @@ class MinioRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete object metadata from MinIO.
 
         Args:
-            model_name: Name of the object.
+            name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{model_name.replace(':', '_')}@{version}.json"
+        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         try:
             self.client.remove_object(self.bucket, meta_path)

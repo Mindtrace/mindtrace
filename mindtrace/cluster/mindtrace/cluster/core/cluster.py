@@ -324,7 +324,7 @@ class ClusterManager(Gateway):
         self.job_schema_targeting_database.insert(
             cluster_types.JobSchemaTargeting(schema_name=job_type, target_endpoint="@orchestrator")
         )
-        self.orchestrator.register(JobSchema(name=job_type, input=BaseModel))
+        self.orchestrator.register(JobSchema(name=job_type, input_schema=BaseModel))
         worker_cm = Worker.connect(worker_url)
 
         heartbeat = worker_cm.heartbeat().heartbeat

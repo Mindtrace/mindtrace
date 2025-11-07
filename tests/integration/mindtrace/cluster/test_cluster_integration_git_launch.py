@@ -4,7 +4,7 @@ import pytest
 
 from mindtrace.cluster import ClusterManager, Node
 from mindtrace.jobs import JobSchema, job_from_schema
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
 from .test_config import GIT_REPO_BRANCH, GIT_REPO_URL
 
@@ -19,7 +19,7 @@ def test_start_worker_from_git():
     )
 
     try:
-        echo_job_schema = JobSchema(name="echo", input=EchoInput, output=EchoOutput)
+        echo_job_schema = JobSchema(name="echo", input_schema=EchoInput, output_schema=EchoOutput)
 
         # Register worker type with git repository information
         cluster_manager.register_worker_type(
