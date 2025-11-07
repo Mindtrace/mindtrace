@@ -1,20 +1,22 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
-from beanie import IndexModel, Link, PydanticObjectId
-from inspectra.backend.db.models.brain import Model
+from beanie import Link, PydanticObjectId
 from inspectra.backend.db.models.camera import Camera
 from inspectra.backend.db.models.line import Line
 from inspectra.backend.db.models.location_scan import LocationScan
 from inspectra.backend.db.models.media import Media
+from inspectra.backend.db.models.model import Model
 from inspectra.backend.db.models.organization import Organization
 from inspectra.backend.db.models.part_scan import PartScan
 from inspectra.backend.db.models.plant import Plant
 from pydantic import Field
+from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
 
 # ========= Inference (single-result row; semantic contract + base fields + extras) =========
+
 
 class Inference(MindtraceDocument):
     # links + denorm (for fast filters)
@@ -42,11 +44,11 @@ class Inference(MindtraceDocument):
     model: Link[Model]
     model_ver: str
 
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     run_id: Optional[Union[str, PydanticObjectId]] = None
 
     # semantic grouping only (no enforcement right now)
-    contract_name: str   # e.g., "visual_inspection", "location_presence_check", "assembly_inspection", "other"
+    contract_name: str  # e.g., "visual_inspection", "location_presence_check", "assembly_inspection", "other"
 
     # canonical queryable fields (all optional for now)
     # classification
@@ -76,20 +78,17 @@ class Inference(MindtraceDocument):
         name = "inferences"
         indexes = [
             # scope & time
-            IndexModel([("org_id", 1), ("plant_id", 1), ("line_id", 1), ("created_at", -1)],
-                       name="inf_scope_time"),
-            IndexModel([("line_id", 1), ("created_at", -1)],
-                       name="inf_line_time"),
-            IndexModel([("line_name", 1), ("created_at", -1)],
-                       name="inf_linename_time"),
-            IndexModel([("camera_name", 1), ("created_at", -1)],
-                       name="inf_camname_time"),
-            IndexModel([("part_code", 1), ("created_at", -1)],
-                       name="inf_part_time"),
-            IndexModel([("contract_name", 1), ("created_at", -1)],
-                       name="inf_contract_time"),
+            IndexModel([("org_id", 1), ("plant_id", 1), ("line_id", 1), ("created_at", -1)], name="inf_scope_time"),
+            IndexModel([("line_id", 1), ("created_at", -1)], name="inf_line_time"),
+            IndexModel([("line_name", 1), ("created_at", -1)], name="inf_linename_time"),
+            IndexModel([("camera_name", 1), ("created_at", -1)], name="inf_camname_time"),
+            IndexModel([("part_code", 1), ("created_at", -1)], name="inf_part_time"),
+            IndexModel([("contract_name", 1), ("created_at", -1)], name="inf_contract_time"),
             # (optional) one row per (capture, model, version, contract, label)
-            IndexModel([("location_scan.$id", 1), ("model.$id", 1), ("model_ver", 1),
-                        ("contract_name", 1), ("label", 1)],
-                       name="inf_unique", unique=True, sparse=True),
+            IndexModel(
+                [("location_scan.$id", 1), ("model.$id", 1), ("model_ver", 1), ("contract_name", 1), ("label", 1)],
+                name="inf_unique",
+                unique=True,
+                sparse=True,
+            ),
         ]

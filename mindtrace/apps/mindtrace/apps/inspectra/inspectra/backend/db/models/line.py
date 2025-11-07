@@ -1,9 +1,10 @@
 from datetime import datetime, timezone
 from typing import List
 
-from beanie import IndexModel, Link, PydanticObjectId
+from beanie import Link, PydanticObjectId
 from inspectra.backend.db.models.plant import Plant
 from pydantic import Field
+from pymongo import IndexModel
 from typing_extensions import Any, Dict
 
 from mindtrace.database import MindtraceDocument
@@ -14,8 +15,8 @@ class Line(MindtraceDocument):
     name: str
     active: bool = True
     supported_part_ids: List[PydanticObjectId] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     class Settings:

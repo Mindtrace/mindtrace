@@ -1,9 +1,10 @@
 from typing import Union
 
-from beanie import IndexModel, Link
+from beanie import Link
 from inspectra.backend.db.models.line import Line
 from inspectra.backend.db.models.organization import Organization
 from pydantic import Field
+from pymongo import IndexModel
 from typing_extensions import Any, Dict, Optional
 
 from mindtrace.database import MindtraceDocument

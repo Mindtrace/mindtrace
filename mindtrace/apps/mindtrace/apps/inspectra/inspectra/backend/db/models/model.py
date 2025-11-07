@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from beanie import IndexModel
 from pydantic import Field
+from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
 

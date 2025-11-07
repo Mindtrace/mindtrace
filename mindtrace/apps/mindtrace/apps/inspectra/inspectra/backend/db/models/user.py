@@ -16,16 +16,16 @@ from mindtrace.database import MindtraceDocument
 class User(MindtraceDocument):
     email: EmailStr
     email_norm: str = ""
-    role: UserRole = UserRole.user
-    persona: Optional[UserPersona] = UserPersona.line_manager
+    role: UserRole = "user"
+    persona: Optional[UserPersona] = "line_manager"
     name: str
     pw_hash: str
     orgs: List[Link[Organization]] = Field(default_factory=list)
     plants: List[Link[Plant]] = Field(default_factory=list)
     lines: List[Link[Line]] = Field(default_factory=list)
     status: Literal["active", "inactive"] = "active"
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
 
     async def before_save(self):

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional, Union
 
-from beanie import IndexModel, Link, PydanticObjectId
+from beanie import Link, PydanticObjectId
 from inspectra.backend.db.models.camera import Camera
 from inspectra.backend.db.models.line import Line
 from inspectra.backend.db.models.media import Media
@@ -9,6 +9,7 @@ from inspectra.backend.db.models.organization import Organization
 from inspectra.backend.db.models.part_scan import PartScan
 from inspectra.backend.db.models.plant import Plant
 from pydantic import Field
+from pymongo import IndexModel
 
 from mindtrace.database import MindtraceDocument
 
@@ -30,7 +31,7 @@ class LocationScan(MindtraceDocument):  # per camera/location shot
     part_code: Union[int, str]
     part_name: Optional[str] = None
 
-    captured_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    captured_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     input_media: Link[Media]
     meta: Dict[str, Any] = Field(default_factory=dict)
     is_defective: Literal["Unknown", "Healthy", "Defective"] = "Unknown"  # hot part filter

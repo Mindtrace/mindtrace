@@ -1,8 +1,9 @@
 from typing import Dict, Optional, Union
 
-from beanie import IndexModel, Link
+from beanie import Link
 from inspectra.backend.db.models.organization import Organization
 from pydantic import Field
+from pymongo import IndexModel
 from typing_extensions import Any
 
 from mindtrace.database import MindtraceDocument
@@ -16,7 +17,4 @@ class Plant(MindtraceDocument):
 
     class Settings:
         name = "plants"
-        indexes = [
-            IndexModel([("org.$id", 1), ("name", 1)],
-                       name="plant_org_name_uq", unique=True)
-        ]
+        indexes = [IndexModel([("org.$id", 1), ("name", 1)], name="plant_org_name_uq", unique=True)]

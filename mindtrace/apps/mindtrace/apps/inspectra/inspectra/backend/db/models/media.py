@@ -11,5 +11,5 @@ class Media(MindtraceDocument):
     kind: MediaKind
     uri: str  # relative/path to the media file within the media storage bucket
     hash: Optional[str] = None  # hash of the media file
-    created_at: datetime = Field(default_factory=datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     meta: Dict[str, Any] = Field(default_factory=dict)
