@@ -94,6 +94,37 @@ async def test_query_data_multi_level_pipeline(datalake: Datalake, mock_database
     assert result == [{"base_id": "b", "label_id": "l", "bbox_id": "bb"}]
 
 
+@pytest.mark.asyncio
+async def test_query_data_random_strategy_uses_rand(datalake: Datalake, mock_database: MagicMock) -> None:
+    """Random strategy should rely on $rand instead of returning first item."""
+
+    mock_database.aggregate.return_value = [{"image_id": "i", "label_id": "l"}]
+
+    query = [
+        {"metadata.project": "p", "column": "image_id"},
+        {"derived_from": "image_id", "column": "label_id", "strategy": "random"},
+    ]
+
+    await datalake.query_data(query)
+
+    pipeline = mock_database.aggregate.call_args[0][0]
+
+    def contains_rand(value):
+        if isinstance(value, dict):
+            return "$rand" in value or any(contains_rand(v) for v in value.values())
+        if isinstance(value, list):
+            return any(contains_rand(v) for v in value)
+        return False
+
+    random_stage = next(
+        stage
+        for stage in pipeline
+        if "$addFields" in stage and contains_rand(stage)
+    )
+
+    assert contains_rand(random_stage)
+
+
 def test_build_match_conditions_nested_fields(datalake: Datalake) -> None:
     """_build_match_conditions should create nested $getField expressions."""
 
