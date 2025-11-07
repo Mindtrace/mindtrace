@@ -111,6 +111,7 @@ class TestQuickestStrategyMultiQuery:
             derived_from=level1_datum2.id,
             datum_id=PydanticObjectId(),
         )
+        assert all(x is not None for x in [level1_datum1, level1_datum2, level2_datum1, level2_datum2])
 
         mock_database.aggregate.return_value = [
             {
@@ -195,6 +196,8 @@ class TestQuickestStrategyMultiQuery:
         base_datum = create_mock_datum(
             data={"type": "image"}, metadata={"project": "test_project"}, datum_id=PydanticObjectId()
         )
+
+        assert base_datum is not None
 
         # Mock database calls - no derived data found
         mock_database.aggregate.return_value = []
@@ -285,9 +288,7 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        mock_database.aggregate.return_value = [
-            {"image_id": base_datum.id, "label_id": derived_datum.id}
-        ]
+        mock_database.aggregate.return_value = [{"image_id": base_datum.id, "label_id": derived_datum.id}]
 
         # Test with quickest strategy and transpose=True
         query = [
@@ -344,6 +345,7 @@ class TestQuickestStrategyMultiQuery:
             derived_from=base3.id,
             datum_id=PydanticObjectId(),
         )
+        assert all(x is not None for x in [derived1, derived2, derived3])
 
         mock_database.aggregate.return_value = [
             {"image_id": base1.id, "label_id": derived1.id},
@@ -392,9 +394,9 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        mock_database.aggregate.return_value = [
-            {"image_id": base1.id, "label_id": derived1.id}
-        ]
+        assert all(x is not None for x in [base1, base2, derived1])
+
+        mock_database.aggregate.return_value = [{"image_id": base1.id, "label_id": derived1.id}]
 
         # Test multi-query with quickest strategy
         query = [
@@ -442,9 +444,7 @@ class TestQuickestStrategyMultiQuery:
             datum_id=PydanticObjectId(),
         )
 
-        mock_database.aggregate.return_value = [
-            {"image_id": base_datum.id, "label_id": derived_datum.id}
-        ]
+        mock_database.aggregate.return_value = [{"image_id": base_datum.id, "label_id": derived_datum.id}]
 
         # Test multi-query with quickest strategy
         query = [

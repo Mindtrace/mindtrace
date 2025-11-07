@@ -661,18 +661,15 @@ class TestDatalakeUnit:
     async def test_query_data_optimized_single_query(self, datalake, mock_database):
         """Test query_data_optimized with single query."""
         # Mock aggregation results
-        mock_results = [
-            {"image_id": "507f1f77bcf86cd799439011"},
-            {"image_id": "507f1f77bcf86cd799439012"}
-        ]
+        mock_results = [{"image_id": "507f1f77bcf86cd799439011"}, {"image_id": "507f1f77bcf86cd799439012"}]
         mock_database.aggregate.return_value = mock_results
-        
+
         query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query)
-        
+
         # Verify aggregation was called
         mock_database.aggregate.assert_called_once()
-        
+
         # Verify result format
         assert len(result) == 2
         assert result[0]["image_id"] == "507f1f77bcf86cd799439011"
@@ -684,19 +681,19 @@ class TestDatalakeUnit:
         # Mock aggregation results
         mock_results = [
             {"image_id": "507f1f77bcf86cd799439011", "label_id": "507f1f77bcf86cd799439021"},
-            {"image_id": "507f1f77bcf86cd799439012", "label_id": "507f1f77bcf86cd799439022"}
+            {"image_id": "507f1f77bcf86cd799439012", "label_id": "507f1f77bcf86cd799439022"},
         ]
         mock_database.aggregate.return_value = mock_results
-        
+
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "column": "label_id"}
+            {"derived_from": "image_id", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
-        
+
         # Verify aggregation was called
         mock_database.aggregate.assert_called_once()
-        
+
         # Verify result format
         assert len(result) == 2
         assert result[0]["image_id"] == "507f1f77bcf86cd799439011"
@@ -706,15 +703,12 @@ class TestDatalakeUnit:
     async def test_query_data_optimized_transpose(self, datalake, mock_database):
         """Test query_data_optimized with transpose=True."""
         # Mock aggregation results
-        mock_results = [
-            {"image_id": "507f1f77bcf86cd799439011"},
-            {"image_id": "507f1f77bcf86cd799439012"}
-        ]
+        mock_results = [{"image_id": "507f1f77bcf86cd799439011"}, {"image_id": "507f1f77bcf86cd799439012"}]
         mock_database.aggregate.return_value = mock_results
-        
+
         query = {"metadata.project": "test_project", "column": "image_id"}
         result = await datalake.query_data(query, transpose=True)
-        
+
         # Verify result format
         assert isinstance(result, dict)
         assert "image_id" in result
