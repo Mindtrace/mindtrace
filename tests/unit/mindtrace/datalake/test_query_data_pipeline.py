@@ -85,7 +85,9 @@ async def test_query_data_multi_level_pipeline(datalake: Datalake, mock_database
     assert lookups[1]["localField"] == "label_id__join"
     assert lookups[1]["as"] == "bbox_id"
 
-    join_add_fields = [stage["$addFields"] for stage in pipeline if "$addFields" in stage and "label_id__join" in stage["$addFields"]]
+    join_add_fields = [
+        stage["$addFields"] for stage in pipeline if "$addFields" in stage and "label_id__join" in stage["$addFields"]
+    ]
     assert join_add_fields
 
     project_stage = pipeline[-1]
@@ -116,11 +118,7 @@ async def test_query_data_random_strategy_uses_rand(datalake: Datalake, mock_dat
             return any(contains_rand(v) for v in value)
         return False
 
-    random_stage = next(
-        stage
-        for stage in pipeline
-        if "$addFields" in stage and contains_rand(stage)
-    )
+    random_stage = next(stage for stage in pipeline if "$addFields" in stage and contains_rand(stage))
 
     assert contains_rand(random_stage)
 
@@ -199,4 +197,3 @@ def test_build_match_conditions_empty(datalake: Datalake) -> None:
     """Empty query dictionaries should return None."""
 
     assert datalake._build_match_conditions({}) is None
-
