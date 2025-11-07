@@ -123,6 +123,20 @@ In above example, we illustrate structlog’s ability to
 - bind context to a logger, which ensures that certain fields are automatically included in every log message. This is especially useful for adding consistent metadata like service name, environment, or version without repeating it in every log call.
 - Extra fields like user_id="123" can be passed per log call, allowing dynamic, event-specific data to be added.
 
+##### Mindtrace autolog
+`Mindtrace.autolog` automatically logs function execution (start, end, duration, exceptions, and optional system metrics).
+It supports sync, async, and static functions with both standard and structured logging formats. See a full usage example [here](/samples/core/logging/using_autologger.py)
+
+```python
+from mindtrace.core import Mindtrace
+
+class DataProcessor(Mindtrace):
+    @Mindtrace.autolog()
+    def process_data(self, data_list, batch_size=100):
+        # Function automatically logged
+        return [item * 2 for item in data_list]
+```
+
 ### Observables
 
 The Observables module enables lightweight observability and reactivity for class objects, automatically turning selected properties into observable variables. This framework allows external components (listeners) to be notified whenever specific values change, without hard-coding the coupling between the source and observers.

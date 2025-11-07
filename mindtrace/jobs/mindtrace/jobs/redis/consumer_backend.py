@@ -3,9 +3,9 @@ import time
 from queue import Empty
 from typing import Optional
 
+from mindtrace.core import ifnone
 from mindtrace.jobs.base.consumer_base import ConsumerBackendBase
 from mindtrace.jobs.redis.connection import RedisConnection
-from mindtrace.jobs.utils.checks import ifnone
 
 
 class RedisConsumerBackend(ConsumerBackendBase):
@@ -24,6 +24,11 @@ class RedisConsumerBackend(ConsumerBackendBase):
         if isinstance(queues, str):
             queues = [queues]
         queues = ifnone(queues, default=self.queues)
+
+        # Guard against empty queue list to avoid infinite loop
+        if not queues:
+            self.logger.warning("No queues provided; nothing to consume.")
+            return
 
         messages_consumed = 0
         try:

@@ -72,11 +72,11 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete metadata for a specific model version.
 
         Args:
-            model_name: Name of the model.
+            name: Name of the model.
             version: Version string.
         """
         pass

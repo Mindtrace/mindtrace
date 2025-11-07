@@ -33,7 +33,7 @@ class MCPClientManager:
             FastMCP Client instance for MCP protocol communication
 
         Example::
-            from mindtrace.services.sample.echo_mcp import EchoService
+            from mindtrace.services.samples.echo_mcp import EchoService
             # Connect to a running EchoService
             mcp_client = EchoService.mcp.connect("http://localhost:8000")
 
@@ -65,7 +65,7 @@ class MCPClientManager:
             FastMCP Client instance connected to the newly launched service
 
         Example::
-            from mindtrace.services.sample.echo_mcp import EchoService
+            from mindtrace.services.samples.echo_mcp import EchoService
 
             mcp_client = EchoService.mcp.launch(
                                                 host="localhost",

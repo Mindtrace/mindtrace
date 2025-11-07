@@ -44,7 +44,6 @@ class MindtraceODMBackend(MindtraceABC):
                 else:
                     result = backend.insert(document)
         """
-        pass
 
     @abstractmethod
     def insert(self, obj: BaseModel):
@@ -72,7 +71,6 @@ class MindtraceODMBackend(MindtraceABC):
                 user = User(name="John", email="john@example.com")
                 inserted_user = backend.insert(user)
         """
-        pass
 
     @abstractmethod
     def get(self, id: str) -> BaseModel:
@@ -97,7 +95,6 @@ class MindtraceODMBackend(MindtraceABC):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        pass
 
     @abstractmethod
     def delete(self, id: str):
@@ -119,7 +116,6 @@ class MindtraceODMBackend(MindtraceABC):
                 except DocumentNotFoundError:
                     print("User not found")
         """
-        pass
 
     @abstractmethod
     def all(self) -> list[BaseModel]:
@@ -137,4 +133,3 @@ class MindtraceODMBackend(MindtraceABC):
                 for user in all_users:
                     print(f"- {user.name}")
         """
-        pass
