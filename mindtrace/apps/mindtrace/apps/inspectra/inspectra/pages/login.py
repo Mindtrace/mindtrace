@@ -27,8 +27,8 @@ def _left_panel() -> rx.Component:
             rx.form(
                 rx.vstack(
                     rx.input(
-                        name="username",
-                        placeholder="Username",
+                        name="email",
+                        placeholder="email",
                         required=True,
                         border=f"1px solid {DS.color.border}",
                         padding=DS.space_px.sm,
