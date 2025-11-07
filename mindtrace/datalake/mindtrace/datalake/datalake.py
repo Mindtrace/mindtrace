@@ -518,7 +518,49 @@ class Datalake(Mindtrace):
             elif derived_strategy == "random":
                 pipeline.append({
                     "$addFields": {
-                        derived_column: {"$slice": [f"${derived_column}", 1]}
+                        derived_column: {
+                            "$let": {
+                                "vars": {
+                                    "items": f"${derived_column}",
+                                    "count": {"$size": f"${derived_column}"}
+                                },
+                                "in": {
+                                    "$let": {
+                                        "vars": {
+                                            "randIndex": {
+                                                "$cond": [
+                                                    {"$gt": ["$$count", 0]},
+                                                    {
+                                                        "$floor": {
+                                                            "$multiply": [
+                                                                {"$rand": {}},
+                                                                "$$count"
+                                                            ]
+                                                        }
+                                                    },
+                                                    None
+                                                ]
+                                            }
+                                        },
+                                        "in": {
+                                            "$cond": [
+                                                {"$or": [
+                                                    {"$eq": ["$$count", 0]},
+                                                    {"$eq": ["$$randIndex", None]}
+                                                ]},
+                                                [],
+                                                [{
+                                                    "$arrayElemAt": [
+                                                        "$$items",
+                                                        {"$toInt": "$$randIndex"}
+                                                    ]
+                                                }]
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 })
             elif derived_strategy == "missing":
