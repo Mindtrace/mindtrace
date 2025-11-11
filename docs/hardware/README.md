@@ -1,0 +1,1 @@
+../../mindtrace/hardware/README.md
