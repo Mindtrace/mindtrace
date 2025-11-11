@@ -599,6 +599,31 @@ class MockGenICamCameraBackend(CameraBackend):
 
         self.logger.debug("Mock camera ROI reset to maximum")
 
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        if timeout_ms < 0:
+            raise ValueError(f"Timeout must be non-negative, got {timeout_ms}")
+
+        await asyncio.sleep(0.001)  # Simulate operation delay
+        self.timeout_ms = timeout_ms
+        self.logger.debug(f"Set capture timeout to {timeout_ms}ms for camera '{self.camera_name}'")
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        await asyncio.sleep(0.001)  # Simulate operation delay
+        return self.timeout_ms
+
     async def import_config(self, config_path: str):
         """Import simulated camera configuration from JSON file."""
         if not os.path.exists(config_path):

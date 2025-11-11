@@ -406,7 +406,7 @@ class AsyncCamera(Mindtrace):
 
         Args:
             **settings: Supported keys include exposure, gain, roi=(x, y, w, h), trigger_mode,
-                pixel_format, white_balance, image_enhancement.
+                pixel_format, white_balance, image_enhancement, capture_timeout.
 
         Raises:
             CameraConfigurationError: If a provided value is invalid for the backend.
@@ -432,6 +432,11 @@ class AsyncCamera(Mindtrace):
                 await self._backend.set_auto_wb_once(settings["white_balance"])
             if "image_enhancement" in settings:
                 await self._backend.set_image_quality_enhancement(settings["image_enhancement"])
+            # Handle both "capture_timeout" and "timeout_ms" for backwards compatibility
+            if "capture_timeout" in settings:
+                await self._backend.set_capture_timeout(settings["capture_timeout"])
+            elif "timeout_ms" in settings:
+                await self._backend.set_capture_timeout(settings["timeout_ms"])
             self.logger.debug(f"Configuration completed for camera '{self._full_name}'")
             return True
 
@@ -487,6 +492,26 @@ class AsyncCamera(Mindtrace):
         """
         range_list = await self._backend.get_gain_range()
         return range_list[0], range_list[1]
+
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        await self._backend.set_capture_timeout(timeout_ms)
+        return True
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        return await self._backend.get_capture_timeout()
 
     async def set_roi(self, x: int, y: int, width: int, height: int):
         """Set the Region of Interest (ROI).
