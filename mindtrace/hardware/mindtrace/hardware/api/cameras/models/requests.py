@@ -267,11 +267,24 @@ class BandwidthLimitRequest(BaseModel):
 
 
 class CameraPerformanceSettingsRequest(BaseModel):
-    """Request model for updating camera performance settings."""
+    """Request model for updating camera performance settings.
 
+    Global settings (always applicable):
+    - timeout_ms, retrieve_retry_count, max_concurrent_captures
+
+    Per-camera GigE settings (requires camera field, only for GigE cameras):
+    - packet_size, inter_packet_delay, bandwidth_limit_mbps
+    """
+
+    camera: Optional[str] = Field(None, description="Optional camera name for per-camera GigE settings (format 'Backend:device_name')")
     timeout_ms: Optional[int] = Field(None, ge=100, le=30000, description="Capture timeout in milliseconds (100-30000)")
     retrieve_retry_count: Optional[int] = Field(None, ge=1, le=10, description="Number of capture retry attempts (1-10)")
     max_concurrent_captures: Optional[int] = Field(None, ge=1, le=10, description="Maximum concurrent captures (1-10)")
+
+    # GigE-specific performance parameters (require camera field)
+    packet_size: Optional[int] = Field(None, ge=1476, le=16000, description="GigE packet size in bytes (1476-16000, typically 1500 or 9000)")
+    inter_packet_delay: Optional[int] = Field(None, ge=0, le=65535, description="Inter-packet delay in ticks (0-65535, higher = slower)")
+    bandwidth_limit_mbps: Optional[float] = Field(None, ge=1.0, le=10000.0, description="Bandwidth limit in Mbps (1.0-10000.0, None = unlimited)")
 
 
 # Specific Camera Parameter Requests

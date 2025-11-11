@@ -256,11 +256,24 @@ class BandwidthSettingsResponse(BaseResponse):
 
 
 class CameraPerformanceSettings(BaseModel):
-    """Camera performance and retry settings model."""
+    """Camera performance and retry settings model.
 
+    Global settings:
+    - timeout_ms, retrieve_retry_count, max_concurrent_captures
+
+    Per-camera GigE settings (None if not applicable or not queried):
+    - packet_size, inter_packet_delay, bandwidth_limit_mbps
+    """
+
+    camera: Optional[str] = None  # Camera name if per-camera settings are included
     timeout_ms: int
     retrieve_retry_count: int
     max_concurrent_captures: int
+
+    # GigE-specific performance parameters (None if not GigE camera or not queried)
+    packet_size: Optional[int] = None
+    inter_packet_delay: Optional[int] = None
+    bandwidth_limit_mbps: Optional[float] = None
 
 
 class CameraPerformanceSettingsResponse(BaseResponse):
