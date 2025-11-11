@@ -217,7 +217,7 @@ def test_exists(gcs_handler, sample_files):
     assert gcs_handler.exists(remote_path)
 
 
-def test_get_presigned_url(gcs_handler, sample_files):
+def test_get_presigned_url(gcs_handler, sample_files, test_bucket):
     """Test generating presigned URLs."""
     remote_path = "test/presigned/file1.txt"
     gcs_handler.upload(str(sample_files / "file1.txt"), remote_path)
@@ -354,7 +354,7 @@ def test_concurrent_operations(gcs_handler, sample_files):
         upload_thread.start()
         
         # Small delay to ensure uploads complete
-        time.sleep(0.1)
+        time.sleep(0.5)
         
         # Download thread
         download_thread = threading.Thread(target=download_worker, args=(i,))
