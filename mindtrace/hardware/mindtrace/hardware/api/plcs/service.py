@@ -161,6 +161,7 @@ class PLCManagerService(Service):
             as_tool=True,
         )
 
+
     # Backend & Discovery Operations
     async def discover_backends(self) -> BackendsResponse:
         """Discover available PLC backends."""

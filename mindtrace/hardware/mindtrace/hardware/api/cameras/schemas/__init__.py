@@ -75,7 +75,7 @@ ALL_SCHEMAS = {
     "capture_images_batch": CaptureImagesBatchSchema,
     "capture_hdr_image": CaptureHDRImageSchema,
     "capture_hdr_images_batch": CaptureHDRImagesBatchSchema,
-    # Network & Performance (bandwidth control moved to performance settings)
+    # Network & Performance
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
     "get_performance_settings": GetPerformanceSettingsSchema,
     "set_performance_settings": SetPerformanceSettingsSchema,
