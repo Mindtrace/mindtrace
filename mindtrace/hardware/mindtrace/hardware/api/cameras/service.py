@@ -147,7 +147,7 @@ class CameraManagerService(Service):
     def _register_endpoints(self):
         """Register all service endpoints."""
         # Health check endpoint
-        self.add_endpoint("health", self.health_check, None, methods=["GET"])
+        self.add_endpoint("health", self.health_check, None, methods=["GET"], as_tool=False)
 
         # Backend & Discovery
         self.add_endpoint(
@@ -237,7 +237,6 @@ class CameraManagerService(Service):
         self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
 
         # Network & Diagnostics
-        # Note: Bandwidth limit control moved to /cameras/performance/settings
         self.add_endpoint(
             "network/diagnostics",
             self.get_network_diagnostics,
@@ -1055,8 +1054,6 @@ class CameraManagerService(Service):
             raise
 
     # Network Diagnostics Operations
-    # Note: Bandwidth limit control has been deprecated and moved to performance settings
-    # Use /cameras/performance/settings to control max_concurrent_captures
 
     async def get_network_diagnostics(self) -> NetworkDiagnosticsResponse:
         """Get network diagnostics information."""

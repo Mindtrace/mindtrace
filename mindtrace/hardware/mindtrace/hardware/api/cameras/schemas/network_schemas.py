@@ -14,7 +14,6 @@ GetNetworkDiagnosticsSchema = TaskSchema(
 )
 
 # Camera Performance Schemas
-# Note: Use these endpoints for bandwidth/concurrency control instead of deprecated /network/bandwidth
 GetPerformanceSettingsSchema = TaskSchema(
     name="get_performance_settings", input_schema=None, output_schema=CameraPerformanceSettingsResponse
 )
