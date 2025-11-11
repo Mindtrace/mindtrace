@@ -1126,20 +1126,10 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
 
-            # Get timeout and retry settings from first active camera, or use defaults
-            timeout_ms = 5000
-            retrieve_retry_count = 3
-
-            if manager.active_cameras:
-                first_camera_name = list(manager.active_cameras)[0]
-                camera = manager._cameras.get(first_camera_name)
-                if camera and hasattr(camera, '_backend'):
-                    timeout_ms = getattr(camera._backend, 'timeout_ms', 5000)
-                    retrieve_retry_count = getattr(camera._backend, 'retrieve_retry_count', 3)
-
+            # Get settings from manager (persisted across camera open/close)
             settings = CameraPerformanceSettings(
-                timeout_ms=timeout_ms,
-                retrieve_retry_count=retrieve_retry_count,
+                timeout_ms=manager.timeout_ms,
+                retrieve_retry_count=manager.retrieve_retry_count,
                 max_concurrent_captures=manager.max_concurrent_captures,
             )
 
@@ -1156,22 +1146,14 @@ class CameraManagerService(Service):
             manager = await self._get_camera_manager()
             updates = []
 
-            # Update timeout_ms for all active cameras
+            # Update timeout_ms (persisted on manager, auto-applies to active + future cameras)
             if request.timeout_ms is not None:
-                for camera_name in manager.active_cameras:
-                    camera = manager._cameras.get(camera_name)
-                    if camera and hasattr(camera, '_backend'):
-                        camera._backend.timeout_ms = request.timeout_ms
-                        # Update derived timeout as well
-                        camera._backend._op_timeout_s = max(1.0, float(request.timeout_ms) / 1000.0)
+                manager.timeout_ms = request.timeout_ms
                 updates.append(f"timeout_ms={request.timeout_ms}ms")
 
-            # Update retrieve_retry_count for all active cameras
+            # Update retrieve_retry_count (persisted on manager, auto-applies to active + future cameras)
             if request.retrieve_retry_count is not None:
-                for camera_name in manager.active_cameras:
-                    camera = manager._cameras.get(camera_name)
-                    if camera and hasattr(camera, '_backend'):
-                        camera._backend.retrieve_retry_count = request.retrieve_retry_count
+                manager.retrieve_retry_count = request.retrieve_retry_count
                 updates.append(f"retrieve_retry_count={request.retrieve_retry_count}")
 
             # Update max_concurrent_captures
