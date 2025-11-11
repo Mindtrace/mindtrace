@@ -35,18 +35,18 @@ class PLCManagerConnectionManager(ConnectionManager):
     making it easy to use the service programmatically from other applications.
     """
 
-    async def get(self, endpoint: str, timeout: float = 60.0) -> Dict[str, Any]:
+    async def get(self, endpoint: str, http_timeout: float = 60.0) -> Dict[str, Any]:
         """Make GET request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout) as client:
             response = await client.get(url)
             response.raise_for_status()
             return response.json()
 
-    async def post(self, endpoint: str, data: Dict[str, Any] = None, timeout: float = 60.0) -> Dict[str, Any]:
+    async def post(self, endpoint: str, data: Dict[str, Any] = None, http_timeout: float = 60.0) -> Dict[str, Any]:
         """Make POST request to service endpoint."""
         url = urljoin(str(self.url), endpoint.lstrip("/"))
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=http_timeout) as client:
             response = await client.post(url, json=data or {})
             response.raise_for_status()
             return response.json()
