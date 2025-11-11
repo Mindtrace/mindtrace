@@ -102,6 +102,9 @@ class CaptureBatchRequest(BaseModel):
     """Request model for batch image capture."""
 
     cameras: List[str] = Field(..., description="List of camera names to capture from")
+    save_path_pattern: Optional[str] = Field(
+        None, description="Optional path pattern for saving images. Use {camera} placeholder for camera name"
+    )
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
 
@@ -163,6 +166,14 @@ class BandwidthLimitRequest(BaseModel):
     """Request model for setting bandwidth limit."""
 
     max_concurrent_captures: int = Field(..., ge=1, le=10, description="Maximum number of concurrent captures (1-10)")
+
+
+class CameraPerformanceSettingsRequest(BaseModel):
+    """Request model for updating camera performance settings."""
+
+    timeout_ms: Optional[int] = Field(None, ge=100, le=30000, description="Capture timeout in milliseconds (100-30000)")
+    retrieve_retry_count: Optional[int] = Field(None, ge=1, le=10, description="Number of capture retry attempts (1-10)")
+    max_concurrent_captures: Optional[int] = Field(None, ge=1, le=10, description="Maximum concurrent captures (1-10)")
 
 
 # Specific Camera Parameter Requests

@@ -255,6 +255,20 @@ class BandwidthSettingsResponse(BaseResponse):
     data: BandwidthSettings
 
 
+class CameraPerformanceSettings(BaseModel):
+    """Camera performance and retry settings model."""
+
+    timeout_ms: int
+    retrieve_retry_count: int
+    max_concurrent_captures: int
+
+
+class CameraPerformanceSettingsResponse(BaseResponse):
+    """Response model for camera performance settings."""
+
+    data: CameraPerformanceSettings
+
+
 class NetworkDiagnostics(BaseModel):
     """Network diagnostics model."""
 

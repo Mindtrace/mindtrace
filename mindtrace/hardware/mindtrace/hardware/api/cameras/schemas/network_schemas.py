@@ -5,6 +5,8 @@ from mindtrace.hardware.api.cameras.models import (
     BandwidthLimitRequest,
     BandwidthSettingsResponse,
     BoolResponse,
+    CameraPerformanceSettingsRequest,
+    CameraPerformanceSettingsResponse,
     NetworkDiagnosticsResponse,
 )
 
@@ -21,8 +23,19 @@ GetNetworkDiagnosticsSchema = TaskSchema(
     name="get_network_diagnostics", input_schema=None, output_schema=NetworkDiagnosticsResponse
 )
 
+# Camera Performance Schemas
+GetPerformanceSettingsSchema = TaskSchema(
+    name="get_performance_settings", input_schema=None, output_schema=CameraPerformanceSettingsResponse
+)
+
+SetPerformanceSettingsSchema = TaskSchema(
+    name="set_performance_settings", input_schema=CameraPerformanceSettingsRequest, output_schema=BoolResponse
+)
+
 __all__ = [
     "GetBandwidthSettingsSchema",
     "SetBandwidthLimitSchema",
     "GetNetworkDiagnosticsSchema",
+    "GetPerformanceSettingsSchema",
+    "SetPerformanceSettingsSchema",
 ]
