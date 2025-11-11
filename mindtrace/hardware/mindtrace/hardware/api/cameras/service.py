@@ -322,27 +322,26 @@ class CameraManagerService(Service):
             try:
                 camera_proxy = await manager.get_camera(request.camera)
                 if camera_proxy:
-                    # Try to get exposure time (GenICam cameras)
-                    if hasattr(camera_proxy._backend, "image_acquirer"):
-                        ia = camera_proxy._backend.image_acquirer
-                        if ia and hasattr(ia, "remote_device"):
-                            node_map = ia.remote_device.node_map
-                            if hasattr(node_map, "ExposureTime"):
-                                exposure_us = node_map.ExposureTime.value
-                                exposure_ms = exposure_us / 1000.0
+                    # Try to get exposure time through properly abstracted method
+                    try:
+                        exposure_us = await camera_proxy.get_exposure()
+                        exposure_ms = exposure_us / 1000.0
 
-                                if exposure_ms > 1000:  # > 1 second
-                                    self.logger.warning(
-                                        f"Camera '{request.camera}' has high exposure time: {exposure_ms:.0f}ms. "
-                                        f"This will cause slow capture (<1 FPS) and streaming timeouts. "
-                                        f"Recommended: <100ms for streaming, <500ms for general use."
-                                    )
-                                elif exposure_ms > 100:  # > 100ms
-                                    self.logger.info(
-                                        f"Camera '{request.camera}' exposure time: {exposure_ms:.0f}ms. "
-                                        f"This may be slow for real-time streaming (< {1000 / exposure_ms:.1f} FPS max). "
-                                        f"Consider reducing exposure for better streaming performance."
-                                    )
+                        if exposure_ms > 1000:  # > 1 second
+                            self.logger.warning(
+                                f"Camera '{request.camera}' has high exposure time: {exposure_ms:.0f}ms. "
+                                f"This will cause slow capture (<1 FPS) and streaming timeouts. "
+                                f"Recommended: <100ms for streaming, <500ms for general use."
+                            )
+                        elif exposure_ms > 100:  # > 100ms
+                            self.logger.info(
+                                f"Camera '{request.camera}' exposure time: {exposure_ms:.0f}ms. "
+                                f"This may be slow for real-time streaming (< {1000 / exposure_ms:.1f} FPS max). "
+                                f"Consider reducing exposure for better streaming performance."
+                            )
+                    except (NotImplementedError, AttributeError):
+                        # Exposure query not supported for this camera
+                        pass
             except Exception as e:
                 # Don't fail the open operation if exposure check fails
                 self.logger.debug(f"Could not check exposure time for '{request.camera}': {e}")
@@ -538,12 +537,9 @@ class CameraManagerService(Service):
             # Get capabilities from camera backend
             try:
                 exposure_range = await camera_proxy.get_exposure_range()
-                # For OpenCV cameras, explicitly disable exposure control as most don't support it
-                if request.camera.startswith("OpenCV:") and exposure_range is not None:
-                    # Double-check that exposure control is actually supported
-                    if hasattr(camera_proxy.backend, "is_exposure_control_supported"):
-                        if not await camera_proxy.backend.is_exposure_control_supported():
-                            exposure_range = None
+                # Verify exposure control is actually supported (some backends report range but don't support control)
+                if exposure_range is not None and not await camera_proxy.is_exposure_control_supported():
+                    exposure_range = None
             except Exception:
                 exposure_range = None
 
@@ -562,49 +558,35 @@ class CameraManagerService(Service):
             except Exception:
                 white_balance_modes = None
 
-            # Get trigger modes (backend-specific implementation)
+            # Get trigger modes with graceful degradation
             try:
-                backend = camera_proxy.backend
-                if hasattr(backend, "get_trigger_modes"):
-                    trigger_modes = await backend.get_trigger_modes()
-                else:
-                    # Default trigger modes for most cameras
-                    trigger_modes = ["continuous", "triggered"]
+                trigger_modes = await camera_proxy.get_trigger_modes()
             except Exception:
                 trigger_modes = None
 
             try:
-                width_range = await camera_proxy.backend.get_width_range()
+                width_range = await camera_proxy.get_width_range()
             except Exception:
                 width_range = None
 
             try:
-                height_range = await camera_proxy.backend.get_height_range()
+                height_range = await camera_proxy.get_height_range()
             except Exception:
                 height_range = None
 
-            # Network parameters (Basler-specific)
+            # Network parameters (GigE cameras) with graceful degradation
             try:
-                if hasattr(camera_proxy.backend, "get_bandwidth_limit_range"):
-                    bandwidth_limit_range = await camera_proxy.backend.get_bandwidth_limit_range()
-                else:
-                    bandwidth_limit_range = None
+                bandwidth_limit_range = await camera_proxy.get_bandwidth_limit_range()
             except Exception:
                 bandwidth_limit_range = None
 
             try:
-                if hasattr(camera_proxy.backend, "get_packet_size_range"):
-                    packet_size_range = await camera_proxy.backend.get_packet_size_range()
-                else:
-                    packet_size_range = None
+                packet_size_range = await camera_proxy.get_packet_size_range()
             except Exception:
                 packet_size_range = None
 
             try:
-                if hasattr(camera_proxy.backend, "get_inter_packet_delay_range"):
-                    inter_packet_delay_range = await camera_proxy.backend.get_inter_packet_delay_range()
-                else:
-                    inter_packet_delay_range = None
+                inter_packet_delay_range = await camera_proxy.get_inter_packet_delay_range()
             except Exception:
                 inter_packet_delay_range = None
 
@@ -1060,8 +1042,16 @@ class CameraManagerService(Service):
         try:
             manager = await self._get_camera_manager()
 
-            # Count GigE cameras (Basler cameras are typically GigE)
-            gige_count = len([cam for cam in manager.active_cameras if "Basler" in cam])
+            # Count GigE cameras by checking for bandwidth_limit support
+            gige_cameras = []
+            for cam_name in manager.active_cameras:
+                try:
+                    cam = await manager.get_camera(cam_name)
+                    if cam and await cam.supports_feature('bandwidth_limit'):
+                        gige_cameras.append(cam_name)
+                except Exception:
+                    pass  # Skip cameras that can't be queried
+            gige_count = len(gige_cameras)
 
             diagnostics = NetworkDiagnostics(
                 gige_cameras_count=gige_count,
@@ -1077,45 +1067,122 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get network diagnostics: {e}")
             raise
 
-    async def get_performance_settings(self) -> CameraPerformanceSettingsResponse:
-        """Get current camera performance settings (timeout, retries, concurrent captures)."""
+    async def get_performance_settings(self, request: CameraPerformanceSettingsRequest = None) -> CameraPerformanceSettingsResponse:
+        """Get current camera performance settings.
+
+        Returns global settings (timeout, retries, concurrent captures) and optionally
+        per-camera GigE settings (packet_size, inter_packet_delay, bandwidth_limit) if camera is specified.
+        """
         try:
             manager = await self._get_camera_manager()
 
-            # Get settings from manager (persisted across camera open/close)
-            settings = CameraPerformanceSettings(
-                timeout_ms=manager.timeout_ms,
-                retrieve_retry_count=manager.retrieve_retry_count,
-                max_concurrent_captures=manager.max_concurrent_captures,
-            )
+            # Base global settings (always included)
+            settings_dict = {
+                "timeout_ms": manager.timeout_ms,
+                "retrieve_retry_count": manager.retrieve_retry_count,
+                "max_concurrent_captures": manager.max_concurrent_captures,
+            }
+
+            # Add per-camera GigE settings if camera specified
+            if request and request.camera:
+                camera_name = request.camera
+                settings_dict["camera"] = camera_name
+
+                # Check if camera is active
+                if camera_name not in manager.active_cameras:
+                    raise CameraNotFoundError(f"Camera '{camera_name}' is not initialized")
+
+                camera_proxy = await manager.open(camera_name)
+
+                # Try to get GigE-specific settings (gracefully handle non-GigE cameras)
+                try:
+                    packet_size = await camera_proxy.get_packet_size()
+                    settings_dict["packet_size"] = packet_size
+                except (NotImplementedError, AttributeError):
+                    pass  # Not a GigE camera or not supported
+
+                try:
+                    inter_packet_delay = await camera_proxy.get_inter_packet_delay()
+                    settings_dict["inter_packet_delay"] = inter_packet_delay
+                except (NotImplementedError, AttributeError):
+                    pass  # Not a GigE camera or not supported
+
+                try:
+                    bandwidth_limit_bps = await camera_proxy.get_bandwidth_limit()
+                    # Convert from Mbps to Mbps (backend returns Mbps)
+                    settings_dict["bandwidth_limit_mbps"] = bandwidth_limit_bps
+                except (NotImplementedError, AttributeError):
+                    pass  # Not a GigE camera or not supported
+
+            settings = CameraPerformanceSettings(**settings_dict)
+
+            message = "Performance settings retrieved successfully"
+            if request and request.camera:
+                message += f" for camera '{request.camera}'"
 
             return CameraPerformanceSettingsResponse(
-                success=True, message="Performance settings retrieved successfully", data=settings
+                success=True, message=message, data=settings
             )
         except Exception as e:
             self.logger.error(f"Failed to get performance settings: {e}")
             raise
 
     async def set_performance_settings(self, request: CameraPerformanceSettingsRequest) -> BoolResponse:
-        """Update camera performance settings (timeout, retries, concurrent captures)."""
+        """Update camera performance settings.
+
+        Updates global settings (timeout, retries, concurrent captures) and optionally
+        per-camera GigE settings (packet_size, inter_packet_delay, bandwidth_limit) if camera is specified.
+        """
         try:
             manager = await self._get_camera_manager()
             updates = []
 
-            # Update timeout_ms (persisted on manager, auto-applies to active + future cameras)
+            # Update global settings (persisted on manager, auto-applies to active + future cameras)
             if request.timeout_ms is not None:
                 manager.timeout_ms = request.timeout_ms
                 updates.append(f"timeout_ms={request.timeout_ms}ms")
 
-            # Update retrieve_retry_count (persisted on manager, auto-applies to active + future cameras)
             if request.retrieve_retry_count is not None:
                 manager.retrieve_retry_count = request.retrieve_retry_count
                 updates.append(f"retrieve_retry_count={request.retrieve_retry_count}")
 
-            # Update max_concurrent_captures
             if request.max_concurrent_captures is not None:
                 manager.max_concurrent_captures = request.max_concurrent_captures
                 updates.append(f"max_concurrent_captures={request.max_concurrent_captures}")
+
+            # Update per-camera GigE settings if camera specified and parameters provided
+            if request.camera and any([request.packet_size, request.inter_packet_delay, request.bandwidth_limit_mbps]):
+                camera_name = request.camera
+
+                # Check if camera is active
+                if camera_name not in manager.active_cameras:
+                    raise CameraNotFoundError(f"Camera '{camera_name}' is not initialized")
+
+                camera_proxy = await manager.open(camera_name)
+
+                # Update packet_size
+                if request.packet_size is not None:
+                    try:
+                        await camera_proxy.set_packet_size(request.packet_size)
+                        updates.append(f"packet_size={request.packet_size}bytes")
+                    except (NotImplementedError, AttributeError) as e:
+                        self.logger.warning(f"Packet size not supported for camera '{camera_name}': {e}")
+
+                # Update inter_packet_delay
+                if request.inter_packet_delay is not None:
+                    try:
+                        await camera_proxy.set_inter_packet_delay(request.inter_packet_delay)
+                        updates.append(f"inter_packet_delay={request.inter_packet_delay}ticks")
+                    except (NotImplementedError, AttributeError) as e:
+                        self.logger.warning(f"Inter-packet delay not supported for camera '{camera_name}': {e}")
+
+                # Update bandwidth_limit
+                if request.bandwidth_limit_mbps is not None:
+                    try:
+                        await camera_proxy.set_bandwidth_limit(request.bandwidth_limit_mbps)
+                        updates.append(f"bandwidth_limit={request.bandwidth_limit_mbps}Mbps")
+                    except (NotImplementedError, AttributeError) as e:
+                        self.logger.warning(f"Bandwidth limit not supported for camera '{camera_name}': {e}")
 
             message = f"Performance settings updated: {', '.join(updates)}" if updates else "No settings updated"
             return BoolResponse(success=True, message=message, data=True)
