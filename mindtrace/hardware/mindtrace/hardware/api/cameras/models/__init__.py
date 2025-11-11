@@ -14,6 +14,7 @@ from mindtrace.hardware.api.cameras.models.requests import (
     CameraOpenBatchRequest,
     # Camera Lifecycle
     CameraOpenRequest,
+    CameraPerformanceSettingsRequest,
     CameraQueryRequest,
     CaptureBatchRequest,
     CaptureHDRBatchRequest,
@@ -61,6 +62,8 @@ from mindtrace.hardware.api.cameras.models.responses import (
     # Camera Information
     CameraInfo,
     CameraInfoResponse,
+    CameraPerformanceSettings,
+    CameraPerformanceSettingsResponse,
     CameraStatus,
     CameraStatusResponse,
     CaptureResponse,
@@ -104,6 +107,7 @@ __all__ = [
     "CameraConfigureRequest",
     "CameraConfigureBatchRequest",
     "CameraQueryRequest",
+    "CameraPerformanceSettingsRequest",
     "ConfigFileImportRequest",
     "ConfigFileExportRequest",
     "CaptureImageRequest",
@@ -143,6 +147,8 @@ __all__ = [
     "CameraStatusResponse",
     "CameraCapabilitiesResponse",
     "CameraConfigurationResponse",
+    "CameraPerformanceSettings",
+    "CameraPerformanceSettingsResponse",
     "ActiveCamerasResponse",
     "CaptureResult",
     "CaptureResponse",
