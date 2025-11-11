@@ -1,21 +1,49 @@
 """
 Scenario factory for creating test scenarios from YAML configurations.
+
+YAML-based scenario creation - all scenario logic defined in YAML files.
 """
 
+from typing import Any, Dict, List
+
 from mindtrace.hardware.test_suite.cameras.config_loader import load_config
-from mindtrace.hardware.test_suite.cameras.scenarios import (
-    CaptureStressScenario,
-    ChaosScenario,
-    MultiCameraScenario,
-    SmokeTestScenario,
-    StreamStressScenario,
-)
-from mindtrace.hardware.test_suite.core.scenario import HardwareScenario
+from mindtrace.hardware.test_suite.core.scenario import HardwareScenario, Operation, OperationType
+
+
+def _parse_operation(op_dict: Dict[str, Any]) -> Operation:
+    """
+    Parse a single operation from YAML dictionary.
+
+    Args:
+        op_dict: Operation dictionary from YAML
+
+    Returns:
+        Operation instance
+    """
+    # Convert action string to OperationType enum
+    action = OperationType(op_dict["action"])
+
+    # Extract optional fields with defaults
+    return Operation(
+        action=action,
+        endpoint=op_dict.get("endpoint"),
+        method=op_dict.get("method", "POST"),
+        payload=op_dict.get("payload", {}),
+        timeout=op_dict.get("timeout", 5.0),
+        repeat=op_dict.get("repeat", 1),
+        delay=op_dict.get("delay", 0.0),
+        expected_success=op_dict.get("expected_success", True),
+        store_result=op_dict.get("store_result"),
+        use_stored=op_dict.get("use_stored"),
+    )
 
 
 def create_scenario_from_config(config_name: str) -> HardwareScenario:
     """
     Create a test scenario from a YAML configuration file.
+
+    This is the generic factory - all scenario logic is defined in YAML.
+    No Python classes required for new scenarios.
 
     Args:
         config_name: Name of config file (e.g., "smoke_test" or "smoke_test.yaml")
@@ -25,75 +53,51 @@ def create_scenario_from_config(config_name: str) -> HardwareScenario:
 
     Raises:
         FileNotFoundError: If config file doesn't exist
-        ValueError: If scenario type is unknown
+        ValueError: If required YAML fields are missing
+        KeyError: If YAML structure is invalid
     """
     # Load configuration
     config = load_config(config_name)
 
-    # Extract common parameters
+    # Validate required top-level keys
+    required_keys = ["name", "description", "api", "expectations"]
+    missing_keys = [key for key in required_keys if key not in config]
+    if missing_keys:
+        raise ValueError(f"Missing required YAML keys: {missing_keys}")
+
+    # Validate operations exist
+    if "operations" not in config or not config["operations"]:
+        raise ValueError(f"Scenario '{config['name']}' must have at least one operation")
+
+    # Parse operations from YAML
+    operations = [_parse_operation(op) for op in config["operations"]]
+
+    # Parse cleanup operations (optional)
+    cleanup_operations = []
+    if "cleanup_operations" in config and config["cleanup_operations"]:
+        cleanup_operations = [_parse_operation(op) for op in config["cleanup_operations"]]
+
+    # Extract configuration values with defaults
     api_base_url = config["api"]["base_url"]
-    backend = config["hardware"]["backend"]
-    scenario_name = config["name"]
+    timeout_per_operation = config["expectations"].get("timeout_per_operation", 5.0)
+    total_timeout = config["expectations"].get("total_timeout", 300.0)
+    expected_success_rate = config["expectations"].get("expected_success_rate", 0.95)
+    tags = config.get("tags", [])
 
-    # Create appropriate scenario based on name
-    if scenario_name == "smoke_test":
-        scenario = SmokeTestScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-        )
+    # Create scenario with parsed operations
+    scenario = HardwareScenario(
+        name=config["name"],
+        description=config["description"],
+        api_base_url=api_base_url,
+        operations=operations,
+        cleanup_operations=cleanup_operations,
+        timeout_per_operation=timeout_per_operation,
+        total_timeout=total_timeout,
+        expected_success_rate=expected_success_rate,
+        tags=tags,
+    )
 
-    elif scenario_name == "capture_stress":
-        scenario = CaptureStressScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-            capture_count=config["test"]["capture_count"],
-            exposure_us=config["test"]["exposure_us"],
-        )
-
-    elif scenario_name == "multi_camera":
-        scenario = MultiCameraScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-            camera_count=config["hardware"]["camera_count"],
-            batch_capture_count=config["test"]["batch_capture_count"],
-            max_concurrent=config["test"]["max_concurrent_captures"],
-        )
-
-    elif scenario_name == "stream_stress":
-        scenario = StreamStressScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-            stream_cycles=config["test"]["stream_cycles"],
-            stream_duration=config["test"]["stream_duration"],
-        )
-
-    elif scenario_name == "chaos_test":
-        scenario = ChaosScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-            camera_count=config["hardware"]["camera_count"],
-        )
-
-    elif scenario_name == "soak_test":
-        # Soak test uses capture stress with higher counts
-        scenario = CaptureStressScenario(
-            api_base_url=api_base_url,
-            backend=backend,
-            capture_count=config["test"]["capture_count"],
-            exposure_us=config["test"]["exposure_us"],
-        )
-
-    else:
-        raise ValueError(
-            f"Unknown scenario type: {scenario_name}. "
-            f"Available: smoke_test, capture_stress, multi_camera, stream_stress, chaos_test, soak_test"
-        )
-
-    # Override expectations from config
-    if "expectations" in config:
-        if "total_timeout" in config["expectations"]:
-            scenario.total_timeout = config["expectations"]["total_timeout"]
-        if "expected_success_rate" in config["expectations"]:
-            scenario.expected_success_rate = config["expectations"]["expected_success_rate"]
+    # Validate scenario
+    scenario.validate()
 
     return scenario
