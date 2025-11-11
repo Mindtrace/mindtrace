@@ -1,12 +1,12 @@
 # Chaos Test Configuration
-# Edge case discovery through random operations
+# Edge case discovery through aggressive operations
 
 name: chaos_test
 description: Deliberately aggressive test to find edge cases and race conditions
 
 # API Configuration
 api:
-  base_url: http://localhost:8002
+  base_url: http://localhost:8003
   timeout: 30.0
 
 # Hardware Configuration
@@ -29,6 +29,7 @@ test:
 # Expectations
 expectations:
   total_timeout: 300.0  # 5 minutes
+  timeout_per_operation: 15.0
   expected_success_rate: 0.70  # 70% - lower expectations for chaos
 
 # Tags
@@ -37,3 +38,71 @@ tags:
   - edge-cases
   - race-conditions
   - aggressive
+
+# Test Operations
+operations:
+  - action: discover
+    payload:
+      backend: Basler
+    timeout: 10.0
+    store_result: cameras
+
+  # Open multiple cameras
+  - action: open_batch
+    payload:
+      cameras: "$cameras[0:2]"
+      test_connection: false
+    timeout: 30.0
+
+  # Rapid configuration changes
+  - action: configure
+    payload:
+      camera: "$cameras[0]"
+      properties:
+        exposure: 1000
+    timeout: 3.0
+
+  - action: configure
+    payload:
+      camera: "$cameras[0]"
+      properties:
+        exposure: 100000
+    timeout: 3.0
+
+  - action: configure
+    payload:
+      camera: "$cameras[0]"
+      properties:
+        exposure: 2000
+    timeout: 3.0
+
+  # Capture during configuration (may fail)
+  - action: capture
+    payload:
+      camera: "$cameras[0]"
+    timeout: 5.0
+    expected_success: false
+
+  # Close and reopen rapidly
+  - action: close
+    payload:
+      camera: "$cameras[0]"
+    timeout: 5.0
+
+  - action: open
+    payload:
+      camera: "$cameras[0]"
+      test_connection: false
+    timeout: 15.0
+
+  # Batch operations on mixed states
+  - action: capture_batch
+    payload:
+      cameras: "$cameras[0:2]"
+    timeout: 10.0
+    expected_success: false
+
+# Cleanup Operations (always run)
+cleanup_operations:
+  - action: close_all
+    timeout: 10.0

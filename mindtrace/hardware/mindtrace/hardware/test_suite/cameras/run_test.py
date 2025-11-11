@@ -13,9 +13,9 @@ import asyncio
 import sys
 
 from mindtrace.hardware.test_suite.cameras.config_loader import list_available_configs
-from mindtrace.hardware.test_suite.cameras.runner import CameraTestRunner
 from mindtrace.hardware.test_suite.cameras.scenario_factory import create_scenario_from_config
 from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
+from mindtrace.hardware.test_suite.core.runner import HardwareTestRunner
 
 
 async def run_test(config_name: str):
@@ -42,7 +42,7 @@ async def run_test(config_name: str):
         print("\n🚀 Starting test execution...")
 
         # Execute scenario
-        async with CameraTestRunner(scenario.api_base_url) as runner:
+        async with HardwareTestRunner(api_base_url=scenario.api_base_url) as runner:
             monitor = HardwareMonitor(scenario.name)
             result = await runner.execute_scenario(scenario, monitor)
 
