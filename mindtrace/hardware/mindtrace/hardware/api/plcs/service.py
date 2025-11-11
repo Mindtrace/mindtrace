@@ -115,10 +115,10 @@ class PLCManagerService(Service):
         """Register all service endpoints."""
         # Backend & Discovery
         self.add_endpoint(
-            "backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
+            "plcs/backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
         )
         self.add_endpoint(
-            "backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
+            "plcs/backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
         )
         self.add_endpoint("plcs/discover", self.discover_plcs, ALL_SCHEMAS["discover_plcs"], as_tool=True)
 

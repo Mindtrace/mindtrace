@@ -151,10 +151,10 @@ class CameraManagerService(Service):
 
         # Backend & Discovery
         self.add_endpoint(
-            "backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
+            "cameras/backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
         )
         self.add_endpoint(
-            "backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
+            "cameras/backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
         )
         self.add_endpoint(
             "cameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], methods=["POST"], as_tool=True
