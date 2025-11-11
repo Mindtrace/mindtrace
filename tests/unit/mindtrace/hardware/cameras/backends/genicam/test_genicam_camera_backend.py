@@ -1,10 +1,4 @@
-import asyncio
-import json
-import os
-import tempfile
-import time
-from unittest.mock import MagicMock, Mock, patch, PropertyMock
-from typing import Any, Optional
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -13,11 +7,8 @@ from mindtrace.hardware.core.exceptions import (
     CameraCaptureError,
     CameraConfigurationError,
     CameraConnectionError,
-    CameraInitializationError,
     CameraNotFoundError,
-    CameraTimeoutError,
     HardwareOperationError,
-    SDKNotAvailableError,
 )
 
 
@@ -25,7 +16,9 @@ from mindtrace.hardware.core.exceptions import (
 class MockDeviceInfo:
     """Mock device info from Harvester."""
 
-    def __init__(self, serial_number="12345678", model="CV-X420", vendor="Keyence", unique_id="TLUsb::0x1234::0x5678::12345678"):
+    def __init__(
+        self, serial_number="12345678", model="CV-X420", vendor="Keyence", unique_id="TLUsb::0x1234::0x5678::12345678"
+    ):
         self.serial_number = serial_number
         self.model = model
         self.vendor = vendor
@@ -297,6 +290,7 @@ def mock_harvester():
 @pytest.fixture
 def mock_harvester_module(mock_harvester):
     """Patch harvesters module and return mock Harvester."""
+
     # Patch the Harvester class to return NEW mock instances on each call
     # Also patch os.path.exists to make CTI file "exist"
     def create_mock_harvester():
@@ -309,8 +303,10 @@ def mock_harvester_module(mock_harvester):
         ]
         return harvester
 
-    with patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.Harvester") as MockHarvesterClass, \
-         patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True):
+    with (
+        patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.Harvester") as MockHarvesterClass,
+        patch("mindtrace.hardware.cameras.backends.genicam.genicam_camera_backend.os.path.exists", return_value=True),
+    ):
         MockHarvesterClass.side_effect = create_mock_harvester
         yield mock_harvester
 
@@ -570,14 +566,12 @@ class TestTriggerModeDetection:
         )
 
         await backend.initialize()
-        
 
         # Attempting to set trigger mode should handle gracefully or raise configuration error
         with pytest.raises((CameraConfigurationError, RuntimeError)):
             await backend.set_triggermode("On")
 
         # Cleanup
-        
 
 
 # Note: Software trigger methods (set_trigger_source, execute_software_trigger)
@@ -699,7 +693,6 @@ class TestImageCapture:
         assert isinstance(image, np.ndarray)
         assert image.shape == (1080, 1920, 3)  # Height, Width, Channels
 
-
     @pytest.mark.asyncio
     async def test_acquisition_auto_started(self, genicam_backend):
         """Test that acquisition is automatically started."""
@@ -714,7 +707,6 @@ class TestImageCapture:
             image = await genicam_backend.capture()
             assert image is not None
             assert isinstance(image, np.ndarray)
-
 
 
 # Tests for camera info

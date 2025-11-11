@@ -1,49 +1,88 @@
 import argparse
 import json
 import logging
+import platform
 from argparse import RawTextHelpFormatter
 from pathlib import Path
 
-from gunicorn.app.base import BaseApplication
-
 from mindtrace.core import instantiate_target, setup_logger
 
+# Platform-specific imports
+IS_WINDOWS = platform.system() == "Windows"
+if not IS_WINDOWS:
+    from gunicorn.app.base import BaseApplication
 
-class Launcher(BaseApplication):
-    """Gunicorn application launcher for Mindtrace services."""
 
-    def __init__(self, options):
-        self.gunicorn_options = {
-            "bind": options.bind,
-            "workers": options.num_workers,
-            "worker_class": options.worker_class,
-            "pidfile": options.pid,
-        }
+if not IS_WINDOWS:
+    class Launcher(BaseApplication):
+        """Gunicorn application launcher for Mindtrace services (Linux/Mac only)."""
 
-        # Parse init params
-        init_params = json.loads(options.init_params) if options.init_params else {}
+        def __init__(self, options):
+            self.gunicorn_options = {
+                "bind": options.bind,
+                "workers": options.num_workers,
+                "worker_class": options.worker_class,
+                "pidfile": options.pid,
+            }
 
-        # Create server with initialization parameters
-        server = instantiate_target(options.server_class, **init_params)
-        server.logger = setup_logger(
-            name=server.unique_name,
-            stream_level=logging.INFO,
-            file_level=logging.DEBUG,
-            log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
-        )
-        self.application = server.app
-        server.url = options.bind
-        super().__init__()
+            # Parse init params
+            init_params = json.loads(options.init_params) if options.init_params else {}
 
-    def load_config(self):
-        config = {
-            key: value for key, value in self.gunicorn_options.items() if key in self.cfg.settings and value is not None
-        }
-        for key, value in config.items():
-            self.cfg.set(key.lower(), value)
+            # Create server with initialization parameters
+            server = instantiate_target(options.server_class, **init_params)
+            server.logger = setup_logger(
+                name=server.unique_name,
+                stream_level=logging.INFO,
+                file_level=logging.DEBUG,
+                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
+            )
+            self.application = server.app
+            server.url = options.bind
+            super().__init__()
 
-    def load(self):
-        return self.application
+        def load_config(self):
+            config = {
+                key: value for key, value in self.gunicorn_options.items() if key in self.cfg.settings and value is not None
+            }
+            for key, value in config.items():
+                self.cfg.set(key.lower(), value)
+
+        def load(self):
+            return self.application
+else:
+    class Launcher:
+        """Uvicorn application launcher for Mindtrace services (Windows)."""
+
+        def __init__(self, options):
+            import uvicorn
+
+            # Parse init params
+            init_params = json.loads(options.init_params) if options.init_params else {}
+
+            # Create server with initialization parameters
+            server = instantiate_target(options.server_class, **init_params)
+            server.logger = setup_logger(
+                name=server.unique_name,
+                stream_level=logging.INFO,
+                file_level=logging.DEBUG,
+                log_dir=Path(server.config["MINDTRACE_DIR_PATHS"]["LOGGER_DIR"]),
+            )
+            self.application = server.app
+
+            # Parse bind address
+            host, port = options.bind.split(":")
+
+            # Store uvicorn config
+            self.uvicorn_config = {
+                "app": self.application,
+                "host": host,
+                "port": int(port),
+                "workers": options.num_workers,
+            }
+
+        def run(self):
+            import uvicorn
+            uvicorn.run(**self.uvicorn_config)
 
 
 def main():

@@ -313,7 +313,7 @@ class AsyncCameraManager(Mindtrace):
                                         "interface": cam_details.get("interface", ""),
                                         "display_name": cam_details.get("display_name", ""),
                                         "user_defined_name": cam_details.get("user_defined_name", ""),
-                                        "device_id": cam_details.get("device_id", "")
+                                        "device_id": cam_details.get("device_id", ""),
                                     }
                                 )
                         else:

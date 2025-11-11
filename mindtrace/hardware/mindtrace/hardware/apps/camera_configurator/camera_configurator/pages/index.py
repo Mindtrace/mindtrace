@@ -1,16 +1,18 @@
 """Main index page for camera configurator."""
 
 import reflex as rx
-from ..state.camera_state import CameraState
-from ..components.camera_grid import camera_grid, camera_grid_header, camera_grid_controls
+
+from ..components.camera_grid import camera_grid, camera_grid_controls, camera_grid_header
 from ..components.camera_modal import camera_modal
-from ..components.status_banner import status_banner
 from ..components.layout import main_layout, page_container
-from ..styles.theme import colors, spacing, css_spacing, layout
+from ..components.status_banner import status_banner
+from ..state.camera_state import CameraState
+from ..styles.theme import colors, css_spacing, layout, spacing
+
 
 def index_page() -> rx.Component:
     """Main camera configurator page."""
-    
+
     def page_content() -> rx.Component:
         """Main page content using proper layout approach."""
         return rx.box(
@@ -23,11 +25,11 @@ def index_page() -> rx.Component:
             gap=layout["content_gap"],
             width="100%",
         )
-    
+
     def captured_image_viewer() -> rx.Component:
         """Display captured image if available."""
         return rx.cond(
-            CameraState.captured_image != None,
+            CameraState.captured_image is not None,
             rx.box(
                 rx.vstack(
                     rx.hstack(
@@ -64,11 +66,11 @@ def index_page() -> rx.Component:
                 margin_top=css_spacing["lg"],
             ),
         )
-    
+
     def active_streams_summary() -> rx.Component:
         """Removed - streams are displayed in camera cards."""
         return rx.fragment()
-    
+
     return rx.box(
         main_layout(
             page_container(
