@@ -6,7 +6,7 @@ description: Quick smoke test for basic camera operations
 
 # API Configuration
 api:
-  base_url: http://localhost:8002
+  base_url: http://localhost:8003
   timeout: 30.0
 
 # Hardware Configuration
@@ -14,15 +14,10 @@ hardware:
   backend: Basler  # Options: GenICam, Basler, OpenCV
   camera_count: 1
 
-# Test Parameters
-test:
-  capture_count: 5
-  exposure_us: 2000
-  max_concurrent_captures: 1
-
 # Expectations
 expectations:
   total_timeout: 60.0
+  timeout_per_operation: 15.0
   expected_success_rate: 1.0  # 100% success expected
 
 # Tags
@@ -30,3 +25,37 @@ tags:
   - smoke
   - quick
   - validation
+
+# Test Operations
+operations:
+  - action: discover
+    payload:
+      backend: Basler
+    timeout: 10.0
+    store_result: cameras
+
+  - action: open
+    payload:
+      camera: "$cameras[0]"
+      test_connection: true
+    timeout: 15.0
+    store_result: camera
+
+  - action: configure
+    payload:
+      camera: "$cameras[0]"
+      properties:
+        exposure: 2000
+    timeout: 5.0
+
+  - action: capture
+    payload:
+      camera: "$cameras[0]"
+    timeout: 10.0
+
+# Cleanup Operations (always run)
+cleanup_operations:
+  - action: close
+    payload:
+      camera: "$cameras[0]"
+    timeout: 5.0

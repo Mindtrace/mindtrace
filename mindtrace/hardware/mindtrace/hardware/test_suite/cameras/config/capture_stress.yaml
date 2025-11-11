@@ -6,7 +6,7 @@ description: Stress test with rapid continuous captures from single camera
 
 # API Configuration
 api:
-  base_url: http://localhost:8002
+  base_url: http://localhost:8003
   timeout: 30.0
 
 # Hardware Configuration
@@ -23,7 +23,8 @@ test:
 
 # Expectations
 expectations:
-  total_timeout: 600.0  # 10 minutes
+  total_timeout: 600.0  # 10 minutes - conservative for 100 captures
+  timeout_per_operation: 5.0
   expected_success_rate: 0.95  # 95% success expected
 
 # Tags
@@ -31,3 +32,38 @@ tags:
   - stress
   - capture
   - performance
+
+# Test Operations
+operations:
+  - action: discover
+    payload:
+      backend: Basler
+    timeout: 10.0
+    store_result: cameras
+
+  - action: open
+    payload:
+      camera: "$cameras[0]"
+      test_connection: true
+    timeout: 15.0
+
+  - action: configure
+    payload:
+      camera: "$cameras[0]"
+      properties:
+        exposure: 2000
+    timeout: 5.0
+
+  - action: capture
+    payload:
+      camera: "$cameras[0]"
+    timeout: 5.0
+    repeat: 100
+    delay: 0.01
+
+# Cleanup Operations (always run)
+cleanup_operations:
+  - action: close
+    payload:
+      camera: "$cameras[0]"
+    timeout: 5.0
