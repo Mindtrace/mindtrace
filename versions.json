@@ -3,5 +3,10 @@
     "version": "feature-docs",
     "title": "feature-docs",
     "aliases": []
+  },
+  {
+    "version": "dev",
+    "title": "dev",
+    "aliases": []
   }
 ]
