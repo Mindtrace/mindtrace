@@ -48,9 +48,6 @@ Environment Variables:
     - MINDTRACE_HW_PATHS_CONFIG_DIR: Directory for configuration files
     - MINDTRACE_HW_NETWORK_CAMERA_IP_RANGE: IP range for camera network communication
     - MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME: Name for firewall rules
-    - MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS: General network timeout in seconds
-    - MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT: Timeout for firewall operations in seconds
-    - MINDTRACE_HW_NETWORK_RETRY_COUNT: Number of retry attempts for network operations
     - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
     - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
@@ -204,14 +201,11 @@ class PathSettings:
 @dataclass
 class NetworkSettings:
     """
-    Configuration for network settings and firewall management.
+    Network infrastructure configuration for GigE camera communication.
 
     Attributes:
         camera_ip_range: IP range for camera network communication (default: 192.168.50.0/24)
         firewall_rule_name: Name for firewall rules (default: "Allow Camera Network")
-        timeout_seconds: General network timeout in seconds
-        firewall_timeout: Timeout for firewall operations in seconds
-        retry_count: Number of retry attempts for network operations
         network_interface: Network interface to use for camera communication
         jumbo_frames_enabled: Enable jumbo frames for GigE camera optimization
         multicast_enabled: Enable multicast for camera discovery
@@ -219,9 +213,6 @@ class NetworkSettings:
 
     camera_ip_range: str = "192.168.50.0/24"
     firewall_rule_name: str = "Allow Camera Network"
-    timeout_seconds: float = 30.0
-    firewall_timeout: float = 30.0
-    retry_count: int = 3
     network_interface: str = "auto"  # "auto" for automatic detection
     jumbo_frames_enabled: bool = True
     multicast_enabled: bool = True
@@ -561,24 +552,6 @@ class HardwareConfigManager(Mindtrace):
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_RULE_NAME"):
             self._config.network.firewall_rule_name = env_val
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_TIMEOUT_SECONDS"):
-            try:
-                self._config.network.timeout_seconds = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_FIREWALL_TIMEOUT"):
-            try:
-                self._config.network.firewall_timeout = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_NETWORK_RETRY_COUNT"):
-            try:
-                self._config.network.retry_count = int(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
 
         if env_val := os.getenv("MINDTRACE_HW_NETWORK_INTERFACE"):
             self._config.network.network_interface = env_val
