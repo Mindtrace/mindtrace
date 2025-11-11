@@ -1,25 +1,233 @@
-# PLC API Service
+# PLC Manager Service
 
-REST API service for PLC management and control, following the Camera Service pattern.
+REST API and MCP tools for comprehensive PLC (Programmable Logic Controller) management and control.
+
+## Overview
+
+The PLC Manager Service provides a unified interface for managing industrial PLCs with support for tag-based data reading/writing, connection management, and comprehensive REST API endpoints with MCP tool integration.
 
 ## Quick Start
 
 ### Launch the Service
 
 ```bash
-# Using default settings (localhost:8003)
-python -m mindtrace.hardware.api.plcs.launcher
+# From the hardware directory
+cd /home/yasser/mindtrace/mindtrace/hardware
 
-# Custom host and port
-python -m mindtrace.hardware.api.plcs.launcher --host 0.0.0.0 --port 8003
+# Basic launch (default: localhost:8003)
+uv run python -m mindtrace.hardware.api.plcs.launcher
 
-# Using environment variables
-export PLC_API_HOST=0.0.0.0
-export PLC_API_PORT=8003
-python -m mindtrace.hardware.api.plcs.launcher
+# With custom host and port
+uv run python -m mindtrace.hardware.api.plcs.launcher --host 0.0.0.0 --port 8004
 ```
 
-### Using the Connection Manager (Client)
+### Environment Variables
+
+- `PLC_API_HOST`: Service host (default: localhost)
+- `PLC_API_PORT`: Service port (default: 8003)
+
+## Supported PLC Backends
+
+- **Allen-Bradley** (ControlLogix, CompactLogix, GuardLogix, MicroLogix, SLC500)
+- **Siemens S7** (via snap7) - planned
+- **Modbus TCP** - planned
+- Custom protocol implementations
+
+Note: Backend availability depends on installed dependencies and hardware configuration.
+
+## REST API Endpoints
+
+### Backend & Discovery
+
+- `GET /backends` - List available PLC backends
+- `GET /backends/info` - Get backend information and capabilities
+- `POST /plcs/discover` - Discover PLCs on the network
+
+### PLC Lifecycle
+
+- `POST /plcs/connect` - Connect to a PLC
+- `POST /plcs/connect/batch` - Connect to multiple PLCs
+- `POST /plcs/disconnect` - Disconnect from a PLC
+- `POST /plcs/disconnect/batch` - Disconnect from multiple PLCs
+- `POST /plcs/disconnect/all` - Disconnect from all PLCs
+- `GET /plcs/active` - List all active PLC connections
+
+### Tag Operations
+
+- `POST /plcs/tags/read` - Read tag value from PLC
+- `POST /plcs/tags/write` - Write tag value to PLC
+- `POST /plcs/tags/read/batch` - Read multiple tags
+- `POST /plcs/tags/write/batch` - Write multiple tags
+- `POST /plcs/tags/list` - List all available tags for a PLC
+- `POST /plcs/tags/info` - Get tag information (type, range, access)
+
+### Status & Information
+
+- `POST /plcs/status` - Get PLC connection status
+- `POST /plcs/info` - Get detailed PLC information
+- `GET /system/diagnostics` - Get system diagnostics and statistics
+
+## MCP Tool Integration
+
+All REST endpoints (except health check) are automatically exposed as MCP tools for integration with AI agents and automation workflows. Tools are named using the pattern: `plc_manager_{endpoint_name}`.
+
+### Example MCP Tools
+
+- `plc_manager_discover_plcs` - Discover PLCs on network
+- `plc_manager_connect_plc` - Connect to PLC
+- `plc_manager_read_tags` - Read tag values
+- `plc_manager_write_tags` - Write tag values
+- `plc_manager_get_plc_status` - Get PLC status
+- `plc_manager_get_system_diagnostics` - Get system diagnostics
+
+## Tag Operations
+
+Tags represent named data points in the PLC that can be read or written. Common tag types include:
+
+- **DINT** (Double Integer) - 32-bit signed integer
+- **REAL** (Float) - 32-bit floating point
+- **BOOL** (Boolean) - Single bit
+- **STRING** - Character array
+
+### Tag Naming Conventions
+
+Tag names typically follow PLC-specific conventions:
+
+- Allen-Bradley: `Program:MainProgram.TagName`
+- Siemens: `DB1.DBD0` (Data Block 1, Double Word 0)
+- Modbus: Register addresses like `40001`
+
+## Interactive API Documentation
+
+Once the service is running, visit:
+
+- **Swagger UI**: http://localhost:8003/docs
+- **ReDoc**: http://localhost:8003/redoc
+
+## Architecture
+
+The service follows a service-based architecture:
+
+1. **API Layer** (`api/plcs/service.py`) - REST endpoints and MCP tools
+2. **Manager Layer** (`plcs/plc_manager.py`) - Multi-PLC orchestration and connection pooling
+3. **Backend Layer** (`plcs/backends/`) - Protocol-specific implementations
+
+## Usage Examples
+
+### Connect to PLC
+
+```bash
+# Connect to Allen-Bradley PLC
+curl -X POST http://localhost:8003/plcs/connect \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "ip_address": "192.168.1.100",
+    "backend": "allen_bradley"
+  }'
+```
+
+### Read Tags
+
+```bash
+# Read single tag
+curl -X POST http://localhost:8003/plcs/tags/read \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "tag_name": "Program:MainProgram.Speed"
+  }'
+
+# Read multiple tags
+curl -X POST http://localhost:8003/plcs/tags/read/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "tag_names": [
+      "Program:MainProgram.Speed",
+      "Program:MainProgram.Temperature",
+      "Program:MainProgram.Status"
+    ]
+  }'
+```
+
+### Write Tags
+
+```bash
+# Write single tag
+curl -X POST http://localhost:8003/plcs/tags/write \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "tag_name": "Program:MainProgram.SetPoint",
+    "value": 150.5
+  }'
+
+# Write multiple tags
+curl -X POST http://localhost:8003/plcs/tags/write/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "tags": [
+      {"tag_name": "Program:MainProgram.Speed", "value": 1200},
+      {"tag_name": "Program:MainProgram.Enable", "value": true}
+    ]
+  }'
+```
+
+### Get PLC Information
+
+```bash
+# Get PLC status
+curl -X POST http://localhost:8003/plcs/status \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01"
+  }'
+
+# List all tags
+curl -X POST http://localhost:8003/plcs/tags/list \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01"
+  }'
+
+# Get tag information
+curl -X POST http://localhost:8003/plcs/tags/info \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plc_name": "LineController_01",
+    "tag_name": "Program:MainProgram.Speed"
+  }'
+```
+
+### Batch Operations
+
+```bash
+# Connect to multiple PLCs
+curl -X POST http://localhost:8003/plcs/connect/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plcs": [
+      {"plc_name": "Line1_PLC", "ip_address": "192.168.1.100", "backend": "allen_bradley"},
+      {"plc_name": "Line2_PLC", "ip_address": "192.168.1.101", "backend": "allen_bradley"}
+    ]
+  }'
+
+# Get active connections
+curl -X GET http://localhost:8003/plcs/active
+```
+
+### System Diagnostics
+
+```bash
+# Get system statistics
+curl -X GET http://localhost:8003/system/diagnostics
+```
+
+## Python Client Usage
+
+### Using the Connection Manager
 
 ```python
 import asyncio
@@ -69,39 +277,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## API Endpoints
-
-### Backend & Discovery
-
-- `GET /backends` - List available PLC backends
-- `GET /backends/info` - Get backend information
-- `POST /plcs/discover` - Discover PLCs on network
-
-### PLC Lifecycle
-
-- `POST /plcs/connect` - Connect to PLC
-- `POST /plcs/connect/batch` - Batch connect to PLCs
-- `POST /plcs/disconnect` - Disconnect from PLC
-- `POST /plcs/disconnect/batch` - Batch disconnect
-- `POST /plcs/disconnect/all` - Disconnect all PLCs
-- `GET /plcs/active` - List active PLCs
-
-### Tag Operations
-
-- `POST /plcs/tags/read` - Read tag values
-- `POST /plcs/tags/write` - Write tag values
-- `POST /plcs/tags/read/batch` - Batch read tags
-- `POST /plcs/tags/write/batch` - Batch write tags
-- `POST /plcs/tags/list` - List all tags on PLC
-- `POST /plcs/tags/info` - Get tag information
-
-### Status & Information
-
-- `POST /plcs/status` - Get PLC status
-- `POST /plcs/info` - Get PLC information
-- `GET /system/diagnostics` - Get system diagnostics
-
-## Example: Robot Control Integration
+### Robot Control Integration Example
 
 ```python
 import asyncio
@@ -176,36 +352,30 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## Docker Deployment
+## Configuration
 
-```dockerfile
-FROM python:3.12-slim
+PLC connection parameters and backend settings are configured in:
+- `/mindtrace/hardware/core/config.py` - Global PLC settings
+- Backend-specific configuration in respective backend implementations
 
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+## Error Handling
 
-COPY mindtrace/ ./mindtrace/
+The service provides comprehensive error responses:
 
-ENV PLC_API_HOST=0.0.0.0
-ENV PLC_API_PORT=8003
+- `200 OK` - Successful operation
+- `400 Bad Request` - Invalid request parameters
+- `404 Not Found` - PLC or tag not found
+- `500 Internal Server Error` - Backend communication error
+- `503 Service Unavailable` - PLC connection timeout
 
-CMD ["python", "-m", "mindtrace.hardware.api.plcs.launcher"]
-```
+All error responses include detailed error messages and context.
 
-## Architecture
+## Performance Considerations
 
-```
-PLCManagerService (FastAPI)
-    ↓
-PLCManager (Existing)
-    ↓
-AllenBradleyPLC (Existing)
-    ↓
-pycomm3 (Ethernet/IP)
-    ↓
-PLC Hardware
-```
+- **Connection Pooling**: Maintains persistent connections to PLCs
+- **Batch Operations**: Use batch endpoints for reading/writing multiple tags
+- **Timeout Configuration**: Configurable timeouts for network operations
+- **Concurrent Operations**: Supports multiple simultaneous PLC operations
 
 ## Features
 
@@ -220,12 +390,9 @@ PLC Hardware
 - ✅ CORS enabled for web frontends
 - ✅ Follows camera service pattern
 
-## Supported PLCs
+## Related Documentation
 
-- Allen-Bradley ControlLogix
-- Allen-Bradley CompactLogix
-- Allen-Bradley GuardLogix (Safety PLCs)
-- Allen-Bradley MicroLogix
-- Allen-Bradley SLC500
-
-More backends can be added following the `BasePLC` interface.
+- Configuration: `/mindtrace/hardware/core/config.py`
+- Backend implementations: `/mindtrace/hardware/plcs/backends/`
+- API models: `/mindtrace/hardware/api/plcs/models/`
+- MCP schemas: `/mindtrace/hardware/api/plcs/schemas/`
