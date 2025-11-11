@@ -20,9 +20,6 @@ from mindtrace.hardware.api.cameras.models import (
     BackendInfo,
     BackendInfoResponse,
     BackendsResponse,
-    BandwidthLimitRequest,
-    BandwidthSettings,
-    BandwidthSettingsResponse,
     BatchCaptureResponse,
     BatchHDRCaptureResponse,
     BatchOperationResponse,
@@ -239,17 +236,8 @@ class CameraManagerService(Service):
         # Video stream endpoints (serve actual video)
         self.add_endpoint("stream/{camera_name}", self.serve_camera_stream, None, methods=["GET"])
 
-        # Network & Bandwidth
-        self.add_endpoint(
-            "network/bandwidth",
-            self.get_bandwidth_settings,
-            ALL_SCHEMAS["get_bandwidth_settings"],
-            methods=["GET"],
-            as_tool=True,
-        )
-        self.add_endpoint(
-            "network/bandwidth/limit", self.set_bandwidth_limit, ALL_SCHEMAS["set_bandwidth_limit"], as_tool=True
-        )
+        # Network & Diagnostics
+        # Note: Bandwidth limit control moved to /cameras/performance/settings
         self.add_endpoint(
             "network/diagnostics",
             self.get_network_diagnostics,
@@ -262,7 +250,7 @@ class CameraManagerService(Service):
             self.get_performance_settings,
             ALL_SCHEMAS["get_performance_settings"],
             methods=["GET"],
-            as_tool=True,
+            as_tool=False,  # Don't register as MCP tool to avoid conflict with POST endpoint
         )
         self.add_endpoint(
             "cameras/performance/settings",
@@ -1066,38 +1054,9 @@ class CameraManagerService(Service):
             self.logger.error(f"Batch HDR image capture failed: {e}")
             raise
 
-    # Network & Bandwidth Operations
-    async def get_bandwidth_settings(self) -> BandwidthSettingsResponse:
-        """Get current bandwidth settings."""
-        try:
-            manager = await self._get_camera_manager()
-
-            settings = BandwidthSettings(
-                max_concurrent_captures=manager.max_concurrent_captures,
-                current_active_captures=len(manager.active_cameras),
-                available_slots=manager.max_concurrent_captures - len(manager.active_cameras),
-                recommended_limit=2,  # Conservative default
-            )
-
-            return BandwidthSettingsResponse(
-                success=True, message="Bandwidth settings retrieved successfully", data=settings
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get bandwidth settings: {e}")
-            raise
-
-    async def set_bandwidth_limit(self, request: BandwidthLimitRequest) -> BoolResponse:
-        """Set maximum concurrent capture limit."""
-        try:
-            manager = await self._get_camera_manager()
-            manager.max_concurrent_captures = request.max_concurrent_captures
-
-            return BoolResponse(
-                success=True, message=f"Bandwidth limit set to {request.max_concurrent_captures}", data=True
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to set bandwidth limit: {e}")
-            raise
+    # Network Diagnostics Operations
+    # Note: Bandwidth limit control has been deprecated and moved to performance settings
+    # Use /cameras/performance/settings to control max_concurrent_captures
 
     async def get_network_diagnostics(self) -> NetworkDiagnosticsResponse:
         """Get network diagnostics information."""

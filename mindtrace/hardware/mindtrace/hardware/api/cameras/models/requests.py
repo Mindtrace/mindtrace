@@ -55,9 +55,33 @@ class CameraConfigureRequest(BaseModel):
 class CameraConfigureBatchRequest(BaseModel):
     """Request model for batch camera configuration."""
 
-    configurations: Dict[str, Dict[str, Any]] = Field(
-        ..., description="Dictionary mapping camera names to their configuration properties"
+    configurations: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]] = Field(
+        ...,
+        description="Camera configurations as dict (camera_name -> properties) or list of {camera, properties} objects",
     )
+
+    @field_validator("configurations")
+    @classmethod
+    def validate_configurations(
+        cls, v: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Convert list format to dict format."""
+        if isinstance(v, dict):
+            return v
+        elif isinstance(v, list):
+            # Convert list format to dict format
+            result = {}
+            for item in v:
+                if not isinstance(item, dict):
+                    raise ValueError("Each item in configurations list must be a dict")
+                if "camera" not in item:
+                    raise ValueError("Each configuration must have a 'camera' field")
+                if "properties" not in item:
+                    raise ValueError("Each configuration must have a 'properties' field")
+                result[item["camera"]] = item["properties"]
+            return result
+        else:
+            raise ValueError("configurations must be dict or list")
 
 
 class CameraQueryRequest(BaseModel):
@@ -93,9 +117,18 @@ class CaptureImageRequest(BaseModel):
     @classmethod
     def validate_output_format(cls, v: str) -> str:
         """Validate output format is supported."""
-        if v.lower() not in ("numpy", "pil"):
-            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
-        return v.lower()
+        v_lower = v.lower()
+        # Accept common image formats and map them to appropriate return type
+        if v_lower in ("numpy", "pil"):
+            return v_lower
+        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
+            # File formats map to numpy for simplicity
+            return "numpy"
+        else:
+            raise ValueError(
+                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
+            )
+
 
 
 class CaptureBatchRequest(BaseModel):
@@ -112,9 +145,18 @@ class CaptureBatchRequest(BaseModel):
     @classmethod
     def validate_output_format(cls, v: str) -> str:
         """Validate output format is supported."""
-        if v.lower() not in ("numpy", "pil"):
-            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
-        return v.lower()
+        v_lower = v.lower()
+        # Accept common image formats and map them to appropriate return type
+        if v_lower in ("numpy", "pil"):
+            return v_lower
+        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
+            # File formats map to numpy for simplicity
+            return "numpy"
+        else:
+            raise ValueError(
+                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
+            )
+
 
 
 class CaptureHDRRequest(BaseModel):
@@ -124,19 +166,47 @@ class CaptureHDRRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern for saving images. Use {exposure} placeholder"
     )
-    exposure_levels: int = Field(3, ge=2, le=10, description="Number of different exposure levels to capture")
-    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels")
+    exposure_levels: Union[int, List[float]] = Field(
+        3, description="Number of exposure levels (int) or explicit exposure values (List[float])"
+    )
+    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)")
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
+
+    @field_validator("exposure_levels")
+    @classmethod
+    def validate_exposure_levels(cls, v: Union[int, List[float]]) -> Union[int, List[float]]:
+        """Validate exposure levels."""
+        if isinstance(v, int):
+            if v < 2 or v > 10:
+                raise ValueError("exposure_levels as int must be between 2 and 10")
+            return v
+        elif isinstance(v, list):
+            if len(v) < 2:
+                raise ValueError("exposure_levels as list must have at least 2 values")
+            if not all(isinstance(x, (int, float)) and x > 0 for x in v):
+                raise ValueError("All exposure values must be positive numbers")
+            return v
+        else:
+            raise ValueError("exposure_levels must be int or List[float]")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
         """Validate output format is supported."""
-        if v.lower() not in ("numpy", "pil"):
-            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
-        return v.lower()
+        v_lower = v.lower()
+        # Accept common image formats and map them to appropriate return type
+        if v_lower in ("numpy", "pil"):
+            return v_lower
+        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
+            # File formats map to numpy for simplicity
+            return "numpy"
+        else:
+            raise ValueError(
+                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
+            )
+
 
 
 class CaptureHDRBatchRequest(BaseModel):
@@ -146,19 +216,47 @@ class CaptureHDRBatchRequest(BaseModel):
     save_path_pattern: Optional[str] = Field(
         None, description="Optional path pattern. Use {camera} and {exposure} placeholders"
     )
-    exposure_levels: int = Field(3, ge=2, le=10, description="Number of different exposure levels to capture")
-    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels")
+    exposure_levels: Union[int, List[float]] = Field(
+        3, description="Number of exposure levels (int) or explicit exposure values (List[float])"
+    )
+    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)")
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
+
+    @field_validator("exposure_levels")
+    @classmethod
+    def validate_exposure_levels(cls, v: Union[int, List[float]]) -> Union[int, List[float]]:
+        """Validate exposure levels."""
+        if isinstance(v, int):
+            if v < 2 or v > 10:
+                raise ValueError("exposure_levels as int must be between 2 and 10")
+            return v
+        elif isinstance(v, list):
+            if len(v) < 2:
+                raise ValueError("exposure_levels as list must have at least 2 values")
+            if not all(isinstance(x, (int, float)) and x > 0 for x in v):
+                raise ValueError("All exposure values must be positive numbers")
+            return v
+        else:
+            raise ValueError("exposure_levels must be int or List[float]")
 
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v: str) -> str:
         """Validate output format is supported."""
-        if v.lower() not in ("numpy", "pil"):
-            raise ValueError(f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil'")
-        return v.lower()
+        v_lower = v.lower()
+        # Accept common image formats and map them to appropriate return type
+        if v_lower in ("numpy", "pil"):
+            return v_lower
+        elif v_lower in ("jpg", "jpeg", "png", "tiff", "tif", "bmp", "webp"):
+            # File formats map to numpy for simplicity
+            return "numpy"
+        else:
+            raise ValueError(
+                f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
+            )
+
 
 
 # Network & Bandwidth Operations

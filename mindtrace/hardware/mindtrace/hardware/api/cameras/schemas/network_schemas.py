@@ -1,29 +1,20 @@
-"""Network and Bandwidth TaskSchemas."""
+"""Network and Performance TaskSchemas."""
 
 from mindtrace.core import TaskSchema
 from mindtrace.hardware.api.cameras.models import (
-    BandwidthLimitRequest,
-    BandwidthSettingsResponse,
     BoolResponse,
     CameraPerformanceSettingsRequest,
     CameraPerformanceSettingsResponse,
     NetworkDiagnosticsResponse,
 )
 
-# Network & Bandwidth Schemas
-GetBandwidthSettingsSchema = TaskSchema(
-    name="get_bandwidth_settings", input_schema=None, output_schema=BandwidthSettingsResponse
-)
-
-SetBandwidthLimitSchema = TaskSchema(
-    name="set_bandwidth_limit", input_schema=BandwidthLimitRequest, output_schema=BoolResponse
-)
-
+# Network Diagnostics Schemas
 GetNetworkDiagnosticsSchema = TaskSchema(
     name="get_network_diagnostics", input_schema=None, output_schema=NetworkDiagnosticsResponse
 )
 
 # Camera Performance Schemas
+# Note: Use these endpoints for bandwidth/concurrency control instead of deprecated /network/bandwidth
 GetPerformanceSettingsSchema = TaskSchema(
     name="get_performance_settings", input_schema=None, output_schema=CameraPerformanceSettingsResponse
 )
@@ -33,8 +24,6 @@ SetPerformanceSettingsSchema = TaskSchema(
 )
 
 __all__ = [
-    "GetBandwidthSettingsSchema",
-    "SetBandwidthLimitSchema",
     "GetNetworkDiagnosticsSchema",
     "GetPerformanceSettingsSchema",
     "SetPerformanceSettingsSchema",

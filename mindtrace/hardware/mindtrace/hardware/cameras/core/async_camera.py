@@ -635,7 +635,7 @@ class AsyncCamera(Mindtrace):
     async def capture_hdr(
         self,
         save_path_pattern: Optional[str] = None,
-        exposure_levels: int = 3,
+        exposure_levels: Union[int, List[float]] = 3,
         exposure_multiplier: float = 2.0,
         return_images: bool = True,
         upload_to_gcs: bool = False,
@@ -645,8 +645,8 @@ class AsyncCamera(Mindtrace):
 
         Args:
             save_path_pattern: Optional path pattern containing "{exposure}" placeholder.
-            exposure_levels: Number of exposure steps to capture.
-            exposure_multiplier: Multiplier between consecutive exposure steps.
+            exposure_levels: Number of exposure steps (int) or explicit exposure values (List[float]).
+            exposure_multiplier: Multiplier between consecutive exposure steps (used when exposure_levels is int).
             return_images: If True, returns list of captured images; otherwise returns success bool.
             upload_to_gcs: Upload HDR sequence to Google Cloud Storage.
             output_format: Output format for returned images ("numpy" or "pil").
@@ -670,18 +670,25 @@ class AsyncCamera(Mindtrace):
 
         async with self._lock:
             try:
-                original_exposure = await self._backend.get_exposure()
-                exposure_range = await self._backend.get_exposure_range()
-                min_exposure, max_exposure = exposure_range[0], exposure_range[1]
-                base_exposure = original_exposure
-                exposures = []
-                for i in range(exposure_levels):
-                    center_index = (exposure_levels - 1) / 2
-                    multiplier = exposure_multiplier ** (i - center_index)
-                    exposure = base_exposure * multiplier
-                    exposure = max(min_exposure, min(max_exposure, exposure))
-                    exposures.append(exposure)
-                exposures = sorted(list(set(exposures)))
+                # Calculate or use provided exposure values
+                if isinstance(exposure_levels, list):
+                    # Use explicit exposure values
+                    exposures = sorted(exposure_levels)
+                    self.logger.info(f"Using explicit exposure values: {exposures}")
+                else:
+                    # Calculate exposure bracket based on count and multiplier
+                    original_exposure = await self._backend.get_exposure()
+                    exposure_range = await self._backend.get_exposure_range()
+                    min_exposure, max_exposure = exposure_range[0], exposure_range[1]
+                    base_exposure = original_exposure
+                    exposures = []
+                    for i in range(exposure_levels):
+                        center_index = (exposure_levels - 1) / 2
+                        multiplier = exposure_multiplier ** (i - center_index)
+                        exposure = base_exposure * multiplier
+                        exposure = max(min_exposure, min(max_exposure, exposure))
+                        exposures.append(exposure)
+                    exposures = sorted(list(set(exposures)))
                 self.logger.info(
                     f"Starting HDR capture for camera '{self._full_name}' with {len(exposures)} exposure levels: {exposures}, output_format={output_format!r}"
                 )

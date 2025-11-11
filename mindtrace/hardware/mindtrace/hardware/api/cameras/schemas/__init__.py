@@ -34,10 +34,8 @@ from mindtrace.hardware.api.cameras.schemas.lifecycle_schemas import (
     OpenCameraSchema,
 )
 from mindtrace.hardware.api.cameras.schemas.network_schemas import (
-    GetBandwidthSettingsSchema,
     GetNetworkDiagnosticsSchema,
     GetPerformanceSettingsSchema,
-    SetBandwidthLimitSchema,
     SetPerformanceSettingsSchema,
 )
 from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
@@ -77,9 +75,7 @@ ALL_SCHEMAS = {
     "capture_images_batch": CaptureImagesBatchSchema,
     "capture_hdr_image": CaptureHDRImageSchema,
     "capture_hdr_images_batch": CaptureHDRImagesBatchSchema,
-    # Network & Bandwidth
-    "get_bandwidth_settings": GetBandwidthSettingsSchema,
-    "set_bandwidth_limit": SetBandwidthLimitSchema,
+    # Network & Performance (bandwidth control moved to performance settings)
     "get_network_diagnostics": GetNetworkDiagnosticsSchema,
     "get_performance_settings": GetPerformanceSettingsSchema,
     "set_performance_settings": SetPerformanceSettingsSchema,
@@ -119,9 +115,7 @@ __all__ = [
     "CaptureImagesBatchSchema",
     "CaptureHDRImageSchema",
     "CaptureHDRImagesBatchSchema",
-    # Network & Bandwidth
-    "GetBandwidthSettingsSchema",
-    "SetBandwidthLimitSchema",
+    # Network & Performance
     "GetNetworkDiagnosticsSchema",
     "GetPerformanceSettingsSchema",
     "SetPerformanceSettingsSchema",
