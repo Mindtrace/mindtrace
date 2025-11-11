@@ -289,6 +289,27 @@ class CameraBackend(MindtraceABC):
         self.logger.error(f"get_inter_packet_delay not implemented for {self.__class__.__name__}")
         raise NotImplementedError(f"get_inter_packet_delay not supported by {self.__class__.__name__}")
 
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Note:
+            This is a runtime-configurable parameter that can be changed without reinitializing the camera.
+        """
+        self.logger.error(f"set_capture_timeout not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"set_capture_timeout not supported by {self.__class__.__name__}")
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        self.logger.error(f"get_capture_timeout not implemented for {self.__class__.__name__}")
+        raise NotImplementedError(f"get_capture_timeout not supported by {self.__class__.__name__}")
+
     async def __aenter__(self):
         await self.setup_camera()
         return self

@@ -743,6 +743,31 @@ class MockBaslerCameraBackend(CameraBackend):
         await asyncio.sleep(0.001)
         return 0  # Simulated no delay
 
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        if timeout_ms < 0:
+            raise ValueError(f"Timeout must be non-negative, got {timeout_ms}")
+
+        self.timeout_ms = timeout_ms
+        self.logger.debug(f"Set capture timeout to {timeout_ms}ms for mock camera '{self.camera_name}'")
+        await asyncio.sleep(0.001)  # Simulate operation delay
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        await asyncio.sleep(0.001)  # Simulate operation delay
+        return self.timeout_ms
+
     async def get_trigger_modes(self) -> List[str]:
         """Get available trigger modes for mock Basler cameras."""
         return [

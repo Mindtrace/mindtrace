@@ -1344,6 +1344,29 @@ class OpenCVCameraBackend(CameraBackend):
             f"Inter-packet delay not applicable for OpenCV camera '{self.camera_name}' (USB/local connection)"
         )
 
+    async def set_capture_timeout(self, timeout_ms: int):
+        """Set capture timeout in milliseconds.
+
+        Args:
+            timeout_ms: Timeout value in milliseconds
+
+        Raises:
+            ValueError: If timeout_ms is negative
+        """
+        if timeout_ms < 0:
+            raise ValueError(f"Timeout must be non-negative, got {timeout_ms}")
+
+        self.timeout_ms = timeout_ms
+        self.logger.debug(f"Set capture timeout to {timeout_ms}ms for camera '{self.camera_name}'")
+
+    async def get_capture_timeout(self) -> int:
+        """Get current capture timeout in milliseconds.
+
+        Returns:
+            Current timeout value in milliseconds
+        """
+        return self.timeout_ms
+
     async def get_trigger_modes(self) -> List[str]:
         """Get available trigger modes for OpenCV cameras.
 

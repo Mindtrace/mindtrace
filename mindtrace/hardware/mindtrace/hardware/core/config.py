@@ -77,83 +77,84 @@ class CameraSettings:
     """
     Configuration for camera settings.
 
-    Attributes:
-        # Core camera settings (actively used)
-        image_quality_enhancement: Enable image quality enhancement processing
-        retrieve_retry_count: Number of retry attempts for image capture
-        trigger_mode: Camera trigger mode (continuous, trigger)
-        exposure_time: Exposure time in microseconds
-        white_balance: White balance mode (auto, off, once)
-        gain: Camera gain value
-        max_concurrent_captures: Maximum number of concurrent captures across all cameras (network bandwidth management)
+    This configuration is divided into three categories based on when parameters can be changed:
 
-        # OpenCV-specific settings (actively used)
-        opencv_default_width: OpenCV default frame width
-        opencv_default_height: OpenCV default frame height
-        opencv_default_fps: OpenCV default frame rate
-        opencv_default_exposure: OpenCV default exposure value
-        opencv_exposure_range_min: OpenCV minimum exposure value
-        opencv_exposure_range_max: OpenCV maximum exposure value
-        opencv_width_range_min: OpenCV minimum frame width
-        opencv_width_range_max: OpenCV maximum frame width
-        opencv_height_range_min: OpenCV minimum frame height
-        opencv_height_range_max: OpenCV maximum frame height
+    1. RUNTIME-CONFIGURABLE PARAMETERS:
+       These parameters can be changed dynamically while the camera is running through the
+       configure_camera API endpoint without requiring camera reinitialization.
+       Example: POST /cameras/configure with {"camera": "...", "properties": {"exposure_time": 2000}}
 
-        # Timeout and discovery settings (actively used)
-        timeout_ms: Operation timeout in milliseconds
-        max_camera_index: Maximum camera index to test during discovery
+    2. STARTUP-ONLY PARAMETERS:
+       These parameters require camera reinitialization to change due to hardware limitations
+       (e.g., memory reallocation, network reconnection). They can only be set when the camera
+       is first initialized or after a full restart.
 
-        # Mock settings (for testing)
-        mock_camera_count: Number of mock cameras to simulate
+    3. SYSTEM CONFIGURATION:
+       General system settings that affect camera manager behavior but are not camera-specific
+       per-device settings.
 
-        # Image enhancement settings (for quality enhancement)
-        enhancement_gamma: Gamma correction value for image enhancement
-        enhancement_contrast: Contrast factor for image enhancement
-
-        # Basler-specific settings
-        pixel_format: Default pixel format (BGR8, RGB8, etc.)
-        buffer_count: Number of frame buffers for cameras
+    Configuration hierarchy: config.py → initial defaults → runtime changes via API
     """
 
-    # Core camera settings
-    image_quality_enhancement: bool = False
-    retrieve_retry_count: int = 3
-    trigger_mode: str = "continuous"
-    exposure_time: float = 1000.0
-    white_balance: str = "auto"
-    gain: float = 1.0
-    max_concurrent_captures: int = 2  # Network bandwidth management for GigE cameras
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RUNTIME-CONFIGURABLE PARAMETERS (changeable via configure_camera API)
+    # ═══════════════════════════════════════════════════════════════════════════════
 
-    # OpenCV-specific settings
-    opencv_default_width: int = 1280
-    opencv_default_height: int = 720
-    opencv_default_fps: int = 30
-    opencv_default_exposure: float = -1.0
+    # Capture timeout (NEW: made runtime-configurable for dynamic adjustment)
+    timeout_ms: int = 5000  # Capture timeout in milliseconds
+
+    # Image quality parameters (all backends)
+    exposure_time: float = 1000.0  # Exposure time in microseconds
+    gain: float = 1.0  # Camera gain value
+    trigger_mode: str = "continuous"  # Trigger mode: "continuous" or "trigger"
+    white_balance: str = "auto"  # White balance: "auto", "off", "once"
+    image_quality_enhancement: bool = False  # Enable CLAHE image enhancement
+    pixel_format: str = "BGR8"  # Pixel format: BGR8, RGB8, Mono8, etc.
+
+    # OpenCV resolution and framerate (runtime-configurable for OpenCV backend)
+    opencv_default_width: int = 1280  # Frame width in pixels
+    opencv_default_height: int = 720  # Frame height in pixels
+    opencv_default_fps: int = 30  # Frames per second
+    opencv_default_exposure: float = -1.0  # OpenCV exposure (-1 = auto)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STARTUP-ONLY PARAMETERS (require camera reinitialization to change)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Frame buffer allocation (requires memory reallocation)
+    buffer_count: int = 25  # Number of frame buffers (memory allocation)
+
+    # Basler multicast streaming (requires network reconnection)
+    basler_multicast_enabled: bool = False  # Enable multicast streaming mode
+    basler_multicast_group: str = "239.192.1.1"  # Multicast group IP address
+    basler_multicast_port: int = 3956  # Multicast port number
+    basler_target_ips: List[str] = field(default_factory=list)  # Target IPs for discovery
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SYSTEM CONFIGURATION (manager-level settings, not per-camera)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture and retry settings
+    retrieve_retry_count: int = 3  # Number of retry attempts for failed captures
+    max_concurrent_captures: int = 2  # Max concurrent captures (bandwidth management)
+
+    # Discovery settings
+    max_camera_index: int = 1  # Maximum camera index for OpenCV discovery
+
+    # Mock/testing settings
+    mock_camera_count: int = 10  # Number of mock cameras to simulate
+
+    # Image enhancement algorithm settings
+    enhancement_gamma: float = 2.2  # Gamma correction value
+    enhancement_contrast: float = 1.2  # Contrast enhancement factor
+
+    # OpenCV capability ranges (defines hardware limits)
     opencv_exposure_range_min: float = -13.0
     opencv_exposure_range_max: float = -1.0
     opencv_width_range_min: int = 160
     opencv_width_range_max: int = 1920
     opencv_height_range_min: int = 120
     opencv_height_range_max: int = 1080
-
-    # Timeout and discovery settings
-    timeout_ms: int = 5000
-    max_camera_index: int = 1
-
-    # Mock settings
-    mock_camera_count: int = 10
-
-    # Image enhancement settings
-    enhancement_gamma: float = 2.2
-    enhancement_contrast: float = 1.2
-
-    # Basler-specific settings
-    pixel_format: str = "BGR8"
-    buffer_count: int = 25
-    basler_multicast_enabled: bool = False
-    basler_multicast_group: str = "239.192.1.1"
-    basler_multicast_port: int = 3956
-    basler_target_ips: List[str] = field(default_factory=list)
 
 
 @dataclass
