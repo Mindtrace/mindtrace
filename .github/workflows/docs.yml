@@ -5,7 +5,6 @@ on:
     branches:
       - dev
       - main
-      - feature/docmentation
   workflow_dispatch:
   release:
     types: [published]
@@ -15,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write 
-  pages: write 
-  pull-requests: write 
+  contents: write
+  pages: write
+  pull-requests: write
 
 jobs:
   deploy:
@@ -57,11 +56,6 @@ jobs:
         if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
         run: |
           uv run mike set-default dev --push
-
-      - name: Deploy Feature Docs
-        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/docmentation'
-        run: |
-          uv run mike deploy --push feature-docs
 
       - name: Deploy Release Docs
         if: github.event_name == 'release' && github.event.action == 'published'
