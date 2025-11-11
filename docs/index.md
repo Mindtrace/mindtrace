@@ -1,19 +1,97 @@
 # :material-rocket-launch: Welcome to Mindtrace
 
-Explore the Mindtrace Docs, a comprehensive guide to streamline both hardware and software integration, as well as machine learning workflows within your organization. Whether your team is deploying complex infrastructure or experimenting with new models, this hub is designed to help companies unlock the full potential of Mindtrace across their projects.
+Unifying asset inspection under a single package, Mindtrace brings together industrial hardware, machine learning, and automation, bridging the gap between edge devices and scalable intelligence.
+
+Monitor, automate, and scale your on-prem AI solutions effortlessly with **Mindtrace** package.  
+From training robust AI models, hardware integration to deploying and scaling edge intelligence for **Asset inspection**, Mindtrace enables full-cycle orchestration.  
+
+It seamlessly connects **hardware, data, and machine learning**, empowering teams to deploy context-aware decision systems, derive real-time insights, and visualize results through interactive dashboards
+
+---
 
 ## :material-star: Features
 
-- :fontawesome-solid-microchip: **Hardware Integration** - Seamless hardware connectivity
-- :material-brain: **Machine Learning** - Advanced ML workflows  
-- :material-cog: **Configuration** - Flexible configuration management
 
-## :material-link: Quick Links
+-   :fontawesome-solid-network-wired: **Unified Architecture**  
+    Integrates data ingestion, model training, deployment, and system coordination under one modular ecosystem that scales seamlessly across services and clusters.
+
+-   :material-cpu-64-bit: **Hardware-Aware Intelligence**  
+    Connect directly to PLCs, cameras, and sensors for real-time inference, control, and closed-loop feedback across industrial environments.
+
+-   :material-brain: **ML-Native Design**  
+    Provides end-to-end pipelines for dataset management, model registry, and distributed training workflows.
+
+-   :material-database: **Datalake Integration**  
+    Built-in connectors and APIs for storing, indexing, and retrieving structured or unstructured data — powering analytics, retraining, and traceability.
+
+-   :material-cloud-sync: **Cluster-Aware Orchestration**  
+    Enables coordinated operation across multiple nodes or services, supporting distributed execution and horizontal scaling.
+
+-   :material-account-group: **Service Collaboration Layer**  
+    Seamlessly launch, register, and interconnect FastAPI or MCP-based microservices through a unified control plane and shared state system.
+
+
+---
+
+## :material-layers-triple: Layered Architecture
+
+Mindtrace is organized into a layered workspace to support ML components as Python modules with clearly defined boundaries and dependencies. We use a level-based system for organizing modules based on dependency direction and build order.
+
+### **Level 1: Core**
+- `core`: Foundational utilities and base classes used across all other modules.
+
+### **Level 2: Core Consumers**
+- `jobs`: Job execution and backend interfaces.
+- `registry`: Artifact and metadata management.
+- `database`: Redis, Mongo, and DB access layers.
+- `services`: Service base classes, authentication, and gateways.
+- `storage`: Storage functionality for cloud storage integration.
+- `ui`: Optional UI libraries and components.
+
+### **Level 3: Infrastructure Modules**
+- `hardware`: Interfaces for cameras, PLCs, scanners, etc.
+- `cluster`: Runtime cluster management, nodes, and workers.
+- `datalake`: Dataset interfaces for HuggingFace and Mindtrace datasets.
+- `models`: Core model definitions and leaderboard utilities.
+
+### **Level 4: Automation**
+- `automation`: Integration of pipelines and orchestration using level 2–3 modules.
+
+### **Level 5: Applications**
+- `apps`: End-user applications composed of all previous levels.
+  - E.g., Demo pipelines
+
+---
+
+## :material-arrow-down-bold: Dependency Flow
+
+Each layer only depends on modules in lower levels.
+
+| Module     | Depends On                                           |
+|------------|------------------------------------------------------|
+| `core`     | –                                                    |
+| `jobs`     | `core`                                               |
+| `registry` | `core`                                               |
+| `database` | `core`, `registry`                                   |
+| `services` | `core`                                               |
+| `storage`  | –                                                    |
+| `ui`       | `core`                                               |
+| `cluster`  | `core`, `jobs`, `registry`, `database`, `services`   |
+| `datalake` | `core`, `registry`, `database`, `services`           |
+| `models`   | `core`, `registry`, `services`                       |
+| `hardware` | `core`, `services`, `storage`                        | 
+| `automation` | `core`, `registry`, `database`, `services`, `datalake`, `models`, `cluster` |
+| `apps`     | `core`, `registry`, `database`, `services`, `datalake`, `models`, `cluster`, `jobs`, `hardware`, `ui`, `automation` |
+
+---
+
+## :material-link: Useful Links
 
 - :material-github: [GitHub Repository](https://github.com/Mindtrace/mindtrace)
 - :material-package: [PyPI Package](https://pypi.org/project/mindtrace/)
 
-## :material-rocket-launch: Quick Start
+---
+## :material-console: Quick Start
 
 ### :material-download: Installation
 
@@ -31,7 +109,12 @@ uv add mindtrace-datalake
 from mindtrace import core, registry, database, services
 ```
 
+---
 
+## :material-rocket: Contribute
 
+We welcome contributions! Whether you're fixing bugs, adding features, or improving documentation, your help makes Mindtrace better.
 
-
+- :material-book-open: [Contributing Guide](https://github.com/Mindtrace/mindtrace/blob/dev/CONTRIBUTING.md) - Learn how to get started
+- :material-github: [GitHub Issues](https://github.com/Mindtrace/mindtrace/issues) - Report bugs or suggest features
+- :material-source-branch: [Pull Requests](https://github.com/Mindtrace/mindtrace/pulls) - Submit your contributions
