@@ -57,7 +57,7 @@ class GCPRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or f"gs://{bucket_name}").expanduser().resolve()
+        self._uri = Path(uri or f"gs://{bucket_name}")
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
 
@@ -86,8 +86,10 @@ class GCPRegistryBackend(RegistryBackend):
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""
         try:
-            self.gcs.exists(self._metadata_path)
+            exists = self.gcs.exists(self._metadata_path)
         except Exception:
+            exists = False
+        if not exists:
             # Create empty metadata file if it doesn't exist
             data = json.dumps({"materializers": {}}).encode()
             with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
