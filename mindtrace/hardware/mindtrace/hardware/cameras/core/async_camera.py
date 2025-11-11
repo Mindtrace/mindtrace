@@ -619,6 +619,217 @@ class AsyncCamera(Mindtrace):
         """Check whether the backend connection is healthy."""
         return await self._backend.check_connection()
 
+    # GigE Network Performance Methods
+
+    async def get_packet_size(self) -> int:
+        """Get GigE packet size in bytes.
+
+        Returns:
+            Packet size in bytes (typically 1500 standard or 9000 jumbo frames).
+
+        Raises:
+            NotImplementedError: If camera doesn't support packet size control.
+        """
+        return await self._backend.get_packet_size()
+
+    async def set_packet_size(self, size: int):
+        """Set GigE packet size for network optimization.
+
+        Args:
+            size: Packet size in bytes (1476-16000).
+        """
+        async with self._lock:
+            await self._backend.set_packet_size(size)
+
+    async def get_inter_packet_delay(self) -> int:
+        """Get inter-packet delay in ticks.
+
+        Returns:
+            Delay in ticks (0-65535, higher = slower transmission).
+
+        Raises:
+            NotImplementedError: If camera doesn't support inter-packet delay control.
+        """
+        return await self._backend.get_inter_packet_delay()
+
+    async def set_inter_packet_delay(self, delay_ticks: int):
+        """Set inter-packet delay for network traffic control.
+
+        Args:
+            delay_ticks: Delay in ticks (0-65535).
+        """
+        async with self._lock:
+            await self._backend.set_inter_packet_delay(delay_ticks)
+
+    async def get_bandwidth_limit(self) -> float:
+        """Get bandwidth limit in Mbps.
+
+        Returns:
+            Bandwidth limit in Mbps, or unlimited if not set.
+
+        Raises:
+            NotImplementedError: If camera doesn't support bandwidth limiting.
+        """
+        return await self._backend.get_bandwidth_limit()
+
+    async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
+        """Set bandwidth limit for GigE camera.
+
+        Args:
+            limit_mbps: Bandwidth limit in Mbps (None for unlimited).
+        """
+        async with self._lock:
+            await self._backend.set_bandwidth_limit(limit_mbps)
+
+    # Camera Capability and Range Query Methods
+
+    async def get_trigger_modes(self) -> List[str]:
+        """Get available trigger modes for the camera.
+
+        Returns:
+            List of supported trigger mode names. Returns default modes if backend doesn't support query.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            return await self._backend.get_trigger_modes()
+        except (NotImplementedError, AttributeError):
+            # Return sensible defaults for cameras without trigger mode query capability
+            return ["continuous", "triggered"]
+
+    async def get_bandwidth_limit_range(self) -> Optional[Tuple[float, float]]:
+        """Get bandwidth limit range for GigE cameras.
+
+        Returns:
+            Tuple of (min_mbps, max_mbps) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_bandwidth_limit_range()
+            return (float(range_list[0]), float(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_packet_size_range(self) -> Optional[Tuple[int, int]]:
+        """Get packet size range for GigE cameras.
+
+        Returns:
+            Tuple of (min_bytes, max_bytes) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_packet_size_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_inter_packet_delay_range(self) -> Optional[Tuple[int, int]]:
+        """Get inter-packet delay range for GigE cameras.
+
+        Returns:
+            Tuple of (min_ticks, max_ticks) for GigE cameras, None for non-GigE cameras.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_inter_packet_delay_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_width_range(self) -> Optional[Tuple[int, int]]:
+        """Get sensor width range for ROI configuration.
+
+        Returns:
+            Tuple of (min_width, max_width) if supported, None otherwise.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_width_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def get_height_range(self) -> Optional[Tuple[int, int]]:
+        """Get sensor height range for ROI configuration.
+
+        Returns:
+            Tuple of (min_height, max_height) if supported, None otherwise.
+
+        Raises:
+            CameraError: If communication with camera fails.
+        """
+        try:
+            range_list = await self._backend.get_height_range()
+            return (int(range_list[0]), int(range_list[1]))
+        except (NotImplementedError, AttributeError):
+            return None
+
+    async def is_exposure_control_supported(self) -> bool:
+        """Check if camera supports exposure control.
+
+        Returns:
+            True if exposure control is supported, False otherwise.
+        """
+        try:
+            return await self._backend.is_exposure_control_supported()
+        except (NotImplementedError, AttributeError):
+            # Assume exposure control is supported unless explicitly not supported
+            return True
+
+    async def supports_feature(self, feature: str) -> bool:
+        """Check if camera supports a specific feature.
+
+        Args:
+            feature: Feature name to check. Supported values:
+                - 'bandwidth_limit': GigE bandwidth limiting
+                - 'packet_size': GigE packet size control
+                - 'inter_packet_delay': GigE inter-packet delay
+                - 'exposure_control': Exposure time control
+                - 'trigger_modes': Trigger mode support
+                - 'width_range': Width range query
+                - 'height_range': Height range query
+
+        Returns:
+            True if feature is supported and functional, False otherwise.
+        """
+        feature_checks = {
+            'bandwidth_limit': self.get_bandwidth_limit_range,
+            'packet_size': self.get_packet_size_range,
+            'inter_packet_delay': self.get_inter_packet_delay_range,
+            'width_range': self.get_width_range,
+            'height_range': self.get_height_range,
+            'exposure_control': self.is_exposure_control_supported,
+            'trigger_modes': self.get_trigger_modes,
+        }
+
+        check_method = feature_checks.get(feature)
+        if not check_method:
+            return False
+
+        try:
+            result = await check_method()
+            # For range methods, None means not supported
+            # For boolean methods, False means not supported
+            # For list methods, empty list means not supported
+            if result is None:
+                return False
+            if isinstance(result, bool):
+                return result
+            if isinstance(result, (list, tuple)) and len(result) == 0:
+                return False
+            return True
+        except Exception:
+            return False
+
     async def get_sensor_info(self) -> Dict[str, Any]:
         """Get basic sensor information for diagnostics.
 
