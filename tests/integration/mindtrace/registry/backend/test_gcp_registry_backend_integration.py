@@ -120,7 +120,7 @@ def test_init(backend, test_bucket, gcs_client):
     assert gcs_client.bucket(test_bucket).exists()
 
 
-def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket):
+def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket, temp_dir):
     """Test pushing and pulling objects."""
     # Push the object
     backend.push("test:object", "1.0.0", sample_object_dir)
@@ -131,7 +131,7 @@ def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket):
     assert len(objects) == 3  # file1.txt, file2.txt, subdir/file3.txt
     
     # Download to a new location
-    download_dir = backend.uri / "download"
+    download_dir = temp_dir / "download"
     download_dir.mkdir()
     backend.pull("test:object", "1.0.0", str(download_dir))
     
@@ -335,6 +335,8 @@ def test_shared_locks(backend):
 
 def test_exclusive_lock_conflict(backend):
     """Test that exclusive locks conflict with shared locks."""
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+    
     lock_key = "test:conflict"
     shared_lock_id = "shared-lock"
     exclusive_lock_id = "exclusive-lock"
@@ -344,9 +346,10 @@ def test_exclusive_lock_conflict(backend):
     shared_success = backend.acquire_lock(lock_key, shared_lock_id, timeout, shared=True)
     assert shared_success
     
-    # Try to acquire exclusive lock (should fail)
-    exclusive_success = backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-    assert not exclusive_success
+    # Try to acquire exclusive lock (should raise LockAcquisitionError)
+    with pytest.raises(LockAcquisitionError) as exc_info:
+        backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
+    assert "currently held as shared" in str(exc_info.value)
     
     # Release shared lock
     backend.release_lock(lock_key, shared_lock_id)
@@ -392,9 +395,10 @@ def test_registry_integration(gcp_registry, sample_object_dir):
     assert loaded_list == [1, 2, 3]
     
     # Test versioning
+    orig_version_objects = gcp_registry.version_objects
+    gcp_registry.version_objects = True
     gcp_registry.save("test:versioned", "version1", version="1.0.0")
     gcp_registry.save("test:versioned", "version2", version="2.0.0")
-    
     v1 = gcp_registry.load("test:versioned", version="1.0.0")
     v2 = gcp_registry.load("test:versioned", version="2.0.0")
     latest = gcp_registry.load("test:versioned")
@@ -414,6 +418,7 @@ def test_registry_integration(gcp_registry, sample_object_dir):
     versions = gcp_registry.list_versions("test:versioned")
     assert "1.0.0" in versions
     assert "2.0.0" in versions
+    gcp_registry.version_objects = orig_version_objects
 
 
 def test_concurrent_operations(gcp_registry):

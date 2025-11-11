@@ -455,38 +455,43 @@ class GCPRegistryBackend(RegistryBackend):
                     with open(temp_path, 'r') as f:
                         metadata = json.load(f)
                     
+                    # Check if lock is still active (not expired)
                     if time.time() < metadata.get("expires_at", 0):
-                        # If there's an active exclusive lock, we can't acquire a shared lock
+                        # Lock is ACTIVE - check compatibility
                         if shared and not metadata.get("shared", False):
+                            # Can't acquire shared lock when exclusive lock is active
                             raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        # If there are active shared locks, we can't acquire an exclusive lock
                         if not shared and metadata.get("shared", False):
+                            # Can't acquire exclusive lock when shared lock is active
                             raise LockAcquisitionError(f"Lock {key} is currently held as shared")
-                        # If there's already a shared lock and we want a shared lock, we can share it
                         if shared and metadata.get("shared", False):
+                            # Both shared - allow
                             return True
+                        # Otherwise, lock is held exclusively
+                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
+                    # Lock is expired - we can overwrite it (handled below)
                 finally:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)
+            except LockAcquisitionError:
+                # Re-raise lock acquisition errors immediately
+                raise
             except Exception:
                 # Lock doesn't exist or is invalid, we can proceed
                 pass
 
-            # Create lock metadata
+            # Create/overwrite lock (allows overwriting expired locks)
             metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
 
-            # Try to create lock object atomically using if_generation_match=0
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
 
             try:
                 blob = self.gcs._bucket().blob(lock_key)
-                blob.upload_from_filename(temp_path, if_generation_match=0)
+                # Upload without if_generation_match to allow overwriting expired locks
+                blob.upload_from_filename(temp_path)
                 return True
-            except gexc.PreconditionFailed:
-                # Lock already exists
-                return False
             except Exception as e:
                 self.logger.debug(f"Lock acquisition failed: {e}")
                 return False
