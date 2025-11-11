@@ -416,25 +416,29 @@ class HardwareTestRunner(Mindtrace):
         Returns:
             API endpoint path
         """
-        # This will be overridden by hardware-specific implementations
-        # For now, provide basic mapping
+        # Camera API endpoint mapping
         endpoint_map = {
-            OperationType.DISCOVER: "/discover",
-            OperationType.DISCOVER_BACKENDS: "/backends",
-            OperationType.OPEN: "/open",
-            OperationType.CLOSE: "/close",
-            OperationType.OPEN_BATCH: "/open/batch",
-            OperationType.CLOSE_BATCH: "/close/batch",
-            OperationType.CLOSE_ALL: "/close/all",
-            OperationType.CONFIGURE: "/configure",
-            OperationType.CONFIGURE_BATCH: "/configure/batch",
-            OperationType.GET_CONFIG: "/configuration",
-            OperationType.CAPTURE: "/capture",
-            OperationType.CAPTURE_BATCH: "/capture/batch",
-            OperationType.CAPTURE_HDR: "/capture/hdr",
-            OperationType.GET_STATUS: "/status",
-            OperationType.GET_CAPABILITIES: "/capabilities",
-            OperationType.GET_INFO: "/info",
+            OperationType.DISCOVER: "/cameras/discover",
+            OperationType.DISCOVER_BACKENDS: "/cameras/backends",
+            OperationType.OPEN: "/cameras/open",
+            OperationType.CLOSE: "/cameras/close",
+            OperationType.OPEN_BATCH: "/cameras/open/batch",
+            OperationType.CLOSE_BATCH: "/cameras/close/batch",
+            OperationType.CLOSE_ALL: "/cameras/close/all",
+            OperationType.CONFIGURE: "/cameras/configure",
+            OperationType.CONFIGURE_BATCH: "/cameras/configure/batch",
+            OperationType.GET_CONFIG: "/cameras/configuration",
+            OperationType.CAPTURE: "/cameras/capture",
+            OperationType.CAPTURE_BATCH: "/cameras/capture/batch",
+            OperationType.CAPTURE_HDR: "/cameras/capture/hdr",
+            OperationType.GET_STATUS: "/cameras/status",
+            OperationType.GET_CAPABILITIES: "/cameras/capabilities",
+            OperationType.GET_INFO: "/cameras/info",
+            OperationType.START_STREAM: "/cameras/stream/start",
+            OperationType.STOP_STREAM: "/cameras/stream/stop",
+            OperationType.GET_STREAM_STATUS: "/cameras/stream/status",
+            OperationType.SET_BANDWIDTH_LIMIT: "/cameras/bandwidth/limit",
+            OperationType.GET_BANDWIDTH_SETTINGS: "/cameras/bandwidth/settings",
         }
 
         return endpoint_map.get(action, f"/{action.value}")
