@@ -87,7 +87,8 @@ class ConfigLoader:
         Raises:
             ValueError: If required fields are missing
         """
-        required_sections = ["name", "api", "hardware", "test", "expectations"]
+        # Core required sections for both old and new format
+        required_sections = ["name", "api", "expectations"]
 
         for section in required_sections:
             if section not in config:
@@ -97,13 +98,24 @@ class ConfigLoader:
         if "base_url" not in config["api"]:
             raise ValueError("Missing 'base_url' in api section")
 
-        # Validate hardware section
-        if "backend" not in config["hardware"]:
-            raise ValueError("Missing 'backend' in hardware section")
-
         # Validate expectations
         if "total_timeout" not in config["expectations"]:
             raise ValueError("Missing 'total_timeout' in expectations section")
+
+        # New format: must have operations
+        # Old format: must have hardware and test sections
+        has_operations = "operations" in config and config["operations"]
+        has_old_format = "hardware" in config and "test" in config
+
+        if not has_operations and not has_old_format:
+            raise ValueError(
+                "Config must have either 'operations' section (new format) "
+                "or both 'hardware' and 'test' sections (old format)"
+            )
+
+        # Validate hardware section if present
+        if "hardware" in config and "backend" not in config["hardware"]:
+            raise ValueError("Missing 'backend' in hardware section")
 
 
 # Convenience function
