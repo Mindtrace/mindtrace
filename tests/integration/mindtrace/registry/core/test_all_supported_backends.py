@@ -108,7 +108,7 @@ def gcp_backend_session():
 
 
 @pytest.fixture
-def backend(backend_type, temp_dir, test_bucket, gcp_backend_session):
+def backend(request, backend_type, temp_dir, test_bucket):
     """Create a backend instance for testing."""
     config = CoreConfig()
     backend_config = BACKENDS[backend_type]
@@ -124,6 +124,7 @@ def backend(backend_type, temp_dir, test_bucket, gcp_backend_session):
         return backend_class(**params)
     elif backend_type == "gcp":
         # Use the session-scoped GCP backend for faster testing
+        gcp_backend_session = request.getfixturevalue("gcp_backend_session")
         return gcp_backend_session
 
 
