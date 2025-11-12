@@ -270,6 +270,10 @@ Exit Codes:
   0 - Test passed (success rate meets expected threshold)
   1 - Configuration error or test not found
   2 - Test failed (success rate below expected threshold)
+
+📚 **Detailed Documentation:**
+- [Camera Test Suite](../test_suite/cameras/README.md) - Complete guide to camera testing, YAML configuration, parameters, and creating custom tests
+- [Test Suite Framework](../test_suite/README.md) - Core framework architecture and extension guide
 ```
 
 ## Troubleshooting

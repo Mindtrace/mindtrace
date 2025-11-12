@@ -12,82 +12,87 @@ The Hardware Test Suite provides a generalized framework for stress testing hard
 - **Comprehensive Monitoring**: Detailed metrics, failure tracking, and performance analysis
 - **Scenario-Based Testing**: Predefined test scenarios for common usage patterns
 - **YAML Configuration**: Easy-to-edit test configurations without code changes
+- **Mindtrace Framework Integration**: All classes inherit from Mindtrace for unified logging and configuration
+
+## Quick Start
+
+```bash
+# List available tests
+uv run python -m mindtrace.hardware.cli camera test --list
+
+# Run smoke test
+uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+
+# Run with verbose output
+uv run python -m mindtrace.hardware.cli camera test --config capture_stress -v
+```
+
+📚 **See also:** [CLI Documentation](../cli/README.md) for complete CLI reference
 
 ## Architecture
 
 ```
 test_suite/
 ├── core/                           # Generic framework (reusable)
-│   ├── scenario.py                # Base scenario class with cleanup operations
-│   ├── runner.py                  # Test execution engine with finally blocks
-│   ├── monitor.py                 # Metrics and monitoring
+│   ├── models.py                  # Base scenario and operation data models
+│   ├── runner.py                  # Test execution engine with Mindtrace integration
+│   ├── monitor.py                 # Metrics and monitoring with Mindtrace logging
 │   └── __init__.py               # Core exports
 │
 └── cameras/                        # Camera-specific implementation
-    ├── scenarios.py               # Predefined camera test scenarios
-    ├── runner.py                  # Camera API endpoint mapping
-    ├── config_loader.py           # YAML configuration loader
-    ├── scenario_factory.py        # Scenario creation from YAML
-    ├── run_test.py                # CLI interface
+    ├── loader.py                  # YAML configuration loader and scenario factory
+    ├── validator.py               # Camera parameter validation
     ├── __init__.py                # Camera module exports
+    ├── README.md                  # Camera test suite documentation
     └── config/                     # YAML test configurations
-        ├── smoke_test.yaml
-        ├── capture_stress.yaml
-        ├── multi_camera.yaml
-        ├── stream_stress.yaml
-        ├── chaos_test.yaml
-        └── soak_test.yaml
+        ├── template.yaml          # Template with all parameters documented
+        ├── smoke_test.yaml        # Quick validation
+        ├── capture_stress.yaml    # High-frequency capture stress
+        ├── multi_camera.yaml      # Concurrent multi-camera operations
+        ├── stream_stress.yaml     # Streaming stability testing
+        ├── chaos_test.yaml        # Edge case discovery
+        └── soak_test.yaml         # Long-duration stability
 ```
 
-## Camera Test Scenarios
+### Key Components
 
-### Smoke Test
-Quick validation of basic camera functionality.
+**Core Framework (Hardware-Agnostic):**
+- `HardwareTestRunner` - Async test execution with process isolation
+- `HardwareMonitor` - Real-time metrics tracking and reporting
+- `HardwareScenario` - Test scenario data model with operations
+- `Operation` - Individual test operation with timeout and retry support
 
-**Operations**: Discover → Open → Configure → Capture → Close
+**Camera Implementation:**
+- `ConfigLoader` - Loads and validates YAML test configurations
+- `ParameterValidator` - Validates camera parameters against CameraSettings
+- YAML configs - Declarative test definitions without code changes
 
-**Duration**: ~3 seconds | **Expected Success**: 100%
+All classes inherit from `Mindtrace` or `MindtraceABC` for:
+- Automatic structured logging via `self.logger`
+- Configuration management via `self.config`
+- Context manager support
+- Consistent error handling
 
-### Capture Stress Test
-High-frequency capture stress testing.
+## Hardware-Specific Documentation
 
-**Operations**: Discover → Open → Configure → 100 rapid captures → Close
+### Camera Tests
+📚 **[Camera Test Suite Documentation](cameras/README.md)**
 
-**Duration**: ~3 seconds | **Expected Success**: 95%
+Comprehensive guide covering:
+- Available test scenarios and when to use them
+- YAML configuration format and all parameters
+- Creating custom camera tests
+- Template reference with complete parameter documentation
 
-### Multi-Camera Test
-Concurrent camera operations with batch processing.
-
-**Operations**: Discover → Open 4 cameras → Batch configure → 50 batch captures → Close all
-
-**Duration**: ~15 seconds | **Expected Success**: 90%
-
-### Stream Stress Test
-Streaming stability and resource cleanup validation.
-
-**Operations**: Discover → Open → Configure → 10 stream cycles (5s each) → Close
-
-**Duration**: ~52 seconds | **Expected Success**: 90%
-
-### Chaos Test
-Edge case discovery through aggressive operations.
-
-**Operations**: Rapid configuration changes, concurrent access, open/close cycles, mixed-state batch operations
-
-**Duration**: ~4 seconds | **Expected Success**: 70% (deliberately aggressive)
-
-### Soak Test
-Long-duration stability testing for resource leak detection.
-
-**Operations**: Discover → Open → Configure → 5000 captures → Close
-
-**Duration**: ~8 hours | **Expected Success**: 85%
+### Future Hardware
+- **Sensors**: `test_suite/sensors/` (planned)
+- **PLCs**: `test_suite/plc/` (planned)
 
 ## Usage
 
 ### CLI Interface (Recommended)
 
-The test suite is integrated into the main hardware CLI for streamlined execution:
+The test suite is integrated into the main hardware CLI:
 
 ```bash
 # List available test configurations
@@ -102,14 +107,14 @@ uv run python -m mindtrace.hardware.cli camera test --config capture_stress
 # Run multi-camera test with verbose output
 uv run python -m mindtrace.hardware.cli camera test --config multi_camera -v
 
-# Run long-duration soak test
-uv run python -m mindtrace.hardware.cli camera test --config soak_test
+# Custom API endpoint
+uv run python -m mindtrace.hardware.cli camera test --config smoke_test --api-port 8003
 ```
 
 **CLI Features:**
 - Automatic Camera API availability check
 - Interactive API startup if not running
-- Formatted test results with ClickLogger styling
+- Rich-formatted test results with progress bars
 - Proper exit codes (0=pass, 1=config error, 2=fail)
 - Verbose mode for detailed debugging
 
@@ -118,21 +123,33 @@ uv run python -m mindtrace.hardware.cli camera test --config soak_test
 - `1` - Configuration error or test not found
 - `2` - Test failed (success rate below expected threshold)
 
+📚 **See also:** [CLI Documentation](../cli/README.md#camera-test) for complete CLI reference
+
 ### Programmatic Usage
 
 ```python
 import asyncio
-from mindtrace.hardware.test_suite.cameras import CameraTestRunner
-from mindtrace.hardware.test_suite.cameras.scenario_factory import create_scenario_from_config
+from mindtrace.hardware.test_suite.cameras.loader import create_scenario_from_config
+from mindtrace.hardware.test_suite.core.runner import HardwareTestRunner
 from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
 
 async def run_test():
+    # Load scenario from YAML config
     scenario = create_scenario_from_config("smoke_test")
 
-    async with CameraTestRunner(scenario.api_base_url) as runner:
+    # Execute with context manager for automatic cleanup
+    async with HardwareTestRunner(api_base_url=scenario.api_base_url) as runner:
         monitor = HardwareMonitor(scenario.name)
         result = await runner.execute_scenario(scenario, monitor)
+
+        # Print formatted summary
         monitor.print_summary()
+
+        # Check results
+        if result.success_rate >= scenario.expected_success_rate:
+            print("✅ Test passed")
+        else:
+            print("❌ Test failed")
 
 asyncio.run(run_test())
 ```
@@ -140,12 +157,12 @@ asyncio.run(run_test())
 ### Custom Scenarios
 
 ```python
-from mindtrace.hardware.test_suite.core.scenario import HardwareScenario, Operation, OperationType
+from mindtrace.hardware.test_suite.core.models import HardwareScenario, Operation, OperationType
 
 scenario = HardwareScenario(
     name="custom_test",
     description="Custom camera test",
-    api_base_url="http://localhost:8002",
+    api_base_url="http://localhost:8003",
     operations=[
         Operation(
             action=OperationType.DISCOVER,
@@ -178,38 +195,9 @@ scenario = HardwareScenario(
 )
 ```
 
-## YAML Configuration Format
-
-```yaml
-name: smoke_test
-description: Quick smoke test for basic camera operations
-
-api:
-  base_url: http://localhost:8002
-  timeout: 30.0
-
-hardware:
-  backend: Basler
-  camera_count: 1
-
-test:
-  capture_count: 5
-  exposure_us: 2000
-  max_concurrent_captures: 1
-
-expectations:
-  total_timeout: 60.0
-  expected_success_rate: 1.0
-
-tags:
-  - smoke
-  - quick
-  - basler
-```
-
 ## Guaranteed Cleanup
 
-All scenarios have `cleanup_operations` that execute in a `finally` block, ensuring cameras are always closed properly.
+All scenarios have `cleanup_operations` that execute in a `finally` block, ensuring hardware is always released properly.
 
 **Normal execution:**
 ```
@@ -259,11 +247,6 @@ The test suite tracks comprehensive metrics:
 - Average/min/max operation time
 - Operations per second
 
-**Error Tracking:**
-- Error types and counts
-- Top errors ranking
-- Device-specific failures
-
 **Example output:**
 ```
 ======================================================================
@@ -271,9 +254,9 @@ Test Summary: capture_stress
 ======================================================================
 Duration: 2.92s
 Operations: 4 total
-  Success: 4 (100.0%)
-  Failed: 0
-  Timeout: 0
+  [✓] Success: 4 (100.0%)
+  [✗] Failed: 0
+  [~] Timeout: 0
 
 Performance:
   Avg time: 0.730s
@@ -283,32 +266,16 @@ Performance:
 ======================================================================
 ```
 
-## API Endpoints
-
-Camera test suite interacts with these endpoints:
-
-- `/cameras/discover` - Discover cameras
-- `/cameras/backends` - Get available backends
-- `/cameras/open` - Open camera
-- `/cameras/close` - Close camera
-- `/cameras/open/batch` - Open multiple cameras
-- `/cameras/close/batch` - Close multiple cameras
-- `/cameras/close/all` - Close all open cameras
-- `/cameras/configure` - Configure camera
-- `/cameras/configure/batch` - Batch configuration
-- `/cameras/capture` - Capture image
-- `/cameras/capture/batch` - Batch capture
-- `/cameras/stream/start` - Start streaming
-- `/cameras/stream/stop` - Stop streaming
-- `/cameras/status` - Get camera status
-
 ## Extension for Other Hardware
 
 The core framework is hardware-agnostic. To add sensors, PLCs, or other hardware:
 
-1. Create directory: `test_suite/sensors/`
-2. Implement hardware-specific runner with endpoint mapping:
+1. **Create directory**: `test_suite/sensors/`
+2. **Implement hardware-specific runner** with endpoint mapping:
    ```python
+   from mindtrace.hardware.test_suite.core.runner import HardwareTestRunner
+   from mindtrace.hardware.test_suite.core.models import OperationType
+
    class SensorTestRunner(HardwareTestRunner):
        def _get_default_endpoint(self, action: OperationType) -> str:
            endpoint_map = {
@@ -318,9 +285,9 @@ The core framework is hardware-agnostic. To add sensors, PLCs, or other hardware
            }
            return endpoint_map.get(action, f"/sensors/{action.value}")
    ```
-3. Define hardware-specific scenarios
-4. Create YAML configuration files
-5. Create CLI runner script
+3. **Define hardware-specific scenarios** in YAML
+4. **Create config loader** (can reuse camera loader pattern)
+5. **Add CLI command** in `cli/commands/`
 
 Example structure:
 ```
@@ -335,4 +302,9 @@ test_suite/
 
 - `httpx` - async HTTP requests
 - `pyyaml` - configuration loading
-- Running hardware API service (default: http://localhost:8002)
+- `mindtrace.core` - Mindtrace framework for logging and configuration
+- Running hardware API service (default: http://localhost:8003)
+
+## License
+
+This project is part of the Mindtrace hardware management system.
