@@ -1,7 +1,7 @@
 """Camera-specific test scenarios and utilities."""
 
-from mindtrace.hardware.test_suite.cameras.config_loader import list_available_configs, load_config
-from mindtrace.hardware.test_suite.cameras.scenario_factory import create_scenario_from_config
+from mindtrace.hardware.test_suite.cameras.loader import list_available_configs, load_config
+from mindtrace.hardware.test_suite.cameras.loader import create_scenario_from_config
 
 __all__ = [
     "load_config",

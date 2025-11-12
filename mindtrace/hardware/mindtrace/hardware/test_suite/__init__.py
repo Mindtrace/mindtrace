@@ -7,7 +7,7 @@ through their HTTP APIs with timeout guards, process isolation, and comprehensiv
 
 from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
 from mindtrace.hardware.test_suite.core.runner import HardwareTestRunner
-from mindtrace.hardware.test_suite.core.scenario import HardwareScenario
+from mindtrace.hardware.test_suite.core.models import HardwareScenario
 
 __all__ = [
     "HardwareScenario",
