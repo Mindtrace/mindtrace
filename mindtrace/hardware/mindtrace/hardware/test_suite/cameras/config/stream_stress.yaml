@@ -20,7 +20,7 @@ test:
   stream_duration: 5.0  # seconds per cycle
   stream_quality: 85
   stream_fps: 30
-  exposure_us: 10000  # 10ms for streaming
+  # Note: Camera config parameters moved to configure operation
 
 # Expectations
 expectations:
@@ -52,7 +52,7 @@ operations:
     payload:
       camera: "$cameras[0]"
       properties:
-        exposure: 10000
+        exposure_time: 10000.0  # Aligned with CameraSettings.exposure_time (10ms for streaming)
     timeout: 5.0
 
   # Stream cycle 1

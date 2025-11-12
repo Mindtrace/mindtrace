@@ -59,21 +59,21 @@ operations:
     payload:
       camera: "$cameras[0]"
       properties:
-        exposure: 1000
+        exposure_time: 1000.0  # Aligned with CameraSettings.exposure_time
     timeout: 3.0
 
   - action: configure
     payload:
       camera: "$cameras[0]"
       properties:
-        exposure: 100000
+        exposure_time: 100000.0  # Aligned with CameraSettings.exposure_time
     timeout: 3.0
 
   - action: configure
     payload:
       camera: "$cameras[0]"
       properties:
-        exposure: 2000
+        exposure_time: 2000.0  # Aligned with CameraSettings.exposure_time
     timeout: 3.0
 
   # Capture during configuration (may fail)
