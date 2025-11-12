@@ -232,10 +232,9 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
     sys.path.insert(0, str(test_suite_path.parent))
 
     try:
-        from mindtrace.hardware.test_suite.cameras.config_loader import list_available_configs
-        from mindtrace.hardware.test_suite.cameras.runner import CameraTestRunner
-        from mindtrace.hardware.test_suite.cameras.scenario_factory import create_scenario_from_config
+        from mindtrace.hardware.test_suite.cameras.loader import create_scenario_from_config, list_available_configs
         from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
+        from mindtrace.hardware.test_suite.core.runner import HardwareTestRunner
     except ImportError as e:
         logger.error(f"Failed to import test suite: {e}")
         logger.info("Make sure the test suite is properly installed")
@@ -300,7 +299,7 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
 
         # Run the test scenario with progress display
         async def run_test():
-            async with CameraTestRunner(scenario.api_base_url) as runner:
+            async with HardwareTestRunner(api_base_url=scenario.api_base_url) as runner:
                 monitor = HardwareMonitor(scenario.name)
 
                 # Create progress display
@@ -334,7 +333,7 @@ def test(config: Optional[str], list_configs: bool, api_host: str, api_port: int
         # Print summary using Rich formatting (CLI layer)
         click.echo("")
         summary = monitor.get_summary()
-        print_test_summary(summary, monitor.devices_hung)
+        print_test_summary(summary)
 
         # Determine exit based on success rate
         if result.success_rate >= scenario.expected_success_rate:
