@@ -39,11 +39,29 @@ class MindtraceMeta(type):
         super().__init__(name, bases, attr_dict)
         cls._logger = None
         cls._config = None
+        cls._logger_kwargs = None
+        cls._cached_logger_kwargs = None  # Store the kwargs used to create the current logger
 
     @property
     def logger(cls):
+        # Check if we need to recreate the logger due to kwargs changes
+        current_kwargs = cls._logger_kwargs or {}
+
+        # Compare current kwargs with cached kwargs
+        if (
+            cls._logger is not None
+            and cls._cached_logger_kwargs is not None
+            and cls._cached_logger_kwargs != current_kwargs
+        ):
+            # Logger exists but kwargs have changed - recreate it
+            cls._logger = None
+            cls._cached_logger_kwargs = None
+
         if cls._logger is None:
-            cls._logger = get_logger(cls.unique_name)
+            # Use stored logger kwargs if available, otherwise use defaults
+            kwargs = current_kwargs
+            cls._logger = get_logger(cls.unique_name, **kwargs)
+            cls._cached_logger_kwargs = kwargs.copy()  # Store a copy for comparison
         return cls._logger
 
     @logger.setter
@@ -119,6 +137,12 @@ class Mindtrace(metaclass=MindtraceMeta):
                 "propagate",
                 "max_bytes",
                 "backup_count",
+                "use_structlog",
+                "structlog_json",
+                "structlog_pre_chain",
+                "structlog_processors",
+                "structlog_renderer",
+                "structlog_bind",
             }
             remaining_kwargs = {k: v for k, v in kwargs.items() if k not in logger_param_names}
             try:
@@ -140,8 +164,17 @@ class Mindtrace(metaclass=MindtraceMeta):
             "propagate",
             "max_bytes",
             "backup_count",
+            "use_structlog",
+            "structlog_json",
+            "structlog_pre_chain",
+            "structlog_processors",
+            "structlog_renderer",
+            "structlog_bind",
         }
         logger_kwargs = {k: v for k, v in kwargs.items() if k in logger_param_names}
+
+        # Store logger kwargs in the class for class-level logger
+        type(self)._logger_kwargs = logger_kwargs
 
         # Set up the logger
         self.logger = get_logger(self.unique_name, **logger_kwargs)

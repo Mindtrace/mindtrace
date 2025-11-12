@@ -963,7 +963,7 @@ def test_node_shutdown(mock_node):
 
 def test_worker_initialization(mock_worker):
     """Test Worker initialization."""
-    assert mock_worker.consume_process is None
+    assert mock_worker.consume_thread is None
     assert mock_worker._cluster_connection_manager is None
     assert mock_worker._cluster_url is None
 
@@ -1069,10 +1069,9 @@ def test_worker_connect_to_cluster(mock_worker):
         patch.object(mock_worker, "start") as mock_start,
         patch.object(mock_worker, "connect_to_orchestator_via_backend_args") as mock_connect_orchestrator,
         patch.object(mock_worker, "consume") as mock_consume,
-        patch("mindtrace.cluster.core.cluster.multiprocessing.Process") as MockProcess,
+        patch("mindtrace.cluster.core.cluster.threading.Thread") as MockThread,
     ):
-        mock_process = MockProcess.return_value
-        mock_process.pid = 12345
+        mock_thread = MockThread.return_value
 
         mock_worker.connect_to_cluster(payload)
 
@@ -1084,43 +1083,11 @@ def test_worker_connect_to_cluster(mock_worker):
         mock_connect_orchestrator.assert_called_once_with({"host": "localhost", "port": 5673}, queue_name="test_queue")
 
         # Verify process was started
-        MockProcess.assert_called_once_with(target=mock_consume)
-        mock_process.start.assert_called_once()
+        MockThread.assert_called_once_with(target=mock_consume)
+        mock_thread.start.assert_called_once()
 
         # Verify consume process was stored
-        assert mock_worker.consume_process == mock_process
-
-
-def test_worker_shutdown_with_process(mock_worker):
-    """Test Worker shutdown method with running process."""
-    # Mock a running process
-    mock_process = MagicMock()
-    mock_process.pid = 12345
-    mock_worker.consume_process = mock_process
-
-    with patch.object(mock_worker, "logger") as mock_logger, patch.object(Service, "shutdown") as mock_shutdown:
-        _ = mock_worker.shutdown()
-
-        # Verify process was killed
-        mock_process.kill.assert_called_once()
-        mock_logger.info.assert_called_with(f"Worker {mock_worker.id} killed consume process 12345 as part of shutdown")
-
-        # Verify super().shutdown() was called
-        assert mock_shutdown.call_count == 1
-
-
-def test_worker_shutdown_without_process(mock_worker):
-    """Test Worker shutdown method without running process."""
-    mock_worker.consume_process = None
-
-    with patch.object(mock_worker, "logger") as mock_logger, patch.object(Service, "shutdown") as mock_shutdown:
-        _ = mock_worker.shutdown()
-
-        # Verify no process was killed
-        mock_logger.info.assert_not_called()
-
-        # Verify super().shutdown() was called
-        assert mock_shutdown.call_count == 1
+        assert mock_worker.consume_thread == mock_thread
 
 
 def test_worker_abstract_run_method():
@@ -2297,8 +2264,8 @@ def test_worker_connect_to_cluster_with_connect_failure(mock_worker):
         mock_worker.connect_to_cluster(payload)
 
 
-def test_worker_connect_to_cluster_with_process_start_failure(mock_worker):
-    """Test worker connect_to_cluster when process start fails."""
+def test_worker_connect_to_cluster_with_thread_start_failure(mock_worker):
+    """Test worker connect_to_cluster when thread start fails."""
     payload = {
         "backend_args": {"cls": "test.backend", "kwargs": {"host": "localhost", "port": 5673}},
         "queue_name": "test_queue",
@@ -2306,12 +2273,12 @@ def test_worker_connect_to_cluster_with_process_start_failure(mock_worker):
     }
 
     # Mock multiprocessing.Process to raise an exception
-    with patch("mindtrace.cluster.core.cluster.multiprocessing.Process") as mock_process_class:
-        mock_process = MagicMock()
-        mock_process.start.side_effect = RuntimeError("Process start failed")
-        mock_process_class.return_value = mock_process
+    with patch("mindtrace.cluster.core.cluster.threading.Thread") as mock_thread_class:
+        mock_thread = MagicMock()
+        mock_thread.start.side_effect = RuntimeError("Thread start failed")
+        mock_thread_class.return_value = mock_thread
 
-        with pytest.raises(RuntimeError, match="Process start failed"):
+        with pytest.raises(RuntimeError, match="Thread start failed"):
             mock_worker.connect_to_cluster(payload)
 
 
