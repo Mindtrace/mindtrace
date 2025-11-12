@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_empty_state(message: str = "No data available") -> rx.Component:
     """Neutral empty state block."""

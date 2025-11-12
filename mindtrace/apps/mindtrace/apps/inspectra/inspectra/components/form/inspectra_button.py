@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_button(label: str, background: str | None = None, color: str | None = None) -> rx.Component:
     """Base button, external colors, token defaults."""

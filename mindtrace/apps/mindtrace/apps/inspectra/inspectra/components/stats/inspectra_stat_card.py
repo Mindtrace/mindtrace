@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_stat_card(label: str, value: str, subtext: str = "") -> rx.Component:
     """Display a KPI metric card."""

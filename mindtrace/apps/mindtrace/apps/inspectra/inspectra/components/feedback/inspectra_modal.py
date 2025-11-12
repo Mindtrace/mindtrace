@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_modal(title: str, body: str, confirm_label: str) -> rx.Component:
     """Token-driven modal."""

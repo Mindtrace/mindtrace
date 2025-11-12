@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_chart_container(title: str, chart: rx.Component) -> rx.Component:
     """Standard wrapper for charts."""

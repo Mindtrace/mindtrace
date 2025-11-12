@@ -1,6 +1,8 @@
 import reflex as rx
-from inspectra.styles.global_styles import DS
+
 from inspectra.components.feedback.inspectra_badge import inspectra_badge
+from inspectra.styles.global_styles import DS
+
 
 def inspectra_alert_row(line: str, description: str, severity_color: str, status_color: str) -> rx.Component:
     """Single alert row using external color inputs."""

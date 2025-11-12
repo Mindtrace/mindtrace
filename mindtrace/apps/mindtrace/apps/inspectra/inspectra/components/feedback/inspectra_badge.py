@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_badge(text: str, background: str | None = None) -> rx.Component:
     """Minimal badge component."""

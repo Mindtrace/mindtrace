@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_toggle_switch(label: str, value: bool = True) -> rx.Component:
     """Token-styled switch."""

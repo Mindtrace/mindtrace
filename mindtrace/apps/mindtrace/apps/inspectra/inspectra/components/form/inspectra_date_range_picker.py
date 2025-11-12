@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_date_range_picker(label: str = "Date Range") -> rx.Component:
     """Date input styled by tokens."""

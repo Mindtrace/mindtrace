@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_data_table(columns: list[str], rows: list[list[str]]) -> rx.Component:
     """Token-driven generic table."""

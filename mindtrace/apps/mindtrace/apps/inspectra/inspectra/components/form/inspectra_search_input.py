@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_search_input(placeholder: str = "Search...") -> rx.Component:
     """Neutral search input, token-styled."""

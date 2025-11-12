@@ -1,5 +1,7 @@
 import reflex as rx
+
 from inspectra.styles.global_styles import DS
+
 
 def inspectra_section_card(title: str, content: rx.Component) -> rx.Component:
     """Generic wrapper for chart or table sections."""
