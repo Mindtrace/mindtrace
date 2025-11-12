@@ -476,7 +476,7 @@ class GCPRegistryBackend(RegistryBackend):
                 finally:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)
-            except Exception as e:
+            except Exception:
                 # Lock doesn't exist or is invalid, we can proceed
                 pass
 

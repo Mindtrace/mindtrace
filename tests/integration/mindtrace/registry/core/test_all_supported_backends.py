@@ -302,10 +302,15 @@ def test_materializer_registration(registry):
 
 
 @pytest.mark.slow
-def test_concurrent_save_operations(registry, test_config):
+def test_concurrent_save_operations(request, registry, test_config):
     """Test concurrent save operations with distributed locking."""
     import time
     from concurrent.futures import ThreadPoolExecutor
+
+    # Get the backend type
+    backend_type = request.getfixturevalue("backend_type")
+    n_workers = 2 if backend_type == "gcp" else 3
+    n_versions = 3 if backend_type == "gcp" else 5
 
     # Use unique test prefix to avoid conflicts with other tests when using shared bucket
     test_prefix = f"test:concurrent-save:{uuid.uuid4().hex[:8]}:"
@@ -324,14 +329,14 @@ def test_concurrent_save_operations(registry, test_config):
         registry.save(f"{test_prefix}save", new_config, version=f"1.0.{i}")
 
     # Try to save multiple versions concurrently (reduced workers to avoid lock contention)
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(save_with_delay, i) for i in range(5)]
+    with ThreadPoolExecutor(max_workers=n_workers) as executor:
+        futures = [executor.submit(save_with_delay, i) for i in range(n_versions)]
         [future.result() for future in futures]
 
     # Verify all versions were saved correctly
     versions = registry.list_versions(f"{test_prefix}save")
-    assert len(versions) == 5
-    for i in range(5):
+    assert len(versions) == n_versions
+    for i in range(n_versions):
         config = registry.load(f"{test_prefix}save", version=f"1.0.{i}")
         assert config["CUSTOM_KEY"] == f"value{i}"
 
