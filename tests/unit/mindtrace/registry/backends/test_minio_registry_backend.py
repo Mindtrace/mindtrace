@@ -1331,6 +1331,7 @@ def test_acquire_lock_generic_exception(backend, monkeypatch):
 
 def test_init_bucket_creation(monkeypatch):
     """Test bucket creation during initialization (line 120)."""
+
     class MockMinio:
         def __init__(self, *args, **kwargs):
             pass
@@ -1357,7 +1358,7 @@ def test_init_bucket_creation(monkeypatch):
             pass
 
     monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
-    
+
     # This should trigger bucket creation
     backend = MinioRegistryBackend(
         uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
@@ -1372,6 +1373,7 @@ def test_init_bucket_creation(monkeypatch):
 
 def test_init_metadata_file_creation(monkeypatch):
     """Test metadata file creation during initialization (lines 126-136)."""
+
     class MockMinio:
         def __init__(self, *args, **kwargs):
             pass
@@ -1398,7 +1400,7 @@ def test_init_metadata_file_creation(monkeypatch):
             pass
 
     monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
-    
+
     # This should trigger metadata file creation
     backend = MinioRegistryBackend(
         uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
@@ -1413,6 +1415,7 @@ def test_init_metadata_file_creation(monkeypatch):
 
 def test_init_metadata_file_other_error(monkeypatch):
     """Test handling of non-NoSuchKey S3Error during initialization (lines 134-136)."""
+
     class MockMinio:
         def __init__(self, *args, **kwargs):
             pass
@@ -1436,7 +1439,7 @@ def test_init_metadata_file_other_error(monkeypatch):
             )
 
     monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
-    
+
     # This should raise the S3Error
     with pytest.raises(S3Error) as exc_info:
         MinioRegistryBackend(
@@ -1452,6 +1455,7 @@ def test_init_metadata_file_other_error(monkeypatch):
 
 def test_delete_objects_with_list(backend, monkeypatch):
     """Test delete method with object listing (lines 229-234)."""
+
     class MockObject:
         def __init__(self, name):
             self.object_name = name
@@ -1478,6 +1482,7 @@ def test_save_metadata_validation(backend):
 
 def test_save_metadata_success(backend, monkeypatch):
     """Test successful save_metadata operation (lines 244-252)."""
+
     def mock_put_object(bucket, object_name, data, length, content_type=None):
         pass
 
@@ -1489,14 +1494,14 @@ def test_save_metadata_success(backend, monkeypatch):
 
 def test_fetch_metadata_success(backend, monkeypatch):
     """Test successful fetch_metadata operation (lines 264-275)."""
+
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                self.data = json.dumps({
-                    "name": "test:object",
-                    "version": "1.0.0",
-                    "description": "Test object"
-                }).encode()
+                self.data = json.dumps(
+                    {"name": "test:object", "version": "1.0.0", "description": "Test object"}
+                ).encode()
+
         return MockResponse()
 
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
@@ -1509,6 +1514,7 @@ def test_fetch_metadata_success(backend, monkeypatch):
 
 def test_fetch_metadata_nosuchkey(backend, monkeypatch):
     """Test fetch_metadata when object doesn't exist (lines 264-275)."""
+
     def mock_get_object(bucket, object_name):
         raise S3Error(
             code="NoSuchKey",
@@ -1530,6 +1536,7 @@ def test_fetch_metadata_nosuchkey(backend, monkeypatch):
 
 def test_fetch_metadata_other_error(backend, monkeypatch):
     """Test fetch_metadata with other S3Error (lines 264-275)."""
+
     def mock_get_object(bucket, object_name):
         raise S3Error(
             code="InternalError",
@@ -1551,6 +1558,7 @@ def test_fetch_metadata_other_error(backend, monkeypatch):
 
 def test_list_objects_success(backend, monkeypatch):
     """Test successful list_objects operation (lines 339-340)."""
+
     class MockObject:
         def __init__(self, name):
             self.object_name = name
@@ -1569,6 +1577,7 @@ def test_list_objects_success(backend, monkeypatch):
 
 def test_list_versions_success(backend, monkeypatch):
     """Test successful list_versions operation (lines 360-361)."""
+
     class MockObject:
         def __init__(self, name):
             self.object_name = name
@@ -1587,6 +1596,7 @@ def test_list_versions_success(backend, monkeypatch):
 
 def test_has_object_true(backend, monkeypatch):
     """Test has_object when object exists (lines 379-387)."""
+
     def mock_list_objects():
         return ["test:object"]
 
@@ -1604,6 +1614,7 @@ def test_has_object_true(backend, monkeypatch):
 
 def test_has_object_false(backend, monkeypatch):
     """Test has_object when object doesn't exist (lines 379-387)."""
+
     def mock_list_objects():
         return []  # No objects exist
 
@@ -1615,6 +1626,7 @@ def test_has_object_false(backend, monkeypatch):
 
 def test_has_object_wrong_version(backend, monkeypatch):
     """Test has_object when object exists but version doesn't (lines 379-387)."""
+
     def mock_list_objects():
         return ["test:object"]
 
@@ -1632,6 +1644,7 @@ def test_has_object_wrong_version(backend, monkeypatch):
 
 def test_acquire_lock_success(backend, monkeypatch):
     """Test successful lock acquisition (lines 398-405)."""
+
     def mock_get_object(bucket, object_name):
         raise S3Error(
             code="NoSuchKey",
@@ -1656,52 +1669,66 @@ def test_acquire_lock_success(backend, monkeypatch):
 
 def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
     """Test acquire_lock when exclusive lock already exists (lines 417-420)."""
+
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                self.data = json.dumps({
-                    "lock_id": "existing-lock-id",
-                    "expires_at": time.time() + 3600,  # Expires in 1 hour
-                    "shared": False  # This is an exclusive lock
-                }).encode()
+                self.data = json.dumps(
+                    {
+                        "lock_id": "existing-lock-id",
+                        "expires_at": time.time() + 3600,  # Expires in 1 hour
+                        "shared": False,  # This is an exclusive lock
+                    }
+                ).encode()
+
         return MockResponse()
 
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     from mindtrace.registry.core.exceptions import LockAcquisitionError
+
     with pytest.raises(LockAcquisitionError):
-        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=True)  # Try to get shared lock when exclusive exists
+        backend.acquire_lock(
+            "test-key", "new-lock-id", timeout=30, shared=True
+        )  # Try to get shared lock when exclusive exists
 
 
 def test_acquire_lock_existing_shared_lock(backend, monkeypatch):
     """Test acquire_lock when shared lock already exists (lines 417-420)."""
+
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                self.data = json.dumps({
-                    "lock_id": "existing-lock-id",
-                    "expires_at": time.time() + 3600,  # Expires in 1 hour
-                    "shared": True  # This is a shared lock
-                }).encode()
+                self.data = json.dumps(
+                    {
+                        "lock_id": "existing-lock-id",
+                        "expires_at": time.time() + 3600,  # Expires in 1 hour
+                        "shared": True,  # This is a shared lock
+                    }
+                ).encode()
+
         return MockResponse()
 
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     from mindtrace.registry.core.exceptions import LockAcquisitionError
+
     with pytest.raises(LockAcquisitionError):
-        backend.acquire_lock("test-key", "new-lock-id", timeout=30, shared=False)  # Try to get exclusive lock when shared exists
+        backend.acquire_lock(
+            "test-key", "new-lock-id", timeout=30, shared=False
+        )  # Try to get exclusive lock when shared exists
 
 
 def test_release_lock_success(backend, monkeypatch):
     """Test successful lock release (lines 520-522)."""
+
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                self.data = json.dumps({
-                    "lock_id": "test-lock-id",
-                    "expires_at": time.time() + 3600,
-                    "shared": False
-                }).encode()
+                self.data = json.dumps(
+                    {"lock_id": "test-lock-id", "expires_at": time.time() + 3600, "shared": False}
+                ).encode()
+
         return MockResponse()
 
     def mock_remove_object(bucket, object_name):
@@ -1716,14 +1743,14 @@ def test_release_lock_success(backend, monkeypatch):
 
 def test_release_lock_wrong_id(backend, monkeypatch):
     """Test release_lock with wrong lock ID (lines 525, 529-530)."""
+
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                self.data = json.dumps({
-                    "lock_id": "different-lock-id",
-                    "expires_at": time.time() + 3600,
-                    "shared": False
-                }).encode()
+                self.data = json.dumps(
+                    {"lock_id": "different-lock-id", "expires_at": time.time() + 3600, "shared": False}
+                ).encode()
+
         return MockResponse()
 
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)

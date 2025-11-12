@@ -127,10 +127,10 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
 
     def register_materializers_batch(self, materializers: Dict[str, str]):
         """Register multiple materializers in a single operation for better performance.
-        
-        Default implementation loops through and calls register_materializer for each. Subclasses can override this 
+
+        Default implementation loops through and calls register_materializer for each. Subclasses can override this
         method to provide optimized batch operations.
-        
+
         Args:
             materializers: Dictionary mapping object classes to materializer classes.
         """
