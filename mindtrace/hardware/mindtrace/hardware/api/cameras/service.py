@@ -1003,9 +1003,20 @@ class CameraManagerService(Service):
 
             for camera, hdr_data in results.items():
                 if hdr_data and isinstance(hdr_data, dict):
+                    # Safely extract and validate images (same logic as single HDR capture)
+                    images = hdr_data.get("images")
+                    if images is not None and not isinstance(images, list):
+                        images = None  # Invalid type, set to None
+                    elif images is not None:
+                        # Ensure all elements are strings (base64 encoded)
+                        images = [str(img) if isinstance(img, str) else None for img in images]
+                        images = [img for img in images if img is not None]  # Remove None values
+                        if not images:
+                            images = None
+
                     hdr_results[camera] = HDRCaptureResult(
                         success=hdr_data.get("success", True),
-                        images=hdr_data.get("images"),
+                        images=images,
                         image_paths=hdr_data.get("image_paths"),
                         gcs_urls=hdr_data.get("gcs_urls"),
                         exposure_levels=hdr_data.get("exposure_levels", []),
