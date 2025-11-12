@@ -4,9 +4,8 @@ from datetime import datetime
 import pytest
 from pydantic import BaseModel
 
-from mindtrace.jobs import Consumer
+from mindtrace.jobs import Consumer, job_from_schema
 from mindtrace.jobs.types.job_specs import Job, JobSchema
-from mindtrace.jobs.utils.checks import job_from_schema
 
 
 class SampleJobInput(BaseModel):
@@ -33,8 +32,8 @@ def create_test_job(name: str = "test_job", schema_name: str = "default_schema")
     test_input = SampleJobInput()
     schema = JobSchema(
         name=schema_name,
-        input=SampleJobInput,
-        output=SampleJobOutput,
+        input_schema=SampleJobInput,
+        output_schema=SampleJobOutput,
     )
     job = job_from_schema(schema, test_input)
     job.id = f"{name}_123"
@@ -45,8 +44,8 @@ def create_test_job(name: str = "test_job", schema_name: str = "default_schema")
 
 @pytest.fixture
 def unique_queue_name():
-    def _unique_name(prefix="test_queue"):
-        return f"{prefix}_{int(time.time())}"
+    def _unique_name(prefix="test-queue"):
+        return f"{prefix}-{int(time.time())}"
 
     return _unique_name
 
@@ -54,6 +53,30 @@ def unique_queue_name():
 @pytest.fixture
 def test_timestamp():
     return datetime.now().isoformat()
+
+
+@pytest.fixture(scope="session")
+def sample_job_input():
+    """Provide SampleJobInput class for the entire test session."""
+    return SampleJobInput
+
+
+@pytest.fixture(scope="session")
+def sample_job_output():
+    """Provide SampleJobOutput class for the entire test session."""
+    return SampleJobOutput
+
+
+@pytest.fixture(scope="function")
+def sample_consumer():
+    """Provide a fresh SampleConsumer instance for each test function."""
+    return SampleConsumer
+
+
+@pytest.fixture(scope="function")
+def create_test_job_fixture():
+    """Provide the create_test_job function for each test function."""
+    return create_test_job
 
 
 def pytest_configure(config):
