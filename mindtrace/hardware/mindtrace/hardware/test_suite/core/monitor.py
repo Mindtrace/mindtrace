@@ -1,40 +1,21 @@
 """
 Hardware test monitoring and metrics collection.
 
-Tracks operation results, detects failures, and provides summary statistics.
+Tracks operation results and provides summary statistics.
 """
 
 import time
-from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Optional
+
+from mindtrace.core import Mindtrace
 
 
 @dataclass
-class OperationMetric:
-    """Metrics for a single operation execution."""
-
-    operation_index: int
-    action: str
-    start_time: float
-    end_time: float
-    duration: float
-    success: bool
-    error: Optional[str] = None
-    error_type: Optional[str] = None
-    retry_count: int = 0
-    payload_size: int = 0
-    response_size: int = 0
-
-
-@dataclass
-class MetricsSummary:
-    """Summary of test execution metrics."""
+class TestSummary:
+    """Summary of test execution."""
 
     scenario_name: str
-    start_time: datetime
-    end_time: datetime
     duration: float
     total_operations: int
     successful_operations: int
@@ -44,45 +25,39 @@ class MetricsSummary:
     average_operation_time: float
     max_operation_time: float
     min_operation_time: float
-    error_types: Dict[str, int]
-    top_errors: List[tuple]
     operations_per_second: float
+    top_errors: list = None  # For compatibility with display utils
 
 
-class HardwareMonitor:
+class HardwareMonitor(Mindtrace):
     """
     Monitor for hardware test execution.
 
-    Tracks metrics, detects anomalies, and provides real-time feedback
-    during test execution.
+    Tracks basic metrics and provides summary reporting.
     """
 
-    def __init__(self, scenario_name: str):
+    def __init__(self, scenario_name: str, **kwargs):
         """
         Initialize monitor for a scenario.
 
         Args:
             scenario_name: Name of the scenario being monitored
+            **kwargs: Additional Mindtrace initialization parameters
         """
+        super().__init__(**kwargs)
+
         self.scenario_name = scenario_name
         self.start_time = time.time()
         self.end_time: Optional[float] = None
 
-        # Metrics storage
-        self.operations: List[OperationMetric] = []
-        self.error_types: Dict[str, int] = defaultdict(int)
-        self.operation_times: List[float] = []
-
-        # Real-time tracking
+        # Operation counters
         self.operations_total = 0
         self.operations_success = 0
         self.operations_failed = 0
         self.operations_timeout = 0
 
-        # Device tracking
-        self.devices_tested: set = set()
-        self.devices_failed: set = set()
-        self.devices_hung: set = set()
+        # Timing metrics
+        self.operation_times: list[float] = []
 
     def record_operation(
         self,
@@ -108,111 +83,59 @@ class HardwareMonitor:
         """
         self.operations_total += 1
 
-        # Update counters
         if success:
             self.operations_success += 1
         else:
             self.operations_failed += 1
 
-            # Track error types
-            if error:
-                error_type = type(error).__name__
-                self.error_types[error_type] += 1
+            # Check for timeout
+            if error and ("timeout" in str(error).lower() or "Timeout" in type(error).__name__):
+                self.operations_timeout += 1
 
-                # Check for timeout
-                if "timeout" in str(error).lower() or "Timeout" in error_type:
-                    self.operations_timeout += 1
-
-                    # Track hung devices
-                    if device_name:
-                        self.devices_hung.add(device_name)
-
-        # Track device
-        if device_name:
-            self.devices_tested.add(device_name)
-            if not success:
-                self.devices_failed.add(device_name)
-
-        # Store operation metric
-        end_time = time.time()
-        metric = OperationMetric(
-            operation_index=operation_index,
-            action=action,
-            start_time=end_time - duration,
-            end_time=end_time,
-            duration=duration,
-            success=success,
-            error=str(error) if error else None,
-            error_type=type(error).__name__ if error else None,
-            retry_count=retry_count,
-        )
-        self.operations.append(metric)
         self.operation_times.append(duration)
-
-    def mark_device_hung(self, device_name: str, operation: str) -> None:
-        """
-        Mark a device as hung during an operation.
-
-        Args:
-            device_name: Name of the device
-            operation: Operation that caused hang
-        """
-        self.devices_hung.add(device_name)
-
-    def get_current_metrics(self) -> Dict[str, Any]:
-        """
-        Get current real-time metrics.
-
-        Returns:
-            Dictionary of current metrics
-        """
-        current_time = time.time()
-        elapsed = current_time - self.start_time
-
-        return {
-            "scenario": self.scenario_name,
-            "elapsed_time": elapsed,
-            "operations_total": self.operations_total,
-            "operations_success": self.operations_success,
-            "operations_failed": self.operations_failed,
-            "operations_timeout": self.operations_timeout,
-            "success_rate": self.operations_success / max(self.operations_total, 1),
-            "timeout_rate": self.operations_timeout / max(self.operations_total, 1),
-            "devices_tested": len(self.devices_tested),
-            "devices_failed": len(self.devices_failed),
-            "devices_hung": len(self.devices_hung),
-            "operations_per_second": self.operations_total / max(elapsed, 1),
-        }
 
     def finalize(self) -> None:
         """Mark monitoring as complete."""
         self.end_time = time.time()
 
-    def get_summary(self) -> MetricsSummary:
-        """
-        Get comprehensive summary of test execution.
+    def get_duration(self) -> float:
+        """Get test duration in seconds."""
+        if self.end_time is None:
+            return time.time() - self.start_time
+        return self.end_time - self.start_time
 
-        Returns:
-            MetricsSummary object with all statistics
-        """
+    def get_success_rate(self) -> float:
+        """Get success rate as a decimal (0.0-1.0)."""
+        if self.operations_total == 0:
+            return 0.0
+        return self.operations_success / self.operations_total
+
+    def get_current_metrics(self) -> dict:
+        """Get current real-time metrics (for runner compatibility)."""
+        return {
+            "operations_total": self.operations_total,
+            "operations_success": self.operations_success,
+            "operations_failed": self.operations_failed,
+            "operations_timeout": self.operations_timeout,
+            "success_rate": self.get_success_rate(),
+        }
+
+    def get_summary(self) -> TestSummary:
+        """Get comprehensive summary (for runner compatibility)."""
         if self.end_time is None:
             self.finalize()
 
-        duration = self.end_time - self.start_time
-        success_rate = self.operations_success / max(self.operations_total, 1)
+        duration = self.get_duration()
+        success_rate = self.get_success_rate()
 
-        # Calculate operation time statistics
+        # Calculate timing stats
         avg_time = sum(self.operation_times) / len(self.operation_times) if self.operation_times else 0.0
-        max_time = max(self.operation_times) if self.operation_times else 0.0
         min_time = min(self.operation_times) if self.operation_times else 0.0
+        max_time = max(self.operation_times) if self.operation_times else 0.0
+        ops_per_sec = self.operations_total / duration if duration > 0 else 0.0
 
-        # Get top errors
-        top_errors = sorted(self.error_types.items(), key=lambda x: x[1], reverse=True)[:5]
-
-        return MetricsSummary(
+        return TestSummary(
             scenario_name=self.scenario_name,
-            start_time=datetime.fromtimestamp(self.start_time, tz=timezone.utc),
-            end_time=datetime.fromtimestamp(self.end_time, tz=timezone.utc),
             duration=duration,
             total_operations=self.operations_total,
             successful_operations=self.operations_success,
@@ -222,35 +145,35 @@ class HardwareMonitor:
             average_operation_time=avg_time,
             max_operation_time=max_time,
             min_operation_time=min_time,
-            error_types=dict(self.error_types),
-            top_errors=top_errors,
-            operations_per_second=self.operations_total / max(duration, 1),
+            operations_per_second=ops_per_sec,
+            top_errors=[],  # Simplified monitor doesn't track detailed errors
         )
 
     def print_summary(self) -> None:
-        """Print plain text summary to console (for non-Rich contexts)."""
-        summary = self.get_summary()
+        """Print summary to console."""
+        if self.end_time is None:
+            self.finalize()
+
+        duration = self.get_duration()
+        success_rate = self.get_success_rate()
+
+        # Calculate timing stats
+        avg_time = sum(self.operation_times) / len(self.operation_times) if self.operation_times else 0.0
+        min_time = min(self.operation_times) if self.operation_times else 0.0
+        max_time = max(self.operation_times) if self.operation_times else 0.0
+        ops_per_sec = self.operations_total / duration if duration > 0 else 0.0
 
         print("\n" + "=" * 70)
-        print(f"Test Summary: {summary.scenario_name}")
+        print(f"Test Summary: {self.scenario_name}")
         print("=" * 70)
-        print(f"Duration: {summary.duration:.2f}s")
-        print(f"Operations: {summary.total_operations} total")
-        print(f"  [✓] Success: {summary.successful_operations} ({summary.success_rate:.1%})")
-        print(f"  [✗] Failed: {summary.failed_operations}")
-        print(f"  [~] Timeout: {summary.timeout_operations}")
+        print(f"Duration: {duration:.2f}s")
+        print(f"Operations: {self.operations_total} total")
+        print(f"  [✓] Success: {self.operations_success} ({success_rate:.1%})")
+        print(f"  [✗] Failed: {self.operations_failed}")
+        print(f"  [~] Timeout: {self.operations_timeout}")
         print("\nPerformance:")
-        print(f"  Avg time: {summary.average_operation_time:.3f}s")
-        print(f"  Min time: {summary.min_operation_time:.3f}s")
-        print(f"  Max time: {summary.max_operation_time:.3f}s")
-        print(f"  Ops/sec: {summary.operations_per_second:.2f}")
-
-        if self.devices_hung:
-            print(f"\n[!] Hung Devices: {', '.join(sorted(self.devices_hung))}")
-
-        if summary.top_errors:
-            print("\n[!] Top Errors:")
-            for error_type, count in summary.top_errors:
-                print(f"  {error_type}: {count}")
-
+        print(f"  Avg time: {avg_time:.3f}s")
+        print(f"  Min time: {min_time:.3f}s")
+        print(f"  Max time: {max_time:.3f}s")
+        print(f"  Ops/sec: {ops_per_sec:.2f}")
         print("=" * 70 + "\n")
