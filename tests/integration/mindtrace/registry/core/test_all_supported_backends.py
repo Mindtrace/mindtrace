@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from mindtrace.core import Config, CoreConfig
-from mindtrace.registry import LocalRegistryBackend, MinioRegistryBackend, GCPRegistryBackend, Registry
+from mindtrace.registry import GCPRegistryBackend, LocalRegistryBackend, MinioRegistryBackend, Registry
 
 # Backend configurations
 BACKENDS = {
@@ -59,7 +59,7 @@ def test_bucket(backend_type):
     """Create a test bucket for cloud backends."""
     if backend_type == "local":
         return None
-    
+
     bucket_name = f"mt-test-{uuid.uuid4().hex[:8]}"
     return bucket_name
 
@@ -68,38 +68,38 @@ def test_bucket(backend_type):
 def gcp_backend_session():
     """Create a session-scoped GCP backend for faster testing."""
     config = CoreConfig()
-    
+
     # Check if GCP credentials are available
     gcp_project_id = os.getenv("GCP_PROJECT_ID")
     gcp_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    
+
     # Try to get from config if not in environment
     if not gcp_project_id:
         try:
             gcp_project_id = config["MINDTRACE_GCP"]["GCP_PROJECT_ID"]
         except (KeyError, TypeError):
             pass
-    
+
     if not gcp_credentials_path:
         try:
             gcp_credentials_path = config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
         except (KeyError, TypeError):
             pass
-    
+
     # Skip GCP tests if credentials are not available
     if not gcp_project_id or not gcp_credentials_path:
         pytest.skip("GCP credentials not available - skipping GCP backend tests")
-    
+
     # Create a shared bucket for all GCP tests in this session
     bucket_name = f"mt-test-session-{uuid.uuid4().hex[:8]}"
-    
+
     params = {
         "project_id": gcp_project_id,
         "bucket_name": bucket_name,
         "credentials_path": gcp_credentials_path,
         "uri": f"gs://{bucket_name}",
     }
-    
+
     try:
         backend_instance = GCPRegistryBackend(**params)
         yield backend_instance
@@ -110,11 +110,10 @@ def gcp_backend_session():
 @pytest.fixture
 def backend(request, backend_type, temp_dir, test_bucket):
     """Create a backend instance for testing."""
-    config = CoreConfig()
     backend_config = BACKENDS[backend_type]
     backend_class = backend_config["class"]
     params = backend_config["params"].copy()
-    
+
     if backend_type == "local":
         params["uri"] = str(temp_dir)
         return backend_class(**params)
@@ -223,7 +222,7 @@ def test_info(registry, test_config):
 
 
 @pytest.mark.slow
-def test_concurrent_operations(registry, test_config):
+def test_concurrent_operations_threadpool(registry, test_config):
     """Test concurrent operations with distributed locking."""
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -289,13 +288,25 @@ def test_materializer_registration(registry):
         == "mindtrace.registry.archivers.config_archiver.ConfigArchiver"
     )
 
+    # Register a materializer
+    registry.register_materializer("test:custom", "CustomMaterializer")
+
+    # Check registered materializer
+    materializer = registry.registered_materializer("test:custom")
+    assert materializer == "CustomMaterializer"
+
+    # Check all registered materializers
+    materializers = registry.registered_materializers()
+    assert "test:custom" in materializers
+    assert materializers["test:custom"] == "CustomMaterializer"
+
 
 @pytest.mark.slow
 def test_concurrent_save_operations(registry, test_config):
     """Test concurrent save operations with distributed locking."""
     import time
     from concurrent.futures import ThreadPoolExecutor
-    
+
     # Use unique test prefix to avoid conflicts with other tests when using shared bucket
     test_prefix = f"test:concurrent-save:{uuid.uuid4().hex[:8]}:"
 
@@ -436,7 +447,7 @@ def test_dict_like_interface_advanced(registry, test_config):
     """Test advanced dictionary-like interface methods."""
     # Use unique test prefix to avoid conflicts with other tests when using shared bucket
     test_prefix = f"test:advanced:{uuid.uuid4().hex[:8]}:"
-    
+
     # Test get() with default
     assert registry.get(f"{test_prefix}nonexistent", "default") == "default"
 
@@ -481,7 +492,7 @@ def test_concurrent_dict_operations(registry, test_config):
     """Test concurrent dictionary-like operations."""
     import time
     from concurrent.futures import ThreadPoolExecutor
-    
+
     # Use unique test prefix to avoid conflicts with other tests when using shared bucket
     test_prefix = f"test:concurrent-dict:{uuid.uuid4().hex[:8]}:"
 
@@ -570,11 +581,11 @@ def test_save_and_load_basic_types(registry):
         "dict": {"key": "value", "number": 123},
         "bool": True,
     }
-    
+
     # Save each type
     for name, value in test_data.items():
         registry.save(f"test:{name}", value)
-    
+
     # Load and verify each type
     for name, expected_value in test_data.items():
         loaded_value = registry.load(f"test:{name}")
@@ -585,12 +596,12 @@ def test_object_discovery(registry):
     """Test object discovery functionality."""
     # Use unique test prefix to avoid conflicts with other tests when using shared bucket (e.g., GCP session-scoped)
     test_prefix = f"test:discovery:{uuid.uuid4().hex[:8]}:"
-    
+
     # Save multiple objects
     registry.save(f"{test_prefix}object:1", "data1")
     registry.save(f"{test_prefix}object:2", "data2")
     registry.save(f"{test_prefix}object:3", "data3")
-    
+
     # List all objects and filter to our test objects
     all_objects = registry.list_objects()
     test_objects = [obj for obj in all_objects if obj.startswith(test_prefix)]
@@ -598,7 +609,7 @@ def test_object_discovery(registry):
     assert f"{test_prefix}object:1" in test_objects
     assert f"{test_prefix}object:2" in test_objects
     assert f"{test_prefix}object:3" in test_objects
-    
+
     # List versions for a specific object
     registry.save(f"{test_prefix}object:1", "data1_v2", version="2.0.0")
     versions = registry.list_versions(f"{test_prefix}object:1")
@@ -615,12 +626,12 @@ def test_metadata_operations(registry):
         "tags": ["test", "integration"],
         "created_by": "test_user",
     }
-    
+
     registry.save("test:metadata", "test_data", metadata=metadata)
-    
+
     # Get object info
     info = registry.info("test:metadata")
-    
+
     # Handle different metadata structures between backends
     if isinstance(info, dict) and "1" in info:
         # GCP backend returns versioned structure
@@ -640,11 +651,11 @@ def test_object_existence(registry):
     """Test object existence checking."""
     # Save an object
     registry.save("test:exists", "test_data")
-    
+
     # Check existing object
     assert registry.has_object("test:exists")
     assert registry.has_object("test:exists", version="1")  # Auto-generated version
-    
+
     # Check non-existing object
     assert not registry.has_object("test:not_exists")
     assert not registry.has_object("test:exists", version="999.0.0")
@@ -655,34 +666,18 @@ def test_delete_operations(registry):
     # Save an object
     registry.save("test:delete", "test_data")
     assert registry.has_object("test:delete")
-    
+
     # Delete the object
     registry.delete("test:delete")
     assert not registry.has_object("test:delete")
 
 
-def test_materializer_registration(registry):
-    """Test materializer registration."""
-    # Register a materializer
-    registry.register_materializer("test:custom", "CustomMaterializer")
-    
-    # Check registered materializer
-    materializer = registry.registered_materializer("test:custom")
-    assert materializer == "CustomMaterializer"
-    
-    # Check all registered materializers
-    materializers = registry.registered_materializers()
-    assert "test:custom" in materializers
-    assert materializers["test:custom"] == "CustomMaterializer"
-
-
-def test_concurrent_operations(registry):
+def test_concurrent_operations_threads(registry):
     """Test concurrent operations with distributed locking."""
     import threading
-    import time
-    
+
     results = []
-    
+
     def worker(worker_id):
         try:
             # Save an object (this will use distributed locking)
@@ -690,22 +685,22 @@ def test_concurrent_operations(registry):
             results.append(f"Worker {worker_id} completed")
         except Exception as e:
             results.append(f"Worker {worker_id} failed: {e}")
-    
+
     # Start multiple workers
     threads = []
     for i in range(3):
         thread = threading.Thread(target=worker, args=(i,))
         threads.append(thread)
         thread.start()
-    
+
     # Wait for all threads with timeout
     for thread in threads:
         thread.join(timeout=10)
-    
+
     # Verify all operations completed
     assert len(results) == 3
     assert all("completed" in result for result in results)
-    
+
     # Verify objects were saved
     for i in range(3):
         assert registry.has_object(f"test:concurrent:{i}")
@@ -719,7 +714,7 @@ def test_error_handling_invalid_names(registry):
         "invalid@name",  # Contains @
         "",  # Empty name
     ]
-    
+
     for invalid_name in invalid_names:
         with pytest.raises(ValueError):
             registry.save(invalid_name, "test_data")
@@ -730,7 +725,7 @@ def test_error_handling_nonexistent_objects(registry):
     # Try to load nonexistent object
     with pytest.raises(ValueError):
         registry.load("nonexistent:object")
-    
+
     # Try to load nonexistent version
     registry.save("test:exists", "data")
     with pytest.raises(ValueError):
@@ -742,37 +737,37 @@ def test_backend_specific_functionality(backend_type, registry):
     if backend_type == "gcp":
         # Test GCP-specific functionality
         backend = registry.backend
-        
+
         # Test distributed locking with timeout
         lock_key = "test:lock"
         lock_id = "test-lock-id"
-        
+
         try:
             success = backend.acquire_lock(lock_key, lock_id, 5, shared=False)
             assert success
-            
+
             is_locked, current_lock_id = backend.check_lock(lock_key)
             assert is_locked
             assert current_lock_id == lock_id
-            
+
             backend.release_lock(lock_key, lock_id)
-            
+
             is_locked_after, _ = backend.check_lock(lock_key)
             assert not is_locked_after
         except Exception as e:
             pytest.skip(f"GCP locking test failed (likely due to credentials): {e}")
-    
+
     elif backend_type == "minio":
         # Test MinIO-specific functionality
         backend = registry.backend
-        
+
         # Test that bucket exists
         assert backend.client.bucket_exists(backend.bucket)
-    
+
     elif backend_type == "local":
         # Test local-specific functionality
         backend = registry.backend
-        
+
         # Test that directory exists
         assert backend.uri.exists()
         assert backend.uri.is_dir()
@@ -783,5 +778,5 @@ def test_cleanup_after_tests(registry, backend_type, test_bucket):
     # This test ensures that cleanup works by verifying the backend is functional
     registry.save("test:cleanup", "cleanup_data")
     assert registry.has_object("test:cleanup")
-    
+
     # The actual cleanup will happen in the fixtures after all tests

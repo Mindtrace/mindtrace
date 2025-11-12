@@ -199,7 +199,7 @@ class Registry(Mindtrace):
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
-        
+
         # Handle version_objects parameter with registry metadata persistence
         self.version_objects = self._initialize_version_objects(version_objects, version_objects_explicitly_set=True)
 
@@ -246,14 +246,14 @@ class Registry(Mindtrace):
 
     def _initialize_version_objects(self, version_objects: bool, version_objects_explicitly_set: bool = True) -> bool:
         """Initialize version_objects parameter with registry metadata persistence.
-        
+
         Args:
             version_objects: The version_objects parameter passed to __init__
             version_objects_explicitly_set: Whether version_objects was explicitly provided
-            
+
         Returns:
             The resolved version_objects value
-            
+
         Raises:
             ValueError: If there's a conflict between existing and new version_objects values
         """
@@ -261,7 +261,7 @@ class Registry(Mindtrace):
         try:
             existing_metadata = self._get_registry_metadata()
             existing_version_objects = existing_metadata.get("version_objects")
-            
+
             if existing_version_objects is not None:
                 # If version_objects was explicitly set and differs from existing, raise error
                 if version_objects_explicitly_set and existing_version_objects != version_objects:
@@ -276,7 +276,7 @@ class Registry(Mindtrace):
                 # No existing setting, use the provided value and save it
                 self._save_registry_metadata({"version_objects": version_objects})
                 return version_objects
-                
+
         except ValueError:
             # Re-raise ValueError (conflict)
             raise
@@ -287,77 +287,76 @@ class Registry(Mindtrace):
 
     def _get_registry_metadata(self) -> dict:
         """Get the registry metadata from the backend.
-        
+
         Returns:
             Dictionary containing registry metadata
         """
         try:
             # Try to get materializers first to see if metadata exists
             materializers = self.backend.registered_materializers()
-            
+
             # For backends that store metadata in a single file, we need to get the full metadata
             # This is a bit of a hack, but we'll check if the backend has a way to get full metadata
-            if hasattr(self.backend, '_metadata_path'):
+            if hasattr(self.backend, "_metadata_path"):
                 # For backends that store metadata in a file, we can read it directly
                 import json
-                import tempfile
                 import os
-                
-                if hasattr(self.backend, 'gcs'):
+                import tempfile
+
+                if hasattr(self.backend, "gcs"):
                     # GCP backend
-                    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                         temp_path = f.name
                     try:
                         self.backend.gcs.download(self.backend._metadata_path, temp_path)
-                        with open(temp_path, 'r') as f:
+                        with open(temp_path, "r") as f:
                             metadata = json.load(f)
                         return metadata
                     finally:
                         if os.path.exists(temp_path):
                             os.unlink(temp_path)
-                elif hasattr(self.backend, 'client'):
+                elif hasattr(self.backend, "client"):
                     # MinIO backend
-                    import io
                     response = self.backend.client.get_object(self.backend.bucket, str(self.backend._metadata_path))
                     return json.loads(response.data.decode())
                 else:
                     # Local backend
-                    with open(self.backend._metadata_path, 'r') as f:
+                    with open(self.backend._metadata_path, "r") as f:
                         return json.load(f)
             else:
                 # Fallback: return just the materializers
                 return {"materializers": materializers}
-                
+
         except Exception:
             # If we can't read metadata, return empty dict
             return {}
 
     def _save_registry_metadata(self, metadata: dict) -> None:
         """Save registry metadata to the backend.
-        
+
         Args:
             metadata: Dictionary containing registry metadata to save
         """
         try:
             # Get existing metadata and merge
             existing_metadata = self._get_registry_metadata()
-            
+
             # Ensure materializers key exists
             if "materializers" not in existing_metadata:
                 existing_metadata["materializers"] = {}
-            
+
             # Merge the new metadata
             existing_metadata.update(metadata)
-            
+
             # Save the updated metadata
-            if hasattr(self.backend, '_metadata_path'):
+            if hasattr(self.backend, "_metadata_path"):
                 import json
-                import tempfile
                 import os
-                
-                if hasattr(self.backend, 'gcs'):
+                import tempfile
+
+                if hasattr(self.backend, "gcs"):
                     # GCP backend
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                         json.dump(existing_metadata, f)
                         temp_path = f.name
                     try:
@@ -365,24 +364,29 @@ class Registry(Mindtrace):
                     finally:
                         if os.path.exists(temp_path):
                             os.unlink(temp_path)
-                elif hasattr(self.backend, 'client'):
+                elif hasattr(self.backend, "client"):
                     # MinIO backend
                     import io
+
                     data = json.dumps(existing_metadata).encode()
                     data_io = io.BytesIO(data)
                     self.backend.client.put_object(
-                        self.backend.bucket, str(self.backend._metadata_path), data_io, len(data), content_type="application/json"
+                        self.backend.bucket,
+                        str(self.backend._metadata_path),
+                        data_io,
+                        len(data),
+                        content_type="application/json",
                     )
                 else:
                     # Local backend
-                    with open(self.backend._metadata_path, 'w') as f:
+                    with open(self.backend._metadata_path, "w") as f:
                         json.dump(existing_metadata, f)
             else:
                 # Fallback: just register materializers if they exist
                 if "materializers" in metadata:
                     for object_class, materializer_class in metadata["materializers"].items():
                         self.backend.register_materializer(object_class, materializer_class)
-                        
+
         except Exception as e:
             self.logger.warning(f"Could not save registry metadata: {e}")
 
@@ -1093,11 +1097,11 @@ class Registry(Mindtrace):
         By default, the registry will only register materializers that are not already registered.
         """
         self.logger.info("Registering default materializers...")
-        
-        # Use batch registration for better performance 
+
+        # Use batch registration for better performance
         default_materializers = self.get_default_materializers()
         existing_materializers = self.backend.registered_materializers()
-        
+
         # Filter materializers that need to be registered
         materializers_to_register = {}
         for object_class, materializer_class in default_materializers.items():
@@ -1106,16 +1110,16 @@ class Registry(Mindtrace):
                 if isinstance(materializer_class, type):
                     materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
                 materializers_to_register[object_class] = materializer_class
-        
+
         if materializers_to_register:
             # Register all materializers in one batch operation
             with self.get_lock("_registry", "materializers"):
                 self.backend.register_materializers_batch(materializers_to_register)
-                
+
                 # Update cache
                 with self._materializer_cache_lock:
                     self._materializer_cache.update(materializers_to_register)
-        
+
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):
@@ -1276,28 +1280,28 @@ class Registry(Mindtrace):
 
     def clear(self, clear_registry_metadata: bool = False) -> None:
         """Remove all objects from the registry.
-        
+
         Args:
             clear_registry_metadata: If True, also clears all registry metadata including
                 materializers and version_objects settings. If False, only clears objects.
         """
         for name in self.keys():
             del self[name]
-            
+
         if clear_registry_metadata:
             # Clear registry metadata by creating a new empty metadata file
             try:
-                if hasattr(self.backend, '_metadata_path'):
+                if hasattr(self.backend, "_metadata_path"):
                     import json
-                    import tempfile
                     import os
-                    
+                    import tempfile
+
                     # Create empty metadata (no version_objects setting)
                     empty_metadata = {"materializers": {}}
-                    
-                    if hasattr(self.backend, 'gcs'):
+
+                    if hasattr(self.backend, "gcs"):
                         # GCP backend
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                             json.dump(empty_metadata, f)
                             temp_path = f.name
                         try:
@@ -1305,19 +1309,24 @@ class Registry(Mindtrace):
                         finally:
                             if os.path.exists(temp_path):
                                 os.unlink(temp_path)
-                    elif hasattr(self.backend, 'client'):
+                    elif hasattr(self.backend, "client"):
                         # MinIO backend
                         import io
+
                         data = json.dumps(empty_metadata).encode()
                         data_io = io.BytesIO(data)
                         self.backend.client.put_object(
-                            self.backend.bucket, str(self.backend._metadata_path), data_io, len(data), content_type="application/json"
+                            self.backend.bucket,
+                            str(self.backend._metadata_path),
+                            data_io,
+                            len(data),
+                            content_type="application/json",
                         )
                     else:
                         # Local backend
-                        with open(self.backend._metadata_path, 'w') as f:
+                        with open(self.backend._metadata_path, "w") as f:
                             json.dump(empty_metadata, f)
-                            
+
             except Exception as e:
                 self.logger.warning(f"Could not clear registry metadata: {e}")
 
