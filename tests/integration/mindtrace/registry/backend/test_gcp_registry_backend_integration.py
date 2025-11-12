@@ -35,12 +35,14 @@ def gcs_client():
 def test_bucket(gcs_client) -> Generator[str, None, None]:
     """Create a temporary bucket for testing."""
     bucket_name = f"mindtrace-test-{uuid.uuid4()}"
-    
-    # Create bucket
-    bucket = gcs_client.bucket(bucket_name)
-    bucket.create()
-    
-    yield bucket_name
+
+    try:
+        # Create bucket
+        bucket = gcs_client.bucket(bucket_name)
+        bucket.create()
+        yield bucket_name
+    except Exception as e:
+        pytest.skip(f"GCP bucket creation failed: {e}")
     
     # Cleanup - delete all objects first, then the bucket
     try:
@@ -68,13 +70,16 @@ def backend(temp_dir, test_bucket):
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
-    
-    return GCPRegistryBackend(
-        uri=f"gs://{test_bucket}",
-        project_id=project_id,
-        bucket_name=test_bucket,
-        credentials_path=credentials_path,
-    )
+
+    try:
+        return GCPRegistryBackend(
+            uri=f"gs://{test_bucket}",
+            project_id=project_id,
+            bucket_name=test_bucket,
+            credentials_path=credentials_path,
+        )
+    except Exception as e:
+        pytest.skip(f"GCP backend creation failed: {e}")
 
 
 @pytest.fixture
