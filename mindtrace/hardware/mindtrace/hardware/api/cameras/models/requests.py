@@ -7,7 +7,7 @@ input validation and documentation for all camera operations.
 
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # Backend & Discovery Operations
