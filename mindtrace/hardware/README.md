@@ -9,12 +9,13 @@ The Mindtrace Hardware Component provides a unified, industrial-grade interface 
 ## 🎯 Overview
 
 **Key Differentiators:**
-- **Service-Based Architecture**: Modern REST APIs with MCP integration (25 camera + 19 PLC endpoints)
+- **Service-Based Architecture**: Modern REST APIs with MCP integration for all hardware components
 - **Multi-Level Interfaces**: From simple synchronous to industrial async with bandwidth management
 - **Network Bandwidth Management**: Critical for GigE cameras with intelligent concurrent capture limiting
 - **Unified Configuration System**: Single configuration for all hardware components
 - **Production-Ready**: Comprehensive exception handling, async operations, graceful degradation
 - **Industrial Integration**: Real-time PLC coordination with multiple addressing schemes
+- **Vision-to-Physical Measurement**: Homography-based pixel-to-world coordinate transformation
 - **Extensible Design**: Easy backend addition with consistent patterns
 
 ## 🛠️ Hardware Management Tools
@@ -95,13 +96,13 @@ mindtrace/hardware/
     ├── __init__.py           # Lazy imports: CameraManager, PLCManager
     ├── api/                  # Service layer
     │   ├── cameras/          # CameraManagerService + client
-    │   │   ├── service.py         # 25 endpoints + 16 MCP tools
+    │   │   ├── service.py         # REST endpoints + MCP tools
     │   │   ├── launcher.py        # Service launcher and startup
     │   │   ├── connection_manager.py # Python client
     │   │   ├── models/            # Request/response models
     │   │   └── schemas/           # TaskSchema definitions
     │   └── plcs/             # PLCManagerService + client
-    │       ├── service.py         # 19 endpoints + 16 MCP tools
+    │       ├── service.py         # REST endpoints + MCP tools
     │       ├── launcher.py        # Service launcher and startup
     │       ├── connection_manager.py # Python client
     │       ├── models/            # Request/response models
@@ -133,13 +134,17 @@ mindtrace/hardware/
     ├── cameras/
     │   ├── core/            # Core camera interfaces
     │   │   ├── camera.py         # Synchronous interface
-    │   │   ├── async_camera.py   # Asynchronous interface  
+    │   │   ├── async_camera.py   # Asynchronous interface
     │   │   ├── camera_manager.py # Sync multi-camera manager
     │   │   └── async_camera_manager.py # Async + bandwidth mgmt
     │   ├── backends/        # Camera implementations
     │   │   ├── basler/      # Basler + mock
     │   │   ├── genicam/     # GenICam + mock
     │   │   └── opencv/      # OpenCV implementation
+    │   ├── homography/      # Planar measurement system
+    │   │   ├── data.py           # CalibrationData, MeasuredBox models
+    │   │   ├── calibrator.py     # HomographyCalibrator (checkerboard/manual)
+    │   │   └── measurer.py       # HomographyMeasurer (bbox/distance)
     │   └── setup/           # Camera setup utilities
     │       ├── setup_cameras.py   # Interactive camera setup
     │       ├── setup_basler.py    # Basler SDK setup
@@ -152,15 +157,17 @@ mindtrace/hardware/
     ├── sensors/             # Sensor management (extensible)
     ├── test_suite/          # Hardware stress testing framework
     │   ├── core/            # Generic test framework (reusable)
-    │   │   ├── scenario.py       # Base scenario class
+    │   │   ├── models.py         # Base scenario and operation models
     │   │   ├── runner.py         # Test execution engine
     │   │   └── monitor.py        # Metrics and monitoring
     │   └── cameras/         # Camera-specific tests
-    │       ├── scenarios.py      # Predefined test scenarios
-    │       ├── runner.py         # Camera API endpoint mapping
-    │       ├── config_loader.py  # YAML configuration loader
-    │       ├── scenario_factory.py # Scenario creation
+    │       ├── loader.py         # YAML configuration loader
+    │       ├── validator.py      # Parameter validation
     │       └── config/           # YAML test configurations
+    │           ├── smoke_test.yaml
+    │           ├── capture_stress.yaml
+    │           ├── multi_camera.yaml
+    │           └── ...           # Additional test scenarios
     └── tests/unit/          # Comprehensive test suite
 ```
 
@@ -380,6 +387,76 @@ export MINDTRACE_HW_CAMERA_BASLER_MULTICAST_PORT="3956"
 export MINDTRACE_HW_CAMERA_BASLER_ENABLE_MULTICAST="true"
 ```
 
+## Homography Measurement System
+
+The homography module provides planar measurement capabilities for converting pixel-space detections to real-world metric dimensions.
+
+**Core Capabilities:**
+- ✅ Automatic checkerboard calibration with sub-pixel accuracy
+- ✅ Manual point correspondence calibration for custom targets
+- ✅ Bounding box dimension measurement (width, height, area)
+- ✅ Point-to-point distance measurement
+- ✅ Unified batch measurement (boxes and distances in one request)
+- ✅ Multi-unit support (mm, cm, m, in, ft) with automatic conversion
+- ✅ RANSAC-based robust estimation with outlier rejection
+
+### Quick Start
+
+```python
+from mindtrace.hardware import HomographyCalibrator, HomographyMeasurer
+
+# Calibrate using checkerboard
+calibrator = HomographyCalibrator()
+calibration = calibrator.calibrate_checkerboard(
+    image=checkerboard_image,
+    board_size=(12, 12),    # Inner corners
+    square_size=25.0,        # mm per square
+    world_unit="mm"
+)
+calibration.save("camera_calibration.json")
+
+# Measure object dimensions
+measurer = HomographyMeasurer(calibration)
+measured = measurer.measure_bounding_box(detection_bbox, target_unit="cm")
+print(f"Size: {measured.width_world:.2f} × {measured.height_world:.2f} cm")
+
+# Measure distance between two points
+distance, unit = measurer.measure_distance(
+    point1=(100, 150),
+    point2=(300, 400),
+    target_unit="mm"
+)
+```
+
+### Service Integration
+
+The Camera Manager Service provides REST API endpoints for automated measurement workflows:
+
+```bash
+# Calibrate from checkerboard
+curl -X POST http://localhost:8002/cameras/homography/calibrate/checkerboard \
+  -H "Content-Type: application/json" \
+  -d '{"image_path": "/path/to/checkerboard.png", "square_size": 25.0}'
+
+# Unified batch measurement (boxes and distances)
+curl -X POST http://localhost:8002/cameras/homography/measure/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "calibration_path": "/path/to/calibration.json",
+    "bounding_boxes": [{"x": 100, "y": 150, "width": 200, "height": 150}],
+    "point_pairs": [[[50, 50], [250, 50]], [[100, 200], [300, 400]]],
+    "target_unit": "mm"
+  }'
+```
+
+**Typical Workflow:**
+1. Place calibration checkerboard in camera view
+2. Calibrate: `POST /cameras/homography/calibrate/checkerboard`
+3. Detect objects with vision model (YOLO, etc.)
+4. Batch measure: `POST /cameras/homography/measure/batch`
+
+[**→ See Homography Documentation**](mindtrace/hardware/cameras/homography/README.md) for calibration methods, use cases, performance optimization, and troubleshooting.
+
 ## Configuration
 
 ### Core Settings
@@ -397,6 +474,36 @@ camera_settings.trigger_mode = "continuous"
 camera_settings.exposure_time = 1000.0
 camera_settings.gain = 1.0
 camera_settings.timeout_ms = 5000
+```
+
+### Homography Settings
+
+```python
+# Homography measurement configuration
+homography_settings = config.get_config().homography
+
+# Calibration board defaults
+homography_settings.checkerboard_cols = 12
+homography_settings.checkerboard_rows = 12
+homography_settings.checkerboard_square_size = 25.0  # mm
+
+# Measurement settings
+homography_settings.default_world_unit = "mm"
+homography_settings.ransac_threshold = 3.0
+homography_settings.refine_corners = True
+```
+
+**Environment Variables:**
+```bash
+# Checkerboard calibration
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=12
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=12
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE=25.0
+
+# Measurement defaults
+export MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT=mm
+export MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD=3.0
+export MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS=true
 ```
 
 ---
