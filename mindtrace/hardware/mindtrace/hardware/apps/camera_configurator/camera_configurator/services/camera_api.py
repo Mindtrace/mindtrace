@@ -226,7 +226,7 @@ class CameraAPI:
     async def get_backends(self) -> List[str]:
         """Get available camera backends."""
         try:
-            result = await self._make_request("GET", "/backends")
+            result = await self._make_request("GET", "/cameras/backends")
             if result.get("success"):
                 return result.get("data", [])
             return []
@@ -238,7 +238,7 @@ class CameraAPI:
         """Check if camera API is healthy."""
         try:
             # Try getting backends as a simple health check
-            result = await self._make_request("GET", "/backends")
+            result = await self._make_request("GET", "/cameras/backends")
             return result.get("success", False)
         except Exception as e:
             logger.debug(f"Health check failed: {e}")
