@@ -18,13 +18,13 @@ The Hardware Test Suite provides a generalized framework for stress testing hard
 
 ```bash
 # List available tests
-uv run python -m mindtrace.hardware.cli camera test --list
+mindtrace-hw camera test --list
 
 # Run smoke test
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --config smoke_test
 
 # Run with verbose output
-uv run python -m mindtrace.hardware.cli camera test --config capture_stress -v
+mindtrace-hw camera test --config capture_stress -v
 ```
 
 📚 **See also:** [CLI Documentation](../cli/README.md) for complete CLI reference
@@ -96,19 +96,19 @@ The test suite is integrated into the main hardware CLI:
 
 ```bash
 # List available test configurations
-uv run python -m mindtrace.hardware.cli camera test --list
+mindtrace-hw camera test --list
 
 # Run smoke test (basic functionality validation)
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --config smoke_test
 
 # Run capture stress test (high-frequency capture)
-uv run python -m mindtrace.hardware.cli camera test --config capture_stress
+mindtrace-hw camera test --config capture_stress
 
 # Run multi-camera test with verbose output
-uv run python -m mindtrace.hardware.cli camera test --config multi_camera -v
+mindtrace-hw camera test --config multi_camera -v
 
 # Custom API endpoint
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test --api-port 8003
+mindtrace-hw camera test --config smoke_test --api-port 8003
 ```
 
 **CLI Features:**

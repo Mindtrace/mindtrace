@@ -28,59 +28,59 @@ A command-line interface for managing Mindtrace hardware services with process l
 ### Basic Usage
 ```bash
 # Start camera services (API + web configurator)
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera start
 
 # Check detailed status with access URLs
-uv run python -m mindtrace.hardware.cli camera status
+mindtrace-hw camera status
 
-# Stop all camera services gracefully  
-uv run python -m mindtrace.hardware.cli camera stop
+# Stop all camera services gracefully
+mindtrace-hw camera stop
 ```
 
 ### Advanced Configuration
 ```bash
 # Custom host and port configuration
-uv run python -m mindtrace.hardware.cli camera start \
+mindtrace-hw camera start \
   --api-host 192.168.1.100 \
   --api-port 8080 \
   --app-port 3001
 
 # API only mode (headless, no web interface)
-uv run python -m mindtrace.hardware.cli camera start --api-only
+mindtrace-hw camera start --api-only
 
 # Include mock cameras for development and testing
-uv run python -m mindtrace.hardware.cli camera start --include-mocks
+mindtrace-hw camera start --include-mocks
 
 # Bind to all interfaces for network access
-uv run python -m mindtrace.hardware.cli camera start --api-host 0.0.0.0 --app-host 0.0.0.0
+mindtrace-hw camera start --api-host 0.0.0.0 --app-host 0.0.0.0
 ```
 
 ### Service Management
 ```bash
 # Check if services are running before starting
-uv run python -m mindtrace.hardware.cli camera status
+mindtrace-hw camera status
 
 # Force restart existing services
-uv run python -m mindtrace.hardware.cli camera start  # Will prompt to restart if running
+mindtrace-hw camera start  # Will prompt to restart if running
 
 # View service log information
-uv run python -m mindtrace.hardware.cli camera logs
+mindtrace-hw camera logs
 ```
 
 ### Camera Testing
 ```bash
 # List available test scenarios
-uv run python -m mindtrace.hardware.cli camera test --list
+mindtrace-hw camera test --list
 
 # Run smoke test (basic functionality validation)
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --config smoke_test
 
 # Run stress tests
-uv run python -m mindtrace.hardware.cli camera test --config capture_stress
-uv run python -m mindtrace.hardware.cli camera test --config multi_camera
+mindtrace-hw camera test --config capture_stress
+mindtrace-hw camera test --config multi_camera
 
 # Run with verbose output for debugging
-uv run python -m mindtrace.hardware.cli camera test --config chaos_test -v
+mindtrace-hw camera test --config chaos_test -v
 ```
 
 ## Architecture
@@ -151,7 +151,7 @@ configurator    | Running | 12346 | localhost:3000   | 2h 14m | 123.4MB
 ```bash
 cd mindtrace/hardware
 uv sync
-uv run python -m mindtrace.hardware.cli --help
+mindtrace-hw --help
 ```
 
 ### System Installation
@@ -165,7 +165,7 @@ mindtrace-hw --help
 ```bash
 cd mindtrace/hardware
 uv sync --dev
-uv run python -m mindtrace.hardware.cli camera start --include-mocks
+mindtrace-hw camera start --include-mocks
 ```
 
 ## Environment Variables
@@ -192,26 +192,26 @@ export CAMERA_UI_FRONTEND_PORT="3001"
 export CAMERA_UI_BACKEND_PORT="8005"
 
 # Start services with environment configuration
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera start
 ```
 
 ### Environment Override
 CLI options always override environment variables:
 ```bash
 # This overrides CAMERA_API_PORT even if set in environment
-uv run python -m mindtrace.hardware.cli camera start --api-port 9000
+mindtrace-hw camera start --api-port 9000
 ```
 
 ## Command Reference
 
 ### camera start
 ```bash
-uv run python -m mindtrace.hardware.cli camera start [OPTIONS]
+mindtrace-hw camera start [OPTIONS]
 
 Options:
   --api-host TEXT     API service host [default: localhost]
   --api-port INTEGER  API service port [default: 8002]
-  --app-host TEXT     Configurator app host [default: localhost] 
+  --app-host TEXT     Configurator app host [default: localhost]
   --app-port INTEGER  Configurator app port [default: 3000]
   --backend-port INTEGER  Reflex backend port [default: 8000]
   --api-only         Start only API service (no web interface)
@@ -220,7 +220,7 @@ Options:
 
 ### camera stop
 ```bash
-uv run python -m mindtrace.hardware.cli camera stop
+mindtrace-hw camera stop
 
 # Gracefully stops services in dependency order:
 # 1. Camera Configurator (if running)
@@ -229,7 +229,7 @@ uv run python -m mindtrace.hardware.cli camera stop
 
 ### camera status
 ```bash
-uv run python -m mindtrace.hardware.cli camera status
+mindtrace-hw camera status
 
 # Shows detailed status table with:
 # - Service name and running status
@@ -240,7 +240,7 @@ uv run python -m mindtrace.hardware.cli camera status
 
 ### camera logs
 ```bash
-uv run python -m mindtrace.hardware.cli camera logs
+mindtrace-hw camera logs
 
 # Provides guidance on log locations:
 # - Console output for API service
@@ -249,7 +249,7 @@ uv run python -m mindtrace.hardware.cli camera logs
 
 ### camera test
 ```bash
-uv run python -m mindtrace.hardware.cli camera test [OPTIONS]
+mindtrace-hw camera test [OPTIONS]
 
 Options:
   --config, -c TEXT    Test configuration to run (e.g., smoke_test)
@@ -286,17 +286,17 @@ Exit Codes:
 # Solution: Check what's using the port
 netstat -tulpn | grep 8002
 # Or use a different port
-uv run python -m mindtrace.hardware.cli camera start --api-port 8003
+mindtrace-hw camera start --api-port 8003
 ```
 
 #### Service Won't Start
 ```bash
 # Check service status first
-uv run python -m mindtrace.hardware.cli camera status
+mindtrace-hw camera status
 
 # Stop and restart cleanly
-uv run python -m mindtrace.hardware.cli camera stop
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera stop
+mindtrace-hw camera start
 ```
 
 #### Service Health Check Timeouts
@@ -305,7 +305,7 @@ uv run python -m mindtrace.hardware.cli camera start
 # App timeout (15s): Usually indicates Reflex compilation issues
 
 # Check with API only mode first
-uv run python -m mindtrace.hardware.cli camera start --api-only
+mindtrace-hw camera start --api-only
 ```
 
 ### Process Management Issues

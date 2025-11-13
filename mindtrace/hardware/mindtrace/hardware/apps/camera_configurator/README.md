@@ -60,13 +60,13 @@ export CAMERA_UI_BACKEND_PORT="8005"
 ### Option 1: Using the CLI (Recommended)
 ```bash
 # Start both API and configurator
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera start
 
 # API only (headless mode)
-uv run python -m mindtrace.hardware.cli camera start --api-only
+mindtrace-hw camera start --api-only
 
 # Custom configuration with mocks
-uv run python -m mindtrace.hardware.cli camera start --api-host 0.0.0.0 --include-mocks
+mindtrace-hw camera start --api-host 0.0.0.0 --include-mocks
 ```
 
 ### Option 2: Using Reflex directly
@@ -176,14 +176,14 @@ Begin or end live MJPEG video streaming with configurable:
 ## Troubleshooting
 
 ### Camera API Connection Issues
-- Verify the camera API service is running: `uv run python -m mindtrace.hardware.cli camera status`
+- Verify the camera API service is running: `mindtrace-hw camera status`
 - Check network connectivity to the camera server
 - Ensure `CAMERA_API_URL` environment variable is correct
 - Test API directly: `curl http://localhost:8002/cameras`
 
 ### Camera Not Detected
 - Check physical camera connections (USB, GigE, etc.)
-- Restart the camera API service: `uv run python -m mindtrace.hardware.cli camera stop && camera start`
+- Restart the camera API service: `mindtrace-hw camera stop && mindtrace-hw camera start`
 - Verify camera drivers are installed (especially for Basler/Daheng cameras)
 - Check camera backend configuration
 
