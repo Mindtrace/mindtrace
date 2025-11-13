@@ -51,6 +51,12 @@ Environment Variables:
     - MINDTRACE_HW_NETWORK_INTERFACE: Network interface to use for camera communication
     - MINDTRACE_HW_NETWORK_JUMBO_FRAMES_ENABLED: Enable jumbo frames for GigE camera optimization
     - MINDTRACE_HW_NETWORK_MULTICAST_ENABLED: Enable multicast for camera discovery
+    - MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD: RANSAC reprojection error threshold in pixels
+    - MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS: Enable sub-pixel corner refinement for checkerboard calibration
+    - MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT: Default unit for world coordinates (mm, cm, m, in, ft)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS: Default checkerboard inner corners (width/columns)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS: Default checkerboard inner corners (height/rows)
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE: Default size of one checkerboard square in mm
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -323,6 +329,55 @@ class GCSSettings:
 
 
 @dataclass
+class HomographySettings:
+    """
+    Configuration for homography calibration and measurement.
+
+    Attributes:
+        ransac_threshold: RANSAC reprojection error threshold in pixels for outlier rejection
+        refine_corners: Enable sub-pixel corner refinement for checkerboard calibration
+        corner_refinement_window: Window size for cornerSubPix refinement (half-width)
+        corner_refinement_iterations: Maximum iterations for corner refinement
+        corner_refinement_epsilon: Convergence epsilon for corner refinement
+        min_correspondences: Minimum number of point correspondences required for calibration
+        default_world_unit: Default unit for world coordinates (mm, cm, m, in, ft)
+        supported_units: List of supported measurement units
+        checkerboard_cols: Default checkerboard inner corners (width/columns)
+        checkerboard_rows: Default checkerboard inner corners (height/rows)
+        checkerboard_square_size: Default size of one checkerboard square in default_world_unit
+        checkerboard_adaptive_thresh: Use adaptive threshold for checkerboard detection
+        checkerboard_normalize_image: Normalize image before checkerboard detection
+        checkerboard_filter_quads: Filter false checkerboard quads
+    """
+
+    # RANSAC homography estimation
+    ransac_threshold: float = 3.0  # pixels
+
+    # Corner refinement for checkerboard calibration
+    refine_corners: bool = True
+    corner_refinement_window: int = 11  # pixels (half-width, so 11x11 window)
+    corner_refinement_iterations: int = 30
+    corner_refinement_epsilon: float = 0.001
+
+    # Calibration constraints
+    min_correspondences: int = 4  # Minimum points needed for homography
+
+    # Unit system
+    default_world_unit: str = "mm"
+    supported_units: List[str] = field(default_factory=lambda: ["mm", "cm", "m", "in", "ft"])
+
+    # Default checkerboard dimensions (standard calibration target)
+    checkerboard_cols: int = 12  # Inner corners width (for 13x13 square board)
+    checkerboard_rows: int = 12  # Inner corners height (for 13x13 square board)
+    checkerboard_square_size: float = 25.0  # Square size in default_world_unit (mm)
+
+    # Checkerboard detection flags
+    checkerboard_adaptive_thresh: bool = True
+    checkerboard_normalize_image: bool = False
+    checkerboard_filter_quads: bool = False
+
+
+@dataclass
 class HardwareConfig:
     """
     Main hardware configuration container.
@@ -337,6 +392,7 @@ class HardwareConfig:
         plcs: PLC component configuration
         plc_backends: PLC backend availability and configuration
         gcs: Google Cloud Storage settings
+        homography: Homography calibration and measurement settings
     """
 
     cameras: CameraSettings = field(default_factory=CameraSettings)
@@ -348,6 +404,7 @@ class HardwareConfig:
     plcs: PLCSettings = field(default_factory=PLCSettings)
     plc_backends: PLCBackends = field(default_factory=PLCBackends)
     gcs: GCSSettings = field(default_factory=GCSSettings)
+    homography: HomographySettings = field(default_factory=HomographySettings)
 
 
 class HardwareConfigManager(Mindtrace):
@@ -696,6 +753,50 @@ class HardwareConfigManager(Mindtrace):
         if env_val := os.getenv("MINDTRACE_HW_GCS_AUTO_UPLOAD"):
             self._config.gcs.auto_upload = env_val.lower() == "true"
 
+        # Homography settings
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD"):
+            try:
+                self._config.homography.ransac_threshold = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS"):
+            self._config.homography.refine_corners = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CORNER_REFINEMENT_WINDOW"):
+            try:
+                self._config.homography.corner_refinement_window = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_MIN_CORRESPONDENCES"):
+            try:
+                self._config.homography.min_correspondences = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT"):
+            if env_val in self._config.homography.supported_units:
+                self._config.homography.default_world_unit = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS"):
+            try:
+                self._config.homography.checkerboard_cols = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS"):
+            try:
+                self._config.homography.checkerboard_rows = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE"):
+            try:
+                self._config.homography.checkerboard_square_size = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
     def _load_from_file(self, config_file: str):
         """
         Load configuration from JSON file.
@@ -718,6 +819,7 @@ class HardwareConfigManager(Mindtrace):
             ("plcs", self._config.plcs),
             ("plc_backends", self._config.plc_backends),
             ("gcs", self._config.gcs),
+            ("homography", self._config.homography),
         )
 
         for section_name, target in sections:
@@ -762,7 +864,7 @@ class HardwareConfigManager(Mindtrace):
         Allow dictionary-style access to configuration.
 
         Args:
-            key: Configuration section key ("cameras", "backends", "sensors", "actuators", "plcs", "plc_backends")
+            key: Configuration section key ("cameras", "backends", "sensors", "actuators", "plcs", "plc_backends", "homography")
 
         Returns:
             Configuration section as dictionary
@@ -785,6 +887,8 @@ class HardwareConfigManager(Mindtrace):
             return asdict(self._config.plc_backends)
         elif key == "gcs":
             return asdict(self._config.gcs)
+        elif key == "homography":
+            return asdict(self._config.homography)
         else:
             return getattr(self._config, key, None)
 
