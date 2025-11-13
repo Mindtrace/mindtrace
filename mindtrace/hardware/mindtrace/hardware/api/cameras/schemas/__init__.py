@@ -45,6 +45,13 @@ from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
     StreamStatusSchema,
     StreamStopSchema,
 )
+from mindtrace.hardware.api.cameras.schemas.homography_schemas import (
+    CalibrateHomographyCheckerboardSchema,
+    CalibrateHomographyCorrespondencesSchema,
+    MeasureHomographyBatchSchema,
+    MeasureHomographyBoxSchema,
+    MeasureHomographyDistanceSchema,
+)
 
 # All schemas for easy import - maintains backward compatibility
 ALL_SCHEMAS = {
@@ -85,6 +92,12 @@ ALL_SCHEMAS = {
     "stream_status": StreamStatusSchema,
     "get_active_streams": GetActiveStreamsSchema,
     "stop_all_streams": StopAllStreamsSchema,
+    # Homography
+    "calibrate_homography_checkerboard": CalibrateHomographyCheckerboardSchema,
+    "calibrate_homography_correspondences": CalibrateHomographyCorrespondencesSchema,
+    "measure_homography_box": MeasureHomographyBoxSchema,
+    "measure_homography_batch": MeasureHomographyBatchSchema,
+    "measure_homography_distance": MeasureHomographyDistanceSchema,
 }
 
 __all__ = [
@@ -125,6 +138,12 @@ __all__ = [
     "StreamStatusSchema",
     "GetActiveStreamsSchema",
     "StopAllStreamsSchema",
+    # Homography
+    "CalibrateHomographyCheckerboardSchema",
+    "CalibrateHomographyCorrespondencesSchema",
+    "MeasureHomographyBoxSchema",
+    "MeasureHomographyBatchSchema",
+    "MeasureHomographyDistanceSchema",
     # All schemas dictionary
     "ALL_SCHEMAS",
 ]

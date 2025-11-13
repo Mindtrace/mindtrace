@@ -55,6 +55,19 @@ from mindtrace.hardware.api.cameras.models import (
     ConfigFileResponse,
     HDRCaptureResponse,
     HDRCaptureResult,
+    HomographyBatchMeasurementData,
+    HomographyBatchMeasurementResponse,
+    HomographyCalibrateCheckerboardRequest,
+    HomographyCalibrateCorrespondencesRequest,
+    HomographyCalibrationResponse,
+    HomographyCalibrationResult,
+    HomographyDistanceResponse,
+    HomographyDistanceResult,
+    HomographyMeasureBatchRequest,
+    HomographyMeasureBoundingBoxRequest,
+    HomographyMeasureDistanceRequest,
+    HomographyMeasurementResponse,
+    HomographyMeasurementResult,
     ListResponse,
     NetworkDiagnostics,
     NetworkDiagnosticsResponse,
@@ -256,6 +269,38 @@ class CameraManagerService(Service):
             self.set_performance_settings,
             ALL_SCHEMAS["set_performance_settings"],
             methods=["POST"],
+            as_tool=True,
+        )
+
+        # Homography Calibration & Measurement
+        self.add_endpoint(
+            "cameras/homography/calibrate/checkerboard",
+            self.calibrate_homography_checkerboard,
+            ALL_SCHEMAS["calibrate_homography_checkerboard"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/homography/calibrate/correspondences",
+            self.calibrate_homography_correspondences,
+            ALL_SCHEMAS["calibrate_homography_correspondences"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/homography/measure/box",
+            self.measure_homography_box,
+            ALL_SCHEMAS["measure_homography_box"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/homography/measure/batch",
+            self.measure_homography_batch,
+            ALL_SCHEMAS["measure_homography_batch"],
+            as_tool=True,
+        )
+        self.add_endpoint(
+            "cameras/homography/measure/distance",
+            self.measure_homography_distance,
+            ALL_SCHEMAS["measure_homography_distance"],
             as_tool=True,
         )
 
@@ -1485,6 +1530,325 @@ class CameraManagerService(Service):
             from fastapi import HTTPException
 
             raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
+
+    # Homography Calibration & Measurement Operations
+    async def calibrate_homography_checkerboard(
+        self, request: HomographyCalibrateCheckerboardRequest
+    ) -> HomographyCalibrationResponse:
+        """Calibrate homography using checkerboard pattern detection."""
+        try:
+            import numpy as np
+
+            from mindtrace.hardware import HomographyCalibrator
+
+            manager = await self._get_camera_manager()
+
+            # Check if camera is active
+            if request.camera not in manager.active_cameras:
+                raise CameraNotFoundError(f"Camera '{request.camera}' is not initialized")
+
+            # Capture calibration image
+            camera_proxy = await manager.open(request.camera)
+            calibration_image = await camera_proxy.capture(output_format="numpy")
+
+            if calibration_image is None:
+                raise HardwareOperationError(f"Failed to capture calibration image from '{request.camera}'")
+
+            # Initialize calibrator
+            calibrator = HomographyCalibrator()
+
+            # Prepare optional parameters
+            kwargs = {}
+            if request.board_size_cols is not None and request.board_size_rows is not None:
+                kwargs["board_size"] = (request.board_size_cols, request.board_size_rows)
+            if request.square_size is not None:
+                kwargs["square_size"] = request.square_size
+            if request.world_unit is not None:
+                kwargs["world_unit"] = request.world_unit
+            if request.refine_corners is not None:
+                kwargs["refine_corners"] = request.refine_corners
+
+            # Perform calibration
+            calibration = calibrator.calibrate_checkerboard(image=calibration_image, **kwargs)
+
+            # Save calibration if requested
+            calibration_path = None
+            if request.save_path:
+                calibration.save(request.save_path)
+                calibration_path = request.save_path
+
+            # Create summary of homography matrix
+            H_summary = {
+                "shape": list(calibration.H.shape),
+                "determinant": float(np.linalg.det(calibration.H)),
+            }
+
+            result = HomographyCalibrationResult(
+                success=True,
+                calibration_path=calibration_path,
+                homography_matrix_summary=H_summary,
+                world_unit=calibration.world_unit,
+                inlier_count=None,  # Checkerboard uses all detected corners
+                total_points=None,
+            )
+
+            return HomographyCalibrationResponse(
+                success=True,
+                message=f"Homography calibration completed for camera '{request.camera}'",
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Homography calibration failed for '{request.camera}': {e}")
+            result = HomographyCalibrationResult(success=False)
+            return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
+
+    async def calibrate_homography_correspondences(
+        self, request: HomographyCalibrateCorrespondencesRequest
+    ) -> HomographyCalibrationResponse:
+        """Calibrate homography from known point correspondences."""
+        try:
+            import numpy as np
+
+            from mindtrace.hardware import HomographyCalibrator
+
+            # Initialize calibrator
+            calibrator = HomographyCalibrator()
+
+            # Convert lists to numpy arrays
+            world_points = np.array(request.world_points, dtype=np.float64)
+            image_points = np.array(request.image_points, dtype=np.float64)
+
+            # Prepare optional parameters
+            kwargs = {}
+            if request.world_unit is not None:
+                kwargs["world_unit"] = request.world_unit
+
+            # Perform calibration
+            calibration = calibrator.calibrate_from_correspondences(
+                world_points=world_points, image_points=image_points, **kwargs
+            )
+
+            # Save calibration if requested
+            calibration_path = None
+            if request.save_path:
+                calibration.save(request.save_path)
+                calibration_path = request.save_path
+
+            # Create summary of homography matrix
+            H_summary = {
+                "shape": list(calibration.H.shape),
+                "determinant": float(np.linalg.det(calibration.H)),
+            }
+
+            result = HomographyCalibrationResult(
+                success=True,
+                calibration_path=calibration_path,
+                homography_matrix_summary=H_summary,
+                world_unit=calibration.world_unit,
+                inlier_count=len(world_points),  # All provided points
+                total_points=len(world_points),
+            )
+
+            return HomographyCalibrationResponse(
+                success=True,
+                message=f"Homography calibration completed from {len(world_points)} correspondences",
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Homography calibration from correspondences failed: {e}")
+            result = HomographyCalibrationResult(success=False)
+            return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
+
+    async def measure_homography_box(
+        self, request: HomographyMeasureBoundingBoxRequest
+    ) -> HomographyMeasurementResponse:
+        """Measure bounding box dimensions using homography calibration."""
+        try:
+            import numpy as np
+
+            from mindtrace.hardware import BoundingBox, CalibrationData, HomographyMeasurer
+
+            # Load calibration
+            calibration = CalibrationData.load(request.calibration_path)
+
+            # Create measurer
+            measurer = HomographyMeasurer(calibration)
+
+            # Create bounding box
+            bbox = BoundingBox(x=request.x, y=request.y, width=request.width, height=request.height)
+
+            # Perform measurement
+            measured = measurer.measure_bounding_box(bbox, target_unit=request.target_unit)
+
+            # Convert corners to list format
+            corners_list = measured.corners_world.tolist()
+
+            result = HomographyMeasurementResult(
+                success=True,
+                corners_world=corners_list,
+                width_world=measured.width_world,
+                height_world=measured.height_world,
+                area_world=measured.area_world,
+                unit=measured.unit,
+            )
+
+            return HomographyMeasurementResponse(
+                success=True,
+                message=f"Bounding box measured: {measured.width_world:.2f} x {measured.height_world:.2f} {measured.unit}",
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Homography measurement failed: {e}")
+            result = HomographyMeasurementResult(success=False)
+            return HomographyMeasurementResponse(success=False, message=f"Measurement failed: {str(e)}", data=result)
+
+    async def measure_homography_batch(
+        self, request: HomographyMeasureBatchRequest
+    ) -> HomographyBatchMeasurementResponse:
+        """Unified batch measurement for bounding boxes and/or point-pair distances."""
+        try:
+            import numpy as np
+
+            from mindtrace.hardware import BoundingBox, CalibrationData, HomographyMeasurer
+
+            # Load calibration
+            calibration = CalibrationData.load(request.calibration_path)
+
+            # Create measurer
+            measurer = HomographyMeasurer(calibration)
+
+            # Initialize results
+            box_measurements = None
+            distance_measurements = None
+            total_boxes = 0
+            total_distances = 0
+            successful_boxes = 0
+            successful_distances = 0
+
+            # Measure bounding boxes if provided
+            if request.bounding_boxes:
+                total_boxes = len(request.bounding_boxes)
+                bboxes = [
+                    BoundingBox(x=box["x"], y=box["y"], width=box["width"], height=box["height"])
+                    for box in request.bounding_boxes
+                ]
+                measurements = measurer.measure_bounding_boxes(bboxes, target_unit=request.target_unit)
+
+                box_measurements = []
+                for measured in measurements:
+                    box_measurements.append(
+                        HomographyMeasurementResult(
+                            success=True,
+                            corners_world=measured.corners_world.tolist(),
+                            width_world=measured.width_world,
+                            height_world=measured.height_world,
+                            area_world=measured.area_world,
+                            unit=measured.unit,
+                        )
+                    )
+                    successful_boxes += 1
+
+            # Measure distances if provided
+            if request.point_pairs:
+                total_distances = len(request.point_pairs)
+                distance_measurements = []
+
+                for point_pair in request.point_pairs:
+                    try:
+                        point1 = tuple(point_pair[0])
+                        point2 = tuple(point_pair[1])
+                        distance, unit = measurer.measure_distance(point1, point2, target_unit=request.target_unit)
+
+                        # Get world coordinates
+                        pixel_points = np.array([point1, point2], dtype=np.float64)
+                        world_points = measurer.pixels_to_world(pixel_points)
+
+                        distance_measurements.append(
+                            HomographyDistanceResult(
+                                success=True,
+                                distance=distance,
+                                unit=unit,
+                                point1_world=world_points[0].tolist(),
+                                point2_world=world_points[1].tolist(),
+                            )
+                        )
+                        successful_distances += 1
+                    except Exception as e:
+                        self.logger.error(f"Distance measurement failed for pair {point_pair}: {e}")
+                        distance_measurements.append(HomographyDistanceResult(success=False))
+
+            # Build summary message
+            parts = []
+            if box_measurements:
+                parts.append(f"{successful_boxes}/{total_boxes} boxes")
+            if distance_measurements:
+                parts.append(f"{successful_distances}/{total_distances} distances")
+            message = f"Batch measurement completed: {', '.join(parts)}"
+
+            data = HomographyBatchMeasurementData(
+                box_measurements=box_measurements,
+                distance_measurements=distance_measurements,
+                total_boxes=total_boxes,
+                total_distances=total_distances,
+                successful_boxes=successful_boxes,
+                successful_distances=successful_distances,
+            )
+
+            return HomographyBatchMeasurementResponse(
+                success=True,
+                message=message,
+                data=data,
+            )
+        except Exception as e:
+            self.logger.error(f"Batch homography measurement failed: {e}")
+            data = HomographyBatchMeasurementData()
+            return HomographyBatchMeasurementResponse(
+                success=False,
+                message=f"Batch measurement failed: {str(e)}",
+                data=data,
+            )
+
+    async def measure_homography_distance(
+        self, request: HomographyMeasureDistanceRequest
+    ) -> HomographyDistanceResponse:
+        """Measure distance between two points using homography calibration."""
+        try:
+            import numpy as np
+
+            from mindtrace.hardware import CalibrationData, HomographyMeasurer
+
+            # Load calibration
+            calibration = CalibrationData.load(request.calibration_path)
+
+            # Create measurer
+            measurer = HomographyMeasurer(calibration)
+
+            # Measure distance using the measurer method
+            point1 = (request.point1_x, request.point1_y)
+            point2 = (request.point2_x, request.point2_y)
+            distance, unit = measurer.measure_distance(point1, point2, target_unit=request.target_unit)
+
+            # Get world coordinates for the points
+            pixel_points = np.array([point1, point2], dtype=np.float64)
+            world_points = measurer.pixels_to_world(pixel_points)
+
+            result = HomographyDistanceResult(
+                success=True,
+                distance=distance,
+                unit=unit,
+                point1_world=world_points[0].tolist(),
+                point2_world=world_points[1].tolist(),
+            )
+
+            return HomographyDistanceResponse(
+                success=True,
+                message=f"Distance measured: {distance:.2f} {unit}",
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Distance measurement failed: {e}")
+            result = HomographyDistanceResult(success=False)
+            return HomographyDistanceResponse(success=False, message=f"Distance measurement failed: {str(e)}", data=result)
 
     # Health Check
     async def health_check(self) -> dict:

@@ -401,3 +401,71 @@ class ActiveStreamsResponse(BaseResponse):
     """Response model for active streams list."""
 
     data: List[str]  # List of camera names with active streams
+
+
+# Homography Calibration & Measurement Responses
+class HomographyCalibrationResult(BaseModel):
+    """Homography calibration result model."""
+
+    success: bool
+    calibration_path: Optional[str] = None
+    homography_matrix_summary: Optional[Dict[str, Any]] = None  # H matrix shape/determinant
+    world_unit: Optional[str] = None
+    inlier_count: Optional[int] = None
+    total_points: Optional[int] = None
+
+
+class HomographyCalibrationResponse(BaseResponse):
+    """Response model for homography calibration."""
+
+    data: HomographyCalibrationResult
+
+
+class HomographyMeasurementResult(BaseModel):
+    """Homography measurement result model."""
+
+    success: bool
+    corners_world: Optional[List[List[float]]] = None  # [[x, y], [x, y], ...]
+    width_world: Optional[float] = None
+    height_world: Optional[float] = None
+    area_world: Optional[float] = None
+    unit: Optional[str] = None
+
+
+class HomographyMeasurementResponse(BaseResponse):
+    """Response model for single homography measurement."""
+
+    data: HomographyMeasurementResult
+
+
+class HomographyDistanceResult(BaseModel):
+    """Homography distance measurement result model."""
+
+    success: bool
+    distance: Optional[float] = None
+    unit: Optional[str] = None
+    point1_world: Optional[List[float]] = None  # [x, y]
+    point2_world: Optional[List[float]] = None  # [x, y]
+
+
+class HomographyDistanceResponse(BaseResponse):
+    """Response model for distance measurement."""
+
+    data: HomographyDistanceResult
+
+
+class HomographyBatchMeasurementData(BaseModel):
+    """Batch measurement data containing both box and distance measurements."""
+
+    box_measurements: Optional[List[HomographyMeasurementResult]] = None
+    distance_measurements: Optional[List[HomographyDistanceResult]] = None
+    total_boxes: int = 0
+    total_distances: int = 0
+    successful_boxes: int = 0
+    successful_distances: int = 0
+
+
+class HomographyBatchMeasurementResponse(BaseResponse):
+    """Response model for unified batch homography measurements."""
+
+    data: HomographyBatchMeasurementData
