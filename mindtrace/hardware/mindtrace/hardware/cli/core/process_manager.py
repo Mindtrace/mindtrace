@@ -117,6 +117,57 @@ class ProcessManager:
 
         return process
 
+    def start_plc_api(self, host: str = None, port: int = None) -> subprocess.Popen:
+        """Launch PLC API service.
+
+        Args:
+            host: Host to bind the service to (default: PLC_API_HOST env var or 'localhost')
+            port: Port to run the service on (default: PLC_API_PORT env var or 8003)
+
+        Returns:
+            The subprocess handle
+        """
+        # Use environment variables as defaults
+        if host is None:
+            host = os.getenv("PLC_API_HOST", "localhost")
+        if port is None:
+            port = int(os.getenv("PLC_API_PORT", "8003"))
+
+        # Build command
+        cmd = [sys.executable, "-m", "mindtrace.hardware.api.plcs.launcher", "--host", host, "--port", str(port)]
+
+        # Set PLC API environment variables for other services to use
+        os.environ["PLC_API_HOST"] = host
+        os.environ["PLC_API_PORT"] = str(port)
+        os.environ["PLC_API_URL"] = f"http://{host}:{port}"
+
+        # Start process
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,  # Create new process group
+        )
+
+        # Wait a moment to ensure it started
+        time.sleep(1)
+
+        # Check if process is still running
+        if process.poll() is not None:
+            raise RuntimeError(f"Failed to start PLC API service on {host}:{port}")
+
+        # Save process info
+        self.processes["plc_api"] = {
+            "pid": process.pid,
+            "host": host,
+            "port": port,
+            "start_time": datetime.now().isoformat(),
+            "command": " ".join(cmd),
+        }
+        self.save_pids()
+
+        return process
+
     def start_configurator(self, host: str = None, port: int = None, backend_port: int = None) -> subprocess.Popen:
         """Launch camera configurator app.
 
