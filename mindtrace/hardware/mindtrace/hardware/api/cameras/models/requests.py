@@ -22,14 +22,14 @@ class CameraOpenRequest(BaseModel):
     """Request model for opening a camera."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    test_connection: bool = Field(True, description="Test connection after opening")
+    test_connection: bool = Field(False, description="Test connection after opening")
 
 
 class CameraOpenBatchRequest(BaseModel):
     """Request model for batch camera opening."""
 
     cameras: List[str] = Field(..., description="List of camera names to open")
-    test_connection: bool = Field(True, description="Test connections after opening")
+    test_connection: bool = Field(False, description="Test connections after opening")
 
 
 class CameraCloseRequest(BaseModel):
