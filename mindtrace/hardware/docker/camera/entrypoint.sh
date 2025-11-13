@@ -78,23 +78,20 @@ case "${1}" in
 
     test)
         echo "==> Running camera tests..."
-        exec python3 -m pytest /workspace/mindtrace/hardware/tests/
+        exec python3 -m mindtrace.hardware.cli camera test --config smoke_test --api-port "${CAMERA_API_PORT:-8002}"
         ;;
 
     discover)
         echo "==> Discovering cameras..."
-        exec python3 -c "
-from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraManager
-import asyncio
-
-async def discover():
-    cameras = AsyncCameraManager.discover(include_mocks=False, details=True)
-    print(f'\nFound {len(cameras)} cameras:')
-    for cam in cameras:
-        print(f'  - {cam}')
-
-asyncio.run(discover())
-"
+        # Wait for service to be ready, then discover cameras via API
+        if curl -s "http://localhost:${CAMERA_API_PORT:-8002}/health" > /dev/null 2>&1; then
+            curl -X POST "http://localhost:${CAMERA_API_PORT:-8002}/cameras/discover" \
+                -H "Content-Type: application/json" \
+                -d '{"backend": "all"}' 2>/dev/null | python3 -m json.tool
+        else
+            echo "ERROR: Camera API not running. Start service first with: docker compose up -d"
+            exit 1
+        fi
         ;;
 
     *)
