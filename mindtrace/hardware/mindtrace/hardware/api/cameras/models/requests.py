@@ -381,3 +381,108 @@ class StreamStatusRequest(BaseModel):
     """Request model for getting stream status."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+
+
+# Homography Operations
+class HomographyCalibrateCheckerboardRequest(BaseModel):
+    """Request model for checkerboard-based homography calibration."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    board_size_cols: Optional[int] = Field(None, ge=2, le=50, description="Checkerboard inner corners (columns). Uses config default if None.")
+    board_size_rows: Optional[int] = Field(None, ge=2, le=50, description="Checkerboard inner corners (rows). Uses config default if None.")
+    square_size: Optional[float] = Field(None, gt=0.0, description="Physical size of one square. Uses config default if None.")
+    world_unit: Optional[str] = Field(None, description="Unit of measurement ('mm', 'cm', 'm', 'in', 'ft'). Uses config default if None.")
+    refine_corners: Optional[bool] = Field(None, description="Enable sub-pixel corner refinement. Uses config default if None.")
+    save_path: Optional[str] = Field(None, description="Optional path to save calibration data as JSON")
+
+
+class HomographyCalibrateCorrespondencesRequest(BaseModel):
+    """Request model for manual point correspondence calibration."""
+
+    camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
+    world_points: List[List[float]] = Field(..., description="World coordinates as [[x1, y1], [x2, y2], ...]. Minimum 4 points.")
+    image_points: List[List[float]] = Field(..., description="Image pixel coordinates as [[u1, v1], [u2, v2], ...]. Minimum 4 points.")
+    world_unit: Optional[str] = Field(None, description="Unit of world coordinates. Uses config default if None.")
+    save_path: Optional[str] = Field(None, description="Optional path to save calibration data as JSON")
+
+    @field_validator("world_points", "image_points")
+    @classmethod
+    def validate_points(cls, v: List[List[float]]) -> List[List[float]]:
+        """Validate point arrays."""
+        if len(v) < 4:
+            raise ValueError("Minimum 4 point correspondences required")
+        for point in v:
+            if len(point) != 2:
+                raise ValueError("Each point must be [x, y] or [u, v]")
+        return v
+
+
+class HomographyMeasureBoundingBoxRequest(BaseModel):
+    """Request model for measuring a single bounding box."""
+
+    calibration_path: str = Field(..., description="Path to calibration data JSON file")
+    x: int = Field(..., ge=0, description="Bounding box X coordinate (top-left)")
+    y: int = Field(..., ge=0, description="Bounding box Y coordinate (top-left)")
+    width: int = Field(..., gt=0, description="Bounding box width in pixels")
+    height: int = Field(..., gt=0, description="Bounding box height in pixels")
+    target_unit: Optional[str] = Field(None, description="Target unit for measurements ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None.")
+
+
+class HomographyMeasureBatchRequest(BaseModel):
+    """Unified request model for batch measurements (bounding boxes and/or point-pair distances)."""
+
+    calibration_path: str = Field(..., description="Path to calibration data JSON file")
+    bounding_boxes: Optional[List[Dict[str, int]]] = Field(
+        None,
+        description="Optional list of bounding boxes as [{'x': x, 'y': y, 'width': w, 'height': h}, ...]"
+    )
+    point_pairs: Optional[List[List[List[float]]]] = Field(
+        None,
+        description="Optional list of point pairs as [[[x1,y1], [x2,y2]], [[x3,y3], [x4,y4]], ...]"
+    )
+    target_unit: Optional[str] = Field(None, description="Target unit for measurements. Uses calibration unit if None.")
+
+    @field_validator("bounding_boxes")
+    @classmethod
+    def validate_boxes(cls, v: Optional[List[Dict[str, int]]]) -> Optional[List[Dict[str, int]]]:
+        """Validate bounding boxes."""
+        if v is None:
+            return v
+        for box in v:
+            if not all(k in box for k in ['x', 'y', 'width', 'height']):
+                raise ValueError("Each bounding box must have 'x', 'y', 'width', 'height' fields")
+            if box['width'] <= 0 or box['height'] <= 0:
+                raise ValueError("Bounding box width and height must be positive")
+        return v
+
+    @field_validator("point_pairs")
+    @classmethod
+    def validate_point_pairs(cls, v: Optional[List[List[List[float]]]]) -> Optional[List[List[List[float]]]]:
+        """Validate point pairs."""
+        if v is None:
+            return v
+        for pair in v:
+            if len(pair) != 2:
+                raise ValueError("Each point pair must contain exactly 2 points")
+            for point in pair:
+                if len(point) != 2:
+                    raise ValueError("Each point must be [x, y]")
+        return v
+
+    @model_validator(mode='after')
+    def validate_at_least_one(self):
+        """Ensure at least one measurement type is provided."""
+        if not self.bounding_boxes and not self.point_pairs:
+            raise ValueError("At least one of 'bounding_boxes' or 'point_pairs' must be provided")
+        return self
+
+
+class HomographyMeasureDistanceRequest(BaseModel):
+    """Request model for measuring distance between two points."""
+
+    calibration_path: str = Field(..., description="Path to calibration data JSON file")
+    point1_x: float = Field(..., description="First point X coordinate in pixels")
+    point1_y: float = Field(..., description="First point Y coordinate in pixels")
+    point2_x: float = Field(..., description="Second point X coordinate in pixels")
+    point2_y: float = Field(..., description="Second point Y coordinate in pixels")
+    target_unit: Optional[str] = Field(None, description="Target unit for distance ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None.")
