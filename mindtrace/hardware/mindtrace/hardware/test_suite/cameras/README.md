@@ -17,13 +17,13 @@ The Camera Test Suite provides realistic hardware testing through declarative YA
 
 ```bash
 # List available tests
-uv run python -m mindtrace.hardware.cli camera test --list
+mindtrace-hw camera test --list
 
 # Run smoke test (quick validation)
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --config smoke_test
 
 # Run capture stress test
-uv run python -m mindtrace.hardware.cli camera test --config capture_stress -v
+mindtrace-hw camera test --config capture_stress -v
 ```
 
 📚 **See also:**
@@ -341,7 +341,7 @@ expectations:
 ### 6. Run Your Test
 
 ```bash
-uv run python -m mindtrace.hardware.cli camera test --config my_custom_test
+mindtrace-hw camera test --config my_custom_test
 ```
 
 ## Available Actions

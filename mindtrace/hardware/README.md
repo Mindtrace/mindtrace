@@ -33,17 +33,17 @@ The hardware system includes comprehensive command-line management tools for dev
 **Quick Start:**
 ```bash
 # Start camera services (API + web configurator)
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera start
 
 # Check service status with access URLs
-uv run python -m mindtrace.hardware.cli camera status
+mindtrace-hw camera status
 
 # Run camera stress tests
-uv run python -m mindtrace.hardware.cli camera test --list
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --list
+mindtrace-hw camera test --config smoke_test
 
 # Stop all services gracefully
-uv run python -m mindtrace.hardware.cli camera stop
+mindtrace-hw camera stop
 ```
 
 [**→ See CLI Documentation**](mindtrace/hardware/cli/README.md) for comprehensive usage examples, configuration options, and troubleshooting guides.
@@ -74,11 +74,11 @@ A standalone Reflex web application providing intuitive camera management with r
 **Access via CLI:**
 ```bash
 # Launch both API and configurator app
-uv run python -m mindtrace.hardware.cli camera start
+mindtrace-hw camera start
 # Opens browser automatically to http://localhost:3000
 
 # API-only mode for headless operation
-uv run python -m mindtrace.hardware.cli camera start --api-only
+mindtrace-hw camera start --api-only
 ```
 
 [**→ See App Documentation**](mindtrace/hardware/apps/camera_configurator/README.md) for detailed features, API integration, configuration management, and troubleshooting.
@@ -653,13 +653,13 @@ The hardware component includes a comprehensive stress testing framework for val
 **Run via CLI:**
 ```bash
 # List available test scenarios
-uv run python -m mindtrace.hardware.cli camera test --list
+mindtrace-hw camera test --list
 
 # Run smoke test
-uv run python -m mindtrace.hardware.cli camera test --config smoke_test
+mindtrace-hw camera test --config smoke_test
 
 # Run stress tests with verbose output
-uv run python -m mindtrace.hardware.cli camera test --config capture_stress -v
+mindtrace-hw camera test --config capture_stress -v
 ```
 
 [**→ See Test Suite Documentation**](mindtrace/hardware/test_suite/README.md) for detailed test scenarios, YAML configuration, and custom test creation.
