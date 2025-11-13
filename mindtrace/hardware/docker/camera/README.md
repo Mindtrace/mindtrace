@@ -205,17 +205,24 @@ Once running, the camera service exposes REST API at `http://localhost:8002`:
 **Example API Call:**
 ```bash
 # Discover cameras
-curl -X GET http://localhost:8002/discover
+curl -X POST http://localhost:8002/cameras/discover \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "Basler"}'
 
-# Open camera
+# Open camera (test_connection defaults to false)
 curl -X POST http://localhost:8002/cameras/open \
   -H "Content-Type: application/json" \
-  -d '{"name": "OpenCV:opencv_camera_0"}'
+  -d '{"camera": "Basler:cam0"}'
+
+# Open camera with connection test
+curl -X POST http://localhost:8002/cameras/open \
+  -H "Content-Type: application/json" \
+  -d '{"camera": "Basler:cam0", "test_connection": true}'
 
 # Capture image
 curl -X POST http://localhost:8002/cameras/capture \
   -H "Content-Type: application/json" \
-  -d '{"camera": "OpenCV:opencv_camera_0", "save_path": "/app/data/image.jpg"}'
+  -d '{"camera": "Basler:cam0"}'
 ```
 
 ## Troubleshooting
