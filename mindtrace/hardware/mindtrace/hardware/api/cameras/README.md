@@ -90,6 +90,37 @@ uv run python -m mindtrace.hardware.api.cameras.launcher --include-mocks
 - `GET /cameras/performance/settings` - Get GigE performance settings
 - `POST /cameras/performance/settings` - Set GigE performance settings
 
+### Homography Calibration & Measurement
+
+Transform pixel coordinates to real-world measurements using planar homography:
+
+**Calibration:**
+- `POST /cameras/homography/calibrate/checkerboard` - Auto-calibrate from checkerboard pattern
+- `POST /cameras/homography/calibrate/correspondences` - Manual calibration from point pairs
+
+**Measurements:**
+- `POST /cameras/homography/measure/box` - Measure single bounding box
+- `POST /cameras/homography/measure/distance` - Measure distance between two points
+- `POST /cameras/homography/measure/batch` - **Unified batch measurement** (boxes AND/OR distances)
+
+**Batch Endpoint Features:**
+The `/measure/batch` endpoint can handle both bounding boxes and point-pair distances in a single request:
+```json
+{
+  "calibration_path": "/path/to/calibration.json",
+  "bounding_boxes": [{"x": 100, "y": 150, "width": 200, "height": 150}],
+  "point_pairs": [[[50, 50], [250, 50]], [[100, 200], [300, 400]]],
+  "target_unit": "mm"
+}
+```
+
+**Typical Workflow:**
+1. Calibrate: `POST /cameras/homography/calibrate/checkerboard`
+2. Detect objects with vision model (YOLO, etc.)
+3. Batch measure: `POST /cameras/homography/measure/batch` with all bboxes and distances
+
+See [Homography Module README](../../cameras/homography/README.md) for detailed documentation.
+
 ### Health Check
 
 - `GET /health` - Service health status
@@ -106,6 +137,11 @@ Most REST endpoints are automatically exposed as MCP tools for integration with 
 - `camera_manager_configure_camera` - Configure camera parameters
 - `camera_manager_get_camera_status` - Get camera status
 - `camera_manager_get_system_diagnostics` - Get system diagnostics
+- `camera_manager_calibrate_homography_checkerboard` - Auto-calibrate homography
+- `camera_manager_calibrate_homography_correspondences` - Manual calibration
+- `camera_manager_measure_homography_box` - Measure single bbox
+- `camera_manager_measure_homography_distance` - Measure point distance
+- `camera_manager_measure_homography_batch` - **Unified batch (boxes + distances)**
 
 ## Configuration Parameters
 
