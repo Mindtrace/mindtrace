@@ -2,6 +2,7 @@ from typing import Optional
 
 import reflex as rx
 
+from inspectra.components.scope_selector import ScopeSelector
 from inspectra.styles.global_styles import DS
 
 
@@ -80,6 +81,7 @@ def Header(
     )
 
     right_section = [
+        ScopeSelector(),
         NotificationDropdown(),
         rx.avatar(
             fallback="U",

@@ -31,6 +31,14 @@ class UserService:
             pw_hash=pw_hash,
         )
 
-    @staticmethod
-    async def deactivate(user_id: UserId) -> User:
-        return await UserRepo.deactivate(user_id)
+    async def get_plant_and_line_scope(user_id: UserId) -> dict:
+        user = await UserRepo.get_by_id(user_id)
+        await user.fetch_all_links()
+        if not user:
+            raise ValueError("user not found")
+        plants = [{"id": plant.id, "name": plant.name} for plant in user.plants]
+        lines = [{"id": line.id, "name": line.name, "plant_id": line.plant.id} for line in user.lines]
+        return {
+            "plants": plants,
+            "lines": lines,
+        }
