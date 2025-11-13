@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 
 from mindtrace.hardware.cli.commands.camera import camera
+from mindtrace.hardware.cli.commands.plc import plc
 from mindtrace.hardware.cli.commands.status import status_command
 from mindtrace.hardware.cli.core.logger import RichLogger, setup_logger
 from mindtrace.hardware.cli.core.process_manager import ProcessManager
@@ -39,6 +40,7 @@ def cli(ctx, verbose: bool, version: bool):
 
 # Add commands
 cli.add_command(camera)
+cli.add_command(plc)
 cli.add_command(status_command, name="status")
 
 
@@ -58,10 +60,13 @@ def stop():
 
     # Show what will be stopped
     camera_services = [s for s in running_services if "camera" in s or "configurator" in s]
-    other_services = [s for s in running_services if s not in camera_services]
+    plc_services = [s for s in running_services if "plc" in s]
+    other_services = [s for s in running_services if s not in camera_services and s not in plc_services]
 
     if camera_services:
         logger.info(f"Stopping camera services: {', '.join(camera_services)}")
+    if plc_services:
+        logger.info(f"Stopping PLC services: {', '.join(plc_services)}")
     if other_services:
         logger.info(f"Stopping other services: {', '.join(other_services)}")
 
@@ -72,12 +77,12 @@ def stop():
 
 
 @cli.command()
-@click.argument("service", type=click.Choice(["camera", "all"]))
+@click.argument("service", type=click.Choice(["camera", "plc", "all"]))
 @click.option("-f", "--follow", is_flag=True, help="Follow log output")
 def logs(service: str, follow: bool):
     """View service logs.
 
-    SERVICE: Service name (camera, all)
+    SERVICE: Service name (camera, plc, all)
     """
     logger = RichLogger()
 
@@ -85,6 +90,10 @@ def logs(service: str, follow: bool):
         log_locations = [
             "API logs: Check console output where service was started",
             "App logs: mindtrace/hardware/apps/camera_configurator/app.log",
+        ]
+    elif service == "plc":
+        log_locations = [
+            "API logs: Check console output where service was started",
         ]
     else:
         log_locations = [
