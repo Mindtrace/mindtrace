@@ -103,13 +103,13 @@ class CameraSettings:
     # RUNTIME-CONFIGURABLE PARAMETERS (changeable via configure_camera API)
     # ═══════════════════════════════════════════════════════════════════════════════
 
-    # Capture timeout (NEW: made runtime-configurable for dynamic adjustment)
-    timeout_ms: int = 5000  # Capture timeout in milliseconds
+    # Capture timeout (runtime-configurable for dynamic adjustment)
+    timeout_ms: int = 2000  # Capture timeout in milliseconds
 
     # Image quality parameters (all backends)
-    exposure_time: float = 1000.0  # Exposure time in microseconds
+    exposure_time: float = 6000.0  # Exposure time in microseconds
     gain: float = 1.0  # Camera gain value
-    trigger_mode: str = "continuous"  # Trigger mode: "continuous" or "trigger"
+    trigger_mode: str = "trigger"  # Trigger mode: "continuous" or "trigger"
     white_balance: str = "auto"  # White balance: "auto", "off", "once"
     image_quality_enhancement: bool = False  # Enable CLAHE image enhancement
     pixel_format: str = "BGR8"  # Pixel format: BGR8, RGB8, Mono8, etc.
@@ -139,13 +139,13 @@ class CameraSettings:
 
     # Capture and retry settings
     retrieve_retry_count: int = 3  # Number of retry attempts for failed captures
-    max_concurrent_captures: int = 2  # Max concurrent captures (bandwidth management)
+    max_concurrent_captures: int = 1  # Max concurrent captures (bandwidth management)
 
     # Discovery settings
     max_camera_index: int = 1  # Maximum camera index for OpenCV discovery
 
     # Mock/testing settings
-    mock_camera_count: int = 10  # Number of mock cameras to simulate
+    mock_camera_count: int = 1  # Number of mock cameras to simulate
 
     # Image enhancement algorithm settings
     enhancement_gamma: float = 2.2  # Gamma correction value
@@ -174,8 +174,8 @@ class CameraBackends:
     """
 
     basler_enabled: bool = True
-    opencv_enabled: bool = True
-    genicam_enabled: bool = True
+    opencv_enabled: bool = False
+    genicam_enabled: bool = False
     mock_enabled: bool = False
     discovery_timeout: float = 10.0
 
@@ -344,7 +344,8 @@ class HomographySettings:
         supported_units: List of supported measurement units
         checkerboard_cols: Default checkerboard inner corners (width/columns)
         checkerboard_rows: Default checkerboard inner corners (height/rows)
-        checkerboard_square_size: Default size of one checkerboard square in default_world_unit
+        checkerboard_square_width: Width of one checkerboard square in default_world_unit
+        checkerboard_square_height: Height of one checkerboard square in default_world_unit
         checkerboard_adaptive_thresh: Use adaptive threshold for checkerboard detection
         checkerboard_normalize_image: Normalize image before checkerboard detection
         checkerboard_filter_quads: Filter false checkerboard quads
@@ -367,9 +368,10 @@ class HomographySettings:
     supported_units: List[str] = field(default_factory=lambda: ["mm", "cm", "m", "in", "ft"])
 
     # Default checkerboard dimensions (standard calibration target)
-    checkerboard_cols: int = 12  # Inner corners width (for 13x13 square board)
-    checkerboard_rows: int = 12  # Inner corners height (for 13x13 square board)
-    checkerboard_square_size: float = 25.0  # Square size in default_world_unit (mm)
+    checkerboard_cols: int = 8  # Inner corners width (for 9x7 square board)
+    checkerboard_rows: int = 6  # Inner corners height (for 9x7 square board)
+    checkerboard_square_width: float = 23.5  # Square width in default_world_unit (mm)
+    checkerboard_square_height: float = 18.0  # Square height in default_world_unit (mm)
 
     # Checkerboard detection flags
     checkerboard_adaptive_thresh: bool = True
@@ -791,9 +793,15 @@ class HardwareConfigManager(Mindtrace):
             except ValueError:
                 pass  # Keep default value on invalid input
 
-        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE"):
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_WIDTH"):
             try:
-                self._config.homography.checkerboard_square_size = float(env_val)
+                self._config.homography.checkerboard_square_width = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_HEIGHT"):
+            try:
+                self._config.homography.checkerboard_square_height = float(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
 
