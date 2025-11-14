@@ -619,7 +619,7 @@ class OpenCVCameraBackend(CameraBackend):
                 )
 
                 if attempt == self.retrieve_retry_count - 1:
-                    raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}")
+                    raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}") from e
 
             if attempt < self.retrieve_retry_count - 1:
                 await asyncio.sleep(0.1)
