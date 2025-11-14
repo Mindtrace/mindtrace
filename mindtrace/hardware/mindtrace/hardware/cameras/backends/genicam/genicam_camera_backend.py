@@ -1317,10 +1317,10 @@ class GenICamCameraBackend(CameraBackend):
                             raise CameraTimeoutError(
                                 f"Capture timeout after {self.retrieve_retry_count} attempts "
                                 f"for camera '{self.camera_name}': {str(e)}"
-                            )
+                            ) from e
                         continue
                     else:
-                        raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}")
+                        raise CameraCaptureError(f"Capture failed for camera '{self.camera_name}': {str(e)}") from e
 
             raise CameraCaptureError(
                 f"Failed to capture image after {self.retrieve_retry_count} attempts for camera '{self.camera_name}'"
@@ -1330,7 +1330,7 @@ class GenICamCameraBackend(CameraBackend):
             raise
         except Exception as e:
             self.logger.error(f"Unexpected error during capture for camera '{self.camera_name}': {str(e)}")
-            raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}")
+            raise CameraCaptureError(f"Unexpected capture error for camera '{self.camera_name}': {str(e)}") from e
 
     async def _enhance_image(self, image: np.ndarray) -> np.ndarray:
         """Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) enhancement.
