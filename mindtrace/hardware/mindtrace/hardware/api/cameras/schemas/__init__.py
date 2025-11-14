@@ -48,6 +48,7 @@ from mindtrace.hardware.api.cameras.schemas.stream_schemas import (
 from mindtrace.hardware.api.cameras.schemas.homography_schemas import (
     CalibrateHomographyCheckerboardSchema,
     CalibrateHomographyCorrespondencesSchema,
+    CalibrateHomographyMultiViewSchema,
     MeasureHomographyBatchSchema,
     MeasureHomographyBoxSchema,
     MeasureHomographyDistanceSchema,
@@ -95,6 +96,7 @@ ALL_SCHEMAS = {
     # Homography
     "calibrate_homography_checkerboard": CalibrateHomographyCheckerboardSchema,
     "calibrate_homography_correspondences": CalibrateHomographyCorrespondencesSchema,
+    "calibrate_homography_multi_view": CalibrateHomographyMultiViewSchema,
     "measure_homography_box": MeasureHomographyBoxSchema,
     "measure_homography_batch": MeasureHomographyBatchSchema,
     "measure_homography_distance": MeasureHomographyDistanceSchema,
@@ -141,6 +143,7 @@ __all__ = [
     # Homography
     "CalibrateHomographyCheckerboardSchema",
     "CalibrateHomographyCorrespondencesSchema",
+    "CalibrateHomographyMultiViewSchema",
     "MeasureHomographyBoxSchema",
     "MeasureHomographyBatchSchema",
     "MeasureHomographyDistanceSchema",

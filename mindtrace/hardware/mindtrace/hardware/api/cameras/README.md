@@ -95,8 +95,9 @@ uv run python -m mindtrace.hardware.api.cameras.launcher --include-mocks
 Transform pixel coordinates to real-world measurements using planar homography:
 
 **Calibration:**
-- `POST /cameras/homography/calibrate/checkerboard` - Auto-calibrate from checkerboard pattern
+- `POST /cameras/homography/calibrate/checkerboard` - Auto-calibrate from single checkerboard image
 - `POST /cameras/homography/calibrate/correspondences` - Manual calibration from point pairs
+- `POST /cameras/homography/calibrate/multi-view` - **Multi-view calibration** for long surfaces (metallic bars, conveyor belts)
 
 **Measurements:**
 - `POST /cameras/homography/measure/box` - Measure single bounding box
@@ -114,10 +115,52 @@ The `/measure/batch` endpoint can handle both bounding boxes and point-pair dist
 }
 ```
 
-**Typical Workflow:**
-1. Calibrate: `POST /cameras/homography/calibrate/checkerboard`
-2. Detect objects with vision model (YOLO, etc.)
-3. Batch measure: `POST /cameras/homography/measure/batch` with all bboxes and distances
+**Typical Workflows:**
+
+*Single-view (standard calibration):*
+1. Place checkerboard in camera view
+2. Calibrate: `POST /cameras/homography/calibrate/checkerboard` (captures live from camera)
+3. Detect objects with vision model (YOLO, etc.)
+4. Batch measure: `POST /cameras/homography/measure/batch` with all bboxes and distances
+
+*Multi-view (for long surfaces like metallic bars, conveyor belts):*
+
+**Problem**: Standard checkerboard (~300mm) is too small for long surfaces (e.g., 2-meter bar)
+
+**Solution**: Move standard checkerboard to multiple positions and combine calibrations
+
+**Physical Setup Steps:**
+1. **Choose origin**: Place checkerboard at starting position → call this (0, 0)
+2. **Capture image 1**: Save to `/path/start.jpg`
+3. **Measure & move**: Use tape measure to move checkerboard along the bar (e.g., 850mm)
+4. **Capture image 2**: Save to `/path/middle.jpg`
+5. **Measure & move**: Move checkerboard again (e.g., another 850mm, total 1700mm from start)
+6. **Capture image 3**: Save to `/path/end.jpg`
+
+**API Call:**
+```json
+POST /cameras/homography/calibrate/multi-view
+{
+  "image_paths": ["/path/start.jpg", "/path/middle.jpg", "/path/end.jpg"],
+  "positions": [
+    {"x": 0, "y": 0},       // Starting position (your chosen origin)
+    {"x": 850, "y": 0},     // Middle (850mm measured with tape measure)
+    {"x": 1700, "y": 0}     // End (1700mm measured with tape measure)
+  ],
+  "output_path": "/path/calibration.json"
+}
+```
+
+**Key Points:**
+- Positions are **real-world coordinates you measure**, not pixel coordinates
+- Origin (0, 0) is **arbitrary** - you choose where to start
+- Distances measured with **physical tape measure** between checkerboard placements
+- Checkerboard parameters (board_size, square_size, world_unit) configured in HomographySettings
+- All images must show the **same plane** (flat surface, Z=0)
+- Camera angle/perspective handled automatically by homography transformation
+
+**After Calibration:**
+7. Use calibration file for measurements: `POST /cameras/homography/measure/batch`
 
 See [Homography Module README](../../cameras/homography/README.md) for detailed documentation.
 
@@ -131,17 +174,23 @@ Most REST endpoints are automatically exposed as MCP tools for integration with 
 
 ### Example MCP Tools
 
+**Camera Operations:**
 - `camera_manager_discover_cameras` - Discover cameras
 - `camera_manager_open_camera` - Open camera connection
 - `camera_manager_capture_image` - Capture image
 - `camera_manager_configure_camera` - Configure camera parameters
 - `camera_manager_get_camera_status` - Get camera status
 - `camera_manager_get_system_diagnostics` - Get system diagnostics
-- `camera_manager_calibrate_homography_checkerboard` - Auto-calibrate homography
-- `camera_manager_calibrate_homography_correspondences` - Manual calibration
-- `camera_manager_measure_homography_box` - Measure single bbox
-- `camera_manager_measure_homography_distance` - Measure point distance
-- `camera_manager_measure_homography_batch` - **Unified batch (boxes + distances)**
+
+**Homography Calibration:**
+- `camera_manager_calibrate_homography_checkerboard` - Single-image calibration (live capture)
+- `camera_manager_calibrate_homography_correspondences` - Manual point-pair calibration
+- `camera_manager_calibrate_homography_multi_view` - Multi-view calibration (pre-saved images)
+
+**Homography Measurement:**
+- `camera_manager_measure_homography_box` - Measure single bounding box
+- `camera_manager_measure_homography_distance` - Measure distance between two points
+- `camera_manager_measure_homography_batch` - Unified batch (boxes + distances)
 
 ## Configuration Parameters
 

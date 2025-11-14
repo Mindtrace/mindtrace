@@ -486,3 +486,40 @@ class HomographyMeasureDistanceRequest(BaseModel):
     point2_x: float = Field(..., description="Second point X coordinate in pixels")
     point2_y: float = Field(..., description="Second point Y coordinate in pixels")
     target_unit: Optional[str] = Field(None, description="Target unit for distance ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None.")
+
+
+class HomographyCalibrateMultiViewRequest(BaseModel):
+    """Request model for multi-view checkerboard calibration.
+
+    Note: Checkerboard parameters (board_size, square_size, world_unit) are configured
+    in HomographySettings (see config.py), not passed per-request.
+    """
+
+    image_paths: List[str] = Field(..., description="List of paths to images with checkerboard at different positions")
+    positions: List[Dict[str, float]] = Field(
+        ...,
+        description="List of checkerboard positions as [{'x': x_offset, 'y': y_offset}, ...]. "
+                    "First position typically {'x': 0, 'y': 0}. Subsequent positions indicate "
+                    "how far the checkerboard was moved (in world units configured in HomographySettings)."
+    )
+    output_path: str = Field(..., description="Path to save calibration data JSON file")
+
+    @field_validator("positions")
+    @classmethod
+    def validate_positions(cls, v: List[Dict[str, float]]) -> List[Dict[str, float]]:
+        """Validate position format."""
+        if len(v) < 1:
+            raise ValueError("At least one position is required")
+        for idx, pos in enumerate(v):
+            if 'x' not in pos or 'y' not in pos:
+                raise ValueError(f"Position {idx} must have 'x' and 'y' fields")
+        return v
+
+    @model_validator(mode='after')
+    def validate_lengths_match(self):
+        """Ensure number of images matches number of positions."""
+        if len(self.image_paths) != len(self.positions):
+            raise ValueError(
+                f"Number of images ({len(self.image_paths)}) must match number of positions ({len(self.positions)})"
+            )
+        return self
