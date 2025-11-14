@@ -40,6 +40,7 @@ from mindtrace.hardware.api.cameras.models.requests import (
     # Homography
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
+    HomographyCalibrateMultiViewRequest,
     HomographyMeasureBatchRequest,
     HomographyMeasureBoundingBoxRequest,
     HomographyMeasureDistanceRequest,
@@ -145,6 +146,7 @@ __all__ = [
     "StreamStatusRequest",
     "HomographyCalibrateCheckerboardRequest",
     "HomographyCalibrateCorrespondencesRequest",
+    "HomographyCalibrateMultiViewRequest",
     "HomographyMeasureBoundingBoxRequest",
     "HomographyMeasureBatchRequest",
     "HomographyMeasureDistanceRequest",

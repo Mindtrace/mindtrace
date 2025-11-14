@@ -286,6 +286,12 @@ class CameraManagerService(Service):
             as_tool=True,
         )
         self.add_endpoint(
+            "cameras/homography/calibrate/multi-view",
+            self.calibrate_homography_multi_view,
+            ALL_SCHEMAS["calibrate_homography_multi_view"],
+            as_tool=True,
+        )
+        self.add_endpoint(
             "cameras/homography/measure/box",
             self.measure_homography_box,
             ALL_SCHEMAS["measure_homography_box"],
@@ -1656,6 +1662,85 @@ class CameraManagerService(Service):
             )
         except Exception as e:
             self.logger.error(f"Homography calibration from correspondences failed: {e}")
+            result = HomographyCalibrationResult(success=False)
+            return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
+
+    async def calibrate_homography_multi_view(
+        self, request: HomographyCalibrateMultiViewRequest
+    ) -> HomographyCalibrationResponse:
+        """Calibrate homography from multiple checkerboard positions on the same plane.
+
+        Ideal for calibrating long surfaces (metallic bars, conveyor belts) using
+        a standard checkerboard moved to multiple positions.
+        """
+        try:
+            import numpy as np
+            from PIL import Image
+
+            from mindtrace.hardware import HomographyCalibrator
+
+            # Load all images
+            images = []
+            for idx, image_path in enumerate(request.image_paths):
+                try:
+                    img = Image.open(image_path)
+                    images.append(img)
+                    self.logger.debug(f"Loaded image {idx+1}/{len(request.image_paths)}: {image_path}")
+                except Exception as e:
+                    raise CameraConfigurationError(f"Failed to load image {idx+1} at '{image_path}': {e}")
+
+            # Convert positions from dict list to tuple list
+            positions = [(pos['x'], pos['y']) for pos in request.positions]
+
+            # Initialize calibrator (uses HomographySettings from config for board_size, square_size, world_unit)
+            calibrator = HomographyCalibrator()
+
+            # Perform multi-view calibration
+            # Note: board_size, square_size, world_unit come from HomographySettings config
+            self.logger.info(
+                f"Starting multi-view calibration with {len(images)} images "
+                f"at positions {positions}"
+            )
+            calibration = calibrator.calibrate_checkerboard_multi_view(
+                images=images,
+                positions=positions,
+            )
+
+            # Save calibration
+            calibration.save(request.output_path)
+            self.logger.info(f"Calibration saved to: {request.output_path}")
+
+            # Create summary of homography matrix
+            H_summary = {
+                "shape": list(calibration.H.shape),
+                "determinant": float(np.linalg.det(calibration.H)),
+            }
+
+            # Calculate total correspondences from config
+            from mindtrace.hardware.core.config import get_hardware_config
+            config = get_hardware_config().get_config()
+            cols = config.homography.checkerboard_cols
+            rows = config.homography.checkerboard_rows
+
+            points_per_view = cols * rows
+            total_points = points_per_view * len(images)
+
+            result = HomographyCalibrationResult(
+                success=True,
+                calibration_path=request.output_path,
+                homography_matrix_summary=H_summary,
+                world_unit=calibration.world_unit,
+                inlier_count=total_points,  # Multi-view uses all detected corners
+                total_points=total_points,
+            )
+
+            return HomographyCalibrationResponse(
+                success=True,
+                message=f"Multi-view homography calibration completed from {len(images)} views ({total_points} total points)",
+                data=result,
+            )
+        except Exception as e:
+            self.logger.error(f"Multi-view homography calibration failed: {e}")
             result = HomographyCalibrationResult(success=False)
             return HomographyCalibrationResponse(success=False, message=f"Calibration failed: {str(e)}", data=result)
 

@@ -5,6 +5,7 @@ from mindtrace.hardware.api.cameras.models import (
     HomographyBatchMeasurementResponse,
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
+    HomographyCalibrateMultiViewRequest,
     HomographyCalibrationResponse,
     HomographyDistanceResponse,
     HomographyMeasureBatchRequest,
@@ -23,6 +24,12 @@ CalibrateHomographyCheckerboardSchema = TaskSchema(
 CalibrateHomographyCorrespondencesSchema = TaskSchema(
     name="calibrate_homography_correspondences",
     input_schema=HomographyCalibrateCorrespondencesRequest,
+    output_schema=HomographyCalibrationResponse,
+)
+
+CalibrateHomographyMultiViewSchema = TaskSchema(
+    name="calibrate_homography_multi_view",
+    input_schema=HomographyCalibrateMultiViewRequest,
     output_schema=HomographyCalibrationResponse,
 )
 
@@ -48,6 +55,7 @@ MeasureHomographyDistanceSchema = TaskSchema(
 __all__ = [
     "CalibrateHomographyCheckerboardSchema",
     "CalibrateHomographyCorrespondencesSchema",
+    "CalibrateHomographyMultiViewSchema",
     "MeasureHomographyBoxSchema",
     "MeasureHomographyBatchSchema",
     "MeasureHomographyDistanceSchema",

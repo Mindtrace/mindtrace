@@ -379,3 +379,175 @@ class HomographyCalibrator(Mindtrace):
             camera_matrix=camera_matrix,
             dist_coeffs=dist_coeffs,
         )
+
+    def calibrate_checkerboard_multi_view(
+        self,
+        images: list[Union[Image.Image, np.ndarray]],
+        positions: list[Tuple[float, float]],
+        board_size: Optional[Tuple[int, int]] = None,
+        square_size: Optional[float] = None,
+        world_unit: Optional[str] = None,
+        camera_matrix: Optional[np.ndarray] = None,
+        dist_coeffs: Optional[np.ndarray] = None,
+        refine_corners: Optional[bool] = None,
+    ) -> CalibrationData:
+        """Calibrate from multiple checkerboard positions on the same plane.
+
+        Combines corner detections from multiple images where the checkerboard
+        is placed at different positions on the measurement plane. This provides
+        better calibration coverage over large areas without requiring an
+        oversized calibration target.
+
+        Ideal for calibrating long surfaces (e.g., metallic bars, conveyor belts)
+        using a standard-sized checkerboard moved to multiple positions.
+
+        Args:
+            images: List of images, each containing the checkerboard at a different position
+            positions: List of (x_offset, y_offset) tuples in world units specifying
+                      the checkerboard's origin position in each image. The first position
+                      is typically (0, 0), and subsequent positions indicate how far the
+                      checkerboard was moved.
+            board_size: Number of inner corners as (columns, rows). Uses config default if None.
+            square_size: Physical size of one checkerboard square in world units. Uses config default if None.
+            world_unit: Unit of positions and square_size. Uses config default if None.
+            camera_matrix: Optional 3x3 camera intrinsics matrix for undistortion
+            dist_coeffs: Optional distortion coefficients for undistortion
+            refine_corners: Enable sub-pixel corner refinement. Uses config default if None.
+
+        Returns:
+            CalibrationData containing homography matrix computed from all positions
+
+        Raises:
+            CameraConfigurationError: If inputs are invalid or inconsistent
+            HardwareOperationError: If checkerboard detection fails in any image
+
+        Example::
+
+            # Calibrate a 2-meter long bar using 3 checkerboard positions
+            images = [image1, image2, image3]
+            positions = [
+                (0, 0),      # Start of bar
+                (1000, 0),   # Middle (1000mm from start)
+                (2000, 0)    # End (2000mm from start)
+            ]
+
+            calibration = calibrator.calibrate_checkerboard_multi_view(
+                images=images,
+                positions=positions,
+                board_size=(12, 12),
+                square_size=25.0,
+                world_unit="mm"
+            )
+
+        Notes:
+            - All images must show the same plane (Z=0)
+            - Positions specify where the checkerboard origin (top-left corner) is located
+            - Use more positions for better coverage of large measurement areas
+            - Typical usage: 3-5 positions for long surfaces
+            - RANSAC automatically handles slight inaccuracies in position measurements
+        """
+        # Use config defaults if not provided
+        if board_size is None:
+            board_size = (self._config.checkerboard_cols, self._config.checkerboard_rows)
+        if square_size is None:
+            square_size = self._config.checkerboard_square_size
+        if world_unit is None:
+            world_unit = self._config.default_world_unit
+        if refine_corners is None:
+            refine_corners = self._config.refine_corners
+
+        # Validate inputs
+        if len(images) != len(positions):
+            raise CameraConfigurationError(
+                f"Number of images ({len(images)}) must match number of positions ({len(positions)})"
+            )
+
+        if len(images) < 1:
+            raise CameraConfigurationError("At least one image is required for calibration")
+
+        self.logger.info(
+            f"Starting multi-view checkerboard calibration "
+            f"({len(images)} views, board_size={board_size}, "
+            f"square_size={square_size}{world_unit}, refine_corners={refine_corners})"
+        )
+
+        all_world_points = []
+        all_image_points = []
+
+        # Process each image and position
+        for idx, (image, (x_offset, y_offset)) in enumerate(zip(images, positions)):
+            self.logger.debug(
+                f"Processing view {idx+1}/{len(images)} at position ({x_offset}, {y_offset}) {world_unit}"
+            )
+
+            # Convert input to CV2 format
+            if isinstance(image, Image.Image):
+                cv2_image = pil_to_cv2(image)
+            elif isinstance(image, np.ndarray):
+                cv2_image = image
+            else:
+                raise CameraConfigurationError(
+                    f"View {idx+1}: Unsupported image type: {type(image)}. Expected PIL Image or numpy array."
+                )
+
+            # Convert to grayscale
+            gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY) if cv2_image.ndim == 3 else cv2_image
+
+            # Detect checkerboard corners
+            flags = 0
+            if self._config.checkerboard_adaptive_thresh:
+                flags |= cv2.CALIB_CB_ADAPTIVE_THRESH
+            if self._config.checkerboard_normalize_image:
+                flags |= cv2.CALIB_CB_NORMALIZE_IMAGE
+            if self._config.checkerboard_filter_quads:
+                flags |= cv2.CALIB_CB_FILTER_QUADS
+
+            found, corners = cv2.findChessboardCorners(gray, board_size, flags=flags)
+
+            if not found:
+                raise HardwareOperationError(
+                    f"View {idx+1}: Checkerboard pattern not found. "
+                    f"Expected {board_size[0]}x{board_size[1]} inner corners. "
+                    f"Ensure good lighting, focus, and that the pattern is visible."
+                )
+
+            self.logger.debug(f"View {idx+1}: Detected {len(corners)} corners")
+
+            # Refine corner locations to sub-pixel accuracy
+            if refine_corners:
+                criteria = (
+                    cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
+                    self._config.corner_refinement_iterations,
+                    self._config.corner_refinement_epsilon,
+                )
+                window_size = (self._config.corner_refinement_window, self._config.corner_refinement_window)
+                corners = cv2.cornerSubPix(gray, corners, window_size, (-1, -1), criteria)
+                self.logger.debug(f"View {idx+1}: Corners refined to sub-pixel accuracy")
+
+            # Generate world coordinates for this checkerboard position
+            cols, rows = board_size
+            objp = np.zeros((rows * cols, 2), dtype=np.float64)
+            objp[:, 0] = (np.arange(cols).repeat(rows)) * square_size + x_offset
+            objp[:, 1] = (np.tile(np.arange(rows), cols)) * square_size + y_offset
+
+            all_world_points.append(objp)
+            all_image_points.append(corners.reshape(-1, 2))
+
+        # Combine all correspondences from all views
+        combined_world_points = np.vstack(all_world_points)
+        combined_image_points = np.vstack(all_image_points)
+
+        total_points = combined_world_points.shape[0]
+        self.logger.info(
+            f"Combined {total_points} point correspondences from {len(images)} views "
+            f"(avg {total_points // len(images)} per view)"
+        )
+
+        # Compute homography from all combined correspondences
+        return self.calibrate_from_correspondences(
+            world_points=combined_world_points,
+            image_points=combined_image_points,
+            world_unit=world_unit,
+            camera_matrix=camera_matrix,
+            dist_coeffs=dist_coeffs,
+        )
