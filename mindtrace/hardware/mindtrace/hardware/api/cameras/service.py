@@ -59,6 +59,7 @@ from mindtrace.hardware.api.cameras.models import (
     HomographyBatchMeasurementResponse,
     HomographyCalibrateCheckerboardRequest,
     HomographyCalibrateCorrespondencesRequest,
+    HomographyCalibrateMultiViewRequest,
     HomographyCalibrationResponse,
     HomographyCalibrationResult,
     HomographyDistanceResponse,
