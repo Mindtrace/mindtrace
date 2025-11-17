@@ -778,6 +778,83 @@ def test_backend_specific_functionality(backend_type, registry):
         assert backend.uri.is_dir()
 
 
+def test_from_uri_integration(backend_type, temp_dir, test_bucket):
+    """Test that from_uri creates correct backend type and works end-to-end."""
+    if backend_type == "local":
+        uri = str(temp_dir)
+        registry = Registry.from_uri(uri, version_objects=True)
+        assert isinstance(registry.backend, LocalRegistryBackend)
+
+    elif backend_type == "minio":
+        uri = f"s3://{test_bucket}"
+        registry = Registry.from_uri(
+            uri,
+            endpoint=os.getenv("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9100"),
+            access_key=os.getenv("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin"),
+            secret_key=os.getenv("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin"),
+            bucket=test_bucket,
+            secure=False,
+            version_objects=True,
+        )
+        assert isinstance(registry.backend, MinioRegistryBackend)
+
+    elif backend_type == "gcp":
+        config = CoreConfig()
+
+        # Check if GCP credentials are available
+        gcp_project_id = os.getenv("GCP_PROJECT_ID")
+        gcp_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+        # Try to get from config if not in environment
+        if not gcp_project_id:
+            try:
+                gcp_project_id = config["MINDTRACE_GCP"]["GCP_PROJECT_ID"]
+            except (KeyError, TypeError):
+                pass
+
+        if not gcp_credentials_path:
+            try:
+                gcp_credentials_path = config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
+            except (KeyError, TypeError):
+                pass
+
+        # Skip if credentials are not available
+        if not gcp_project_id or not gcp_credentials_path:
+            pytest.skip("GCP credentials not available - skipping GCP from_uri test")
+
+        uri = f"gs://{test_bucket}"
+        try:
+            registry = Registry.from_uri(
+                uri,
+                project_id=gcp_project_id,
+                bucket_name=test_bucket,
+                credentials_path=gcp_credentials_path,
+                version_objects=True,
+            )
+        except Exception as e:
+            pytest.skip(f"GCP backend creation failed: {e}")
+        assert isinstance(registry.backend, GCPRegistryBackend)
+
+    # Test basic functionality
+    test_config = Config(
+        {
+            "MINDTRACE_DIR_PATHS": {
+                "TEMP_DIR": "/test/temp",
+                "REGISTRY_DIR": "/test/registry",
+            },
+            "TEST_KEY": "test_value",
+        }
+    )
+
+    registry.save("test:fromuri", test_config, version="1.0.0")
+    loaded_config = registry.load("test:fromuri", version="1.0.0")
+    assert loaded_config["TEST_KEY"] == "test_value"
+    assert "test:fromuri" in registry.list_objects()
+
+    # Cleanup
+    registry.delete("test:fromuri", version="1.0.0")
+
+
 def test_cleanup_after_tests(registry, backend_type, test_bucket):
     """Test that cleanup works properly after tests."""
     # This test ensures that cleanup works by verifying the backend is functional

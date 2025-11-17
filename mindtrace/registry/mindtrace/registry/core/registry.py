@@ -244,6 +244,62 @@ class Registry(Mindtrace):
         with cls._materializer_lock:
             return dict(cls._default_materializers)
 
+    @classmethod
+    def from_uri(cls, uri: str | Path, version_objects: bool = False, **kwargs) -> "Registry":
+        """Create a Registry instance with the appropriate backend based on the URI scheme.
+
+        The URI scheme determines which backend is used:
+        - s3://... -> MinioRegistryBackend (requires endpoint, access_key, secret_key, bucket kwargs)
+        - gs://... -> GCPRegistryBackend (requires project_id, bucket_name kwargs)
+        - file://... or /path/... -> LocalRegistryBackend
+
+        Args:
+            uri: URI string specifying the registry location
+            version_objects: Whether to keep version history. If False, only one version per object is kept.
+            **kwargs: Additional arguments passed to backend constructors.
+
+        Returns:
+            Registry instance with the appropriate backend
+
+        Example::
+            # Local registry
+            registry = Registry.from_uri("/path/to/registry")
+            registry = Registry.from_uri("file:///path/to/registry")
+
+            # MinIO registry
+            registry = Registry.from_uri(
+                "s3://bucket-name",
+                endpoint="localhost:9000",
+                access_key="minioadmin",
+                secret_key="minioadmin",
+                bucket="my-bucket",
+                secure=False
+            )
+
+            # GCP registry
+            registry = Registry.from_uri(
+                "gs://my-bucket",
+                project_id="my-project",
+                bucket_name="my-bucket",
+                credentials_path="/path/to/credentials.json"
+            )
+        """
+        from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+        from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
+        from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+
+        uri_str = str(uri)
+
+        # Determine backend based on URI scheme
+        if uri_str.startswith("s3://"):
+            backend = MinioRegistryBackend(uri=uri, **kwargs)
+        elif uri_str.startswith("gs://"):
+            backend = GCPRegistryBackend(uri=uri, **kwargs)
+        else:
+            backend = LocalRegistryBackend(uri=uri, **kwargs)
+
+        return cls(backend=backend, version_objects=version_objects)
+
     def _initialize_version_objects(self, version_objects: bool, version_objects_explicitly_set: bool = True) -> bool:
         """Initialize version_objects parameter with registry metadata persistence.
 

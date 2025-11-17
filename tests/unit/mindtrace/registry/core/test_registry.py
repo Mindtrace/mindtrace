@@ -2218,3 +2218,129 @@ def test_clear_registry_metadata_exception_handling(registry, monkeypatch):
     # Mock the file operations to raise an exception
     with patch("builtins.open", side_effect=Exception("Test error")):
         registry.clear(clear_registry_metadata=True)
+
+
+# Tests for Registry.from_uri class method
+
+
+def test_from_uri_local_path():
+    """Test from_uri with local filesystem path."""
+    with TemporaryDirectory() as temp_dir:
+        registry = Registry.from_uri(temp_dir, version_objects=True)
+        assert isinstance(registry.backend, LocalRegistryBackend)
+        assert registry.version_objects is True
+
+        # Test save/load works
+        registry.save("test:int", 42)
+        assert registry.load("test:int") == 42
+
+
+def test_from_uri_file_scheme():
+    """Test from_uri with file:// URI scheme."""
+    with TemporaryDirectory() as temp_dir:
+        uri = f"file://{temp_dir}"
+        registry = Registry.from_uri(uri, version_objects=False)
+        assert isinstance(registry.backend, LocalRegistryBackend)
+        assert registry.version_objects is False
+
+
+def test_from_uri_s3_scheme():
+    """Test from_uri with s3:// URI scheme."""
+    from unittest.mock import MagicMock
+
+    from minio.error import S3Error
+
+    from mindtrace.registry.backends.minio_registry_backend import MinioRegistryBackend
+
+    uri = "s3://test-bucket/path"
+
+    # Create a proper mock MinioRegistryBackend with all required attributes
+    with patch("mindtrace.registry.backends.minio_registry_backend.Minio") as mock_minio:
+        # Mock the Minio client methods
+        mock_client = MagicMock()
+        mock_client.bucket_exists.return_value = True
+        # Create proper S3Error for NoSuchKey
+        s3_error = S3Error(
+            code="NoSuchKey",
+            message="Object not found",
+            resource="/test-bucket/registry_metadata.json",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=MagicMock(),
+        )
+        mock_client.stat_object.side_effect = s3_error
+        mock_client.put_object.return_value = None
+
+        # Mock get_object to return proper JSON data for registry metadata
+        mock_response = MagicMock()
+        mock_response.data.decode.return_value = '{"materializers": {}}'
+        mock_client.get_object.return_value = mock_response
+
+        mock_minio.return_value = mock_client
+
+        registry = Registry.from_uri(
+            uri, endpoint="localhost:9000", access_key="test", secret_key="test", bucket="test-bucket", secure=False
+        )
+
+        # Verify backend type
+        assert isinstance(registry.backend, MinioRegistryBackend)
+
+
+def test_from_uri_gs_scheme():
+    """Test from_uri with gs:// URI scheme."""
+    from unittest.mock import MagicMock
+
+    from mindtrace.registry.backends.gcp_registry_backend import GCPRegistryBackend
+
+    uri = "gs://test-bucket/path"
+
+    # Mock google.auth.default to avoid credentials lookup and storage.Client to avoid actual GCS connection
+    with patch("google.auth.default") as mock_auth:
+        with patch("google.cloud.storage.Client") as mock_storage_client:
+            # Mock credentials
+            mock_creds = MagicMock()
+            mock_auth.return_value = (mock_creds, "test-project")
+
+            # Mock storage client
+            mock_client = MagicMock()
+            mock_bucket = MagicMock()
+            mock_blob = MagicMock()
+            mock_client.bucket.return_value = mock_bucket
+            mock_bucket.blob.return_value = mock_blob
+            mock_blob.exists.return_value = False
+            mock_storage_client.return_value = mock_client
+
+            registry = Registry.from_uri(
+                uri, project_id="test-project", bucket_name="test-bucket", credentials_path=None
+            )
+
+            # Verify backend type
+            assert isinstance(registry.backend, GCPRegistryBackend)
+
+
+def test_from_uri_version_objects_extracted():
+    """Test that version_objects is extracted and not passed to backend."""
+    with TemporaryDirectory() as temp_dir:
+        registry = Registry.from_uri(temp_dir, version_objects=True)
+        assert registry.version_objects is True
+
+        # Save multiple versions
+        registry.save("test:int", 1)
+        registry.save("test:int", 2)
+        assert len(registry.list_versions("test:int")) == 2
+
+
+def test_from_uri_default_version_objects():
+    """Test that version_objects defaults to False when not specified."""
+    with TemporaryDirectory() as temp_dir:
+        registry = Registry.from_uri(temp_dir)
+        assert registry.version_objects is False
+
+
+def test_from_uri_path_object():
+    """Test from_uri with Path object instead of string."""
+    with TemporaryDirectory() as temp_dir:
+        path_obj = Path(temp_dir)
+        registry = Registry.from_uri(path_obj, version_objects=True)
+        assert isinstance(registry.backend, LocalRegistryBackend)
+        assert registry.backend.uri == path_obj.resolve()
