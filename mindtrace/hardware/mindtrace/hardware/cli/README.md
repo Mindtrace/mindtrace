@@ -6,13 +6,29 @@ A command-line interface for managing Mindtrace hardware services with process l
 
 ### Core Commands
 
+**Camera Services:**
 - **`mindtrace-hw camera start`** - Start camera API service and configurator web app
 - **`mindtrace-hw camera stop`** - Stop camera services gracefully
 - **`mindtrace-hw camera status`** - Show detailed camera service status with URLs
 - **`mindtrace-hw camera test`** - Run camera stress tests and validation scenarios
 - **`mindtrace-hw camera logs`** - View camera service logs and guidance
+
+**Stereo Camera Services:**
+- **`mindtrace-hw stereo start`** - Start stereo camera API service
+- **`mindtrace-hw stereo stop`** - Stop stereo camera service gracefully
+- **`mindtrace-hw stereo status`** - Show stereo camera service status with URLs
+- **`mindtrace-hw stereo logs`** - View stereo camera service logs
+
+**PLC Services:**
+- **`mindtrace-hw plc start`** - Start PLC API service
+- **`mindtrace-hw plc stop`** - Stop PLC service gracefully
+- **`mindtrace-hw plc status`** - Show PLC service status with URLs
+- **`mindtrace-hw plc logs`** - View PLC service logs
+
+**Global Commands:**
 - **`mindtrace-hw status`** - Show all hardware services status
 - **`mindtrace-hw stop`** - Stop all services cleanly
+- **`mindtrace-hw logs <service>`** - View logs for camera, plc, stereo, or all services
 
 ### Key Capabilities
 
@@ -26,6 +42,8 @@ A command-line interface for managing Mindtrace hardware services with process l
 ## Usage Examples
 
 ### Basic Usage
+
+**Camera Services:**
 ```bash
 # Start camera services (API + web configurator)
 mindtrace-hw camera start
@@ -35,6 +53,33 @@ mindtrace-hw camera status
 
 # Stop all camera services gracefully
 mindtrace-hw camera stop
+```
+
+**Stereo Camera Services:**
+```bash
+# Start stereo camera API service
+mindtrace-hw stereo start
+
+# Open documentation in browser automatically
+mindtrace-hw stereo start --open-docs
+
+# Check stereo camera service status
+mindtrace-hw stereo status
+
+# Stop stereo camera service
+mindtrace-hw stereo stop
+```
+
+**PLC Services:**
+```bash
+# Start PLC API service
+mindtrace-hw plc start
+
+# Check PLC service status
+mindtrace-hw plc status
+
+# Stop PLC service
+mindtrace-hw plc stop
 ```
 
 ### Advanced Configuration
@@ -93,6 +138,8 @@ cli/
 ├── commands/
 │   ├── __init__.py
 │   ├── camera.py         # Camera service management commands
+│   ├── stereo.py         # Stereo camera service management commands
+│   ├── plc.py            # PLC service management commands
 │   └── status.py         # Global status command
 ├── core/
 │   ├── __init__.py
@@ -107,6 +154,8 @@ cli/
 ### Service Integration Architecture
 - **Camera API**: Managed via `mindtrace.hardware.api.cameras.launcher`
 - **Camera Configurator**: Reflex app from `apps/camera_configurator/`
+- **Stereo Camera API**: Managed via `mindtrace.hardware.api.stereo_cameras.launcher`
+- **PLC API**: Managed via `mindtrace.hardware.api.plcs.launcher`
 - **Process Coordination**: PID tracking in `~/.mindtrace/hw_services.json`
 - **Health Monitoring**: TCP port checks and process validation
 
@@ -182,6 +231,16 @@ Configure services using standardized environment variables:
 - `CAMERA_UI_FRONTEND_PORT` - Frontend port (default: `3000`)
 - `CAMERA_UI_BACKEND_PORT` - Reflex backend port (default: `8000`)
 
+### Stereo Camera API Service Configuration
+- `STEREO_CAMERA_API_HOST` - API service host (default: `localhost`)
+- `STEREO_CAMERA_API_PORT` - API service port (default: `8004`)
+- `STEREO_CAMERA_API_URL` - Full API URL (default: `http://localhost:8004`)
+
+### PLC API Service Configuration
+- `PLC_API_HOST` - API service host (default: `localhost`)
+- `PLC_API_PORT` - API service port (default: `8003`)
+- `PLC_API_URL` - Full API URL (default: `http://localhost:8003`)
+
 ### Example Production Configuration
 ```bash
 # Network accessible configuration
@@ -204,7 +263,111 @@ mindtrace-hw camera start --api-port 9000
 
 ## Command Reference
 
-### camera start
+### Stereo Camera Commands
+
+#### stereo start
+```bash
+mindtrace-hw stereo start [OPTIONS]
+
+Options:
+  --api-host TEXT     Stereo Camera API service host [default: localhost]
+  --api-port INTEGER  Stereo Camera API service port [default: 8004]
+  --open-docs        Open API documentation in browser
+
+Examples:
+  # Start with default settings
+  mindtrace-hw stereo start
+
+  # Start on custom host/port
+  mindtrace-hw stereo start --api-host 0.0.0.0 --api-port 8005
+
+  # Start and open Swagger UI in browser
+  mindtrace-hw stereo start --open-docs
+
+Access URLs:
+  - API: http://localhost:8004
+  - Swagger UI: http://localhost:8004/docs
+  - ReDoc: http://localhost:8004/redoc
+```
+
+#### stereo stop
+```bash
+mindtrace-hw stereo stop
+
+# Gracefully stops stereo camera API service
+```
+
+#### stereo status
+```bash
+mindtrace-hw stereo status
+
+# Shows detailed status:
+# - Service running status
+# - Process ID and resource usage
+# - Host:Port and access URLs
+# - Service uptime
+```
+
+#### stereo logs
+```bash
+mindtrace-hw stereo logs
+
+# Provides guidance on log locations:
+# - Console output for API service
+```
+
+### PLC Commands
+
+#### plc start
+```bash
+mindtrace-hw plc start [OPTIONS]
+
+Options:
+  --api-host TEXT     PLC API service host [default: localhost]
+  --api-port INTEGER  PLC API service port [default: 8003]
+
+Examples:
+  # Start with default settings
+  mindtrace-hw plc start
+
+  # Start on custom host/port
+  mindtrace-hw plc start --api-host 0.0.0.0 --api-port 8005
+
+Access URLs:
+  - API: http://localhost:8003
+  - Swagger UI: http://localhost:8003/docs
+  - ReDoc: http://localhost:8003/redoc
+```
+
+#### plc stop
+```bash
+mindtrace-hw plc stop
+
+# Gracefully stops PLC API service
+```
+
+#### plc status
+```bash
+mindtrace-hw plc status
+
+# Shows detailed status:
+# - Service running status
+# - Process ID and resource usage
+# - Host:Port and access URLs
+# - Service uptime
+```
+
+#### plc logs
+```bash
+mindtrace-hw plc logs
+
+# Provides guidance on log locations:
+# - Console output for API service
+```
+
+### Camera Commands
+
+#### camera start
 ```bash
 mindtrace-hw camera start [OPTIONS]
 
@@ -351,10 +514,14 @@ def format_new_service_status(status_data: dict) -> str:
 
 The CLI architecture supports easy addition of new hardware services:
 
-### Planned Services
+### Implemented Services
+- **Camera Management**: `mindtrace-hw camera start/stop/status/test/logs`
+- **Stereo Camera Management**: `mindtrace-hw stereo start/stop/status/logs`
 - **PLC Management**: `mindtrace-hw plc start/stop/status`
-- **Sensor Services**: `mindtrace-hw sensor start/stop/status`  
-- **Unified Control**: `mindtrace-hw start --all` / `mindtrace-hw stop --all`
+
+### Planned Services
+- **Sensor Services**: `mindtrace-hw sensor start/stop/status`
+- **Unified Control**: `mindtrace-hw start --all` for all services simultaneously
 
 ### Integration Points
 - **Service Registry**: Automatic service discovery and registration

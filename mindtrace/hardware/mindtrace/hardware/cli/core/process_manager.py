@@ -168,6 +168,57 @@ class ProcessManager:
 
         return process
 
+    def start_stereo_camera_api(self, host: str = None, port: int = None) -> subprocess.Popen:
+        """Launch Stereo Camera API service.
+
+        Args:
+            host: Host to bind the service to (default: STEREO_CAMERA_API_HOST env var or 'localhost')
+            port: Port to run the service on (default: STEREO_CAMERA_API_PORT env var or 8004)
+
+        Returns:
+            The subprocess handle
+        """
+        # Use environment variables as defaults
+        if host is None:
+            host = os.getenv("STEREO_CAMERA_API_HOST", "localhost")
+        if port is None:
+            port = int(os.getenv("STEREO_CAMERA_API_PORT", "8004"))
+
+        # Build command
+        cmd = [sys.executable, "-m", "mindtrace.hardware.api.stereo_cameras.launcher", "--host", host, "--port", str(port)]
+
+        # Set Stereo Camera API environment variables for other services to use
+        os.environ["STEREO_CAMERA_API_HOST"] = host
+        os.environ["STEREO_CAMERA_API_PORT"] = str(port)
+        os.environ["STEREO_CAMERA_API_URL"] = f"http://{host}:{port}"
+
+        # Start process
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,  # Create new process group
+        )
+
+        # Wait a moment to ensure it started
+        time.sleep(1)
+
+        # Check if process is still running
+        if process.poll() is not None:
+            raise RuntimeError(f"Failed to start Stereo Camera API service on {host}:{port}")
+
+        # Save process info
+        self.processes["stereo_camera_api"] = {
+            "pid": process.pid,
+            "host": host,
+            "port": port,
+            "start_time": datetime.now().isoformat(),
+            "command": " ".join(cmd),
+        }
+        self.save_pids()
+
+        return process
+
     def start_configurator(self, host: str = None, port: int = None, backend_port: int = None) -> subprocess.Popen:
         """Launch camera configurator app.
 
