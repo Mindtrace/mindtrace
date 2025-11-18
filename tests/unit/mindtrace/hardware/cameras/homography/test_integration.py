@@ -6,8 +6,9 @@ import numpy as np
 import pytest
 
 from mindtrace.core.types.bounding_box import BoundingBox
-from mindtrace.hardware.cameras.homography.calibration import HomographyCalibrator
-from mindtrace.hardware.cameras.homography.measurement import PlanarHomographyMeasurer
+from mindtrace.hardware.cameras.homography.calibrator import HomographyCalibrator
+from mindtrace.hardware.cameras.homography.measurer import HomographyMeasurer
+from mindtrace.hardware.core.exceptions import CameraConfigurationError, HardwareOperationError
 
 
 class TestHomographyIntegration:
@@ -49,7 +50,7 @@ class TestHomographyIntegration:
         )
 
         # Step 3: Create measurer
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
 
         # Step 4: Test measurement on a known bounding box
         # Box from (200,300) to (300,350) should map to (0,0) to (50,25) = 50x25mm
@@ -73,7 +74,7 @@ class TestHomographyIntegration:
             world_points=world_points, image_points=image_points, world_unit="mm"
         )
 
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
 
         # Measure in centimeters
         bbox = BoundingBox(x=100, y=100, width=100, height=100)  # Should be 10x10mm
@@ -109,7 +110,7 @@ class TestHomographyIntegration:
         assert np.array_equal(calibration_data.dist_coeffs, dist_coeffs)
 
         # Create measurer and test
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
         bbox = BoundingBox(x=150, y=150, width=100, height=100)
         measured = measurer.measure_bounding_box(bbox)
 
@@ -129,7 +130,7 @@ class TestHomographyIntegration:
             world_points=world_points, image_points=image_points, world_unit="mm"
         )
 
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
 
         # Create multiple test objects
         objects = [
@@ -188,7 +189,7 @@ class TestHomographyIntegration:
         )
 
         # Create measurer and test measurement
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
         bbox = BoundingBox(x=100, y=100, width=50, height=50)
         measured = measurer.measure_bounding_box(bbox)
 
@@ -229,7 +230,7 @@ class TestHomographyIntegration:
             pytest.skip("Could not detect checkerboard with any tested size")
 
         # Test measurement with the real calibration
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
 
         # Create a test bounding box
         bbox = BoundingBox(x=100, y=100, width=200, height=150)
@@ -268,7 +269,7 @@ class TestHomographyIntegration:
             )
 
             # If calibration succeeds, measurement should still work
-            measurer = PlanarHomographyMeasurer(calibration_data)
+            measurer = HomographyMeasurer(calibration_data)
             bbox = BoundingBox(x=50, y=50, width=100, height=100)
             measured = measurer.measure_bounding_box(bbox)
 
@@ -277,7 +278,7 @@ class TestHomographyIntegration:
             assert not np.isnan(measured.height_world)
             assert not np.isnan(measured.area_world)
 
-        except ValueError:
+        except HardwareOperationError:
             # Expected for degenerate cases
             pass
 
@@ -293,7 +294,7 @@ class TestHomographyIntegration:
             world_points=world_points, image_points=image_points, world_unit="mm"
         )
 
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
 
         # Test measurement precision
         bbox = BoundingBox(x=100, y=200, width=100, height=60)  # Should be 50x30mm
@@ -325,7 +326,7 @@ class TestHomographyIntegration:
             world_points=world_points, image_points=image_points, world_unit="mm"
         )
 
-        measurer = PlanarHomographyMeasurer(calibration_data)
+        measurer = HomographyMeasurer(calibration_data)
         bbox = BoundingBox(x=200, y=200, width=200, height=200)  # Should be ~100x100mm
         measured = measurer.measure_bounding_box(bbox)
 

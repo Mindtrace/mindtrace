@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from mindtrace.hardware.cameras.homography.calibration import CalibrationData, HomographyCalibrator
+from mindtrace.hardware.cameras.homography.calibrator import CalibrationData, HomographyCalibrator
+from mindtrace.hardware.core.exceptions import CameraConfigurationError, HardwareOperationError
 
 
 class TestCalibrationData:
@@ -160,21 +161,21 @@ class TestHomographyCalibrator:
         world_points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], dtype=np.float64)  # Only 3 points
         image_points = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]], dtype=np.float64)
 
-        with pytest.raises(ValueError, match="At least 4 point correspondences are required"):
+        with pytest.raises(CameraConfigurationError, match="At least 4 point correspondences are required"):
             self.calibrator.calibrate_from_correspondences(world_points, image_points)
 
         # Test mismatched array lengths
         world_points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
         image_points = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]], dtype=np.float64)  # One less
 
-        with pytest.raises(ValueError, match="world_points and image_points must have same length"):
+        with pytest.raises(CameraConfigurationError, match="world_points and image_points must have the same number of points"):
             self.calibrator.calibrate_from_correspondences(world_points, image_points)
 
         # Test wrong dimensionality
         world_points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]], dtype=np.float64)  # 3D points
         image_points = np.array([[0.0, 0.0], [100.0, 0.0]], dtype=np.float64)
 
-        with pytest.raises(ValueError, match="world_points and image_points must be Nx2 arrays"):
+        with pytest.raises(CameraConfigurationError, match="world_points and image_points must be Nx2 arrays"):
             self.calibrator.calibrate_from_correspondences(world_points, image_points)
 
     @patch("cv2.findHomography")
@@ -185,7 +186,7 @@ class TestHomographyCalibrator:
         world_points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
         image_points = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]], dtype=np.float64)
 
-        with pytest.raises(ValueError, match="Homography estimation failed"):
+        with pytest.raises(HardwareOperationError, match="Homography estimation failed"):
             self.calibrator.calibrate_from_correspondences(world_points, image_points)
 
     def test_calibrate_checkerboard_success(self):
@@ -235,7 +236,7 @@ class TestHomographyCalibrator:
         # Create a dummy image
         image = np.zeros((480, 640, 3), dtype=np.uint8)
 
-        with pytest.raises(ValueError, match="Checkerboard not found"):
+        with pytest.raises(HardwareOperationError, match="Checkerboard pattern not found"):
             self.calibrator.calibrate_checkerboard(image=image, board_size=(9, 6), square_size=25.0)
 
     def test_calibrate_checkerboard_grayscale_input(self):
@@ -256,8 +257,8 @@ class TestHomographyCalibrator:
             assert isinstance(calib_data, CalibrationData)
             assert calib_data.world_unit == "cm"
 
-        except ValueError as e:
-            if "Checkerboard not found" in str(e):
+        except HardwareOperationError as e:
+            if "Checkerboard pattern not found" in str(e):
                 # If the improved synthetic checkerboard still fails, try with mocking
                 self._test_checkerboard_with_mock()
             else:
@@ -433,8 +434,8 @@ class TestHomographyCalibrator:
             assert calib_data.world_unit == "mm"
             assert calib_data.H.shape == (3, 3)
 
-        except ValueError as e:
-            if "Checkerboard not found" in str(e):
+        except HardwareOperationError as e:
+            if "Checkerboard pattern not found" in str(e):
                 # If synthetic checkerboard fails, test with mocked PIL image
                 self._test_pil_image_with_mock()
             else:
@@ -458,8 +459,8 @@ class TestHomographyCalibrator:
             assert calib_data.world_unit == "cm"
             assert calib_data.H.shape == (3, 3)
 
-        except ValueError as e:
-            if "Checkerboard not found" in str(e):
+        except HardwareOperationError as e:
+            if "Checkerboard pattern not found" in str(e):
                 # Expected for synthetic checkerboard - test passes if we reach here
                 pass
             else:
@@ -467,7 +468,7 @@ class TestHomographyCalibrator:
 
     def test_calibrate_checkerboard_invalid_input_type(self):
         """Test error handling for invalid input types."""
-        with pytest.raises(ValueError, match="Unsupported image type"):
+        with pytest.raises(CameraConfigurationError, match="Unsupported image type"):
             self.calibrator.calibrate_checkerboard(
                 image="invalid_input",  # String instead of Image or array
                 board_size=(5, 3),
