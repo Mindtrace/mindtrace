@@ -250,7 +250,7 @@ class Registry(Mindtrace):
 
         The URI scheme determines which backend is used:
         - s3://... -> MinioRegistryBackend (requires endpoint, access_key, secret_key, bucket kwargs)
-        - gs://... -> GCPRegistryBackend (requires project_id, bucket_name kwargs)
+        - gs://... -> GCPRegistryBackend (requires project_id, bucket kwargs)
         - file://... or /path/... -> LocalRegistryBackend
 
         Args:
@@ -280,7 +280,7 @@ class Registry(Mindtrace):
             registry = Registry.from_uri(
                 "gs://my-bucket",
                 project_id="my-project",
-                bucket_name="my-bucket",
+                bucket="my-bucket",
                 credentials_path="/path/to/credentials.json"
             )
         """

@@ -91,7 +91,7 @@ from mindtrace.registry import Registry, GCPRegistryBackend
 gcp_backend = GCPRegistryBackend(
     uri="gs://my-registry-bucket",
     project_id="my-project",
-    bucket_name="my-registry-bucket",
+    bucket="my-registry-bucket",
     credentials_path="/path/to/service-account.json"
 )
 registry = Registry(backend=gcp_backend)

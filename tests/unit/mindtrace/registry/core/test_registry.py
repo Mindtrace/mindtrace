@@ -2311,7 +2311,7 @@ def test_from_uri_gs_scheme():
             mock_storage_client.return_value = mock_client
 
             registry = Registry.from_uri(
-                uri, project_id="test-project", bucket_name="test-bucket", credentials_path=None
+                uri, project_id="test-project", bucket="test-bucket", credentials_path=None
             )
 
             # Verify backend type

@@ -65,7 +65,7 @@ def backend(mock_gcs_handler):
     return GCPRegistryBackend(
         uri="gs://test-bucket",
         project_id="test-project",
-        bucket_name="test-bucket",
+        bucket="test-bucket",
         credentials_path="/path/to/credentials.json",
     )
 
@@ -717,7 +717,7 @@ def test_metadata_path_property(backend):
     custom_backend = GCPRegistryBackend(
         uri="gs://test-bucket",
         project_id="test-project",
-        bucket_name="test-bucket",
+        bucket="test-bucket",
         credentials_path="/path/to/credentials.json",
     )
     custom_backend._metadata_path = "custom_metadata.json"

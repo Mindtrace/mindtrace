@@ -74,7 +74,7 @@ def backend(temp_dir, test_bucket):
         return GCPRegistryBackend(
             uri=f"gs://{test_bucket}",
             project_id=project_id,
-            bucket_name=test_bucket,
+            bucket=test_bucket,
             credentials_path=credentials_path,
         )
     except Exception as e:
@@ -467,7 +467,7 @@ def test_error_handling_invalid_credentials():
         GCPRegistryBackend(
             uri="gs://test-bucket",
             project_id="invalid-project",
-            bucket_name="test-bucket",
+            bucket="test-bucket",
             credentials_path="/nonexistent/credentials.json",
         )
 
@@ -478,7 +478,7 @@ def test_error_handling_nonexistent_bucket():
         GCPRegistryBackend(
             uri="gs://nonexistent-bucket",
             project_id=os.environ.get("GCP_PROJECT_ID", "mindtrace-test"),
-            bucket_name="nonexistent-bucket",
+            bucket="nonexistent-bucket",
             ensure_bucket=True,
             create_if_missing=False,
         )

@@ -26,7 +26,7 @@ class GCPRegistryBackend(RegistryBackend):
         gcp_backend = GCPRegistryBackend(
             uri="gs://my-registry-bucket",
             project_id="my-project",
-            bucket_name="my-registry-bucket",
+            bucket="my-registry-bucket",
             credentials_path="/path/to/service-account.json"
         )
         registry = Registry(backend=gcp_backend)
@@ -42,7 +42,7 @@ class GCPRegistryBackend(RegistryBackend):
         uri: str | Path | None = None,
         *,
         project_id: str,
-        bucket_name: str,
+        bucket: str,
         credentials_path: str | None = None,
         **kwargs,
     ):
@@ -51,18 +51,18 @@ class GCPRegistryBackend(RegistryBackend):
         Args:
             uri: The base URI for the registry (e.g., "gs://my-bucket").
             project_id: GCP project ID.
-            bucket_name: GCS bucket name.
+            bucket: GCS bucket name.
             credentials_path: Optional path to service account JSON file.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or f"gs://{bucket_name}")
+        self._uri = Path(uri or f"gs://{bucket}")
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
 
         # Initialize GCS storage handler
         self.gcs = GCSStorageHandler(
-            bucket_name=bucket_name,
+            bucket_name=bucket,
             project_id=project_id,
             credentials_path=credentials_path,
             ensure_bucket=True,

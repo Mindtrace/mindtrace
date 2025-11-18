@@ -33,7 +33,7 @@ BACKENDS = {
         "class": GCPRegistryBackend,
         "params": {
             "project_id": None,  # Will be set in fixture
-            "bucket_name": None,  # Will be set in fixture
+            "bucket": None,  # Will be set in fixture
             "credentials_path": None,  # Will be set in fixture
         },
     },
@@ -95,7 +95,7 @@ def gcp_backend_session():
 
     params = {
         "project_id": gcp_project_id,
-        "bucket_name": bucket_name,
+        "bucket": bucket_name,
         "credentials_path": gcp_credentials_path,
         "uri": f"gs://{bucket_name}",
     }
@@ -827,7 +827,7 @@ def test_from_uri_integration(backend_type, temp_dir, test_bucket):
             registry = Registry.from_uri(
                 uri,
                 project_id=gcp_project_id,
-                bucket_name=test_bucket,
+                bucket=test_bucket,
                 credentials_path=gcp_credentials_path,
                 version_objects=True,
             )
