@@ -155,7 +155,7 @@ POST /cameras/homography/calibrate/multi-view
 - Positions are **real-world coordinates you measure**, not pixel coordinates
 - Origin (0, 0) is **arbitrary** - you choose where to start
 - Distances measured with **physical tape measure** between checkerboard placements
-- Checkerboard parameters (board_size, square_size, world_unit) configured in HomographySettings
+- Checkerboard parameters (board_size, square_width/height, world_unit) configured in HomographySettings
 - All images must show the **same plane** (flat surface, Z=0)
 - Camera angle/perspective handled automatically by homography transformation
 

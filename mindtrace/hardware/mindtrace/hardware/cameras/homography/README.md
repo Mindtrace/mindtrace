@@ -33,7 +33,7 @@ calibrator = HomographyCalibrator()
 # Calibrate using checkerboard pattern
 calibration = calibrator.calibrate_checkerboard(
     image=checkerboard_image,
-    board_size=(12, 12),      # Inner corners
+    board_size=(8, 6),        # Inner corners (9×7 squares)
     square_size=25.0,          # mm per square
     world_unit="mm"
 )
@@ -94,13 +94,15 @@ homography/
 ```
 Mindtrace (base class)
 ├── HomographyCalibrator
-│   ├── calibrate_checkerboard()      # Automatic calibration
-│   ├── calibrate_from_correspondences()  # Manual calibration
-│   └── estimate_intrinsics_from_fov()   # Camera model estimation
+│   ├── calibrate_checkerboard()              # Single-view calibration
+│   ├── calibrate_checkerboard_multi_view()   # Multi-view calibration
+│   ├── calibrate_from_correspondences()      # Manual calibration
+│   └── estimate_intrinsics_from_fov()        # Camera model estimation
 │
 └── HomographyMeasurer
     ├── measure_bounding_box()         # Single object measurement
-    ├── measure_bounding_boxes()       # Batch measurement
+    ├── measure_bounding_boxes()       # Batch object measurement
+    ├── measure_distance()             # Point-to-point distance
     └── pixels_to_world()              # Coordinate projection
 ```
 
@@ -129,10 +131,10 @@ Mindtrace (base class)
 Configure default calibration board dimensions:
 
 ```bash
-# Standard 12x12 checkerboard with 25mm squares
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE=25.0
+# Standard 8x6 checkerboard (default: 9×7 squares, 23mm/8 per square)
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=8
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=6
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE=2.875
 export MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT=mm
 
 # RANSAC and refinement settings
@@ -145,9 +147,9 @@ export MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS=true
 ```json
 {
   "homography": {
-    "checkerboard_cols": 12,
-    "checkerboard_rows": 12,
-    "checkerboard_square_size": 25.0,
+    "checkerboard_cols": 8,
+    "checkerboard_rows": 6,
+    "checkerboard_square": 2.875,
     "default_world_unit": "mm",
     "ransac_threshold": 3.0,
     "refine_corners": true
@@ -159,14 +161,14 @@ export MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS=true
 
 ```python
 # Set config once
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE=25.0
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=8
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=6
+export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE=2.875
 
 # Ultra-simple calibration - all params from config!
 calibrator = HomographyCalibrator()
 calibration = calibrator.calibrate_checkerboard(image=img)
-# Uses config defaults: 12x12 board, 25mm squares
+# Uses config defaults: 8×6 board, 2.875mm squares
 ```
 
 ---
@@ -183,8 +185,8 @@ calibrator = HomographyCalibrator()
 # Detect checkerboard and compute homography
 calibration = calibrator.calibrate_checkerboard(
     image=checkerboard_image,
-    board_size=(12, 12),      # Inner corners (not squares!)
-    square_size=25.0,          # Physical size in mm
+    board_size=(8, 6),        # Inner corners (not squares!)
+    square_size=25.0,          # Physical size in mm (uniform squares only)
     world_unit="mm",
     refine_corners=True        # Sub-pixel accuracy
 )
@@ -229,7 +231,51 @@ calibration = calibrator.calibrate_from_correspondences(
 - Accurate world coordinate measurements
 - Precise pixel coordinate identification
 
-### Method 3: Camera Intrinsics Estimation
+### Method 3: Multi-View Checkerboard
+
+**Best for:** Long surfaces (metallic bars, conveyor belts) where standard checkerboard is too small
+
+```python
+# Calibrate 2-meter bar using standard checkerboard at 3 positions
+from PIL import Image
+
+images = [
+    Image.open("/path/start.jpg"),    # Checkerboard at position 1
+    Image.open("/path/middle.jpg"),   # Checkerboard at position 2
+    Image.open("/path/end.jpg")       # Checkerboard at position 3
+]
+
+positions = [
+    (0, 0),       # Start (arbitrary origin)
+    (850, 0),     # 850mm from start (measured with tape)
+    (1700, 0)     # 1700mm from start (measured with tape)
+]
+
+calibration = calibrator.calibrate_checkerboard_multi_view(
+    images=images,
+    positions=positions,
+    board_size=(8, 6),
+    square_width=25.0,
+    square_height=25.0,
+    world_unit="mm"
+)
+```
+
+**Requirements:**
+- Multiple images with checkerboard at different positions on same plane
+- Accurate position measurements between checkerboard placements (use tape measure)
+- All images show the same flat surface
+- 3-5 positions recommended for good coverage
+
+**Workflow:**
+1. Place checkerboard at origin → capture image
+2. Measure and move checkerboard along surface → capture image
+3. Repeat for desired coverage
+4. Calibrate using all images + measured positions
+
+See Camera API README for detailed multi-view workflow examples.
+
+### Method 4: Camera Intrinsics Estimation
 
 **Best for:** When camera calibration unavailable
 
@@ -574,7 +620,19 @@ class HomographyCalibrator(Mindtrace):
     def calibrate_checkerboard(
         image: Union[Image.Image, np.ndarray],
         board_size: Optional[Tuple[int, int]] = None,
-        square_size: Optional[float] = None,
+        square_size: Optional[float] = None,  # Uniform squares only
+        world_unit: Optional[str] = None,
+        camera_matrix: Optional[np.ndarray] = None,
+        dist_coeffs: Optional[np.ndarray] = None,
+        refine_corners: Optional[bool] = None
+    ) -> CalibrationData
+
+    def calibrate_checkerboard_multi_view(
+        images: list[Union[Image.Image, np.ndarray]],
+        positions: list[Tuple[float, float]],
+        board_size: Optional[Tuple[int, int]] = None,
+        square_width: Optional[float] = None,  # Rectangular squares supported
+        square_height: Optional[float] = None,
         world_unit: Optional[str] = None,
         camera_matrix: Optional[np.ndarray] = None,
         dist_coeffs: Optional[np.ndarray] = None,
@@ -612,6 +670,12 @@ class HomographyMeasurer(Mindtrace):
         boxes: Sequence[BoundingBox],
         target_unit: Optional[str] = None
     ) -> List[MeasuredBox]
+
+    def measure_distance(
+        point1: Union[Tuple[float, float], np.ndarray],
+        point2: Union[Tuple[float, float], np.ndarray],
+        target_unit: Optional[str] = None
+    ) -> Tuple[float, str]
 
     def pixels_to_world(
         points_px: np.ndarray
@@ -728,11 +792,3 @@ measurements = measurer.measure_bounding_boxes(boxes, target_unit="cm")
 
 Part of the Mindtrace Hardware framework.
 
----
-
-## Support
-
-For issues, questions, or contributions:
-- Check configuration examples: `../../HOMOGRAPHY_CONFIG_EXAMPLES.md`
-- Review refactor summary: `../../HOMOGRAPHY_REFACTOR_SUMMARY.md`
-- See camera service integration: `../../api/cameras/README.md`
