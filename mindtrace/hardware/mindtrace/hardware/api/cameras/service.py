@@ -89,6 +89,7 @@ from mindtrace.hardware.cameras.core.async_camera_manager import AsyncCameraMana
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
     CameraTimeoutError,
+    HardwareOperationError,
 )
 from mindtrace.services import Service
 
@@ -1575,7 +1576,7 @@ class CameraManagerService(Service):
             if request.refine_corners is not None:
                 kwargs["refine_corners"] = request.refine_corners
 
-            # Perform calibration
+            # Perform calibration (validation happens inside calibrator)
             calibration = calibrator.calibrate_checkerboard(image=calibration_image, **kwargs)
 
             # Save calibration if requested
@@ -1584,10 +1585,11 @@ class CameraManagerService(Service):
                 calibration.save(request.save_path)
                 calibration_path = request.save_path
 
-            # Create summary of homography matrix
+            # Create summary of homography matrix for response
+            det = float(np.linalg.det(calibration.H))
             H_summary = {
                 "shape": list(calibration.H.shape),
-                "determinant": float(np.linalg.det(calibration.H)),
+                "determinant": det,
             }
 
             result = HomographyCalibrationResult(
@@ -1595,13 +1597,13 @@ class CameraManagerService(Service):
                 calibration_path=calibration_path,
                 homography_matrix_summary=H_summary,
                 world_unit=calibration.world_unit,
-                inlier_count=None,  # Checkerboard uses all detected corners
-                total_points=None,
             )
+
+            message = f"Homography calibration completed for camera '{request.camera}'"
 
             return HomographyCalibrationResponse(
                 success=True,
-                message=f"Homography calibration completed for camera '{request.camera}'",
+                message=message,
                 data=result,
             )
         except Exception as e:
