@@ -671,7 +671,8 @@ class TestMockBaslerPerformanceAndTiming:
     @pytest.mark.asyncio
     async def test_capture_timing_simulation(self):
         """Test that capture timing is simulated based on exposure."""
-        camera = MockBaslerCameraBackend("test_cam")
+        # Explicitly disable fast_mode for this timing test
+        camera = MockBaslerCameraBackend("test_cam", fast_mode=False)
         await camera.initialize()
 
         # Set very short exposure
