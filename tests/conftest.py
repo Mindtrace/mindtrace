@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 from types import ModuleType
 
@@ -223,3 +224,11 @@ class MockAssets:
 def mock_assets():
     """Fixture providing the MockAssets instance for all tests."""
     return MockAssets()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def enable_mock_basler_fast_mode():
+    """Enable fast mode for MockBasler cameras during tests to skip timing delays."""
+    os.environ["MOCK_BASLER_FAST_MODE"] = "1"
+    yield
+    os.environ.pop("MOCK_BASLER_FAST_MODE", None)
