@@ -101,7 +101,7 @@ class HomographyCalibrator(Mindtrace):
             f"refine_corners={self._config.refine_corners}, "
             f"default_unit={self._config.default_world_unit}, "
             f"default_board={self._config.checkerboard_cols}x{self._config.checkerboard_rows}, "
-            f"default_square={self._config.checkerboard_square_width}x{self._config.checkerboard_square_height}{self._config.default_world_unit})"
+            f"default_square={self._config.checkerboard_square}{self._config.default_world_unit})"
         )
 
     def estimate_intrinsics_from_fov(
@@ -246,12 +246,102 @@ class HomographyCalibrator(Mindtrace):
             world_unit=world_unit,
         )
 
+    def _validate_homography_quality(
+        self,
+        H: np.ndarray,
+        image: Optional[np.ndarray] = None,
+        board_size: Optional[Tuple[int, int]] = None,
+        square_size: Optional[float] = None,
+    ) -> Tuple[Optional[float], Optional[float], int]:
+        """Validate homography quality and compute reprojection errors.
+
+        Args:
+            H: 3x3 homography matrix
+            image: Optional calibration image for reprojection error computation
+            board_size: Optional checkerboard size (cols, rows) for reprojection validation
+            square_size: Optional square size for reprojection validation
+
+        Returns:
+            Tuple of (mean_error, max_error, total_corners). Errors are None if validation skipped.
+
+        Raises:
+            HardwareOperationError: If homography has invalid determinant
+        """
+        # Validate determinant
+        det = float(np.linalg.det(H))
+        abs_det = abs(det)
+
+        # Check for singular matrix (determinant too close to zero)
+        if abs_det < 1e-10:
+            self.logger.error(f"Invalid homography: determinant too close to zero ({det:.2e})")
+            raise HardwareOperationError(
+                f"Calibration failed: singular homography matrix (det={det:.2e})"
+            )
+
+        # Warn about suspiciously large determinant magnitude
+        if abs_det > 1e10:
+            self.logger.warning(
+                f"Suspicious homography determinant magnitude: {abs_det:.2e} (may indicate poor calibration)"
+            )
+
+        # Note negative determinant (indicates reflection/flip)
+        if det < 0:
+            self.logger.info(
+                f"Homography has negative determinant ({det:.2e}) - indicates coordinate system reflection "
+                "(normal for some camera angles)"
+            )
+
+        # Compute reprojection error if image and board parameters provided
+        mean_error = None
+        max_error = None
+        total_corners = 0
+
+        if image is not None and board_size is not None and square_size is not None:
+            # Convert to grayscale for corner detection
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+
+            # Detect checkerboard corners
+            found, corners = cv2.findChessboardCorners(gray, board_size)
+
+            if found:
+                total_corners = len(corners)
+
+                # Generate world coordinates (row-major order to match OpenCV)
+                cols, rows = board_size
+                objp = np.zeros((rows * cols, 2), dtype=np.float64)
+                objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_size
+                objp[:, 1] = (np.arange(rows).repeat(cols)) * square_size
+
+                # Project world points to image using computed homography
+                projected = cv2.perspectiveTransform(objp.reshape(-1, 1, 2), H)
+
+                # Compute reprojection errors
+                errors = np.linalg.norm(projected.reshape(-1, 2) - corners.reshape(-1, 2), axis=1)
+                mean_error = float(np.mean(errors))
+                max_error = float(np.max(errors))
+
+                self.logger.info(
+                    f"Reprojection error: mean={mean_error:.2f}px, max={max_error:.2f}px "
+                    f"(over {total_corners} corners)"
+                )
+
+                # Warn if errors are high
+                if mean_error > 5.0:
+                    self.logger.warning(
+                        f"High mean reprojection error ({mean_error:.2f}px) - calibration may be inaccurate"
+                    )
+                if max_error > 10.0:
+                    self.logger.warning(
+                        f"High maximum reprojection error ({max_error:.2f}px) - consider recalibrating"
+                    )
+
+        return mean_error, max_error, total_corners
+
     def calibrate_checkerboard(
         self,
         image: Union[Image.Image, np.ndarray],
         board_size: Optional[Tuple[int, int]] = None,
-        square_width: Optional[float] = None,
-        square_height: Optional[float] = None,
+        square_size: Optional[float] = None,
         world_unit: Optional[str] = None,
         camera_matrix: Optional[np.ndarray] = None,
         dist_coeffs: Optional[np.ndarray] = None,
@@ -267,9 +357,8 @@ class HomographyCalibrator(Mindtrace):
             image: PIL Image or BGR numpy array containing checkerboard pattern
             board_size: Number of inner corners as (columns, rows). Uses config default if None.
                        For a standard 8x8 checkerboard, use (7, 7).
-            square_width: Physical width of one checkerboard square in world units. Uses config default if None.
-            square_height: Physical height of one checkerboard square in world units. Uses config default if None.
-            world_unit: Unit of square_width/height (e.g., 'mm', 'cm', 'm'). Uses config default if None.
+            square_size: Physical size of one checkerboard square in world units. Uses config default if None.
+            world_unit: Unit of square_size (e.g., 'mm', 'cm', 'm'). Uses config default if None.
             camera_matrix: Optional 3x3 camera intrinsics matrix for undistortion
             dist_coeffs: Optional distortion coefficients for undistortion
             refine_corners: Enable sub-pixel corner refinement. Uses config default if None.
@@ -290,16 +379,7 @@ class HomographyCalibrator(Mindtrace):
             calibration = calibrator.calibrate_checkerboard(
                 image=checkerboard_image,
                 board_size=(9, 6),         # Custom board size
-                square_width=30.0,         # Custom square width
-                square_height=30.0,        # Custom square height (same as width for square checkerboard)
-                world_unit="mm"
-            )
-
-            # Rectangular checkerboard support
-            calibration = calibrator.calibrate_checkerboard(
-                image=checkerboard_image,
-                square_width=25.0,         # 25mm wide
-                square_height=30.0,        # 30mm tall (rectangular squares)
+                square_size=30.0,          # Custom square size
                 world_unit="mm"
             )
 
@@ -308,20 +388,16 @@ class HomographyCalibrator(Mindtrace):
             - A standard 8x8 checkerboard has 7x7 inner corners
             - Ensure good lighting and focus for accurate detection
             - Checkerboard should fill significant portion of image
-            - Supports both square and rectangular checkerboard squares
             - If using a standard calibration board, configure dimensions via:
               MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS
               MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS
-              MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_WIDTH
-              MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_HEIGHT
+              MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE
         """
         # Use config defaults if not provided
         if board_size is None:
             board_size = (self._config.checkerboard_cols, self._config.checkerboard_rows)
-        if square_width is None:
-            square_width = self._config.checkerboard_square_width
-        if square_height is None:
-            square_height = self._config.checkerboard_square_height
+        if square_size is None:
+            square_size = self._config.checkerboard_square
         if world_unit is None:
             world_unit = self._config.default_world_unit
         if refine_corners is None:
@@ -329,7 +405,7 @@ class HomographyCalibrator(Mindtrace):
 
         self.logger.debug(
             f"Starting checkerboard calibration "
-            f"(board_size={board_size}, square={square_width}x{square_height}{world_unit}, "
+            f"(board_size={board_size}, square={square_size}{world_unit}, "
             f"refine_corners={refine_corners})"
         )
 
@@ -380,22 +456,33 @@ class HomographyCalibrator(Mindtrace):
             self.logger.debug(f"Corners refined to sub-pixel accuracy (window={window_size})")
 
         # Generate world coordinates for checkerboard corners
-        # Supports rectangular checkerboards: width != height
+        # OpenCV returns corners in row-major order (left-to-right, top-to-bottom)
+        # so we must generate world points in the same order
         cols, rows = board_size
         objp = np.zeros((rows * cols, 2), dtype=np.float64)
-        objp[:, 0] = (np.arange(cols).repeat(rows)) * square_width   # X coordinates (width)
-        objp[:, 1] = (np.tile(np.arange(rows), cols)) * square_height  # Y coordinates (height)
+        objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_size    # X: repeat columns for each row
+        objp[:, 1] = (np.arange(rows).repeat(cols)) * square_size      # Y: tile rows
 
         self.logger.debug(f"Generated {len(objp)} world point correspondences")
 
         # Compute homography from correspondences
-        return self.calibrate_from_correspondences(
+        calibration = self.calibrate_from_correspondences(
             world_points=objp,
             image_points=corners.reshape(-1, 2),
             world_unit=world_unit,
             camera_matrix=camera_matrix,
             dist_coeffs=dist_coeffs,
         )
+
+        # Validate homography quality with reprojection error
+        self._validate_homography_quality(
+            H=calibration.H,
+            image=cv2_image,
+            board_size=board_size,
+            square_size=square_size,
+        )
+
+        return calibration
 
     def calibrate_checkerboard_multi_view(
         self,
@@ -470,9 +557,9 @@ class HomographyCalibrator(Mindtrace):
         if board_size is None:
             board_size = (self._config.checkerboard_cols, self._config.checkerboard_rows)
         if square_width is None:
-            square_width = self._config.checkerboard_square_width
+            square_width = self._config.checkerboard_square
         if square_height is None:
-            square_height = self._config.checkerboard_square_height
+            square_height = self._config.checkerboard_square
         if world_unit is None:
             world_unit = self._config.default_world_unit
         if refine_corners is None:
@@ -546,12 +633,12 @@ class HomographyCalibrator(Mindtrace):
                 corners = cv2.cornerSubPix(gray, corners, window_size, (-1, -1), criteria)
                 self.logger.debug(f"View {idx+1}: Corners refined to sub-pixel accuracy")
 
-            # Generate world coordinates for this checkerboard position
+            # Generate world coordinates for this checkerboard position (row-major order to match OpenCV)
             # Supports rectangular checkerboards: width != height
             cols, rows = board_size
             objp = np.zeros((rows * cols, 2), dtype=np.float64)
-            objp[:, 0] = (np.arange(cols).repeat(rows)) * square_width + x_offset   # X coordinates (width)
-            objp[:, 1] = (np.tile(np.arange(rows), cols)) * square_height + y_offset  # Y coordinates (height)
+            objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_width + x_offset   # X coordinates (width)
+            objp[:, 1] = (np.arange(rows).repeat(cols)) * square_height + y_offset  # Y coordinates (height)
 
             all_world_points.append(objp)
             all_image_points.append(corners.reshape(-1, 2))
