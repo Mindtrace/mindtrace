@@ -253,13 +253,13 @@ class ParameterValidator(Mindtrace):
     def _check_type_compatibility(self, value: Any, expected_type: type) -> bool:
         """Check if value is compatible with expected type."""
         # Handle string type annotations
-        if expected_type == str:
+        if expected_type is str:
             return isinstance(value, str)
-        elif expected_type == int:
+        elif expected_type is int:
             return isinstance(value, int)
-        elif expected_type == float:
+        elif expected_type is float:
             return isinstance(value, (int, float))
-        elif expected_type == bool:
+        elif expected_type is bool:
             return isinstance(value, bool)
         else:
             # For complex types, just accept it

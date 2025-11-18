@@ -6,8 +6,8 @@ multi-component capture results, calibration parameters, and 3D point clouds.
 
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -292,10 +292,8 @@ class PointCloudData:
         Raises:
             ImportError: If open3d is not installed
         """
-        try:
-            import open3d as o3d
-        except ImportError:
-            raise ImportError("open3d package required for outlier removal. Install with: pip install open3d") from None
+        if importlib.util.find_spec("open3d") is None:
+            raise ImportError("open3d package required for outlier removal. Install with: pip install open3d")
 
         pcd = self.to_open3d()
         pcd_clean, inlier_indices = pcd.remove_statistical_outlier(nb_neighbors=nb_neighbors, std_ratio=std_ratio)

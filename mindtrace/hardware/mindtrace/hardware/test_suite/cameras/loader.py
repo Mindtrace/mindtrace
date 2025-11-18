@@ -130,7 +130,7 @@ class ConfigLoader(Mindtrace):
 
         if errors:
             # Log warnings for parameter issues
-            self.logger.warning(f"Configuration validation warnings for config:")
+            self.logger.warning("Configuration validation warnings for config:")
             for error in errors:
                 self.logger.warning(f"  - {error}")
 

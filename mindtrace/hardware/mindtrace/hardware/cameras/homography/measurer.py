@@ -6,7 +6,7 @@ to real-world metric coordinates using calibrated homography transformations.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 

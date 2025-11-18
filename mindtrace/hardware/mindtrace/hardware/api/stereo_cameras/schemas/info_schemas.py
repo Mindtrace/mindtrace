@@ -2,9 +2,9 @@
 
 from mindtrace.core import TaskSchema
 from mindtrace.hardware.api.stereo_cameras.models import (
+    BackendFilterRequest,
     BackendInfoResponse,
     BackendsResponse,
-    BackendFilterRequest,
     ListResponse,
     StereoCameraInfoResponse,
     StereoCameraQueryRequest,

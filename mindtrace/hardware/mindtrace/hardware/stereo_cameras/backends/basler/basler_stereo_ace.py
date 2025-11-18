@@ -6,10 +6,7 @@ cameras with a pattern projector into a unified stereo vision system.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Dict, List, Optional
-
-import numpy as np
 
 from mindtrace.core import Mindtrace
 from mindtrace.hardware.core.exceptions import (

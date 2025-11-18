@@ -16,7 +16,7 @@ from mindtrace.hardware.stereo_cameras.core.models import (
 )
 
 if TYPE_CHECKING:
-    from mindtrace.hardware.stereo_cameras.backends.basler.basler_stereo_ace import BaslerStereoAceBackend
+    pass
 
 
 class AsyncStereoCamera(Mindtrace):
