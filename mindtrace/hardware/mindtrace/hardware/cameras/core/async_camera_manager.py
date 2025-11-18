@@ -308,10 +308,28 @@ class AsyncCameraManager(Mindtrace):
                         if details:
                             detailed_cameras = camera_class.get_available_cameras(include_details=True)
                             for cam_id, cam_details in detailed_cameras.items():
+                                # Extract standard camera properties with safe defaults
+                                try:
+                                    width = int(cam_details.get("width", 0))
+                                except Exception:
+                                    width = 0
+                                try:
+                                    height = int(cam_details.get("height", 0))
+                                except Exception:
+                                    height = 0
+                                try:
+                                    fps = float(cam_details.get("fps", 0.0))
+                                except Exception:
+                                    fps = 0.0
+
                                 all_details.append(
                                     {
                                         "name": f"{backend}:{cam_id}",
                                         "backend": backend,
+                                        "index": None,  # GenICam uses device IDs, not numeric indices
+                                        "width": width,
+                                        "height": height,
+                                        "fps": fps,
                                         "serial_number": cam_details.get("serial_number", ""),
                                         "model": cam_details.get("model", ""),
                                         "vendor": cam_details.get("vendor", ""),
