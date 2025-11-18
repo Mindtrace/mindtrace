@@ -85,6 +85,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 - pixel_format: Pixel format (simulated)
                 - buffer_count: Buffer count (simulated)
                 - timeout_ms: Timeout in milliseconds
+                - fast_mode: If True, skip all sleep delays for fast unit tests (default: False)
                 - simulate_fail_init: If True, simulate initialization failure (overrides env)
                 - simulate_fail_capture: If True, simulate capture failure (overrides env)
                 - simulate_timeout: If True, simulate timeout on capture (overrides env)
@@ -100,6 +101,9 @@ class MockBaslerCameraBackend(CameraBackend):
             CameraInitializationError: If initialization fails (when simulated)
         """
         super().__init__(camera_name, camera_config, img_quality_enhancement, retrieve_retry_count)
+
+        # Fast mode for unit tests - skips all timing delays
+        self.fast_mode = backend_kwargs.get("fast_mode", os.environ.get("MOCK_BASLER_FAST_MODE") == "1")
 
         # Get backend-specific configuration with fallbacks
         pixel_format = backend_kwargs.get("pixel_format")
@@ -207,6 +211,11 @@ class MockBaslerCameraBackend(CameraBackend):
 
         return mock_cameras
 
+    async def _sleep(self, seconds: float) -> None:
+        """Conditional sleep - skips if fast_mode is enabled."""
+        if not self.fast_mode:
+            await asyncio.sleep(seconds)
+
     async def initialize(self) -> Tuple[bool, Any, Any]:
         """Initialize the mock camera connection.
 
@@ -282,7 +291,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
             # Simulate capture delay based on exposure time
             capture_delay = max(0.01, self.exposure_time / 1000000.0)  # Convert to seconds
-            await asyncio.sleep(min(capture_delay, 0.1))  # Cap at 100ms for testing
+            await self._sleep(min(capture_delay, 0.1))  # Cap at 100ms for testing
 
             # Generate synthetic image off the event loop
             image = await asyncio.to_thread(self._generate_synthetic_image)
@@ -444,7 +453,7 @@ class MockBaslerCameraBackend(CameraBackend):
                 raise CameraConfigurationError(f"Configuration file not found: {config_path}")
 
             # Simulate configuration import
-            await asyncio.sleep(0.01)  # Simulate processing time
+            await self._sleep(0.01)  # Simulate processing time
 
             # Load JSON configuration
             try:
@@ -535,7 +544,7 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         try:
             # Simulate async operation delay
-            await asyncio.sleep(0.001)
+            await self._sleep(0.001)
 
             if width <= 0 or height <= 0:
                 raise CameraConfigurationError(f"Invalid ROI dimensions: {width}x{height}")
@@ -558,14 +567,14 @@ class MockBaslerCameraBackend(CameraBackend):
             Dictionary with ROI parameters
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return self.roi.copy()
 
     async def reset_ROI(self):
         """Reset ROI to full sensor size."""
         try:
             # Simulate async operation
-            await asyncio.sleep(0.001)
+            await self._sleep(0.001)
             self.roi = {"x": 0, "y": 0, "width": self.synthetic_width, "height": self.synthetic_height}
             self.logger.debug(f"ROI reset to full size for mock camera '{self.camera_name}'")
         except Exception as e:
@@ -583,7 +592,7 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         try:
             # Simulate async operation
-            await asyncio.sleep(0.001)
+            await self._sleep(0.001)
 
             if gain < 1.0 or gain > 16.0:
                 raise CameraConfigurationError(f"Gain {gain} out of range [1.0, 16.0]")
@@ -603,7 +612,7 @@ class MockBaslerCameraBackend(CameraBackend):
             List with [min_gain, max_gain]
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return [1.0, 16.0]
 
     async def get_gain(self) -> float:
@@ -613,7 +622,7 @@ class MockBaslerCameraBackend(CameraBackend):
             Current gain value
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return self.gain
 
     async def get_wb(self) -> str:
@@ -644,7 +653,7 @@ class MockBaslerCameraBackend(CameraBackend):
             List of available white balance modes (lowercase for API compatibility)
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return ["off", "once", "continuous"]
 
     async def get_pixel_format_range(self) -> List[str]:
@@ -654,7 +663,7 @@ class MockBaslerCameraBackend(CameraBackend):
             List of available pixel formats
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return ["BGR8", "RGB8", "Mono8", "BayerRG8", "BayerGB8", "BayerGR8", "BayerBG8"]
 
     async def get_current_pixel_format(self) -> str:
@@ -664,7 +673,7 @@ class MockBaslerCameraBackend(CameraBackend):
             Current pixel format
         """
         # Simulate async operation
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return self.default_pixel_format
 
     async def set_pixel_format(self, pixel_format: str):
@@ -678,7 +687,7 @@ class MockBaslerCameraBackend(CameraBackend):
         """
         try:
             # Simulate async operation
-            await asyncio.sleep(0.001)
+            await self._sleep(0.001)
             available_formats = await self.get_pixel_format_range()
             if pixel_format not in available_formats:
                 raise CameraConfigurationError(f"Unsupported pixel format: {pixel_format}")
@@ -698,7 +707,7 @@ class MockBaslerCameraBackend(CameraBackend):
         Returns:
             List containing [min_width, max_width]
         """
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return [320, 1920]
 
     async def get_height_range(self) -> List[int]:
@@ -707,40 +716,40 @@ class MockBaslerCameraBackend(CameraBackend):
         Returns:
             List containing [min_height, max_height]
         """
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return [240, 1080]
 
     # Network-related methods (simulated for GigE cameras)
     async def set_bandwidth_limit(self, limit_mbps: Optional[float]):
         """Set GigE camera bandwidth limit in Mbps (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         self.logger.debug(f"Bandwidth limit set to {limit_mbps} Mbps for mock camera '{self.camera_name}' (simulated)")
 
     async def get_bandwidth_limit(self) -> float:
         """Get current bandwidth limit (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return 125.0  # Simulated 1Gbps = 125MB/s
 
     async def set_packet_size(self, size: int):
         """Set GigE packet size for network optimization (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         self.logger.debug(f"Packet size set to {size} bytes for mock camera '{self.camera_name}' (simulated)")
 
     async def get_packet_size(self) -> int:
         """Get current packet size (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return 1500  # Simulated standard MTU
 
     async def set_inter_packet_delay(self, delay_ticks: int):
         """Set inter-packet delay for network traffic control (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         self.logger.debug(
             f"Inter-packet delay set to {delay_ticks} ticks for mock camera '{self.camera_name}' (simulated)"
         )
 
     async def get_inter_packet_delay(self) -> int:
         """Get current inter-packet delay (simulated)."""
-        await asyncio.sleep(0.001)
+        await self._sleep(0.001)
         return 0  # Simulated no delay
 
     async def set_capture_timeout(self, timeout_ms: int):
@@ -757,7 +766,7 @@ class MockBaslerCameraBackend(CameraBackend):
 
         self.timeout_ms = timeout_ms
         self.logger.debug(f"Set capture timeout to {timeout_ms}ms for mock camera '{self.camera_name}'")
-        await asyncio.sleep(0.001)  # Simulate operation delay
+        await self._sleep(0.001)  # Simulate operation delay
 
     async def get_capture_timeout(self) -> int:
         """Get current capture timeout in milliseconds.
@@ -765,7 +774,7 @@ class MockBaslerCameraBackend(CameraBackend):
         Returns:
             Current timeout value in milliseconds
         """
-        await asyncio.sleep(0.001)  # Simulate operation delay
+        await self._sleep(0.001)  # Simulate operation delay
         return self.timeout_ms
 
     async def get_trigger_modes(self) -> List[str]:
