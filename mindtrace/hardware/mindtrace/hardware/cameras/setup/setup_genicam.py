@@ -20,11 +20,12 @@ CTI File Locations:
 - macOS: /Applications/mvIMPACT_Acquire.app/Contents/Libraries/x86_64/mvGenTLProducer.cti
 
 Usage:
-    python setup_genicam.py                    # Install CTI files
-    python setup_genicam.py --uninstall        # Uninstall SDK
-    python setup_genicam.py --verify           # Verify CTI installation
-    mindtrace-setup-genicam                     # Console script (install)
-    mindtrace-uninstall-genicam                 # Console script (uninstall)
+    python setup_genicam.py                      # Install CTI files
+    python setup_genicam.py --uninstall          # Uninstall SDK
+    python setup_genicam.py --verify             # Verify CTI installation
+    mindtrace-camera-genicam-install            # Console script (install)
+    mindtrace-camera-genicam-uninstall          # Console script (uninstall)
+    mindtrace-camera-genicam-verify             # Console script (verify)
 """
 
 import argparse

@@ -14,10 +14,10 @@ Features:
 - Uninstallation support
 
 Usage:
-    python setup_basler.py                    # Install SDK
-    python setup_basler.py --uninstall        # Uninstall SDK
-    mindtrace-setup-basler                     # Console script (install)
-    mindtrace-uninstall-basler                 # Console script (uninstall)
+    python setup_basler.py                      # Install SDK
+    python setup_basler.py --uninstall          # Uninstall SDK
+    mindtrace-camera-basler-install            # Console script (install)
+    mindtrace-camera-basler-uninstall          # Console script (uninstall)
 """
 
 import argparse
@@ -335,27 +335,53 @@ class PylonSDKInstaller(Mindtrace):
         return False
 
 
-def install_pylon_sdk(release_version: str = "v1.0-stable") -> bool:
-    """Install the Basler Pylon SDK.
+def install_pylon_sdk() -> None:
+    """CLI entry point for installation."""
+    # Parse arguments for install mode
+    parser = argparse.ArgumentParser(
+        description="Install the Basler Pylon SDK",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version", default="v1.0-stable", help="SDK release version to install (default: v1.0-stable)"
+    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    Args:
-        release_version: SDK release version to install
+    args = parser.parse_args()
 
-    Returns:
-        True if installation successful, False otherwise
-    """
-    installer = PylonSDKInstaller(release_version)
-    return installer.install()
+    # Create installer
+    installer = PylonSDKInstaller(args.version)
+
+    # Configure logging
+    if args.verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    # Install
+    success = installer.install()
+    sys.exit(0 if success else 1)
 
 
-def uninstall_pylon_sdk() -> bool:
-    """Uninstall the Basler Pylon SDK.
+def uninstall_pylon_sdk() -> None:
+    """CLI entry point for uninstallation."""
+    # Parse arguments for uninstall mode
+    parser = argparse.ArgumentParser(
+        description="Uninstall the Basler Pylon SDK",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    Returns:
-        True if uninstallation successful, False otherwise
-    """
+    args = parser.parse_args()
+
+    # Create installer
     installer = PylonSDKInstaller()
-    return installer.uninstall()
+
+    # Configure logging
+    if args.verbose:
+        installer.logger.setLevel(logging.DEBUG)
+
+    # Uninstall
+    success = installer.uninstall()
+    sys.exit(0 if success else 1)
 
 
 def main() -> None:
