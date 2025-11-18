@@ -335,8 +335,12 @@ class PylonSDKInstaller(Mindtrace):
         return False
 
 
-def install_pylon_sdk() -> None:
-    """CLI entry point for installation."""
+def install_pylon_sdk(argv=None) -> None:
+    """CLI entry point for installation.
+
+    Args:
+        argv: Command line arguments (for testing). If None, uses sys.argv.
+    """
     # Parse arguments for install mode
     parser = argparse.ArgumentParser(
         description="Install the Basler Pylon SDK",
@@ -347,7 +351,7 @@ def install_pylon_sdk() -> None:
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Create installer
     installer = PylonSDKInstaller(args.version)
@@ -361,8 +365,12 @@ def install_pylon_sdk() -> None:
     sys.exit(0 if success else 1)
 
 
-def uninstall_pylon_sdk() -> None:
-    """CLI entry point for uninstallation."""
+def uninstall_pylon_sdk(argv=None) -> None:
+    """CLI entry point for uninstallation.
+
+    Args:
+        argv: Command line arguments (for testing). If None, uses sys.argv.
+    """
     # Parse arguments for uninstall mode
     parser = argparse.ArgumentParser(
         description="Uninstall the Basler Pylon SDK",
@@ -370,7 +378,7 @@ def uninstall_pylon_sdk() -> None:
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Create installer
     installer = PylonSDKInstaller()
