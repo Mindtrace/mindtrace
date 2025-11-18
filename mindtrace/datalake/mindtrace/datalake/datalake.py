@@ -10,7 +10,7 @@ from beanie import PydanticObjectId
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.types import Datum
+from mindtrace.datalake.types import Datum, Dataset
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 
@@ -50,6 +50,11 @@ class Datalake(Mindtrace):
             db_uri=self.mongo_db_uri,
         )
         self.registries: Dict[str, Registry] = {}
+        self.dataset_database: MongoMindtraceODMBackend[Dataset] = MongoMindtraceODMBackend[Dataset](
+            model_cls=Dataset,
+            db_name=self.mongo_db_name,
+            db_uri=self.mongo_db_uri,
+        )
 
     async def initialize(self):
         await self.datum_database.initialize()

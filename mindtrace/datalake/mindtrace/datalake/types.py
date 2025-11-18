@@ -1,11 +1,17 @@
+from beanie.odm.fields import PydanticObjectId
+
+
+from collections import defaultdict
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, TYPE_CHECKING
 
 from beanie import Indexed, PydanticObjectId
+from datasets import Dataset as HuggingFaceDataset, Image
 from pydantic import Field
 
 from mindtrace.database import MindtraceDocument
-
+if TYPE_CHECKING:
+    from mindtrace.datalake.datalake import Datalake
 
 class Datum(MindtraceDocument):
     """
@@ -39,3 +45,27 @@ class Datum(MindtraceDocument):
     added_at: datetime = Field(
         default_factory=datetime.now, description="Timestamp when this datum was added to the datalake."
     )
+
+class Dataset(MindtraceDocument):
+    """
+    A dataset in the datalake system.
+    """
+    name: str = Field(description="Name of the dataset.")
+    description: str = Field(description="Description of the dataset.")
+    created_at: datetime = Field(default_factory=datetime.now, description="Timestamp when the dataset was created.")
+    updated_at: datetime = Field(default_factory=datetime.now, description="Timestamp when the dataset was last updated.")
+    metadata: dict[str, Any] = Field(default_factory=lambda: {}, description="Additional metadata associated with the dataset.")
+    datum_ids: dict[str, list[PydanticObjectId]] = Field(default_factory=lambda: defaultdict[str, list[PydanticObjectId]](list), description="Datum IDs of the dataset.")
+
+    async def to_HF(self, datalake: "Datalake") -> HuggingFaceDataset:
+        loaded_data = await self.load(datalake)
+        hf_dataset = HuggingFaceDataset.from_dict(loaded_data)
+        hf_dataset.cast_column("image", Image(decode=True))
+        return hf_dataset
+
+    async def load(self, datalake: "Datalake"):
+        loaded_data = {}
+        for column, datum_ids in self.datum_ids.items():
+            datums = await datalake.get_data(datum_ids)
+            loaded_data[column] = [datum.data for datum in datums]
+        return loaded_data
