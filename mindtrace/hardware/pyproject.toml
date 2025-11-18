@@ -29,19 +29,28 @@ dependencies = [
 ]
 
 [project.scripts]
+# Main CLI
 mindtrace-hw = "mindtrace.hardware.cli.__main__:main"
-mindtrace-setup-cameras = "mindtrace.hardware.cameras.setup.setup_cameras:main"
-mindtrace-setup-basler = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
-mindtrace-uninstall-basler = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
-mindtrace-setup-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:main"
-mindtrace-uninstall-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:uninstall_main"
-mindtrace-verify-genicam = "mindtrace.hardware.cameras.setup.setup_genicam:verify_main"
+
+# Camera commands (regular 2D cameras)
+mindtrace-camera-setup = "mindtrace.hardware.cameras.setup.setup_cameras:main"
+mindtrace-camera-basler-install = "mindtrace.hardware.cameras.setup.setup_basler:install_pylon_sdk"
+mindtrace-camera-basler-uninstall = "mindtrace.hardware.cameras.setup.setup_basler:uninstall_pylon_sdk"
+mindtrace-camera-genicam-install = "mindtrace.hardware.cameras.setup.setup_genicam:main"
+mindtrace-camera-genicam-uninstall = "mindtrace.hardware.cameras.setup.setup_genicam:uninstall_main"
+mindtrace-camera-genicam-verify = "mindtrace.hardware.cameras.setup.setup_genicam:verify_main"
+
+# Stereo camera commands (3D/depth cameras)
+mindtrace-stereo-basler-install = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:install_stereo_ace"
+mindtrace-stereo-basler-uninstall = "mindtrace.hardware.stereo_cameras.setup.setup_stereo_ace:uninstall_stereo_ace"
 
 [project.optional-dependencies]
 cameras-basler = ["pypylon>=3.0.0"]
 cameras-genicam = ["harvesters>=1.4.0", "genicam>=1.5.0"]
 cameras-all = ["mindtrace-hardware[cameras-basler,cameras-genicam]"]
-hardware-all = ["mindtrace-hardware[cameras-all]"]
+stereo-basler = ["pypylon>=3.0.0", "plyfile>=1.0.0", "open3d>=0.17.0"]
+stereo-all = ["mindtrace-hardware[stereo-basler]"]
+hardware-all = ["mindtrace-hardware[cameras-all,stereo-all]"]
 setup-tools = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
