@@ -4,13 +4,14 @@
 
 # Mindtrace Hardware Component
 
-The Mindtrace Hardware Component provides a unified, industrial-grade interface for managing cameras, PLCs, sensors, and actuators. Built with a service-first architecture, it offers multiple interface levels from simple scripts to production automation systems.
+The Mindtrace Hardware Component provides a unified, industrial-grade interface for managing 2D cameras, 3D stereo cameras, PLCs, sensors, and actuators. Built with a service-first architecture, it offers multiple interface levels from simple scripts to production automation systems.
 
 ## 🎯 Overview
 
 **Key Differentiators:**
 - **Service-Based Architecture**: Modern REST APIs with MCP integration for all hardware components
 - **Multi-Level Interfaces**: From simple synchronous to industrial async with bandwidth management
+- **3D Vision Support**: Stereo cameras for depth measurement, 3D inspection, and point cloud generation
 - **Network Bandwidth Management**: Critical for GigE cameras with intelligent concurrent capture limiting
 - **Unified Configuration System**: Single configuration for all hardware components
 - **Production-Ready**: Comprehensive exception handling, async operations, graceful degradation
@@ -36,29 +37,39 @@ The hardware system includes comprehensive command-line management tools for dev
 # Start camera services (API + web configurator)
 mindtrace-hw camera start
 
+# Start stereo camera service (API only)
+mindtrace-hw stereo start
+
+# Start PLC service (API only)
+mindtrace-hw plc start
+
 # Check service status with access URLs
-mindtrace-hw camera status
+mindtrace-hw status
 
 # Run camera stress tests
 mindtrace-hw camera test --list
 mindtrace-hw camera test --config smoke_test
 
 # Stop all services gracefully
-mindtrace-hw camera stop
+mindtrace-hw stop
 ```
 
 [**→ See CLI Documentation**](mindtrace/hardware/cli/README.md) for comprehensive usage examples, configuration options, and troubleshooting guides.
 
 **Additional Setup Commands:**
 ```bash
-# GenICam backend setup
-uv run mindtrace-setup-genicam      # Install GenICam CTI files
-uv run mindtrace-uninstall-genicam  # Uninstall GenICam SDK
-uv run mindtrace-verify-genicam     # Verify GenICam installation
+# Camera backend setup (2D cameras)
+# Note: Basler SDK operations require sudo on Linux, admin privileges on Windows
+uv run mindtrace-camera-basler-install       # Install Basler Pylon SDK (Linux/Windows)
+sudo uv run mindtrace-camera-basler-uninstall  # Uninstall Basler SDK (Linux - requires sudo)
+uv run mindtrace-camera-genicam-install      # Install GenICam CTI files
+uv run mindtrace-camera-genicam-uninstall    # Uninstall GenICam SDK
+uv run mindtrace-camera-genicam-verify       # Verify GenICam installation
 
-# Basler backend setup  
-uv run mindtrace-setup-basler       # Install Basler Pylon SDK
-uv run mindtrace-uninstall-basler   # Uninstall Basler SDK
+# Stereo camera setup (3D/depth cameras - Linux only)
+# Note: Stereo ace uses tarball installation (no sudo required)
+uv run mindtrace-stereo-basler-install       # Install Stereo ace package
+uv run mindtrace-stereo-basler-uninstall     # Uninstall Stereo ace package
 ```
 
 ### Camera Configurator App
@@ -101,6 +112,12 @@ mindtrace/hardware/
     │   │   ├── connection_manager.py # Python client
     │   │   ├── models/            # Request/response models
     │   │   └── schemas/           # TaskSchema definitions
+    │   ├── stereo_cameras/   # StereoCameraService + client
+    │   │   ├── service.py         # REST endpoints + MCP tools
+    │   │   ├── launcher.py        # Service launcher and startup
+    │   │   ├── connection_manager.py # Python client
+    │   │   ├── models/            # Request/response models
+    │   │   └── schemas/           # TaskSchema definitions
     │   └── plcs/             # PLCManagerService + client
     │       ├── service.py         # REST endpoints + MCP tools
     │       ├── launcher.py        # Service launcher and startup
@@ -121,6 +138,8 @@ mindtrace/hardware/
     │   ├── __main__.py       # CLI entry point
     │   ├── commands/         # Command implementations
     │   │   ├── camera.py          # Camera service management + testing
+    │   │   ├── stereo.py          # Stereo camera service management
+    │   │   ├── plc.py             # PLC service management
     │   │   └── status.py          # Global status commands
     │   ├── core/             # Core CLI functionality
     │   │   ├── process_manager.py # Service lifecycle with PID tracking
@@ -149,6 +168,14 @@ mindtrace/hardware/
     │       ├── setup_cameras.py   # Interactive camera setup
     │       ├── setup_basler.py    # Basler SDK setup
     │       └── setup_genicam.py   # GenICam CTI setup
+    ├── stereo_cameras/      # Stereo camera system (3D vision)
+    │   ├── core/            # Core stereo interfaces
+    │   │   ├── stereo_camera.py   # Async stereo camera interface
+    │   │   └── stereo_manager.py  # Multi-stereo camera manager
+    │   ├── backends/        # Stereo camera implementations
+    │   │   └── basler/      # Basler stereo ace cameras
+    │   └── setup/           # Stereo camera setup utilities
+    │       └── setup_basler.py    # Basler stereo ace SDK setup
     ├── plcs/
     │   ├── core/
     │   │   └── plc_manager.py    # PLC management interface
@@ -180,11 +207,15 @@ cd mindtrace
 uv sync --extra cameras-all
 
 # Setup camera backends (interactive)
-uv run mindtrace-setup-cameras
+uv run mindtrace-camera-setup
 
 # Or setup specific backends
-uv run mindtrace-setup-basler
-uv run mindtrace-setup-genicam
+uv run mindtrace-camera-basler-install    # Basler Pylon SDK (Linux/Windows - requires sudo/admin)
+uv run mindtrace-camera-genicam-install   # GenICam cameras (no sudo required)
+
+# For stereo cameras (3D/depth)
+uv sync --extra stereo-all
+uv run mindtrace-stereo-basler-install    # Stereo ace (Linux only - no sudo required)
 ```
 
 ---
@@ -324,10 +355,10 @@ The GenICam backend provides support for GenICam-compliant industrial cameras th
 uv sync --extra cameras-genicam
 
 # Setup GenICam CTI files (Matrix Vision SDK)
-uv run mindtrace-setup-genicam
+uv run mindtrace-camera-genicam-install
 
 # Verify installation
-uv run mindtrace-verify-genicam
+uv run mindtrace-camera-genicam-verify
 ```
 
 **Usage:**
@@ -457,53 +488,228 @@ curl -X POST http://localhost:8002/cameras/homography/measure/batch \
 
 [**→ See Homography Documentation**](mindtrace/hardware/cameras/homography/README.md) for calibration methods, use cases, performance optimization, and troubleshooting.
 
+---
+
+# 📐 STEREO CAMERA SYSTEM
+
+The stereo camera system provides 3D vision and depth measurement capabilities using Basler stereo ace cameras for industrial 3D inspection, measurement, and automation applications.
+
+## Overview
+
+Stereo cameras enable precise 3D measurements, depth mapping, and volume calculations for applications such as:
+- Bin picking and robotic guidance
+- 3D object inspection and quality control
+- Volume and dimension measurement
+- Obstacle detection and navigation
+- Pick and place automation
+
+## Interface Hierarchy
+
+| Interface | Async | Multi-Camera | Service API | Use Case |
+|-----------|-------|--------------|-------------|----------|
+| **StereoCamera** | ✅ | ❌ | ❌ | Single stereo camera applications |
+| **StereoCameraManager** | ✅ | ✅ | ❌ | Multi-stereo camera systems |
+| **StereoCameraService** | ✅ | ✅ | ✅ | Service-based integration |
+
+## Core Usage Patterns
+
+### Basic Stereo Camera Usage
+```python
+import asyncio
+from mindtrace.hardware.stereo_cameras import StereoCamera
+
+async def capture_3d():
+    camera = StereoCamera(name="Basler:stereo_camera_0")
+
+    try:
+        await camera.initialize()
+        await camera.configure(exposure=10000, trigger_mode="software")
+
+        # Capture rectified stereo pair
+        rectified = await camera.capture_rectified()
+        print(f"Left: {rectified.left_image.shape}")
+        print(f"Right: {rectified.right_image.shape}")
+
+        # Capture 3D point cloud
+        point_cloud = await camera.capture_point_cloud()
+        print(f"Point cloud: {point_cloud.points.shape}")
+        print(f"Depth range: {point_cloud.range_min} - {point_cloud.range_max} mm")
+
+    finally:
+        await camera.close()
+
+asyncio.run(capture_3d())
+```
+
+### Multi-Camera Stereo Manager
+```python
+from mindtrace.hardware.stereo_cameras import StereoCameraManager
+
+async def multi_stereo():
+    async with StereoCameraManager() as manager:
+        cameras = await manager.discover()
+
+        # Open multiple stereo cameras
+        cam1 = await manager.open(cameras[0])
+        cam2 = await manager.open(cameras[1])
+
+        # Synchronized capture from multiple stereo rigs
+        results = await manager.capture_batch([
+            (cam1, {"exposure": 10000}),
+            (cam2, {"exposure": 15000})
+        ])
+```
+
+## Service Architecture
+
+The StereoCameraService provides REST API and MCP integration for stereo camera management.
+
+### Launch Service
+```bash
+# Via CLI (recommended)
+mindtrace-hw stereo start
+
+# Programmatically
+from mindtrace.hardware.api.stereo_cameras import StereoCameraService
+
+StereoCameraService.launch(
+    host="localhost",
+    port=8004,
+    block=True
+)
+```
+
+### Programmatic Client
+```python
+from mindtrace.hardware.api.stereo_cameras import StereoCameraConnectionManager
+
+async def service_example():
+    client = StereoCameraConnectionManager("http://localhost:8004")
+
+    # Discover and open stereo cameras
+    cameras = await client.discover_cameras()
+    await client.open_camera(cameras[0])
+
+    # Capture 3D data
+    point_cloud = await client.capture_point_cloud(
+        camera=cameras[0],
+        save_path="/tmp/scan.ply"
+    )
+
+    # Measure 3D dimensions
+    measurements = await client.measure_3d_bounding_box(
+        camera=cameras[0],
+        bbox={"x": 100, "y": 150, "width": 200, "height": 150}
+    )
+```
+
+### CLI Integration
+
+The stereo camera service is fully integrated into the hardware CLI:
+
+```bash
+# Start stereo camera API service
+mindtrace-hw stereo start
+
+# Custom configuration
+mindtrace-hw stereo start --api-host 0.0.0.0 --api-port 8005
+
+# Open API documentation in browser
+mindtrace-hw stereo start --open-docs
+
+# Check service status
+mindtrace-hw stereo status
+
+# Stop service
+mindtrace-hw stereo stop
+
+# View logs
+mindtrace-hw stereo logs
+```
+
+### Key Service Endpoints
+
+| Category | Essential Endpoints | Description |
+|----------|-------------------|-------------|
+| **Discovery** | `discover_cameras`, `get_camera_info` | Camera discovery and capabilities |
+| **Lifecycle** | `open_camera`, `close_camera`, `get_active_cameras` | Camera management |
+| **3D Capture** | `capture_point_cloud`, `capture_rectified`, `capture_depth_map` | 3D data acquisition |
+| **Measurement** | `measure_3d_box`, `measure_distance`, `measure_volume` | 3D measurements |
+| **Configuration** | `configure_camera`, `calibrate_stereo` | Camera settings and calibration |
+
+### API Access
+
+```bash
+# API Documentation
+http://localhost:8004/docs          # Swagger UI
+http://localhost:8004/redoc         # ReDoc
+
+# Example API Call
+curl -X POST http://localhost:8004/cameras/capture/point-cloud \
+  -H "Content-Type: application/json" \
+  -d '{"camera_name": "stereo_camera_0", "save_path": "/tmp/scan.ply"}'
+```
+
+## Supported Features
+
+### Basler Stereo ace Backend
+
+**Key Capabilities:**
+- ✅ Rectified stereo pair capture (left/right images)
+- ✅ 3D point cloud generation with confidence mapping
+- ✅ Depth map computation with range validation
+- ✅ Factory calibration data with distortion correction
+- ✅ Software and hardware trigger support
+- ✅ Configurable ROI and scan parameters
+- ✅ Multiple output formats (PLY, PCD, NumPy)
+
+**Camera Models:**
+- Basler stereo ace a2A1920-160um (1920x1200, 160 fps)
+- Basler stereo ace a2A1920-51um (1920x1200, 51 fps)
+- Basler stereo ace a2A2590-60um (2590x1942, 60 fps)
+
+**Installation:**
+```bash
+# Install with stereo camera support
+uv sync --extra stereo-all
+
+# Setup Basler stereo ace SDK (Linux only)
+uv run mindtrace-stereo-basler-install
+
+# Verify installation
+python -c "from pypylon import pylon; print('Stereo SDK ready')"
+```
+
 ## Configuration
 
-### Core Settings
+### Service Configuration
+```bash
+# Environment variables
+export STEREO_CAMERA_API_HOST="localhost"
+export STEREO_CAMERA_API_PORT="8004"
+export STEREO_CAMERA_API_URL="http://localhost:8004"
+
+# Core settings
+export MINDTRACE_HW_STEREO_TIMEOUT_MS="10000"
+export MINDTRACE_HW_STEREO_DEFAULT_EXPOSURE="10000"
+```
+
+### Stereo Camera Settings
 ```python
 from mindtrace.hardware.core.config import get_hardware_config
 
 config = get_hardware_config()
-camera_settings = config.get_config().cameras
+stereo_settings = config.get_config().stereo_cameras
 
-# Critical for GigE cameras
-camera_settings.max_concurrent_captures = 2  # Bandwidth management
+# Capture settings
+stereo_settings.timeout_ms = 10000
+stereo_settings.default_exposure = 10000
+stereo_settings.trigger_mode = "software"
 
-# Core operational settings
-camera_settings.trigger_mode = "continuous"
-camera_settings.exposure_time = 1000.0
-camera_settings.gain = 1.0
-camera_settings.timeout_ms = 5000
-```
-
-### Homography Settings
-
-```python
-# Homography measurement configuration
-homography_settings = config.get_config().homography
-
-# Calibration board defaults
-homography_settings.checkerboard_cols = 12
-homography_settings.checkerboard_rows = 12
-homography_settings.checkerboard_square_size = 25.0  # mm
-
-# Measurement settings
-homography_settings.default_world_unit = "mm"
-homography_settings.ransac_threshold = 3.0
-homography_settings.refine_corners = True
-```
-
-**Environment Variables:**
-```bash
-# Checkerboard calibration
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS=12
-export MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE=25.0
-
-# Measurement defaults
-export MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT=mm
-export MINDTRACE_HW_HOMOGRAPHY_RANSAC_THRESHOLD=3.0
-export MINDTRACE_HW_HOMOGRAPHY_REFINE_CORNERS=true
+# 3D processing
+stereo_settings.confidence_threshold = 0.5
+stereo_settings.depth_range_min = 100.0  # mm
+stereo_settings.depth_range_max = 2000.0  # mm
 ```
 
 ---
