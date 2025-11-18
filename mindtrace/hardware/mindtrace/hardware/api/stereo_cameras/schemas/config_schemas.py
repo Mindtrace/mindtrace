@@ -4,8 +4,8 @@ from mindtrace.core import TaskSchema
 from mindtrace.hardware.api.stereo_cameras.models import (
     BatchOperationResponse,
     BoolResponse,
-    StereoCameraConfigureBatchRequest,
     StereoCameraConfigurationResponse,
+    StereoCameraConfigureBatchRequest,
     StereoCameraConfigureRequest,
     StereoCameraQueryRequest,
 )

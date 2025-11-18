@@ -14,7 +14,6 @@ from mindtrace.hardware.api.stereo_cameras.models import (
     BackendFilterRequest,
     PointCloudCaptureBatchRequest,
     PointCloudCaptureRequest,
-    StereoCaptureBatchRequest,
     StereoCameraCloseBatchRequest,
     StereoCameraCloseRequest,
     StereoCameraConfigureBatchRequest,
@@ -22,6 +21,7 @@ from mindtrace.hardware.api.stereo_cameras.models import (
     StereoCameraOpenBatchRequest,
     StereoCameraOpenRequest,
     StereoCameraQueryRequest,
+    StereoCaptureBatchRequest,
     StereoCaptureRequest,
 )
 from mindtrace.services.core.connection_manager import ConnectionManager

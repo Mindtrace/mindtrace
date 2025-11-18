@@ -5,7 +5,7 @@ Contains all Pydantic models for API requests, ensuring proper
 input validation and documentation for all PLC operations.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, field_validator
 

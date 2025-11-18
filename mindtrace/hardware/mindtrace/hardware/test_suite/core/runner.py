@@ -17,8 +17,8 @@ from typing import Any, Dict, Optional
 import httpx
 
 from mindtrace.core import Mindtrace
-from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
 from mindtrace.hardware.test_suite.core.models import HardwareScenario, Operation, OperationType
+from mindtrace.hardware.test_suite.core.monitor import HardwareMonitor
 
 
 class ScenarioStatus(str, Enum):

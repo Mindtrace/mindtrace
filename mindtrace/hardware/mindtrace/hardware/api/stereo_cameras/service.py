@@ -7,27 +7,16 @@ Basler Stereo ace cameras with multi-component capture (intensity, disparity, de
 
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict
 
 from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from mindtrace.hardware.api.stereo_cameras.models import (
-    # Requests
-    BackendFilterRequest,
-    PointCloudCaptureBatchRequest,
-    PointCloudCaptureRequest,
-    StereoCaptureBatchRequest,
-    StereoCameraCloseBatchRequest,
-    StereoCameraCloseRequest,
-    StereoCameraConfigureBatchRequest,
-    StereoCameraConfigureRequest,
-    StereoCameraOpenBatchRequest,
-    StereoCameraOpenRequest,
-    StereoCameraQueryRequest,
-    StereoCaptureRequest,
     # Responses
     ActiveStereoCamerasResponse,
+    # Requests
+    BackendFilterRequest,
     BackendInfo,
     BackendInfoResponse,
     BackendsResponse,
@@ -37,16 +26,27 @@ from mindtrace.hardware.api.stereo_cameras.models import (
     ListResponse,
     PointCloudBatchResponse,
     PointCloudBatchResult,
+    PointCloudCaptureBatchRequest,
+    PointCloudCaptureRequest,
     PointCloudResponse,
     PointCloudResult,
-    StereoCaptureBatchResponse,
-    StereoCaptureBatchResult,
+    StereoCameraCloseBatchRequest,
+    StereoCameraCloseRequest,
     StereoCameraConfiguration,
     StereoCameraConfigurationResponse,
+    StereoCameraConfigureBatchRequest,
+    StereoCameraConfigureRequest,
     StereoCameraInfo,
     StereoCameraInfoResponse,
+    StereoCameraOpenBatchRequest,
+    StereoCameraOpenRequest,
+    StereoCameraQueryRequest,
     StereoCameraStatus,
     StereoCameraStatusResponse,
+    StereoCaptureBatchRequest,
+    StereoCaptureBatchResponse,
+    StereoCaptureBatchResult,
+    StereoCaptureRequest,
     StereoCaptureResponse,
     StereoCaptureResult,
     SystemDiagnostics,
@@ -54,9 +54,7 @@ from mindtrace.hardware.api.stereo_cameras.models import (
 )
 from mindtrace.hardware.api.stereo_cameras.schemas import ALL_SCHEMAS
 from mindtrace.hardware.core.exceptions import (
-    CameraConnectionError,
     CameraNotFoundError,
-    HardwareOperationError,
 )
 from mindtrace.hardware.stereo_cameras import AsyncStereoCamera, BaslerStereoAceBackend
 from mindtrace.services import Service
