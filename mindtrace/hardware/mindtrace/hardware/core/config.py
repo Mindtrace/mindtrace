@@ -56,7 +56,7 @@ Environment Variables:
     - MINDTRACE_HW_HOMOGRAPHY_DEFAULT_WORLD_UNIT: Default unit for world coordinates (mm, cm, m, in, ft)
     - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_COLS: Default checkerboard inner corners (width/columns)
     - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_ROWS: Default checkerboard inner corners (height/rows)
-    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_SIZE: Default size of one checkerboard square in mm
+    - MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE: Default size of one checkerboard square in mm
 
 Usage:
     from mindtrace.hardware.core.config import get_hardware_config
@@ -344,8 +344,7 @@ class HomographySettings:
         supported_units: List of supported measurement units
         checkerboard_cols: Default checkerboard inner corners (width/columns)
         checkerboard_rows: Default checkerboard inner corners (height/rows)
-        checkerboard_square_width: Width of one checkerboard square in default_world_unit
-        checkerboard_square_height: Height of one checkerboard square in default_world_unit
+        checkerboard_square: Size of one checkerboard square in default_world_unit
         checkerboard_adaptive_thresh: Use adaptive threshold for checkerboard detection
         checkerboard_normalize_image: Normalize image before checkerboard detection
         checkerboard_filter_quads: Filter false checkerboard quads
@@ -368,10 +367,11 @@ class HomographySettings:
     supported_units: List[str] = field(default_factory=lambda: ["mm", "cm", "m", "in", "ft"])
 
     # Default checkerboard dimensions (standard calibration target)
+    # Board orientation: 9 squares wide × 7 squares tall = 8×6 inner corners
+    # Physical size: 23mm width × 18.3mm height
     checkerboard_cols: int = 8  # Inner corners width (for 9x7 square board)
     checkerboard_rows: int = 6  # Inner corners height (for 9x7 square board)
-    checkerboard_square_width: float = 23.5  # Square width in default_world_unit (mm)
-    checkerboard_square_height: float = 18.0  # Square height in default_world_unit (mm)
+    checkerboard_square: float = 23/8  # Square size 3mm
 
     # Checkerboard detection flags
     checkerboard_adaptive_thresh: bool = True
@@ -793,15 +793,9 @@ class HardwareConfigManager(Mindtrace):
             except ValueError:
                 pass  # Keep default value on invalid input
 
-        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_WIDTH"):
+        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE"):
             try:
-                self._config.homography.checkerboard_square_width = float(env_val)
-            except ValueError:
-                pass  # Keep default value on invalid input
-
-        if env_val := os.getenv("MINDTRACE_HW_HOMOGRAPHY_CHECKERBOARD_SQUARE_HEIGHT"):
-            try:
-                self._config.homography.checkerboard_square_height = float(env_val)
+                self._config.homography.checkerboard_square = float(env_val)
             except ValueError:
                 pass  # Keep default value on invalid input
 
