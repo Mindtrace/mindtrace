@@ -2,8 +2,8 @@
 Hardware configuration management for Mindtrace project.
 
 Provides unified configuration for all hardware components including cameras,
-sensors, actuators, and other devices with support for environment variables,
-JSON file loading/saving, and default values.
+stereo cameras, sensors, actuators, and other devices with support for
+environment variables, JSON file loading/saving, and default values.
 
 Features:
     - Unified configuration for all hardware components
@@ -39,6 +39,26 @@ Environment Variables:
     - MINDTRACE_HW_CAMERA_BASLER_ENABLED: Enable Basler backend
     - MINDTRACE_HW_CAMERA_OPENCV_ENABLED: Enable OpenCV backend
     - MINDTRACE_HW_CAMERA_GENICAM_ENABLED: Enable GenICam backend
+    - MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS: Stereo camera capture timeout in milliseconds
+    - MINDTRACE_HW_STEREO_CAMERA_EXPOSURE_TIME: Stereo camera exposure time in microseconds
+    - MINDTRACE_HW_STEREO_CAMERA_GAIN: Stereo camera gain value
+    - MINDTRACE_HW_STEREO_CAMERA_TRIGGER_MODE: Stereo camera trigger mode (continuous/trigger)
+    - MINDTRACE_HW_STEREO_CAMERA_PIXEL_FORMAT: Stereo camera pixel format
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MIN: Minimum depth in meters
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MAX: Maximum depth in meters
+    - MINDTRACE_HW_STEREO_CAMERA_ILLUMINATION_MODE: Illumination mode (AlwaysActive/AlternateActive)
+    - MINDTRACE_HW_STEREO_CAMERA_BINNING_HORIZONTAL: Horizontal binning factor
+    - MINDTRACE_HW_STEREO_CAMERA_BINNING_VERTICAL: Vertical binning factor
+    - MINDTRACE_HW_STEREO_CAMERA_DEPTH_QUALITY: Depth quality (Full/High/Normal/Low)
+    - MINDTRACE_HW_STEREO_CAMERA_BUFFER_COUNT: Number of frame buffers
+    - MINDTRACE_HW_STEREO_CAMERA_RETRY_COUNT: Number of capture retry attempts
+    - MINDTRACE_HW_STEREO_CAMERA_MAX_CONCURRENT_CAPTURES: Maximum concurrent captures
+    - MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS: Include color information in point clouds
+    - MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS: Remove statistical outliers from point clouds
+    - MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR: Point cloud downsampling factor
+    - MINDTRACE_HW_STEREO_CAMERA_BASLER_STEREO_ACE_ENABLED: Enable Basler Stereo ace backend
+    - MINDTRACE_HW_STEREO_CAMERA_MOCK_ENABLED: Enable mock stereo camera backend
+    - MINDTRACE_HW_STEREO_CAMERA_DISCOVERY_TIMEOUT: Stereo camera discovery timeout in seconds
     - MINDTRACE_HW_PATHS_LIB_DIR: Directory for library installations
     - MINDTRACE_HW_PATHS_BIN_DIR: Directory for binary installations
     - MINDTRACE_HW_PATHS_INCLUDE_DIR: Directory for header files
@@ -64,6 +84,8 @@ Usage:
     config = get_hardware_config()
     camera_settings = config.get_config().cameras
     backend_settings = config.get_config().backends
+    stereo_camera_settings = config.get_config().stereo_cameras
+    stereo_backend_settings = config.get_config().stereo_backends
 """
 
 import json
@@ -176,6 +198,88 @@ class CameraBackends:
     basler_enabled: bool = True
     opencv_enabled: bool = False
     genicam_enabled: bool = False
+    mock_enabled: bool = False
+    discovery_timeout: float = 10.0
+
+
+@dataclass
+class StereoCameraSettings:
+    """
+    Configuration for stereo camera settings.
+
+    This configuration is divided into three categories based on when parameters can be changed:
+
+    1. RUNTIME-CONFIGURABLE PARAMETERS:
+       These parameters can be changed dynamically while the stereo camera is running through the
+       configure_camera API endpoint without requiring camera reinitialization.
+       Example: POST /stereocameras/configure with {"camera": "...", "properties": {"exposure_time": 8000}}
+
+    2. STARTUP-ONLY PARAMETERS:
+       These parameters require camera reinitialization to change due to hardware limitations
+       (e.g., memory reallocation, network reconnection). They can only be set when the camera
+       is first initialized or after a full restart.
+
+    3. SYSTEM CONFIGURATION:
+       General system settings that affect stereo camera manager behavior but are not camera-specific
+       per-device settings.
+
+    Configuration hierarchy: config.py → initial defaults → runtime changes via API
+    """
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # RUNTIME-CONFIGURABLE PARAMETERS (changeable via configure_camera API)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture timeout (runtime-configurable for dynamic adjustment)
+    timeout_ms: int = 20000  # Capture timeout in milliseconds
+
+    # Image quality parameters
+    exposure_time: float = 8000.0  # Exposure time in microseconds
+    gain: float = 2.0  # Camera gain value
+    trigger_mode: str = "continuous"  # Trigger mode: "continuous" or "trigger"
+    pixel_format: str = "Coord3D_C16"  # Pixel format for stereo ace
+
+    # Stereo-specific runtime parameters
+    depth_range_min: float = 0.5  # Minimum depth in meters
+    depth_range_max: float = 3.0  # Maximum depth in meters
+    illumination_mode: str = "AlwaysActive"  # "AlwaysActive" (low latency) or "AlternateActive" (clean intensity)
+    binning_horizontal: int = 1  # Horizontal binning factor
+    binning_vertical: int = 1  # Vertical binning factor
+    depth_quality: str = "Normal"  # Depth quality: "Full", "High", "Normal", "Low"
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # STARTUP-ONLY PARAMETERS (require camera reinitialization to change)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Frame buffer allocation (requires memory reallocation)
+    buffer_count: int = 25  # Number of frame buffers (memory allocation)
+
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # SYSTEM CONFIGURATION (manager-level settings, not per-camera)
+    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # Capture and retry settings
+    retrieve_retry_count: int = 3  # Number of retry attempts for failed captures
+    max_concurrent_captures: int = 1  # Max concurrent captures (bandwidth management)
+
+    # Point cloud generation settings
+    enable_colors: bool = True  # Include color information in point clouds
+    remove_outliers: bool = False  # Remove statistical outliers from point clouds
+    downsample_factor: int = 1  # Point cloud downsampling factor (1 = no downsampling)
+
+
+@dataclass
+class StereoCameraBackends:
+    """
+    Configuration for stereo camera backends.
+
+    Attributes:
+        basler_stereo_ace_enabled: Enable Basler Stereo ace backend (dual ace2 Pro cameras)
+        mock_enabled: Enable mock stereo camera backend for testing
+        discovery_timeout: Stereo camera discovery timeout in seconds
+    """
+
+    basler_stereo_ace_enabled: bool = True
     mock_enabled: bool = False
     discovery_timeout: float = 10.0
 
@@ -387,6 +491,8 @@ class HardwareConfig:
     Attributes:
         cameras: Camera-specific settings and parameters
         backends: Camera backend availability and configuration
+        stereo_cameras: Stereo camera-specific settings and parameters
+        stereo_backends: Stereo camera backend availability and configuration
         paths: Installation and library paths
         network: Network settings and firewall configuration
         sensors: Sensor component configuration
@@ -399,6 +505,8 @@ class HardwareConfig:
 
     cameras: CameraSettings = field(default_factory=CameraSettings)
     backends: CameraBackends = field(default_factory=CameraBackends)
+    stereo_cameras: StereoCameraSettings = field(default_factory=StereoCameraSettings)
+    stereo_backends: StereoCameraBackends = field(default_factory=StereoCameraBackends)
     paths: PathSettings = field(default_factory=PathSettings)
     network: NetworkSettings = field(default_factory=NetworkSettings)
     sensors: SensorSettings = field(default_factory=SensorSettings)
@@ -742,6 +850,107 @@ class HardwareConfigManager(Mindtrace):
             except ValueError:
                 pass  # Keep default value on invalid input
 
+        # Stereo camera settings
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_TIMEOUT_MS"):
+            try:
+                self._config.stereo_cameras.timeout_ms = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_EXPOSURE_TIME"):
+            try:
+                self._config.stereo_cameras.exposure_time = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_GAIN"):
+            try:
+                self._config.stereo_cameras.gain = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_TRIGGER_MODE"):
+            if env_val in ["continuous", "trigger"]:
+                self._config.stereo_cameras.trigger_mode = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_PIXEL_FORMAT"):
+            self._config.stereo_cameras.pixel_format = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MIN"):
+            try:
+                self._config.stereo_cameras.depth_range_min = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_RANGE_MAX"):
+            try:
+                self._config.stereo_cameras.depth_range_max = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_ILLUMINATION_MODE"):
+            if env_val in ["AlwaysActive", "AlternateActive"]:
+                self._config.stereo_cameras.illumination_mode = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BINNING_HORIZONTAL"):
+            try:
+                self._config.stereo_cameras.binning_horizontal = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BINNING_VERTICAL"):
+            try:
+                self._config.stereo_cameras.binning_vertical = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DEPTH_QUALITY"):
+            if env_val in ["Full", "High", "Normal", "Low"]:
+                self._config.stereo_cameras.depth_quality = env_val
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BUFFER_COUNT"):
+            try:
+                self._config.stereo_cameras.buffer_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_RETRY_COUNT"):
+            try:
+                self._config.stereo_cameras.retrieve_retry_count = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_MAX_CONCURRENT_CAPTURES"):
+            try:
+                self._config.stereo_cameras.max_concurrent_captures = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_ENABLE_COLORS"):
+            self._config.stereo_cameras.enable_colors = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_REMOVE_OUTLIERS"):
+            self._config.stereo_cameras.remove_outliers = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DOWNSAMPLE_FACTOR"):
+            try:
+                self._config.stereo_cameras.downsample_factor = int(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
+        # Stereo camera backends
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_BASLER_STEREO_ACE_ENABLED"):
+            self._config.stereo_backends.basler_stereo_ace_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_MOCK_ENABLED"):
+            self._config.stereo_backends.mock_enabled = env_val.lower() == "true"
+
+        if env_val := os.getenv("MINDTRACE_HW_STEREO_CAMERA_DISCOVERY_TIMEOUT"):
+            try:
+                self._config.stereo_backends.discovery_timeout = float(env_val)
+            except ValueError:
+                pass  # Keep default value on invalid input
+
         # GCS settings
         if env_val := os.getenv("MINDTRACE_HW_GCS_ENABLED"):
             self._config.gcs.enabled = env_val.lower() == "true"
@@ -814,6 +1023,8 @@ class HardwareConfigManager(Mindtrace):
         sections = (
             ("cameras", self._config.cameras),
             ("backends", self._config.backends),
+            ("stereo_cameras", self._config.stereo_cameras),
+            ("stereo_backends", self._config.stereo_backends),
             ("paths", self._config.paths),
             ("network", self._config.network),
             ("sensors", self._config.sensors),
@@ -866,7 +1077,7 @@ class HardwareConfigManager(Mindtrace):
         Allow dictionary-style access to configuration.
 
         Args:
-            key: Configuration section key ("cameras", "backends", "sensors", "actuators", "plcs", "plc_backends", "homography")
+            key: Configuration section key ("cameras", "backends", "stereo_cameras", "stereo_backends", "sensors", "actuators", "plcs", "plc_backends", "homography")
 
         Returns:
             Configuration section as dictionary
@@ -875,6 +1086,10 @@ class HardwareConfigManager(Mindtrace):
             return asdict(self._config.cameras)
         elif key == "backends":
             return asdict(self._config.backends)
+        elif key == "stereo_cameras":
+            return asdict(self._config.stereo_cameras)
+        elif key == "stereo_backends":
+            return asdict(self._config.stereo_backends)
         elif key == "paths":
             return asdict(self._config.paths)
         elif key == "network":
