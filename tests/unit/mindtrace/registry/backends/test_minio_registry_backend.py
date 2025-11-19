@@ -1761,20 +1761,18 @@ def test_release_lock_wrong_id(backend, monkeypatch):
 
 def test_registered_materializer_success(backend, monkeypatch):
     """Test registered_materializer success path when metadata exists (lines 339-340)."""
+
     # Mock get_object to return valid metadata with materializer
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                metadata = {
-                    "materializers": {
-                        "test.Object": "TestMaterializer"
-                    }
-                }
+                metadata = {"materializers": {"test.Object": "TestMaterializer"}}
                 self.data = json.dumps(metadata).encode()
+
         return MockResponse()
-    
+
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    
+
     # Should return the materializer
     materializer = backend.registered_materializer("test.Object")
     assert materializer == "TestMaterializer"
@@ -1782,31 +1780,26 @@ def test_registered_materializer_success(backend, monkeypatch):
 
 def test_registered_materializers_success(backend, monkeypatch):
     """Test registered_materializers success path when metadata exists (lines 360-361)."""
+
     # Mock get_object to return valid metadata with materializers
     def mock_get_object(bucket, object_name):
         class MockResponse:
             def __init__(self):
-                metadata = {
-                    "materializers": {
-                        "test.Object1": "TestMaterializer1",
-                        "test.Object2": "TestMaterializer2"
-                    }
-                }
+                metadata = {"materializers": {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}}
                 self.data = json.dumps(metadata).encode()
+
         return MockResponse()
-    
+
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    
+
     # Should return all materializers
     materializers = backend.registered_materializers()
-    assert materializers == {
-        "test.Object1": "TestMaterializer1",
-        "test.Object2": "TestMaterializer2"
-    }
+    assert materializers == {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}
 
 
 def test_release_lock_no_such_key(backend, monkeypatch):
     """Test release_lock when lock doesn't exist (line 525)."""
+
     # Mock get_object to raise NoSuchKey (lock doesn't exist)
     def mock_get_object(bucket, object_name):
         raise S3Error(
@@ -1819,9 +1812,9 @@ def test_release_lock_no_such_key(backend, monkeypatch):
             bucket_name="test-bucket",
             object_name="locks/test-key",
         )
-    
+
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    
+
     # Should return True (lock doesn't exist, considered released)
     result = backend.release_lock("test-key", "test-lock-id")
     assert result is True

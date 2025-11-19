@@ -1,4 +1,5 @@
 """Conftest for ultralytics archiver tests."""
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -20,4 +21,3 @@ MockAssets = tests_conftest.MockAssets
 def mock_assets():
     """Fixture providing the MockAssets instance for ultralytics tests."""
     return MockAssets()
-
