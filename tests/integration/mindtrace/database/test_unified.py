@@ -75,7 +75,7 @@ async def mongo_unified_backend():
     # Initialize and clean up existing data
     await backend.initialize_async()
     mongo_backend = backend.get_mongo_backend()
-    
+
     # Clean up any existing data before the test starts
     try:
         collection_name = getattr(MongoUserDoc.Settings, "name", "unified_users")

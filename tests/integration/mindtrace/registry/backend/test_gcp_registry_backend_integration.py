@@ -349,11 +349,11 @@ def test_exclusive_lock_conflict(backend):
     # Acquire shared lock first
     shared_success = backend.acquire_lock(lock_key, shared_lock_id, timeout, shared=True)
     assert shared_success
-    
+
     # Try to acquire exclusive lock (should raise LockAcquisitionError)
     with pytest.raises(LockAcquisitionError, match="currently held as shared"):
         backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-    
+
     # Release shared lock
     backend.release_lock(lock_key, shared_lock_id)
 

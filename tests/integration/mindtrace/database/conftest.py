@@ -68,7 +68,7 @@ async def mongo_backend(request, test_db):
     backend = MongoMindtraceODMBackend(model_cls, MONGO_URL, MONGO_DB)
     _test_clients.append(backend.client)
     await backend.initialize()
-    
+
     # Clean up any existing data before the test starts
     try:
         collection_name = getattr(model_cls.Settings, "name", model_cls.__name__.lower())
@@ -76,7 +76,7 @@ async def mongo_backend(request, test_db):
         await collection.delete_many({})
     except Exception:
         pass
-    
+
     try:
         yield backend
     finally:
@@ -87,7 +87,7 @@ async def mongo_backend(request, test_db):
             await collection.delete_many({})
         except Exception:
             pass
-        
+
         # Properly cleanup the backend and its connections
         if hasattr(backend, "client") and backend.client:
             backend.client.close()

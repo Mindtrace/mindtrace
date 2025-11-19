@@ -1000,7 +1000,7 @@ def test_register_materializer_metadata_not_exists(backend):
     """Test register_materializer when metadata file doesn't exist."""
     # Track download calls - first call fails (metadata doesn't exist), subsequent calls succeed
     download_calls = []
-    
+
     def mock_download(remote_path, local_path):
         download_calls.append(remote_path)
         # First call fails (metadata doesn't exist), but after upload it should exist
@@ -1009,12 +1009,13 @@ def test_register_materializer_metadata_not_exists(backend):
         # After upload, simulate that the file now exists
         metadata = {"materializers": {"test.Object": "TestMaterializer"}}
         import json
-        with open(local_path, 'w') as f:
+
+        with open(local_path, "w") as f:
             json.dump(metadata, f)
-    
-    with patch.object(backend.gcs, 'download', side_effect=mock_download):
+
+    with patch.object(backend.gcs, "download", side_effect=mock_download):
         backend.register_materializer("test.Object", "TestMaterializer")
-        
+
         # Verify materializer was registered (metadata was created)
         materializer = backend.registered_materializer("test.Object")
         assert materializer == "TestMaterializer"
@@ -1025,11 +1026,11 @@ def test_register_materializers_batch(backend):
     materializers = {
         "test.Object1": "TestMaterializer1",
         "test.Object2": "TestMaterializer2",
-        "test.Object3": "TestMaterializer3"
+        "test.Object3": "TestMaterializer3",
     }
-    
+
     backend.register_materializers_batch(materializers)
-    
+
     # Verify all materializers were registered
     assert backend.registered_materializer("test.Object1") == "TestMaterializer1"
     assert backend.registered_materializer("test.Object2") == "TestMaterializer2"
@@ -1040,30 +1041,23 @@ def test_register_materializers_batch_metadata_not_exists(backend):
     """Test register_materializers_batch when metadata file doesn't exist."""
     # Track download calls - first call fails (metadata doesn't exist), subsequent calls succeed
     download_calls = []
-    
+
     def mock_download(remote_path, local_path):
         download_calls.append(remote_path)
         # First call fails (metadata doesn't exist), but after upload it should exist
         if len(download_calls) == 1:
             raise FileNotFoundError("Metadata not found")
         # After upload, simulate that the file now exists with the batch materializers
-        metadata = {
-            "materializers": {
-                "test.Object1": "TestMaterializer1",
-                "test.Object2": "TestMaterializer2"
-            }
-        }
+        metadata = {"materializers": {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}}
         import json
-        with open(local_path, 'w') as f:
+
+        with open(local_path, "w") as f:
             json.dump(metadata, f)
-    
-    with patch.object(backend.gcs, 'download', side_effect=mock_download):
-        materializers = {
-            "test.Object1": "TestMaterializer1",
-            "test.Object2": "TestMaterializer2"
-        }
+
+    with patch.object(backend.gcs, "download", side_effect=mock_download):
+        materializers = {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}
         backend.register_materializers_batch(materializers)
-        
+
         # Verify materializers were registered (metadata was created)
         assert backend.registered_materializer("test.Object1") == "TestMaterializer1"
         assert backend.registered_materializer("test.Object2") == "TestMaterializer2"
@@ -1071,23 +1065,25 @@ def test_register_materializers_batch_metadata_not_exists(backend):
 
 def test_register_materializers_batch_exception_handling(backend, monkeypatch):
     """Test register_materializers_batch exception handler."""
+
     # Mock upload to raise an exception
     def failing_upload(*args, **kwargs):
         raise Exception("Upload failed")
-    
-    monkeypatch.setattr(backend.gcs, 'upload', failing_upload)
-    
+
+    monkeypatch.setattr(backend.gcs, "upload", failing_upload)
+
     # Mock download to succeed (metadata exists)
     def mock_download(remote_path, local_path):
         metadata = {"materializers": {}}
         import json
-        with open(local_path, 'w') as f:
+
+        with open(local_path, "w") as f:
             json.dump(metadata, f)
-    
-    monkeypatch.setattr(backend.gcs, 'download', mock_download)
-    
+
+    monkeypatch.setattr(backend.gcs, "download", mock_download)
+
     materializers = {"test.Object": "TestMaterializer"}
-    
+
     # Should raise the exception (caught and re-raised)
     with pytest.raises(Exception, match="Upload failed"):
         backend.register_materializers_batch(materializers)
@@ -1097,13 +1093,14 @@ def test_registered_materializer_outer_exception(backend, monkeypatch):
     """Test registered_materializer outer exception handler."""
     # Mock tempfile.NamedTemporaryFile to raise an exception (outer try block)
     import tempfile
+
     original_named_temp = tempfile.NamedTemporaryFile
-    
+
     def failing_named_tempfile(*args, **kwargs):
         raise OSError("Failed to create temp file")
-    
+
     monkeypatch.setattr(tempfile, "NamedTemporaryFile", failing_named_tempfile)
-    
+
     # Should return None gracefully
     result = backend.registered_materializer("test:object")
     assert result is None
@@ -1113,12 +1110,12 @@ def test_registered_materializers_outer_exception(backend, monkeypatch):
     """Test registered_materializers outer exception handler."""
     # Mock tempfile.NamedTemporaryFile to raise an exception (outer try block)
     import tempfile
-    
+
     def failing_named_tempfile(*args, **kwargs):
         raise OSError("Failed to create temp file")
-    
+
     monkeypatch.setattr(tempfile, "NamedTemporaryFile", failing_named_tempfile)
-    
+
     # Should return empty dict gracefully
     result = backend.registered_materializers()
     assert result == {}
@@ -1128,34 +1125,34 @@ def test_acquire_lock_non_precondition_failed_exception(backend, monkeypatch):
     """Test acquire_lock exception handling for non-PreconditionFailed errors."""
     lock_key = "test_lock"
     lock_id = "test_id"
-    
+
     # Mock the bucket blob operations to raise a non-PreconditionFailed exception
-    with patch.object(backend.gcs, '_bucket') as mock_bucket:
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
         # First call (checking lock) succeeds, but upload fails with non-PreconditionFailed exception
         mock_blob.download_to_filename = MagicMock()
         mock_blob.reload = MagicMock()
-        
+
         def failing_upload(*args, **kwargs):
             raise Exception("Network error")
-        
+
         mock_blob.upload_from_filename = MagicMock(side_effect=failing_upload)
         mock_blob.generation = 123
         mock_bucket.return_value.blob.return_value = mock_blob
-        
+
         # Mock download to simulate existing lock that's expired
         def mock_download(remote_path, local_path):
             # Create a lock file with expired timestamp
             lock_data = {
                 "lock_id": "old_lock",
                 "expires_at": time.time() - 100,  # Expired
-                "shared": False
+                "shared": False,
             }
-            with open(local_path, 'w') as f:
+            with open(local_path, "w") as f:
                 json.dump(lock_data, f)
-        
+
         monkeypatch.setattr(backend.gcs, "download", mock_download)
-        
+
         # Should return False (not raise exception)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
         assert result is False
@@ -1165,28 +1162,28 @@ def test_acquire_lock_expired_lock_blob_reload(backend, monkeypatch):
     """Test acquire_lock with expired lock - stale lock is deleted."""
     lock_key = "test_lock"
     lock_id = "test_id"
-    
-    with patch.object(backend.gcs, '_bucket') as mock_bucket:
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
         mock_blob.upload_from_filename = MagicMock(return_value=None)
         mock_bucket.return_value.blob.return_value = mock_blob
-        
+
         # Mock delete to succeed
         mock_delete = MagicMock()
         monkeypatch.setattr(backend.gcs, "delete", mock_delete)
-        
+
         # Mock download to simulate expired lock
         def mock_download(remote_path, local_path):
             lock_data = {
                 "lock_id": "old_lock",
                 "expires_at": time.time() - 100,  # Expired lock
-                "shared": False
+                "shared": False,
             }
-            with open(local_path, 'w') as f:
+            with open(local_path, "w") as f:
                 json.dump(lock_data, f)
-        
+
         monkeypatch.setattr(backend.gcs, "download", mock_download)
-        
+
         # Should acquire lock successfully (expired lock is deleted and new one created)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
         # Verify gcs.delete was called to remove stale lock
@@ -1198,28 +1195,28 @@ def test_acquire_lock_expired_lock_blob_reload_not_found(backend, monkeypatch):
     """Test acquire_lock when expired lock deletion fails (best-effort)."""
     lock_key = "test_lock"
     lock_id = "test_id"
-    
-    with patch.object(backend.gcs, '_bucket') as mock_bucket:
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
         mock_blob.upload_from_filename = MagicMock(return_value=None)
         mock_bucket.return_value.blob.return_value = mock_blob
-        
+
         # Mock delete to raise exception (best-effort deletion fails)
         mock_delete = MagicMock(side_effect=Exception("Delete failed"))
         monkeypatch.setattr(backend.gcs, "delete", mock_delete)
-        
+
         # Mock download to simulate expired lock
         def mock_download(remote_path, local_path):
             lock_data = {
                 "lock_id": "old_lock",
                 "expires_at": time.time() - 100,  # Expired lock
-                "shared": False
+                "shared": False,
             }
-            with open(local_path, 'w') as f:
+            with open(local_path, "w") as f:
                 json.dump(lock_data, f)
-        
+
         monkeypatch.setattr(backend.gcs, "download", mock_download)
-        
+
         # Should still try to acquire lock (best-effort deletion failure is logged but doesn't stop acquisition)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
         # Verify delete was attempted
@@ -1232,19 +1229,19 @@ def test_acquire_lock_not_found_exception(backend, monkeypatch):
     """Test acquire_lock NotFound exception handler."""
     lock_key = "test_lock"
     lock_id = "test_id"
-    
-    with patch.object(backend.gcs, '_bucket') as mock_bucket:
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
         mock_blob.upload_from_filename = MagicMock()
         mock_bucket.return_value.blob.return_value = mock_blob
-        
+
         # Mock download to raise NotFound (lock doesn't exist) - this happens in the inner try block
         # The NotFound exception is caught in the exception handler
         def mock_download(remote_path, local_path):
             raise gexc.NotFound("Lock not found")
-        
+
         monkeypatch.setattr(backend.gcs, "download", mock_download)
-        
+
         # Should handle NotFound and create lock (generation_match=0)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
         assert result is True
@@ -1257,17 +1254,17 @@ def test_overwrite_target_deletion_exception(backend, monkeypatch):
         "version": "1.0.0",
         "description": "Test source",
         "created_at": "2024-01-01",
-        "path": "gs://test-bucket/objects/test:source/1.0.0"
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
     }
-    
+
     delete_called = []
-    
+
     # Mock the GCS operations
     def mock_download(remote_path, local_path):
         if "_meta_" in remote_path:
-            with open(local_path, 'w') as f:
+            with open(local_path, "w") as f:
                 json.dump(source_metadata, f)
-    
+
     def mock_list_objects(prefix):
         if "test:source" in prefix:
             return ["objects/test:source/1.0.0/file1.txt"]
@@ -1275,7 +1272,7 @@ def test_overwrite_target_deletion_exception(backend, monkeypatch):
             # Return existing target objects
             return ["objects/test:target/2.0.0/existing.txt"]
         return []
-    
+
     def mock_delete(remote_path):
         delete_called.append(remote_path)
         # Raise exception during delete for target objects (exception should be caught)
@@ -1283,38 +1280,36 @@ def test_overwrite_target_deletion_exception(backend, monkeypatch):
             raise Exception("Delete failed")
         # Source deletions should succeed
         pass
-    
+
     def mock_upload(local_path, remote_path):
         pass
-    
+
     def mock_copy(source_bucket, source_object, dest_bucket, dest_object):
         pass
-    
+
     # Mock blob operations for copy
-    with patch.object(backend.gcs, '_bucket') as mock_bucket:
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
         mock_blob.rewrite = MagicMock()
         mock_bucket.return_value.blob.return_value = mock_blob
-        
-        with patch.object(backend.gcs, 'download', side_effect=mock_download), \
-             patch.object(backend.gcs, 'list_objects', side_effect=mock_list_objects), \
-             patch.object(backend.gcs, 'delete', side_effect=mock_delete), \
-             patch.object(backend.gcs, 'upload', side_effect=mock_upload), \
-             patch.object(backend.gcs, 'copy', side_effect=mock_copy):
-            
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "copy", side_effect=mock_copy),
+        ):
             # Should raise exception (delete exception is caught and logged, but other errors propagate)
             # However, the delete exception itself should be caught and handled gracefully
             # The overwrite will fail later, but the delete exception should be handled gracefully
             try:
                 backend.overwrite(
-                    source_name="test:source",
-                    source_version="1.0.0",
-                    target_name="test:target",
-                    target_version="2.0.0"
+                    source_name="test:source", source_version="1.0.0", target_name="test:target", target_version="2.0.0"
                 )
             except Exception:
                 # Exception may be raised later in the process, but delete exception should be caught
                 pass
-            
+
             # Verify delete was attempted (exception was caught, not preventing execution)
             assert len(delete_called) > 0

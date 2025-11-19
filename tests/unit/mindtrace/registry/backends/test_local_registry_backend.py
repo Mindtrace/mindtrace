@@ -198,10 +198,10 @@ def test_register_materializer_metadata_not_exists(backend):
     # Ensure metadata file doesn't exist
     if backend.metadata_path.exists():
         backend.metadata_path.unlink()
-    
+
     # Register a materializer - should create metadata file
     backend.register_materializer("test.Object", "TestMaterializer")
-    
+
     # Verify metadata file was created and materializer was registered
     assert backend.metadata_path.exists()
     materializer = backend.registered_materializer("test.Object")
