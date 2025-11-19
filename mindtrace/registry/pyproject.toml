@@ -2,6 +2,7 @@
 name = "mindtrace-registry"
 version = "0.5.0"
 description = "Registry functionality for Mindtrace"
+readme = "README.md"
 license = "Apache-2.0"
 authors = [
     {name = "Mindtrace Team"}

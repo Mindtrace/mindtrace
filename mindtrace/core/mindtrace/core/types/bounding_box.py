@@ -38,6 +38,14 @@ class BoundingBox:
 
     # --- Basic properties
     @property
+    def x1(self) -> float:
+        return self.x
+
+    @property
+    def y1(self) -> float:
+        return self.y
+
+    @property
     def x2(self) -> float:
         return self.x + self.width
 

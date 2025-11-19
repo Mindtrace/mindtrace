@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, List
 
 from google.api_core import exceptions as gexc
-from google.cloud import storage
 
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
@@ -57,7 +56,7 @@ class GCPRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or f"gs://{bucket_name}").expanduser().resolve()
+        self._uri = Path(uri or f"gs://{bucket_name}")
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
 
@@ -86,21 +85,20 @@ class GCPRegistryBackend(RegistryBackend):
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""
         try:
-            if not self.gcs.exists(self._metadata_path):
-                # Create empty metadata file if it doesn't exist
-                data = json.dumps({"materializers": {}}).encode()
-                with tempfile.NamedTemporaryFile(mode='wb', delete=False) as f:
-                    f.write(data)
-                    temp_path = f.name
-                
-                try:
-                    self.gcs.upload(temp_path, self._metadata_path)
-                finally:
-                    os.unlink(temp_path)
+            exists = self.gcs.exists(self._metadata_path)
         except Exception:
-            # If we can't check existence or create the file, log and continue
-            # This ensures the method doesn't raise exceptions
-            self.logger.debug("Could not ensure metadata file exists, continuing anyway")
+            exists = False
+        if not exists:
+            # Create empty metadata file if it doesn't exist
+            data = json.dumps({"materializers": {}}).encode()
+            with tempfile.NamedTemporaryFile(mode="wb", delete=False) as f:
+                f.write(data)
+                temp_path = f.name
+
+            try:
+                self.gcs.upload(temp_path, self._metadata_path)
+            finally:
+                os.unlink(temp_path)
 
     def _object_key(self, name: str, version: str) -> str:
         """Convert object name and version to a storage key.
@@ -162,12 +160,12 @@ class GCPRegistryBackend(RegistryBackend):
 
         local_path = Path(local_path)
         downloaded_files = []
-        
+
         # List all objects with the prefix
         objects = self.gcs.list_objects(prefix=remote_key)
         for obj_name in objects:
             if not obj_name.endswith("/"):  # Skip directory markers
-                relative_path = obj_name[len(remote_key):].lstrip("/")
+                relative_path = obj_name[len(remote_key) :].lstrip("/")
                 if relative_path:
                     dest_path = local_path / relative_path
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -204,7 +202,7 @@ class GCPRegistryBackend(RegistryBackend):
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
 
         # Create temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(metadata, f)
             temp_path = f.name
 
@@ -226,12 +224,12 @@ class GCPRegistryBackend(RegistryBackend):
         meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
         self.logger.debug(f"Loading metadata from: {meta_path}")
 
-        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             temp_path = f.name
 
         try:
             self.gcs.download(meta_path, temp_path)
-            with open(temp_path, 'r') as f:
+            with open(temp_path, "r") as f:
                 metadata = json.load(f)
 
             # Add the GCS path to the metadata
@@ -282,7 +280,7 @@ class GCPRegistryBackend(RegistryBackend):
 
         for obj_name in self.gcs.list_objects(prefix=prefix):
             if obj_name.endswith(".json"):
-                version = obj_name[len(prefix):-5]  # Remove prefix and .json
+                version = obj_name[len(prefix) : -5]  # Remove prefix and .json
                 versions.append(version)
         return sorted(versions)
 
@@ -310,12 +308,12 @@ class GCPRegistryBackend(RegistryBackend):
         """
         try:
             # Download current metadata
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     metadata = json.load(f)
             except Exception:
                 # If metadata doesn't exist, create new metadata
@@ -325,7 +323,7 @@ class GCPRegistryBackend(RegistryBackend):
             metadata["materializers"][object_class] = materializer_class
 
             # Upload updated metadata
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
 
@@ -342,18 +340,18 @@ class GCPRegistryBackend(RegistryBackend):
 
     def register_materializers_batch(self, materializers: Dict[str, str]):
         """Register multiple materializers in a single operation for better performance.
-        
+
         Args:
             materializers: Dictionary mapping object classes to materializer classes.
         """
         try:
             # Download current metadata
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     metadata = json.load(f)
             except Exception:
                 # If metadata doesn't exist, create new metadata
@@ -363,7 +361,7 @@ class GCPRegistryBackend(RegistryBackend):
             metadata["materializers"].update(materializers)
 
             # Upload updated metadata
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
 
@@ -388,12 +386,12 @@ class GCPRegistryBackend(RegistryBackend):
             Materializer class string, or None if no materializer is registered for the object class.
         """
         try:
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     metadata = json.load(f)
                 return metadata.get("materializers", {}).get(object_class)
             except Exception as e:
@@ -413,12 +411,12 @@ class GCPRegistryBackend(RegistryBackend):
             Dictionary mapping object classes to their registered materializer classes.
         """
         try:
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(self._metadata_path, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     metadata = json.load(f)
                 return metadata.get("materializers", {})
             except Exception as e:
@@ -450,18 +448,15 @@ class GCPRegistryBackend(RegistryBackend):
             generation_match = 0  # Initialize to default value (create from scratch)
             # Check if lock exists and handle it appropriately
             try:
-                with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                     temp_path = f.name
 
                 try:
                     self.gcs.download(lock_key, temp_path)
-                    with open(temp_path, 'r') as f:
+                    with open(temp_path, "r") as f:
                         metadata = json.load(f)
-                    
-                    expires_at = metadata.get("expires_at", 0)
-                    
-                    if time.time() < expires_at:
-                        # Lock is still valid
+
+                    if time.time() < metadata.get("expires_at", 0):
                         # If there's an active exclusive lock, we can't acquire a shared lock
                         if shared and not metadata.get("shared", False):
                             raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
@@ -471,14 +466,15 @@ class GCPRegistryBackend(RegistryBackend):
                         # If there's already a shared lock and we want a shared lock, we can share it
                         if shared and metadata.get("shared", False):
                             return True
+                        # Otherwise, lock is held exclusively
+                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
                     else:
-                        # Lock is expired - reload blob to get current generation and atomically replace
+                        # Stale/expired lock -> proactively clear it so conditional create can succeed
                         try:
-                            blob.reload()
-                            generation_match = blob.generation
-                        except gexc.NotFound:
-                            # Lock was deleted between download and reload, create from scratch
-                            generation_match = 0
+                            self.gcs.delete(lock_key)
+                        except Exception as e:
+                            # Best-effort: if someone else deleted it or we lack perms, we'll try create below
+                            self.logger.warning(f"Error deleting stale lock {key}: {e}")
                 finally:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)
@@ -495,8 +491,8 @@ class GCPRegistryBackend(RegistryBackend):
             # Create lock metadata
             metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
 
-            # Try to create/update lock object atomically
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            # Try to create lock object atomically using if_generation_match=0
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
                 json.dump(metadata, f)
                 temp_path = f.name
 
@@ -533,12 +529,12 @@ class GCPRegistryBackend(RegistryBackend):
 
         try:
             # Verify lock ownership
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(lock_key, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     lock_data = json.load(f)
                 if lock_data.get("lock_id") != lock_id:
                     return False  # Not our lock
@@ -549,7 +545,7 @@ class GCPRegistryBackend(RegistryBackend):
             self.gcs.delete(lock_key)
             return True
         finally:
-            if 'temp_path' in locals() and os.path.exists(temp_path):
+            if "temp_path" in locals() and os.path.exists(temp_path):
                 os.unlink(temp_path)
 
     def check_lock(self, key: str) -> tuple[bool, str | None]:
@@ -565,12 +561,12 @@ class GCPRegistryBackend(RegistryBackend):
         lock_key = self._lock_key(key)
 
         try:
-            with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 temp_path = f.name
 
             try:
                 self.gcs.download(lock_key, temp_path)
-                with open(temp_path, 'r') as f:
+                with open(temp_path, "r") as f:
                     lock_data = json.load(f)
 
                 # Check if lock is expired
@@ -642,20 +638,20 @@ class GCPRegistryBackend(RegistryBackend):
             # Copy metadata file if it exists
             try:
                 self.logger.debug(f"Copying metadata from {source_meta_key} to {target_meta_key}")
-                
-                with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                     temp_path = f.name
 
                 try:
                     self.gcs.download(source_meta_key, temp_path)
-                    with open(temp_path, 'r') as f:
+                    with open(temp_path, "r") as f:
                         metadata = json.load(f)
 
                     # Update the path in metadata
                     metadata["path"] = f"gs://{self.gcs.bucket_name}/{target_key}"
 
                     # Save updated metadata
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f2:
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f2:
                         json.dump(metadata, f2)
                         temp_path2 = f2.name
 
