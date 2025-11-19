@@ -56,36 +56,37 @@ class GCSStorageHandler(StorageHandler):
     # ------------------------------------------------------------------
     def _load_credentials(self, credentials_path: str):
         """Load credentials from a file, handling both service account and user credentials.
-        
+
         Args:
             credentials_path: Path to the credentials file.
-            
+
         Returns:
             Credentials object that can be used with Google Cloud clients.
         """
         import json
-        from google.oauth2 import service_account
-        
+
         try:
-            with open(credentials_path, 'r') as f:
+            with open(credentials_path, "r") as f:
                 cred_data = json.load(f)
-            
+
             # Check if it's a service account key file
-            if cred_data.get('type') == 'service_account':
+            if cred_data.get("type") == "service_account":
                 return service_account.Credentials.from_service_account_file(credentials_path)
-            
+
             # Check if it's user credentials (application default credentials)
-            elif 'client_id' in cred_data and 'refresh_token' in cred_data:
+            elif "client_id" in cred_data and "refresh_token" in cred_data:
                 from google.oauth2.credentials import Credentials
+
                 return Credentials.from_authorized_user_file(credentials_path)
-            
+
             # If it's neither, try to use it as a service account file anyway
             # (for backward compatibility)
             else:
                 return service_account.Credentials.from_service_account_file(credentials_path)
-                
+
         except Exception as e:
             raise ValueError(f"Could not load credentials from {credentials_path}: {e}")
+
     def _ensure_bucket(self, create: bool, location: str, storage_class: str) -> None:
         """Ensure the GCS bucket exists, creating it if necessary."""
         bucket = self.client.bucket(self.bucket_name)
