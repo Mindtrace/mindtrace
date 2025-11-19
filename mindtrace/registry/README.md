@@ -64,7 +64,7 @@ from mindtrace.registry import Registry, MinioRegistryBackend
 
 # MinIO registry
 minio_backend = MinioRegistryBackend(
-    uri="gs://my-registry",
+    uri="s3://minio-registry",
     endpoint="localhost:9000",
     access_key="minioadmin",
     secret_key="minioadmin",
@@ -102,6 +102,41 @@ registry = Registry(backend=gcp_backend)
 - Distributed storage with global availability
 - Atomic operations using GCS object generation numbers
 - Automatic bucket creation and management
+
+### Creating a Registry from URI
+
+The `Registry.from_uri()` class method provides a convenient way to create a registry instance with the appropriate backend automatically selected based on the URI scheme. Backend-specific parameters can be passed as keyword arguments.
+
+**URI Scheme Mapping:**
+- `s3://...` → `MinioRegistryBackend`
+- `gs://...` → `GCPRegistryBackend`
+- `file://...` or `/path/...` → `LocalRegistryBackend`
+
+```python
+from mindtrace.registry import Registry
+
+# MinIO/S3
+registry = Registry.from_uri(
+    "s3://my-bucket",
+    endpoint="localhost:9000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    bucket="my-bucket",
+    secure=False
+)
+
+# Google Cloud Storage
+registry = Registry.from_uri(
+    "gs://my-bucket",
+    project_id="my-project",
+    bucket="my-bucket",
+    credentials_path="/path/to/credentials.json"
+)
+
+# Local filesystem
+registry = Registry.from_uri("/path/to/registry")
+registry = Registry.from_uri("file:///path/to/registry")
+```
 
 ## Advanced Usage
 
