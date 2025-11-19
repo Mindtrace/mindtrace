@@ -249,9 +249,10 @@ class Registry(Mindtrace):
         """Create a Registry instance with the appropriate backend based on the URI scheme.
 
         The URI scheme determines which backend is used:
-        - s3://... -> MinioRegistryBackend (requires endpoint, access_key, secret_key, bucket kwargs)
-        - gs://... -> GCPRegistryBackend (requires project_id, bucket kwargs)
+        - s3://... -> MinioRegistryBackend
+        - gs://... -> GCPRegistryBackend
         - file://... or /path/... -> LocalRegistryBackend
+        - default -> LocalRegistryBackend (if no URI scheme is provided)
 
         Args:
             uri: URI string specifying the registry location
@@ -268,7 +269,7 @@ class Registry(Mindtrace):
 
             # MinIO registry
             registry = Registry.from_uri(
-                "s3://bucket-name",
+                "s3://my-bucket",
                 endpoint="localhost:9000",
                 access_key="minioadmin",
                 secret_key="minioadmin",
