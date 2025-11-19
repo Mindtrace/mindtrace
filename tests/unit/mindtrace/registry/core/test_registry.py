@@ -2169,7 +2169,6 @@ def test_initialize_version_objects_exception_handling(temp_registry_dir, monkey
     """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
     # Create a fresh registry that hasn't been initialized yet
     # We'll patch _get_registry_metadata to raise an exception during initialization
-    original_get_metadata = Registry._get_registry_metadata
     save_calls = []
 
     def failing_get_metadata(self):

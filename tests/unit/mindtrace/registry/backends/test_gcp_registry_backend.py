@@ -1094,8 +1094,6 @@ def test_registered_materializer_outer_exception(backend, monkeypatch):
     # Mock tempfile.NamedTemporaryFile to raise an exception (outer try block)
     import tempfile
 
-    original_named_temp = tempfile.NamedTemporaryFile
-
     def failing_named_tempfile(*args, **kwargs):
         raise OSError("Failed to create temp file")
 
