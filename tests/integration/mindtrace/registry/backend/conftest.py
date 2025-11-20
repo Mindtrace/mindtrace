@@ -19,9 +19,7 @@ def gcs_client():
     """Create a GCS client for testing."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
     if not credentials_path:
         pytest.skip("No GCP credentials path provided")
     if not os.path.exists(credentials_path):
@@ -68,9 +66,7 @@ def gcp_backend(gcp_temp_dir, gcp_test_bucket):
     """Create a GCPRegistryBackend instance with a test bucket."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
 
     try:
         return GCPRegistryBackend(
@@ -81,4 +77,3 @@ def gcp_backend(gcp_temp_dir, gcp_test_bucket):
         )
     except Exception as e:
         pytest.skip(f"GCP backend creation failed: {e}")
-
