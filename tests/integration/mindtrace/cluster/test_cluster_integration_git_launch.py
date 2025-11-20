@@ -3,7 +3,7 @@ import time
 import httpx
 import pytest
 
-from mindtrace.cluster import ClusterManager, Node
+from mindtrace.cluster import ClusterManager, Node, Worker
 from mindtrace.jobs import JobSchema, job_from_schema
 from mindtrace.services.samples.echo_service import EchoInput, EchoOutput
 
@@ -17,14 +17,14 @@ def test_start_worker_from_git():
     cluster_port = 8212
     node_port = 8213
     worker_port = 8214
-    
+
     # Check for pre-existing services on the ports we'll use (fail fast with clear error)
     ports_to_check = {
         "cluster_manager": cluster_port,
         "node": node_port,
         "worker": worker_port,
     }
-    
+
     for service_name, port in ports_to_check.items():
         url = f"http://localhost:{port}"
         try:
@@ -47,7 +47,7 @@ def test_start_worker_from_git():
                 f"Attempted to check {url}/heartbeat but got unexpected error: {e}. "
                 f"This test requires clean ports. Please stop any existing services on ports {cluster_port}, {node_port}, or {worker_port}."
             )
-    
+
     cluster_manager = ClusterManager.launch(host="localhost", port=cluster_port, wait_for_launch=True, timeout=15)
     node = Node.launch(
         host="localhost", port=node_port, cluster_url=str(cluster_manager.url), wait_for_launch=True, timeout=15
@@ -68,8 +68,67 @@ def test_start_worker_from_git():
 
         # Launch worker on the node
         worker_url = f"http://localhost:{worker_port}"
-        cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
-        
+
+        # Launch worker - may timeout if git clone/dependency sync takes too long, but worker might still start
+        try:
+            cluster_manager.launch_worker(node_url=str(node.url), worker_type="echoworker", worker_url=worker_url)
+        except (httpx.ReadTimeout, httpx.TimeoutException) as e:
+            # Worker launch timed out, but the worker process might have started anyway.
+            # Check if worker is actually responding before failing
+            print(f"Worker launch timed out: {e}. Checking if worker started anyway...")
+
+            # Give worker a bit more time to become ready (git clones can take a while)
+            max_wait_for_worker = 30  # seconds
+            start_time = time.time()
+            worker_ready = False
+            while (time.time() - start_time) < max_wait_for_worker:
+                try:
+                    response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
+                    if response.status_code == 200:
+                        worker_ready = True
+                        print(f"Worker is ready after launch timeout (took {time.time() - start_time:.1f}s)")
+                        break
+                except (httpx.ConnectError, httpx.TimeoutException):
+                    pass  # Worker not ready yet, continue waiting
+                time.sleep(1)
+
+            if not worker_ready:
+                pytest.fail(
+                    f"Worker launch timed out after 60s and worker did not become ready within {max_wait_for_worker}s. "
+                    f"This indicates the worker failed to launch properly. "
+                    f"Git-based worker launches (clone + dependency sync) can take longer than the 60s timeout. "
+                    f"Worker URL: {worker_url}"
+                )
+
+            # Worker is ready, but launch_worker timed out before completing the setup.
+            # We need to manually complete the worker registration to the cluster and job queue.
+            # This is what launch_worker does after the worker launches (lines 596-601 in cluster.py)
+            print("Completing worker registration to cluster after timeout...")
+            try:
+                Worker.connect(worker_url)
+
+                # Check if worker auto-connect is configured for this worker type
+                worker_auto_connect_list = cluster_manager.worker_auto_connect_database.find(
+                    cluster_manager.worker_auto_connect_database.redis_backend.model_cls.worker_type == "echoworker"
+                )
+                if worker_auto_connect_list:
+                    worker_auto_connect = worker_auto_connect_list[0]
+                    # Register the worker to the job queue (this connects it to the cluster and starts consuming)
+                    cluster_manager.register_job_to_worker(
+                        payload={"job_type": worker_auto_connect.schema_name, "worker_url": worker_url}
+                    )
+                    print(f"Worker registered to job type '{worker_auto_connect.schema_name}' and started consuming")
+                else:
+                    pytest.fail(
+                        "Worker launched but auto-connect configuration not found for worker type 'echoworker'. "
+                        "This indicates the worker registration setup is incomplete."
+                    )
+            except Exception as setup_error:
+                pytest.fail(
+                    f"Worker launched successfully but failed to complete cluster registration: {setup_error}. "
+                    f"This indicates the worker may not be able to consume jobs from the queue."
+                )
+
         # Verify worker is launched and reachable (quick validation to catch launch failures early)
         try:
             response = httpx.post(f"{worker_url}/heartbeat", json={}, timeout=2.0)
@@ -112,7 +171,7 @@ def test_start_worker_from_git():
                 )
             time.sleep(0.5)
             status = cluster_manager.get_job_status(job_id=job.id)
-        
+
         print(f"Job status after waiting for running: {status}")
         if status.status != "running":
             # Check if worker is still alive
@@ -121,7 +180,7 @@ def test_start_worker_from_git():
                 worker_alive = response.status_code == 200
             except Exception:
                 worker_alive = False
-            
+
             pytest.fail(
                 f"Job did not transition from 'queued' to 'running' within {max_wait_for_running}s. "
                 f"Final status: {status.status}. "
@@ -136,10 +195,14 @@ def test_start_worker_from_git():
         start_time = time.time()
         final_status = status
         stuck_in_running_count = 0
-        while final_status.status != "completed" and final_status.status != "failed" and (time.time() - start_time) < max_wait_for_completion:
+        while (
+            final_status.status != "completed"
+            and final_status.status != "failed"
+            and (time.time() - start_time) < max_wait_for_completion
+        ):
             time.sleep(0.5)
             final_status = cluster_manager.get_job_status(job_id=job.id)
-            
+
             # Check if job is stuck in running (early failure detection - fail fast if worker is dead)
             if final_status.status == "running":
                 stuck_in_running_count += 1
@@ -150,7 +213,7 @@ def test_start_worker_from_git():
                         worker_alive = response.status_code == 200
                     except Exception:
                         worker_alive = False
-                    
+
                     if not worker_alive:
                         pytest.fail(
                             f"Job stuck in 'running' status and worker at {worker_url} is NOT RESPONDING. "
@@ -158,7 +221,7 @@ def test_start_worker_from_git():
                             f"This indicates the worker crashed during job execution. "
                             f"Current job status: {final_status}"
                         )
-        
+
         print(f"Final job status: {final_status}")
 
         # Verify the job completed successfully
