@@ -302,6 +302,8 @@ def test_acquire_lock_success(backend):
     # Mock the bucket blob operations
     with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
+        # Lock doesn't exist - reload raises NotFound
+        mock_blob.reload = MagicMock(side_effect=gexc.NotFound("Lock not found"))
         mock_blob.upload_from_filename = MagicMock()
         mock_bucket.return_value.blob.return_value = mock_blob
 
@@ -656,9 +658,12 @@ def test_acquire_lock_generic_exception(backend, monkeypatch):
     """Test acquire_lock when a generic exception occurs."""
     # Mock the bucket blob operations to raise a generic exception
     with patch.object(backend.gcs, "_bucket") as mock_bucket:
-        mock_bucket.side_effect = Exception("Generic error")
+        mock_blob = MagicMock()
+        # Raise exception on reload
+        mock_blob.reload = MagicMock(side_effect=Exception("Generic error"))
+        mock_bucket.return_value.blob.return_value = mock_blob
 
-        # Try to acquire lock - should return False
+        # Try to acquire lock - should return False after retries
         result = backend.acquire_lock("test_key", "test_id", timeout=30)
         assert result is False
 
@@ -1157,18 +1162,17 @@ def test_acquire_lock_non_precondition_failed_exception(backend, monkeypatch):
 
 
 def test_acquire_lock_expired_lock_blob_reload(backend, monkeypatch):
-    """Test acquire_lock with expired lock - stale lock is deleted."""
+    """Test acquire_lock with expired lock - stale lock is updated atomically."""
     lock_key = "test_lock"
     lock_id = "test_id"
 
     with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
+        # Lock exists with generation=5 and is expired
+        mock_blob.generation = 5
+        mock_blob.reload = MagicMock()  # reload() succeeds and sets generation
         mock_blob.upload_from_filename = MagicMock(return_value=None)
         mock_bucket.return_value.blob.return_value = mock_blob
-
-        # Mock delete to succeed
-        mock_delete = MagicMock()
-        monkeypatch.setattr(backend.gcs, "delete", mock_delete)
 
         # Mock download to simulate expired lock
         def mock_download(remote_path, local_path):
@@ -1182,26 +1186,39 @@ def test_acquire_lock_expired_lock_blob_reload(backend, monkeypatch):
 
         monkeypatch.setattr(backend.gcs, "download", mock_download)
 
-        # Should acquire lock successfully (expired lock is deleted and new one created)
+        # Should acquire lock successfully (expired lock is updated atomically using generation)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
-        # Verify gcs.delete was called to remove stale lock
-        mock_delete.assert_called_once_with("_lock_test_lock")
+        # Verify upload was called with generation match
+        mock_blob.upload_from_filename.assert_called()
+        call_args = mock_blob.upload_from_filename.call_args
+        assert call_args[1]["if_generation_match"] == 5, "Should use generation=5 for atomic update"
         assert result is True
 
 
 def test_acquire_lock_expired_lock_blob_reload_not_found(backend, monkeypatch):
-    """Test acquire_lock when expired lock deletion fails (best-effort)."""
+    """Test acquire_lock when expired lock update fails due to generation mismatch.
+
+    Note: The backend method does not retry internally. The Registry class handles retries.
+    """
     lock_key = "test_lock"
     lock_id = "test_id"
 
     with patch.object(backend.gcs, "_bucket") as mock_bucket:
         mock_blob = MagicMock()
-        mock_blob.upload_from_filename = MagicMock(return_value=None)
-        mock_bucket.return_value.blob.return_value = mock_blob
+        # Lock exists with generation=5 and is expired
+        mock_blob.generation = 5
 
-        # Mock delete to raise exception (best-effort deletion fails)
-        mock_delete = MagicMock(side_effect=Exception("Delete failed"))
-        monkeypatch.setattr(backend.gcs, "delete", mock_delete)
+        def mock_reload():
+            mock_blob.generation = 5
+
+        mock_blob.reload = MagicMock(side_effect=mock_reload)
+
+        def mock_upload(filename, if_generation_match):
+            # First attempt fails with PreconditionFailed (someone else updated it)
+            raise gexc.PreconditionFailed("Generation mismatch")
+
+        mock_blob.upload_from_filename = MagicMock(side_effect=mock_upload)
+        mock_bucket.return_value.blob.return_value = mock_blob
 
         # Mock download to simulate expired lock
         def mock_download(remote_path, local_path):
@@ -1215,12 +1232,12 @@ def test_acquire_lock_expired_lock_blob_reload_not_found(backend, monkeypatch):
 
         monkeypatch.setattr(backend.gcs, "download", mock_download)
 
-        # Should still try to acquire lock (best-effort deletion failure is logged but doesn't stop acquisition)
+        # Should return False on PreconditionFailed (allowing Registry to retry)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
-        # Verify delete was attempted
-        mock_delete.assert_called_once_with("_lock_test_lock")
-        # Lock acquisition may succeed or fail depending on race condition, but delete was attempted
-        assert result is True or result is False
+        # Verify no internal retry occurred
+        assert mock_blob.reload.call_count == 1, "Should only call reload once (no internal retry)"
+        assert mock_blob.upload_from_filename.call_count == 1, "Should only attempt upload once (no internal retry)"
+        assert result is False, "Should return False on PreconditionFailed to allow Registry retry"
 
 
 def test_acquire_lock_not_found_exception(backend, monkeypatch):
@@ -1243,6 +1260,103 @@ def test_acquire_lock_not_found_exception(backend, monkeypatch):
         # Should handle NotFound and create lock (generation_match=0)
         result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
         assert result is True
+
+
+def test_acquire_lock_race_condition_generation_mismatch(backend, monkeypatch):
+    """Test race condition handling when generation mismatch occurs.
+
+    This simulates:
+    1. Process reads lock with generation=5 (expired)
+    2. Process tries to update with if_generation_match=5
+    3. Another process updated it first -> PreconditionFailed
+    4. Method returns False to allow Registry class to retry
+
+    Note: The backend method does not retry internally. The Registry class handles retries.
+    """
+    lock_key = "test_lock"
+    lock_id = "test_id"
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        # Simulate expired lock with generation=5
+        expired_lock_data = {
+            "lock_id": "old_lock",
+            "expires_at": time.time() - 100,
+            "shared": False,
+        }
+
+        def mock_reload():
+            """Simulate blob.reload() returning generation=5."""
+            mock_blob.generation = 5
+
+        def mock_download(remote_path, local_path):
+            """Simulate downloading lock file."""
+            with open(local_path, "w") as f:
+                json.dump(expired_lock_data, f)
+
+        def mock_upload(filename, if_generation_match):
+            """Simulate upload with generation check - fails with PreconditionFailed."""
+            # Generation mismatch (another process updated it)
+            raise gexc.PreconditionFailed("Generation mismatch")
+
+        mock_blob.reload = MagicMock(side_effect=mock_reload)
+        mock_blob.upload_from_filename = MagicMock(side_effect=mock_upload)
+        monkeypatch.setattr(backend.gcs, "download", mock_download)
+
+        # Should return False on PreconditionFailed (allowing Registry to retry)
+        result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
+
+        # Verify method returns False (no internal retry)
+        assert result is False, "Should return False on PreconditionFailed to allow Registry retry"
+        assert mock_blob.reload.call_count == 1, "Should only call reload once (no internal retry)"
+        assert mock_blob.upload_from_filename.call_count == 1, "Should only attempt upload once (no internal retry)"
+
+
+def test_acquire_lock_retry_on_precondition_failed(backend, monkeypatch):
+    """Test that PreconditionFailed returns False to allow Registry retry.
+
+    This verifies that when a PreconditionFailed exception occurs,
+    the method returns False (not True) so the Registry class can handle retries.
+
+    Note: The backend method does not retry internally. The Registry class handles retries.
+    """
+    lock_key = "test_lock"
+    lock_id = "test_id"
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        # Simulate expired lock
+        expired_data = {
+            "lock_id": "old_lock",
+            "expires_at": time.time() - 100,
+            "shared": False,
+        }
+
+        def mock_reload():
+            mock_blob.generation = 5
+
+        def mock_download(remote_path, local_path):
+            with open(local_path, "w") as f:
+                json.dump(expired_data, f)
+
+        def mock_upload(filename, if_generation_match):
+            # First attempt fails with PreconditionFailed (generation mismatch)
+            raise gexc.PreconditionFailed("Generation mismatch")
+
+        mock_blob.reload = MagicMock(side_effect=mock_reload)
+        mock_blob.upload_from_filename = MagicMock(side_effect=mock_upload)
+        monkeypatch.setattr(backend.gcs, "download", mock_download)
+
+        result = backend.acquire_lock(lock_key, lock_id, timeout=10, shared=False)
+
+        # Verify method returns False (no internal retry - Registry will retry)
+        assert result is False, "Should return False on PreconditionFailed to allow Registry retry"
+        assert mock_blob.reload.call_count == 1, "Should only call reload once (no internal retry)"
+        assert mock_blob.upload_from_filename.call_count == 1, "Should only attempt upload once (no internal retry)"
 
 
 def test_overwrite_target_deletion_exception(backend, monkeypatch):

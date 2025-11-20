@@ -432,6 +432,15 @@ class GCPRegistryBackend(RegistryBackend):
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using GCS object generation numbers.
 
+        This method uses atomic operations to prevent race conditions:
+        1. First, attempt to read the current lock state atomically
+        2. If lock exists and is valid, check compatibility and raise error if needed
+        3. If lock exists but is expired, use atomic conditional update with generation number
+        4. If lock doesn't exist, use atomic conditional create (if_generation_match=0)
+
+        Note: This method does not retry on failures. The Registry class handles retries
+        using its Timeout handler. Return False on PreconditionFailed to allow retry.
+
         Args:
             key: The key to acquire the lock for.
             lock_id: The ID of the lock to acquire.
@@ -442,74 +451,111 @@ class GCPRegistryBackend(RegistryBackend):
             True if the lock was acquired, False otherwise.
         """
         lock_key = self._lock_key(key)
+        blob = self.gcs._bucket().blob(lock_key)
 
         try:
-            blob = self.gcs._bucket().blob(lock_key)
-            generation_match = 0  # Initialize to default value (create from scratch)
-            # Check if lock exists and handle it appropriately
+            # Step 1: Atomically read current lock state
+            generation_match = None  # Will be set based on lock state
             try:
+                # Reload blob to get current generation number
+                blob.reload()
+                current_generation = blob.generation
+
+                # Download current lock content
                 with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                     temp_path = f.name
 
                 try:
                     self.gcs.download(lock_key, temp_path)
                     with open(temp_path, "r") as f:
-                        metadata = json.load(f)
+                        current_metadata = json.load(f)
 
-                    if time.time() < metadata.get("expires_at", 0):
-                        # If there's an active exclusive lock, we can't acquire a shared lock
-                        if shared and not metadata.get("shared", False):
+                    # Check if lock is still valid (not expired)
+                    if time.time() < current_metadata.get("expires_at", 0):
+                        # Lock is valid - check compatibility
+                        if shared and not current_metadata.get("shared", False):
+                            # Trying to acquire shared lock but exclusive lock exists
                             raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        # If there are active shared locks, we can't acquire an exclusive lock
-                        if not shared and metadata.get("shared", False):
+                        if not shared and current_metadata.get("shared", False):
+                            # Trying to acquire exclusive lock but shared lock exists
                             raise LockAcquisitionError(f"Lock {key} is currently held as shared")
                         # If there's already a shared lock and we want a shared lock, we can share it
-                        if shared and metadata.get("shared", False):
+                        if shared and current_metadata.get("shared", False):
                             return True
-                        # Otherwise, lock is held exclusively
+                        # Otherwise, lock is held exclusively (and we want exclusive)
                         raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
                     else:
-                        # Stale/expired lock -> proactively clear it so conditional create can succeed
-                        try:
-                            self.gcs.delete(lock_key)
-                        except Exception as e:
-                            # Best-effort: if someone else deleted it or we lack perms, we'll try create below
-                            self.logger.warning(f"Error deleting stale lock {key}: {e}")
+                        # Lock is expired - we'll update it atomically using generation number
+                        generation_match = current_generation
                 finally:
                     if os.path.exists(temp_path):
                         os.unlink(temp_path)
+
             except gexc.NotFound:
-                # Lock doesn't exist, we can create it
-                generation_match = 0
-            except LockAcquisitionError:
-                # Re-raise LockAcquisitionError
-                raise
-            except Exception:
-                # Other error - try to create from scratch (generation_match=0 means file must not exist)
+                # Lock doesn't exist (either never existed or was deleted between reload and download)
+                # Use generation_match=0 to create atomically
                 generation_match = 0
 
-            # Create lock metadata
-            metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
+            # Step 2: Atomically create/update lock with generation check
+            # generation_match should be set by now (either from expired lock or NotFound)
+            if generation_match is None:
+                # This shouldn't happen, but handle it gracefully
+                self.logger.error(f"Unexpected state: generation_match is None for lock {key}")
+                return False
 
-            # Try to create lock object atomically using if_generation_match=0
+            new_metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
+
             with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(metadata, f)
+                json.dump(new_metadata, f)
                 temp_path = f.name
 
             try:
+                # Atomic operation: only succeeds if generation matches (or is 0 for new file)
                 blob.upload_from_filename(temp_path, if_generation_match=generation_match)
                 return True
             except gexc.PreconditionFailed:
-                # Lock was modified by another process (race condition)
-                return False
-            except Exception as e:
-                self.logger.debug(f"Lock acquisition failed: {e}")
+                # Generation mismatch - another process modified the lock
+                # For shared locks, check if the existing lock is also shared - if so, we can share it
+                if shared:
+                    try:
+                        # Reload to get the current lock state
+                        blob.reload()
+                        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+                            temp_check_path = f.name
+                        try:
+                            self.gcs.download(lock_key, temp_check_path)
+                            with open(temp_check_path, "r") as f:
+                                existing_metadata = json.load(f)
+                            # If the existing lock is shared and valid, we can share it
+                            if (
+                                existing_metadata.get("shared", False)
+                                and time.time() < existing_metadata.get("expires_at", 0)
+                            ):
+                                return True
+                            # If the existing lock is exclusive, raise error
+                            if not existing_metadata.get("shared", False):
+                                raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
+                        finally:
+                            if os.path.exists(temp_check_path):
+                                os.unlink(temp_check_path)
+                    except LockAcquisitionError:
+                        # Re-raise LockAcquisitionError
+                        raise
+                    except gexc.NotFound:
+                        # Lock was deleted between PreconditionFailed and check - return False to retry
+                        return False
+                    except Exception as e:
+                        # Log other exceptions but still return False to allow retry
+                        self.logger.debug(f"Error checking existing lock after PreconditionFailed: {e}")
+                        return False
+                # Return False to allow Registry class to retry
                 return False
             finally:
-                os.unlink(temp_path)
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
 
         except LockAcquisitionError:
-            # Re-raise LockAcquisitionError
+            # Re-raise LockAcquisitionError (Registry will handle retries)
             raise
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
