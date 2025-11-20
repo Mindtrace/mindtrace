@@ -62,12 +62,10 @@ def test_concurrent_lock_acquisition_race_condition(gcp_backend):
 
     # Verify results
     successful_acquires = [r for r in results if r[1] is True]
-    failed_acquires = [r for r in results if r[1] is False]
 
     # Only one thread should have successfully acquired the lock
     assert len(successful_acquires) == 1, (
-        f"Expected exactly 1 successful acquire, got {len(successful_acquires)}. "
-        f"Results: {results}"
+        f"Expected exactly 1 successful acquire, got {len(successful_acquires)}. Results: {results}"
     )
 
     # Verify the lock is actually held by checking lock state
@@ -188,7 +186,7 @@ def test_lock_acquisition_stress_test(gcp_backend):
                 else:
                     with results_lock:
                         results.append((thread_id, iteration, False))
-            except Exception as e:
+            except Exception:
                 with results_lock:
                     results.append((thread_id, iteration, False))
 
@@ -268,4 +266,3 @@ def test_lock_retry_on_generation_mismatch(gcp_backend):
 
     # Clean up
     gcp_backend.release_lock(lock_key, lock_id)
-

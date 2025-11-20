@@ -184,7 +184,11 @@ def test_init_with_default_uri(minio_client, minio_test_bucket):
     """Test backend initialization with default URI from config."""
     # Create backend without specifying URI
     backend = MinioRegistryBackend(
-        endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", bucket=minio_test_bucket, secure=False
+        endpoint="localhost:9100",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        bucket=minio_test_bucket,
+        secure=False,
     )
 
     # Verify the URI is set to the default from config
