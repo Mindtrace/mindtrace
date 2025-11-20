@@ -1251,3 +1251,12 @@ def test_overwrite_with_metadata_file_exists_check(backend, temp_dir):
     target_meta = backend.fetch_metadata("test:source", "2.0.0")
     expected_path = str(backend.uri / "test:source" / "2.0.0")
     assert target_meta["path"] == expected_path
+
+
+def test_init_with_file_uri(temp_dir):
+    """Test LocalRegistryBackend initialization with file:// URI."""
+    # Test that file:// prefix is stripped
+    file_uri = f"file://{temp_dir}"
+    backend = LocalRegistryBackend(uri=file_uri)
+    assert backend.uri == temp_dir.resolve()
+    assert str(backend.uri).startswith(str(temp_dir))
