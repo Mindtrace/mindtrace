@@ -119,7 +119,7 @@ def backend(request, backend_type, temp_dir, test_bucket):
         return backend_class(**params)
     elif backend_type == "minio":
         params["bucket"] = test_bucket
-        params["uri"] = str(temp_dir)
+        params["uri"] = f"s3://{test_bucket}"
         return backend_class(**params)
     elif backend_type == "gcp":
         # Use the session-scoped GCP backend for faster testing

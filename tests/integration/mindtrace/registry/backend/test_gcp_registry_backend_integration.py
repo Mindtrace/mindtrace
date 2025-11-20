@@ -120,7 +120,7 @@ def sample_metadata():
 
 def test_init(backend, test_bucket, gcs_client):
     """Test backend initialization."""
-    assert backend.uri.name == test_bucket
+    assert backend.uri == f"gs://{test_bucket}"
     assert gcs_client.bucket(test_bucket).exists()
 
 

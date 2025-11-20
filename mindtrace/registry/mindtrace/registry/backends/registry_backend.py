@@ -8,7 +8,7 @@ from mindtrace.core import MindtraceABC
 class RegistryBackend(MindtraceABC):  # pragma: no cover
     @property
     @abstractmethod
-    def uri(self) -> Path:
+    def uri(self) -> str | Path:
         pass
 
     @abstractmethod

@@ -61,7 +61,7 @@ def backend(temp_dir, test_bucket):
     secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin")
     secure = os.environ.get("MINIO_SECURE", "0") == "1"
     return MinioRegistryBackend(
-        uri=str(temp_dir),
+        uri=f"s3://{test_bucket}",
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,

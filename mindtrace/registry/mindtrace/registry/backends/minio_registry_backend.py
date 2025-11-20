@@ -49,7 +49,7 @@ class MinioRegistryBackend(RegistryBackend):
 
         # Connect to a remote MinIO registry (expected to be non-local in practice)
         minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry",
+            uri="s3://minio-registry",
             endpoint="localhost:9000",
             access_key="minioadmin",
             secret_key="minioadmin",
@@ -68,7 +68,7 @@ class MinioRegistryBackend(RegistryBackend):
         # Print the contents of the registry
         print(registry)
 
-        Registry at /Users/jeremywurbs/.cache/mindtrace/minio_registry   
+        Registry at s3://minio-registry
         ┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━┓
         ┃ Object     ┃ Version ┃ Class          ┃ Value         ┃ Metadata ┃
         ┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━┩
@@ -94,7 +94,7 @@ class MinioRegistryBackend(RegistryBackend):
         """Initialize the MinioRegistryBackend.
 
         Args:
-            uri: The base directory path where all object files and metadata will be stored.
+            uri: The S3 URI for the registry for storing all object files and metadata (e.g., "s3://bucket-name").
             endpoint: MinIO server endpoint.
             access_key: MinIO access key.
             secret_key: MinIO secret key.
@@ -103,8 +103,10 @@ class MinioRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
-        self._uri.mkdir(parents=True, exist_ok=True)
+        self._uri = uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+        # If URI doesn't start with s3://, construct it from bucket
+        if not self._uri.startswith("s3://"):
+            self._uri = f"s3://{bucket}"
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
 
@@ -136,7 +138,7 @@ class MinioRegistryBackend(RegistryBackend):
                 raise
 
     @property
-    def uri(self) -> Path:
+    def uri(self) -> str:
         return self._uri
 
     @property
@@ -269,7 +271,7 @@ class MinioRegistryBackend(RegistryBackend):
 
         # Add the path to the object directory to the metadata:
         object_key = self._object_key(name, version)
-        metadata.update({"path": str(self._uri / object_key)})
+        metadata.update({"path": f"s3://{self.bucket}/{object_key}"})
 
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata

@@ -10,12 +10,11 @@ from mindtrace.registry import MinioRegistryBackend
 
 def test_init(backend, test_bucket, minio_client):
     """Test backend initialization."""
-    assert backend.uri.exists()
-    assert backend.uri.is_dir()
+    assert backend.uri == f"s3://{test_bucket}"
     assert minio_client.bucket_exists(test_bucket)
 
 
-def test_push_and_pull(backend, sample_object_dir, minio_client, test_bucket):
+def test_push_and_pull(backend, sample_object_dir, minio_client, test_bucket, tmp_path):
     """Test pushing and pulling objects."""
     # Push the object
     backend.push("test:object", "1.0.0", sample_object_dir)
@@ -25,7 +24,7 @@ def test_push_and_pull(backend, sample_object_dir, minio_client, test_bucket):
     assert len(objects) == 2
 
     # Download to a new location
-    download_dir = backend.uri / "download"
+    download_dir = tmp_path / "download"
     download_dir.mkdir()
     backend.pull("test:object", "1.0.0", str(download_dir))
 
@@ -188,10 +187,9 @@ def test_init_with_default_uri(minio_client, test_bucket):
     )
 
     # Verify the URI is set to the default from config
-    expected_uri = Path(CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]).expanduser().resolve()
+    expected_uri = CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+    assert backend.uri.startswith("s3://")
     assert backend.uri == expected_uri
-    assert backend.uri.exists()
-    assert backend.uri.is_dir()
     assert minio_client.bucket_exists(test_bucket)
 
 
@@ -205,7 +203,7 @@ def test_init_creates_bucket(minio_client):
 
     # Create backend with the new bucket name
     _ = MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+        uri=f"s3://{bucket_name}",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -226,7 +224,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     """Test backend initialization handles errors when checking metadata file."""
     # Create a backend with valid credentials
     _ = MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+        uri=f"s3://{test_bucket}",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -263,7 +261,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     # Try to create another backend - should fail with a non-NoSuchKey error
     with pytest.raises(S3Error) as exc_info:
         MinioRegistryBackend(
-            uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / f"test_dir_{uuid.uuid4()}"),
+            uri=f"s3://{test_bucket}",
             endpoint="localhost:9100",
             access_key="minioadmin",
             secret_key="minioadmin",

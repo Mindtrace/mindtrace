@@ -81,7 +81,7 @@ class Registry(Mindtrace):
 
         # Connect to a remote MinIO registry (expected to be non-local in practice)
         minio_backend = MinioRegistryBackend(
-            uri="~/.cache/mindtrace/minio_registry",
+            uri="s3://minio-registry",
             endpoint="localhost:9000",
             access_key="minioadmin",
             secret_key="minioadmin",

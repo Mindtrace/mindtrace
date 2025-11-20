@@ -55,7 +55,7 @@ def mock_minio_client(monkeypatch):
 def backend(mock_minio_client):
     """Create a MinioRegistryBackend instance with a mock client."""
     return MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+        uri="s3://test-bucket",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",

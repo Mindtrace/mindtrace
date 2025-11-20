@@ -56,7 +56,7 @@ class GCPRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = Path(uri or f"gs://{bucket}")
+        self._uri = uri or f"gs://{bucket}"
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
 
@@ -73,7 +73,7 @@ class GCPRegistryBackend(RegistryBackend):
         self._ensure_metadata_file()
 
     @property
-    def uri(self) -> Path:
+    def uri(self) -> str:
         """The resolved base URI for the backend."""
         return self._uri
 
