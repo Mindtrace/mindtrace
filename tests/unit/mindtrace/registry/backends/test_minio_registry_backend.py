@@ -1597,16 +1597,15 @@ def test_list_versions_success(backend, monkeypatch):
 def test_has_object_true(backend, monkeypatch):
     """Test has_object when object exists (lines 379-387)."""
 
-    def mock_list_objects():
-        return ["test:object"]
+    class MockResponse:
+        def __init__(self):
+            self.data = json.dumps({"class": "TestClass", "materializer": "TestMaterializer"}).encode()
 
-    def mock_list_versions(name):
-        if name == "test:object":
-            return ["1.0.0", "2.0.0"]
-        return []
+    def mock_get_object(bucket, object_name):
+        return MockResponse()
 
-    monkeypatch.setattr(backend, "list_objects", mock_list_objects)
-    monkeypatch.setattr(backend, "list_versions", mock_list_versions)
+    # Mock get_object to return a valid response for fetch_metadata
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     result = backend.has_object("test:object", "1.0.0")
     assert result is True
