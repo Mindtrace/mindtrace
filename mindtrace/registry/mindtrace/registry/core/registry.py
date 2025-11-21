@@ -784,7 +784,7 @@ class Registry(Mindtrace):
     def list_versions(self, object_name: str) -> List[str]:
         """List all registered versions for an object.
 
-        This method uses caching to reduce expensive backend list operations. Cache is invalidated on save/delete 
+        This method uses caching to reduce expensive backend list operations. Cache is invalidated on save/delete
         operations.
 
         Args:
