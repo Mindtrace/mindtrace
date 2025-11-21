@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Generator
 
@@ -129,6 +130,27 @@ class Dataset(MindtraceDocument):
             gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type
         )
 
+    async def load_row(self, datalake: "Datalake", row: dict[str, PydanticObjectId]) -> dict[str, Any]:
+        loaded_row = {}
+        # Load all datum IDs for this row, preserving the mapping to columns
+        # Create a list of tuples (column, datum_id) to preserve order
+        column_id_pairs = list(row.items())
+        datum_ids = [datum_id for _, datum_id in column_id_pairs]
+        datums = await datalake.get_data(datum_ids)
+        if not self.contracts:
+            for (column, _), datum in zip(column_id_pairs, datums):
+                self.contracts[column] = datum.contract
+        else:
+            for (column, _), datum in zip(column_id_pairs, datums):
+                if self.contracts[column] != datum.contract:
+                    raise ValueError(
+                        f"All datums in a column must have the same contract, but datum id {datum.id} in column {column} has contract {datum.contract} when the column contract is {self.contracts[column]}"
+                    )
+        # Map the loaded data back to their column names
+        for (column, _), datum in zip(column_id_pairs, datums):
+            loaded_row[column] = datum.data
+        return loaded_row
+
     async def load(self, datalake: "Datalake") -> list[dict[str, Any]]:
         """
         Load all data for this dataset from the datalake.
@@ -152,27 +174,4 @@ class Dataset(MindtraceDocument):
             ValueError: If datums in the same column have different contracts
             Exception: If data retrieval from the datalake fails
         """
-        loaded_rows = []
-        contracts = {}
-        for i, row in enumerate(self.datum_ids):
-            loaded_row = {}
-            # Load all datum IDs for this row, preserving the mapping to columns
-            # Create a list of tuples (column, datum_id) to preserve order
-            column_id_pairs = list(row.items())
-            datum_ids = [datum_id for _, datum_id in column_id_pairs]
-            datums = await datalake.get_data(datum_ids)
-            if i == 0:
-                for (column, _), datum in zip(column_id_pairs, datums):
-                    contracts[column] = datum.contract
-            else:
-                for (column, _), datum in zip(column_id_pairs, datums):
-                    if contracts[column] != datum.contract:
-                        raise ValueError(
-                            f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}"
-                        )
-            # Map the loaded data back to their column names
-            for (column, _), datum in zip(column_id_pairs, datums):
-                loaded_row[column] = datum.data
-            loaded_rows.append(loaded_row)
-        self.contracts = contracts
-        return loaded_rows
+        return await asyncio.gather(*[self.load_row(datalake, row) for row in self.datum_ids])
