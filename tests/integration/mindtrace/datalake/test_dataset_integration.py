@@ -5,7 +5,7 @@ import pathlib
 import pytest
 
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Dataset
+from mindtrace.datalake.dataset import Dataset
 
 
 class TestDatasetIntegration:

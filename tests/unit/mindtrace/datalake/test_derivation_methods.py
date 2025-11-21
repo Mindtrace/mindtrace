@@ -6,7 +6,7 @@ import pytest
 from beanie import PydanticObjectId
 
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Datum
+from mindtrace.datalake.datum import Datum
 
 
 def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None):

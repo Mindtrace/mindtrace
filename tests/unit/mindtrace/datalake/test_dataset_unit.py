@@ -7,7 +7,8 @@ import pytest
 from beanie import PydanticObjectId
 from datasets import Image, IterableDataset, List, Sequence, Value
 
-from mindtrace.datalake.types import Dataset, Datum, contracts_to_hf_type, gen
+from mindtrace.datalake.datum import Datum
+from mindtrace.datalake.dataset import Dataset, contracts_to_hf_type, gen
 
 
 def create_mock_dataset(
@@ -495,8 +496,6 @@ class TestDatasetToHF:
                 """Mock to_HF method that calls the real implementation."""
                 from datasets import Features, IterableDataset
 
-                from mindtrace.datalake.types import contracts_to_hf_type, gen
-
                 loaded_data = await self.load(datalake)
                 features_dict = {column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()}
                 hf_type = Features(features_dict)
@@ -835,8 +834,6 @@ class TestDatasetEdgeCases:
             async def to_HF(self, datalake):
                 """Mock to_HF method."""
                 from datasets import Features, IterableDataset
-
-                from mindtrace.datalake.types import contracts_to_hf_type, gen
 
                 loaded_data = await self.load(datalake)
                 features_dict = {column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()}

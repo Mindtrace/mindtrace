@@ -8,7 +8,8 @@ from beanie import PydanticObjectId
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Dataset, Datum
+from mindtrace.datalake.dataset import Dataset
+from mindtrace.datalake.datum import Datum
 
 
 def create_mock_datum(

@@ -11,7 +11,8 @@ from beanie import PydanticObjectId
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.types import Dataset, Datum
+from mindtrace.datalake.dataset import Dataset
+from mindtrace.datalake.datum import Datum
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 
