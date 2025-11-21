@@ -182,6 +182,7 @@ class Registry(Mindtrace):
         registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = False,
+        versions_cache_ttl: float = 60.0,
         **kwargs,
     ):
         """Initialize the registry.
@@ -190,6 +191,7 @@ class Registry(Mindtrace):
             registry_dir: Directory to store registry objects. If None, uses the default from config.
             backend: Backend to use for storage. If None, uses LocalRegistryBackend.
             version_objects: Whether to keep version history. If False, only one version per object is kept.
+            versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -225,7 +227,7 @@ class Registry(Mindtrace):
         # Format: {object_name: (versions_list, timestamp)}
         self._versions_cache: Dict[str, tuple[List[str], float]] = {}
         self._versions_cache_lock = threading.Lock()
-        self._versions_cache_ttl = 60.0  # Cache TTL in seconds (1 minute)
+        self._versions_cache_ttl = versions_cache_ttl
 
         # Register the default materializers if there are none
         self._register_default_materializers()
@@ -782,8 +784,8 @@ class Registry(Mindtrace):
     def list_versions(self, object_name: str) -> List[str]:
         """List all registered versions for an object.
 
-        This method uses caching to reduce expensive backend list operations.
-        Cache is invalidated on save/delete operations.
+        This method uses caching to reduce expensive backend list operations. Cache is invalidated on save/delete 
+        operations.
 
         Args:
             object_name: Object name
