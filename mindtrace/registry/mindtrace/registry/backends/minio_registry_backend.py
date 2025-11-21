@@ -420,8 +420,6 @@ class MinioRegistryBackend(RegistryBackend):
         # Check if metadata file exists directly (much faster than listing all objects)
         meta_path = self._object_metadata_path(name, version)
         try:
-            from minio.error import S3Error
-
             # Try to stat the object to check existence
             self.client.stat_object(self.bucket, meta_path)
             # If stat_object succeeds, verify by trying to fetch metadata
