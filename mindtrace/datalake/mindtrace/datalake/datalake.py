@@ -5,6 +5,7 @@ from collections import defaultdict
 from typing import Any, Dict, Literal, Optional, overload
 from uuid import uuid4
 
+import pathlib
 from beanie import PydanticObjectId
 
 from mindtrace.core import Mindtrace
@@ -58,6 +59,7 @@ class Datalake(Mindtrace):
 
     async def initialize(self):
         await self.datum_database.initialize()
+        await self.dataset_database.initialize()
 
     @classmethod
     async def create(cls, mongo_db_uri: str, mongo_db_name: str) -> "Datalake":
@@ -72,6 +74,7 @@ class Datalake(Mindtrace):
         self,
         data: Any,
         metadata: Dict[str, Any],
+        contract: Optional[str] = None,
         registry_uri: Optional[str] = None,
         derived_from: Optional[PydanticObjectId] = None,
     ) -> Datum:
@@ -87,6 +90,54 @@ class Datalake(Mindtrace):
         Returns:
             The created datum with assigned ID
         """
+
+        if contract is None:
+            contract = "default"
+        
+        if contract == "default":
+            pass
+        elif contract == "image":
+            if not isinstance(data, (pathlib.Path, pathlib.PosixPath)):
+                raise ValueError(f"Data must be a path to an image, got {type(data)}")
+            # TODO: check if this is actually an image
+        elif contract == "classification":
+            if not isinstance(data, dict):
+                raise ValueError(f"Data must be a dictionary, got {type(data)}")
+            if "label" not in data:
+                raise ValueError("Data must contain a 'label' key")
+            if "confidence" not in data:
+                raise ValueError("Data must contain a 'confidence' key")
+            if not isinstance(data["confidence"], float):
+                raise ValueError(f"Confidence must be a float, got {type(data['confidence'])}")
+            if data["confidence"] < 0 or data["confidence"] > 1:
+                raise ValueError("Confidence must be between 0 and 1")
+        elif contract == "bbox":
+            if not isinstance(data, dict):
+                raise ValueError(f"Data must be a dictionary, got {type(data)}")
+            if not "bbox" in data:
+                raise ValueError("Data must contain a 'bbox' key")
+            if not isinstance(data["bbox"], list):
+                raise ValueError(f"Bbox must be a list, got {type(data['bbox'])}")
+
+            for entry in data["bbox"]:
+                if not isinstance(entry, list):
+                    raise ValueError(f"Bbox must be a list of lists, got {type(entry)}")
+                if len(entry) != 4:
+                    raise ValueError("Bbox must be a list of lists of 4 elements")
+                if not all(isinstance(x, float) for x in entry):
+                    raise ValueError("Bbox must be a list of lists of floats")
+                # Validate coordinates are non-negative (x1, y1, x2, y2 format)
+                if entry[0] < 0 or entry[1] < 0 or entry[2] < 0 or entry[3] < 0:
+                    raise ValueError("Bbox coordinates must be non-negative")
+                # Validate that x2 >= x1 and y2 >= y1
+                if entry[2] < entry[0] or entry[3] < entry[1]:
+                    raise ValueError("Bbox must have x2 >= x1 and y2 >= y1")
+        elif contract == "regression":
+            pass
+        elif contract == "segmentation":
+            pass
+        else:
+            raise ValueError(f"Unsupported contract: {contract}")
         if registry_uri:
             # Store in registry
             uuid = str(uuid4())
@@ -99,6 +150,7 @@ class Datalake(Mindtrace):
                 registry_key=uuid,
                 derived_from=derived_from,
                 metadata=metadata,
+                contract=contract,
             )
         else:
             # Store in database
@@ -108,6 +160,7 @@ class Datalake(Mindtrace):
                 registry_key=None,
                 derived_from=derived_from,
                 metadata=metadata,
+                contract=contract,
             )
         inserted_datum = await self.datum_database.insert(datum)
         return inserted_datum
@@ -212,6 +265,73 @@ class Datalake(Mindtrace):
                         queue.append(child_id)
 
         return result
+
+    async def add_dataset(self, dataset: Dataset) -> Dataset:
+        """
+        Add a dataset to the datalake asynchronously.
+
+        Args:
+            dataset: The Dataset instance to store
+
+        Returns:
+            The created dataset with assigned ID
+
+        Raises:
+            Exception: If database insert fails
+        """
+        inserted_dataset = await self.dataset_database.insert(dataset)
+        return inserted_dataset
+
+    async def get_dataset(self, dataset_id: PydanticObjectId | None) -> Dataset:
+        """
+        Retrieve a dataset by its ID.
+
+        Args:
+            dataset_id: The unique identifier of the dataset to retrieve
+
+        Returns:
+            The dataset if found
+
+        Raises:
+            DocumentNotFoundError: If the dataset is not found
+        """
+        if dataset_id is None:
+            raise DocumentNotFoundError("Dataset ID is None")
+        dataset = await self.dataset_database.get(dataset_id)
+        return dataset
+
+    async def get_datasets(self, dataset_ids: list[PydanticObjectId]) -> list[Dataset]:
+        """
+        Retrieve multiple datasets by their IDs.
+
+        Args:
+            dataset_ids: List of unique identifiers of the datasets to retrieve
+
+        Returns:
+            List of datasets
+
+        Raises:
+            Exception: If database queries fail
+        """
+        return await asyncio.gather(*[self.get_dataset(dataset_id) for dataset_id in dataset_ids])
+
+    async def find_datasets(self, filter: dict[str, Any] | None = None) -> list[Dataset]:
+        """
+        Find datasets matching the given filter.
+
+        Args:
+            filter: MongoDB-style filter dictionary. If None, returns all datasets.
+
+        Returns:
+            List of datasets matching the filter
+
+        Raises:
+            Exception: If database query fails
+        """
+        if filter is None:
+            filter = {}
+        datasets = await self.dataset_database.find(filter)
+        return list(datasets)
 
     @overload
     async def query_data(

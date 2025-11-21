@@ -10,6 +10,7 @@ class Datum:  # noqa: D101 - simple test helper
     def __init__(
         self,
         data=None,
+        contract: str = "default",
         registry_uri: str | None = None,
         registry_key: str | None = None,
         derived_from=None,
@@ -17,6 +18,7 @@ class Datum:  # noqa: D101 - simple test helper
         added_at: datetime | None = None,
     ):
         self.data = data
+        self.contract = contract
         self.registry_uri = registry_uri
         self.registry_key = registry_key
         self.derived_from = derived_from
@@ -27,6 +29,7 @@ class Datum:  # noqa: D101 - simple test helper
     def model_dump(self):
         return {
             "data": self.data,
+            "contract": self.contract,
             "registry_uri": self.registry_uri,
             "registry_key": self.registry_key,
             "derived_from": self.derived_from,
@@ -38,6 +41,7 @@ class Datum:  # noqa: D101 - simple test helper
     def model_validate(cls, d: dict):  # noqa: D401
         return cls(
             data=d.get("data"),
+            contract=d.get("contract", "default"),
             registry_uri=d.get("registry_uri"),
             registry_key=d.get("registry_key"),
             derived_from=d.get("derived_from"),
@@ -54,6 +58,7 @@ class TestDatumModel:
         datum = Datum()
 
         assert datum.data is None
+        assert datum.contract == "default"
         assert datum.registry_uri is None
         assert datum.registry_key is None
         assert datum.derived_from is None
@@ -65,6 +70,7 @@ class TestDatumModel:
         datum = Datum(data=test_data)
 
         assert datum.data == test_data
+        assert datum.contract == "default"
         assert datum.registry_uri is None
         assert datum.registry_key is None
         assert datum.derived_from is None
@@ -112,9 +118,11 @@ class TestDatumModel:
         registry_key = "test_key"
         parent_id = PydanticObjectId()
         metadata = {"source": "comprehensive_test", "tags": ["test", "unit"]}
+        contract = "image"
 
         datum = Datum(
             data=test_data,
+            contract=contract,
             registry_uri=registry_uri,
             registry_key=registry_key,
             derived_from=parent_id,
@@ -122,6 +130,7 @@ class TestDatumModel:
         )
 
         assert datum.data == test_data
+        assert datum.contract == contract
         assert datum.registry_uri == registry_uri
         assert datum.registry_key == registry_key
         assert datum.derived_from == parent_id
@@ -447,3 +456,48 @@ class TestDatumModel:
 
         assert datum.added_at is not None
         assert isinstance(datum.added_at, datetime)
+
+    def test_datum_contract_default_value(self):
+        """Test that contract defaults to 'default' when not provided."""
+        datum = Datum()
+
+        assert datum.contract == "default"
+
+    def test_datum_contract_explicit_value(self):
+        """Test that contract can be set explicitly."""
+        datum = Datum(contract="image")
+
+        assert datum.contract == "image"
+
+    def test_datum_contract_different_values(self):
+        """Test that contract can be set to different contract types."""
+        contracts = ["default", "image", "classification", "bbox"]
+
+        for contract in contracts:
+            datum = Datum(contract=contract)
+            assert datum.contract == contract
+
+    def test_datum_contract_model_dump(self):
+        """Test that contract is included in model_dump output."""
+        datum = Datum(contract="image", data={"test": "data"})
+
+        dumped = datum.model_dump()
+
+        assert "contract" in dumped
+        assert dumped["contract"] == "image"
+
+    def test_datum_contract_model_validate(self):
+        """Test that contract is correctly handled in model_validate."""
+        datum_dict = {"data": {"test": "data"}, "contract": "classification"}
+
+        datum = Datum.model_validate(datum_dict)
+
+        assert datum.contract == "classification"
+
+    def test_datum_contract_model_validate_without_contract(self):
+        """Test that model_validate sets contract to 'default' when not provided."""
+        datum_dict = {"data": {"test": "data"}}
+
+        datum = Datum.model_validate(datum_dict)
+
+        assert datum.contract == "default"

@@ -11,7 +11,7 @@ from mindtrace.datalake.types import Datum
 
 
 def create_mock_datum(
-    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None
+    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None, contract="default"
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -21,6 +21,7 @@ def create_mock_datum(
 
     mock_datum = MagicMock(spec=Datum)
     mock_datum.data = data
+    mock_datum.contract = contract
     mock_datum.registry_uri = registry_uri
     mock_datum.registry_key = registry_key
     mock_datum.derived_from = derived_from
@@ -55,8 +56,9 @@ class TestQuickestStrategyMultiQuery:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None):
+            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, contract="default"):
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
@@ -100,14 +102,16 @@ class TestQuickestStrategyMultiQuery:
 
         # Mock level 2 derived data (multiple options for each level 1)
         level2_datum1 = create_mock_datum(
-            data={"type": "bbox", "x": 10, "y": 20},
+            data={"bbox": [[10.0, 20.0, 50.0, 60.0]]},  # x1, y1, x2, y2 format
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=level1_datum1.id,
             datum_id=PydanticObjectId(),
         )
         level2_datum2 = create_mock_datum(
-            data={"type": "bbox", "x": 30, "y": 40},
+            data={"bbox": [[30.0, 40.0, 70.0, 80.0]]},  # x1, y1, x2, y2 format
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=level1_datum2.id,
             datum_id=PydanticObjectId(),
         )
@@ -242,8 +246,9 @@ class TestQuickestStrategyMultiQuery:
 
         # Mock level 2 derived data
         level2_datum = create_mock_datum(
-            data={"type": "bbox", "x": 10, "y": 20},
+            data={"bbox": [[10.0, 20.0, 50.0, 60.0]]},  # x1, y1, x2, y2 format
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=new_derived.id,  # Derived from the "new" classification
             datum_id=PydanticObjectId(),
         )
