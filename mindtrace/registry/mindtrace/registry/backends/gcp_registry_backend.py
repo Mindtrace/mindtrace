@@ -41,9 +41,11 @@ class GCPRegistryBackend(RegistryBackend):
         self,
         uri: str | Path | None = None,
         *,
-        project_id: str,
-        bucket: str,
+        project_id: str | None = None,
+        bucket: str | None = None,
         credentials_path: str | None = None,
+        location: str | None = None,
+        storage_class: str | None = None,
         **kwargs,
     ):
         """Initialize the GCPRegistryBackend.
@@ -53,10 +55,35 @@ class GCPRegistryBackend(RegistryBackend):
             project_id: GCP project ID.
             bucket: GCS bucket name.
             credentials_path: Optional path to service account JSON file.
+            location: GCS bucket location.
+            storage_class: GCS bucket storage class.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = uri or f"gs://{bucket}"
+
+        # URI and bucket parameter validation
+        if uri is None and bucket is None:
+            # Neither provided: use config URI and extract bucket from it
+            self._uri = self.config["MINDTRACE_GCP"]["GCP_REGISTRY_URI"]
+            bucket = self._extract_bucket_from_uri(self._uri)
+        elif uri is not None and bucket is None:
+            # Only URI provided: extract bucket from URI
+            self._uri = uri
+            bucket = self._extract_bucket_from_uri(self._uri)
+        elif uri is None and bucket is not None:
+            # Only bucket provided: construct URI from bucket
+            self._uri = f"gs://{bucket}"
+        else:
+            # Both provided: validate they match
+            self._uri = uri
+            uri_bucket = self._extract_bucket_from_uri(self._uri)
+            if uri_bucket != bucket:
+                raise ValueError(f"URI bucket '{uri_bucket}' does not match bucket parameter '{bucket}'")
+
+        project_id = project_id or self.config["MINDTRACE_GCP"]["GCP_PROJECT_ID"]
+        location = location or self.config["MINDTRACE_GCP"]["GCP_LOCATION"]
+        storage_class = storage_class or self.config["MINDTRACE_GCP"]["GCP_STORAGE_CLASS"]
+
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing GCPBackend with uri: {self._uri}")
 
@@ -67,6 +94,8 @@ class GCPRegistryBackend(RegistryBackend):
             credentials_path=credentials_path,
             ensure_bucket=True,
             create_if_missing=True,
+            location=location,
+            storage_class=storage_class,
         )
 
         # Initialize metadata file if it doesn't exist
@@ -81,6 +110,26 @@ class GCPRegistryBackend(RegistryBackend):
     def metadata_path(self) -> Path:
         """The resolved metadata file path for the backend."""
         return Path(self._metadata_path)
+
+    def _extract_bucket_from_uri(self, uri: str) -> str:
+        """Extract bucket name from gs:// URI.
+
+        Args:
+            uri: URI string (e.g., "gs://my-bucket")
+
+        Returns:
+            Bucket name
+
+        Raises:
+            ValueError: If URI format is invalid
+        """
+        if not uri.startswith("gs://"):
+            raise ValueError(f"Invalid GCS URI format: {uri}. Expected format: gs://bucket-name")
+        bucket_and_path = uri[5:]  # remove "gs://" prefix
+        bucket = bucket_and_path.split("/")[0]  # first path component
+        if not bucket:
+            raise ValueError(f"Invalid GCS URI format: {uri}. Bucket name is empty")
+        return bucket
 
     def _ensure_metadata_file(self):
         """Ensure the metadata file exists in the bucket."""

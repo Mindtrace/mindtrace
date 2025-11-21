@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from minio.error import S3Error
 
-from mindtrace.core import CoreConfig
 from mindtrace.registry import MinioRegistryBackend
 
 
@@ -1108,7 +1107,7 @@ def test_metadata_path_property(backend):
 
     # Create a new backend with a custom metadata path
     custom_backend = MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]) / "test_dir"),
+        uri="s3://test-bucket",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -1361,7 +1360,7 @@ def test_init_bucket_creation(monkeypatch):
 
     # This should trigger bucket creation
     backend = MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+        uri="s3://test-bucket",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -1403,7 +1402,7 @@ def test_init_metadata_file_creation(monkeypatch):
 
     # This should trigger metadata file creation
     backend = MinioRegistryBackend(
-        uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+        uri="s3://test-bucket",
         endpoint="localhost:9100",
         access_key="minioadmin",
         secret_key="minioadmin",
@@ -1443,7 +1442,7 @@ def test_init_metadata_file_other_error(monkeypatch):
     # This should raise the S3Error
     with pytest.raises(S3Error) as exc_info:
         MinioRegistryBackend(
-            uri=str(Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser() / "test_dir"),
+            uri="s3://test-bucket",
             endpoint="localhost:9100",
             access_key="minioadmin",
             secret_key="minioadmin",
@@ -1757,3 +1756,37 @@ def test_release_lock_wrong_id(backend, monkeypatch):
 
     result = backend.release_lock("test-key", "test-lock-id")
     assert result is False
+
+
+def test_init_with_config_fallbacks(monkeypatch):
+    """Test that backend initialization uses config fallbacks when parameters are not provided."""
+    from mindtrace.core import CoreConfig
+
+    config = CoreConfig()
+    expected_endpoint = config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"]
+    expected_access_key = config["MINDTRACE_MINIO"]["MINIO_ACCESS_KEY"]
+    expected_secret_key = config["MINDTRACE_MINIO"]["MINIO_SECRET_KEY"]
+    expected_uri = config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+
+    class MockMinio:
+        def __init__(self, endpoint, access_key, secret_key, secure):
+            # Verify that config values were used
+            assert endpoint == expected_endpoint
+            assert access_key == expected_access_key
+            assert secret_key == expected_secret_key
+            self.endpoint = endpoint
+            self.access_key = access_key
+            self.secret_key = secret_key
+
+        def bucket_exists(self, bucket):
+            return True
+
+        def stat_object(self, bucket, object_name):
+            pass
+
+    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
+
+    backend = MinioRegistryBackend(secure=False)
+
+    # Verify URI and bucket fell back to config
+    assert backend.uri == expected_uri

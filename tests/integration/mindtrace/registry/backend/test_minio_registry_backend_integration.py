@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 
 import pytest
 from minio.error import S3Error
@@ -181,16 +180,43 @@ def test_registered_materializers(backend, minio_client, test_bucket):
 
 def test_init_with_default_uri(minio_client, test_bucket):
     """Test backend initialization with default URI from config."""
-    # Create backend without specifying URI
+    # Create backend without specifying URI or bucket - both should fall back to config
     backend = MinioRegistryBackend(
-        endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", bucket=test_bucket, secure=False
+        endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", secure=False
     )
 
     # Verify the URI is set to the default from config
     expected_uri = CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
     assert backend.uri.startswith("s3://")
     assert backend.uri == expected_uri
-    assert minio_client.bucket_exists(test_bucket)
+
+
+def test_init_with_all_config_defaults(monkeypatch):
+    """Test backend initialization with all parameters defaulting to config."""
+    config = CoreConfig()
+
+    # Mock MinIO client to avoid actual connection
+    class MockMinioClient:
+        def __init__(self, endpoint, access_key, secret_key, secure):
+            # Verify config values were used
+            assert endpoint == config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"]
+            assert access_key == config["MINDTRACE_MINIO"]["MINIO_ACCESS_KEY"]
+            self._endpoint_url = type("obj", (object,), {"netloc": endpoint})()
+
+        def bucket_exists(self, bucket):
+            return True
+
+        def stat_object(self, bucket, object_name):
+            pass
+
+    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinioClient)
+
+    # Create backend without specifying any optional parameters - all should fall back to config
+    backend = MinioRegistryBackend(secure=False)
+
+    # Verify all parameters were set from config
+    assert backend.uri == config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+    assert backend.client._endpoint_url.netloc == config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"]
 
 
 def test_init_creates_bucket(minio_client):
@@ -201,23 +227,27 @@ def test_init_creates_bucket(minio_client):
     # Verify bucket doesn't exist
     assert not minio_client.bucket_exists(bucket_name)
 
-    # Create backend with the new bucket name
-    _ = MinioRegistryBackend(
-        uri=f"s3://{bucket_name}",
-        endpoint="localhost:9100",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        bucket=bucket_name,
-        secure=False,
-    )
+    try:
+        # Create backend with the new bucket name
+        _ = MinioRegistryBackend(
+            uri=f"s3://{bucket_name}",
+            endpoint="localhost:9100",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            bucket=bucket_name,
+            secure=False,
+        )
 
-    # Verify the bucket was created
-    assert minio_client.bucket_exists(bucket_name)
-
-    # Cleanup - remove all objects first, then the bucket
-    for obj in minio_client.list_objects(bucket_name, recursive=True):
-        minio_client.remove_object(bucket_name, obj.object_name)
-    minio_client.remove_bucket(bucket_name)
+        # Verify the bucket was created
+        assert minio_client.bucket_exists(bucket_name)
+    finally:
+        # Cleanup - remove all objects first, then the bucket
+        try:
+            for obj in minio_client.list_objects(bucket_name, recursive=True):
+                minio_client.remove_object(bucket_name, obj.object_name)
+            minio_client.remove_bucket(bucket_name)
+        except Exception:
+            pass
 
 
 def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):

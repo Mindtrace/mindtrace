@@ -994,3 +994,35 @@ def test_overwrite_exception_re_raise(backend):
             backend.overwrite(
                 source_name="test:source", source_version="1.0.0", target_name="test:target", target_version="2.0.0"
             )
+
+
+def test_init_with_config_fallbacks(monkeypatch):
+    """Test that backend initialization uses config fallbacks when parameters are not provided."""
+
+    class MockGCSHandler:
+        def __init__(
+            self, bucket_name, project_id, credentials_path, ensure_bucket, create_if_missing, location, storage_class
+        ):
+            # Verify that config values were used
+            assert bucket_name == "mindtrace-test-bucket"
+            assert project_id == "mindtrace-test"
+            assert location == "US"
+            assert storage_class == "STANDARD"
+            self.bucket_name = bucket_name
+            self.project_id = project_id
+            self._objects = {}
+
+        def exists(self, path):
+            return False
+
+        def upload(self, local_path, remote_path):
+            pass
+
+    monkeypatch.setattr("mindtrace.registry.backends.gcp_registry_backend.GCSStorageHandler", MockGCSHandler)
+
+    # Create backend without providing project_id, bucket, location, or storage_class
+    # These should fall back to config values
+    backend = GCPRegistryBackend()
+
+    # Verify URI fell back to config
+    assert backend.uri == "gs://mindtrace-test-bucket"

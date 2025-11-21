@@ -84,10 +84,10 @@ class MinioRegistryBackend(RegistryBackend):
         self,
         uri: str | Path | None = None,
         *,
-        endpoint: str,
-        access_key: str,
-        secret_key: str,
-        bucket: str = "minio-registry",
+        endpoint: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        bucket: str | None = None,
         secure: bool = True,
         **kwargs,
     ):
@@ -103,12 +103,32 @@ class MinioRegistryBackend(RegistryBackend):
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
         super().__init__(uri=uri, **kwargs)
-        self._uri = uri or self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
-        # If URI doesn't start with s3://, construct it from bucket
-        if not self._uri.startswith("s3://"):
+
+        # URI and bucket validation
+        if uri is None and bucket is None:
+            # Neither provided: use config URI and extract bucket from it
+            self._uri = self.config["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+            bucket = self._extract_bucket_from_uri(self._uri)
+        elif uri is not None and bucket is None:
+            # Only URI provided: extract bucket from URI
+            self._uri = uri
+            bucket = self._extract_bucket_from_uri(self._uri)
+        elif uri is None and bucket is not None:
+            # Only bucket provided: construct URI from bucket
             self._uri = f"s3://{bucket}"
+        else:
+            # Both provided: validate they match
+            self._uri = uri
+            uri_bucket = self._extract_bucket_from_uri(self._uri)
+            if uri_bucket != bucket:
+                raise ValueError(f"URI bucket '{uri_bucket}' does not match bucket parameter '{bucket}'")
+
         self._metadata_path = "registry_metadata.json"
         self.logger.debug(f"Initializing MinioBackend with uri: {self._uri}")
+
+        endpoint = endpoint or self.config["MINDTRACE_MINIO"]["MINIO_ENDPOINT"]
+        access_key = access_key or self.config["MINDTRACE_MINIO"]["MINIO_ACCESS_KEY"]
+        secret_key = secret_key or self.config["MINDTRACE_MINIO"]["MINIO_SECRET_KEY"]
 
         self.client = Minio(
             endpoint=endpoint,
@@ -145,6 +165,26 @@ class MinioRegistryBackend(RegistryBackend):
     def metadata_path(self) -> Path:
         """The resolved metadata file path for the backend."""
         return Path(self._metadata_path)
+
+    def _extract_bucket_from_uri(self, uri: str) -> str:
+        """Extract bucket name from s3:// URI.
+
+        Args:
+            uri: URI string (e.g., "s3://my-bucket")
+
+        Returns:
+            Bucket name
+
+        Raises:
+            ValueError: If URI format is invalid
+        """
+        if not uri.startswith("s3://"):
+            raise ValueError(f"Invalid S3 URI format: {uri}. Expected format: s3://bucket-name")
+        bucket_and_path = uri[5:]  # remove "s3://" prefix
+        bucket = bucket_and_path.split("/")[0]  # first path component
+        if not bucket:
+            raise ValueError(f"Invalid S3 URI format: {uri}. Bucket name is empty")
+        return bucket
 
     def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local directory to MinIO.

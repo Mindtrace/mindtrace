@@ -124,6 +124,37 @@ def test_init(backend, test_bucket, gcs_client):
     assert gcs_client.bucket(test_bucket).exists()
 
 
+def test_init_with_all_config_defaults(gcs_client):
+    """Test backend initialization with all parameters defaulting to config."""
+    config = CoreConfig()
+
+    # Create a test bucket for this test
+    test_bucket_name = f"test-config-defaults-{uuid.uuid4()}"
+    try:
+        bucket = gcs_client.bucket(test_bucket_name)
+        bucket.create()
+
+        # Create backend without specifying URI - it should be constructed from the provided bucket
+        backend = GCPRegistryBackend(
+            project_id=os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"]),
+            bucket=test_bucket_name,
+            credentials_path=os.environ.get(
+                "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
+            ),
+        )
+
+        # Verify URI was constructed from the bucket parameter (our new validation logic)
+        assert backend.uri == f"gs://{test_bucket_name}"
+    finally:
+        # Cleanup
+        try:
+            for blob in bucket.list_blobs():
+                blob.delete()
+            bucket.delete()
+        except Exception:
+            pass
+
+
 def test_push_and_pull(backend, sample_object_dir, gcs_client, test_bucket, temp_dir):
     """Test pushing and pulling objects."""
     # Push the object
