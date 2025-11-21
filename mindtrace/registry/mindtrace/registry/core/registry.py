@@ -628,10 +628,10 @@ class Registry(Mindtrace):
             with self.get_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
-        
+
         # Invalidate versions cache after successful delete
         self._invalidate_versions_cache(name)
-        
+
         self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
 
     def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
