@@ -8,11 +8,18 @@ from beanie import PydanticObjectId
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Datum, Dataset
+from mindtrace.datalake.types import Dataset, Datum
 
 
 def create_mock_datum(
-    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None, contract="default"
+    data=None,
+    registry_uri=None,
+    registry_key=None,
+    derived_from=None,
+    metadata=None,
+    datum_id=None,
+    added_at=None,
+    contract="default",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -39,6 +46,7 @@ class TestDatalakeUnit:
     def _create_mock_backend_class(mock_database, mock_dataset_database):
         """Helper to create a mock backend class that supports subscripting."""
         call_count = [0]
+
         def mock_backend_factory(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -93,7 +101,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -106,6 +121,7 @@ class TestDatalakeUnit:
 
         # Create a callable that returns the appropriate mock based on call count
         call_count = [0]
+
         def mock_backend_factory(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -552,7 +568,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -605,7 +628,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -655,7 +685,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -668,6 +705,7 @@ class TestDatalakeUnit:
 
         # Create a callable that returns the appropriate mock based on call count
         call_count = [0]
+
         def mock_backend_factory(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
@@ -695,7 +733,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -747,7 +792,14 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None, contract="default"
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -772,6 +824,7 @@ class TestDatalakeUnit:
 
         # Track call count to return appropriate mocks for multiple instances
         call_count = [0]
+
         def mock_backend_factory(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] <= 2:
@@ -919,7 +972,7 @@ class TestDatalakeUnit:
         mock_dataset.description = "Test dataset description"
         mock_dataset.datum_ids = [{"image": PydanticObjectId()}]
         mock_dataset.id = PydanticObjectId()
-        
+
         inserted_dataset = MagicMock(spec=Dataset)
         inserted_dataset.name = "test_dataset"
         inserted_dataset.description = "Test dataset description"

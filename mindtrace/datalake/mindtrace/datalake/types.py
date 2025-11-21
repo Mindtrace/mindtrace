@@ -1,16 +1,16 @@
-from beanie.odm.fields import PydanticObjectId
-
-
 from datetime import datetime
-from typing import Annotated, Any, TYPE_CHECKING, Generator
-from PIL import Image as PILImage
-from beanie import Indexed, PydanticObjectId
-from datasets import Image, IterableDataset, Value, List, Features, Sequence
+from typing import TYPE_CHECKING, Annotated, Any, Generator
+
+from beanie import Indexed
+from beanie.odm.fields import PydanticObjectId
+from datasets import Features, Image, IterableDataset, List, Sequence, Value
 from pydantic import Field
 
 from mindtrace.database import MindtraceDocument
+
 if TYPE_CHECKING:
     from mindtrace.datalake.datalake import Datalake
+
 
 class Datum(MindtraceDocument):
     """
@@ -29,7 +29,9 @@ class Datum(MindtraceDocument):
     """
 
     data: Any = Field(default=None, description="The data content of this datum. Can be None if stored in a registry.")
-    contract: str = Field(default="default", description="The contract of this datum.")
+    contract: Annotated[str, Indexed(unique=False)] = Field(
+        default="default", description="The contract of this datum."
+    )
     registry_uri: str | None = Field(
         default=None, description="URI of the registry backend where this datum is stored."
     )
@@ -45,6 +47,7 @@ class Datum(MindtraceDocument):
     added_at: datetime = Field(
         default_factory=datetime.now, description="Timestamp when this datum was added to the datalake."
     )
+
 
 def gen(loaded_data: list[dict[str, Any]], contracts: dict[str, str]) -> Generator[dict[str, Any], None, None]:
     """
@@ -81,16 +84,22 @@ contracts_to_hf_type = {
     "bbox": {"bbox": List(Sequence(Value("float"), length=4))},
 }
 
+
 class Dataset(MindtraceDocument):
     """
     A dataset in the datalake system.
     """
+
     name: str = Field(description="Name of the dataset.")
     description: str = Field(description="Description of the dataset.")
     contracts: dict[str, str] = Field(default_factory=dict, description="Contracts of the dataset.")
     created_at: datetime = Field(default_factory=datetime.now, description="Timestamp when the dataset was created.")
-    updated_at: datetime = Field(default_factory=datetime.now, description="Timestamp when the dataset was last updated.")
-    metadata: dict[str, Any] = Field(default_factory=lambda: {}, description="Additional metadata associated with the dataset.")
+    updated_at: datetime = Field(
+        default_factory=datetime.now, description="Timestamp when the dataset was last updated."
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=lambda: {}, description="Additional metadata associated with the dataset."
+    )
     # datum_ids: dict[str, list[PydanticObjectId]] = Field(default_factory=lambda: defaultdict[str, list[PydanticObjectId]](list), description="Datum IDs of the dataset.")
     datum_ids: list[dict[str, PydanticObjectId]] = Field(default_factory=list, description="Datum IDs of the dataset.")
 
@@ -113,12 +122,12 @@ class Dataset(MindtraceDocument):
             Exception: If data loading fails
         """
         loaded_data = await self.load(datalake)
-        features_dict = {
-            column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()
-        }
+        features_dict = {column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()}
         hf_type = Features(features_dict)
 
-        return IterableDataset.from_generator(gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type)
+        return IterableDataset.from_generator(
+            gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type
+        )
 
     async def load(self, datalake: "Datalake") -> list[dict[str, Any]]:
         """
@@ -158,7 +167,9 @@ class Dataset(MindtraceDocument):
             else:
                 for (column, _), datum in zip(column_id_pairs, datums):
                     if contracts[column] != datum.contract:
-                        raise ValueError(f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}")
+                        raise ValueError(
+                            f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}"
+                        )
             # Map the loaded data back to their column names
             for (column, _), datum in zip(column_id_pairs, datums):
                 loaded_row[column] = datum.data

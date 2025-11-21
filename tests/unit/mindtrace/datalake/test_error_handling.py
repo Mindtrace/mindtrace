@@ -10,7 +10,9 @@ from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import Datum
 
 
-def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, contract="default"):
+def create_mock_datum(
+    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, contract="default"
+):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
         datum_id = "507f1f77bcf86cd799439011"
@@ -53,7 +55,15 @@ class TestErrorHandling:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, contract="default"):
+            def __init__(
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                contract="default",
+            ):
                 self.id = PydanticObjectId()
                 self.data = data
                 self.contract = contract

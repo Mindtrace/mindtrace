@@ -1,17 +1,17 @@
 import asyncio
 import copy
+import pathlib
 import random
 from collections import defaultdict
 from typing import Any, Dict, Literal, Optional, overload
 from uuid import uuid4
 
-import pathlib
 from beanie import PydanticObjectId
 
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.types import Datum, Dataset
+from mindtrace.datalake.types import Dataset, Datum
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 
@@ -130,7 +130,7 @@ class Datalake(Mindtrace):
 
         if contract is None:
             contract = "default"
-        
+
         if contract == "default":
             pass
         elif contract == "image":
@@ -151,7 +151,7 @@ class Datalake(Mindtrace):
         elif contract == "bbox":
             if not isinstance(data, dict):
                 raise ValueError(f"Data must be a dictionary, got {type(data)}")
-            if not "bbox" in data:
+            if "bbox" not in data:
                 raise ValueError("Data must contain a 'bbox' key")
             if not isinstance(data["bbox"], list):
                 raise ValueError(f"Bbox must be a list, got {type(data['bbox'])}")

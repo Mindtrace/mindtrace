@@ -316,7 +316,10 @@ class TestQueryDataIntegration:
             data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
         await datalake.add_datum(
-            data={"label": "cat", "confidence": 0.98}, metadata={"model": "resnet50"}, contract="classification", derived_from=image.id
+            data={"label": "cat", "confidence": 0.98},
+            metadata={"model": "resnet50"},
+            contract="classification",
+            derived_from=image.id,
         )
 
         # Query with invalid strategy
@@ -609,7 +612,7 @@ class TestQueryDataIntegration:
         labels = []
         for image in images:
             label = await datalake.add_datum(
-                data={"label": f"label_{image.id}",  "confidence": 0.98},
+                data={"label": f"label_{image.id}", "confidence": 0.98},
                 metadata={"model": "resnet50"},
                 contract="classification",
                 derived_from=image.id,

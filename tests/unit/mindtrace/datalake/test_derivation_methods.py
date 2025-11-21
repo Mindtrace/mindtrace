@@ -49,7 +49,15 @@ class TestDerivationMethods:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, contract="default"):
+            def __init__(
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                contract="default",
+            ):
                 self.id = PydanticObjectId()
                 self.data = data
                 self.contract = contract

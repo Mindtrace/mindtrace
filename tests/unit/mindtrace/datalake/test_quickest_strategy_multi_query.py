@@ -11,7 +11,14 @@ from mindtrace.datalake.types import Datum
 
 
 def create_mock_datum(
-    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None, contract="default"
+    data=None,
+    registry_uri=None,
+    registry_key=None,
+    derived_from=None,
+    metadata=None,
+    datum_id=None,
+    added_at=None,
+    contract="default",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -56,7 +63,15 @@ class TestQuickestStrategyMultiQuery:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, contract="default"):
+            def __init__(
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                contract="default",
+            ):
                 self.data = data
                 self.contract = contract
                 self.registry_uri = registry_uri

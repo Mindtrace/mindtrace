@@ -3,8 +3,6 @@
 import pathlib
 
 import pytest
-from PIL import Image as PILImage
-from beanie import PydanticObjectId
 
 from mindtrace.datalake import Datalake
 from mindtrace.datalake.types import Dataset
@@ -25,25 +23,47 @@ class TestDatasetIntegration:
         # Add image data to the datalake using registry storage (image files must be stored in registry)
         registry_uri = temp_registry_dir
         image_datum1 = await datalake.add_datum(
-            data=image1_path, metadata={"type": "image", "project": "test_project"}, contract="image", registry_uri=registry_uri
+            data=image1_path,
+            metadata={"type": "image", "project": "test_project"},
+            contract="image",
+            registry_uri=registry_uri,
         )
         image_datum2 = await datalake.add_datum(
-            data=image2_path, metadata={"type": "image", "project": "test_project"}, contract="image", registry_uri=registry_uri
+            data=image2_path,
+            metadata={"type": "image", "project": "test_project"},
+            contract="image",
+            registry_uri=registry_uri,
         )
         image_datum3 = await datalake.add_datum(
-            data=image3_path, metadata={"type": "image", "project": "test_project"}, contract="image", registry_uri=registry_uri
+            data=image3_path,
+            metadata={"type": "image", "project": "test_project"},
+            contract="image",
+            registry_uri=registry_uri,
         )
 
         # Create some label data with classification contract
         label_datum1 = await datalake.add_datum(
-            data={"label": "cat", "confidence": 0.95}, metadata={"type": "label"}, contract="classification", derived_from=image_datum1.id
+            data={"label": "cat", "confidence": 0.95},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum1.id,
         )
         label_datum2 = await datalake.add_datum(
-            data={"label": "dog", "confidence": 0.87}, metadata={"type": "label"}, contract="classification", derived_from=image_datum2.id
+            data={"label": "dog", "confidence": 0.87},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum2.id,
         )
         label_datum3 = await datalake.add_datum(
-            data={"label": "bird", "confidence": 0.92}, metadata={"type": "label"}, contract="classification", derived_from=image_datum3.id
+            data={"label": "bird", "confidence": 0.92},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum3.id,
         )
+
+        assert label_datum1.id is not None
+        assert label_datum2.id is not None
+        assert label_datum3.id is not None
 
         # Use query_data to get datum_ids with transpose=True to get a dict
         query = [
@@ -51,10 +71,10 @@ class TestDatasetIntegration:
             {"derived_from": "image", "metadata.type": "label", "column": "label"},
         ]
         datum_ids_dict = await datalake.query_data(query, transpose=True)
-        
+
         # Type assertion for type checker
         assert isinstance(datum_ids_dict, dict)
-        
+
         # Verify we got the expected structure
         assert "image" in datum_ids_dict
         assert "label" in datum_ids_dict
@@ -123,7 +143,6 @@ class TestDatasetIntegration:
 
         assert isinstance(hf_dataset, HFIterableDataset)
 
-
         # Verify we can iterate over the dataset
         row_count = 0
         for row in hf_dataset:
@@ -142,33 +161,42 @@ class TestDatasetIntegration:
         assert hf_dataset.info is not None
 
         # Verify dataset features are properly defined based on contracts
-        from datasets import Image as HFImage, Value
+        from datasets import Image as HFImage
+        from datasets import Value
+
         assert hf_dataset.features is not None
-        
+
         # Verify features exist for all columns
         assert "image" in hf_dataset.features
         assert "label" in hf_dataset.features
-        
+
         # Image contract should map to Image feature type
         image_feature = hf_dataset.features["image"]
         assert isinstance(image_feature, HFImage), f"Expected Image feature, got {type(image_feature)}"
-        
+
         # Classification contract should map to dict with label and confidence
         label_feature = hf_dataset.features["label"]
         assert isinstance(label_feature, dict), f"Expected dict feature for classification, got {type(label_feature)}"
         assert "label" in label_feature, "Classification feature should have 'label' key"
         assert "confidence" in label_feature, "Classification feature should have 'confidence' key"
-        
+
         # Verify the Value types
-        assert isinstance(label_feature["label"], Value), f"Expected Value for label, got {type(label_feature['label'])}"
-        assert isinstance(label_feature["confidence"], Value), f"Expected Value for confidence, got {type(label_feature['confidence'])}"
-        
+        assert isinstance(label_feature["label"], Value), (
+            f"Expected Value for label, got {type(label_feature['label'])}"
+        )
+        assert isinstance(label_feature["confidence"], Value), (
+            f"Expected Value for confidence, got {type(label_feature['confidence'])}"
+        )
+
         # Verify label is string type
-        assert label_feature["label"].dtype == "string", f"Expected string dtype for label, got {label_feature['label'].dtype}"
-        
+        assert label_feature["label"].dtype == "string", (
+            f"Expected string dtype for label, got {label_feature['label'].dtype}"
+        )
+
         # Verify confidence is float type
-        assert label_feature["confidence"].dtype == "float64" or label_feature["confidence"].dtype == "float32", \
+        assert label_feature["confidence"].dtype == "float64" or label_feature["confidence"].dtype == "float32", (
             f"Expected float dtype for confidence, got {label_feature['confidence'].dtype}"
+        )
 
         # Verify we can select columns
         image_only = hf_dataset.select_columns(["image"])
@@ -184,7 +212,7 @@ class TestDatasetIntegration:
         test_dir = pathlib.Path(__file__).parent
         image1_path = test_dir / "test_image_red.png"
         image2_path = test_dir / "test_image_blue.png"
-        
+
         registry_uri = temp_registry_dir
         image_datum1 = await datalake.add_datum(
             data=image1_path, metadata={"type": "image"}, contract="image", registry_uri=registry_uri
@@ -193,7 +221,7 @@ class TestDatasetIntegration:
         image_datum2 = await datalake.add_datum(
             data=image2_path, metadata={"type": "image"}, contract="default", registry_uri=registry_uri
         )
-        
+
         # Create a dataset with mixed contracts
         # Type assertions to help the type checker understand IDs are not None
         assert image_datum1.id is not None
@@ -206,9 +234,9 @@ class TestDatasetIntegration:
                 {"image": image_datum2.id},
             ],
         )
-        
+
         inserted_dataset = await datalake.dataset_database.insert(dataset)
-        
+
         # Loading should raise ValueError because contracts don't match
         with pytest.raises(ValueError, match="All datums in a column must have the same contract"):
             await inserted_dataset.load(datalake)
@@ -220,7 +248,7 @@ class TestDatasetIntegration:
         test_dir = pathlib.Path(__file__).parent
         image1_path = test_dir / "test_image_red.png"
         image2_path = test_dir / "test_image_blue.png"
-        
+
         registry_uri = temp_registry_dir
         image_datum1 = await datalake.add_datum(
             data=image1_path, metadata={"type": "image"}, contract="image", registry_uri=registry_uri
@@ -228,14 +256,14 @@ class TestDatasetIntegration:
         image_datum2 = await datalake.add_datum(
             data=image2_path, metadata={"type": "image"}, contract="image", registry_uri=registry_uri
         )
-        
+
         label_datum1 = await datalake.add_datum(
             data={"label": "cat", "confidence": 0.95}, metadata={"type": "label"}, contract="classification"
         )
         label_datum2 = await datalake.add_datum(
             data={"label": "dog", "confidence": 0.87}, metadata={"type": "label"}, contract="classification"
         )
-        
+
         # Create dataset with explicit contracts
         # Type assertions to help the type checker understand IDs are not None
         assert image_datum1.id is not None
@@ -251,31 +279,33 @@ class TestDatasetIntegration:
                 {"image": image_datum2.id, "label": label_datum2.id},
             ],
         )
-        
+
         inserted_dataset = await datalake.dataset_database.insert(dataset)
-        
+
         # Verify contracts are set
         assert inserted_dataset.contracts == {"image": "image", "label": "classification"}
-        
+
         # Load should still work and validate
         loaded_data = await inserted_dataset.load(datalake)
         assert len(loaded_data) == 2
-        
+
         # Contracts should still be set after load
         assert inserted_dataset.contracts == {"image": "image", "label": "classification"}
-        
+
         # Test to_HF() with explicit contracts
         hf_dataset = await inserted_dataset.to_HF(datalake)
-        
+
         # Verify features are correctly set based on explicit contracts
-        from datasets import Image as HFImage, Value
+        from datasets import Image as HFImage
+        from datasets import Value
+
         assert hf_dataset.features is not None
         assert "image" in hf_dataset.features
         assert "label" in hf_dataset.features
-        
+
         # Image feature should be Image type
         assert isinstance(hf_dataset.features["image"], HFImage)
-        
+
         # Classification feature should be dict with label and confidence
         label_feature = hf_dataset.features["label"]
         assert isinstance(label_feature, dict)
@@ -298,52 +328,71 @@ class TestDatasetIntegration:
         # Add image data to the datalake using registry storage
         registry_uri = temp_registry_dir
         image_datum1 = await datalake.add_datum(
-            data=image1_path, metadata={"type": "image", "project": "bbox_test"}, contract="image", registry_uri=registry_uri
+            data=image1_path,
+            metadata={"type": "image", "project": "bbox_test"},
+            contract="image",
+            registry_uri=registry_uri,
         )
         image_datum2 = await datalake.add_datum(
-            data=image2_path, metadata={"type": "image", "project": "bbox_test"}, contract="image", registry_uri=registry_uri
+            data=image2_path,
+            metadata={"type": "image", "project": "bbox_test"},
+            contract="image",
+            registry_uri=registry_uri,
         )
         image_datum3 = await datalake.add_datum(
-            data=image3_path, metadata={"type": "image", "project": "bbox_test"}, contract="image", registry_uri=registry_uri
+            data=image3_path,
+            metadata={"type": "image", "project": "bbox_test"},
+            contract="image",
+            registry_uri=registry_uri,
         )
 
         # Create classification labels
         label_datum1 = await datalake.add_datum(
-            data={"label": "cat", "confidence": 0.95}, metadata={"type": "label"}, contract="classification", derived_from=image_datum1.id
+            data={"label": "cat", "confidence": 0.95},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum1.id,
         )
         label_datum2 = await datalake.add_datum(
-            data={"label": "dog", "confidence": 0.87}, metadata={"type": "label"}, contract="classification", derived_from=image_datum2.id
+            data={"label": "dog", "confidence": 0.87},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum2.id,
         )
         label_datum3 = await datalake.add_datum(
-            data={"label": "bird", "confidence": 0.92}, metadata={"type": "label"}, contract="classification", derived_from=image_datum3.id
+            data={"label": "bird", "confidence": 0.92},
+            metadata={"type": "label"},
+            contract="classification",
+            derived_from=image_datum3.id,
         )
+
+        assert label_datum1.id is not None
+        assert label_datum2.id is not None
+        assert label_datum3.id is not None
 
         # Create bbox data derived from images
         # Bbox data structure: {height: float, width: float, bbox: [[x1, y1, x2, y2], ...]}
         bbox_datum1 = await datalake.add_datum(
-            data={
-                "bbox": [[10.0, 20.0, 50.0, 60.0], [80.0, 30.0, 120.0, 70.0]]
-            },
+            data={"bbox": [[10.0, 20.0, 50.0, 60.0], [80.0, 30.0, 120.0, 70.0]]},
             metadata={"type": "bbox"},
             contract="bbox",
-            derived_from=image_datum1.id
+            derived_from=image_datum1.id,
         )
         bbox_datum2 = await datalake.add_datum(
-            data={
-                "bbox": [[15.0, 25.0, 55.0, 65.0]]
-            },
+            data={"bbox": [[15.0, 25.0, 55.0, 65.0]]},
             metadata={"type": "bbox"},
             contract="bbox",
-            derived_from=image_datum2.id
+            derived_from=image_datum2.id,
         )
         bbox_datum3 = await datalake.add_datum(
-            data={
-                "bbox": [[20.0, 30.0, 60.0, 70.0], [90.0, 40.0, 130.0, 80.0], [140.0, 50.0, 180.0, 90.0]]
-            },
+            data={"bbox": [[20.0, 30.0, 60.0, 70.0], [90.0, 40.0, 130.0, 80.0], [140.0, 50.0, 180.0, 90.0]]},
             metadata={"type": "bbox"},
             contract="bbox",
-            derived_from=image_datum3.id
+            derived_from=image_datum3.id,
         )
+        assert bbox_datum1.id is not None
+        assert bbox_datum2.id is not None
+        assert bbox_datum3.id is not None
 
         # Use query_data to get datum_ids
         query = [
@@ -462,7 +511,9 @@ class TestDatasetIntegration:
         assert row_count == 3
 
         # Verify dataset features are properly defined
-        from datasets import Image as HFImage, Value, List as HFList, Sequence as HFSequence
+        from datasets import Image as HFImage
+        from datasets import List as HFList
+        from datasets import Sequence as HFSequence
 
         assert hf_dataset.features is not None
         assert "image" in hf_dataset.features
@@ -485,4 +536,3 @@ class TestDatasetIntegration:
         assert "bbox" in bbox_feature
         # The bbox feature should be a List of Sequences of floats
         assert isinstance(bbox_feature["bbox"], (HFList, HFSequence))
-        

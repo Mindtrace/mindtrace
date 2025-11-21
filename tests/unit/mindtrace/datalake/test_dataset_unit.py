@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from beanie import PydanticObjectId
-from datasets import Image, IterableDataset, Value, List, Sequence
+from datasets import Image, IterableDataset, List, Sequence, Value
 
 from mindtrace.datalake.types import Dataset, Datum, contracts_to_hf_type, gen
 
@@ -46,9 +46,7 @@ def create_mock_dataset(
     return mock_dataset
 
 
-def create_mock_datum(
-    data=None, contract="default", datum_id=None, added_at=None
-):
+def create_mock_datum(data=None, contract="default", datum_id=None, added_at=None):
     """Create a mock Datum instance for testing."""
     if datum_id is None:
         datum_id = PydanticObjectId()
@@ -212,6 +210,7 @@ class TestDatasetLoad:
     @pytest.fixture
     def dataset_class(self):
         """Create a mock Dataset class that can be instantiated."""
+
         class MockDataset:
             def __init__(self, name, description, contracts=None, datum_ids=None, metadata=None):
                 self.name = name
@@ -238,7 +237,9 @@ class TestDatasetLoad:
                     else:
                         for (column, _), datum in zip(column_id_pairs, datums):
                             if contracts[column] != datum.contract:
-                                raise ValueError(f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}")
+                                raise ValueError(
+                                    f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}"
+                                )
                     for (column, _), datum in zip(column_id_pairs, datums):
                         loaded_row[column] = datum.data
                     loaded_rows.append(loaded_row)
@@ -311,7 +312,9 @@ class TestDatasetLoad:
         image_id = PydanticObjectId()
         label_id = PydanticObjectId()
         mock_image = create_mock_datum(data="image_path", contract="image", datum_id=image_id)
-        mock_label = create_mock_datum(data={"label": "cat", "confidence": 0.95}, contract="classification", datum_id=label_id)
+        mock_label = create_mock_datum(
+            data={"label": "cat", "confidence": 0.95}, contract="classification", datum_id=label_id
+        )
 
         dataset = dataset_class(
             name="multi_column",
@@ -337,9 +340,13 @@ class TestDatasetLoad:
         label_id2 = PydanticObjectId()
 
         mock_image1 = create_mock_datum(data="image_path1", contract="image", datum_id=image_id1)
-        mock_label1 = create_mock_datum(data={"label": "cat", "confidence": 0.95}, contract="classification", datum_id=label_id1)
+        mock_label1 = create_mock_datum(
+            data={"label": "cat", "confidence": 0.95}, contract="classification", datum_id=label_id1
+        )
         mock_image2 = create_mock_datum(data="image_path2", contract="image", datum_id=image_id2)
-        mock_label2 = create_mock_datum(data={"label": "dog", "confidence": 0.87}, contract="classification", datum_id=label_id2)
+        mock_label2 = create_mock_datum(
+            data={"label": "dog", "confidence": 0.87}, contract="classification", datum_id=label_id2
+        )
 
         dataset = dataset_class(
             name="multi_row_column",
@@ -383,7 +390,7 @@ class TestDatasetLoad:
             [mock_datum2],
         ]
 
-        result = await dataset.load(mock_datalake)
+        await dataset.load(mock_datalake)
 
         assert dataset.contracts == {"col": "image"}
 
@@ -448,6 +455,7 @@ class TestDatasetToHF:
     @pytest.fixture
     def dataset_class(self):
         """Create a mock Dataset class that can be instantiated."""
+
         class MockDataset:
             def __init__(self, name, description, contracts=None, datum_ids=None, metadata=None):
                 self.name = name
@@ -474,7 +482,9 @@ class TestDatasetToHF:
                     else:
                         for (column, _), datum in zip(column_id_pairs, datums):
                             if contracts[column] != datum.contract:
-                                raise ValueError(f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}")
+                                raise ValueError(
+                                    f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}"
+                                )
                     for (column, _), datum in zip(column_id_pairs, datums):
                         loaded_row[column] = datum.data
                     loaded_rows.append(loaded_row)
@@ -483,15 +493,16 @@ class TestDatasetToHF:
 
             async def to_HF(self, datalake):
                 """Mock to_HF method that calls the real implementation."""
-                from mindtrace.datalake.types import contracts_to_hf_type, gen
                 from datasets import Features, IterableDataset
-                
+
+                from mindtrace.datalake.types import contracts_to_hf_type, gen
+
                 loaded_data = await self.load(datalake)
-                features_dict = {
-                    column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()
-                }
+                features_dict = {column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()}
                 hf_type = Features(features_dict)
-                return IterableDataset.from_generator(gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type)
+                return IterableDataset.from_generator(
+                    gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type
+                )
 
         return MockDataset
 
@@ -614,9 +625,8 @@ class TestDatasetToHF:
     @pytest.mark.asyncio
     async def test_to_hf_iterates_correctly(self, mock_datalake, dataset_class):
         """Test that to_HF produces an iterable dataset with correct data."""
-        from unittest.mock import patch
         from PIL import Image as PILImage
-        
+
         datum_id1 = PydanticObjectId()
         datum_id2 = PydanticObjectId()
         mock_datum1 = create_mock_datum(data="image1", contract="image", datum_id=datum_id1)
@@ -786,6 +796,7 @@ class TestDatasetEdgeCases:
     @pytest.fixture
     def dataset_class(self):
         """Create a mock Dataset class that can be instantiated."""
+
         class MockDataset:
             def __init__(self, name, description, contracts=None, datum_ids=None, metadata=None):
                 self.name = name
@@ -812,7 +823,9 @@ class TestDatasetEdgeCases:
                     else:
                         for (column, _), datum in zip(column_id_pairs, datums):
                             if contracts[column] != datum.contract:
-                                raise ValueError(f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}")
+                                raise ValueError(
+                                    f"All datums in a column must have the same contract, but entry {i} column {column} has contract {datum.contract} when the column contract is {contracts[column]}"
+                                )
                     for (column, _), datum in zip(column_id_pairs, datums):
                         loaded_row[column] = datum.data
                     loaded_rows.append(loaded_row)
@@ -821,15 +834,16 @@ class TestDatasetEdgeCases:
 
             async def to_HF(self, datalake):
                 """Mock to_HF method."""
-                from mindtrace.datalake.types import contracts_to_hf_type, gen
                 from datasets import Features, IterableDataset
-                
+
+                from mindtrace.datalake.types import contracts_to_hf_type, gen
+
                 loaded_data = await self.load(datalake)
-                features_dict = {
-                    column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()
-                }
+                features_dict = {column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()}
                 hf_type = Features(features_dict)
-                return IterableDataset.from_generator(gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type)
+                return IterableDataset.from_generator(
+                    gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type
+                )
 
         return MockDataset
 
@@ -867,7 +881,7 @@ class TestDatasetEdgeCases:
 
         mock_datalake.get_data.return_value = [mock_datum]
 
-        result = await dataset.load(mock_datalake)
+        await dataset.load(mock_datalake)
 
         # Contracts should be updated from loaded data
         assert dataset.contracts == {"col": "image"}
@@ -888,7 +902,7 @@ class TestDatasetEdgeCases:
 
         mock_datalake.get_data.return_value = [mock_image, mock_label]
 
-        result = await dataset.load(mock_datalake)
+        await dataset.load(mock_datalake)
 
         # Should work fine with different contracts in different columns
         assert dataset.contracts == {"image": "image", "label": "classification"}
@@ -935,4 +949,3 @@ class TestDatasetEdgeCases:
         # But to_HF should raise KeyError when trying to map the contract
         with pytest.raises(KeyError):
             await dataset.to_HF(mock_datalake)
-
