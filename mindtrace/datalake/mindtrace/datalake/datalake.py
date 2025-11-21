@@ -58,13 +58,35 @@ class Datalake(Mindtrace):
         )
 
     async def initialize(self):
+        """
+        Initialize the datalake by setting up database connections.
+
+        This method initializes both the datum database and dataset database backends,
+        establishing connections to MongoDB and preparing them for use.
+
+        Raises:
+            Exception: If database initialization fails
+        """
         await self.datum_database.initialize()
         await self.dataset_database.initialize()
 
     @classmethod
     async def create(cls, mongo_db_uri: str, mongo_db_name: str) -> "Datalake":
         """
-        Create a Datalake instance from a configuration dictionary.
+        Create and initialize a Datalake instance.
+
+        This is a convenience class method that creates a Datalake instance
+        and initializes it in a single call.
+
+        Args:
+            mongo_db_uri: MongoDB connection URI
+            mongo_db_name: Name of the MongoDB database to use
+
+        Returns:
+            An initialized Datalake instance ready for use
+
+        Raises:
+            Exception: If database initialization fails
         """
         datalake = cls(mongo_db_uri=mongo_db_uri, mongo_db_name=mongo_db_name)
         await datalake.initialize()
@@ -81,14 +103,29 @@ class Datalake(Mindtrace):
         """
         Add a datum to the datalake asynchronously.
 
+        This method validates the data according to the specified contract,
+        stores it either in the database or in a registry backend, and returns
+        the created datum with an assigned ID.
+
         Args:
-            data: The data to store
-            metadata: Metadata associated with the datum
-            registry_uri: Optional registry URI for external storage
-            derived_from: Optional ID of the parent datum
+            data: The data to store. Format depends on the contract:
+                - "image": Must be a pathlib.Path or pathlib.PosixPath to an image file
+                - "classification": Must be a dict with "label" (str) and "confidence" (float 0-1)
+                - "bbox": Must be a dict with "bbox" key containing a list of lists of 4 floats
+                - "default": Any data type
+            metadata: Metadata dictionary associated with the datum
+            contract: Optional contract type specifying the data format. If None, defaults to "default".
+                Supported contracts: "default", "image", "classification", "bbox", "regression", "segmentation"
+            registry_uri: Optional registry URI for external storage. If provided, data is stored
+                in the registry backend instead of the database.
+            derived_from: Optional ID of the parent datum this datum was derived from
 
         Returns:
-            The created datum with assigned ID
+            The created Datum instance with assigned ID
+
+        Raises:
+            ValueError: If data doesn't match the contract requirements
+            Exception: If database or registry operations fail
         """
 
         if contract is None:
@@ -319,11 +356,17 @@ class Datalake(Mindtrace):
         """
         Find datasets matching the given filter.
 
+        This method searches for datasets using a MongoDB-style filter dictionary.
+        If no filter is provided, returns all datasets in the database.
+
         Args:
-            filter: MongoDB-style filter dictionary. If None, returns all datasets.
+            filter: MongoDB-style filter dictionary. Examples:
+                - {"name": "my_dataset"} - find datasets with specific name
+                - {"metadata.project": "test_project"} - find datasets by metadata
+                - None - returns all datasets
 
         Returns:
-            List of datasets matching the filter
+            List of Dataset instances matching the filter
 
         Raises:
             Exception: If database query fails
@@ -464,12 +507,12 @@ class Datalake(Mindtrace):
         by using MongoDB's native aggregation capabilities instead of multiple round trips.
 
         Args:
-            query: Same syntax as query_data - list of queries or single query
+            query: Same syntax as query_data_legacy - list of queries or single query
             datums_wanted: Maximum number of results to return
             transpose: Whether to return dict of lists (True) or list of dicts (False)
 
         Returns:
-            Same format as query_data - list of dictionaries or dictionary of lists
+            Same format as query_data_legacy - list of dictionaries or dictionary of lists
 
         Note:
             This optimized version handles common cases but may fall back to the original

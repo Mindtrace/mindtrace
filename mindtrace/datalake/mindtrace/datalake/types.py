@@ -47,6 +47,22 @@ class Datum(MindtraceDocument):
     )
 
 def gen(loaded_data: list[dict[str, Any]], contracts: dict[str, str]) -> Generator[dict[str, Any], None, None]:
+    """
+    Generator function that converts loaded data to HuggingFace-compatible format.
+
+    This function processes each row of loaded data and transforms it according to
+    the contract types specified. For image contracts, it converts paths to strings.
+    For other contracts, it passes the data through unchanged.
+
+    Args:
+        loaded_data: List of dictionaries, where each dictionary represents a row
+            with column names as keys and loaded datum data as values
+        contracts: Dictionary mapping column names to their contract types
+            (e.g., {"image": "image", "label": "classification"})
+
+    Yields:
+        Dictionary for each row with data transformed according to contract types
+    """
     for row in loaded_data:
         row_to_yield = {}
         for column, data in row.items():
@@ -57,6 +73,8 @@ def gen(loaded_data: list[dict[str, Any]], contracts: dict[str, str]) -> Generat
         yield row_to_yield
 
 
+# Mapping from contract types to HuggingFace feature types
+# Used when converting datasets to HuggingFace format
 contracts_to_hf_type = {
     "image": Image(),
     "classification": {"label": Value("string"), "confidence": Value("float")},
@@ -77,6 +95,23 @@ class Dataset(MindtraceDocument):
     datum_ids: list[dict[str, PydanticObjectId]] = Field(default_factory=list, description="Datum IDs of the dataset.")
 
     async def to_HF(self, datalake: "Datalake") -> IterableDataset:
+        """
+        Convert the dataset to a HuggingFace IterableDataset.
+
+        This method loads all data from the datalake, determines the appropriate
+        HuggingFace feature types based on the contracts, and creates an IterableDataset
+        that can be used with HuggingFace's datasets library.
+
+        Args:
+            datalake: The Datalake instance to use for loading data
+
+        Returns:
+            A HuggingFace IterableDataset with properly typed features
+
+        Raises:
+            KeyError: If a contract type is not found in contracts_to_hf_type mapping
+            Exception: If data loading fails
+        """
         loaded_data = await self.load(datalake)
         features_dict = {
             column: contracts_to_hf_type[contract] for column, contract in self.contracts.items()
@@ -85,10 +120,29 @@ class Dataset(MindtraceDocument):
 
         return IterableDataset.from_generator(gen, gen_kwargs={"loaded_data": loaded_data, "contracts": self.contracts}, features=hf_type)
 
-    async def load(self, datalake: "Datalake"):
-        # Return a list of dicts in the same format as datum_ids, but with loaded data
-        # datum_ids: [{"image": id1, "label": label1}, {"image": id2, "label": label2}]
-        # Returns: [{"image": data1, "label": data1}, {"image": data2, "label": data2}]
+    async def load(self, datalake: "Datalake") -> list[dict[str, Any]]:
+        """
+        Load all data for this dataset from the datalake.
+
+        This method retrieves the actual data for all datum IDs in the dataset,
+        validates that all datums in each column have the same contract, and
+        returns the loaded data in the same row-oriented format as datum_ids.
+
+        The contracts are automatically detected from the first row and stored
+        in self.contracts. All subsequent rows are validated to ensure consistency.
+
+        Args:
+            datalake: The Datalake instance to use for loading data
+
+        Returns:
+            List of dictionaries, where each dictionary represents a row with
+            column names as keys and loaded datum data as values.
+            Example: [{"image": path1, "label": {"label": "cat", "confidence": 0.95}}, ...]
+
+        Raises:
+            ValueError: If datums in the same column have different contracts
+            Exception: If data retrieval from the datalake fails
+        """
         loaded_rows = []
         contracts = {}
         for i, row in enumerate(self.datum_ids):
