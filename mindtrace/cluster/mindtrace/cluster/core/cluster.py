@@ -636,9 +636,7 @@ class Node(Service):
         if cluster_url is not None:
             self.cluster_cm = ClusterManager.connect(cluster_url)
             minio_params = self.cluster_cm.register_node(node_url=str(self._url))
-            minio_backend = MinioRegistryBackend(
-                **minio_params.model_dump(), secure=False
-            )
+            minio_backend = MinioRegistryBackend(**minio_params.model_dump(), secure=False)
             self.worker_registry = Registry(backend=minio_backend)
         else:
             self.cluster_cm = None  # type: ignore

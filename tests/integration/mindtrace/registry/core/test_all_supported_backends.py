@@ -100,11 +100,25 @@ def gcp_backend_session():
         "uri": f"gs://{bucket_name}",
     }
 
+    backend_instance = None
     try:
         backend_instance = GCPRegistryBackend(**params)
         yield backend_instance
     except Exception as e:
         pytest.skip(f"GCP backend creation failed: {e}")
+    finally:
+        # Cleanup
+        if backend_instance is not None:
+            try:
+                from google.cloud import storage
+
+                gcs_client = storage.Client(project=gcp_project_id)
+                bucket = gcs_client.bucket(bucket_name)
+                for blob in bucket.list_blobs():
+                    blob.delete()
+                bucket.delete()
+            except Exception:
+                pass
 
 
 @pytest.fixture
@@ -116,15 +130,32 @@ def backend(request, backend_type, temp_dir, test_bucket):
 
     if backend_type == "local":
         params["uri"] = str(temp_dir)
-        return backend_class(**params)
+        yield backend_class(**params)
     elif backend_type == "minio":
         params["bucket"] = test_bucket
         params["uri"] = f"s3://{test_bucket}"
-        return backend_class(**params)
+        backend_instance = backend_class(**params)
+        yield backend_instance
+        # Cleanup
+        try:
+            from minio import Minio
+
+            minio_client = Minio(
+                endpoint=params["endpoint"],
+                access_key=params["access_key"],
+                secret_key=params["secret_key"],
+                secure=params["secure"],
+            )
+            for obj in minio_client.list_objects(test_bucket, recursive=True):
+                minio_client.remove_object(test_bucket, obj.object_name)
+            minio_client.remove_bucket(test_bucket)
+        except Exception:
+            raise
+
     elif backend_type == "gcp":
         # Use the session-scoped GCP backend for faster testing
         gcp_backend_session = request.getfixturevalue("gcp_backend_session")
-        return gcp_backend_session
+        yield gcp_backend_session
 
 
 @pytest.fixture
