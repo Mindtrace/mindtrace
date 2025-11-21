@@ -637,7 +637,7 @@ class Node(Service):
             self.cluster_cm = ClusterManager.connect(cluster_url)
             minio_params = self.cluster_cm.register_node(node_url=str(self._url))
             minio_backend = MinioRegistryBackend(
-                uri=f"~/.cache/mindtrace/minio_registry_node_{self.id}", **minio_params.model_dump(), secure=False
+                **minio_params.model_dump(), secure=False
             )
             self.worker_registry = Registry(backend=minio_backend)
         else:
