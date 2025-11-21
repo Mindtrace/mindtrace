@@ -112,6 +112,29 @@ class GCPRegistryBackend(RegistryBackend):
         """
         return f"objects/{name}/{version}"
 
+    def _object_metadata_path(self, name: str, version: str) -> str:
+        """Generate the metadata file path for an object version.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Metadata file path (e.g., "_meta_object_name@1.0.0.json").
+        """
+        return f"_meta_{name.replace(':', '_')}@{version}.json"
+
+    def _object_metadata_prefix(self, name: str) -> str:
+        """Generate the metadata file prefix for listing versions of an object.
+
+        Args:
+            name: Name of the object.
+
+        Returns:
+            Metadata file prefix (e.g., "_meta_object_name@").
+        """
+        return f"_meta_{name.replace(':', '_')}@"
+
     def _lock_key(self, key: str) -> str:
         """Convert a key to a lock file key.
 
@@ -198,7 +221,7 @@ class GCPRegistryBackend(RegistryBackend):
             metadata: Dictionary containing object metadata.
         """
         self.validate_object_name(name)
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
 
         # Create temporary file
@@ -221,7 +244,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             Dictionary containing object metadata.
         """
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
 
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
@@ -248,7 +271,7 @@ class GCPRegistryBackend(RegistryBackend):
             name: Name of the object.
             version: Version of the object.
         """
-        meta_path = f"_meta_{name.replace(':', '_')}@{version}.json"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         self.gcs.delete(meta_path)
 
@@ -275,7 +298,7 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             Sorted list of version strings available for the object.
         """
-        prefix = f"_meta_{name.replace(':', '_')}@"
+        prefix = self._object_metadata_prefix(name)
         versions = []
 
         for obj_name in self.gcs.list_objects(prefix=prefix):
@@ -294,10 +317,16 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             True if the object version exists, False otherwise.
         """
-        if name not in self.list_objects():
-            return False
-        else:
-            return version in self.list_versions(name)
+        meta_path = self._object_metadata_path(name, version)
+        try:
+            return self.gcs.exists(meta_path)
+        except Exception:
+            # If existence check fails, fall back to checking if metadata can be fetched
+            try:
+                self.fetch_metadata(name, version)
+                return True
+            except Exception:
+                return False
 
     def register_materializer(self, object_class: str, materializer_class: str):
         """Register a materializer for an object class.
@@ -647,8 +676,8 @@ class GCPRegistryBackend(RegistryBackend):
         target_key = self._object_key(target_name, target_version)
 
         # Get the source and target metadata keys
-        source_meta_key = f"_meta_{source_name.replace(':', '_')}@{source_version}.json"
-        target_meta_key = f"_meta_{target_name.replace(':', '_')}@{target_version}.json"
+        source_meta_key = self._object_metadata_path(source_name, source_version)
+        target_meta_key = self._object_metadata_path(target_name, target_version)
 
         self.logger.debug(f"Overwriting {source_name}@{source_version} to {target_name}@{target_version}")
 
@@ -909,7 +938,7 @@ class GCPRegistryBackend(RegistryBackend):
             {'objects_deleted': 5, 'metadata_deleted': 1, 'errors': 0}
         """
         source_key = self._object_key(source_name, source_version)
-        source_meta_key = f"_meta_{source_name.replace(':', '_')}@{source_version}.json"
+        source_meta_key = self._object_metadata_path(source_name, source_version)
 
         stats = {"objects_deleted": 0, "metadata_deleted": 0, "errors": 0}
 
