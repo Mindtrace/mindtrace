@@ -180,15 +180,25 @@ def test_registered_materializers(backend, minio_client, test_bucket):
 
 def test_init_with_default_uri(minio_client, test_bucket):
     """Test backend initialization with default URI from config."""
-    # Create backend without specifying URI or bucket - both should fall back to config
-    backend = MinioRegistryBackend(
-        endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", secure=False
-    )
+    try:
+        # Create backend without specifying URI or bucket - both should fall back to config
+        backend = MinioRegistryBackend(
+            endpoint="localhost:9100", access_key="minioadmin", secret_key="minioadmin", secure=False
+        )
 
-    # Verify the URI is set to the default from config
-    expected_uri = CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
-    assert backend.uri.startswith("s3://")
-    assert backend.uri == expected_uri
+        # Verify the URI is set to the default from config
+        expected_uri = CoreConfig()["MINDTRACE_MINIO"]["MINIO_REGISTRY_URI"]
+        assert backend.uri.startswith("s3://")
+        assert backend.uri == expected_uri
+    finally:
+        # Cleanup - remove all objects first, then the bucket
+        try:
+            bucket_name = backend.bucket
+            for obj in minio_client.list_objects(bucket_name, recursive=True):
+                minio_client.remove_object(bucket_name, obj.object_name)
+            minio_client.remove_bucket(bucket_name)
+        except Exception:
+            pass
 
 
 def test_init_with_all_config_defaults(monkeypatch):
@@ -252,45 +262,9 @@ def test_init_creates_bucket(minio_client):
 
 def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     """Test backend initialization handles errors when checking metadata file."""
-    # Create a backend with valid credentials
-    _ = MinioRegistryBackend(
-        uri=f"s3://{test_bucket}",
-        endpoint="localhost:9100",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        bucket=test_bucket,
-        secure=False,
-    )
-
-    # Create a mock Minio class that raises a non-NoSuchKey error
-    class MockMinio:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def bucket_exists(self, *args, **kwargs):
-            return True
-
-        def make_bucket(self, *args, **kwargs):
-            pass
-
-        def stat_object(self, *args, **kwargs):
-            raise S3Error(
-                code="InvalidRequest",
-                message="Invalid request",
-                resource="/test-bucket/registry_metadata.yaml",
-                request_id="test-request-id",
-                host_id="test-host-id",
-                response=None,  # type: ignore
-                bucket_name="test-bucket",
-                object_name="registry_metadata.yaml",
-            )
-
-    # Replace the Minio class with our mock
-    monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
-
-    # Try to create another backend - should fail with a non-NoSuchKey error
-    with pytest.raises(S3Error) as exc_info:
-        MinioRegistryBackend(
+    try:
+        # Create a backend with valid credentials
+        _ = MinioRegistryBackend(
             uri=f"s3://{test_bucket}",
             endpoint="localhost:9100",
             access_key="minioadmin",
@@ -299,8 +273,53 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
             secure=False,
         )
 
-    # Verify the error is not a NoSuchKey error
-    assert exc_info.value.code != "NoSuchKey"
+        # Create a mock Minio class that raises a non-NoSuchKey error
+        class MockMinio:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def bucket_exists(self, *args, **kwargs):
+                return True
+
+            def make_bucket(self, *args, **kwargs):
+                pass
+
+            def stat_object(self, *args, **kwargs):
+                raise S3Error(
+                    code="InvalidRequest",
+                    message="Invalid request",
+                    resource="/test-bucket/registry_metadata.yaml",
+                    request_id="test-request-id",
+                    host_id="test-host-id",
+                    response=None,  # type: ignore
+                    bucket_name="test-bucket",
+                    object_name="registry_metadata.yaml",
+                )
+
+        # Replace the Minio class with our mock
+        monkeypatch.setattr("mindtrace.registry.backends.minio_registry_backend.Minio", MockMinio)
+
+        # Try to create another backend - should fail with a non-NoSuchKey error
+        with pytest.raises(S3Error) as exc_info:
+            MinioRegistryBackend(
+                uri=f"s3://{test_bucket}",
+                endpoint="localhost:9100",
+                access_key="minioadmin",
+                secret_key="minioadmin",
+                bucket=test_bucket,
+                secure=False,
+            )
+
+        # Verify the error is not a NoSuchKey error
+        assert exc_info.value.code != "NoSuchKey"
+    finally:
+        # Cleanup - remove all objects first, then the bucket
+        try:
+            for obj in minio_client.list_objects(test_bucket, recursive=True):
+                minio_client.remove_object(test_bucket, obj.object_name)
+            minio_client.remove_bucket(test_bucket)
+        except Exception:
+            pass
 
 
 def test_delete_metadata_no_such_key(backend, monkeypatch):

@@ -54,20 +54,29 @@ def temp_dir() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def backend(temp_dir, test_bucket):
+def backend(temp_dir, test_bucket, minio_client):
     """Create a MinioRegistryBackend instance with a test bucket."""
     endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000")
     access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin")
     secure = os.environ.get("MINIO_SECURE", "0") == "1"
-    return MinioRegistryBackend(
-        uri=f"s3://{test_bucket}",
-        endpoint=endpoint,
-        access_key=access_key,
-        secret_key=secret_key,
-        bucket=test_bucket,
-        secure=secure,
-    )
+    try:
+        yield MinioRegistryBackend(
+            uri=f"s3://{test_bucket}",
+            endpoint=endpoint,
+            access_key=access_key,
+            secret_key=secret_key,
+            bucket=test_bucket,
+            secure=secure,
+        )
+    finally:
+        # Cleanup - remove all objects first, then the bucket
+        try:
+            for obj in minio_client.list_objects(test_bucket, recursive=True):
+                minio_client.remove_object(test_bucket, obj.object_name)
+            minio_client.remove_bucket(test_bucket)
+        except Exception:
+            pass
 
 
 @pytest.fixture
