@@ -457,7 +457,7 @@ def test_subscribe_to_events_pubsub_close_exception_in_finally(monkeypatch):
 
 def test_subscribe_to_events_declare_stack_queue(monkeypatch):
     """Test _subscribe_to_events with declare event for stack queue type."""
-    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"), patch("threading.Thread"):
         conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
@@ -485,7 +485,7 @@ def test_subscribe_to_events_declare_stack_queue(monkeypatch):
 
 def test_subscribe_to_events_declare_priority_queue(monkeypatch):
     """Test _subscribe_to_events with declare event for priority queue type."""
-    with patch("mindtrace.jobs.redis.connection.redis.Redis"):
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"), patch("threading.Thread"):
         conn = RedisConnection(host="localhost", port=6381, db=0)
 
         pubsub = MagicMock()
