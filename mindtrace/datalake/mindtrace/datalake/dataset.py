@@ -1,24 +1,21 @@
 import asyncio
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any, Generator
+from typing import TYPE_CHECKING, Any, Generator
 
 from beanie import Indexed
 from beanie.odm.fields import PydanticObjectId
-from datasets import Features, Image, IterableDataset, List, Sequence, Value
+from datasets import Features, IterableDataset
 from pydantic import Field
 
 from mindtrace.database import MindtraceDocument
+from mindtrace.datalake.contracts import contracts_to_hf_type
 
 if TYPE_CHECKING:
     from mindtrace.datalake.datalake import Datalake
 
 # Mapping from contract types to HuggingFace feature types
 # Used when converting datasets to HuggingFace format
-contracts_to_hf_type = {
-    "image": Image(),
-    "classification": {"label": Value("string"), "confidence": Value("float")},
-    "bbox": {"bbox": List(Sequence(Value("float"), length=4))},
-}
+
 
 def gen(loaded_data: list[dict[str, Any]], contracts: dict[str, str]) -> Generator[dict[str, Any], None, None]:
     """
