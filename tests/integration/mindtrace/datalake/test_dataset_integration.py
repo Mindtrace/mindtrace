@@ -536,3 +536,274 @@ class TestDatasetIntegration:
         assert "bbox" in bbox_feature
         # The bbox feature should be a List of Sequences of floats
         assert isinstance(bbox_feature["bbox"], (HFList, HFSequence))
+
+    @pytest.mark.asyncio
+    async def test_dataset_with_multiple_classification_columns(self, datalake: Datalake, temp_registry_dir: str):
+        """Test creating a Dataset with multiple columns that use the 'classification' contract."""
+        # Use test images from disk
+        test_dir = pathlib.Path(__file__).parent
+        image1_path = test_dir / "test_image_red.png"
+        image2_path = test_dir / "test_image_blue.png"
+        image3_path = test_dir / "test_image_green.png"
+
+        # Add image data to the datalake using registry storage
+        registry_uri = temp_registry_dir
+        image_datum1 = await datalake.add_datum(
+            data=image1_path,
+            metadata={"type": "image", "project": "multi_classification_test"},
+            contract="image",
+            registry_uri=registry_uri,
+        )
+        image_datum2 = await datalake.add_datum(
+            data=image2_path,
+            metadata={"type": "image", "project": "multi_classification_test"},
+            contract="image",
+            registry_uri=registry_uri,
+        )
+        image_datum3 = await datalake.add_datum(
+            data=image3_path,
+            metadata={"type": "image", "project": "multi_classification_test"},
+            contract="image",
+            registry_uri=registry_uri,
+        )
+
+        # Create first classification column (e.g., from model1)
+        model1_label1 = await datalake.add_datum(
+            data={"label": "cat", "confidence": 0.95},
+            metadata={"type": "label", "model": "resnet50"},
+            contract="classification",
+            derived_from=image_datum1.id,
+        )
+        model1_label2 = await datalake.add_datum(
+            data={"label": "dog", "confidence": 0.87},
+            metadata={"type": "label", "model": "resnet50"},
+            contract="classification",
+            derived_from=image_datum2.id,
+        )
+        model1_label3 = await datalake.add_datum(
+            data={"label": "bird", "confidence": 0.92},
+            metadata={"type": "label", "model": "resnet50"},
+            contract="classification",
+            derived_from=image_datum3.id,
+        )
+
+        # Create second classification column (e.g., from model2)
+        model2_label1 = await datalake.add_datum(
+            data={"label": "feline", "confidence": 0.88},
+            metadata={"type": "label", "model": "vgg16"},
+            contract="classification",
+            derived_from=image_datum1.id,
+        )
+        model2_label2 = await datalake.add_datum(
+            data={"label": "canine", "confidence": 0.91},
+            metadata={"type": "label", "model": "vgg16"},
+            contract="classification",
+            derived_from=image_datum2.id,
+        )
+        model2_label3 = await datalake.add_datum(
+            data={"label": "avian", "confidence": 0.85},
+            metadata={"type": "label", "model": "vgg16"},
+            contract="classification",
+            derived_from=image_datum3.id,
+        )
+
+        assert model1_label1.id is not None
+        assert model1_label2.id is not None
+        assert model1_label3.id is not None
+        assert model2_label1.id is not None
+        assert model2_label2.id is not None
+        assert model2_label3.id is not None
+
+        # Use query_data to get datum_ids with transpose=True
+        query = [
+            {"metadata.project": "multi_classification_test", "metadata.type": "image", "column": "image"},
+            {
+                "derived_from": "image",
+                "metadata.model": "resnet50",
+                "contract": "classification",
+                "column": "model1_label",
+            },
+            {
+                "derived_from": "image",
+                "metadata.model": "vgg16",
+                "contract": "classification",
+                "column": "model2_label",
+            },
+        ]
+        datum_ids_dict = await datalake.query_data(query, transpose=True)
+
+        # Type assertion for type checker
+        assert isinstance(datum_ids_dict, dict)
+
+        # Verify we got the expected structure
+        assert "image" in datum_ids_dict
+        assert "model1_label" in datum_ids_dict
+        assert "model2_label" in datum_ids_dict
+        image_ids: list = datum_ids_dict["image"]  # type: ignore
+        model1_ids: list = datum_ids_dict["model1_label"]  # type: ignore
+        model2_ids: list = datum_ids_dict["model2_label"]  # type: ignore
+        assert isinstance(image_ids, list)
+        assert isinstance(model1_ids, list)
+        assert isinstance(model2_ids, list)
+        assert len(image_ids) == 3
+        assert len(model1_ids) == 3
+        assert len(model2_ids) == 3
+
+        # Convert the column-oriented dict to row-oriented list format
+        datum_ids_list = [
+            {column: datum_ids_dict[column][i] for column in datum_ids_dict.keys()}  # type: ignore
+            for i in range(len(image_ids))
+        ]
+
+        # Create a Dataset instance with the datum_ids
+        dataset = Dataset(
+            name="multi_classification_dataset",
+            description="Integration test dataset with multiple classification columns",
+            datum_ids=datum_ids_list,
+        )
+
+        # Insert the dataset into the database
+        inserted_dataset = await datalake.dataset_database.insert(dataset)
+
+        # Verify the dataset was inserted
+        assert inserted_dataset.id is not None
+        assert inserted_dataset.name == "multi_classification_dataset"
+        assert inserted_dataset.description == "Integration test dataset with multiple classification columns"
+        assert len(inserted_dataset.datum_ids) == 3
+        assert all("image" in row for row in inserted_dataset.datum_ids)
+        assert all("model1_label" in row for row in inserted_dataset.datum_ids)
+        assert all("model2_label" in row for row in inserted_dataset.datum_ids)
+
+        # Test load() method
+        loaded_data = await inserted_dataset.load(datalake)
+
+        # Verify loaded_data structure
+        assert isinstance(loaded_data, list)
+        assert len(loaded_data) == 3
+
+        # Verify contracts were automatically detected and set
+        assert "image" in inserted_dataset.contracts
+        assert "model1_label" in inserted_dataset.contracts
+        assert "model2_label" in inserted_dataset.contracts
+        assert inserted_dataset.contracts["image"] == "image"
+        assert inserted_dataset.contracts["model1_label"] == "classification"
+        assert inserted_dataset.contracts["model2_label"] == "classification"
+
+        # Verify each row has the expected columns and data structure
+        for row in loaded_data:
+            assert "image" in row
+            assert "model1_label" in row
+            assert "model2_label" in row
+            # Verify the loaded images are paths
+            assert isinstance(row["image"], (pathlib.Path, pathlib.PosixPath))
+            # Verify both classification columns are dictionaries
+            assert isinstance(row["model1_label"], dict)
+            assert isinstance(row["model2_label"], dict)
+            # Verify model1_label structure
+            assert "label" in row["model1_label"]
+            assert "confidence" in row["model1_label"]
+            assert isinstance(row["model1_label"]["label"], str)
+            assert isinstance(row["model1_label"]["confidence"], float)
+            # Verify model2_label structure
+            assert "label" in row["model2_label"]
+            assert "confidence" in row["model2_label"]
+            assert isinstance(row["model2_label"]["label"], str)
+            assert isinstance(row["model2_label"]["confidence"], float)
+
+        # Test to_HF() method
+        hf_dataset = await inserted_dataset.to_HF(datalake)
+
+        # Verify it's a valid HuggingFace Dataset
+        from datasets import IterableDataset as HFIterableDataset
+
+        assert isinstance(hf_dataset, HFIterableDataset)
+
+        # Verify we can iterate over the dataset
+        row_count = 0
+        for row in hf_dataset:
+            assert "image" in row
+            assert "model1_label" in row
+            assert "model2_label" in row
+            # Verify image data is accessible
+            assert row["image"] is not None
+            # Verify both classification columns have correct structure
+            assert isinstance(row["model1_label"], dict)
+            assert isinstance(row["model2_label"], dict)
+            assert "label" in row["model1_label"]
+            assert "confidence" in row["model1_label"]
+            assert "label" in row["model2_label"]
+            assert "confidence" in row["model2_label"]
+            row_count += 1
+        assert row_count == 3
+
+        # Verify dataset features are properly defined
+        from datasets import Image as HFImage
+        from datasets import Value
+
+        assert hf_dataset.features is not None
+        assert "image" in hf_dataset.features
+        assert "model1_label" in hf_dataset.features
+        assert "model2_label" in hf_dataset.features
+
+        # Image feature should be Image type
+        image_feature = hf_dataset.features["image"]
+        assert isinstance(image_feature, HFImage)
+
+        # Both classification features should be dicts with label and confidence
+        model1_feature = hf_dataset.features["model1_label"]
+        model2_feature = hf_dataset.features["model2_label"]
+        assert isinstance(model1_feature, dict), f"Expected dict feature for model1_label, got {type(model1_feature)}"
+        assert isinstance(model2_feature, dict), f"Expected dict feature for model2_label, got {type(model2_feature)}"
+        assert "label" in model1_feature, "model1_label feature should have 'label' key"
+        assert "confidence" in model1_feature, "model1_label feature should have 'confidence' key"
+        assert "label" in model2_feature, "model2_label feature should have 'label' key"
+        assert "confidence" in model2_feature, "model2_label feature should have 'confidence' key"
+
+        # Verify the Value types for both classification columns
+        assert isinstance(model1_feature["label"], Value), (
+            f"Expected Value for model1_label.label, got {type(model1_feature['label'])}"
+        )
+        assert isinstance(model1_feature["confidence"], Value), (
+            f"Expected Value for model1_label.confidence, got {type(model1_feature['confidence'])}"
+        )
+        assert isinstance(model2_feature["label"], Value), (
+            f"Expected Value for model2_label.label, got {type(model2_feature['label'])}"
+        )
+        assert isinstance(model2_feature["confidence"], Value), (
+            f"Expected Value for model2_label.confidence, got {type(model2_feature['confidence'])}"
+        )
+
+        # Verify label is string type for both
+        assert model1_feature["label"].dtype == "string", (
+            f"Expected string dtype for model1_label.label, got {model1_feature['label'].dtype}"
+        )
+        assert model2_feature["label"].dtype == "string", (
+            f"Expected string dtype for model2_label.label, got {model2_feature['label'].dtype}"
+        )
+
+        # Verify confidence is float type for both
+        assert model1_feature["confidence"].dtype in ["float64", "float32"], (
+            f"Expected float dtype for model1_label.confidence, got {model1_feature['confidence'].dtype}"
+        )
+        assert model2_feature["confidence"].dtype in ["float64", "float32"], (
+            f"Expected float dtype for model2_label.confidence, got {model2_feature['confidence'].dtype}"
+        )
+
+        # Verify we can select individual classification columns
+        model1_only = hf_dataset.select_columns(["image", "model1_label"])
+        for row in model1_only:
+            assert "image" in row
+            assert "model1_label" in row
+            assert "model2_label" not in row
+            assert isinstance(row["model1_label"], dict)
+            assert "label" in row["model1_label"]
+            assert "confidence" in row["model1_label"]
+
+        # Verify we can select both classification columns together
+        classifications_only = hf_dataset.select_columns(["model1_label", "model2_label"])
+        for row in classifications_only:
+            assert "model1_label" in row
+            assert "model2_label" in row
+            assert "image" not in row
+            assert isinstance(row["model1_label"], dict)
+            assert isinstance(row["model2_label"], dict)
