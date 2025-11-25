@@ -7,25 +7,25 @@ from mindtrace.core import CoreConfig
 from mindtrace.registry import MinioRegistryBackend
 
 
-def test_init(backend, test_bucket, minio_client):
+def test_init(minio_backend, minio_test_bucket, minio_client):
     """Test backend initialization."""
-    assert backend.uri == f"s3://{test_bucket}"
-    assert minio_client.bucket_exists(test_bucket)
+    assert minio_backend.uri == f"s3://{minio_test_bucket}"
+    assert minio_client.bucket_exists(minio_test_bucket)
 
 
-def test_push_and_pull(backend, sample_object_dir, minio_client, test_bucket, tmp_path):
+def test_push_and_pull(minio_backend, sample_object_dir, minio_client, minio_test_bucket, tmp_path):
     """Test pushing and pulling objects."""
     # Push the object
-    backend.push("test:object", "1.0.0", sample_object_dir)
+    minio_backend.push("test:object", "1.0.0", sample_object_dir)
 
     # Verify the object was pushed to MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="objects/test:object/1.0.0/"))
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix="objects/test:object/1.0.0/"))
     assert len(objects) == 2
 
     # Download to a new location
     download_dir = tmp_path / "download"
     download_dir.mkdir()
-    backend.pull("test:object", "1.0.0", str(download_dir))
+    minio_backend.pull("test:object", "1.0.0", str(download_dir))
 
     # Verify the download
     assert (download_dir / "file1.txt").exists()
@@ -34,17 +34,17 @@ def test_push_and_pull(backend, sample_object_dir, minio_client, test_bucket, tm
     assert (download_dir / "file2.txt").read_text() == "test content 2"
 
 
-def test_save_and_fetch_metadata(backend, sample_metadata, minio_client, test_bucket):
+def test_save_and_fetch_metadata(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test saving and fetching metadata."""
     # Save metadata
-    backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Verify metadata exists in MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix="_meta_test_object@1.0.0.json"))
     assert len(objects) == 1
 
     # Fetch metadata and verify contents
-    fetched_metadata = backend.fetch_metadata("test:object", "1.0.0")
+    fetched_metadata = minio_backend.fetch_metadata("test:object", "1.0.0")
 
     # Remove the path field for comparison since it's added by fetch_metadata
     path = fetched_metadata.pop("path", None)
@@ -57,34 +57,34 @@ def test_save_and_fetch_metadata(backend, sample_metadata, minio_client, test_bu
     assert fetched_metadata["description"] == sample_metadata["description"]
 
     # Delete metadata
-    backend.delete_metadata("test:object", "1.0.0")
+    minio_backend.delete_metadata("test:object", "1.0.0")
 
     # Verify metadata is deleted
-    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix="_meta_test_object@1.0.0.json"))
     assert len(objects) == 0
 
 
-def test_delete_metadata(backend, sample_metadata, minio_client, test_bucket):
+def test_delete_metadata(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test deleting metadata."""
     # Save metadata first
-    backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Delete metadata
-    backend.delete_metadata("test:object", "1.0.0")
+    minio_backend.delete_metadata("test:object", "1.0.0")
 
     # Verify metadata is deleted from MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="_meta_test_object@1.0.0.json"))
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix="_meta_test_object@1.0.0.json"))
     assert len(objects) == 0
 
 
-def test_list_objects(backend, sample_metadata, minio_client, test_bucket):
+def test_list_objects(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test listing objects."""
     # Save metadata for multiple objects
-    backend.save_metadata("object:1", "1.0.0", sample_metadata)
-    backend.save_metadata("object:2", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("object:1", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("object:2", "1.0.0", sample_metadata)
 
     # List objects
-    objects = backend.list_objects()
+    objects = minio_backend.list_objects()
 
     # Verify results
     assert len(objects) == 2
@@ -92,14 +92,14 @@ def test_list_objects(backend, sample_metadata, minio_client, test_bucket):
     assert "object:2" in objects
 
 
-def test_list_versions(backend, sample_metadata, minio_client, test_bucket):
+def test_list_versions(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test listing versions."""
     # Save metadata for multiple versions
-    backend.save_metadata("test:object", "1.0.0", sample_metadata)
-    backend.save_metadata("test:object", "2.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object", "2.0.0", sample_metadata)
 
     # List versions
-    versions = backend.list_versions("test:object")
+    versions = minio_backend.list_versions("test:object")
 
     # Verify results
     assert len(versions) == 2
@@ -107,78 +107,78 @@ def test_list_versions(backend, sample_metadata, minio_client, test_bucket):
     assert "2.0.0" in versions
 
 
-def test_has_object(backend, sample_metadata, minio_client, test_bucket):
+def test_has_object(minio_backend, sample_metadata, minio_client, minio_test_bucket):
     """Test checking object existence."""
     # Save metadata
-    backend.save_metadata("test:object", "1.0.0", sample_metadata)
+    minio_backend.save_metadata("test:object", "1.0.0", sample_metadata)
 
     # Check existing object
-    assert backend.has_object("test:object", "1.0.0")
+    assert minio_backend.has_object("test:object", "1.0.0")
 
     # Check non-existing object
-    assert not backend.has_object("nonexistent:object", "1.0.0")
-    assert not backend.has_object("test:object", "2.0.0")
+    assert not minio_backend.has_object("nonexistent:object", "1.0.0")
+    assert not minio_backend.has_object("test:object", "2.0.0")
 
 
-def test_delete_object(backend, sample_object_dir, minio_client, test_bucket):
+def test_delete_object(minio_backend, sample_object_dir, minio_client, minio_test_bucket):
     """Test deleting objects."""
     # Push an object
-    backend.push("test:object", "1.0.0", sample_object_dir)
+    minio_backend.push("test:object", "1.0.0", sample_object_dir)
 
     # Save metadata
-    backend.save_metadata("test:object", "1.0.0", {"name": "test:object"})
+    minio_backend.save_metadata("test:object", "1.0.0", {"name": "test:object"})
 
     # Delete the object
-    backend.delete("test:object", "1.0.0")
+    minio_backend.delete("test:object", "1.0.0")
 
     # Verify object is deleted from MinIO
-    objects = list(minio_client.list_objects(test_bucket, prefix="objects/test:object/1.0.0/"))
+    objects = list(minio_client.list_objects(minio_test_bucket, prefix="objects/test:object/1.0.0/"))
     assert len(objects) == 0
 
 
-def test_invalid_object_name(backend):
+def test_invalid_object_name(minio_backend):
     """Test handling of invalid object names."""
     with pytest.raises(ValueError):
-        backend.push("invalid_name", "1.0.0", "some_path")
+        minio_backend.push("invalid_name", "1.0.0", "some_path")
 
 
-def test_register_materializer(backend, minio_client, test_bucket):
+def test_register_materializer(minio_backend, minio_client, minio_test_bucket):
     """Test registering a materializer."""
     # Register a materializer
-    backend.register_materializer("test:object", "TestMaterializer")
+    minio_backend.register_materializer("test:object", "TestMaterializer")
 
     # Verify materializer was registered
-    materializers = backend.registered_materializers()
+    materializers = minio_backend.registered_materializers()
     assert materializers["test:object"] == "TestMaterializer"
 
 
-def test_registered_materializer(backend, minio_client, test_bucket):
+def test_registered_materializer(minio_backend, minio_client, minio_test_bucket):
     """Test getting a registered materializer."""
     # Register a materializer
-    backend.register_materializer("test:object", "TestMaterializer")
+    minio_backend.register_materializer("test:object", "TestMaterializer")
 
     # Get the registered materializer
-    materializer = backend.registered_materializer("test:object")
+    materializer = minio_backend.registered_materializer("test:object")
     assert materializer == "TestMaterializer"
 
     # Test non-existent materializer
-    assert backend.registered_materializer("nonexistent:object") is None
+    assert minio_backend.registered_materializer("nonexistent:object") is None
 
 
-def test_registered_materializers(backend, minio_client, test_bucket):
+def test_registered_materializers(minio_backend, minio_client, minio_test_bucket):
     """Test getting all registered materializers."""
     # Register multiple materializers
-    backend.register_materializer("test:object1", "TestMaterializer1")
-    backend.register_materializer("test:object2", "TestMaterializer2")
+    minio_backend.register_materializer("test:object1", "TestMaterializer1")
+    minio_backend.register_materializer("test:object2", "TestMaterializer2")
 
     # Get all registered materializers
-    materializers = backend.registered_materializers()
+    materializers = minio_backend.registered_materializers()
     assert len(materializers) == 2
     assert materializers["test:object1"] == "TestMaterializer1"
     assert materializers["test:object2"] == "TestMaterializer2"
 
 
-def test_init_with_default_uri(minio_client, test_bucket):
+def test_init_with_default_uri(minio_client, minio_test_bucket):
     """Test backend initialization with default URI from config."""
     try:
         # Create backend without specifying URI or bucket - both should fall back to config
@@ -260,16 +260,16 @@ def test_init_creates_bucket(minio_client):
             pass
 
 
-def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
+def test_init_handles_metadata_error(minio_client, minio_test_bucket, monkeypatch):
     """Test backend initialization handles errors when checking metadata file."""
     try:
         # Create a backend with valid credentials
         _ = MinioRegistryBackend(
-            uri=f"s3://{test_bucket}",
+            uri=f"s3://{minio_test_bucket}",
             endpoint="localhost:9100",
             access_key="minioadmin",
             secret_key="minioadmin",
-            bucket=test_bucket,
+            bucket=minio_test_bucket,
             secure=False,
         )
 
@@ -292,7 +292,7 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
                     request_id="test-request-id",
                     host_id="test-host-id",
                     response=None,  # type: ignore
-                    bucket_name="test-bucket",
+                    bucket_name=minio_test_bucket,
                     object_name="registry_metadata.yaml",
                 )
 
@@ -302,11 +302,11 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
         # Try to create another backend - should fail with a non-NoSuchKey error
         with pytest.raises(S3Error) as exc_info:
             MinioRegistryBackend(
-                uri=f"s3://{test_bucket}",
+                uri=f"s3://{minio_test_bucket}",
                 endpoint="localhost:9100",
                 access_key="minioadmin",
                 secret_key="minioadmin",
-                bucket=test_bucket,
+                bucket=minio_test_bucket,
                 secure=False,
             )
 
@@ -315,14 +315,14 @@ def test_init_handles_metadata_error(minio_client, test_bucket, monkeypatch):
     finally:
         # Cleanup - remove all objects first, then the bucket
         try:
-            for obj in minio_client.list_objects(test_bucket, recursive=True):
-                minio_client.remove_object(test_bucket, obj.object_name)
-            minio_client.remove_bucket(test_bucket)
+            for obj in minio_client.list_objects(minio_test_bucket, recursive=True):
+                minio_client.remove_object(minio_test_bucket, obj.object_name)
+            minio_client.remove_bucket(minio_test_bucket)
         except Exception:
             pass
 
 
-def test_delete_metadata_no_such_key(backend, monkeypatch):
+def test_delete_metadata_no_such_key(minio_backend, monkeypatch):
     """Test that delete_metadata ignores NoSuchKey errors."""
 
     # Mock the remove_object method to raise NoSuchKey error
@@ -338,13 +338,13 @@ def test_delete_metadata_no_such_key(backend, monkeypatch):
             object_name="metadata.yaml",
         )
 
-    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+    monkeypatch.setattr(minio_backend.client, "remove_object", mock_remove_object)
 
     # This should not raise an exception
-    backend.delete_metadata("test:object", "1.0.0")
+    minio_backend.delete_metadata("test:object", "1.0.0")
 
 
-def test_delete_metadata_other_error(backend, monkeypatch):
+def test_delete_metadata_other_error(minio_backend, monkeypatch):
     """Test that delete_metadata re-raises non-NoSuchKey errors."""
 
     # Mock the remove_object method to raise a different error
@@ -360,17 +360,17 @@ def test_delete_metadata_other_error(backend, monkeypatch):
             object_name="metadata.yaml",
         )
 
-    monkeypatch.setattr(backend.client, "remove_object", mock_remove_object)
+    monkeypatch.setattr(minio_backend.client, "remove_object", mock_remove_object)
 
     # This should raise the S3Error
     with pytest.raises(S3Error) as exc_info:
-        backend.delete_metadata("test:object", "1.0.0")
+        minio_backend.delete_metadata("test:object", "1.0.0")
 
     # Verify it's not a NoSuchKey error
     assert exc_info.value.code != "NoSuchKey"
 
 
-def test_register_materializer_error(backend, monkeypatch):
+def test_register_materializer_error(minio_backend, monkeypatch):
     """Test error handling in register_materializer."""
 
     # Mock get_object to raise an exception
@@ -381,46 +381,46 @@ def test_register_materializer_error(backend, monkeypatch):
     def mock_put_object(*args, **kwargs):
         raise Exception("Failed to save metadata file")
 
-    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+    monkeypatch.setattr(minio_backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(minio_backend.client, "put_object", mock_put_object)
 
     # Attempt to register a materializer - should raise the exception from put_object
     with pytest.raises(Exception) as exc_info:
-        backend.register_materializer("test:object", "TestMaterializer")
+        minio_backend.register_materializer("test:object", "TestMaterializer")
 
     # Verify the error message
     assert str(exc_info.value) == "Failed to get metadata file"
 
 
-def test_registered_materializer_error(backend, monkeypatch):
+def test_registered_materializer_error(minio_backend, monkeypatch):
     """Test error handling in registered_materializer."""
 
     # Mock get_object to raise an exception
     def mock_get_object(*args, **kwargs):
         raise Exception("Failed to get metadata file")
 
-    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(minio_backend.client, "get_object", mock_get_object)
 
     # Attempt to get registered materializer - should raise the exception
     with pytest.raises(Exception) as exc_info:
-        backend.registered_materializer("test:object")
+        minio_backend.registered_materializer("test:object")
 
     # Verify the error message
     assert str(exc_info.value) == "Failed to get metadata file"
 
 
-def test_registered_materializers_error(backend, monkeypatch):
+def test_registered_materializers_error(minio_backend, monkeypatch):
     """Test error handling in registered_materializers."""
 
     # Mock get_object to raise an exception
     def mock_get_object(*args, **kwargs):
         raise Exception("Failed to get metadata file")
 
-    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+    monkeypatch.setattr(minio_backend.client, "get_object", mock_get_object)
 
     # Attempt to get all registered materializers - should raise the exception
     with pytest.raises(Exception) as exc_info:
-        backend.registered_materializers()
+        minio_backend.registered_materializers()
 
     # Verify the error message
     assert str(exc_info.value) == "Failed to get metadata file"

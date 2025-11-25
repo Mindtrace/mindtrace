@@ -1,5 +1,6 @@
 import shutil
 import threading
+import time
 import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -181,6 +182,7 @@ class Registry(Mindtrace):
         registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = False,
+        versions_cache_ttl: float = 60.0,
         **kwargs,
     ):
         """Initialize the registry.
@@ -189,6 +191,7 @@ class Registry(Mindtrace):
             registry_dir: Directory to store registry objects. If None, uses the default from config.
             backend: Backend to use for storage. If None, uses LocalRegistryBackend.
             version_objects: Whether to keep version history. If False, only one version per object is kept.
+            versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -219,6 +222,12 @@ class Registry(Mindtrace):
         # Materializer cache to reduce lock contention
         self._materializer_cache = {}
         self._materializer_cache_lock = threading.Lock()
+
+        # Version list cache to reduce expensive list_versions() calls
+        # Format: {object_name: (versions_list, timestamp)}
+        self._versions_cache: Dict[str, tuple[List[str], float]] = {}
+        self._versions_cache_lock = threading.Lock()
+        self._versions_cache_ttl = versions_cache_ttl
 
         # Register the default materializers if there are none
         self._register_default_materializers()
@@ -567,6 +576,9 @@ class Registry(Mindtrace):
                 except Exception as e:
                     self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
 
+            # Invalidate versions cache after successful save
+            self._invalidate_versions_cache(name)
+
         self.logger.debug(f"Saved {name}@{version} to registry.")
 
     def load(
@@ -675,6 +687,10 @@ class Registry(Mindtrace):
             with self.get_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
+
+        # Invalidate versions cache after successful delete
+        self._invalidate_versions_cache(name)
+
         self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
 
     def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
@@ -825,13 +841,45 @@ class Registry(Mindtrace):
     def list_versions(self, object_name: str) -> List[str]:
         """List all registered versions for an object.
 
+        This method uses caching to reduce expensive backend list operations. Cache is invalidated on save/delete
+        operations.
+
         Args:
             object_name: Object name
 
         Returns:
             List of version strings
         """
-        return self.backend.list_versions(object_name)
+        # Check cache first
+        with self._versions_cache_lock:
+            if object_name in self._versions_cache:
+                versions, timestamp = self._versions_cache[object_name]
+                # Check if cache is still valid
+                if time.time() - timestamp < self._versions_cache_ttl:
+                    return versions
+                # Cache expired, remove it
+                del self._versions_cache[object_name]
+
+        # Cache miss or expired - fetch from backend
+        versions = self.backend.list_versions(object_name)
+
+        # Update cache
+        with self._versions_cache_lock:
+            self._versions_cache[object_name] = (versions, time.time())
+
+        return versions
+
+    def _invalidate_versions_cache(self, object_name: str):
+        """Invalidate the versions cache for an object.
+
+        Called after save/delete operations to ensure cache consistency.
+
+        Args:
+            object_name: Object name to invalidate cache for
+        """
+        with self._versions_cache_lock:
+            if object_name in self._versions_cache:
+                del self._versions_cache[object_name]
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
         """Map object types to their available versions.

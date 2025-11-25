@@ -30,8 +30,8 @@ def minio_client():
 
 
 @pytest.fixture
-def test_bucket(minio_client) -> Generator[str, None, None]:
-    """Create a temporary bucket for testing."""
+def minio_test_bucket(minio_client) -> Generator[str, None, None]:
+    """Create a temporary MinIO bucket for testing."""
     bucket_name = f"test-bucket-{uuid.uuid4()}"
     minio_client.make_bucket(bucket_name)
     yield bucket_name
@@ -45,16 +45,7 @@ def test_bucket(minio_client) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for testing."""
-    temp_dir = Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]) / f"test_dir_{uuid.uuid4()}"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    yield temp_dir
-    shutil.rmtree(temp_dir)
-
-
-@pytest.fixture
-def backend(temp_dir, test_bucket, minio_client):
+def minio_backend(minio_test_bucket, minio_client):
     """Create a MinioRegistryBackend instance with a test bucket."""
     endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000")
     access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin")
@@ -62,26 +53,26 @@ def backend(temp_dir, test_bucket, minio_client):
     secure = os.environ.get("MINIO_SECURE", "0") == "1"
     try:
         yield MinioRegistryBackend(
-            uri=f"s3://{test_bucket}",
+            uri=f"s3://{minio_test_bucket}",
             endpoint=endpoint,
             access_key=access_key,
             secret_key=secret_key,
-            bucket=test_bucket,
+            bucket=minio_test_bucket,
             secure=secure,
         )
     finally:
         # Cleanup - remove all objects first, then the bucket
         try:
-            for obj in minio_client.list_objects(test_bucket, recursive=True):
-                minio_client.remove_object(test_bucket, obj.object_name)
-            minio_client.remove_bucket(test_bucket)
+            for obj in minio_client.list_objects(minio_test_bucket, recursive=True):
+                minio_client.remove_object(minio_test_bucket, obj.object_name)
+            minio_client.remove_bucket(minio_test_bucket)
         except Exception:
             pass
 
 
 @pytest.fixture
-def minio_registry(backend):
-    return Registry(backend=backend)
+def minio_registry(minio_backend):
+    return Registry(backend=minio_backend)
 
 
 @pytest.fixture

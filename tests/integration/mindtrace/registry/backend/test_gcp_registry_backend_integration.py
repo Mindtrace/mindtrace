@@ -84,7 +84,7 @@ def backend(temp_dir, test_bucket):
 @pytest.fixture
 def gcp_registry(backend):
     """Create a Registry instance with GCP backend."""
-    return Registry(backend=backend)
+    return Registry(backend=backend, version_objects=True)
 
 
 @pytest.fixture
@@ -382,9 +382,8 @@ def test_exclusive_lock_conflict(backend):
     assert shared_success
 
     # Try to acquire exclusive lock (should raise LockAcquisitionError)
-    with pytest.raises(LockAcquisitionError) as exc_info:
+    with pytest.raises(LockAcquisitionError, match="currently held as shared"):
         backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-    assert "currently held as shared" in str(exc_info.value)
 
     # Release shared lock
     backend.release_lock(lock_key, shared_lock_id)

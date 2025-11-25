@@ -1596,16 +1596,15 @@ def test_list_versions_success(backend, monkeypatch):
 def test_has_object_true(backend, monkeypatch):
     """Test has_object when object exists (lines 379-387)."""
 
-    def mock_list_objects():
-        return ["test:object"]
+    class MockResponse:
+        def __init__(self):
+            self.data = json.dumps({"class": "TestClass", "materializer": "TestMaterializer"}).encode()
 
-    def mock_list_versions(name):
-        if name == "test:object":
-            return ["1.0.0", "2.0.0"]
-        return []
+    def mock_get_object(bucket, object_name):
+        return MockResponse()
 
-    monkeypatch.setattr(backend, "list_objects", mock_list_objects)
-    monkeypatch.setattr(backend, "list_versions", mock_list_versions)
+    # Mock get_object to return a valid response for fetch_metadata
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     result = backend.has_object("test:object", "1.0.0")
     assert result is True
@@ -1790,3 +1789,71 @@ def test_init_with_config_fallbacks(monkeypatch):
 
     # Verify URI and bucket fell back to config
     assert backend.uri == expected_uri
+
+
+def test_registered_materializer_success(backend, monkeypatch):
+    """Test registered_materializer success path when metadata exists (lines 339-340)."""
+
+    # Mock get_object to return valid metadata with materializer
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                metadata = {"materializers": {"test.Object": "TestMaterializer"}}
+                self.data = json.dumps(metadata).encode()
+
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return the materializer
+    materializer = backend.registered_materializer("test.Object")
+    assert materializer == "TestMaterializer"
+
+
+def test_registered_materializers_success(backend, monkeypatch):
+    """Test registered_materializers success path when metadata exists (lines 360-361)."""
+
+    # Mock get_object to return valid metadata with materializers
+    def mock_get_object(bucket, object_name):
+        class MockResponse:
+            def __init__(self):
+                metadata = {"materializers": {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}}
+                self.data = json.dumps(metadata).encode()
+
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return all materializers
+    materializers = backend.registered_materializers()
+    assert materializers == {"test.Object1": "TestMaterializer1", "test.Object2": "TestMaterializer2"}
+
+
+def test_release_lock_no_such_key(backend, monkeypatch):
+    """Test release_lock when lock doesn't exist (line 525)."""
+
+    # Mock get_object to raise NoSuchKey (lock doesn't exist)
+    def mock_get_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object not found",
+            resource="/test-bucket/locks/test-key",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name="test-bucket",
+            object_name="locks/test-key",
+        )
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return True (lock doesn't exist, considered released)
+    result = backend.release_lock("test-key", "test-lock-id")
+    assert result is True
+
+
+def test_uri_property(backend):
+    """Test uri property getter"""
+    uri = backend.uri
+    assert isinstance(uri, str)
+    assert uri == backend._uri

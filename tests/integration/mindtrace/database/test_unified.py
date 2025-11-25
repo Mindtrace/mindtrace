@@ -1,6 +1,7 @@
 from typing import Annotated
 
 import pytest
+import pytest_asyncio
 from beanie import Indexed
 from pydantic import BaseModel, Field
 from redis_om import Field as RedisField
@@ -61,7 +62,7 @@ class IntegrationUnifiedUserDoc(UnifiedMindtraceDocument):
         unique_fields = ["email"]
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def mongo_unified_backend():
     """Create a unified backend with only MongoDB configured."""
     backend = UnifiedMindtraceODMBackend(
@@ -74,13 +75,22 @@ async def mongo_unified_backend():
     # Initialize and clean up existing data
     await backend.initialize_async()
     mongo_backend = backend.get_mongo_backend()
-    await mongo_backend.model_cls.delete_all()
+
+    # Clean up any existing data before the test starts
+    try:
+        collection_name = getattr(MongoUserDoc.Settings, "name", "unified_users")
+        collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+        await collection.delete_many({})
+    except Exception:
+        pass
 
     yield backend
 
     # Cleanup after test
     try:
-        await mongo_backend.model_cls.delete_all()
+        collection_name = getattr(MongoUserDoc.Settings, "name", "unified_users")
+        collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+        await collection.delete_many({})
     except Exception:
         pass
 
@@ -107,7 +117,7 @@ def redis_unified_backend():
         redis_backend.delete(user.pk)
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def dual_unified_backend():
     """Create a unified backend with both MongoDB and Redis configured."""
     backend = UnifiedMindtraceODMBackend(
@@ -123,9 +133,14 @@ async def dual_unified_backend():
     backend.initialize_sync()
     await backend.initialize_async()
 
-    # Clean up existing data
+    # Clean up existing data before test starts
     mongo_backend = backend.get_mongo_backend()
-    await mongo_backend.model_cls.delete_all()
+    try:
+        collection_name = getattr(MongoUserDoc.Settings, "name", "unified_users")
+        collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+        await collection.delete_many({})
+    except Exception:
+        pass
 
     redis_backend = backend.get_redis_backend()
     redis = redis_backend.redis
@@ -138,7 +153,9 @@ async def dual_unified_backend():
 
     # Cleanup after test
     try:
-        await mongo_backend.model_cls.delete_all()
+        collection_name = getattr(MongoUserDoc.Settings, "name", "unified_users")
+        collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+        await collection.delete_many({})
     except Exception:
         pass
 
@@ -148,7 +165,7 @@ async def dual_unified_backend():
         redis.delete(*keys)
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def unified_model_backend():
     """Create a unified backend with unified document model."""
     backend = UnifiedMindtraceODMBackend(
@@ -163,10 +180,15 @@ async def unified_model_backend():
     backend.initialize_sync()
     await backend.initialize_async()
 
-    # Clean up existing data
+    # Clean up existing data before test starts
     if backend.has_mongo_backend():
         mongo_backend = backend.get_mongo_backend()
-        await mongo_backend.model_cls.delete_all()
+        try:
+            collection_name = getattr(IntegrationUnifiedUserDoc.get_meta(), "collection_name", "integration_users")
+            collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+            await collection.delete_many({})
+        except Exception:
+            pass
 
     if backend.has_redis_backend():
         redis_backend = backend.get_redis_backend()
@@ -181,7 +203,9 @@ async def unified_model_backend():
     try:
         if backend.has_mongo_backend():
             mongo_backend = backend.get_mongo_backend()
-            await mongo_backend.model_cls.delete_all()
+            collection_name = getattr(IntegrationUnifiedUserDoc.get_meta(), "collection_name", "integration_users")
+            collection = mongo_backend.client[MONGO_DB_NAME][collection_name]
+            await collection.delete_many({})
     except Exception:
         pass
 
