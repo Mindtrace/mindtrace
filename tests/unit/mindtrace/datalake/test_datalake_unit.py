@@ -21,6 +21,8 @@ def create_mock_datum(
     datum_id=None,
     added_at=None,
     contract="default",
+    project_id="test_project",
+    line_id="test_line",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -37,6 +39,8 @@ def create_mock_datum(
     mock_datum.metadata = metadata or {}
     mock_datum.id = datum_id
     mock_datum.added_at = added_at
+    mock_datum.project_id = project_id
+    mock_datum.line_id = line_id
     return mock_datum
 
 
@@ -110,6 +114,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -119,6 +125,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         # Create a callable that returns the appropriate mock based on call count
         call_count = [0]
@@ -577,6 +585,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -586,6 +596,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         # Create fresh mocks to avoid any fixture state issues
         mock_database = AsyncMock()
@@ -637,6 +649,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -646,6 +660,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         mock_dataset_database = AsyncMock()
         mock_dataset_database.initialize = AsyncMock()
@@ -694,6 +710,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -703,6 +721,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         # Create a callable that returns the appropriate mock based on call count
         call_count = [0]
@@ -742,6 +762,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -751,6 +773,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         mock_dataset_database = AsyncMock()
         mock_dataset_database.initialize = AsyncMock()
@@ -801,6 +825,8 @@ class TestDatalakeUnit:
                 metadata=None,
                 added_at=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
@@ -810,6 +836,8 @@ class TestDatalakeUnit:
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
         # Create separate mocks for each instance
         mock_dataset_database1 = AsyncMock()

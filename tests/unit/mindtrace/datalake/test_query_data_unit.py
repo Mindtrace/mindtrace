@@ -19,6 +19,8 @@ def create_mock_datum(
     datum_id=None,
     added_at=None,
     contract="default",
+    project_id="test_project",
+    line_id="test_line",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -35,6 +37,8 @@ def create_mock_datum(
     mock_datum.metadata = metadata or {}
     mock_datum.id = datum_id
     mock_datum.added_at = added_at
+    mock_datum.project_id = project_id
+    mock_datum.line_id = line_id
     return mock_datum
 
 
@@ -70,6 +74,8 @@ class TestQueryDataUnit:
                 derived_from=None,
                 metadata=None,
                 contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.data = data
                 self.contract = contract
@@ -77,6 +83,8 @@ class TestQueryDataUnit:
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
+                self.project_id = project_id
+                self.line_id = line_id
 
         db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)

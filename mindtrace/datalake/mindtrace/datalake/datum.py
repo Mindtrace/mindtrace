@@ -40,6 +40,12 @@ class Datum(MindtraceDocument):
     derived_from: Annotated[PydanticObjectId | None, Indexed(unique=False)] = Field(
         default=None, description="ID of the parent datum this datum was derived from."
     )
+    project_id: Annotated[str, Indexed(unique=False)] = Field(
+        description="Name of the project this datum belongs to."
+    )
+    line_id: Annotated[str, Indexed(unique=False)] = Field(
+        description="Name of the line this datum belongs to."
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata associated with this datum."
     )

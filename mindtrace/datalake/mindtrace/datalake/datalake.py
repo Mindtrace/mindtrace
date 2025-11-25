@@ -100,6 +100,8 @@ class Datalake(Mindtrace):
         contract: Optional[str] = None,
         registry_uri: Optional[str] = None,
         derived_from: Optional[PydanticObjectId] = None,
+        project_id: Optional[str] = None,
+        line_id: Optional[str] = None,
     ) -> Datum:
         """
         Add a datum to the datalake asynchronously.
@@ -120,6 +122,8 @@ class Datalake(Mindtrace):
             registry_uri: Optional registry URI for external storage. If provided, data is stored
                 in the registry backend instead of the database.
             derived_from: Optional ID of the parent datum this datum was derived from
+            project_id: Name of the project this datum belongs to
+            line_id: Name of the line this datum belongs to
 
         Returns:
             The created Datum instance with assigned ID
@@ -147,6 +151,8 @@ class Datalake(Mindtrace):
                 derived_from=derived_from,
                 metadata=metadata,
                 contract=contract,
+                project_id=project_id or "default_project",
+                line_id=line_id or "default_line",
             )
         else:
             # Store in database
@@ -157,6 +163,8 @@ class Datalake(Mindtrace):
                 derived_from=derived_from,
                 metadata=metadata,
                 contract=contract,
+                project_id=project_id or "default_project",
+                line_id=line_id or "default_line",
             )
         inserted_datum = await self.datum_database.insert(datum)
         return inserted_datum

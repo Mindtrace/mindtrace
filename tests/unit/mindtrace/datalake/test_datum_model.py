@@ -16,6 +16,8 @@ class Datum:  # noqa: D101 - simple test helper
         derived_from=None,
         metadata: dict | None = None,
         added_at: datetime | None = None,
+        project_id: str = "test_project",
+        line_id: str = "test_line",
     ):
         self.data = data
         self.contract = contract
@@ -24,6 +26,8 @@ class Datum:  # noqa: D101 - simple test helper
         self.derived_from = derived_from
         self.metadata = {} if metadata is None else metadata
         self.added_at = added_at if added_at is not None else datetime.now()
+        self.project_id = project_id
+        self.line_id = line_id
 
     # minimal API used in tests
     def model_dump(self):
@@ -47,6 +51,8 @@ class Datum:  # noqa: D101 - simple test helper
             derived_from=d.get("derived_from"),
             metadata=d.get("metadata"),
             added_at=d.get("added_at"),
+            project_id=d.get("project_id", "test_project"),
+            line_id=d.get("line_id", "test_line"),
         )
 
 

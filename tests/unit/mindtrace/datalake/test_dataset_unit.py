@@ -47,7 +47,7 @@ def create_mock_dataset(
     return mock_dataset
 
 
-def create_mock_datum(data=None, contract="default", datum_id=None, added_at=None):
+def create_mock_datum(data=None, contract="default", datum_id=None, added_at=None, project_id="test_project", line_id="test_line"):
     """Create a mock Datum instance for testing."""
     if datum_id is None:
         datum_id = PydanticObjectId()
@@ -59,6 +59,8 @@ def create_mock_datum(data=None, contract="default", datum_id=None, added_at=Non
     mock_datum.contract = contract
     mock_datum.id = datum_id
     mock_datum.added_at = added_at
+    mock_datum.project_id = project_id
+    mock_datum.line_id = line_id
     return mock_datum
 
 

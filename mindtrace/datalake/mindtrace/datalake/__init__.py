@@ -1,5 +1,5 @@
 from .datalake import Datalake
-from .datum import Datum
 from .dataset import Dataset
+from .datum import Datum
 
 __all__ = ["Datalake", "Datum", "Dataset"]
