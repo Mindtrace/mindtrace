@@ -1,5 +1,4 @@
 import os
-import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -9,7 +8,6 @@ import pytest
 from minio import Minio
 from minio.error import S3Error
 
-from mindtrace.core import CoreConfig
 from mindtrace.registry import MinioRegistryBackend, Registry
 
 

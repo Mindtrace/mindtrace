@@ -2377,9 +2377,11 @@ def test_from_uri_gs_scheme():
             mock_storage_client.return_value = mock_client
 
             # Mock lock operations on the backend
-            with patch.object(GCPRegistryBackend, 'acquire_lock', return_value=True):
-                with patch.object(GCPRegistryBackend, 'release_lock', return_value=True):
-                    registry = Registry.from_uri(uri, project_id="test-project", bucket="test-bucket", credentials_path=None)
+            with patch.object(GCPRegistryBackend, "acquire_lock", return_value=True):
+                with patch.object(GCPRegistryBackend, "release_lock", return_value=True):
+                    registry = Registry.from_uri(
+                        uri, project_id="test-project", bucket="test-bucket", credentials_path=None
+                    )
 
                     # Verify backend type
                     assert isinstance(registry.backend, GCPRegistryBackend)
