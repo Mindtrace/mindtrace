@@ -1,10 +1,14 @@
 from datetime import datetime
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
-from beanie import Indexed, PydanticObjectId
+from beanie import Indexed
+from beanie.odm.fields import PydanticObjectId
 from pydantic import Field
 
 from mindtrace.database import MindtraceDocument
+
+if TYPE_CHECKING:
+    pass
 
 
 class Datum(MindtraceDocument):
@@ -24,6 +28,9 @@ class Datum(MindtraceDocument):
     """
 
     data: Any = Field(default=None, description="The data content of this datum. Can be None if stored in a registry.")
+    contract: Annotated[str, Indexed(unique=False)] = Field(
+        default="default", description="The contract of this datum."
+    )
     registry_uri: str | None = Field(
         default=None, description="URI of the registry backend where this datum is stored."
     )
@@ -32,6 +39,12 @@ class Datum(MindtraceDocument):
     )
     derived_from: Annotated[PydanticObjectId | None, Indexed(unique=False)] = Field(
         default=None, description="ID of the parent datum this datum was derived from."
+    )
+    project_id: Annotated[str, Indexed(unique=False)] = Field(
+        description="Name of the project this datum belongs to."
+    )
+    line_id: Annotated[str, Indexed(unique=False)] = Field(
+        description="Name of the line this datum belongs to."
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata associated with this datum."

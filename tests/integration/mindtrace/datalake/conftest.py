@@ -8,6 +8,7 @@ from typing import Generator
 import pytest
 
 from mindtrace.datalake import Datalake
+from mindtrace.datalake.datum import Datum
 
 # Test configuration
 MONGO_URL = "mongodb://localhost:27018"
@@ -38,8 +39,6 @@ async def datalake():
     """Create a Datalake instance for testing."""
     # Clean up any existing data before starting
     try:
-        from mindtrace.datalake.types import Datum
-
         await Datum.delete_all()
     except Exception:
         pass  # Ignore cleanup errors

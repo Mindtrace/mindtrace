@@ -1,4 +1,5 @@
 from .datalake import Datalake
-from .types import Datum
+from .dataset import Dataset
+from .datum import Datum
 
-__all__ = ["Datalake", "Datum"]
+__all__ = ["Datalake", "Datum", "Dataset"]

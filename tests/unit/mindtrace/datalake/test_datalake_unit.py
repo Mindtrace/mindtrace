@@ -8,11 +8,21 @@ from beanie import PydanticObjectId
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Datum
+from mindtrace.datalake.dataset import Dataset
+from mindtrace.datalake.datum import Datum
 
 
 def create_mock_datum(
-    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, added_at=None
+    data=None,
+    registry_uri=None,
+    registry_key=None,
+    derived_from=None,
+    metadata=None,
+    datum_id=None,
+    added_at=None,
+    contract="default",
+    project_id="test_project",
+    line_id="test_line",
 ):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
@@ -22,17 +32,42 @@ def create_mock_datum(
 
     mock_datum = MagicMock(spec=Datum)
     mock_datum.data = data
+    mock_datum.contract = contract
     mock_datum.registry_uri = registry_uri
     mock_datum.registry_key = registry_key
     mock_datum.derived_from = derived_from
     mock_datum.metadata = metadata or {}
     mock_datum.id = datum_id
     mock_datum.added_at = added_at
+    mock_datum.project_id = project_id
+    mock_datum.line_id = line_id
     return mock_datum
 
 
 class TestDatalakeUnit:
     """Unit tests for the Datalake class."""
+
+    @staticmethod
+    def _create_mock_backend_class(mock_database, mock_dataset_database):
+        """Helper to create a mock backend class that supports subscripting."""
+        call_count = [0]
+
+        def mock_backend_factory(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_database
+            else:
+                return mock_dataset_database
+
+        class MockBackendMeta(type):
+            def __getitem__(cls, item):
+                return cls
+
+        class MockBackendClass(metaclass=MockBackendMeta):
+            def __new__(cls, *args, **kwargs):
+                return mock_backend_factory(*args, **kwargs)
+
+        return MockBackendClass
 
     @pytest.fixture
     def mock_database(self):
@@ -48,6 +83,16 @@ class TestDatalakeUnit:
         return mock_db
 
     @pytest.fixture
+    def mock_dataset_database(self):
+        """Mock dataset database backend."""
+        mock_db = AsyncMock()
+        mock_db.initialize = AsyncMock()
+        mock_db.insert = AsyncMock()
+        mock_db.get = AsyncMock()
+        mock_db.find = AsyncMock()
+        return mock_db
+
+    @pytest.fixture
     def mock_registry(self):
         """Mock registry backend."""
         mock_registry = MagicMock()
@@ -56,22 +101,44 @@ class TestDatalakeUnit:
         return mock_registry
 
     @pytest.fixture
-    def datalake(self, mock_database, mock_registry):
+    def datalake(self, mock_database, mock_registry, mock_dataset_database):
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
 
-        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
+        # Create a callable that returns the appropriate mock based on call count
+        call_count = [0]
+
+        def mock_backend_factory(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_database
+            else:
+                return mock_dataset_database
+
+        db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", side_effect=mock_backend_factory)
         registry_patcher = patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)
         db_patcher.start()
@@ -79,6 +146,8 @@ class TestDatalakeUnit:
         registry_patcher.start()
         try:
             instance = Datalake("mongodb://test:27017", "test_db")
+            # Ensure dataset_database is properly set to the mock
+            instance.dataset_database = mock_dataset_database
             yield instance
         finally:
             datum_patcher.stop()
@@ -94,10 +163,11 @@ class TestDatalakeUnit:
         assert datalake.registries == {}
 
     @pytest.mark.asyncio
-    async def test_initialize(self, datalake, mock_database):
+    async def test_initialize(self, datalake, mock_database, mock_dataset_database):
         """Test datalake initialization."""
         await datalake.initialize()
         mock_database.initialize.assert_called_once()
+        mock_dataset_database.initialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_add_datum_database_storage(self, datalake, mock_database):
@@ -116,6 +186,7 @@ class TestDatalakeUnit:
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.data == test_data
         assert inserted_datum.metadata == test_metadata
+        assert inserted_datum.contract == "default"
         assert inserted_datum.registry_uri is None
         assert inserted_datum.registry_key is None
         assert inserted_datum.derived_from is None
@@ -147,6 +218,7 @@ class TestDatalakeUnit:
         mock_database.insert.assert_called_once()
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.data is None
+        assert inserted_datum.contract == "default"
         assert inserted_datum.registry_uri == registry_uri
         assert inserted_datum.registry_key is not None
         assert inserted_datum.metadata == test_metadata
@@ -168,6 +240,31 @@ class TestDatalakeUnit:
         # Verify database insert was called with correct datum
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.derived_from == parent_id
+        assert inserted_datum.contract == "default"
+
+        assert result == mock_datum
+
+    @pytest.mark.asyncio
+    async def test_add_datum_with_contract(self, datalake, mock_database):
+        """Test adding datum with explicit contract."""
+        test_data = {"label": "cat", "confidence": 0.95}
+        test_metadata = {"source": "classification_test"}
+        contract = "classification"
+
+        mock_datum = create_mock_datum(data=test_data, metadata=test_metadata, contract=contract)
+        mock_database.insert.return_value = mock_datum
+
+        result = await datalake.add_datum(test_data, test_metadata, contract=contract)
+
+        # Verify database insert was called with correct datum
+        mock_database.insert.assert_called_once()
+        inserted_datum = mock_database.insert.call_args[0][0]
+        assert inserted_datum.data == test_data
+        assert inserted_datum.metadata == test_metadata
+        assert inserted_datum.contract == contract
+        assert inserted_datum.registry_uri is None
+        assert inserted_datum.registry_key is None
+        assert inserted_datum.derived_from is None
 
         assert result == mock_datum
 
@@ -324,6 +421,7 @@ class TestDatalakeUnit:
 
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.metadata == {}
+        assert inserted_datum.contract == "default"
 
     @pytest.mark.asyncio
     async def test_complex_metadata(self, datalake, mock_database):
@@ -338,6 +436,7 @@ class TestDatalakeUnit:
 
         inserted_datum = mock_database.insert.call_args[0][0]
         assert inserted_datum.metadata == complex_metadata
+        assert inserted_datum.contract == "default"
 
     @pytest.mark.asyncio
     async def test_added_at_field_populated_on_creation(self, datalake, mock_database):
@@ -471,25 +570,54 @@ class TestDatalakeUnit:
             assert isinstance(datum.added_at, datetime)
 
     @pytest.mark.asyncio
-    async def test_create_class_method_success(self, mock_database, mock_registry):
+    async def test_create_class_method_success(self, mock_registry):
         """Test successful creation of Datalake instance using create() class method."""
         mongo_db_uri = "mongodb://test:27017"
         mongo_db_name = "test_db"
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
+
+        # Create fresh mocks to avoid any fixture state issues
+        mock_database = AsyncMock()
+        mock_database.initialize = AsyncMock()
+        mock_database.insert = AsyncMock()
+        mock_database.get = AsyncMock()
+        mock_database.aggregate = AsyncMock()
+        mock_database.find = AsyncMock()
+        mock_database.get_raw_model = MagicMock(return_value=MagicMock(derived_from=MagicMock()))
+
+        mock_dataset_database = AsyncMock()
+        mock_dataset_database.initialize = AsyncMock()
+        mock_dataset_database.insert = AsyncMock()
+        mock_dataset_database.get = AsyncMock()
+        mock_dataset_database.find = AsyncMock()
+
+        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -501,11 +629,9 @@ class TestDatalakeUnit:
         # Verify the instance is properly initialized
         assert result.mongo_db_uri == mongo_db_uri
         assert result.mongo_db_name == mongo_db_name
-        assert result.datum_database == mock_database
-        assert result.registries == {}
-
-        # Verify initialize was called
+        # Verify initialize was called for both databases
         mock_database.initialize.assert_called_once()
+        mock_dataset_database.initialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_class_method_with_different_parameters(self, mock_database, mock_registry):
@@ -515,18 +641,38 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
+
+        mock_dataset_database = AsyncMock()
+        mock_dataset_database.initialize = AsyncMock()
+        mock_dataset_database.insert = AsyncMock()
+        mock_dataset_database.get = AsyncMock()
+        mock_dataset_database.find = AsyncMock()
+
+        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -536,10 +682,12 @@ class TestDatalakeUnit:
         assert result.mongo_db_uri == mongo_db_uri
         assert result.mongo_db_name == mongo_db_name
         assert result.datum_database == mock_database
+        assert result.dataset_database == mock_dataset_database
         assert result.registries == {}
 
-        # Verify initialize was called
+        # Verify initialize was called for both databases
         mock_database.initialize.assert_called_once()
+        mock_dataset_database.initialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_class_method_initialization_failure(self, mock_database, mock_registry):
@@ -549,21 +697,45 @@ class TestDatalakeUnit:
 
         # Make initialize raise an exception
         mock_database.initialize.side_effect = Exception("Database connection failed")
+        mock_dataset_database = AsyncMock()
+        mock_dataset_database.initialize = AsyncMock()
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
+
+        # Create a callable that returns the appropriate mock based on call count
+        call_count = [0]
+
+        def mock_backend_factory(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return mock_database
+            else:
+                return mock_dataset_database
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", side_effect=mock_backend_factory),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -571,7 +743,7 @@ class TestDatalakeUnit:
             with pytest.raises(Exception, match="Database connection failed"):
                 await Datalake.create(mongo_db_uri, mongo_db_name)
 
-        # Verify initialize was called
+        # Verify initialize was called (fails on first call)
         mock_database.initialize.assert_called_once()
 
     @pytest.mark.asyncio
@@ -582,18 +754,38 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
+
+        mock_dataset_database = AsyncMock()
+        mock_dataset_database.initialize = AsyncMock()
+        mock_dataset_database.insert = AsyncMock()
+        mock_dataset_database.get = AsyncMock()
+        mock_dataset_database.find = AsyncMock()
+
+        MockBackendClass = self._create_mock_backend_class(mock_database, mock_dataset_database)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -601,6 +793,7 @@ class TestDatalakeUnit:
 
         # Verify the instance is ready to use (can call methods without additional initialization)
         assert hasattr(result, "datum_database")
+        assert hasattr(result, "dataset_database")
         assert hasattr(result, "registries")
         assert hasattr(result, "mongo_db_uri")
         assert hasattr(result, "mongo_db_name")
@@ -609,10 +802,12 @@ class TestDatalakeUnit:
         assert result.mongo_db_uri == mongo_db_uri
         assert result.mongo_db_name == mongo_db_name
         assert result.datum_database == mock_database
+        assert result.dataset_database == mock_dataset_database
         assert result.registries == {}
 
-        # Verify initialize was called exactly once
+        # Verify initialize was called for both databases
         mock_database.initialize.assert_called_once()
+        mock_dataset_database.initialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_class_method_multiple_calls(self, mock_database, mock_registry):
@@ -622,18 +817,62 @@ class TestDatalakeUnit:
 
         class _MockDatum:
             def __init__(
-                self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, added_at=None
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                added_at=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
             ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
                 self.added_at = added_at if added_at is not None else datetime.now()
+                self.project_id = project_id
+                self.line_id = line_id
+
+        # Create separate mocks for each instance
+        mock_dataset_database1 = AsyncMock()
+        mock_dataset_database1.initialize = AsyncMock()
+        mock_dataset_database1.insert = AsyncMock()
+        mock_dataset_database1.get = AsyncMock()
+        mock_dataset_database1.find = AsyncMock()
+        mock_dataset_database2 = AsyncMock()
+        mock_dataset_database2.initialize = AsyncMock()
+        mock_dataset_database2.insert = AsyncMock()
+        mock_dataset_database2.get = AsyncMock()
+        mock_dataset_database2.find = AsyncMock()
+
+        # Track call count to return appropriate mocks for multiple instances
+        call_count = [0]
+
+        def mock_backend_factory(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                # First instance: first call = datum_db, second call = dataset_db
+                return mock_database if call_count[0] == 1 else mock_dataset_database1
+            else:
+                # Second instance: third call = datum_db, fourth call = dataset_db
+                return mock_database if call_count[0] == 3 else mock_dataset_database2
+
+        class MockBackendMeta(type):
+            def __getitem__(cls, item):
+                return cls
+
+        class MockBackendClass(metaclass=MockBackendMeta):
+            def __new__(cls, *args, **kwargs):
+                return mock_backend_factory(*args, **kwargs)
 
         with (
-            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database),
+            patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", new=MockBackendClass),
             patch("mindtrace.datalake.datalake.Registry", return_value=mock_registry),
             patch("mindtrace.datalake.datalake.Datum", _MockDatum),
         ):
@@ -654,8 +893,10 @@ class TestDatalakeUnit:
         assert result1.mongo_db_name == mongo_db_name
         assert result2.mongo_db_name == mongo_db_name
 
-        # Verify initialize was called twice (once for each instance)
+        # Verify initialize was called for both databases in each instance
         assert mock_database.initialize.call_count == 2
+        mock_dataset_database1.initialize.assert_called_once()
+        mock_dataset_database2.initialize.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_query_data_optimized_single_query(self, datalake, mock_database):
@@ -743,3 +984,137 @@ class TestDatalakeUnit:
                 "bbox_id": "507f1f77bcf86cd799439031",
             }
         ]
+
+    @pytest.mark.asyncio
+    async def test_initialize_dataset_database(self, datalake, mock_database, mock_dataset_database):
+        """Test that initialize also initializes dataset_database."""
+        await datalake.initialize()
+        mock_database.initialize.assert_called_once()
+        mock_dataset_database.initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_add_dataset(self, datalake, mock_dataset_database):
+        """Test adding a dataset to the datalake."""
+        # Create a mock dataset
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.name = "test_dataset"
+        mock_dataset.description = "Test dataset description"
+        mock_dataset.datum_ids = [{"image": PydanticObjectId()}]
+        mock_dataset.id = PydanticObjectId()
+
+        inserted_dataset = MagicMock(spec=Dataset)
+        inserted_dataset.name = "test_dataset"
+        inserted_dataset.description = "Test dataset description"
+        inserted_dataset.id = mock_dataset.id
+        mock_dataset_database.insert.return_value = inserted_dataset
+
+        result = await datalake.add_dataset(mock_dataset)
+
+        mock_dataset_database.insert.assert_called_once()
+        assert result == inserted_dataset
+
+    @pytest.mark.asyncio
+    async def test_get_dataset(self, datalake, mock_dataset_database):
+        """Test getting a dataset from the datalake."""
+        dataset_id = PydanticObjectId()
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.name = "test_dataset"
+        mock_dataset.description = "Test dataset description"
+        mock_dataset.datum_ids = []
+        mock_dataset.id = dataset_id
+        mock_dataset_database.get.return_value = mock_dataset
+
+        result = await datalake.get_dataset(dataset_id)
+
+        mock_dataset_database.get.assert_called_once_with(dataset_id)
+        assert result == mock_dataset
+        assert result.id == dataset_id
+
+    @pytest.mark.asyncio
+    async def test_get_dataset_none_id(self, datalake):
+        """Test getting a dataset with None ID raises error."""
+        with pytest.raises(DocumentNotFoundError, match="Dataset ID is None"):
+            await datalake.get_dataset(None)
+
+    @pytest.mark.asyncio
+    async def test_get_dataset_nonexistent(self, datalake, mock_dataset_database):
+        """Test getting nonexistent dataset."""
+        dataset_id = PydanticObjectId()
+        mock_dataset_database.get.side_effect = DocumentNotFoundError("Not found")
+
+        with pytest.raises(DocumentNotFoundError):
+            await datalake.get_dataset(dataset_id)
+
+    @pytest.mark.asyncio
+    async def test_get_datasets(self, datalake, mock_dataset_database):
+        """Test getting multiple datasets."""
+        dataset_ids = [PydanticObjectId() for _ in range(3)]
+        mock_datasets = []
+        for i in range(3):
+            mock_dataset = MagicMock(spec=Dataset)
+            mock_dataset.name = f"dataset_{i}"
+            mock_dataset.description = f"Description {i}"
+            mock_dataset.datum_ids = []
+            mock_dataset.id = dataset_ids[i]
+            mock_datasets.append(mock_dataset)
+
+        # Mock get_dataset calls
+        with patch.object(datalake, "get_dataset", side_effect=mock_datasets):
+            result = await datalake.get_datasets(dataset_ids)
+
+        assert len(result) == 3
+        for i, dataset in enumerate(result):
+            assert dataset.name == f"dataset_{i}"
+            assert dataset.id == dataset_ids[i]
+
+    @pytest.mark.asyncio
+    async def test_get_datasets_empty_list(self, datalake):
+        """Test getting datasets with empty list."""
+        result = await datalake.get_datasets([])
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_find_datasets_no_filter(self, datalake, mock_dataset_database):
+        """Test finding datasets with no filter."""
+        mock_dataset1 = MagicMock(spec=Dataset)
+        mock_dataset1.name = "dataset1"
+        mock_dataset1.description = "Description 1"
+        mock_dataset1.datum_ids = []
+        mock_dataset2 = MagicMock(spec=Dataset)
+        mock_dataset2.name = "dataset2"
+        mock_dataset2.description = "Description 2"
+        mock_dataset2.datum_ids = []
+        mock_datasets = [mock_dataset1, mock_dataset2]
+        mock_dataset_database.find.return_value = mock_datasets
+
+        result = await datalake.find_datasets()
+
+        mock_dataset_database.find.assert_called_once_with({})
+        assert len(result) == 2
+        assert result[0].name == "dataset1"
+        assert result[1].name == "dataset2"
+
+    @pytest.mark.asyncio
+    async def test_find_datasets_with_filter(self, datalake, mock_dataset_database):
+        """Test finding datasets with a filter."""
+        filter_dict = {"name": "test_dataset"}
+        mock_dataset = MagicMock(spec=Dataset)
+        mock_dataset.name = "test_dataset"
+        mock_dataset.description = "Test"
+        mock_dataset.datum_ids = []
+        mock_dataset_database.find.return_value = [mock_dataset]
+
+        result = await datalake.find_datasets(filter_dict)
+
+        mock_dataset_database.find.assert_called_once_with(filter_dict)
+        assert len(result) == 1
+        assert result[0].name == "test_dataset"
+
+    @pytest.mark.asyncio
+    async def test_find_datasets_empty_result(self, datalake, mock_dataset_database):
+        """Test finding datasets that returns empty result."""
+        mock_dataset_database.find.return_value = []
+
+        result = await datalake.find_datasets({"name": "nonexistent"})
+
+        assert result == []

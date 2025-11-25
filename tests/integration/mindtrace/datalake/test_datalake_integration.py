@@ -361,3 +361,83 @@ class TestDatalakeIntegration:
         for i, datum in enumerate(retrieved_data):
             assert datum.data["concurrent_test"] == i
             assert datum.data["value"] == i * 10
+
+    @pytest.mark.asyncio
+    async def test_add_datum_with_contract_classification(self, datalake: Datalake):
+        """Test adding datum with classification contract."""
+        classification_data = {"label": "cat", "confidence": 0.95}
+        metadata = {"type": "classification"}
+
+        datum = await datalake.add_datum(classification_data, metadata, contract="classification")
+
+        assert datum.id is not None
+        assert datum.contract == "classification"
+        assert datum.data == classification_data
+        assert datum.data["label"] == "cat"
+        assert datum.data["confidence"] == 0.95
+
+        # Retrieve and verify
+        retrieved_datum = await datalake.get_datum(datum.id)
+        assert retrieved_datum.contract == "classification"
+        assert retrieved_datum.data == classification_data
+
+    @pytest.mark.asyncio
+    async def test_add_datum_with_contract_image(self, datalake: Datalake, temp_registry_dir: str):
+        """Test adding datum with image contract."""
+        import pathlib
+
+        from PIL import Image as PILImage
+
+        # Create a temporary image file
+        registry_uri = temp_registry_dir
+        image = PILImage.new("RGB", (100, 100), color="red")
+        image_path = pathlib.Path(temp_registry_dir) / "test_image.png"
+        image.save(image_path)
+
+        metadata = {"type": "image"}
+
+        datum = await datalake.add_datum(image_path, metadata, contract="image", registry_uri=registry_uri)
+
+        assert datum.id is not None
+        assert datum.contract == "image"
+        # Image data is stored in registry
+        assert datum.registry_uri == registry_uri
+
+        # Retrieve and verify
+        retrieved_datum = await datalake.get_datum(datum.id)
+        assert retrieved_datum.contract == "image"
+
+    @pytest.mark.asyncio
+    async def test_add_datum_with_default_contract(self, datalake: Datalake):
+        """Test adding datum without contract (defaults to 'default')."""
+        test_data = {"test": "data"}
+        metadata = {"source": "test"}
+
+        datum = await datalake.add_datum(test_data, metadata)
+
+        assert datum.id is not None
+        assert datum.contract == "default"
+        assert datum.data == test_data
+
+        # Retrieve and verify
+        retrieved_datum = await datalake.get_datum(datum.id)
+        assert retrieved_datum.contract == "default"
+
+    @pytest.mark.asyncio
+    async def test_add_datum_with_invalid_classification_contract(self, datalake: Datalake):
+        """Test that adding datum with invalid classification contract raises error."""
+        # Missing 'label' key
+        with pytest.raises(ValueError, match="Data must contain a 'label' key"):
+            await datalake.add_datum({"confidence": 0.95}, {}, contract="classification")
+
+        # Missing 'confidence' key
+        with pytest.raises(ValueError, match="Data must contain a 'confidence' key"):
+            await datalake.add_datum({"label": "cat"}, {}, contract="classification")
+
+        # Invalid confidence type
+        with pytest.raises(ValueError, match="Confidence must be a float"):
+            await datalake.add_datum({"label": "cat", "confidence": "high"}, {}, contract="classification")
+
+        # Invalid confidence range
+        with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
+            await datalake.add_datum({"label": "cat", "confidence": 1.5}, {}, contract="classification")

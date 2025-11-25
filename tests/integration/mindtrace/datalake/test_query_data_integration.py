@@ -91,14 +91,16 @@ class TestQueryDataIntegration:
         # Add classification labels derived from images
         await asyncio.sleep(0.01)  # Ensure different timestamps
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
         await asyncio.sleep(0.01)
         label2 = await datalake.add_datum(
-            data={"type": "classification", "label": "dog", "confidence": 0.87},
+            data={"label": "dog", "confidence": 0.87},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image2.id,
         )
 
@@ -107,7 +109,7 @@ class TestQueryDataIntegration:
             {"metadata.project": "test_project", "column": "image_id"},  # Base query: find images
             {
                 "derived_from": "image_id",
-                "data.type": "classification",
+                "contract": "classification",
                 "column": "label_id",
             },  # Derived query: find classifications
         ]
@@ -145,14 +147,16 @@ class TestQueryDataIntegration:
         # Add multiple classification labels with different timestamps
         await asyncio.sleep(0.01)
         old_label = await datalake.add_datum(
-            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            data={"label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
+            contract="classification",
             derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
-            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            data={"label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
+            contract="classification",
             derived_from=image.id,
         )
         assert old_label.id != new_label.id
@@ -160,7 +164,7 @@ class TestQueryDataIntegration:
         # Query with latest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "latest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -196,15 +200,16 @@ class TestQueryDataIntegration:
 
         # Add classification label only for image1
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
 
         # Query for images and their classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -231,28 +236,32 @@ class TestQueryDataIntegration:
         # Add classification labels (level 1 derivation)
         await asyncio.sleep(0.01)
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
         await asyncio.sleep(0.01)
         label2 = await datalake.add_datum(
-            data={"type": "classification", "label": "dog", "confidence": 0.87},
+            data={"label": "dog", "confidence": 0.87},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image2.id,
         )
 
         # Add bounding boxes derived from classifications (level 2 derivation)
         await asyncio.sleep(0.01)
         bbox1 = await datalake.add_datum(
-            data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+            data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=label1.id,
         )
         await asyncio.sleep(0.01)
         bbox2 = await datalake.add_datum(
-            data={"type": "bbox", "x": 30, "y": 40, "width": 120, "height": 90},
+            data={"bbox": [[30.0, 40.0, 150.0, 130.0]]},  # x=30, y=40, width=120, height=90 -> [x1, y1, x2, y2]
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=label2.id,
         )
 
@@ -261,10 +270,10 @@ class TestQueryDataIntegration:
             {"metadata.project": "test_project", "column": "image_id"},  # Base: images
             {
                 "derived_from": "image_id",
-                "data.type": "classification",
+                "contract": "classification",
                 "column": "label_id",
             },  # Level 1: classifications
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},  # Level 2: bounding boxes
+            {"derived_from": "label_id", "contract": "bbox", "column": "bbox_id"},  # Level 2: bounding boxes
         ]
         result = await datalake.query_data(query)
 
@@ -307,13 +316,16 @@ class TestQueryDataIntegration:
             data={"type": "image", "filename": "test.jpg"}, metadata={"project": "test_project"}
         )
         await datalake.add_datum(
-            data={"type": "classification", "label": "cat"}, metadata={"model": "resnet50"}, derived_from=image.id
+            data={"label": "cat", "confidence": 0.98},
+            metadata={"model": "resnet50"},
+            contract="classification",
+            derived_from=image.id,
         )
 
         # Query with invalid strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "invalid", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "invalid", "column": "label_id"},
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
@@ -432,14 +444,16 @@ class TestQueryDataIntegration:
         # Add multiple classification labels with different timestamps
         await asyncio.sleep(0.01)
         old_label = await datalake.add_datum(
-            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            data={"label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
+            contract="classification",
             derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
-            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            data={"label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
+            contract="classification",
             derived_from=image.id,
         )
         assert old_label.id != new_label.id
@@ -447,7 +461,7 @@ class TestQueryDataIntegration:
         # Query with earliest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "earliest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -469,20 +483,22 @@ class TestQueryDataIntegration:
 
         # Add multiple classification labels
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "label1", "confidence": 0.7},
+            data={"label": "label1", "confidence": 0.7},
             metadata={"model": "model1"},
+            contract="classification",
             derived_from=image.id,
         )
         label2 = await datalake.add_datum(
-            data={"type": "classification", "label": "label2", "confidence": 0.8},
+            data={"label": "label2", "confidence": 0.8},
             metadata={"model": "model2"},
+            contract="classification",
             derived_from=image.id,
         )
 
         # Query with random strategy (run multiple times to test randomness)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "random", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "random", "column": "label_id"},
         ]
 
         # Run the query multiple times to ensure it can select different results
@@ -596,8 +612,9 @@ class TestQueryDataIntegration:
         labels = []
         for image in images:
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{image.id}"},
+                data={"label": f"label_{image.id}", "confidence": 0.98},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=image.id,
             )
             labels.append(label)
@@ -605,7 +622,7 @@ class TestQueryDataIntegration:
         # Query with datums_wanted=2 and multi-query
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=2)
 
@@ -636,7 +653,7 @@ class TestQueryDataIntegration:
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -669,15 +686,16 @@ class TestQueryDataIntegration:
 
         # Add classification label only for image1
         await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
 
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -707,15 +725,16 @@ class TestQueryDataIntegration:
         # Add classification labels for only some images (images 0, 2, 4)
         for i in [0, 2, 4]:
             await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
 
         # Query for images that don't have classification labels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -740,28 +759,31 @@ class TestQueryDataIntegration:
 
         # Add classification labels for both images
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
         await datalake.add_datum(
-            data={"type": "classification", "label": "dog", "confidence": 0.90},
+            data={"label": "dog", "confidence": 0.90},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image2.id,
         )
 
         # Add bounding box only for label1
         await datalake.add_datum(
-            data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+            data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=label1.id,
         )
 
         # Query for images that don't have bounding boxes (through classification)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "strategy": "missing", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "strategy": "missing", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -798,7 +820,8 @@ class TestQueryDataIntegration:
         labels = []
         for i in range(3):
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
+                contract="classification",
                 metadata={"model": "resnet50"},
                 derived_from=images[i].id,
             )
@@ -808,7 +831,7 @@ class TestQueryDataIntegration:
         # This should return only 3 results (the ones with classification labels)
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=4)
 
@@ -847,7 +870,8 @@ class TestQueryDataIntegration:
         classification_labels = []
         for i in [0, 1, 2, 4]:
             label = await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
+                contract="classification",
                 metadata={"model": "resnet50"},
                 derived_from=images[i].id,
             )
@@ -857,8 +881,9 @@ class TestQueryDataIntegration:
         bbox_labels = []
         for i in [0, 2]:
             bbox = await datalake.add_datum(
-                data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+                data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
                 metadata={"model": "yolo"},
+                contract="bbox",
                 derived_from=classification_labels[i].id if i < 3 else classification_labels[i - 1].id,
             )
             bbox_labels.append(bbox)
@@ -867,8 +892,8 @@ class TestQueryDataIntegration:
         # This should return only 2 results (images 0 and 2) because only they have both classification and bbox
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=5)
 
@@ -900,15 +925,16 @@ class TestQueryDataIntegration:
         # Add classification labels only for images 0, 2, 4
         for i in [0, 2, 4]:
             await datalake.add_datum(
-                data={"type": "classification", "label": f"label_{i}", "confidence": 0.9},
+                data={"label": f"label_{i}", "confidence": 0.9},
                 metadata={"model": "resnet50"},
+                contract="classification",
                 derived_from=images[i].id,
             )
 
         # Query for images that don't have classification labels, with datums_wanted=3
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "missing", "column": "label_id"},
         ]
         result = await datalake.query_data(query, datums_wanted=3)
 
@@ -963,14 +989,16 @@ class TestQueryDataIntegration:
         # Add multiple classification labels with different timestamps
         await asyncio.sleep(0.01)
         old_label = await datalake.add_datum(
-            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            data={"label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
+            contract="classification",
             derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
-            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            data={"label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
+            contract="classification",
             derived_from=image.id,
         )
         assert old_label.id != new_label.id
@@ -978,7 +1006,7 @@ class TestQueryDataIntegration:
         # Query with quickest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "quickest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -1036,34 +1064,38 @@ class TestQueryDataIntegration:
         # Add multiple classification labels
         await asyncio.sleep(0.01)
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "label1", "confidence": 0.7},
+            data={"label": "label1", "confidence": 0.7},
             metadata={"model": "model1"},
+            contract="classification",
             derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         label2 = await datalake.add_datum(
-            data={"type": "classification", "label": "label2", "confidence": 0.8},
+            data={"label": "label2", "confidence": 0.8},
             metadata={"model": "model2"},
+            contract="classification",
             derived_from=image.id,
         )
 
         # Add bounding boxes derived from each label
         bbox1 = await datalake.add_datum(
-            data={"type": "bbox", "x": 10, "y": 20, "width": 100, "height": 80},
+            data={"bbox": [[10.0, 20.0, 110.0, 100.0]]},  # x=10, y=20, width=100, height=80 -> [x1, y1, x2, y2]
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=label1.id,
         )
         bbox2 = await datalake.add_datum(
-            data={"type": "bbox", "x": 30, "y": 40, "width": 120, "height": 90},
+            data={"bbox": [[30.0, 40.0, 150.0, 130.0]]},  # x=30, y=40, width=120, height=90 -> [x1, y1, x2, y2]
             metadata={"model": "yolo"},
+            contract="bbox",
             derived_from=label2.id,
         )
 
         # Query with quickest strategy for both levels
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
-            {"derived_from": "label_id", "data.type": "bbox", "strategy": "quickest", "column": "bbox_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "label_id", "contract": "bbox", "strategy": "quickest", "column": "bbox_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -1096,15 +1128,16 @@ class TestQueryDataIntegration:
 
         # Add classification label only for image1
         label1 = await datalake.add_datum(
-            data={"type": "classification", "label": "cat", "confidence": 0.95},
+            data={"label": "cat", "confidence": 0.95},
             metadata={"model": "resnet50"},
+            contract="classification",
             derived_from=image1.id,
         )
 
         # Query with quickest strategy
         query = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "quickest", "column": "label_id"},
         ]
         result = await datalake.query_data(query)
 
@@ -1128,35 +1161,37 @@ class TestQueryDataIntegration:
         # Add multiple classification labels with different timestamps
         await asyncio.sleep(0.01)
         old_label = await datalake.add_datum(
-            data={"type": "classification", "label": "old_label", "confidence": 0.5},
+            data={"label": "old_label", "confidence": 0.5},
             metadata={"model": "old_model"},
+            contract="classification",
             derived_from=image.id,
         )
         await asyncio.sleep(0.01)
         new_label = await datalake.add_datum(
-            data={"type": "classification", "label": "new_label", "confidence": 0.9},
+            data={"label": "new_label", "confidence": 0.9},
             metadata={"model": "new_model"},
+            contract="classification",
             derived_from=image.id,
         )
 
         # Test with latest strategy
         query_latest = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "latest", "column": "label_id"},
         ]
         result_latest = await datalake.query_data(query_latest)
 
         # Test with earliest strategy
         query_earliest = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "earliest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "earliest", "column": "label_id"},
         ]
         result_earliest = await datalake.query_data(query_earliest)
 
         # Test with quickest strategy
         query_quickest = [
             {"metadata.project": "test_project", "column": "image_id"},
-            {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
+            {"derived_from": "image_id", "contract": "classification", "strategy": "quickest", "column": "label_id"},
         ]
         result_quickest = await datalake.query_data(query_quickest)
 

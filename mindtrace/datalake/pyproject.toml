@@ -16,6 +16,7 @@ dependencies = [
     "mindtrace-registry",
     "mindtrace-database",
     "mindtrace-services",
+    "datasets>=4.4.1",
 ]
 
 [project.urls]

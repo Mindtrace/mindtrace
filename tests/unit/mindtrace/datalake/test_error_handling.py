@@ -7,21 +7,27 @@ from beanie import PydanticObjectId
 
 from mindtrace.database.core.exceptions import DocumentNotFoundError
 from mindtrace.datalake import Datalake
-from mindtrace.datalake.types import Datum
+from mindtrace.datalake.datum import Datum
 
 
-def create_mock_datum(data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None):
+def create_mock_datum(
+    data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None, datum_id=None, contract="default",
+    project_id="test_project", line_id="test_line"
+):
     """Create a mock Datum instance without requiring beanie initialization."""
     if datum_id is None:
         datum_id = "507f1f77bcf86cd799439011"
 
     mock_datum = MagicMock(spec=Datum)
     mock_datum.data = data
+    mock_datum.contract = contract
     mock_datum.registry_uri = registry_uri
     mock_datum.registry_key = registry_key
     mock_datum.derived_from = derived_from
     mock_datum.metadata = metadata or {}
     mock_datum.id = datum_id
+    mock_datum.project_id = project_id
+    mock_datum.line_id = line_id
     return mock_datum
 
 
@@ -52,13 +58,26 @@ class TestErrorHandling:
         """Create Datalake instance with mocked database and patched Datum model."""
 
         class _MockDatum:
-            def __init__(self, data=None, registry_uri=None, registry_key=None, derived_from=None, metadata=None):
+            def __init__(
+                self,
+                data=None,
+                registry_uri=None,
+                registry_key=None,
+                derived_from=None,
+                metadata=None,
+                contract="default",
+                project_id="test_project",
+                line_id="test_line",
+            ):
                 self.id = PydanticObjectId()
                 self.data = data
+                self.contract = contract
                 self.registry_uri = registry_uri
                 self.registry_key = registry_key
                 self.derived_from = derived_from
                 self.metadata = metadata or {}
+                self.project_id = project_id
+                self.line_id = line_id
 
         db_patcher = patch("mindtrace.datalake.datalake.MongoMindtraceODMBackend", return_value=mock_database)
         datum_patcher = patch("mindtrace.datalake.datalake.Datum", _MockDatum)

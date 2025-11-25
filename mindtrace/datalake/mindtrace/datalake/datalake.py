@@ -10,7 +10,9 @@ from beanie import PydanticObjectId
 from mindtrace.core import Mindtrace
 from mindtrace.database import MongoMindtraceODMBackend
 from mindtrace.database.core.exceptions import DocumentNotFoundError
-from mindtrace.datalake.types import Datum
+from mindtrace.datalake.contracts import validate_contract
+from mindtrace.datalake.dataset import Dataset
+from mindtrace.datalake.datum import Datum
 from mindtrace.registry import Registry
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 
@@ -50,14 +52,42 @@ class Datalake(Mindtrace):
             db_uri=self.mongo_db_uri,
         )
         self.registries: Dict[str, Registry] = {}
+        self.dataset_database: MongoMindtraceODMBackend[Dataset] = MongoMindtraceODMBackend[Dataset](
+            model_cls=Dataset,
+            db_name=self.mongo_db_name,
+            db_uri=self.mongo_db_uri,
+        )
 
     async def initialize(self):
+        """
+        Initialize the datalake by setting up database connections.
+
+        This method initializes both the datum database and dataset database backends,
+        establishing connections to MongoDB and preparing them for use.
+
+        Raises:
+            Exception: If database initialization fails
+        """
         await self.datum_database.initialize()
+        await self.dataset_database.initialize()
 
     @classmethod
     async def create(cls, mongo_db_uri: str, mongo_db_name: str) -> "Datalake":
         """
-        Create a Datalake instance from a configuration dictionary.
+        Create and initialize a Datalake instance.
+
+        This is a convenience class method that creates a Datalake instance
+        and initializes it in a single call.
+
+        Args:
+            mongo_db_uri: MongoDB connection URI
+            mongo_db_name: Name of the MongoDB database to use
+
+        Returns:
+            An initialized Datalake instance ready for use
+
+        Raises:
+            Exception: If database initialization fails
         """
         datalake = cls(mongo_db_uri=mongo_db_uri, mongo_db_name=mongo_db_name)
         await datalake.initialize()
@@ -67,21 +97,47 @@ class Datalake(Mindtrace):
         self,
         data: Any,
         metadata: Dict[str, Any],
+        contract: Optional[str] = None,
         registry_uri: Optional[str] = None,
         derived_from: Optional[PydanticObjectId] = None,
+        project_id: Optional[str] = None,
+        line_id: Optional[str] = None,
     ) -> Datum:
         """
         Add a datum to the datalake asynchronously.
 
+        This method validates the data according to the specified contract,
+        stores it either in the database or in a registry backend, and returns
+        the created datum with an assigned ID.
+
         Args:
-            data: The data to store
-            metadata: Metadata associated with the datum
-            registry_uri: Optional registry URI for external storage
-            derived_from: Optional ID of the parent datum
+            data: The data to store. Format depends on the contract:
+                - "image": Must be a pathlib.Path or pathlib.PosixPath to an image file
+                - "classification": Must be a dict with "label" (str) and "confidence" (float 0-1)
+                - "bbox": Must be a dict with "bbox" key containing a list of lists of 4 floats
+                - "default": Any data type
+            metadata: Metadata dictionary associated with the datum
+            contract: Optional contract type specifying the data format. If None, defaults to "default".
+                Supported contracts: "default", "image", "classification", "bbox", "regression", "segmentation"
+            registry_uri: Optional registry URI for external storage. If provided, data is stored
+                in the registry backend instead of the database.
+            derived_from: Optional ID of the parent datum this datum was derived from
+            project_id: Name of the project this datum belongs to
+            line_id: Name of the line this datum belongs to
 
         Returns:
-            The created datum with assigned ID
+            The created Datum instance with assigned ID
+
+        Raises:
+            ValueError: If data doesn't match the contract requirements
+            Exception: If database or registry operations fail
         """
+
+        if contract is None:
+            contract = "default"
+
+        validate_contract(data, contract)
+
         if registry_uri:
             # Store in registry
             uuid = str(uuid4())
@@ -94,6 +150,9 @@ class Datalake(Mindtrace):
                 registry_key=uuid,
                 derived_from=derived_from,
                 metadata=metadata,
+                contract=contract,
+                project_id=project_id or "default_project",
+                line_id=line_id or "default_line",
             )
         else:
             # Store in database
@@ -103,6 +162,9 @@ class Datalake(Mindtrace):
                 registry_key=None,
                 derived_from=derived_from,
                 metadata=metadata,
+                contract=contract,
+                project_id=project_id or "default_project",
+                line_id=line_id or "default_line",
             )
         inserted_datum = await self.datum_database.insert(datum)
         return inserted_datum
@@ -207,6 +269,79 @@ class Datalake(Mindtrace):
                         queue.append(child_id)
 
         return result
+
+    async def add_dataset(self, dataset: Dataset) -> Dataset:
+        """
+        Add a dataset to the datalake asynchronously.
+
+        Args:
+            dataset: The Dataset instance to store
+
+        Returns:
+            The created dataset with assigned ID
+
+        Raises:
+            Exception: If database insert fails
+        """
+        inserted_dataset = await self.dataset_database.insert(dataset)
+        return inserted_dataset
+
+    async def get_dataset(self, dataset_id: PydanticObjectId | None) -> Dataset:
+        """
+        Retrieve a dataset by its ID.
+
+        Args:
+            dataset_id: The unique identifier of the dataset to retrieve
+
+        Returns:
+            The dataset if found
+
+        Raises:
+            DocumentNotFoundError: If the dataset is not found
+        """
+        if dataset_id is None:
+            raise DocumentNotFoundError("Dataset ID is None")
+        dataset = await self.dataset_database.get(dataset_id)
+        return dataset
+
+    async def get_datasets(self, dataset_ids: list[PydanticObjectId]) -> list[Dataset]:
+        """
+        Retrieve multiple datasets by their IDs.
+
+        Args:
+            dataset_ids: List of unique identifiers of the datasets to retrieve
+
+        Returns:
+            List of datasets
+
+        Raises:
+            Exception: If database queries fail
+        """
+        return await asyncio.gather(*[self.get_dataset(dataset_id) for dataset_id in dataset_ids])
+
+    async def find_datasets(self, filter: dict[str, Any] | None = None) -> list[Dataset]:
+        """
+        Find datasets matching the given filter.
+
+        This method searches for datasets using a MongoDB-style filter dictionary.
+        If no filter is provided, returns all datasets in the database.
+
+        Args:
+            filter: MongoDB-style filter dictionary. Examples:
+                - {"name": "my_dataset"} - find datasets with specific name
+                - {"metadata.project": "test_project"} - find datasets by metadata
+                - None - returns all datasets
+
+        Returns:
+            List of Dataset instances matching the filter
+
+        Raises:
+            Exception: If database query fails
+        """
+        if filter is None:
+            filter = {}
+        datasets = await self.dataset_database.find(filter)
+        return list(datasets)
 
     @overload
     async def query_data(
@@ -339,12 +474,12 @@ class Datalake(Mindtrace):
         by using MongoDB's native aggregation capabilities instead of multiple round trips.
 
         Args:
-            query: Same syntax as query_data - list of queries or single query
+            query: Same syntax as query_data_legacy - list of queries or single query
             datums_wanted: Maximum number of results to return
             transpose: Whether to return dict of lists (True) or list of dicts (False)
 
         Returns:
-            Same format as query_data - list of dictionaries or dictionary of lists
+            Same format as query_data_legacy - list of dictionaries or dictionary of lists
 
         Note:
             This optimized version handles common cases but may fall back to the original
