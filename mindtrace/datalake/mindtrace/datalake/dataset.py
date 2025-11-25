@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Generator
 
-from beanie import Indexed
 from beanie.odm.fields import PydanticObjectId
 from datasets import Features, IterableDataset
 from pydantic import Field
@@ -42,6 +41,7 @@ def gen(loaded_data: list[dict[str, Any]], contracts: dict[str, str]) -> Generat
             else:
                 row_to_yield[column] = data
         yield row_to_yield
+
 
 class Dataset(MindtraceDocument):
     """

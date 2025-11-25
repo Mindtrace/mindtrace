@@ -1,16 +1,14 @@
-import asyncio
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any, Generator
+from typing import TYPE_CHECKING, Annotated, Any
 
 from beanie import Indexed
 from beanie.odm.fields import PydanticObjectId
-from datasets import Features, Image, IterableDataset, List, Sequence, Value
 from pydantic import Field
 
 from mindtrace.database import MindtraceDocument
 
 if TYPE_CHECKING:
-    from mindtrace.datalake.datalake import Datalake
+    pass
 
 
 class Datum(MindtraceDocument):
@@ -48,5 +46,3 @@ class Datum(MindtraceDocument):
     added_at: datetime = Field(
         default_factory=datetime.now, description="Timestamp when this datum was added to the datalake."
     )
-
-

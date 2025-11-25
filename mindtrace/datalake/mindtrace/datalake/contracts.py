@@ -1,13 +1,14 @@
-from typing import Any
 import pathlib
+from typing import Any
 
-from datasets import Image, Value, List, Sequence
+from datasets import Image, List, Sequence, Value
 
 contracts_to_hf_type = {
     "image": Image(),
     "classification": {"label": Value("string"), "confidence": Value("float")},
     "bbox": {"bbox": List(Sequence(Value("float"), length=4))},
 }
+
 
 def validate_contract(data: Any, contract: str):
     if contract == "default":
