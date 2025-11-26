@@ -536,7 +536,16 @@ class MinioRegistryBackend(RegistryBackend):
         return f"_lock_{key}"
 
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
-        """Acquire a lock using Minio's object locking features.
+        """Acquire a lock using MinIO's ETag-based atomic operations.
+
+        This method uses atomic operations to prevent race conditions:
+        1. First, attempt to read the current lock state atomically
+        2. If lock exists and is valid, check compatibility and raise error if needed
+        3. If lock exists but is expired, use atomic conditional update with ETag
+        4. If lock doesn't exist, use atomic conditional create (If-None-Match: *)
+
+        Note: This method does not retry on failures. The Registry class handles retries
+        using its Timeout handler. Return False on PreconditionFailed to allow retry.
 
         Args:
             key: The key to acquire the lock for.
@@ -546,49 +555,111 @@ class MinioRegistryBackend(RegistryBackend):
 
         Returns:
             True if the lock was acquired, False otherwise.
+
+        Raises:
+            LockAcquisitionError: If lock is held and incompatible with requested lock type.
         """
         lock_key = self._lock_key(key)
 
         try:
-            # Check if lock exists and is not expired
+            # Step 1: Atomically read current lock state
+            etag_match = None  # Will be set based on lock state
             try:
+                # Get current lock state and ETag
+                stat = self.client.stat_object(self.bucket, lock_key)
+                current_etag = stat.etag
+
+                # Download current lock content
                 response = self.client.get_object(self.bucket, lock_key)
-                metadata = json.loads(response.data.decode())
-                if time.time() < metadata.get("expires_at", 0):
-                    # If there's an active exclusive lock, we can't acquire a shared lock
-                    if shared and not metadata.get("shared", False):
+                current_metadata = json.loads(response.data.decode())
+
+                # Check if lock is still valid (not expired)
+                if time.time() < current_metadata.get("expires_at", 0):
+                    # Lock is valid - check compatibility
+                    if shared and not current_metadata.get("shared", False):
+                        # Trying to acquire shared lock but exclusive lock exists
                         raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                    # If there are active shared locks, we can't acquire an exclusive lock
-                    if not shared and metadata.get("shared", False):
+                    if not shared and current_metadata.get("shared", False):
+                        # Trying to acquire exclusive lock but shared lock exists
                         raise LockAcquisitionError(f"Lock {key} is currently held as shared")
+                    # If there's already a shared lock and we want a shared lock, we can share it
+                    if shared and current_metadata.get("shared", False):
+                        return True
+                    # Otherwise, lock is held exclusively (and we want exclusive)
+                    raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
+                else:
+                    # Lock is expired - we'll update it atomically using ETag
+                    etag_match = current_etag
+
             except S3Error as e:
                 if e.code == "NoSuchKey":
-                    # Lock doesn't exist, we can proceed
-                    pass
+                    # Lock doesn't exist - use If-None-Match for atomic creation
+                    etag_match = None
                 else:
                     # Unexpected S3 error
                     raise
-            except LockAcquisitionError:
-                # Re-raise LockAcquisitionError
-                raise
-            except Exception:
-                # Lock doesn't exist or is invalid, we can proceed
-                pass
 
-            # Create lock metadata
-            metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
+            # Step 2: Atomically create/update lock with ETag check
+            new_metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
 
             # Convert metadata to bytes and wrap in BytesIO
-            data = json.dumps(metadata).encode()
+            data = json.dumps(new_metadata).encode()
             data_io = io.BytesIO(data)
 
-            # Upload lock file with metadata
-            self.client.put_object(self.bucket, lock_key, data_io, len(data), content_type="application/json")
+            try:
+                # Build headers for conditional put
+                headers = {"Content-Type": "application/json"}
+                if etag_match is None:
+                    # Atomic creation: only succeeds if object doesn't exist
+                    headers["If-None-Match"] = "*"
+                else:
+                    # Atomic update: only succeeds if ETag matches (expired lock replacement)
+                    headers["If-Match"] = etag_match
 
-            return True
+                # Use internal _put_object method for atomic conditional put
+                self.client._put_object(
+                    self.bucket,
+                    lock_key,
+                    data,
+                    headers=headers,
+                )
+                return True
+
+            except S3Error as e:
+                if e.code == "PreconditionFailed":
+                    # ETag mismatch - another process modified the lock
+                    # For shared locks, check if the existing lock is also shared - if so, we can share it
+                    if shared:
+                        try:
+                            response = self.client.get_object(self.bucket, lock_key)
+                            existing_metadata = json.loads(response.data.decode())
+                            # If the existing lock is shared and valid, we can share it
+                            if existing_metadata.get("shared", False) and time.time() < existing_metadata.get(
+                                "expires_at", 0
+                            ):
+                                return True
+                            # If the existing lock is exclusive, raise error
+                            if not existing_metadata.get("shared", False):
+                                raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
+                        except S3Error as check_error:
+                            if check_error.code == "NoSuchKey":
+                                # Lock was deleted between PreconditionFailed and check - return False to retry
+                                return False
+                        except LockAcquisitionError:
+                            # Re-raise LockAcquisitionError
+                            raise
+                        except Exception as check_e:
+                            # Log other exceptions but still return False to allow retry
+                            self.logger.debug(f"Error checking existing lock after PreconditionFailed: {check_e}")
+                            return False
+                    # Return False to allow Registry class to retry
+                    return False
+                else:
+                    # Other S3 errors
+                    raise
 
         except LockAcquisitionError:
-            # Re-raise LockAcquisitionError
+            # Re-raise LockAcquisitionError (Registry will handle retries)
             raise
         except Exception as e:
             self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
