@@ -157,8 +157,8 @@ Environment Variables > JSON File > Default Values > Runtime API Changes
 
 ### Backend & Discovery
 
-- `GET /backends` - List available stereo camera backends
-- `GET /backends/info` - Get backend information and capabilities
+- `GET /stereocameras/backends` - List available stereo camera backends
+- `GET /stereocameras/backends/info` - Get backend information and capabilities
 - `POST /stereocameras/discover` - Discover stereo cameras on specified backends
 
 ### Camera Lifecycle
@@ -213,6 +213,29 @@ Point cloud options:
 - `remove_outliers`: Remove statistical outliers (default: false)
 - `downsample_factor`: Downsampling factor (default: 1, no downsampling)
 - `save_path`: Optional path to save point cloud (.ply format)
+
+### Calibration
+
+- `GET /stereocameras/{camera_name}/calibration` - Get full calibration data with Q matrix
+
+Returns stereo calibration parameters for 2D-to-3D projection:
+- `baseline_m`: Stereo baseline in meters
+- `baseline_mm`: Stereo baseline in millimeters
+- `focal_length_px`: Focal length in pixels
+- `principal_point_u/v`: Principal point coordinates
+- `scale3d`, `offset3d`: 3D scaling parameters
+- `Q_matrix`: 4x4 reprojection matrix for disparity-to-3D conversion
+
+### Streaming
+
+- `POST /stereocameras/stream/start` - Start MJPEG video stream for a camera
+- `POST /stereocameras/stream/stop` - Stop video stream
+- `GET /stereocameras/stream/active` - List all active streams
+- `GET /stream/{camera_name}` - Serve MJPEG video stream (intensity image)
+
+Stream parameters:
+- `quality`: JPEG compression quality (1-100, default: 85)
+- `fps`: Target frame rate (default: 10)
 
 ### Health Check
 
@@ -349,6 +372,29 @@ curl -X POST http://localhost:8004/stereocameras/capture/batch \
       }
     ]
   }'
+```
+
+### Get Calibration Data
+
+```bash
+# Retrieve calibration parameters including Q matrix
+curl http://localhost:8004/stereocameras/BaslerStereoAce:40644640/calibration
+```
+
+### Video Streaming
+
+```bash
+# Start MJPEG stream
+curl -X POST "http://localhost:8004/stereocameras/stream/start?camera=BaslerStereoAce:40644640&quality=85&fps=10"
+
+# View stream in browser or with curl
+curl http://localhost:8004/stream/BaslerStereoAce_40644640 --output stream.mjpeg
+
+# Check active streams
+curl http://localhost:8004/stereocameras/stream/active
+
+# Stop stream
+curl -X POST "http://localhost:8004/stereocameras/stream/stop?camera=BaslerStereoAce:40644640"
 ```
 
 ## Configuration Parameters
