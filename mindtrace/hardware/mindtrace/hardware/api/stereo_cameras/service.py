@@ -83,19 +83,22 @@ class StereoCameraService(Service):
         Args:
             **kwargs: Additional arguments passed to Service base class
         """
-        super().__init__(name="stereo_camera_manager", version="1.0.0", **kwargs)
+        super().__init__(
+            summary="Stereo Camera Management Service",
+            description="REST API and MCP tools for comprehensive stereo camera management and 3D capture",
+            **kwargs,
+        )
 
         # Active camera storage
         self._cameras: Dict[str, AsyncStereoCamera] = {}
+
+        # Active streams tracking
+        self._active_streams: Dict[str, Dict] = {}
 
         # Statistics
         self._start_time = time.time()
         self._total_captures = 0
         self._total_point_clouds = 0
-
-        # Register all MCP tools
-        for schema in ALL_SCHEMAS:
-            self.add_task(schema)
 
         # Setup CORS middleware
         self.app.add_middleware(
@@ -113,7 +116,7 @@ class StereoCameraService(Service):
         """Register all REST API endpoints."""
 
         # Backend & Discovery Endpoints
-        @self.app.get("/backends", response_model=BackendsResponse)
+        @self.app.get("/stereocameras/backends", response_model=BackendsResponse)
         async def get_backends():
             """Get list of available stereo camera backends."""
             try:
@@ -122,7 +125,7 @@ class StereoCameraService(Service):
             except Exception as e:
                 return BackendsResponse(success=False, message=f"Failed to get backends: {e}", data=[])
 
-        @self.app.get("/backends/info", response_model=BackendInfoResponse)
+        @self.app.get("/stereocameras/backends/info", response_model=BackendInfoResponse)
         async def get_backend_info():
             """Get detailed information about stereo camera backends."""
             try:
@@ -324,6 +327,40 @@ class StereoCameraService(Service):
             except Exception as e:
                 raise HTTPException(status_code=404, detail=str(e))
 
+        @self.app.get("/stereocameras/{camera_name}/calibration")
+        async def get_calibration(camera_name: str):
+            """Get full calibration data including Q matrix for 2D-to-3D projection."""
+            try:
+                if camera_name not in self._cameras:
+                    raise CameraNotFoundError(f"Camera {camera_name} not found")
+
+                camera = self._cameras[camera_name]
+
+                if camera.calibration is None:
+                    raise HTTPException(status_code=400, detail="Camera not calibrated")
+
+                calib = camera.calibration
+
+                return {
+                    "success": True,
+                    "message": "Calibration data retrieved",
+                    "data": {
+                        "baseline_m": float(calib.baseline),
+                        "baseline_mm": float(calib.baseline * 1000),
+                        "focal_length_px": float(calib.focal_length),
+                        "principal_point_u": float(calib.principal_point_u),
+                        "principal_point_v": float(calib.principal_point_v),
+                        "scale3d": float(calib.scale3d),
+                        "offset3d": float(calib.offset3d),
+                        "Q_matrix": calib.Q.tolist(),  # 4x4 reprojection matrix
+                        "Q_shape": list(calib.Q.shape),
+                    }
+                }
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+
         # Configuration Endpoints
         @self.app.post("/stereocameras/configure", response_model=BoolResponse)
         async def configure_camera(request: StereoCameraConfigureRequest):
@@ -334,10 +371,17 @@ class StereoCameraService(Service):
                     raise CameraNotFoundError(f"Camera {camera_name} not found")
 
                 camera = self._cameras[camera_name]
+
+                # Log configuration being applied
+                self.logger.info(f"Configuring camera {camera_name} with parameters: {request.properties}")
+
                 await camera.configure(**request.properties)
+
+                self.logger.info(f"Successfully configured camera {camera_name} with {len(request.properties)} parameters")
 
                 return BoolResponse(success=True, message="Camera configured", data=True)
             except Exception as e:
+                self.logger.error(f"Failed to configure camera {camera_name}: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
 
         @self.app.post("/stereocameras/configure/batch", response_model=BatchOperationResponse)
@@ -620,3 +664,144 @@ class StereoCameraService(Service):
                 "active_cameras": len(self._cameras),
                 "uptime_seconds": time.time() - self._start_time,
             }
+
+        # Streaming endpoints
+        @self.app.post("/stereocameras/stream/start")
+        async def start_stream(camera: str, quality: int = 85, fps: int = 10):
+            """Start stereo camera stream."""
+            import os
+            if camera not in self._cameras:
+                raise HTTPException(status_code=404, detail=f"Camera {camera} not found")
+
+            # Get API host/port from environment
+            api_host = os.getenv("STEREO_API_HOST", "localhost")
+            api_port = os.getenv("STEREO_API_PORT", "8004")
+            stream_url = f"http://{api_host}:{api_port}/stream/{camera.replace(':', '_')}"
+
+            # Track active stream
+            self._active_streams[camera] = {
+                "stream_url": stream_url,
+                "start_time": datetime.now(timezone.utc),
+                "quality": quality,
+                "fps": fps,
+            }
+
+            return {
+                "success": True,
+                "message": f"Stream started for camera '{camera}'",
+                "data": {
+                    "camera": camera,
+                    "streaming": True,
+                    "stream_url": stream_url,
+                    "start_time": datetime.now(timezone.utc).isoformat()
+                }
+            }
+
+        @self.app.post("/stereocameras/stream/stop")
+        async def stop_stream(camera: str):
+            """Stop stereo camera stream."""
+            was_streaming = camera in self._active_streams
+            if was_streaming:
+                del self._active_streams[camera]
+
+            return {
+                "success": True,
+                "message": f"Stream stopped for camera '{camera}'",
+                "data": True
+            }
+
+        @self.app.get("/stereocameras/stream/active")
+        async def get_active_streams():
+            """Get list of active streams."""
+            return {
+                "success": True,
+                "message": "Active streams retrieved",
+                "data": list(self._active_streams.keys())
+            }
+
+        @self.app.get("/stream/{camera_name}")
+        async def serve_stereo_stream(camera_name: str):
+            """Serve MJPEG video stream for stereo camera (intensity image)."""
+            from fastapi.responses import StreamingResponse
+            import asyncio
+            import cv2
+            import numpy as np
+
+            # Replace first underscore back to colon
+            actual_camera_name = camera_name.replace("_", ":", 1)
+
+            # Check if camera is active
+            if actual_camera_name not in self._cameras:
+                raise HTTPException(status_code=404, detail=f"Camera '{actual_camera_name}' not initialized")
+
+            camera = self._cameras[actual_camera_name]
+
+            # Get streaming parameters
+            stream_info = self._active_streams.get(actual_camera_name, {})
+            quality = stream_info.get("quality", 85)
+            fps = stream_info.get("fps", 10)
+            frame_delay = 1.0 / fps
+
+            async def generate_mjpeg_stream():
+                """Generate MJPEG stream from stereo camera intensity images."""
+                consecutive_timeouts = 0
+                max_consecutive_timeouts = 10  # Increased for resilience during camera reconfiguration
+                capture_timeout = 10.0
+
+                while True:
+                    try:
+                        # Capture stereo data (intensity only for streaming)
+                        result = await asyncio.wait_for(
+                            camera.capture(enable_intensity=True, enable_disparity=False, timeout_ms=int(capture_timeout * 1000)),
+                            timeout=capture_timeout
+                        )
+
+                        # Reset timeout counter and log recovery if we had timeouts
+                        if consecutive_timeouts > 0:
+                            self.logger.info(f"Stream recovered for camera '{actual_camera_name}' after {consecutive_timeouts} timeout(s)")
+                        consecutive_timeouts = 0
+
+                        if result.intensity is not None:
+                            frame = result.intensity
+
+                            # Ensure uint8
+                            if frame.dtype != np.uint8:
+                                frame = (frame * 255).astype(np.uint8)
+
+                            # Encode as JPEG
+                            success, jpeg_data = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+
+                            if success:
+                                frame_data = jpeg_data.tobytes()
+                                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
+
+                        # Control frame rate
+                        await asyncio.sleep(frame_delay)
+
+                    except asyncio.TimeoutError:
+                        consecutive_timeouts += 1
+                        if consecutive_timeouts == 1:
+                            self.logger.warning(f"Stream timeout for camera '{actual_camera_name}' (may be due to reconfiguration)")
+                        elif consecutive_timeouts >= max_consecutive_timeouts:
+                            error_msg = f"Stream terminated: Camera '{actual_camera_name}' - {max_consecutive_timeouts} consecutive timeouts"
+                            self.logger.error(error_msg)
+                            yield (b"--frame\r\nContent-Type: text/plain\r\n\r\n" + error_msg.encode() + b"\r\n")
+                            break
+                        await asyncio.sleep(1.0)
+                        continue
+
+                    except Exception as e:
+                        if actual_camera_name not in self._cameras:
+                            break
+                        await asyncio.sleep(0.1)
+                        continue
+
+            return StreamingResponse(
+                generate_mjpeg_stream(),
+                media_type="multipart/x-mixed-replace; boundary=frame",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
