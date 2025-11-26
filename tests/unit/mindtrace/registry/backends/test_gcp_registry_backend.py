@@ -2183,6 +2183,7 @@ def test_extract_bucket_from_uri_empty_bucket(backend):
 
 def test_has_object_exception_fallback(backend, monkeypatch):
     """Test has_object falls back to fetch_metadata when exists check fails."""
+
     # Mock exists to raise an exception
     def mock_exists(*args, **kwargs):
         raise Exception("GCS check failed")
@@ -2200,6 +2201,7 @@ def test_has_object_exception_fallback(backend, monkeypatch):
 
 def test_has_object_exception_fallback_fails(backend, monkeypatch):
     """Test has_object returns False when both exists and fetch_metadata fail."""
+
     # Mock exists to raise an exception
     def mock_exists(*args, **kwargs):
         raise Exception("GCS check failed")

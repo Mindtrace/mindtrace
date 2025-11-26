@@ -13,6 +13,7 @@ from typing import List, Tuple
 
 import pytest
 
+from mindtrace.core import Timeout
 from mindtrace.registry.core.exceptions import LockAcquisitionError
 
 
@@ -95,9 +96,26 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
         """Thread function to acquire shared lock."""
         lock_id = f"shared_lock_{thread_id}"
         try:
-            result = gcp_backend.acquire_lock(lock_key, lock_id, timeout, shared=True)
+            # Use Timeout with retry logic similar to Registry.get_lock()
+            timeout_handler = Timeout(
+                timeout=timeout,
+                retry_delay=0.1,
+                exceptions=(LockAcquisitionError,),
+                progress_bar=False,
+                desc=f"Thread {thread_id} acquiring shared lock",
+            )
+
+            def acquire_lock_with_retry():
+                """Attempt to acquire the lock, raising LockAcquisitionError on failure."""
+                if not gcp_backend.acquire_lock(lock_key, lock_id, timeout, shared=True):
+                    raise LockAcquisitionError(f"Failed to acquire shared lock for thread {thread_id}")
+                return True
+
+            # Use the timeout handler to retry lock acquisition
+            timeout_handler.run(acquire_lock_with_retry)
+
             with results_lock:
-                results.append((thread_id, result, lock_id))
+                results.append((thread_id, True, lock_id))
             # Hold lock briefly
             time.sleep(0.1)
             gcp_backend.release_lock(lock_key, lock_id)
@@ -121,7 +139,7 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
     # All threads should have successfully acquired shared locks
     successful_acquires = [r for r in results if r[1] is True]
     assert len(successful_acquires) == num_threads, (
-        f"Expected {num_threads} successful shared lock acquires, got {len(successful_acquires)}"
+        f"Expected {num_threads} successful shared lock acquires, got {len(successful_acquires)}. Results: {results}"
     )
 
 

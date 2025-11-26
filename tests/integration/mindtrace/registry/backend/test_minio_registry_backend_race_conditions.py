@@ -243,9 +243,7 @@ def test_lock_retry_on_etag_mismatch(minio_backend, minio_client, minio_test_buc
 
     data = json.dumps(expired_lock_data).encode()
     data_io = io.BytesIO(data)
-    minio_client.put_object(
-        minio_test_bucket, f"_lock_{lock_key}", data_io, len(data), content_type="application/json"
-    )
+    minio_client.put_object(minio_test_bucket, f"_lock_{lock_key}", data_io, len(data), content_type="application/json")
 
     # Now try to acquire the lock - should handle expired lock and retry if needed
     lock_id = "new_lock"
@@ -261,4 +259,3 @@ def test_lock_retry_on_etag_mismatch(minio_backend, minio_client, minio_test_buc
 
     # Clean up
     minio_backend.release_lock(lock_key, lock_id)
-

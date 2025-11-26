@@ -2,8 +2,6 @@ import logging
 
 import pytest
 
-empty_mark = pytest.mark.empty
-
 
 def by_slow_marker(item):
     # Check if test is marked as slow

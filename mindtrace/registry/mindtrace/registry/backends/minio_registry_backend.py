@@ -604,7 +604,6 @@ class MinioRegistryBackend(RegistryBackend):
 
             # Convert metadata to bytes and wrap in BytesIO
             data = json.dumps(new_metadata).encode()
-            data_io = io.BytesIO(data)
 
             try:
                 # Build headers for conditional put

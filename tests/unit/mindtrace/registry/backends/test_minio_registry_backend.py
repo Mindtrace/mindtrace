@@ -339,6 +339,7 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
     def mock_stat_object(*args, **kwargs):
         class MockStat:
             etag = "test-etag-123"
+
         return MockStat()
 
     # Mock get_object to return an active exclusive lock
@@ -410,6 +411,7 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
     def mock_stat_object(*args, **kwargs):
         class MockStat:
             etag = "test-etag-123"
+
         return MockStat()
 
     # Mock get_object to return an active shared lock
@@ -1346,6 +1348,7 @@ def test_acquire_lock_generic_exception(backend, monkeypatch):
     def mock_put_object(*args, **kwargs):
         class MockResult:
             etag = "test-etag"
+
         return MockResult()
 
     monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
@@ -1686,6 +1689,7 @@ def test_acquire_lock_success(backend, monkeypatch):
     def mock_put_object(bucket, object_name, data, headers=None):
         class MockResult:
             etag = "test-etag"
+
         return MockResult()
 
     monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
@@ -1701,6 +1705,7 @@ def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
     def mock_stat_object(bucket, object_name):
         class MockStat:
             etag = "test-etag-123"
+
         return MockStat()
 
     def mock_get_object(bucket, object_name):
@@ -1733,6 +1738,7 @@ def test_acquire_lock_existing_shared_lock(backend, monkeypatch):
     def mock_stat_object(bucket, object_name):
         class MockStat:
             etag = "test-etag-123"
+
         return MockStat()
 
     def mock_get_object(bucket, object_name):
