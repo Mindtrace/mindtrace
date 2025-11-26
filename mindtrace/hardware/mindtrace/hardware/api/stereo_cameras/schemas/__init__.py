@@ -7,7 +7,7 @@ from mindtrace.hardware.api.stereo_cameras.schemas.capture_schemas import (
     CaptureStereoPairSchema,
 )
 from mindtrace.hardware.api.stereo_cameras.schemas.config_schemas import (
-    ConfigureStereoCameraBatchSchema,
+    ConfigureStereoCamerasBatchSchema,
     ConfigureStereoCameraSchema,
     GetStereoCameraConfigurationSchema,
 )
@@ -21,10 +21,10 @@ from mindtrace.hardware.api.stereo_cameras.schemas.info_schemas import (
 )
 from mindtrace.hardware.api.stereo_cameras.schemas.lifecycle_schemas import (
     CloseAllStereoCamerasSchema,
-    CloseStereoCameraBatchSchema,
+    CloseStereoCamerasBatchSchema,
     CloseStereoCameraSchema,
     GetActiveStereoCamerasSchema,
-    OpenStereoCameraBatchSchema,
+    OpenStereoCamerasBatchSchema,
     OpenStereoCameraSchema,
 )
 
@@ -36,9 +36,9 @@ ALL_SCHEMAS = [
     DiscoverStereoCamerasSchema,
     # Lifecycle
     OpenStereoCameraSchema,
-    OpenStereoCameraBatchSchema,
+    OpenStereoCamerasBatchSchema,
     CloseStereoCameraSchema,
-    CloseStereoCameraBatchSchema,
+    CloseStereoCamerasBatchSchema,
     CloseAllStereoCamerasSchema,
     GetActiveStereoCamerasSchema,
     # Status & Information
@@ -47,7 +47,7 @@ ALL_SCHEMAS = [
     GetSystemDiagnosticsSchema,
     # Configuration
     ConfigureStereoCameraSchema,
-    ConfigureStereoCameraBatchSchema,
+    ConfigureStereoCamerasBatchSchema,
     GetStereoCameraConfigurationSchema,
     # Capture
     CaptureStereoPairSchema,
@@ -62,16 +62,16 @@ __all__ = [
     "GetStereoCameraBackendInfoSchema",
     "DiscoverStereoCamerasSchema",
     "OpenStereoCameraSchema",
-    "OpenStereoCameraBatchSchema",
+    "OpenStereoCamerasBatchSchema",
     "CloseStereoCameraSchema",
-    "CloseStereoCameraBatchSchema",
+    "CloseStereoCamerasBatchSchema",
     "CloseAllStereoCamerasSchema",
     "GetActiveStereoCamerasSchema",
     "GetStereoCameraStatusSchema",
     "GetStereoCameraInfoSchema",
     "GetSystemDiagnosticsSchema",
     "ConfigureStereoCameraSchema",
-    "ConfigureStereoCameraBatchSchema",
+    "ConfigureStereoCamerasBatchSchema",
     "GetStereoCameraConfigurationSchema",
     "CaptureStereoPairSchema",
     "CaptureStereoPairBatchSchema",
