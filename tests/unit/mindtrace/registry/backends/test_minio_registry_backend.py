@@ -1899,3 +1899,465 @@ def test_uri_property(backend):
     uri = backend.uri
     assert isinstance(uri, str)
     assert uri == backend._uri
+
+
+def test_init_with_uri_only(mock_minio_client):
+    """Test initialization with URI only - bucket extracted from URI."""
+    backend = MinioRegistryBackend(
+        uri="s3://test-bucket-from-uri", endpoint="localhost:9100", access_key="admin", secret_key="admin", secure=False
+    )
+    assert backend.bucket == "test-bucket-from-uri"
+    assert "test-bucket-from-uri" in str(backend.uri)
+
+
+def test_init_with_bucket_only(mock_minio_client):
+    """Test initialization with bucket only - URI constructed from bucket."""
+    backend = MinioRegistryBackend(
+        bucket="test-bucket-only", endpoint="localhost:9100", access_key="admin", secret_key="admin", secure=False
+    )
+    assert backend.bucket == "test-bucket-only"
+    assert backend.uri == "s3://test-bucket-only"
+
+
+def test_init_with_uri_and_bucket_mismatch(mock_minio_client):
+    """Test initialization with mismatched URI and bucket - raises ValueError."""
+    with pytest.raises(ValueError, match="URI bucket .* does not match bucket parameter"):
+        MinioRegistryBackend(
+            uri="s3://bucket-a",
+            bucket="bucket-b",
+            endpoint="localhost:9100",
+            access_key="admin",
+            secret_key="admin",
+            secure=False,
+        )
+
+
+def test_extract_bucket_from_uri_invalid_format(backend):
+    """Test bucket extraction with invalid URI format."""
+    with pytest.raises(ValueError, match="Invalid S3 URI format"):
+        backend._extract_bucket_from_uri("gs://wrong-prefix/bucket")
+
+
+def test_extract_bucket_from_uri_empty_bucket(backend):
+    """Test bucket extraction when bucket name is empty."""
+    with pytest.raises(ValueError, match="Bucket name is empty"):
+        backend._extract_bucket_from_uri("s3://")
+
+
+def test_has_object_stat_exception_fallback_success(backend, monkeypatch):
+    """Test has_object falls back to fetch_metadata when stat_object raises non-NoSuchKey error."""
+
+    # Mock stat_object to raise a non-NoSuchKey S3Error
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/meta",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="meta",
+        )
+
+    # Mock fetch_metadata to return successfully (object exists)
+    def mock_fetch_metadata(*args, **kwargs):
+        return {"name": "test:object", "version": "1.0.0"}
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return True because fetch_metadata succeeds
+    assert backend.has_object("test:object", "1.0.0") is True
+
+
+def test_has_object_stat_exception_fallback_fails(backend, monkeypatch):
+    """Test has_object returns False when both stat_object and fetch_metadata fail."""
+
+    # Mock stat_object to raise a non-NoSuchKey S3Error
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/meta",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="meta",
+        )
+
+    # Mock fetch_metadata to also raise an exception
+    def mock_fetch_metadata(*args, **kwargs):
+        raise Exception("Fetch failed")
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return False because both checks fail
+    assert backend.has_object("test:object", "1.0.0") is False
+
+
+def test_has_object_generic_exception_fallback_success(backend, monkeypatch):
+    """Test has_object falls back to fetch_metadata when stat_object raises generic exception."""
+
+    # Mock stat_object to raise a generic exception (not S3Error)
+    def mock_stat_object(*args, **kwargs):
+        raise Exception("Generic error")
+
+    # Mock fetch_metadata to return successfully
+    def mock_fetch_metadata(*args, **kwargs):
+        return {"name": "test:object", "version": "1.0.0"}
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return True because fetch_metadata succeeds
+    assert backend.has_object("test:object", "1.0.0") is True
+
+
+def test_has_object_generic_exception_fallback_fails(backend, monkeypatch):
+    """Test has_object returns False when stat_object raises exception and fetch_metadata fails."""
+
+    # Mock stat_object to raise a generic exception
+    def mock_stat_object(*args, **kwargs):
+        raise Exception("Generic error")
+
+    # Mock fetch_metadata to also raise an exception
+    def mock_fetch_metadata(*args, **kwargs):
+        raise Exception("Fetch failed")
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return False because both checks fail
+    assert backend.has_object("test:object", "1.0.0") is False
+
+
+def test_has_object_stat_success_but_fetch_fails(backend, monkeypatch):
+    """Test has_object returns False when stat_object succeeds but fetch_metadata fails."""
+
+    # Mock stat_object to succeed
+    def mock_stat_object(*args, **kwargs):
+        class MockStat:
+            etag = "test-etag"
+
+        return MockStat()
+
+    # Mock fetch_metadata to raise an exception
+    def mock_fetch_metadata(*args, **kwargs):
+        raise Exception("Fetch failed")
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return False because fetch verification fails
+    assert backend.has_object("test:object", "1.0.0") is False
+
+
+def test_acquire_lock_stat_raises_non_nosuchkey_error(backend, monkeypatch):
+    """Test acquire_lock when stat_object raises non-NoSuchKey S3Error returns False."""
+
+    # Mock stat_object to raise a non-NoSuchKey S3Error
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+
+    # Should return False (error is caught and logged)
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=False)
+    assert result is False
+
+
+def test_acquire_lock_shared_precondition_check_exception(backend, monkeypatch):
+    """Test acquire_lock shared lock check when getting existing lock raises exception."""
+
+    # Mock stat_object to raise NoSuchKey (lock doesn't exist initially)
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    put_call_count = 0
+
+    def mock_put_object(*args, **kwargs):
+        nonlocal put_call_count
+        put_call_count += 1
+        # First call raises PreconditionFailed to trigger shared lock check
+        if put_call_count == 1:
+            raise S3Error(
+                code="PreconditionFailed",
+                message="Precondition failed",
+                resource="/test-bucket/lock",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name="lock",
+            )
+
+    # Mock get_object to raise exception during shared lock check
+    def mock_get_object(*args, **kwargs):
+        raise Exception("Get object failed")
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return False (allows retry)
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is False
+
+
+def test_acquire_lock_shared_precondition_check_nosuchkey(backend, monkeypatch):
+    """Test acquire_lock shared lock check when lock is deleted after PreconditionFailed."""
+
+    # Mock stat_object to raise NoSuchKey
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    put_call_count = 0
+
+    def mock_put_object(*args, **kwargs):
+        nonlocal put_call_count
+        put_call_count += 1
+        # Raise PreconditionFailed to trigger shared lock check
+        if put_call_count == 1:
+            raise S3Error(
+                code="PreconditionFailed",
+                message="Precondition failed",
+                resource="/test-bucket/lock",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name="lock",
+            )
+
+    # Mock get_object to raise NoSuchKey (lock was deleted)
+    def mock_get_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Lock deleted",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return False (allows retry)
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is False
+
+
+def test_acquire_lock_shared_precondition_existing_shared_lock(backend, monkeypatch):
+    """Test acquire_lock shared lock check when existing lock is also shared and valid."""
+
+    # Mock stat_object to raise NoSuchKey
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    put_call_count = 0
+
+    def mock_put_object(*args, **kwargs):
+        nonlocal put_call_count
+        put_call_count += 1
+        # Raise PreconditionFailed to trigger shared lock check
+        if put_call_count == 1:
+            raise S3Error(
+                code="PreconditionFailed",
+                message="Precondition failed",
+                resource="/test-bucket/lock",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name="lock",
+            )
+
+    # Mock get_object to return existing shared lock
+    def mock_get_object(*args, **kwargs):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps(
+                    {"lock_id": "existing-lock", "expires_at": time.time() + 3600, "shared": True}
+                ).encode()
+
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return True (can share the lock)
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+    assert result is True
+
+
+def test_acquire_lock_shared_precondition_existing_exclusive_lock_raises(backend, monkeypatch):
+    """Test acquire_lock shared lock check raises error when existing lock is exclusive."""
+
+    # Mock stat_object to raise NoSuchKey
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    put_call_count = 0
+
+    def mock_put_object(*args, **kwargs):
+        nonlocal put_call_count
+        put_call_count += 1
+        # Raise PreconditionFailed to trigger shared lock check
+        if put_call_count == 1:
+            raise S3Error(
+                code="PreconditionFailed",
+                message="Precondition failed",
+                resource="/test-bucket/lock",
+                request_id="test-request-id",
+                host_id="test-host-id",
+                response=None,
+                bucket_name="test-bucket",
+                object_name="lock",
+            )
+
+    # Mock get_object to return existing exclusive lock
+    def mock_get_object(*args, **kwargs):
+        class MockResponse:
+            def __init__(self):
+                self.data = json.dumps(
+                    {"lock_id": "existing-lock", "expires_at": time.time() + 3600, "shared": False}
+                ).encode()
+
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should raise LockAcquisitionError
+    from mindtrace.registry.core.exceptions import LockAcquisitionError
+
+    with pytest.raises(LockAcquisitionError, match="currently held exclusively"):
+        backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
+
+
+def test_acquire_lock_precondition_failed_non_shared(backend, monkeypatch):
+    """Test acquire_lock returns False on PreconditionFailed for non-shared locks."""
+
+    # Mock stat_object to raise NoSuchKey
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    # Mock _put_object to raise PreconditionFailed
+    def mock_put_object(*args, **kwargs):
+        raise S3Error(
+            code="PreconditionFailed",
+            message="Precondition failed",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+
+    # Should return False (allows retry) for exclusive lock
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=False)
+    assert result is False
+
+
+def test_acquire_lock_other_s3error_returns_false(backend, monkeypatch):
+    """Test acquire_lock returns False for other S3Errors that aren't PreconditionFailed."""
+
+    # Mock stat_object to raise NoSuchKey
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    # Mock _put_object to raise different S3Error
+    def mock_put_object(*args, **kwargs):
+        raise S3Error(
+            code="InvalidRequest",
+            message="Invalid request",
+            resource="/test-bucket/lock",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name="test-bucket",
+            object_name="lock",
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
+
+    # Should return False (error is caught and logged)
+    result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=False)
+    assert result is False

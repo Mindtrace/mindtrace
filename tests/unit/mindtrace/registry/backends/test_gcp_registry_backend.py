@@ -2147,3 +2147,535 @@ def test_overwrite_deletion_metadata_error(backend):
                     target_name="test:target",
                     target_version="2.0.0",
                 )
+
+
+def test_init_with_uri_only(mock_gcs_handler):
+    """Test initialization with URI only - bucket extracted from URI."""
+    backend = GCPRegistryBackend(uri="gs://test-bucket-from-uri", project_id="test-project")
+    assert backend.gcs.bucket_name == "test-bucket-from-uri"
+    assert "test-bucket-from-uri" in str(backend.uri)
+
+
+def test_init_with_bucket_only(mock_gcs_handler):
+    """Test initialization with bucket only - URI constructed from bucket."""
+    backend = GCPRegistryBackend(bucket="test-bucket-only", project_id="test-project")
+    assert backend.gcs.bucket_name == "test-bucket-only"
+    assert backend.uri == "gs://test-bucket-only"
+
+
+def test_init_with_uri_and_bucket_mismatch(mock_gcs_handler):
+    """Test initialization with mismatched URI and bucket - raises ValueError."""
+    with pytest.raises(ValueError, match="URI bucket .* does not match bucket parameter"):
+        GCPRegistryBackend(uri="gs://bucket-a", bucket="bucket-b", project_id="test-project")
+
+
+def test_extract_bucket_from_uri_invalid_format(backend):
+    """Test bucket extraction with invalid URI format."""
+    with pytest.raises(ValueError, match="Invalid GCS URI format"):
+        backend._extract_bucket_from_uri("s3://wrong-prefix/bucket")
+
+
+def test_extract_bucket_from_uri_empty_bucket(backend):
+    """Test bucket extraction when bucket name is empty."""
+    with pytest.raises(ValueError, match="Bucket name is empty"):
+        backend._extract_bucket_from_uri("gs://")
+
+
+def test_has_object_exception_fallback(backend, monkeypatch):
+    """Test has_object falls back to fetch_metadata when exists check fails."""
+    # Mock exists to raise an exception
+    def mock_exists(*args, **kwargs):
+        raise Exception("GCS check failed")
+
+    # Mock fetch_metadata to return successfully (object exists)
+    def mock_fetch_metadata(*args, **kwargs):
+        return {"name": "test:object", "version": "1.0.0"}
+
+    monkeypatch.setattr(backend.gcs, "exists", mock_exists)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return True because fetch_metadata succeeds
+    assert backend.has_object("test:object", "1.0.0") is True
+
+
+def test_has_object_exception_fallback_fails(backend, monkeypatch):
+    """Test has_object returns False when both exists and fetch_metadata fail."""
+    # Mock exists to raise an exception
+    def mock_exists(*args, **kwargs):
+        raise Exception("GCS check failed")
+
+    # Mock fetch_metadata to also raise an exception
+    def mock_fetch_metadata(*args, **kwargs):
+        raise Exception("Fetch failed")
+
+    monkeypatch.setattr(backend.gcs, "exists", mock_exists)
+    monkeypatch.setattr(backend, "fetch_metadata", mock_fetch_metadata)
+
+    # Should return False because both checks fail
+    assert backend.has_object("test:object", "1.0.0") is False
+
+
+def test_acquire_lock_shared_with_existing_exclusive_lock_raises_error(backend):
+    """Test acquiring shared lock fails when valid exclusive lock exists."""
+    lock_key = "test_lock"
+    lock_id = "test_id"
+
+    # Create an existing valid exclusive lock
+    lock_data = {
+        "lock_id": "existing_id",
+        "expires_at": time.time() + 3600,
+        "shared": False,
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(lock_data, f)
+        temp_path = f.name
+
+    try:
+        backend.gcs.upload(temp_path, f"_lock_{lock_key}")
+
+        # Mock bucket blob to simulate lock exists
+        with patch.object(backend.gcs, "_bucket") as mock_bucket:
+            mock_blob = MagicMock()
+            mock_blob.generation = 123
+            mock_blob.reload = MagicMock()
+            mock_bucket.return_value.blob.return_value = mock_blob
+
+            # Try to acquire a shared lock - should raise LockAcquisitionError
+            with pytest.raises(LockAcquisitionError, match="currently held exclusively"):
+                backend.acquire_lock(lock_key, lock_id, timeout=30, shared=True)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
+def test_acquire_lock_exclusive_with_existing_shared_lock_raises_error(backend):
+    """Test acquiring exclusive lock fails when valid shared lock exists."""
+    lock_key = "test_lock"
+    lock_id = "test_id"
+
+    # Create an existing valid shared lock
+    lock_data = {
+        "lock_id": "existing_id",
+        "expires_at": time.time() + 3600,
+        "shared": True,
+    }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(lock_data, f)
+        temp_path = f.name
+
+    try:
+        backend.gcs.upload(temp_path, f"_lock_{lock_key}")
+
+        # Mock bucket blob to simulate lock exists
+        with patch.object(backend.gcs, "_bucket") as mock_bucket:
+            mock_blob = MagicMock()
+            mock_blob.generation = 123
+            mock_blob.reload = MagicMock()
+            mock_bucket.return_value.blob.return_value = mock_blob
+
+            # Try to acquire an exclusive lock - should raise LockAcquisitionError
+            with pytest.raises(LockAcquisitionError, match="currently held"):
+                backend.acquire_lock(lock_key, lock_id, timeout=30, shared=False)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
+def test_overwrite_verification_exception(backend):
+    """Test overwrite when verification check itself raises an exception."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    list_call_count = 0
+
+    def mock_list_objects(prefix):
+        nonlocal list_call_count
+        list_call_count += 1
+        if "test:source" in prefix:
+            if list_call_count == 1:
+                return ["objects/test:source/1.0.0/file1.txt"]
+            else:
+                # Raise exception during verification check
+                raise Exception("Verification list failed")
+        return []
+
+    def mock_upload(local_path, remote_path):
+        pass
+
+    def mock_delete(remote_path):
+        pass
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+        mock_blob.reload = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            # Should complete successfully despite verification exception
+            backend.overwrite(
+                source_name="test:source",
+                source_version="1.0.0",
+                target_name="test:target",
+                target_version="2.0.0",
+            )
+
+
+def test_overwrite_source_deletion_not_found_error(backend):
+    """Test overwrite when source object check raises not found error."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    def mock_list_objects(prefix):
+        if "test:source" in prefix:
+            return ["objects/test:source/1.0.0/file1.txt"]
+        elif "test:target" in prefix:
+            return ["objects/test:target/2.0.0/file1.txt"]
+        return []
+
+    def mock_upload(local_path, remote_path):
+        pass
+
+    def mock_delete(remote_path):
+        pass
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+
+        # Mock reload to raise NotFound (object already deleted - idempotent)
+        def mock_reload():
+            raise gexc.NotFound("Object not found")
+
+        mock_blob.reload = MagicMock(side_effect=mock_reload)
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            # Should succeed - idempotent deletion
+            backend.overwrite(
+                source_name="test:source",
+                source_version="1.0.0",
+                target_name="test:target",
+                target_version="2.0.0",
+            )
+
+
+def test_overwrite_metadata_deletion_not_found_error(backend):
+    """Test overwrite when source metadata check raises not found error."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    def mock_list_objects(prefix):
+        if "test:source" in prefix:
+            return ["objects/test:source/1.0.0/file1.txt"]
+        elif "test:target" in prefix:
+            return ["objects/test:target/2.0.0/file1.txt"]
+        return []
+
+    def mock_upload(local_path, remote_path):
+        pass
+
+    def mock_delete(remote_path):
+        pass
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+
+        reload_count = 0
+
+        def mock_reload():
+            nonlocal reload_count
+            reload_count += 1
+            # First reload is for object check (succeeds)
+            # Second reload is for metadata check (raises NotFound - already deleted)
+            if reload_count > 1:
+                raise gexc.NotFound("Metadata not found")
+
+        mock_blob.reload = MagicMock(side_effect=mock_reload)
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            # Should succeed - idempotent deletion
+            backend.overwrite(
+                source_name="test:source",
+                source_version="1.0.0",
+                target_name="test:target",
+                target_version="2.0.0",
+            )
+
+
+def test_overwrite_rollback_list_error(backend):
+    """Test overwrite rollback when checking source existence raises exception."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    list_call_count = 0
+
+    def mock_list_objects(prefix):
+        nonlocal list_call_count
+        list_call_count += 1
+        if "test:source" in prefix:
+            if list_call_count == 1:
+                return ["objects/test:source/1.0.0/file1.txt"]
+            else:
+                # Raise exception during rollback check
+                raise Exception("List error during rollback")
+        return []
+
+    def mock_upload(local_path, remote_path):
+        # Fail after copy to trigger rollback
+        if "_meta_" in remote_path:
+            raise Exception("Upload failed")
+
+    rollback_deletes = []
+
+    def mock_delete(remote_path):
+        rollback_deletes.append(remote_path)
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+        mock_blob.reload = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            with pytest.raises(Exception, match="Upload failed"):
+                backend.overwrite(
+                    source_name="test:source",
+                    source_version="1.0.0",
+                    target_name="test:target",
+                    target_version="2.0.0",
+                )
+
+            # Rollback should handle the exception gracefully
+
+
+def test_overwrite_rollback_delete_error(backend):
+    """Test overwrite rollback when deleting copied objects fails."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    def mock_list_objects(prefix):
+        if "test:source" in prefix:
+            return ["objects/test:source/1.0.0/file1.txt"]
+        return []
+
+    def mock_upload(local_path, remote_path):
+        # Fail after copy to trigger rollback
+        if "_meta_" in remote_path:
+            raise Exception("Upload failed")
+
+    def mock_delete(remote_path):
+        # Fail during rollback deletion
+        raise Exception("Delete failed during rollback")
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+        mock_blob.reload = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            with pytest.raises(Exception, match="Upload failed"):
+                backend.overwrite(
+                    source_name="test:source",
+                    source_version="1.0.0",
+                    target_name="test:target",
+                    target_version="2.0.0",
+                )
+
+
+def test_overwrite_rollback_metadata_delete_error(backend):
+    """Test overwrite rollback when deleting copied metadata fails."""
+    from unittest.mock import MagicMock, patch
+
+    source_metadata = {
+        "name": "test:source",
+        "version": "1.0.0",
+        "path": "gs://test-bucket/objects/test:source/1.0.0",
+    }
+
+    def mock_download(remote_path, local_path):
+        if "_meta_" in remote_path:
+            with open(local_path, "w") as f:
+                json.dump(source_metadata, f)
+        else:
+            with open(local_path, "w") as f:
+                f.write("test content")
+
+    list_call_count = 0
+
+    def mock_list_objects(prefix):
+        nonlocal list_call_count
+        list_call_count += 1
+        if "test:source" in prefix:
+            if list_call_count == 1:
+                return ["objects/test:source/1.0.0/file1.txt"]
+            else:
+                # Source still exists during rollback check
+                return ["objects/test:source/1.0.0/file1.txt"]
+        return []
+
+    upload_count = 0
+
+    def mock_upload(local_path, remote_path):
+        nonlocal upload_count
+        upload_count += 1
+        # Succeed on metadata upload, then fail on source deletion
+        if upload_count > 1:
+            raise Exception("Post-metadata failure")
+
+    delete_count = 0
+
+    def mock_delete(remote_path):
+        nonlocal delete_count
+        delete_count += 1
+        # Fail on metadata deletion during rollback
+        if "_meta_" in remote_path and delete_count > 1:
+            raise Exception("Metadata delete failed during rollback")
+
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_blob = MagicMock()
+        mock_blob.rewrite = MagicMock()
+        mock_blob.reload = MagicMock()
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        with (
+            patch.object(backend.gcs, "download", side_effect=mock_download),
+            patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+            patch.object(backend.gcs, "upload", side_effect=mock_upload),
+            patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        ):
+            with pytest.raises(Exception):
+                backend.overwrite(
+                    source_name="test:source",
+                    source_version="1.0.0",
+                    target_name="test:target",
+                    target_version="2.0.0",
+                )
+
+
+def test_cleanup_partial_overwrite_metadata_reload_error(backend):
+    """Test cleanup_partial_overwrite when metadata blob reload raises non-NotFound error."""
+    from unittest.mock import MagicMock, patch
+
+    source_key = "objects/test:source/1.0.0"
+
+    def mock_list_objects(prefix):
+        if prefix == source_key:
+            return []  # No source objects
+        return []
+
+    def mock_blob_reload():
+        # Raise non-NotFound error
+        raise Exception("Reload failed")
+
+    with (
+        patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+        patch.object(backend.gcs, "_bucket") as mock_bucket,
+    ):
+        mock_blob = MagicMock()
+        mock_blob.reload = MagicMock(side_effect=mock_blob_reload)
+        mock_bucket.return_value.blob.return_value = mock_blob
+
+        stats = backend.cleanup_partial_overwrite(
+            source_name="test:source",
+            source_version="1.0.0",
+            target_name="test:target",
+            target_version="2.0.0",
+        )
+
+        # Should have an error from metadata cleanup
+        assert stats["errors"] == 1
+        assert stats["metadata_deleted"] == 0
