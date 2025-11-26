@@ -31,6 +31,9 @@ def mock_minio_client(monkeypatch):
         def put_object(self, *args, **kwargs):
             pass
 
+        def _put_object(self, *args, **kwargs):
+            pass
+
         def remove_object(self, *args, **kwargs):
             pass
 
@@ -332,6 +335,12 @@ def test_registered_materializer_other_error(backend, monkeypatch):
 def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
     """Test that acquire_lock raises LockAcquisitionError when trying to acquire a shared lock while an exclusive lock exists."""
 
+    # Mock stat_object to return an object with etag
+    def mock_stat_object(*args, **kwargs):
+        class MockStat:
+            etag = "test-etag-123"
+        return MockStat()
+
     # Mock get_object to return an active exclusive lock
     def mock_get_object(*args, **kwargs):
         class MockResponse:
@@ -346,6 +355,7 @@ def test_acquire_shared_lock_with_exclusive_lock(backend, monkeypatch):
 
         return MockResponse()
 
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire a shared lock while an exclusive lock exists
@@ -396,6 +406,12 @@ def test_acquire_lock_put_failure(backend, monkeypatch):
 def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
     """Test that acquire_lock raises LockAcquisitionError when trying to acquire an exclusive lock while shared locks exist."""
 
+    # Mock stat_object to return an object with etag
+    def mock_stat_object(*args, **kwargs):
+        class MockStat:
+            etag = "test-etag-123"
+        return MockStat()
+
     # Mock get_object to return an active shared lock
     def mock_get_object(*args, **kwargs):
         class MockResponse:
@@ -410,6 +426,7 @@ def test_acquire_exclusive_lock_with_shared_lock(backend, monkeypatch):
 
         return MockResponse()
 
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     # Try to acquire an exclusive lock while shared locks exist
@@ -1312,18 +1329,29 @@ def test_acquire_lock_unexpected_s3error(backend, monkeypatch, caplog):
 def test_acquire_lock_generic_exception(backend, monkeypatch):
     """Test that acquire_lock proceeds when get_object raises a generic Exception (lines 483-485)."""
 
-    # Mock get_object to raise a generic Exception (not S3Error or LockAcquisitionError)
-    def mock_get_object(*args, **kwargs):
-        raise Exception("Generic error during lock check")
+    # Mock stat_object to raise NoSuchKey (lock doesn't exist)
+    def mock_stat_object(*args, **kwargs):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource="/test-bucket/_lock_test-key",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name="test-bucket",
+            object_name="_lock_test-key",
+        )
 
-    # Mock put_object to succeed
+    # Mock _put_object to succeed
     def mock_put_object(*args, **kwargs):
-        pass
+        class MockResult:
+            etag = "test-etag"
+        return MockResult()
 
-    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
 
-    # Attempt to acquire lock - should proceed despite the exception and return True
+    # Attempt to acquire lock - should succeed
     result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
     assert result is True
 
@@ -1643,7 +1671,7 @@ def test_has_object_wrong_version(backend, monkeypatch):
 def test_acquire_lock_success(backend, monkeypatch):
     """Test successful lock acquisition (lines 398-405)."""
 
-    def mock_get_object(bucket, object_name):
+    def mock_stat_object(bucket, object_name):
         raise S3Error(
             code="NoSuchKey",
             message="Object does not exist",
@@ -1655,11 +1683,13 @@ def test_acquire_lock_success(backend, monkeypatch):
             object_name=object_name,
         )
 
-    def mock_put_object(bucket, object_name, data, length, content_type=None):
-        pass
+    def mock_put_object(bucket, object_name, data, headers=None):
+        class MockResult:
+            etag = "test-etag"
+        return MockResult()
 
-    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
-    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "_put_object", mock_put_object)
 
     result = backend.acquire_lock("test-key", "test-lock-id", timeout=30, shared=True)
     assert result is True
@@ -1667,6 +1697,11 @@ def test_acquire_lock_success(backend, monkeypatch):
 
 def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
     """Test acquire_lock when exclusive lock already exists (lines 417-420)."""
+
+    def mock_stat_object(bucket, object_name):
+        class MockStat:
+            etag = "test-etag-123"
+        return MockStat()
 
     def mock_get_object(bucket, object_name):
         class MockResponse:
@@ -1681,6 +1716,7 @@ def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
 
         return MockResponse()
 
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     from mindtrace.registry.core.exceptions import LockAcquisitionError
@@ -1693,6 +1729,11 @@ def test_acquire_lock_existing_exclusive_lock(backend, monkeypatch):
 
 def test_acquire_lock_existing_shared_lock(backend, monkeypatch):
     """Test acquire_lock when shared lock already exists (lines 417-420)."""
+
+    def mock_stat_object(bucket, object_name):
+        class MockStat:
+            etag = "test-etag-123"
+        return MockStat()
 
     def mock_get_object(bucket, object_name):
         class MockResponse:
@@ -1707,6 +1748,7 @@ def test_acquire_lock_existing_shared_lock(backend, monkeypatch):
 
         return MockResponse()
 
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
     monkeypatch.setattr(backend.client, "get_object", mock_get_object)
 
     from mindtrace.registry.core.exceptions import LockAcquisitionError
