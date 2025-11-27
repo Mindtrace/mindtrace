@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: ../../..
+      dockerfile: mindtrace/apps/mindtrace/apps/inspectra/Dockerfile
+    container_name: inspectra_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: inspectra_redis
+    ports:
+      - "6379:6379"
+    restart: always
