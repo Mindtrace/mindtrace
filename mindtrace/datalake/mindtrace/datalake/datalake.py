@@ -333,22 +333,45 @@ class Datalake(Mindtrace):
         self, query: list[dict[str, Any]] | dict[str, Any], datums_wanted: int | None = None, transpose: bool = False
     ) -> list[dict[str, Any]] | dict[str, list]:
         """
-        Optimized version of query_data using MongoDB aggregation pipelines.
+        Query the data in the datalake using a list of queries.
 
-        This method provides significant performance improvements for common query patterns
-        by using MongoDB's native aggregation capabilities instead of multiple round trips.
+        This method should provide significant performance improvements for common query patterns
+        compared to query_data_legacy by using MongoDB's native aggregation capabilities instead of multiple round trips.
 
         Args:
-            query: Same syntax as query_data - list of queries or single query
-            datums_wanted: Maximum number of results to return
-            transpose: Whether to return dict of lists (True) or list of dicts (False)
+            query: A list of queries or a single query.
+                If a list of queries is provided, the first query is the base query,
+                and then the remaining queries are used to obtain derived data.
+                So the base query might find images from a certain project, and then
+                a second query might find classification labels for those images.
+                If no classification label is found for an image, the image id is not included in the result.
+                The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
+
+                The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
+                - "latest": The data/datum with the latest added_at timestamp
+                - "earliest": The data/datum with the earliest added_at timestamp
+                - "random": Randomly selected data/datum
+                - "quickest": The first data/datum we find (so "quickest" to run)
+                For these three strategies, if no data is found, the entire row (including the base datum) is not included in the result.
+                - "missing": if any data is found, the entire row (including the base datum) is not included in the result.
+                  This allows us to search for "images we haven't classified yet", for instance.
+                  This is not available for the base query.
+                If no strategy is provided, "latest" is used.
+
+                Otherwise, the queries have the same syntax as MongoDB filters: https://www.mongodb.com/docs/languages/python/pymongo-driver/current/crud/query/specify-query/
+
+            If a single query is provided, it is used to find the base data and no derived data is obtained.
+
+            datums_wanted: The number of datums to return for each query. If None, all datums are returned.
+
+            transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
 
         Returns:
-            Same format as query_data - list of dictionaries or dictionary of lists
-
-        Note:
-            This optimized version handles common cases but may fall back to the original
-            query_data method for complex scenarios not yet supported.
+            If transpose is False:
+                A list of dictionaries, where each dictionary contains the data of the base datum and the data of
+                any derived data, with the number of entries of each dictionary equalling the length of query (minus any entries with the "missing" strategy)
+            If transpose is True:
+                A dictionary of lists, where the keys are the columns and the values are the lists of values.
         """
         if isinstance(query, dict):
             query = [query]
