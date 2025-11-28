@@ -52,14 +52,15 @@ if TYPE_CHECKING:  # pragma: no cover
 def pil_to_ascii(image: Image) -> str:
     """Serialize PIL Image to ascii.
 
-    Example::
-
+    Example:
+        ```python
         import PIL
         from mindtrace.core import pil_to_ascii, ascii_to_pil
 
         image = PIL.Image.open('tests/resources/hopper.png')
         ascii_image = pil_to_ascii(image)
         decoded_image = ascii_to_pil(ascii_image)
+        ```
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -71,7 +72,8 @@ def pil_to_ascii(image: Image) -> str:
 def ascii_to_pil(ascii_image: str) -> Image:
     """Convert ascii image to PIL Image.
 
-    Example::
+    Example:
+        ```python
 
         import PIL
         from mindtrace.core import pil_to_ascii, ascii_to_pil
@@ -79,6 +81,7 @@ def ascii_to_pil(ascii_image: str) -> Image:
         image = PIL.Image.open('tests/resources/hopper.png')
         ascii_image = pil_to_ascii(image)
         decoded_image = ascii_to_pil(ascii_image)
+        ```
     """
     return PIL.Image.open(io.BytesIO(base64.b64decode(ascii_image)))
 
@@ -86,7 +89,8 @@ def ascii_to_pil(ascii_image: str) -> Image:
 def pil_to_bytes(image: Image) -> bytes:
     """Serialize PIL Image into io.BytesIO stream.
 
-    Example::
+    Example:
+        ```python
 
         import PIL
         from mindtrace.core import pil_to_bytes, bytes_to_pil
@@ -94,6 +98,7 @@ def pil_to_bytes(image: Image) -> bytes:
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
         decoded_image = bytes_to_pil(bytes_image)
+        ```
     """
     imageio = io.BytesIO()
     image.save(imageio, "png")
@@ -104,7 +109,8 @@ def pil_to_bytes(image: Image) -> bytes:
 def bytes_to_pil(bytes_image: bytes) -> Image:
     """Convert io.BytesIO stream to PIL Image.
 
-    Example::
+    Example:
+        ```python
 
         import PIL
         from mindtrace.core import pil_to_bytes, bytes_to_pil
@@ -112,6 +118,7 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
         image = PIL.Image.open('tests/resources/hopper.png')
         bytes_image = pil_to_bytes(image)
         decoded_image = bytes_to_pil(bytes_image)
+        ```
     """
     return PIL.Image.open(io.BytesIO(bytes_image))
 
@@ -119,13 +126,15 @@ def bytes_to_pil(bytes_image: bytes) -> Image:
 def pil_to_tensor(image: Image) -> "torch.Tensor":
     """Convert PIL Image to Torch Tensor.
 
-    Example::
+    Example:
+        ```python
 
         from PIL import Image
         from mindtrace.core import pil_to_tensor
 
         image = Image.open('tests/resources/hopper.png')
         tensor = pil_to_tensor(image)
+        ```
     """
     if not _HAS_TORCH:
         raise ImportError("torch is required for pil_to_tensor but is not installed.")
@@ -148,7 +157,8 @@ def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) 
         min_val: The minimum value of the input image. If None, it will be inferred from the input image.
         max_val: The maximum value of the input image. If None, it will be inferred from the input image.
 
-    Example::
+    Example:
+        ```python
 
         from PIL import Image
         from mindtrace.core import pil_to_tensor, tensor_to_pil
@@ -156,6 +166,7 @@ def tensor_to_pil(image: "torch.Tensor", mode=None, min_val=None, max_val=None) 
         image = Image.open('tests/resources/hopper.png')
         tensor_image = pil_to_tensor(image)
         pil_image = tensor_to_pil(tensor_image)
+        ```
     """
     if not _HAS_TORCH:
         raise ImportError("torch is required for tensor_to_pil but is not installed.")
@@ -218,13 +229,14 @@ def ndarray_to_pil(image: "np.ndarray", image_format: str = "RGB"):
     Returns:
         A PIL image.
 
-    Example::
-
+    Example:
+        ```python
         from matplotlib import image, pyplot as plt
         from mindtrace.core import ndarray_to_pil
 
         ndarray_image = image.imread('tests/resources/hopper.png')
         pil_image = ndarray_to_pil(ndarray_image, image_format='RGB')
+        ```
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for ndarray_to_pil but is not installed.")
@@ -262,13 +274,15 @@ def pil_to_cv2(image: Image) -> "np.ndarray":
     Returns:
         An np.ndarray image in 'BGR' (cv2) format.
 
-    Example::
+    Example:
 
+        ```python
         import PIL
         from mindtrace.core import pil_to_cv2
 
         pil_image = PIL.Image.open('tests/resources/hopper.png')
         cv2_image = pil_to_cv2(pil_image)
+        ```
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for pil_to_cv2 but is not installed.")
@@ -289,13 +303,15 @@ def cv2_to_pil(image: "np.ndarray") -> Image:
     Returns:
         A PIL image.
 
-    Example::
+    Example:
+        ```python
 
         import cv2
         from mindtrace.core import cv2_to_pil
 
         cv2_image = cv2.imread('tests/resources/hopper.png')
         pil_image = cv2_to_pil(cv2_image)
+        ```
     """
     if not _HAS_NUMPY:
         raise ImportError("numpy is required for cv2_to_pil but is not installed.")
@@ -313,12 +329,14 @@ def pil_to_base64(image: Image) -> str:
     Returns:
         str: The base64-encoded string representing the image.
 
-    Example::
+    Example:
+        ```python
         from PIL import Image
         from mindtrace.core import pil_to_base64
 
         image = Image.open("path_to_image.png")
         encoded_image = pil_to_base64(image)
+        ```
     """
     image_bytes = io.BytesIO()
     image.save(image_bytes, format="PNG")
@@ -334,12 +352,14 @@ def base64_to_pil(base64_str: str) -> Image:
     Returns:
         PIL.Image: The decoded image object.
 
-    Example::
+    Example:
+        ```python
         from mindtrace.core import base64_to_pil
 
         base64_str = "..."  # Base64 string obtained earlier
         image = base64_to_pil(base64_str)
         image.show()  # Display the decoded image
+        ```
     """
     image_bytes = io.BytesIO(base64.b64decode(base64_str))
     return PIL.Image.open(image_bytes)
@@ -355,7 +375,8 @@ def pil_to_discord_file(image: Image, filename: str = "image.png") -> "File":
     Returns:
         discord.File: A Discord file object that can be sent in a message.
 
-    Example::
+    Example:
+        ```python
         from PIL import Image
         from mindtrace.core import pil_to_discord_file
         from discord import File
@@ -363,6 +384,7 @@ def pil_to_discord_file(image: Image, filename: str = "image.png") -> "File":
         image = Image.open("path_to_image.png")
         discord_file = pil_to_discord_file(image)
         await message.reply(file=discord_file)
+        ```
     """
     if not _HAS_DISCORD:
         raise ImportError("discord.py is required for pil_to_discord_file but is not installed.")
@@ -381,7 +403,8 @@ async def discord_file_to_pil(attachment: "Attachment") -> Image:
     Returns:
         The resulting PIL Image.
 
-    Example::
+    Example:
+        ```python
         @commands.command(name="process_images")
         async def example_command(self, ctx):
             attachments = ctx.message.attachments
@@ -397,6 +420,7 @@ async def discord_file_to_pil(attachment: "Attachment") -> Image:
                     await ctx.send(f"Attachment {i} processed as image.")
                 else:
                     await ctx.send(f"Attachment {i} is not a valid image file.")
+        ```
     """
     if not _HAS_DISCORD:
         raise ImportError("discord.py is required for discord_file_to_pil but is not installed.")

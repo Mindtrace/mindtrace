@@ -434,34 +434,6 @@ Supported registry URIs:
 - `gs://bucket-name/path`
 - Custom registry backends
 
-## Testing
-
-The datalake includes comprehensive test coverage:
-
-### Unit Tests
-- **116 unit tests** covering all functionality
-- Mocked dependencies for fast execution
-- Tests for edge cases and error conditions
-- Comprehensive coverage of query strategies and transpose functionality
-
-### Integration Tests
-- **44 integration tests** with real MongoDB and registry
-- End-to-end workflow testing
-- Performance and scalability testing
-- Real-world scenario validation
-
-### Running Tests
-```bash
-# Run all tests
-ds test: datalake
-
-# Run only unit tests
-ds test: datalake --unit
-
-# Run only integration tests
-ds test: datalake --integration
-```
-
 ## Performance Considerations
 
 ### Registry Caching
