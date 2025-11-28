@@ -1,5 +1,6 @@
 import shutil
 import threading
+import time
 import uuid
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
@@ -181,6 +182,7 @@ class Registry(Mindtrace):
         registry_dir: str | Path | None = None,
         backend: RegistryBackend | None = None,
         version_objects: bool = False,
+        versions_cache_ttl: float = 60.0,
         **kwargs,
     ):
         """Initialize the registry.
@@ -189,6 +191,7 @@ class Registry(Mindtrace):
             registry_dir: Directory to store registry objects. If None, uses the default from config.
             backend: Backend to use for storage. If None, uses LocalRegistryBackend.
             version_objects: Whether to keep version history. If False, only one version per object is kept.
+            versions_cache_ttl: Time-to-live in seconds for the versions cache. Default is 60.0 seconds.
             **kwargs: Additional arguments to pass to the backend.
         """
         super().__init__(**kwargs)
@@ -199,7 +202,9 @@ class Registry(Mindtrace):
             registry_dir = Path(registry_dir).expanduser().resolve()
             backend = LocalRegistryBackend(uri=registry_dir, **kwargs)
         self.backend = backend
-        self.version_objects = version_objects
+
+        # Handle version_objects parameter with registry metadata persistence
+        self.version_objects = self._initialize_version_objects(version_objects, version_objects_explicitly_set=True)
 
         self._artifact_store = LocalArtifactStore(
             name="local_artifact_store",
@@ -217,6 +222,12 @@ class Registry(Mindtrace):
         # Materializer cache to reduce lock contention
         self._materializer_cache = {}
         self._materializer_cache_lock = threading.Lock()
+
+        # Version list cache to reduce expensive list_versions() calls
+        # Format: {object_name: (versions_list, timestamp)}
+        self._versions_cache: Dict[str, tuple[List[str], float]] = {}
+        self._versions_cache_lock = threading.Lock()
+        self._versions_cache_ttl = versions_cache_ttl
 
         # Register the default materializers if there are none
         self._register_default_materializers()
@@ -241,6 +252,152 @@ class Registry(Mindtrace):
         """Get a copy of the class-level default materializers dictionary."""
         with cls._materializer_lock:
             return dict(cls._default_materializers)
+
+    def _initialize_version_objects(self, version_objects: bool, version_objects_explicitly_set: bool = True) -> bool:
+        """Initialize version_objects parameter with registry metadata persistence.
+
+        Args:
+            version_objects: The version_objects parameter passed to __init__
+            version_objects_explicitly_set: Whether version_objects was explicitly provided
+
+        Returns:
+            The resolved version_objects value
+
+        Raises:
+            ValueError: If there's a conflict between existing and new version_objects values
+        """
+        # Try to get existing registry metadata
+        try:
+            existing_metadata = self._get_registry_metadata()
+            existing_version_objects = existing_metadata.get("version_objects")
+
+            if existing_version_objects is not None:
+                # If version_objects was explicitly set and differs from existing, raise error
+                if version_objects_explicitly_set and existing_version_objects != version_objects:
+                    raise ValueError(
+                        f"Version objects conflict: existing registry has version_objects={existing_version_objects}, "
+                        f"but new Registry instance was created with version_objects={version_objects}. "
+                        f"All Registry instances must use the same version_objects setting."
+                    )
+                # Use existing value
+                return existing_version_objects
+            else:
+                # No existing setting, use the provided value and save it
+                self._save_registry_metadata({"version_objects": version_objects})
+                return version_objects
+
+        except ValueError:
+            # Re-raise ValueError (conflict)
+            raise
+        except Exception:
+            # If we can't read metadata, assume this is a new registry and save the setting
+            self._save_registry_metadata({"version_objects": version_objects})
+            return version_objects
+
+    def _get_registry_metadata(self) -> dict:
+        """Get the registry metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata
+        """
+        try:
+            # Try to get materializers first to see if metadata exists
+            materializers = self.backend.registered_materializers()
+
+            # For backends that store metadata in a single file, we need to get the full metadata
+            # This is a bit of a hack, but we'll check if the backend has a way to get full metadata
+            if hasattr(self.backend, "_metadata_path"):
+                # For backends that store metadata in a file, we can read it directly
+                import json
+                import os
+                import tempfile
+
+                if hasattr(self.backend, "gcs"):
+                    # GCP backend
+                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+                        temp_path = f.name
+                    try:
+                        self.backend.gcs.download(self.backend._metadata_path, temp_path)
+                        with open(temp_path, "r") as f:
+                            metadata = json.load(f)
+                        return metadata
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.unlink(temp_path)
+                elif hasattr(self.backend, "client"):
+                    # MinIO backend
+                    response = self.backend.client.get_object(self.backend.bucket, str(self.backend._metadata_path))
+                    return json.loads(response.data.decode())
+                else:
+                    # Local backend
+                    with open(self.backend._metadata_path, "r") as f:
+                        return json.load(f)
+            else:
+                # Fallback: return just the materializers
+                return {"materializers": materializers}
+
+        except Exception:
+            # If we can't read metadata, return empty dict
+            return {}
+
+    def _save_registry_metadata(self, metadata: dict) -> None:
+        """Save registry metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save
+        """
+        try:
+            # Get existing metadata and merge
+            existing_metadata = self._get_registry_metadata()
+
+            # Ensure materializers key exists
+            if "materializers" not in existing_metadata:
+                existing_metadata["materializers"] = {}
+
+            # Merge the new metadata
+            existing_metadata.update(metadata)
+
+            # Save the updated metadata
+            if hasattr(self.backend, "_metadata_path"):
+                import json
+                import os
+                import tempfile
+
+                if hasattr(self.backend, "gcs"):
+                    # GCP backend
+                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                        json.dump(existing_metadata, f)
+                        temp_path = f.name
+                    try:
+                        self.backend.gcs.upload(temp_path, self.backend._metadata_path)
+                    finally:
+                        if os.path.exists(temp_path):
+                            os.unlink(temp_path)
+                elif hasattr(self.backend, "client"):
+                    # MinIO backend
+                    import io
+
+                    data = json.dumps(existing_metadata).encode()
+                    data_io = io.BytesIO(data)
+                    self.backend.client.put_object(
+                        self.backend.bucket,
+                        str(self.backend._metadata_path),
+                        data_io,
+                        len(data),
+                        content_type="application/json",
+                    )
+                else:
+                    # Local backend
+                    with open(self.backend._metadata_path, "w") as f:
+                        json.dump(existing_metadata, f)
+            else:
+                # Fallback: just register materializers if they exist
+                if "materializers" in metadata:
+                    for object_class, materializer_class in metadata["materializers"].items():
+                        self.backend.register_materializer(object_class, materializer_class)
+
+        except Exception as e:
+            self.logger.warning(f"Could not save registry metadata: {e}")
 
     def save(
         self,
@@ -362,6 +519,9 @@ class Registry(Mindtrace):
                 except Exception as e:
                     self.logger.warning(f"Error cleaning up temp version {name}@{temp_version}: {e}")
 
+            # Invalidate versions cache after successful save
+            self._invalidate_versions_cache(name)
+
         self.logger.debug(f"Saved {name}@{version} to registry.")
 
     def load(
@@ -470,6 +630,10 @@ class Registry(Mindtrace):
             with self.get_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
+
+        # Invalidate versions cache after successful delete
+        self._invalidate_versions_cache(name)
+
         self.logger.debug(f"Deleted object '{name}' version '{version or 'all'}'")
 
     def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
@@ -620,13 +784,45 @@ class Registry(Mindtrace):
     def list_versions(self, object_name: str) -> List[str]:
         """List all registered versions for an object.
 
+        This method uses caching to reduce expensive backend list operations. Cache is invalidated on save/delete
+        operations.
+
         Args:
             object_name: Object name
 
         Returns:
             List of version strings
         """
-        return self.backend.list_versions(object_name)
+        # Check cache first
+        with self._versions_cache_lock:
+            if object_name in self._versions_cache:
+                versions, timestamp = self._versions_cache[object_name]
+                # Check if cache is still valid
+                if time.time() - timestamp < self._versions_cache_ttl:
+                    return versions
+                # Cache expired, remove it
+                del self._versions_cache[object_name]
+
+        # Cache miss or expired - fetch from backend
+        versions = self.backend.list_versions(object_name)
+
+        # Update cache
+        with self._versions_cache_lock:
+            self._versions_cache[object_name] = (versions, time.time())
+
+        return versions
+
+    def _invalidate_versions_cache(self, object_name: str):
+        """Invalidate the versions cache for an object.
+
+        Called after save/delete operations to ensure cache consistency.
+
+        Args:
+            object_name: Object name to invalidate cache for
+        """
+        with self._versions_cache_lock:
+            if object_name in self._versions_cache:
+                del self._versions_cache[object_name]
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
         """Map object types to their available versions.
@@ -949,9 +1145,29 @@ class Registry(Mindtrace):
         By default, the registry will only register materializers that are not already registered.
         """
         self.logger.info("Registering default materializers...")
-        for object_class, materializer_class in self.get_default_materializers().items():
-            if override_preexisting_materializers or object_class not in self.backend.registered_materializers():
-                self.register_materializer(object_class, materializer_class)
+
+        # Use batch registration for better performance
+        default_materializers = self.get_default_materializers()
+        existing_materializers = self.backend.registered_materializers()
+
+        # Filter materializers that need to be registered
+        materializers_to_register = {}
+        for object_class, materializer_class in default_materializers.items():
+            if override_preexisting_materializers or object_class not in existing_materializers:
+                # Ensure materializer_class is a string for JSON serialization
+                if isinstance(materializer_class, type):
+                    materializer_class = f"{materializer_class.__module__}.{materializer_class.__name__}"
+                materializers_to_register[object_class] = materializer_class
+
+        if materializers_to_register:
+            # Register all materializers in one batch operation
+            with self.get_lock("_registry", "materializers"):
+                self.backend.register_materializers_batch(materializers_to_register)
+
+                # Update cache
+                with self._materializer_cache_lock:
+                    self._materializer_cache.update(materializers_to_register)
+
         self.logger.info("Default materializers registered successfully.")
 
     def _warm_materializer_cache(self):
@@ -1110,10 +1326,57 @@ class Registry(Mindtrace):
             for key, value in mapping.items():
                 self[key] = value
 
-    def clear(self) -> None:
-        """Remove all objects from the registry."""
+    def clear(self, clear_registry_metadata: bool = False) -> None:
+        """Remove all objects from the registry.
+
+        Args:
+            clear_registry_metadata: If True, also clears all registry metadata including
+                materializers and version_objects settings. If False, only clears objects.
+        """
         for name in self.keys():
             del self[name]
+
+        if clear_registry_metadata:
+            # Clear registry metadata by creating a new empty metadata file
+            try:
+                if hasattr(self.backend, "_metadata_path"):
+                    import json
+                    import os
+                    import tempfile
+
+                    # Create empty metadata (no version_objects setting)
+                    empty_metadata = {"materializers": {}}
+
+                    if hasattr(self.backend, "gcs"):
+                        # GCP backend
+                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                            json.dump(empty_metadata, f)
+                            temp_path = f.name
+                        try:
+                            self.backend.gcs.upload(temp_path, self.backend._metadata_path)
+                        finally:
+                            if os.path.exists(temp_path):
+                                os.unlink(temp_path)
+                    elif hasattr(self.backend, "client"):
+                        # MinIO backend
+                        import io
+
+                        data = json.dumps(empty_metadata).encode()
+                        data_io = io.BytesIO(data)
+                        self.backend.client.put_object(
+                            self.backend.bucket,
+                            str(self.backend._metadata_path),
+                            data_io,
+                            len(data),
+                            content_type="application/json",
+                        )
+                    else:
+                        # Local backend
+                        with open(self.backend._metadata_path, "w") as f:
+                            json.dump(empty_metadata, f)
+
+            except Exception as e:
+                self.logger.warning(f"Could not clear registry metadata: {e}")
 
     def pop(self, key: str, default: Any = None) -> Any:
         """Remove and return an object from the registry.

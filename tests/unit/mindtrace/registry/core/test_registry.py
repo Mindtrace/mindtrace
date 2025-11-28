@@ -81,9 +81,10 @@ def test_path():
 
 
 @pytest.fixture
-def non_versioned_registry(temp_registry_dir):
+def non_versioned_registry():
     """Create a registry with versioning disabled."""
-    return Registry(registry_dir=temp_registry_dir, version_objects=False)
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(registry_dir=temp_dir, version_objects=False)
 
 
 def test_registry_initialization(registry, temp_registry_dir):
@@ -2009,3 +2010,277 @@ def test_register_materializer_accepts_materializer_class_type(registry):
     expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
     expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"
     assert registry.registered_materializer(expected_key) == expected_value
+
+
+def test_version_objects_conflict_error(registry):
+    """Test version objects conflict error."""
+    # Create a registry with version_objects=True
+    _ = Registry(registry_dir=str(registry.backend.uri), version_objects=True)
+
+    # Try to create another registry with version_objects=False in the same directory
+    with pytest.raises(ValueError, match="Version objects conflict"):
+        Registry(registry_dir=str(registry.backend.uri), version_objects=False)
+
+
+def test_get_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.download = lambda remote_path, local_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = '{"version_objects": true, "materializers": {}}'
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                result = registry._get_registry_metadata()
+                assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_response = type("MockResponse", (), {})()
+    mock_response.data = b'{"version_objects": true, "materializers": {}}'
+    mock_client.get_object = lambda bucket, object_name: mock_response
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    result = registry._get_registry_metadata()
+    assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_local_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = '{"version_objects": true, "materializers": {}}'
+
+        result = registry._get_registry_metadata()
+        assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_fallback(registry, monkeypatch):
+    """Test _get_registry_metadata fallback."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=FileNotFoundError):
+        result = registry._get_registry_metadata()
+        assert result == {}
+
+
+def test_get_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test _get_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        result = registry._get_registry_metadata()
+        assert result == {}
+
+
+def test_save_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.upload = lambda local_path, remote_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("tempfile.NamedTemporaryFile") as mock_temp:
+        mock_file = mock_temp.return_value.__enter__.return_value
+        mock_file.name = "/tmp/test.json"
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_client.put_object = lambda bucket, object_name, data, length, content_type: None
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_local_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.write = lambda data: None
+
+        registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_fallback(registry, monkeypatch):
+    """Test _save_registry_metadata fallback."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        # Mock register_materializer to avoid actual registration
+        with patch.object(registry.backend, "register_materializer"):
+            registry._save_registry_metadata({"materializers": {"test": "materializer"}})
+
+
+def test_save_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test _save_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        # Mock register_materializer to avoid actual registration
+        with patch.object(registry.backend, "register_materializer"):
+            registry._save_registry_metadata({"materializers": {"test": "materializer"}})
+
+
+def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
+    """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
+    # Create a fresh registry that hasn't been initialized yet
+    # We'll patch _get_registry_metadata to raise an exception during initialization
+    save_calls = []
+
+    def failing_get_metadata(self):
+        raise OSError("Cannot read metadata file")
+
+    def mock_save_metadata(self, metadata):
+        save_calls.append(metadata)
+        # Don't actually save to avoid side effects
+
+    # Patch before creating registry
+    monkeypatch.setattr(Registry, "_get_registry_metadata", failing_get_metadata)
+    monkeypatch.setattr(Registry, "_save_registry_metadata", mock_save_metadata)
+
+    # Create registry - should handle exception and save the provided value
+    registry = Registry(registry_dir=temp_registry_dir, version_objects=False)
+
+    # Verify that save was called (exception handler saved the value)
+    assert len(save_calls) > 0
+    # Verify the registry uses the provided value
+    assert registry.version_objects is False
+
+
+def test_get_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _get_registry_metadata fallback when backend doesn't have _metadata_path (line 329)."""
+
+    # Create a mock backend without _metadata_path
+    class MockBackend:
+        def registered_materializers(self):
+            return {"test.Object": "TestMaterializer"}
+
+    registry.backend = MockBackend()
+
+    # Should return fallback with just materializers
+    result = registry._get_registry_metadata()
+    assert result == {"materializers": {"test.Object": "TestMaterializer"}}
+
+
+def test_save_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _save_registry_metadata fallback when backend doesn't have _metadata_path (lines 382-384)."""
+
+    # Create a mock backend without _metadata_path but with register_materializer
+    class MockBackend:
+        def registered_materializers(self):
+            return {}
+
+        def register_materializer(self, object_class, materializer_class):
+            # Track registrations
+            if not hasattr(self, "_materializers"):
+                self._materializers = {}
+            self._materializers[object_class] = materializer_class
+
+    mock_backend = MockBackend()
+    registry.backend = mock_backend
+
+    # Save metadata with materializers
+    registry._save_registry_metadata({"materializers": {"test.Object": "TestMaterializer"}})
+
+    # Verify register_materializer was called
+    assert hasattr(mock_backend, "_materializers")
+    assert mock_backend._materializers["test.Object"] == "TestMaterializer"
+
+
+def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.upload = lambda local_path, remote_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("tempfile.NamedTemporaryFile") as mock_temp:
+        mock_file = mock_temp.return_value.__enter__.return_value
+        mock_file.name = "/tmp/test.json"
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_client.put_object = lambda bucket, object_name, data, length, content_type: None
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_local_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.write = lambda data: None
+
+        registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test clear_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        registry.clear(clear_registry_metadata=True)

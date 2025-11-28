@@ -69,6 +69,15 @@ class MINDTRACE_WORKER(BaseModel):
     DEFAULT_REDIS_URL: str
 
 
+class MINDTRACE_GCP(BaseModel):
+    GCP_REGISTRY_URI: str
+    GCP_PROJECT_ID: str
+    GCP_BUCKET_NAME: str
+    GCP_CREDENTIALS_PATH: str
+    GCP_LOCATION: str
+    GCP_STORAGE_CLASS: str
+
+
 def load_ini_settings() -> Dict[str, Any]:
     ini_path = Path(__file__).parent / "config.ini"
     return load_ini_as_dict(ini_path)
@@ -80,6 +89,7 @@ class CoreSettings(BaseSettings):
     MINDTRACE_DIR_PATHS: MINDTRACE_DIR_PATHS
     MINDTRACE_DEFAULT_HOST_URLS: MINDTRACE_DEFAULT_HOST_URLS
     MINDTRACE_MINIO: MINDTRACE_MINIO
+    MINDTRACE_GCP: MINDTRACE_GCP
     MINDTRACE_CLUSTER: MINDTRACE_CLUSTER
     MINDTRACE_MCP: MINDTRACE_MCP
     MINDTRACE_WORKER: MINDTRACE_WORKER
