@@ -562,7 +562,7 @@ class Datalake(Mindtrace):
             else:
                 pipeline.append({"$limit": datums_wanted})
 
-        self.logger.info(f"pipeline: {pipeline}")
+        # self.logger.debug(f"pipeline: {pipeline}")
         # Execute aggregation pipeline
         results = await self.datum_database.aggregate(pipeline)
 
