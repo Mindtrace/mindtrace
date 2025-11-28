@@ -233,7 +233,7 @@ class Datalake(Mindtrace):
                 So the base query might find images from a certain project, and then
                 a second query might find classification labels for those images.
                 If no classification label is found for an image, the image id is not included in the result.
-                The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
+                The "derived_from" key indicates the column name (from a previous query) from which this datum should be derived.
 
                 The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
                 - "latest": The data/datum with the latest added_at timestamp
@@ -250,7 +250,7 @@ class Datalake(Mindtrace):
 
             If a single query is provided, it is used to find the base data and no derived data is obtained.
 
-            datums_wanted: The number of datums to return for each query. If None, all datums are returned.
+            datums_wanted: The number of datums to return from the base query. If None, all datums are returned.
 
             transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
 
@@ -345,7 +345,7 @@ class Datalake(Mindtrace):
                 So the base query might find images from a certain project, and then
                 a second query might find classification labels for those images.
                 If no classification label is found for an image, the image id is not included in the result.
-                The "derived_from" key indicates the index of the query which creates the data from which this datum should be derived.
+                The "derived_from" key indicates the column name (from a previous query) from which this datum should be derived.
 
                 The "strategy" key indicates the strategy to use to determine which datum to use if multiple are found.
                 - "latest": The data/datum with the latest added_at timestamp
@@ -362,7 +362,7 @@ class Datalake(Mindtrace):
 
             If a single query is provided, it is used to find the base data and no derived data is obtained.
 
-            datums_wanted: The number of datums to return for each query. If None, all datums are returned.
+            datums_wanted: The number of datums to return from the base query. If None, all datums are returned.
 
             transpose: whether to return a list of dictionaries (default, False) or a dictionary of lists (True).
 
