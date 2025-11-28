@@ -94,7 +94,7 @@ def mock_camera_manager():
 
 
 @pytest.fixture
-async def camera_service(mock_camera_manager):
+def camera_service(mock_camera_manager):
     """Create a CameraManagerService with mock manager."""
     service = CameraManagerService(include_mocks=True)
     service._camera_manager = mock_camera_manager
