@@ -41,6 +41,7 @@ class TestDatalakeUnit:
         mock_db.initialize = AsyncMock()
         mock_db.insert = AsyncMock()
         mock_db.get = AsyncMock()
+        mock_db.aggregate = AsyncMock()
         mock_db.find = AsyncMock()
         # get_raw_model must be sync and return an object with a derived_from attribute
         mock_db.get_raw_model = MagicMock(return_value=MagicMock(derived_from=MagicMock()))
@@ -655,3 +656,90 @@ class TestDatalakeUnit:
 
         # Verify initialize was called twice (once for each instance)
         assert mock_database.initialize.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_query_data_optimized_single_query(self, datalake, mock_database):
+        """Test query_data_optimized with single query."""
+        # Mock aggregation results
+        mock_results = [{"image_id": "507f1f77bcf86cd799439011"}, {"image_id": "507f1f77bcf86cd799439012"}]
+        mock_database.aggregate.return_value = mock_results
+
+        query = {"metadata.project": "test_project", "column": "image_id"}
+        result = await datalake.query_data(query)
+
+        # Verify aggregation was called
+        mock_database.aggregate.assert_called_once()
+
+        # Verify result format
+        assert len(result) == 2
+        assert result[0]["image_id"] == "507f1f77bcf86cd799439011"
+        assert result[1]["image_id"] == "507f1f77bcf86cd799439012"
+
+    @pytest.mark.asyncio
+    async def test_query_data_optimized_multi_query(self, datalake, mock_database):
+        """Test query_data_optimized with multi-query."""
+        # Mock aggregation results
+        mock_results = [
+            {"image_id": "507f1f77bcf86cd799439011", "label_id": "507f1f77bcf86cd799439021"},
+            {"image_id": "507f1f77bcf86cd799439012", "label_id": "507f1f77bcf86cd799439022"},
+        ]
+        mock_database.aggregate.return_value = mock_results
+
+        query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "column": "label_id"},
+        ]
+        result = await datalake.query_data(query)
+
+        # Verify aggregation was called
+        mock_database.aggregate.assert_called_once()
+
+        # Verify result format
+        assert len(result) == 2
+        assert result[0]["image_id"] == "507f1f77bcf86cd799439011"
+        assert result[0]["label_id"] == "507f1f77bcf86cd799439021"
+
+    @pytest.mark.asyncio
+    async def test_query_data_optimized_transpose(self, datalake, mock_database):
+        """Test query_data_optimized with transpose=True."""
+        # Mock aggregation results
+        mock_results = [{"image_id": "507f1f77bcf86cd799439011"}, {"image_id": "507f1f77bcf86cd799439012"}]
+        mock_database.aggregate.return_value = mock_results
+
+        query = {"metadata.project": "test_project", "column": "image_id"}
+        result = await datalake.query_data(query, transpose=True)
+
+        # Verify result format
+        assert isinstance(result, dict)
+        assert "image_id" in result
+        assert len(result["image_id"]) == 2
+        assert result["image_id"][0] == "507f1f77bcf86cd799439011"
+
+    @pytest.mark.asyncio
+    async def test_query_data_optimized_complex_chain(self, datalake, mock_database):
+        """Complex multi-level queries are handled via the aggregation pipeline."""
+
+        mock_database.aggregate.return_value = [
+            {
+                "image_id": "507f1f77bcf86cd799439011",
+                "label_id": "507f1f77bcf86cd799439021",
+                "bbox_id": "507f1f77bcf86cd799439031",
+            }
+        ]
+
+        complex_query = [
+            {"metadata.project": "test_project", "column": "image_id"},
+            {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
+            {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
+        ]
+
+        result = await datalake.query_data(complex_query)
+
+        mock_database.aggregate.assert_called_once()
+        assert result == [
+            {
+                "image_id": "507f1f77bcf86cd799439011",
+                "label_id": "507f1f77bcf86cd799439021",
+                "bbox_id": "507f1f77bcf86cd799439031",
+            }
+        ]
