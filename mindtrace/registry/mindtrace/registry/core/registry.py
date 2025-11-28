@@ -1,3 +1,4 @@
+import hashlib
 import shutil
 import threading
 import time
@@ -10,7 +11,7 @@ from typing import Any, Dict, List, Type
 from zenml.artifact_stores import LocalArtifactStore, LocalArtifactStoreConfig
 from zenml.materializers.base_materializer import BaseMaterializer
 
-from mindtrace.core import Mindtrace, Timeout, first_not_none, ifnone, instantiate_target
+from mindtrace.core import Mindtrace, Timeout, compute_dir_hash, first_not_none, ifnone, instantiate_target
 from mindtrace.registry.backends.local_registry_backend import LocalRegistryBackend
 from mindtrace.registry.backends.registry_backend import RegistryBackend
 from mindtrace.registry.core.exceptions import LockAcquisitionError
@@ -484,17 +485,23 @@ class Registry(Mindtrace):
                 # Save to temp location first
                 with self.get_lock(name, temp_version):
                     try:
-                        metadata = {
-                            "class": object_class,
-                            "materializer": materializer_class,
-                            "init_params": ifnone(init_params, default={}),
-                            "metadata": ifnone(metadata, default={}),
-                        }
                         with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                             materializer = instantiate_target(
                                 materializer, uri=temp_dir, artifact_store=self._artifact_store
                             )
                             materializer.save(obj)
+                            
+                            # Compute artifact hash after materializer saves the object
+                            artifact_hash = compute_dir_hash(temp_dir)
+                            
+                            metadata = {
+                                "class": object_class,
+                                "materializer": materializer_class,
+                                "init_params": ifnone(init_params, default={}),
+                                "metadata": ifnone(metadata, default={}),
+                                "hash": artifact_hash,
+                            }
+                            
                             self.backend.push(name=name, version=temp_version, local_path=temp_dir)
                             self.backend.save_metadata(name=name, version=temp_version, metadata=metadata)
                     except Exception as e:
@@ -530,6 +537,7 @@ class Registry(Mindtrace):
         version: str | None = "latest",
         output_dir: str | None = None,
         acquire_lock: bool = True,
+        verify_hash: bool = True,
         **kwargs,
     ) -> Any:
         """Load an object from the registry.
@@ -539,6 +547,8 @@ class Registry(Mindtrace):
             version: Version of the object.
             output_dir (optional): If the loaded object is a Path, the Path contents will be moved to this directory.
             acquire_lock: Whether to acquire a lock for this operation. Set to False if the caller already has a lock.
+            verify_hash: Whether to verify the artifact hash after downloading. If True, computes hash of downloaded
+                artifact and compares it to the hash stored in metadata. Raises ValueError if hashes don't match.
             **kwargs: Additional keyword arguments to pass to the object's constructor.
 
         Returns:
@@ -546,6 +556,7 @@ class Registry(Mindtrace):
 
         Raises:
             ValueError: If the object does not exist.
+            ValueError: If verify_hash is True and the computed hash doesn't match the metadata hash.
         """
         if version == "latest" or not self.version_objects:
             version = self._latest(name)
@@ -575,6 +586,29 @@ class Registry(Mindtrace):
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                     self.backend.pull(name=name, version=version, local_path=temp_dir)
+                    
+                    # Verify hash if requested
+                    if verify_hash:
+                        expected_hash = metadata.get("hash")
+                        if expected_hash:
+                            computed_hash = compute_dir_hash(temp_dir)
+                            if computed_hash != expected_hash:
+                                self.logger.error(
+                                    f"Hash mismatch for {name}@{version}: "
+                                    f"expected {expected_hash}, computed {computed_hash}"
+                                )
+                                raise ValueError(
+                                    f"Artifact hash verification failed for {name}@{version}. "
+                                    f"Expected hash: {expected_hash}, computed hash: {computed_hash}. "
+                                    f"This may indicate data corruption or tampering."
+                                )
+                            self.logger.debug(f"Hash verification passed for {name}@{version}")
+                        else:
+                            self.logger.warning(
+                                f"No hash found in metadata for {name}@{version}. "
+                                f"Skipping hash verification."
+                            )
+                    
                     materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
 
                     # Convert string class name to actual class
@@ -823,6 +857,27 @@ class Registry(Mindtrace):
         with self._versions_cache_lock:
             if object_name in self._versions_cache:
                 del self._versions_cache[object_name]
+
+    def _get_cache_dir_from_backend_uri(self) -> Path:
+        """Generate cache directory path based on backend URI hash.
+
+        Creates a deterministic cache directory path by hashing the backend URI.
+        This ensures that the same backend location always uses the same cache.
+
+        Returns:
+            Path to the cache directory (e.g., ~/.cache/mindtrace/tmp/registry_cache_<hash>/)
+        """
+        # Get backend URI as string and normalize
+        backend_uri_str = str(self.backend.uri)
+        
+        # Compute SHA256 hash of the URI
+        uri_hash = hashlib.sha256(backend_uri_str.encode()).hexdigest()[:16]  # Use first 16 chars
+        
+        # Build cache directory path
+        temp_dir = Path(self.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
+        cache_dir = temp_dir / f"registry_cache_{uri_hash}"
+        
+        return cache_dir
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
         """Map object types to their available versions.
