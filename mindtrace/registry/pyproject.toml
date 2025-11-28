@@ -13,6 +13,7 @@ classifiers = [
 ]
 dependencies = [
     "mindtrace-core",
+    "mindtrace-storage",
     "minio<7.2.19",
     "pydantic>=2.11.1",
     "zenml>=0.82.1",
