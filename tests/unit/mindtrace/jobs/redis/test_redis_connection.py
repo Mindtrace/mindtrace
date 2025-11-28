@@ -271,14 +271,15 @@ def test_connect_ping_failure(mock_redis):
 
 def test_close_pubsub_error(mock_redis):
     """Test close method handles pubsub close errors gracefully."""
-    conn = RedisConnection(host="localhost", port=6381, db=0)
-    # Simulate pubsub connection
-    mock_pubsub = MagicMock()
-    mock_pubsub.close.side_effect = Exception("pubsub close failed")
-    conn._pubsub = mock_pubsub
-    # This should not raise an exception
-    conn.close()
-    mock_pubsub.close.assert_called_once()
+    with patch("mindtrace.jobs.redis.connection.redis.Redis"), patch("threading.Thread"):
+        conn = RedisConnection(host="localhost", port=6381, db=0)
+        # Simulate pubsub connection
+        mock_pubsub = MagicMock()
+        mock_pubsub.close.side_effect = Exception("pubsub close failed")
+        conn._pubsub = mock_pubsub
+        # This should not raise an exception
+        conn.close()
+        mock_pubsub.close.assert_called_once()
 
 
 def test_del_method_exception_handling():
