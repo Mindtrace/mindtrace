@@ -6,6 +6,7 @@ import tempfile
 from typing import Generator
 
 import pytest
+import pytest_asyncio
 
 from mindtrace.datalake import Datalake
 
@@ -33,7 +34,7 @@ def temp_registry_dir() -> Generator[str, None, None]:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def datalake():
     """Create a Datalake instance for testing."""
     # Clean up any existing data before starting

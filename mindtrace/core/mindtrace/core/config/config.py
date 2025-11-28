@@ -69,6 +69,15 @@ class MINDTRACE_WORKER(BaseModel):
     DEFAULT_REDIS_URL: str
 
 
+class MINDTRACE_GCP(BaseModel):
+    GCP_REGISTRY_URI: str
+    GCP_PROJECT_ID: str
+    GCP_BUCKET_NAME: str
+    GCP_CREDENTIALS_PATH: str
+    GCP_LOCATION: str
+    GCP_STORAGE_CLASS: str
+
+
 def load_ini_settings() -> Dict[str, Any]:
     ini_path = Path(__file__).parent / "config.ini"
     return load_ini_as_dict(ini_path)
@@ -80,6 +89,7 @@ class CoreSettings(BaseSettings):
     MINDTRACE_DIR_PATHS: MINDTRACE_DIR_PATHS
     MINDTRACE_DEFAULT_HOST_URLS: MINDTRACE_DEFAULT_HOST_URLS
     MINDTRACE_MINIO: MINDTRACE_MINIO
+    MINDTRACE_GCP: MINDTRACE_GCP
     MINDTRACE_CLUSTER: MINDTRACE_CLUSTER
     MINDTRACE_MCP: MINDTRACE_MCP
     MINDTRACE_WORKER: MINDTRACE_WORKER
@@ -155,15 +165,14 @@ class _AttrView:
 
 
 class Config(dict):
-    """
-    Unified configuration manager for Mindtrace components.
+    """Unified configuration manager for Mindtrace components.
 
     The `Config` class consolidates configuration from sources including
     dictionaries, Pydantic `BaseSettings` or `BaseModel` objects.
     It supports user provided arguments and environment variable overrides, path normalization by expanding the `~` character.
 
     Key Features:
-    -------------
+
     - Accepts multiple configuration formats: `dict`, `BaseModel`, `BaseSettings`, or lists of these.
     - Attr-style and dict-style access to nested keys.
     - Supports secret fields using `pydantic.SecretStr`, preserving masking them by default.
@@ -177,11 +186,92 @@ class Config(dict):
             If True, environment variables will be applied over the default configs.
             If False, environment variables will not be applied.
 
-    Example:
-        >>> from mindtrace.core.config import Config, CoreSettings
-        >>> config = Config(CoreSettings())  # Load from BaseSettings
-        >>> print(config["MINDTRACE_API_KEYS"]["OPENAI"])  # Masked by default
-        >>> config.get_secret("MINDTRACE_API_KEYS", "OPENAI")  # Real secret value
+    Examples:
+        Basic usage with CoreSettings:
+        ```python
+        from mindtrace.core.config import Config, CoreSettings
+        config = Config(CoreSettings())
+        print(config["MINDTRACE_API_KEYS"]["OPENAI"])  # ******** (masked)
+        print(config.get_secret("MINDTRACE_API_KEYS", "OPENAI"))  # Real secret value
+        ```
+
+        Load from INI file with overrides:
+        ```python
+        from pathlib import Path
+        from mindtrace.core.config import Config
+        from mindtrace.core.utils import load_ini_as_dict
+
+        def my_loader():
+            file_path = Path("sample.ini")
+            return load_ini_as_dict(file_path)
+
+        defaults = my_loader()
+        overrides = {
+            "MINDTRACE_DIR_PATHS": {
+                "TEMP_DIR": "/tmp/logs",
+                "REGISTRY_DIR": "/tmp/registry"
+            }
+        }
+        config = Config.load(defaults=defaults, overrides=overrides)
+        ```
+
+        Access values in multiple ways:
+        ```python
+        # Attribute style access
+        print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+
+        # Dict style access
+        print(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"])
+
+        # Get method
+        print(config.get("MINDTRACE_DIR_PATHS").get("TEMP_DIR"))
+        ```
+
+        Save and reload configuration:
+        ```python
+        # Save config to JSON
+        config.save_json("saved_config.json")
+
+        # Load config back
+        reloaded = Config.load_json("saved_config.json")
+        ```
+
+        Clone config with overrides (original unchanged):
+        ```python
+        cloned = config.clone_with_overrides({
+            "MINDTRACE_DIR_PATHS": {
+                "TEMP_DIR": "/tmp/clone/logs"
+            }
+        })
+        print("Original:", config.MINDTRACE_DIR_PATHS.TEMP_DIR)  # Unchanged
+        print("Cloned:", cloned.MINDTRACE_DIR_PATHS.TEMP_DIR)   # New value
+        ```
+
+        Working with secret fields:
+        ```python
+        from pydantic import BaseModel, SecretStr
+        from mindtrace.core.config import Config
+
+        class APIKeys(BaseModel):
+            OPENAI: SecretStr
+            DISCORD: SecretStr
+
+        class AppSettings(BaseModel):
+            API_KEYS: APIKeys
+
+        config = Config(AppSettings(API_KEYS=APIKeys(
+            OPENAI=SecretStr("sk-abc123"),
+            DISCORD=SecretStr("discord-token")
+        )))
+
+        # Access masked values
+        print(config.API_KEYS.OPENAI)           # ********
+        print(config.API_KEYS.DISCORD)          # ********
+
+        # Get real secret values
+        print(config.get_secret("API_KEYS", "OPENAI"))   # sk-abc123
+        print(config.get_secret("API_KEYS", "DISCORD"))  # discord-token
+        ```
     """
 
     def __init__(self, extra_settings: SettingsLike = None, *, apply_env_overrides: bool = True):
@@ -247,7 +337,53 @@ class Config(dict):
         ] = None,
         file_loader: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> "Config":
-        """Create a Config from optional defaults, optional file loader, and runtime overrides."""
+        """Create a Config from optional defaults, optional file loader, and runtime overrides.
+
+        This is the recommended way to create a Config instance with proper precedence order:
+        1. File loader (lowest precedence)
+        2. Defaults
+        3. Environment variables
+        4. Runtime overrides (highest precedence)
+
+        Args:
+            defaults: Base configuration as dict, BaseSettings, or BaseModel
+            overrides: Runtime overrides that take highest precedence
+            file_loader: Optional callable that returns a dict (e.g., from INI file)
+
+        Returns:
+            Config instance with all sources merged
+
+        Examples:
+            Load from INI file with overrides:
+            ```python
+            from pathlib import Path
+            from mindtrace.core.config import Config
+            from mindtrace.core.utils import load_ini_as_dict
+
+            def ini_loader():
+                return load_ini_as_dict(Path("config.ini"))
+
+            config = Config.load(
+                file_loader=ini_loader,
+                overrides={"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/custom/tmp"}}
+            )
+            ```
+
+            Load with Pydantic model defaults:
+            ```python
+            from pydantic import BaseModel
+            from mindtrace.core.config import Config
+
+            class MySettings(BaseModel):
+                API_URL: str = "http://localhost:8000"
+                DEBUG: bool = False
+
+            config = Config.load(
+                defaults=MySettings(),
+                overrides={"DEBUG": True}
+            )
+            ```
+        """
         base: Dict[str, Any] = {}
         if isinstance(defaults, (BaseSettings, BaseModel)):
             base = defaults.model_dump()
@@ -278,7 +414,42 @@ class Config(dict):
 
     @classmethod
     def load_json(cls, path: str | Path) -> "Config":
-        """Load from a JSON file (acts as file_loader layer) and apply env + masking."""
+        """Load configuration from a JSON file with environment variable overrides and secret masking.
+
+        This method loads configuration data from a JSON file and applies the same
+        processing as the main Config class: environment variable overrides and
+        automatic masking of secret fields.
+
+        Args:
+            path: Path to the JSON file (string or Path object)
+
+        Returns:
+            Config instance loaded from the JSON file
+
+        Examples:
+            Load from JSON file:
+            ```python
+            from mindtrace.core.config import Config
+
+            # Load configuration from JSON file
+            config = Config.load_json("config.json")
+            print(config.MINDTRACE_DIR_PATHS.TEMP_DIR)
+            ```
+
+            Load with environment overrides:
+            ```python
+            import os
+            os.environ["MINDTRACE_DEFAULT_HOST_URLS__SERVICE"] = "http://env-override:8000"
+
+            config = Config.load_json("config.json")
+            # Environment variable will override the value from JSON
+            print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)  # http://env-override:8000
+            ```
+
+        Note:
+            The JSON file should contain the same structure as expected by Config.
+            Secret fields will be automatically masked when accessed normally.
+        """
 
         def _loader() -> Dict[str, Any]:
             with open(path, "r") as f:
@@ -287,10 +458,45 @@ class Config(dict):
         return cls.load(file_loader=_loader)
 
     def save_json(self, path: str | Path, *, reveal_secrets: bool = False, indent: int = 4) -> None:
-        """Save to JSON; masked by default. Set reveal_secrets=True to write real secrets.
+        """Save configuration to a JSON file with optional secret revelation.
 
-        Creates parent directories if they do not exist and raises a RuntimeError
-        with context if serialization or I/O fails.
+        This method serializes the current configuration to a JSON file. By default,
+        secret fields are masked (shown as ********) for security. You can optionally
+        reveal the actual secret values by setting reveal_secrets=True.
+
+        Args:
+            path: Path where to save the JSON file (string or Path object)
+            reveal_secrets: If True, writes actual secret values instead of masked ones
+            indent: JSON indentation level for pretty printing (default: 4)
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: If file writing or JSON serialization fails
+
+        Examples:
+            Save with masked secrets (default):
+            ```python
+            config = Config(CoreSettings())
+            config.save_json("config.json")
+            # Secret fields will be saved as "********"
+            ```
+
+            Save with revealed secrets:
+            ```python
+            config.save_json("config.json", reveal_secrets=True)
+            # Secret fields will be saved with actual values
+            ```
+
+            Save with custom indentation:
+            ```python
+            config.save_json("config.json", indent=2)
+            ```
+
+        Note:
+            Parent directories are created automatically if they don't exist.
+            Use reveal_secrets=True only when necessary for debugging or migration.
         """
         try:
             p = Path(path)
@@ -326,7 +532,47 @@ class Config(dict):
         return result
 
     def clone_with_overrides(self, *overrides: SettingsLike) -> "Config":
-        """Return a new Config clone with overrides applied (original remains unchanged)."""
+        """Return a new Config clone with overrides applied (original remains unchanged).
+
+        This method creates a deep copy of the current config and applies the provided
+        overrides without modifying the original configuration. Useful for creating
+        temporary configurations or testing different settings.
+
+        Args:
+            *overrides: Configuration overrides as dict, BaseSettings, BaseModel, or lists of these
+
+        Returns:
+            New Config instance with overrides applied
+
+        Examples:
+            Clone with simple overrides:
+            ```python
+            original = Config({"API_URL": "http://prod:8000", "DEBUG": False})
+            cloned = original.clone_with_overrides({"DEBUG": True})
+
+            print(original.DEBUG)  # False (unchanged)
+            print(cloned.DEBUG)   # True (new value)
+            ```
+
+            Clone with nested overrides:
+            ```python
+            cloned = config.clone_with_overrides({
+                "MINDTRACE_DIR_PATHS": {
+                    "TEMP_DIR": "/tmp/testing",
+                    "REGISTRY_DIR": "/tmp/test_registry"
+                }
+            })
+            ```
+
+            Clone with multiple overrides:
+            ```python
+            cloned = config.clone_with_overrides(
+                {"DEBUG": True},
+                {"API_URL": "http://test:8000"},
+                {"LOGGING_LEVEL": "DEBUG"}
+            )
+            ```
+        """
         items: List[Dict[str, Any]] = [deepcopy(dict(self))]
 
         def push(x):
@@ -352,7 +598,46 @@ class Config(dict):
         return Config(items, apply_env_overrides=False)
 
     def get_secret(self, *path: str) -> Optional[str]:
-        """Retrieve a secret by dotted path components, e.g., get_secret("API_KEYS", "OPENAI")."""
+        """Retrieve a secret by dotted path components.
+
+        This method accesses the real (unmasked) value of secret fields that were
+        defined using pydantic.SecretStr. The secret values are stored internally
+        and can be retrieved using this method.
+
+        Args:
+            *path: Path components to the secret field (e.g., "API_KEYS", "OPENAI")
+
+        Returns:
+            The real secret value as string, or None if not found
+
+        Examples:
+            Get OpenAI API key:
+            ```python
+            config = Config(CoreSettings())
+            api_key = config.get_secret("MINDTRACE_API_KEYS", "OPENAI")
+            print(api_key)  # "sk-abc123..." (real value)
+            ```
+            Working with custom secret fields:
+            ```python
+            from pydantic import BaseModel, SecretStr
+            from mindtrace.core.config import Config
+
+            class APIKeys(BaseModel):
+                OPENAI: SecretStr
+                DISCORD: SecretStr
+
+            config = Config(APIKeys(
+                OPENAI=SecretStr("sk-abc123"),
+                DISCORD=SecretStr("discord-token")
+            ))
+
+            # Access masked value
+            print(config.OPENAI)  # ********
+
+            # Get real value
+            print(config.get_secret("OPENAI"))  # sk-abc123
+            ```
+        """
         return self._secrets.get(tuple(path))
 
     def secret_paths(self) -> List[str]:
@@ -515,14 +800,49 @@ class Config(dict):
 
 class CoreConfig(Config):
     """
-    Wrapper around `Config` that always includes `CoreSettings` by default.
+    Configuration wrapper that automatically includes CoreSettings with environment variable support.
 
-    Usage:
+    CoreConfig is a convenience class that wraps the base Config class and automatically
+    loads CoreSettings as the default configuration. This includes support for environment
+    variables, .env files, and INI configuration files with automatic path expansion.
+
+    Args:
+        extra_settings: Additional configuration overrides (highest precedence)
+        apply_env_overrides: Whether to apply environment variable overrides
+
+    Examples:
+        Basic usage with default CoreSettings:
+        ```python
         from mindtrace.core.config import CoreConfig
-        cfg = CoreConfig()  # loads CoreSettings (env + .env + INI with '~' expansion)
 
-    You can still pass extra overrides; they are applied on top of CoreSettings
-    and remain highest precedence. Env is not re-applied at the Config layer.
+        # Loads CoreSettings with env overrides
+        config = CoreConfig()
+        print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)
+        ```
+
+        With additional overrides:
+        ```python
+        config = CoreConfig({
+            "MINDTRACE_DIR_PATHS": {
+                "TEMP_DIR": "/custom/tmp"
+            }
+        })
+        # Override takes precedence over CoreSettings defaults
+        ```
+
+        Environment variable overrides:
+        ```python
+        import os
+        os.environ["MINDTRACE_DEFAULT_HOST_URLS__SERVICE"] = "http://custom:8000"
+
+        config = CoreConfig()
+        # Environment variable overrides the INI file value
+        print(config.MINDTRACE_DEFAULT_HOST_URLS.SERVICE)  # http://custom:8000
+        ```
+
+    Note:
+        Environment variables are applied at the CoreSettings level, not at the Config level.
+        Additional overrides passed to CoreConfig take the highest precedence.
     """
 
     def __init__(self, extra_settings: SettingsLike = None):
