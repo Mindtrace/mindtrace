@@ -2284,3 +2284,273 @@ def test_clear_registry_metadata_exception_handling(registry, monkeypatch):
     # Mock the file operations to raise an exception
     with patch("builtins.open", side_effect=Exception("Test error")):
         registry.clear(clear_registry_metadata=True)
+
+
+def test_save_computes_hash(registry, test_config):
+    """Test that save() computes and stores hash in metadata."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Get metadata
+    metadata = registry.info("test:config", version="1.0.0")
+    
+    # Verify hash is present in metadata
+    assert "hash" in metadata
+    assert isinstance(metadata["hash"], str)
+    assert len(metadata["hash"]) == 64  # SHA256 produces 64 hex characters
+
+
+def test_save_hash_deterministic(registry, test_config):
+    """Test that saving the same object produces the same hash."""
+    # Save object first time
+    registry.save("test:config1", test_config, version="1.0.0")
+    hash1 = registry.info("test:config1", version="1.0.0")["hash"]
+    
+    # Save same object again with different name
+    registry.save("test:config2", test_config, version="1.0.0")
+    hash2 = registry.info("test:config2", version="1.0.0")["hash"]
+    
+    # Hashes should be the same for identical objects
+    assert hash1 == hash2
+
+
+def test_load_verifies_hash_by_default(registry, test_config):
+    """Test that load() verifies hash by default."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Load should succeed with hash verification (default)
+    loaded_config = registry.load("test:config", version="1.0.0")
+    assert loaded_config == test_config
+
+
+def test_load_with_verify_hash_true(registry, test_config):
+    """Test that load() verifies hash when verify_hash=True."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Load with explicit verify_hash=True
+    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    assert loaded_config == test_config
+
+
+def test_load_with_verify_hash_false(registry, test_config):
+    """Test that load() skips hash verification when verify_hash=False."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Load with verify_hash=False should still work
+    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=False)
+    assert loaded_config == test_config
+
+
+def test_load_hash_mismatch_detection(registry, test_config):
+    """Test that load() detects hash mismatches and raises ValueError."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Manually corrupt the metadata hash
+    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    metadata["hash"] = "0" * 64  # Invalid hash
+    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    
+    # Load should detect hash mismatch and raise ValueError
+    with pytest.raises(ValueError, match="Artifact hash verification failed"):
+        registry.load("test:config", version="1.0.0", verify_hash=True)
+
+
+def test_load_missing_hash_warning(registry, test_config, caplog):
+    """Test that load() logs warning when hash is missing from metadata."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Manually remove hash from metadata
+    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    metadata.pop("hash", None)
+    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    
+    # Load should still work but log a warning
+    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    assert loaded_config == test_config
+    
+    # Verify warning was logged
+    assert any("No hash found in metadata" in record.message for record in caplog.records)
+    assert any("Skipping hash verification" in record.message for record in caplog.records)
+
+
+def test_load_hash_verification_passed_logging(registry, test_config, caplog):
+    """Test that load() logs debug message when hash verification passes."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Load with hash verification
+    loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
+    assert loaded_config == test_config
+    
+    # Verify debug message was logged
+    assert any("Hash verification passed" in record.message for record in caplog.records)
+
+
+def test_load_hash_mismatch_error_message(registry, test_config):
+    """Test that hash mismatch error message contains expected and computed hashes."""
+    # Save an object
+    registry.save("test:config", test_config, version="1.0.0")
+    
+    # Get the correct hash
+    correct_hash = registry.info("test:config", version="1.0.0")["hash"]
+    
+    # Manually corrupt the metadata hash
+    metadata = registry.backend.fetch_metadata("test:config", "1.0.0")
+    metadata["hash"] = "0" * 64  # Invalid hash
+    registry.backend.save_metadata("test:config", "1.0.0", metadata)
+    
+    # Load should raise ValueError with informative message
+    with pytest.raises(ValueError) as exc_info:
+        registry.load("test:config", version="1.0.0", verify_hash=True)
+    
+    error_message = str(exc_info.value)
+    assert "Artifact hash verification failed" in error_message
+    assert "Expected hash:" in error_message
+    assert "computed hash:" in error_message
+    assert "0" * 64 in error_message  # Invalid hash should be in message
+    assert correct_hash in error_message  # Correct hash should be in message
+
+
+def test_hash_computation_different_objects(registry, test_config):
+    """Test that different objects produce different hashes."""
+    # Create two different configs
+    config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
+    config2 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir2"}})
+    
+    # Save both
+    registry.save("test:config1", config1, version="1.0.0")
+    registry.save("test:config2", config2, version="1.0.0")
+    
+    # Get hashes
+    hash1 = registry.info("test:config1", version="1.0.0")["hash"]
+    hash2 = registry.info("test:config2", version="1.0.0")["hash"]
+    
+    # Different objects should produce different hashes
+    assert hash1 != hash2
+
+
+def test_hash_preserved_across_versions(registry, test_config):
+    """Test that saving the same object in different versions produces same hash."""
+    # Save same object in multiple versions
+    registry.save("test:config", test_config, version="1.0.0")
+    registry.save("test:config", test_config, version="1.0.1")
+    registry.save("test:config", test_config, version="2.0.0")
+    
+    # Get hashes
+    hash1 = registry.info("test:config", version="1.0.0")["hash"]
+    hash2 = registry.info("test:config", version="1.0.1")["hash"]
+    hash3 = registry.info("test:config", version="2.0.0")["hash"]
+    
+    # Same object should produce same hash across versions
+    assert hash1 == hash2 == hash3
+
+
+def test_get_cache_dir_from_backend_uri(registry):
+    """Test _get_cache_dir_from_backend_uri generates deterministic cache directory."""
+    # Get cache directory
+    cache_dir1 = registry._get_cache_dir_from_backend_uri()
+    
+    # Get cache directory again
+    cache_dir2 = registry._get_cache_dir_from_backend_uri()
+    
+    # Should be the same
+    assert cache_dir1 == cache_dir2
+    
+    # Should be a Path object
+    assert isinstance(cache_dir1, Path)
+    
+    # Should contain registry_cache_ prefix
+    assert "registry_cache_" in cache_dir1.name
+    
+    # Should be in temp directory
+    temp_dir = Path(registry.config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
+    assert cache_dir1.parent == temp_dir
+
+
+def test_get_cache_dir_from_backend_uri_different_backends(temp_registry_dir):
+    """Test that different backend URIs produce different cache directories."""
+    # Create two registries with different backend URIs
+    registry1 = Registry(registry_dir=temp_registry_dir + "_1")
+    registry2 = Registry(registry_dir=temp_registry_dir + "_2")
+    
+    # Get cache directories
+    cache_dir1 = registry1._get_cache_dir_from_backend_uri()
+    cache_dir2 = registry2._get_cache_dir_from_backend_uri()
+    
+    # Different backends should produce different cache directories
+    assert cache_dir1 != cache_dir2
+
+
+def test_load_hash_verification_with_basic_types(registry):
+    """Test hash verification works with basic types."""
+    # Test with string
+    registry.save("test:str", "hello", version="1.0.0")
+    assert "hash" in registry.info("test:str", version="1.0.0")
+    loaded = registry.load("test:str", version="1.0.0", verify_hash=True)
+    assert loaded == "hello"
+    
+    # Test with int
+    registry.save("test:int", 42, version="1.0.0")
+    assert "hash" in registry.info("test:int", version="1.0.0")
+    loaded = registry.load("test:int", version="1.0.0", verify_hash=True)
+    assert loaded == 42
+    
+    # Test with float
+    registry.save("test:float", 3.14, version="1.0.0")
+    assert "hash" in registry.info("test:float", version="1.0.0")
+    loaded = registry.load("test:float", version="1.0.0", verify_hash=True)
+    assert loaded == 3.14
+
+
+def test_load_hash_verification_with_container_types(registry):
+    """Test hash verification works with container types."""
+    # Test with list
+    test_list = [1, 2, 3]
+    registry.save("test:list", test_list, version="1.0.0")
+    assert "hash" in registry.info("test:list", version="1.0.0")
+    loaded = registry.load("test:list", version="1.0.0", verify_hash=True)
+    assert loaded == test_list
+    
+    # Test with dict
+    test_dict = {"a": 1, "b": 2}
+    registry.save("test:dict", test_dict, version="1.0.0")
+    assert "hash" in registry.info("test:dict", version="1.0.0")
+    loaded = registry.load("test:dict", version="1.0.0", verify_hash=True)
+    assert loaded == test_dict
+
+
+def test_list_versions_cache_expiration(temp_registry_dir):
+    """Test that expired cache entries are removed from versions cache."""
+    # Create registry with very short TTL to test expiration quickly
+    registry = Registry(registry_dir=temp_registry_dir, version_objects=True, versions_cache_ttl=0.01)
+    
+    # Save an object with multiple versions
+    registry.save("test:obj", "value1", version="1.0.0")
+    registry.save("test:obj", "value2", version="1.0.1")
+    
+    # First call populates the cache
+    versions1 = registry.list_versions("test:obj")
+    assert versions1 == ["1.0.0", "1.0.1"]
+    
+    # Verify cache is populated
+    with registry._versions_cache_lock:
+        assert "test:obj" in registry._versions_cache
+    
+    # Wait for cache to expire
+    time.sleep(0.2)
+    
+    # Second call should trigger cache expiration deletion (line 838)
+    versions2 = registry.list_versions("test:obj")
+    assert versions2 == ["1.0.0", "1.0.1"]
+    
+    # Cache should be repopulated with new timestamp
+    with registry._versions_cache_lock:
+        assert "test:obj" in registry._versions_cache
+        _, timestamp = registry._versions_cache["test:obj"]
+        # Timestamp should be recent (within last second)
+        assert time.time() - timestamp < 1.0
