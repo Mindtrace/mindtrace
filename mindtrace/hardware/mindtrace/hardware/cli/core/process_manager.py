@@ -219,75 +219,6 @@ class ProcessManager:
 
         return process
 
-    def start_configurator(self, host: str = None, port: int = None, backend_port: int = None) -> subprocess.Popen:
-        """Launch camera configurator app.
-
-        Args:
-            host: Host to bind the app to (default: CAMERA_UI_HOST env var or 'localhost')
-            port: Port to run the app on - frontend (default: CAMERA_UI_FRONTEND_PORT env var or 3000)
-            backend_port: Port for Reflex backend (default: CAMERA_UI_BACKEND_PORT env var or 8000)
-
-        Returns:
-            The subprocess handle
-        """
-        # Use environment variables as defaults
-        if host is None:
-            host = os.getenv("CAMERA_UI_HOST", "localhost")
-        if port is None:
-            port = int(os.getenv("CAMERA_UI_FRONTEND_PORT", "3000"))
-        if backend_port is None:
-            backend_port = int(os.getenv("CAMERA_UI_BACKEND_PORT", "8000"))
-        # Find app directory
-        app_dir = Path(__file__).parent.parent.parent / "apps" / "camera_configurator"
-
-        if not app_dir.exists():
-            raise RuntimeError(f"Camera configurator app not found at {app_dir}")
-
-        # Note: API URL is configured via environment variables in rxconfig.py
-
-        # Build command - use uv run reflex run for Reflex apps
-        cmd = ["uv", "run", "reflex", "run", "--frontend-port", str(port), "--backend-port", str(backend_port)]
-
-        # Set environment for subprocess - need host and ports for config to work correctly
-        env = os.environ.copy()
-        env["CAMERA_UI_HOST"] = host  # Host for UI service
-        env["CAMERA_UI_FRONTEND_PORT"] = str(port)  # Frontend port for rxconfig.py
-        env["CAMERA_UI_BACKEND_PORT"] = str(backend_port)  # Backend port for rxconfig.py
-
-        # Debug: Print command and environment
-        print(f"DEBUG: Command: {' '.join(cmd)}")
-        print(f"DEBUG: Working directory: {app_dir}")
-        print(f"DEBUG: CAMERA_API_HOST in env: {env.get('CAMERA_API_HOST', 'NOT SET')}")
-        print(f"DEBUG: CAMERA_API_PORT in env: {env.get('CAMERA_API_PORT', 'NOT SET')}")
-        print(f"DEBUG: CAMERA_API_URL in env: {env.get('CAMERA_API_URL', 'NOT SET')}")
-        print(f"DEBUG: CAMERA_UI_HOST in env: {env.get('CAMERA_UI_HOST', 'NOT SET')}")
-        print(f"DEBUG: CAMERA_UI_FRONTEND_PORT in env: {env.get('CAMERA_UI_FRONTEND_PORT', 'NOT SET')}")
-        print(f"DEBUG: CAMERA_UI_BACKEND_PORT in env: {env.get('CAMERA_UI_BACKEND_PORT', 'NOT SET')}")
-
-        # Start process - allow output to show for debugging
-        process = subprocess.Popen(cmd, cwd=str(app_dir), env=env, start_new_session=True)
-
-        # Wait a moment to ensure it started
-        time.sleep(2)
-
-        # Check if process is still running
-        if process.poll() is not None:
-            raise RuntimeError(f"Failed to start configurator app on {host}:{port}")
-
-        # Save process info
-        self.processes["configurator"] = {
-            "pid": process.pid,
-            "host": host,
-            "port": port,
-            "backend_port": backend_port,
-            "start_time": datetime.now().isoformat(),
-            "command": " ".join(cmd),
-            "app_dir": str(app_dir),  # Save for cleanup
-        }
-        self.save_pids()
-
-        return process
-
     def stop_service(self, service_name: str) -> bool:
         """Stop a service by name.
 
@@ -304,12 +235,8 @@ class ProcessManager:
         pid = info["pid"]
 
         try:
-            # Special handling for configurator (Reflex app)
-            if service_name == "configurator":
-                self._stop_reflex_app(info)
-            else:
-                # Standard process termination
-                self._stop_process(pid)
+            # Standard process termination
+            self._stop_process(pid)
 
             # Remove from tracking
             del self.processes[service_name]
@@ -339,82 +266,9 @@ class ProcessManager:
             os.kill(pid, signal.SIGKILL)
             time.sleep(0.5)
 
-    def _stop_reflex_app(self, info: Dict[str, Any]):
-        """Stop Reflex app and all related processes (Next.js, bun, node)."""
-        pid = info["pid"]
-        app_dir = info.get("app_dir")
-
-        # 1. Stop main Reflex process
-        self._stop_process(pid)
-
-        # 2. Find and kill related Reflex processes
-        try:
-            # Get all processes and find Reflex-related ones
-            for proc in psutil.process_iter(["pid", "name", "cmdline", "cwd"]):
-                try:
-                    proc_info = proc.info
-                    cmdline = proc_info.get("cmdline", [])
-                    name = proc_info.get("name", "")
-                    cwd = proc_info.get("cwd", "")
-
-                    # Skip if we can't get process info
-                    if not cmdline:
-                        continue
-
-                    cmdline_str = " ".join(cmdline).lower()
-
-                    # Kill processes related to our Reflex app
-                    should_kill = False
-
-                    # Check for Reflex-specific processes
-                    if any(
-                        pattern in cmdline_str
-                        for pattern in ["reflex", "rx", "camera_configurator", "camera-configurator"]
-                    ):
-                        should_kill = True
-
-                    # Check for Next.js/Node processes in our app directory
-                    elif app_dir and cwd and app_dir in cwd:
-                        if any(pattern in name.lower() for pattern in ["node", "npm", "bun", "next"]):
-                            should_kill = True
-
-                    # Check for processes on our ports
-                    elif any(
-                        pattern in cmdline_str
-                        for pattern in [f":{info.get('port', 3000)}", f":{info.get('backend_port', 8000)}"]
-                    ):
-                        should_kill = True
-
-                    if should_kill and proc.pid != os.getpid():  # Don't kill ourselves
-                        try:
-                            proc.terminate()
-                            # Wait briefly for graceful termination
-                            proc.wait(timeout=2)
-                        except (psutil.NoSuchProcess, psutil.TimeoutExpired):
-                            try:
-                                proc.kill()  # Force kill if terminate didn't work
-                            except psutil.NoSuchProcess:
-                                pass  # Already dead
-                        except psutil.AccessDenied:
-                            pass  # Can't kill, skip
-
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                    # Process disappeared or no access, skip
-                    continue
-
-        except Exception:
-            # If cleanup fails, at least the main process should be stopped
-            pass
-
     def stop_all(self):
         """Stop all running services."""
         services = list(self.processes.keys())
-        # Stop configurator first (depends on API)
-        if "configurator" in services:
-            self.stop_service("configurator")
-            services.remove("configurator")
-
-        # Stop remaining services
         for service in services:
             self.stop_service(service)
 
