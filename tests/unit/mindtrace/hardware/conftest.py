@@ -1,6 +1,6 @@
 import sys
-from unittest.mock import Mock
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 
@@ -38,6 +38,7 @@ def prevent_numpy_reload():
     We ensure numpy is imported once at session start.
     """
     import numpy as np  # noqa: F401
+
     yield
 
 

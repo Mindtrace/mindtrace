@@ -111,9 +111,7 @@ class StereoCalibrationData:
         offset = params["Scan3dCoordinateOffset"]
 
         # Construct Q matrix for cv2.reprojectImageTo3D
-        Q = np.array(
-            [[1, 0, 0, -pp_u], [0, -1, 0, pp_v], [0, 0, 0, -focal], [0, 0, 1 / baseline, 0]], dtype=np.float64
-        )
+        Q = np.array([[1, 0, 0, -pp_u], [0, -1, 0, pp_v], [0, 0, 0, -focal], [0, 0, 1 / baseline, 0]], dtype=np.float64)
 
         return cls(
             baseline=baseline,
@@ -146,7 +144,7 @@ class StereoCalibrationData:
     def __repr__(self) -> str:
         """String representation of calibration data."""
         return (
-            f"StereoCalibrationData(baseline={self.baseline*1000:.2f}mm, "
+            f"StereoCalibrationData(baseline={self.baseline * 1000:.2f}mm, "
             f"focal={self.focal_length:.1f}px, "
             f"pp=({self.principal_point_u:.1f}, {self.principal_point_v:.1f}))"
         )
@@ -176,9 +174,7 @@ class PointCloudData:
         if self.colors is not None:
             self.has_colors = True
             if len(self.colors) != self.num_points:
-                raise ValueError(
-                    f"Points and colors must have same length: {self.num_points} vs {len(self.colors)}"
-                )
+                raise ValueError(f"Points and colors must have same length: {self.num_points} vs {len(self.colors)}")
 
     def save_ply(self, path: str, binary: bool = True) -> None:
         """Save point cloud as PLY file.
@@ -193,9 +189,7 @@ class PointCloudData:
         try:
             from plyfile import PlyData, PlyElement
         except ImportError:
-            raise ImportError(
-                "plyfile package required for PLY export. Install with: pip install plyfile"
-            ) from None
+            raise ImportError("plyfile package required for PLY export. Install with: pip install plyfile") from None
 
         # Prepare vertex data
         vertices = np.zeros(
@@ -252,9 +246,7 @@ class PointCloudData:
         try:
             import open3d as o3d
         except ImportError:
-            raise ImportError(
-                "open3d package required for visualization. Install with: pip install open3d"
-            ) from None
+            raise ImportError("open3d package required for visualization. Install with: pip install open3d") from None
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(self.points)

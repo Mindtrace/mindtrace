@@ -84,7 +84,9 @@ class TagWriteRequest(BaseModel):
 
     @field_validator("tags")
     @classmethod
-    def validate_tags(cls, v: Union[Tuple[str, Any], List[Tuple[str, Any]]]) -> Union[Tuple[str, Any], List[Tuple[str, Any]]]:
+    def validate_tags(
+        cls, v: Union[Tuple[str, Any], List[Tuple[str, Any]]]
+    ) -> Union[Tuple[str, Any], List[Tuple[str, Any]]]:
         """Ensure tags is properly formatted."""
         if isinstance(v, list):
             if len(v) == 0:
@@ -128,7 +130,9 @@ class TagBatchWriteRequest(BaseModel):
 
     @field_validator("requests")
     @classmethod
-    def validate_requests(cls, v: List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]) -> List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]:
+    def validate_requests(
+        cls, v: List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]
+    ) -> List[Tuple[str, Union[Tuple[str, Any], List[Tuple[str, Any]]]]]:
         """Validate batch write requests."""
         if len(v) == 0:
             raise ValueError("Batch requests cannot be empty")

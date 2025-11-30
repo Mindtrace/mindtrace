@@ -65,9 +65,7 @@ def stop():
     plc_services = [s for s in running_services if "plc" in s]
     stereo_services = [s for s in running_services if "stereo" in s]
     other_services = [
-        s
-        for s in running_services
-        if s not in camera_services and s not in plc_services and s not in stereo_services
+        s for s in running_services if s not in camera_services and s not in plc_services and s not in stereo_services
     ]
 
     if camera_services:

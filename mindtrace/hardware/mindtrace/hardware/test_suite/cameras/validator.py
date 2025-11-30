@@ -78,10 +78,7 @@ class ParameterValidator(Mindtrace):
         self.logger.debug(f"ParameterValidator initialized with {len(self._all_parameters)} parameters")
 
     def validate_parameters(
-        self,
-        parameters: Dict[str, Any],
-        category: Optional[str] = None,
-        strict: bool = True
+        self, parameters: Dict[str, Any], category: Optional[str] = None, strict: bool = True
     ) -> Tuple[bool, List[str]]:
         """
         Validate parameters against CameraSettings.
@@ -107,10 +104,7 @@ class ParameterValidator(Mindtrace):
                         f"Did you mean '{suggestion}'? (matches CameraSettings.{suggestion})"
                     )
                 else:
-                    errors.append(
-                        f"Unknown parameter '{param_name}'. "
-                        f"Not found in CameraSettings."
-                    )
+                    errors.append(f"Unknown parameter '{param_name}'. Not found in CameraSettings.")
                 continue
 
             # Check category if specified
@@ -127,18 +121,13 @@ class ParameterValidator(Mindtrace):
             expected_type = self._parameter_types.get(param_name)
             if expected_type and not self._check_type_compatibility(param_value, expected_type):
                 errors.append(
-                    f"Parameter '{param_name}' has wrong type. "
-                    f"Expected {expected_type}, got {type(param_value)}"
+                    f"Parameter '{param_name}' has wrong type. Expected {expected_type}, got {type(param_value)}"
                 )
 
         is_valid = len(errors) == 0
         return (is_valid, errors)
 
-    def validate_config(
-        self,
-        config: Dict[str, Any],
-        strict: bool = False
-    ) -> Tuple[bool, List[str]]:
+    def validate_config(self, config: Dict[str, Any], strict: bool = False) -> Tuple[bool, List[str]]:
         """
         Validate entire test configuration.
 
@@ -157,29 +146,17 @@ class ParameterValidator(Mindtrace):
 
             # Validate runtime parameters
             if "runtime" in camera_config:
-                is_valid, errors = self.validate_parameters(
-                    camera_config["runtime"],
-                    category="runtime",
-                    strict=strict
-                )
+                is_valid, errors = self.validate_parameters(camera_config["runtime"], category="runtime", strict=strict)
                 all_errors.extend(errors)
 
             # Validate startup parameters
             if "startup" in camera_config:
-                is_valid, errors = self.validate_parameters(
-                    camera_config["startup"],
-                    category="startup",
-                    strict=strict
-                )
+                is_valid, errors = self.validate_parameters(camera_config["startup"], category="startup", strict=strict)
                 all_errors.extend(errors)
 
             # Validate system parameters
             if "system" in camera_config:
-                is_valid, errors = self.validate_parameters(
-                    camera_config["system"],
-                    category="system",
-                    strict=strict
-                )
+                is_valid, errors = self.validate_parameters(camera_config["system"], category="system", strict=strict)
                 all_errors.extend(errors)
 
         # Check for old-style parameters in operations
@@ -197,13 +174,10 @@ class ParameterValidator(Mindtrace):
                             is_valid, errors = self.validate_parameters(
                                 properties,
                                 category=None,  # Allow any category in operation
-                                strict=strict
+                                strict=strict,
                             )
                             # Prefix errors with operation index
-                            prefixed_errors = [
-                                f"Operation {i} (configure): {error}"
-                                for error in errors
-                            ]
+                            prefixed_errors = [f"Operation {i} (configure): {error}" for error in errors]
                             all_errors.extend(prefixed_errors)
 
         is_valid = len(all_errors) == 0
@@ -325,19 +299,14 @@ def get_validator() -> ParameterValidator:
 
 
 def validate_parameters(
-    parameters: Dict[str, Any],
-    category: Optional[str] = None,
-    strict: bool = True
+    parameters: Dict[str, Any], category: Optional[str] = None, strict: bool = True
 ) -> Tuple[bool, List[str]]:
     """Validate parameters against CameraSettings."""
     validator = get_validator()
     return validator.validate_parameters(parameters, category, strict)
 
 
-def validate_config(
-    config: Dict[str, Any],
-    strict: bool = False
-) -> Tuple[bool, List[str]]:
+def validate_config(config: Dict[str, Any], strict: bool = False) -> Tuple[bool, List[str]]:
     """Validate entire test configuration."""
     validator = get_validator()
     return validator.validate_config(config, strict)

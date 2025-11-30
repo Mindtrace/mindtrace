@@ -546,9 +546,9 @@ class AsyncCameraManager(Mindtrace):
         self._timeout_ms = timeout
         # Update all active cameras
         for camera_name, camera in self._cameras.items():
-            if hasattr(camera, '_backend') and hasattr(camera._backend, 'timeout_ms'):
+            if hasattr(camera, "_backend") and hasattr(camera._backend, "timeout_ms"):
                 camera._backend.timeout_ms = timeout
-                if hasattr(camera._backend, '_op_timeout_s'):
+                if hasattr(camera._backend, "_op_timeout_s"):
                     camera._backend._op_timeout_s = max(1.0, float(timeout) / 1000.0)
         self.logger.info(f"Capture timeout set to {timeout}ms")
 
@@ -576,7 +576,7 @@ class AsyncCameraManager(Mindtrace):
         self._retrieve_retry_count = count
         # Update all active cameras
         for camera_name, camera in self._cameras.items():
-            if hasattr(camera, '_backend') and hasattr(camera._backend, 'retrieve_retry_count'):
+            if hasattr(camera, "_backend") and hasattr(camera._backend, "retrieve_retry_count"):
                 camera._backend.retrieve_retry_count = count
         self.logger.info(f"Retrieve retry count set to {count}")
 
@@ -815,10 +815,10 @@ class AsyncCameraManager(Mindtrace):
             raise CameraNotFoundError(f"Backend '{backend}' not available")
 
         # Inject manager's performance settings if not explicitly provided
-        if 'timeout_ms' not in kwargs:
-            kwargs['timeout_ms'] = self._timeout_ms
-        if 'retrieve_retry_count' not in kwargs:
-            kwargs['retrieve_retry_count'] = self._retrieve_retry_count
+        if "timeout_ms" not in kwargs:
+            kwargs["timeout_ms"] = self._timeout_ms
+        if "retrieve_retry_count" not in kwargs:
+            kwargs["retrieve_retry_count"] = self._retrieve_retry_count
 
         try:
             if backend in ["Basler", "OpenCV", "GenICam"]:
@@ -826,12 +826,16 @@ class AsyncCameraManager(Mindtrace):
                 if not available or not camera_class:
                     self.logger.error(f"Requested backend '{backend}' is not available or has no class")
                     raise CameraNotFoundError(f"Backend '{backend}' not available")
-                self.logger.debug(f"Creating camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}")
+                self.logger.debug(
+                    f"Creating camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}"
+                )
                 return camera_class(device_name, **kwargs)
 
             elif backend.startswith("Mock"):
                 backend_name = backend.replace("Mock", "").lower()
-                self.logger.debug(f"Creating mock camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}")
+                self.logger.debug(
+                    f"Creating mock camera instance for {backend}:{device_name} with timeout={kwargs['timeout_ms']}ms, retry={kwargs['retrieve_retry_count']}"
+                )
                 mock_class = self._get_mock_camera(backend_name)
                 return mock_class(device_name, **kwargs)
 

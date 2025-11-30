@@ -23,7 +23,6 @@ if "beartype.claw" not in sys.modules:
 
 # Import numpy early to prevent reload issues
 import numpy as np  # noqa: F401
-
 import pytest
 
 empty_mark = pytest.mark.empty

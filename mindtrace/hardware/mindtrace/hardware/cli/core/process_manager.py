@@ -185,7 +185,15 @@ class ProcessManager:
             port = int(os.getenv("STEREO_CAMERA_API_PORT", "8004"))
 
         # Build command
-        cmd = [sys.executable, "-m", "mindtrace.hardware.api.stereo_cameras.launcher", "--host", host, "--port", str(port)]
+        cmd = [
+            sys.executable,
+            "-m",
+            "mindtrace.hardware.api.stereo_cameras.launcher",
+            "--host",
+            host,
+            "--port",
+            str(port),
+        ]
 
         # Set Stereo Camera API environment variables for other services to use
         os.environ["STEREO_CAMERA_API_HOST"] = host

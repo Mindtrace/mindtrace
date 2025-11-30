@@ -170,7 +170,11 @@ class CameraManagerService(Service):
             "cameras/backends", self.discover_backends, ALL_SCHEMAS["discover_backends"], methods=["GET"], as_tool=True
         )
         self.add_endpoint(
-            "cameras/backends/info", self.get_backend_info, ALL_SCHEMAS["get_backend_info"], methods=["GET"], as_tool=True
+            "cameras/backends/info",
+            self.get_backend_info,
+            ALL_SCHEMAS["get_backend_info"],
+            methods=["GET"],
+            as_tool=True,
         )
         self.add_endpoint(
             "cameras/discover", self.discover_cameras, ALL_SCHEMAS["discover_cameras"], methods=["POST"], as_tool=True
@@ -1112,7 +1116,7 @@ class CameraManagerService(Service):
             for cam_name in manager.active_cameras:
                 try:
                     cam = await manager.get_camera(cam_name)
-                    if cam and await cam.supports_feature('bandwidth_limit'):
+                    if cam and await cam.supports_feature("bandwidth_limit"):
                         gige_cameras.append(cam_name)
                 except Exception:
                     pass  # Skip cameras that can't be queried
@@ -1132,7 +1136,9 @@ class CameraManagerService(Service):
             self.logger.error(f"Failed to get network diagnostics: {e}")
             raise
 
-    async def get_performance_settings(self, request: CameraPerformanceSettingsRequest = None) -> CameraPerformanceSettingsResponse:
+    async def get_performance_settings(
+        self, request: CameraPerformanceSettingsRequest = None
+    ) -> CameraPerformanceSettingsResponse:
         """Get current camera performance settings.
 
         Returns global settings (timeout, retries, concurrent captures) and optionally
@@ -1185,9 +1191,7 @@ class CameraManagerService(Service):
             if request and request.camera:
                 message += f" for camera '{request.camera}'"
 
-            return CameraPerformanceSettingsResponse(
-                success=True, message=message, data=settings
-            )
+            return CameraPerformanceSettingsResponse(success=True, message=message, data=settings)
         except Exception as e:
             self.logger.error(f"Failed to get performance settings: {e}")
             raise
@@ -1689,22 +1693,19 @@ class CameraManagerService(Service):
                 try:
                     img = Image.open(image_path)
                     images.append(img)
-                    self.logger.debug(f"Loaded image {idx+1}/{len(request.image_paths)}: {image_path}")
+                    self.logger.debug(f"Loaded image {idx + 1}/{len(request.image_paths)}: {image_path}")
                 except Exception as e:
-                    raise CameraConfigurationError(f"Failed to load image {idx+1} at '{image_path}': {e}")
+                    raise CameraConfigurationError(f"Failed to load image {idx + 1} at '{image_path}': {e}")
 
             # Convert positions from dict list to tuple list
-            positions = [(pos['x'], pos['y']) for pos in request.positions]
+            positions = [(pos["x"], pos["y"]) for pos in request.positions]
 
             # Initialize calibrator (uses HomographySettings from config for board_size, square_size, world_unit)
             calibrator = HomographyCalibrator()
 
             # Perform multi-view calibration
             # Note: board_size, square_size, world_unit come from HomographySettings config
-            self.logger.info(
-                f"Starting multi-view calibration with {len(images)} images "
-                f"at positions {positions}"
-            )
+            self.logger.info(f"Starting multi-view calibration with {len(images)} images at positions {positions}")
             calibration = calibrator.calibrate_checkerboard_multi_view(
                 images=images,
                 positions=positions,
@@ -1722,6 +1723,7 @@ class CameraManagerService(Service):
 
             # Calculate total correspondences from config
             from mindtrace.hardware.core.config import get_hardware_config
+
             config = get_hardware_config().get_config()
             cols = config.homography.checkerboard_cols
             rows = config.homography.checkerboard_rows
@@ -1753,7 +1755,6 @@ class CameraManagerService(Service):
     ) -> HomographyMeasurementResponse:
         """Measure bounding box dimensions using homography calibration."""
         try:
-
             from mindtrace.hardware import BoundingBox, CalibrationData, HomographyMeasurer
 
             # Load calibration
@@ -1936,7 +1937,9 @@ class CameraManagerService(Service):
         except Exception as e:
             self.logger.error(f"Distance measurement failed: {e}")
             result = HomographyDistanceResult(success=False)
-            return HomographyDistanceResponse(success=False, message=f"Distance measurement failed: {str(e)}", data=result)
+            return HomographyDistanceResponse(
+                success=False, message=f"Distance measurement failed: {str(e)}", data=result
+            )
 
     # Health Check
     async def health_check(self) -> dict:

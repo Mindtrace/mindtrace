@@ -166,7 +166,9 @@ class StereoCameraConnectionManager(ConnectionManager):
         response = await self.post("/stereocameras/capture", request.model_dump(), http_timeout=120.0)
         return response["data"]
 
-    async def capture_stereo_batch(self, captures: List[Dict[str, Any]], output_format: str = "numpy") -> Dict[str, Any]:
+    async def capture_stereo_batch(
+        self, captures: List[Dict[str, Any]], output_format: str = "numpy"
+    ) -> Dict[str, Any]:
         """Capture stereo data from multiple cameras."""
         request = StereoCaptureBatchRequest(captures=captures, output_format=output_format)
         response = await self.post("/stereocameras/capture/batch", request.model_dump(), http_timeout=120.0)

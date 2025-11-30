@@ -234,9 +234,7 @@ class HomographyCalibrator(Mindtrace):
         # Count inliers
         inlier_count = int(np.sum(mask)) if mask is not None else world_pts.shape[0]
         self.logger.info(
-            f"Homography computed successfully "
-            f"({inlier_count}/{world_pts.shape[0]} inliers, "
-            f"unit={world_unit})"
+            f"Homography computed successfully ({inlier_count}/{world_pts.shape[0]} inliers, unit={world_unit})"
         )
 
         return CalibrationData(
@@ -274,9 +272,7 @@ class HomographyCalibrator(Mindtrace):
         # Check for singular matrix (determinant too close to zero)
         if abs_det < 1e-10:
             self.logger.error(f"Invalid homography: determinant too close to zero ({det:.2e})")
-            raise HardwareOperationError(
-                f"Calibration failed: singular homography matrix (det={det:.2e})"
-            )
+            raise HardwareOperationError(f"Calibration failed: singular homography matrix (det={det:.2e})")
 
         # Warn about suspiciously large determinant magnitude
         if abs_det > 1e10:
@@ -321,8 +317,7 @@ class HomographyCalibrator(Mindtrace):
                 max_error = float(np.max(errors))
 
                 self.logger.info(
-                    f"Reprojection error: mean={mean_error:.2f}px, max={max_error:.2f}px "
-                    f"(over {total_corners} corners)"
+                    f"Reprojection error: mean={mean_error:.2f}px, max={max_error:.2f}px (over {total_corners} corners)"
                 )
 
                 # Warn if errors are high
@@ -331,9 +326,7 @@ class HomographyCalibrator(Mindtrace):
                         f"High mean reprojection error ({mean_error:.2f}px) - calibration may be inaccurate"
                     )
                 if max_error > 10.0:
-                    self.logger.warning(
-                        f"High maximum reprojection error ({max_error:.2f}px) - consider recalibrating"
-                    )
+                    self.logger.warning(f"High maximum reprojection error ({max_error:.2f}px) - consider recalibrating")
 
         return mean_error, max_error, total_corners
 
@@ -416,9 +409,7 @@ class HomographyCalibrator(Mindtrace):
         elif isinstance(image, np.ndarray):
             cv2_image = image
         else:
-            raise CameraConfigurationError(
-                f"Unsupported image type: {type(image)}. Expected PIL Image or numpy array."
-            )
+            raise CameraConfigurationError(f"Unsupported image type: {type(image)}. Expected PIL Image or numpy array.")
 
         # Convert to grayscale for checkerboard detection
         gray = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2GRAY) if cv2_image.ndim == 3 else cv2_image
@@ -460,8 +451,8 @@ class HomographyCalibrator(Mindtrace):
         # so we must generate world points in the same order
         cols, rows = board_size
         objp = np.zeros((rows * cols, 2), dtype=np.float64)
-        objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_size    # X: repeat columns for each row
-        objp[:, 1] = (np.arange(rows).repeat(cols)) * square_size      # Y: tile rows
+        objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_size  # X: repeat columns for each row
+        objp[:, 1] = (np.arange(rows).repeat(cols)) * square_size  # Y: tile rows
 
         self.logger.debug(f"Generated {len(objp)} world point correspondences")
 
@@ -586,7 +577,7 @@ class HomographyCalibrator(Mindtrace):
         # Process each image and position
         for idx, (image, (x_offset, y_offset)) in enumerate(zip(images, positions)):
             self.logger.debug(
-                f"Processing view {idx+1}/{len(images)} at position ({x_offset}, {y_offset}) {world_unit}"
+                f"Processing view {idx + 1}/{len(images)} at position ({x_offset}, {y_offset}) {world_unit}"
             )
 
             # Convert input to CV2 format
@@ -596,7 +587,7 @@ class HomographyCalibrator(Mindtrace):
                 cv2_image = image
             else:
                 raise CameraConfigurationError(
-                    f"View {idx+1}: Unsupported image type: {type(image)}. Expected PIL Image or numpy array."
+                    f"View {idx + 1}: Unsupported image type: {type(image)}. Expected PIL Image or numpy array."
                 )
 
             # Convert to grayscale
@@ -615,12 +606,12 @@ class HomographyCalibrator(Mindtrace):
 
             if not found:
                 raise HardwareOperationError(
-                    f"View {idx+1}: Checkerboard pattern not found. "
+                    f"View {idx + 1}: Checkerboard pattern not found. "
                     f"Expected {board_size[0]}x{board_size[1]} inner corners. "
                     f"Ensure good lighting, focus, and that the pattern is visible."
                 )
 
-            self.logger.debug(f"View {idx+1}: Detected {len(corners)} corners")
+            self.logger.debug(f"View {idx + 1}: Detected {len(corners)} corners")
 
             # Refine corner locations to sub-pixel accuracy
             if refine_corners:
@@ -631,13 +622,13 @@ class HomographyCalibrator(Mindtrace):
                 )
                 window_size = (self._config.corner_refinement_window, self._config.corner_refinement_window)
                 corners = cv2.cornerSubPix(gray, corners, window_size, (-1, -1), criteria)
-                self.logger.debug(f"View {idx+1}: Corners refined to sub-pixel accuracy")
+                self.logger.debug(f"View {idx + 1}: Corners refined to sub-pixel accuracy")
 
             # Generate world coordinates for this checkerboard position (row-major order to match OpenCV)
             # Supports rectangular checkerboards: width != height
             cols, rows = board_size
             objp = np.zeros((rows * cols, 2), dtype=np.float64)
-            objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_width + x_offset   # X coordinates (width)
+            objp[:, 0] = (np.tile(np.arange(cols), rows)) * square_width + x_offset  # X coordinates (width)
             objp[:, 1] = (np.arange(rows).repeat(cols)) * square_height + y_offset  # Y coordinates (height)
 
             all_world_points.append(objp)

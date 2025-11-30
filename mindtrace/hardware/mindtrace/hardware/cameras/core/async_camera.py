@@ -831,13 +831,13 @@ class AsyncCamera(Mindtrace):
             True if feature is supported and functional, False otherwise.
         """
         feature_checks = {
-            'bandwidth_limit': self.get_bandwidth_limit_range,
-            'packet_size': self.get_packet_size_range,
-            'inter_packet_delay': self.get_inter_packet_delay_range,
-            'width_range': self.get_width_range,
-            'height_range': self.get_height_range,
-            'exposure_control': self.is_exposure_control_supported,
-            'trigger_modes': self.get_trigger_modes,
+            "bandwidth_limit": self.get_bandwidth_limit_range,
+            "packet_size": self.get_packet_size_range,
+            "inter_packet_delay": self.get_inter_packet_delay_range,
+            "width_range": self.get_width_range,
+            "height_range": self.get_height_range,
+            "exposure_control": self.is_exposure_control_supported,
+            "trigger_modes": self.get_trigger_modes,
         }
 
         check_method = feature_checks.get(feature)

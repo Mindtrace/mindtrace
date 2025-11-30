@@ -212,9 +212,7 @@ class PLCManagerConnectionManager(ConnectionManager):
         response = await self.post("/plcs/tags/write", request.model_dump())
         return response["data"]
 
-    async def read_tags_batch(
-        self, requests: List[Tuple[str, Union[str, List[str]]]]
-    ) -> Dict[str, Dict[str, Any]]:
+    async def read_tags_batch(self, requests: List[Tuple[str, Union[str, List[str]]]]) -> Dict[str, Dict[str, Any]]:
         """Read tags from multiple PLCs in batch.
 
         Args:

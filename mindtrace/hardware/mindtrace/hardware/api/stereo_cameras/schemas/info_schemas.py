@@ -13,7 +13,9 @@ from mindtrace.hardware.api.stereo_cameras.models import (
 )
 
 # Backend & Discovery Schemas
-GetStereoCameraBackendsSchema = TaskSchema(name="get_stereo_camera_backends", input_schema=None, output_schema=BackendsResponse)
+GetStereoCameraBackendsSchema = TaskSchema(
+    name="get_stereo_camera_backends", input_schema=None, output_schema=BackendsResponse
+)
 
 GetStereoCameraBackendInfoSchema = TaskSchema(
     name="get_stereo_camera_backend_info", input_schema=None, output_schema=BackendInfoResponse
