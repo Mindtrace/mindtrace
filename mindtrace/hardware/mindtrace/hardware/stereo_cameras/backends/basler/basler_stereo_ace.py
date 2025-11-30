@@ -51,9 +51,7 @@ class BaslerStereoAceBackend(Mindtrace):
         super().__init__()
 
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon not available. Install with: pip install pypylon"
-            )
+            raise SDKNotAvailableError("pypylon not available. Install with: pip install pypylon")
 
         self.serial_number = serial_number
         self._camera: Optional[pylon.InstantCamera] = None
@@ -72,9 +70,7 @@ class BaslerStereoAceBackend(Mindtrace):
             SDKNotAvailableError: If pypylon is not available
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon not available. Install with: pip install pypylon"
-            )
+            raise SDKNotAvailableError("pypylon not available. Install with: pip install pypylon")
 
         # Create device info filter for Stereo ace cameras
         di = pylon.DeviceInfo()
@@ -97,9 +93,7 @@ class BaslerStereoAceBackend(Mindtrace):
             SDKNotAvailableError: If pypylon is not available
         """
         if not PYPYLON_AVAILABLE:
-            raise SDKNotAvailableError(
-                "pypylon not available. Install with: pip install pypylon"
-            )
+            raise SDKNotAvailableError("pypylon not available. Install with: pip install pypylon")
 
         # Create device info filter for Stereo ace cameras
         di = pylon.DeviceInfo()
@@ -145,9 +139,7 @@ class BaslerStereoAceBackend(Mindtrace):
                 self._camera = pylon.InstantCamera(tl_factory.CreateFirstDevice(di))
             except Exception as e:
                 if self.serial_number:
-                    raise CameraNotFoundError(
-                        f"Stereo ace camera '{self.serial_number}' not found"
-                    ) from e
+                    raise CameraNotFoundError(f"Stereo ace camera '{self.serial_number}' not found") from e
                 else:
                     raise CameraNotFoundError("No Stereo ace cameras found") from e
 
@@ -268,9 +260,7 @@ class BaslerStereoAceBackend(Mindtrace):
 
             try:
                 if not grab_result.GrabSucceeded():
-                    raise CameraCaptureError(
-                        f"Grab failed: {grab_result.ErrorCode} - {grab_result.ErrorDescription}"
-                    )
+                    raise CameraCaptureError(f"Grab failed: {grab_result.ErrorCode} - {grab_result.ErrorDescription}")
 
                 # Extract components
                 container = grab_result.GetDataContainer()
@@ -478,8 +468,7 @@ class BaslerStereoAceBackend(Mindtrace):
             available_formats = self._camera.PixelFormat.GetSymbolics()
             if format not in available_formats:
                 raise CameraConfigurationError(
-                    f"Pixel format '{format}' not available. "
-                    f"Available formats: {', '.join(available_formats)}"
+                    f"Pixel format '{format}' not available. Available formats: {', '.join(available_formats)}"
                 )
 
             self._camera.PixelFormat.Value = format
@@ -666,9 +655,7 @@ class BaslerStereoAceBackend(Mindtrace):
             raise CameraConnectionError("Camera not opened")
 
         if mode not in ["continuous", "trigger"]:
-            raise CameraConfigurationError(
-                f"Invalid trigger mode '{mode}'. Must be 'continuous' or 'trigger'"
-            )
+            raise CameraConfigurationError(f"Invalid trigger mode '{mode}'. Must be 'continuous' or 'trigger'")
 
         if mode == "continuous":
             # Disable triggering - free running mode

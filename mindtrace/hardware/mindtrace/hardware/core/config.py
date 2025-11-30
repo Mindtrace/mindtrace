@@ -475,7 +475,7 @@ class HomographySettings:
     # Physical size: 23mm width × 18.3mm height
     checkerboard_cols: int = 8  # Inner corners width (for 9x7 square board)
     checkerboard_rows: int = 6  # Inner corners height (for 9x7 square board)
-    checkerboard_square: float = 23/8  # Square size 3mm
+    checkerboard_square: float = 23 / 8  # Square size 3mm
 
     # Checkerboard detection flags
     checkerboard_adaptive_thresh: bool = True

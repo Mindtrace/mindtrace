@@ -8,7 +8,7 @@ import pytest
 from mindtrace.core.types.bounding_box import BoundingBox
 from mindtrace.hardware.cameras.homography.calibrator import HomographyCalibrator
 from mindtrace.hardware.cameras.homography.measurer import HomographyMeasurer
-from mindtrace.hardware.core.exceptions import CameraConfigurationError, HardwareOperationError
+from mindtrace.hardware.core.exceptions import HardwareOperationError
 
 
 class TestHomographyIntegration:

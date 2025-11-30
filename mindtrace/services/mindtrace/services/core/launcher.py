@@ -14,6 +14,7 @@ if not IS_WINDOWS:
 
 
 if not IS_WINDOWS:
+
     class Launcher(BaseApplication):
         """Gunicorn application launcher for Mindtrace services (Linux/Mac only)."""
 
@@ -42,7 +43,9 @@ if not IS_WINDOWS:
 
         def load_config(self):
             config = {
-                key: value for key, value in self.gunicorn_options.items() if key in self.cfg.settings and value is not None
+                key: value
+                for key, value in self.gunicorn_options.items()
+                if key in self.cfg.settings and value is not None
             }
             for key, value in config.items():
                 self.cfg.set(key.lower(), value)
@@ -50,12 +53,11 @@ if not IS_WINDOWS:
         def load(self):
             return self.application
 else:
+
     class Launcher:
         """Uvicorn application launcher for Mindtrace services (Windows)."""
 
         def __init__(self, options):
-            import uvicorn
-
             # Parse init params
             init_params = json.loads(options.init_params) if options.init_params else {}
 
@@ -82,6 +84,7 @@ else:
 
         def run(self):
             import uvicorn
+
             uvicorn.run(**self.uvicorn_config)
 
 

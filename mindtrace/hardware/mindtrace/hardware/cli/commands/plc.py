@@ -19,9 +19,7 @@ def plc():
 
 @plc.command()
 @click.option("--api-host", default=lambda: os.getenv("PLC_API_HOST", "localhost"), help="API service host")
-@click.option(
-    "--api-port", default=lambda: int(os.getenv("PLC_API_PORT", "8003")), type=int, help="API service port"
-)
+@click.option("--api-port", default=lambda: int(os.getenv("PLC_API_PORT", "8003")), type=int, help="API service port")
 def start(api_host: str, api_port: int):
     """Start PLC API service."""
     logger = RichLogger()

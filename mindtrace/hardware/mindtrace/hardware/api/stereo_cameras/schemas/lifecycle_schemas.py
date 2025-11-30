@@ -30,9 +30,7 @@ CloseStereoCamerasBatchSchema = TaskSchema(
     output_schema=BatchOperationResponse,
 )
 
-CloseAllStereoCamerasSchema = TaskSchema(
-    name="close_all_stereo_cameras", input_schema=None, output_schema=BoolResponse
-)
+CloseAllStereoCamerasSchema = TaskSchema(name="close_all_stereo_cameras", input_schema=None, output_schema=BoolResponse)
 
 GetActiveStereoCamerasSchema = TaskSchema(
     name="get_active_stereo_cameras", input_schema=None, output_schema=ActiveStereoCamerasResponse

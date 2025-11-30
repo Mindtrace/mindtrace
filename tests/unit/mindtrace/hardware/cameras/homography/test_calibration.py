@@ -168,7 +168,9 @@ class TestHomographyCalibrator:
         world_points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=np.float64)
         image_points = np.array([[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]], dtype=np.float64)  # One less
 
-        with pytest.raises(CameraConfigurationError, match="world_points and image_points must have the same number of points"):
+        with pytest.raises(
+            CameraConfigurationError, match="world_points and image_points must have the same number of points"
+        ):
             self.calibrator.calibrate_from_correspondences(world_points, image_points)
 
         # Test wrong dimensionality

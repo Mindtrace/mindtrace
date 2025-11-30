@@ -141,12 +141,8 @@ class PLCManagerService(Service):
         # Tag Operations
         self.add_endpoint("plcs/tags/read", self.read_tags, ALL_SCHEMAS["tag_read"], as_tool=True)
         self.add_endpoint("plcs/tags/write", self.write_tags, ALL_SCHEMAS["tag_write"], as_tool=True)
-        self.add_endpoint(
-            "plcs/tags/read/batch", self.read_tags_batch, ALL_SCHEMAS["tag_batch_read"], as_tool=True
-        )
-        self.add_endpoint(
-            "plcs/tags/write/batch", self.write_tags_batch, ALL_SCHEMAS["tag_batch_write"], as_tool=True
-        )
+        self.add_endpoint("plcs/tags/read/batch", self.read_tags_batch, ALL_SCHEMAS["tag_batch_read"], as_tool=True)
+        self.add_endpoint("plcs/tags/write/batch", self.write_tags_batch, ALL_SCHEMAS["tag_batch_write"], as_tool=True)
         self.add_endpoint("plcs/tags/list", self.list_tags, ALL_SCHEMAS["tag_list"], as_tool=True)
         self.add_endpoint("plcs/tags/info", self.get_tag_info, ALL_SCHEMAS["tag_info"], as_tool=True)
 
@@ -160,7 +156,6 @@ class PLCManagerService(Service):
             methods=["GET"],
             as_tool=True,
         )
-
 
     # Backend & Discovery Operations
     async def discover_backends(self) -> BackendsResponse:
@@ -311,9 +306,7 @@ class PLCManagerService(Service):
             manager = await self._get_plc_manager()
             success = await manager.disconnect_plc(request.plc)
 
-            return BoolResponse(
-                success=success, message=f"PLC '{request.plc}' disconnected successfully", data=success
-            )
+            return BoolResponse(success=success, message=f"PLC '{request.plc}' disconnected successfully", data=success)
         except Exception as e:
             self.logger.error(f"Failed to disconnect from PLC '{request.plc}': {e}")
             raise
@@ -364,9 +357,7 @@ class PLCManagerService(Service):
             manager = await self._get_plc_manager()
             active_plcs = manager.get_registered_plcs()
 
-            return ActivePLCsResponse(
-                success=True, message=f"Found {len(active_plcs)} active PLCs", data=active_plcs
-            )
+            return ActivePLCsResponse(success=True, message=f"Found {len(active_plcs)} active PLCs", data=active_plcs)
         except Exception as e:
             self.logger.error(f"Failed to get active PLCs: {e}")
             raise
@@ -395,7 +386,9 @@ class PLCManagerService(Service):
             self._total_tag_writes += len(results) if isinstance(results, dict) else 1
 
             tag_count = len(results) if isinstance(results, dict) else 1
-            return TagWriteResponse(success=True, message=f"Wrote {tag_count} tags to PLC '{request.plc}'", data=results)
+            return TagWriteResponse(
+                success=True, message=f"Wrote {tag_count} tags to PLC '{request.plc}'", data=results
+            )
         except Exception as e:
             self.logger.error(f"Failed to write tags to PLC '{request.plc}': {e}")
             raise

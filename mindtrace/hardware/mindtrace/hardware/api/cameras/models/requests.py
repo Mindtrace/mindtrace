@@ -130,7 +130,6 @@ class CaptureImageRequest(BaseModel):
             )
 
 
-
 class CaptureBatchRequest(BaseModel):
     """Request model for batch image capture."""
 
@@ -158,7 +157,6 @@ class CaptureBatchRequest(BaseModel):
             )
 
 
-
 class CaptureHDRRequest(BaseModel):
     """Request model for HDR image capture."""
 
@@ -169,7 +167,9 @@ class CaptureHDRRequest(BaseModel):
     exposure_levels: Union[int, List[float]] = Field(
         3, description="Number of exposure levels (int) or explicit exposure values (List[float])"
     )
-    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)")
+    exposure_multiplier: float = Field(
+        2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)"
+    )
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
@@ -206,7 +206,6 @@ class CaptureHDRRequest(BaseModel):
             raise ValueError(
                 f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
             )
-
 
 
 class CaptureHDRBatchRequest(BaseModel):
@@ -219,7 +218,9 @@ class CaptureHDRBatchRequest(BaseModel):
     exposure_levels: Union[int, List[float]] = Field(
         3, description="Number of exposure levels (int) or explicit exposure values (List[float])"
     )
-    exposure_multiplier: float = Field(2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)")
+    exposure_multiplier: float = Field(
+        2.0, gt=1.0, le=5.0, description="Multiplier between exposure levels (used when exposure_levels is int)"
+    )
     return_images: bool = Field(True, description="Whether to return captured images in response")
     upload_to_gcs: bool = Field(False, description="Upload captured images to Google Cloud Storage")
     output_format: str = Field("numpy", description="Output format for returned images ('numpy' or 'pil')")
@@ -256,7 +257,6 @@ class CaptureHDRBatchRequest(BaseModel):
             raise ValueError(
                 f"Unsupported output_format: '{v}'. Supported formats: 'numpy', 'pil', 'jpeg', 'jpg', 'png', 'tiff', 'bmp', 'webp'"
             )
-
 
 
 # Network & Bandwidth Operations
@@ -276,15 +276,25 @@ class CameraPerformanceSettingsRequest(BaseModel):
     - packet_size, inter_packet_delay, bandwidth_limit_mbps
     """
 
-    camera: Optional[str] = Field(None, description="Optional camera name for per-camera GigE settings (format 'Backend:device_name')")
+    camera: Optional[str] = Field(
+        None, description="Optional camera name for per-camera GigE settings (format 'Backend:device_name')"
+    )
     timeout_ms: Optional[int] = Field(None, ge=100, le=30000, description="Capture timeout in milliseconds (100-30000)")
-    retrieve_retry_count: Optional[int] = Field(None, ge=1, le=10, description="Number of capture retry attempts (1-10)")
+    retrieve_retry_count: Optional[int] = Field(
+        None, ge=1, le=10, description="Number of capture retry attempts (1-10)"
+    )
     max_concurrent_captures: Optional[int] = Field(None, ge=1, le=10, description="Maximum concurrent captures (1-10)")
 
     # GigE-specific performance parameters (require camera field)
-    packet_size: Optional[int] = Field(None, ge=1476, le=16000, description="GigE packet size in bytes (1476-16000, typically 1500 or 9000)")
-    inter_packet_delay: Optional[int] = Field(None, ge=0, le=65535, description="Inter-packet delay in ticks (0-65535, higher = slower)")
-    bandwidth_limit_mbps: Optional[float] = Field(None, ge=1.0, le=10000.0, description="Bandwidth limit in Mbps (1.0-10000.0, None = unlimited)")
+    packet_size: Optional[int] = Field(
+        None, ge=1476, le=16000, description="GigE packet size in bytes (1476-16000, typically 1500 or 9000)"
+    )
+    inter_packet_delay: Optional[int] = Field(
+        None, ge=0, le=65535, description="Inter-packet delay in ticks (0-65535, higher = slower)"
+    )
+    bandwidth_limit_mbps: Optional[float] = Field(
+        None, ge=1.0, le=10000.0, description="Bandwidth limit in Mbps (1.0-10000.0, None = unlimited)"
+    )
 
 
 # Specific Camera Parameter Requests
@@ -388,11 +398,21 @@ class HomographyCalibrateCheckerboardRequest(BaseModel):
     """Request model for checkerboard-based homography calibration."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    board_size_cols: Optional[int] = Field(None, ge=2, le=50, description="Checkerboard inner corners (columns). Uses config default if None.")
-    board_size_rows: Optional[int] = Field(None, ge=2, le=50, description="Checkerboard inner corners (rows). Uses config default if None.")
-    square_size: Optional[float] = Field(None, gt=0.0, description="Physical size of one square. Uses config default if None.")
-    world_unit: Optional[str] = Field(None, description="Unit of measurement ('mm', 'cm', 'm', 'in', 'ft'). Uses config default if None.")
-    refine_corners: Optional[bool] = Field(None, description="Enable sub-pixel corner refinement. Uses config default if None.")
+    board_size_cols: Optional[int] = Field(
+        None, ge=2, le=50, description="Checkerboard inner corners (columns). Uses config default if None."
+    )
+    board_size_rows: Optional[int] = Field(
+        None, ge=2, le=50, description="Checkerboard inner corners (rows). Uses config default if None."
+    )
+    square_size: Optional[float] = Field(
+        None, gt=0.0, description="Physical size of one square. Uses config default if None."
+    )
+    world_unit: Optional[str] = Field(
+        None, description="Unit of measurement ('mm', 'cm', 'm', 'in', 'ft'). Uses config default if None."
+    )
+    refine_corners: Optional[bool] = Field(
+        None, description="Enable sub-pixel corner refinement. Uses config default if None."
+    )
     save_path: Optional[str] = Field(None, description="Optional path to save calibration data as JSON")
 
 
@@ -400,8 +420,12 @@ class HomographyCalibrateCorrespondencesRequest(BaseModel):
     """Request model for manual point correspondence calibration."""
 
     camera: str = Field(..., description="Camera name in format 'Backend:device_name'")
-    world_points: List[List[float]] = Field(..., description="World coordinates as [[x1, y1], [x2, y2], ...]. Minimum 4 points.")
-    image_points: List[List[float]] = Field(..., description="Image pixel coordinates as [[u1, v1], [u2, v2], ...]. Minimum 4 points.")
+    world_points: List[List[float]] = Field(
+        ..., description="World coordinates as [[x1, y1], [x2, y2], ...]. Minimum 4 points."
+    )
+    image_points: List[List[float]] = Field(
+        ..., description="Image pixel coordinates as [[u1, v1], [u2, v2], ...]. Minimum 4 points."
+    )
     world_unit: Optional[str] = Field(None, description="Unit of world coordinates. Uses config default if None.")
     save_path: Optional[str] = Field(None, description="Optional path to save calibration data as JSON")
 
@@ -425,7 +449,9 @@ class HomographyMeasureBoundingBoxRequest(BaseModel):
     y: int = Field(..., ge=0, description="Bounding box Y coordinate (top-left)")
     width: int = Field(..., gt=0, description="Bounding box width in pixels")
     height: int = Field(..., gt=0, description="Bounding box height in pixels")
-    target_unit: Optional[str] = Field(None, description="Target unit for measurements ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None.")
+    target_unit: Optional[str] = Field(
+        None, description="Target unit for measurements ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None."
+    )
 
 
 class HomographyMeasureBatchRequest(BaseModel):
@@ -433,12 +459,10 @@ class HomographyMeasureBatchRequest(BaseModel):
 
     calibration_path: str = Field(..., description="Path to calibration data JSON file")
     bounding_boxes: Optional[List[Dict[str, int]]] = Field(
-        None,
-        description="Optional list of bounding boxes as [{'x': x, 'y': y, 'width': w, 'height': h}, ...]"
+        None, description="Optional list of bounding boxes as [{'x': x, 'y': y, 'width': w, 'height': h}, ...]"
     )
     point_pairs: Optional[List[List[List[float]]]] = Field(
-        None,
-        description="Optional list of point pairs as [[[x1,y1], [x2,y2]], [[x3,y3], [x4,y4]], ...]"
+        None, description="Optional list of point pairs as [[[x1,y1], [x2,y2]], [[x3,y3], [x4,y4]], ...]"
     )
     target_unit: Optional[str] = Field(None, description="Target unit for measurements. Uses calibration unit if None.")
 
@@ -449,9 +473,9 @@ class HomographyMeasureBatchRequest(BaseModel):
         if v is None:
             return v
         for box in v:
-            if not all(k in box for k in ['x', 'y', 'width', 'height']):
+            if not all(k in box for k in ["x", "y", "width", "height"]):
                 raise ValueError("Each bounding box must have 'x', 'y', 'width', 'height' fields")
-            if box['width'] <= 0 or box['height'] <= 0:
+            if box["width"] <= 0 or box["height"] <= 0:
                 raise ValueError("Bounding box width and height must be positive")
         return v
 
@@ -469,7 +493,7 @@ class HomographyMeasureBatchRequest(BaseModel):
                     raise ValueError("Each point must be [x, y]")
         return v
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_at_least_one(self):
         """Ensure at least one measurement type is provided."""
         if not self.bounding_boxes and not self.point_pairs:
@@ -485,7 +509,9 @@ class HomographyMeasureDistanceRequest(BaseModel):
     point1_y: float = Field(..., description="First point Y coordinate in pixels")
     point2_x: float = Field(..., description="Second point X coordinate in pixels")
     point2_y: float = Field(..., description="Second point Y coordinate in pixels")
-    target_unit: Optional[str] = Field(None, description="Target unit for distance ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None.")
+    target_unit: Optional[str] = Field(
+        None, description="Target unit for distance ('mm', 'cm', 'm', 'in', 'ft'). Uses calibration unit if None."
+    )
 
 
 class HomographyCalibrateMultiViewRequest(BaseModel):
@@ -499,8 +525,8 @@ class HomographyCalibrateMultiViewRequest(BaseModel):
     positions: List[Dict[str, float]] = Field(
         ...,
         description="List of checkerboard positions as [{'x': x_offset, 'y': y_offset}, ...]. "
-                    "First position typically {'x': 0, 'y': 0}. Subsequent positions indicate "
-                    "how far the checkerboard was moved (in world units configured in HomographySettings)."
+        "First position typically {'x': 0, 'y': 0}. Subsequent positions indicate "
+        "how far the checkerboard was moved (in world units configured in HomographySettings).",
     )
     output_path: str = Field(..., description="Path to save calibration data JSON file")
 
@@ -511,11 +537,11 @@ class HomographyCalibrateMultiViewRequest(BaseModel):
         if len(v) < 1:
             raise ValueError("At least one position is required")
         for idx, pos in enumerate(v):
-            if 'x' not in pos or 'y' not in pos:
+            if "x" not in pos or "y" not in pos:
                 raise ValueError(f"Position {idx} must have 'x' and 'y' fields")
         return v
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_lengths_match(self):
         """Ensure number of images matches number of positions."""
         if len(self.image_paths) != len(self.positions):

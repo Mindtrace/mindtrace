@@ -145,8 +145,7 @@ class HomographyMeasurer(Mindtrace):
         """
         if from_unit not in cls._UNIT_TO_MM or to_unit not in cls._UNIT_TO_MM:
             raise CameraConfigurationError(
-                f"Unsupported unit. Got '{from_unit}' or '{to_unit}', "
-                f"expected one of: {list(cls._UNIT_TO_MM.keys())}"
+                f"Unsupported unit. Got '{from_unit}' or '{to_unit}', expected one of: {list(cls._UNIT_TO_MM.keys())}"
             )
         return cls._UNIT_TO_MM[from_unit] / cls._UNIT_TO_MM[to_unit]
 
@@ -247,8 +246,7 @@ class HomographyMeasurer(Mindtrace):
             unit = target_unit
 
         self.logger.debug(
-            f"Measured box: {width_world:.2f} × {height_world:.2f} {unit} "
-            f"(area={area_world:.2f} {unit}²)"
+            f"Measured box: {width_world:.2f} × {height_world:.2f} {unit} (area={area_world:.2f} {unit}²)"
         )
 
         return MeasuredBox(
@@ -353,9 +351,6 @@ class HomographyMeasurer(Mindtrace):
             distance *= scale
             unit = target_unit
 
-        self.logger.debug(
-            f"Measured distance: {distance:.2f} {unit} "
-            f"(from {point1} to {point2} pixels)"
-        )
+        self.logger.debug(f"Measured distance: {distance:.2f} {unit} (from {point1} to {point2} pixels)")
 
         return distance, unit

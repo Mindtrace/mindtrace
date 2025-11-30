@@ -69,6 +69,7 @@ def start(api_host: str, api_port: int, include_mocks: bool, open_docs: bool):
         # Open browser to docs if requested
         if open_docs:
             import webbrowser
+
             docs_url = f"http://{api_host}:{api_port}/docs"
             webbrowser.open(docs_url)
             logger.info(f"Opening browser: {docs_url}")
@@ -134,8 +135,8 @@ def status():
     # Show access URLs if running
     if camera_status.get("camera_api", {}).get("running"):
         info = camera_status["camera_api"]
-        host = info['host']
-        port = info['port']
+        host = info["host"]
+        port = info["port"]
         click.echo("\nAccess URLs:")
         click.echo(f"  API: http://{host}:{port}")
         click.echo(f"  Swagger UI: http://{host}:{port}/docs")

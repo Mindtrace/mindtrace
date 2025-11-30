@@ -16,7 +16,9 @@ GetNetworkDiagnosticsSchema = TaskSchema(
 # Camera Performance Schemas
 # GET endpoint accepts optional camera parameter to retrieve per-camera GigE settings
 GetPerformanceSettingsSchema = TaskSchema(
-    name="get_performance_settings", input_schema=CameraPerformanceSettingsRequest, output_schema=CameraPerformanceSettingsResponse
+    name="get_performance_settings",
+    input_schema=CameraPerformanceSettingsRequest,
+    output_schema=CameraPerformanceSettingsResponse,
 )
 
 SetPerformanceSettingsSchema = TaskSchema(

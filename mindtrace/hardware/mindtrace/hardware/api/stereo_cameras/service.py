@@ -52,7 +52,6 @@ from mindtrace.hardware.api.stereo_cameras.models import (
     SystemDiagnostics,
     SystemDiagnosticsResponse,
 )
-from mindtrace.hardware.api.stereo_cameras.schemas import ALL_SCHEMAS
 from mindtrace.hardware.core.exceptions import (
     CameraNotFoundError,
 )
@@ -138,9 +137,7 @@ class StereoCameraService(Service):
                         description="Basler Stereo ace (dual ace2 Pro + pattern projector)",
                     )
                 }
-                return BackendInfoResponse(
-                    success=True, message="Backend information retrieved", data=backends_info
-                )
+                return BackendInfoResponse(success=True, message="Backend information retrieved", data=backends_info)
             except Exception as e:
                 return BackendInfoResponse(success=False, message=f"Failed to get backend info: {e}", data={})
 
@@ -189,9 +186,7 @@ class StereoCameraService(Service):
                         results.append(BatchOperationResult(camera=camera_name, success=True, message="Opened"))
                     else:
                         successful += 1
-                        results.append(
-                            BatchOperationResult(camera=camera_name, success=True, message="Already open")
-                        )
+                        results.append(BatchOperationResult(camera=camera_name, success=True, message="Already open"))
                 except Exception as e:
                     failed += 1
                     results.append(BatchOperationResult(camera=camera_name, success=False, message=str(e)))
@@ -233,9 +228,7 @@ class StereoCameraService(Service):
                         results.append(BatchOperationResult(camera=camera_name, success=True, message="Closed"))
                     else:
                         failed += 1
-                        results.append(
-                            BatchOperationResult(camera=camera_name, success=False, message="Not found")
-                        )
+                        results.append(BatchOperationResult(camera=camera_name, success=False, message="Not found"))
                 except Exception as e:
                     failed += 1
                     results.append(BatchOperationResult(camera=camera_name, success=False, message=str(e)))
@@ -354,7 +347,7 @@ class StereoCameraService(Service):
                         "offset3d": float(calib.offset3d),
                         "Q_matrix": calib.Q.tolist(),  # 4x4 reprojection matrix
                         "Q_shape": list(calib.Q.shape),
-                    }
+                    },
                 }
             except HTTPException:
                 raise
@@ -377,7 +370,9 @@ class StereoCameraService(Service):
 
                 await camera.configure(**request.properties)
 
-                self.logger.info(f"Successfully configured camera {camera_name} with {len(request.properties)} parameters")
+                self.logger.info(
+                    f"Successfully configured camera {camera_name} with {len(request.properties)} parameters"
+                )
 
                 return BoolResponse(success=True, message="Camera configured", data=True)
             except Exception as e:
@@ -468,10 +463,12 @@ class StereoCameraService(Service):
                 # Save if requested
                 if request.save_intensity_path and result.intensity is not None:
                     import cv2
+
                     cv2.imwrite(request.save_intensity_path, result.intensity)
 
                 if request.save_disparity_path and result.disparity is not None:
                     import cv2
+
                     cv2.imwrite(request.save_disparity_path, result.disparity)
 
                 capture_result = StereoCaptureResult(
@@ -625,9 +622,7 @@ class StereoCameraService(Service):
                     failed += 1
                     errors[camera_name or "unknown"] = str(e)
 
-            batch_result = PointCloudBatchResult(
-                successful=successful, failed=failed, results=results, errors=errors
-            )
+            batch_result = PointCloudBatchResult(successful=successful, failed=failed, results=results, errors=errors)
 
             return PointCloudBatchResponse(
                 success=True,
@@ -670,6 +665,7 @@ class StereoCameraService(Service):
         async def start_stream(camera: str, quality: int = 85, fps: int = 10):
             """Start stereo camera stream."""
             import os
+
             if camera not in self._cameras:
                 raise HTTPException(status_code=404, detail=f"Camera {camera} not found")
 
@@ -693,8 +689,8 @@ class StereoCameraService(Service):
                     "camera": camera,
                     "streaming": True,
                     "stream_url": stream_url,
-                    "start_time": datetime.now(timezone.utc).isoformat()
-                }
+                    "start_time": datetime.now(timezone.utc).isoformat(),
+                },
             }
 
         @self.app.post("/stereocameras/stream/stop")
@@ -704,28 +700,21 @@ class StereoCameraService(Service):
             if was_streaming:
                 del self._active_streams[camera]
 
-            return {
-                "success": True,
-                "message": f"Stream stopped for camera '{camera}'",
-                "data": True
-            }
+            return {"success": True, "message": f"Stream stopped for camera '{camera}'", "data": True}
 
         @self.app.get("/stereocameras/stream/active")
         async def get_active_streams():
             """Get list of active streams."""
-            return {
-                "success": True,
-                "message": "Active streams retrieved",
-                "data": list(self._active_streams.keys())
-            }
+            return {"success": True, "message": "Active streams retrieved", "data": list(self._active_streams.keys())}
 
         @self.app.get("/stream/{camera_name}")
         async def serve_stereo_stream(camera_name: str):
             """Serve MJPEG video stream for stereo camera (intensity image)."""
-            from fastapi.responses import StreamingResponse
             import asyncio
+
             import cv2
             import numpy as np
+            from fastapi.responses import StreamingResponse
 
             # Replace first underscore back to colon
             actual_camera_name = camera_name.replace("_", ":", 1)
@@ -752,13 +741,17 @@ class StereoCameraService(Service):
                     try:
                         # Capture stereo data (intensity only for streaming)
                         result = await asyncio.wait_for(
-                            camera.capture(enable_intensity=True, enable_disparity=False, timeout_ms=int(capture_timeout * 1000)),
-                            timeout=capture_timeout
+                            camera.capture(
+                                enable_intensity=True, enable_disparity=False, timeout_ms=int(capture_timeout * 1000)
+                            ),
+                            timeout=capture_timeout,
                         )
 
                         # Reset timeout counter and log recovery if we had timeouts
                         if consecutive_timeouts > 0:
-                            self.logger.info(f"Stream recovered for camera '{actual_camera_name}' after {consecutive_timeouts} timeout(s)")
+                            self.logger.info(
+                                f"Stream recovered for camera '{actual_camera_name}' after {consecutive_timeouts} timeout(s)"
+                            )
                         consecutive_timeouts = 0
 
                         if result.intensity is not None:
@@ -781,7 +774,9 @@ class StereoCameraService(Service):
                     except asyncio.TimeoutError:
                         consecutive_timeouts += 1
                         if consecutive_timeouts == 1:
-                            self.logger.warning(f"Stream timeout for camera '{actual_camera_name}' (may be due to reconfiguration)")
+                            self.logger.warning(
+                                f"Stream timeout for camera '{actual_camera_name}' (may be due to reconfiguration)"
+                            )
                         elif consecutive_timeouts >= max_consecutive_timeouts:
                             error_msg = f"Stream terminated: Camera '{actual_camera_name}' - {max_consecutive_timeouts} consecutive timeouts"
                             self.logger.error(error_msg)
@@ -790,7 +785,7 @@ class StereoCameraService(Service):
                         await asyncio.sleep(1.0)
                         continue
 
-                    except Exception as e:
+                    except Exception:
                         if actual_camera_name not in self._cameras:
                             break
                         await asyncio.sleep(0.1)

@@ -141,6 +141,7 @@ class StereoAceInstaller(Mindtrace):
         except Exception as e:
             self.logger.error(f"Installation failed with unexpected error: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -164,8 +165,7 @@ class StereoAceInstaller(Mindtrace):
 
                 self.logger.info(f"Downloading from {self.GITHUB_DEB_URL}")
                 downloaded_path = download_file(
-                    url=self.GITHUB_DEB_URL,
-                    destination=str(download_dir / self.DEB_PACKAGE_NAME)
+                    url=self.GITHUB_DEB_URL, destination=str(download_dir / self.DEB_PACKAGE_NAME)
                 )
                 self.package_path = Path(downloaded_path)
                 self.logger.info(f"Downloaded to {self.package_path}")
@@ -174,7 +174,9 @@ class StereoAceInstaller(Mindtrace):
                 self.logger.error(f"Failed to download package: {e}")
                 self.logger.info("Please download manually from:")
                 self.logger.info(f"  {self.BASLER_DEB_URL}")
-                self.logger.info(f"Then run: python setup_stereo_ace.py --method deb --package /path/to/{self.DEB_PACKAGE_NAME}")
+                self.logger.info(
+                    f"Then run: python setup_stereo_ace.py --method deb --package /path/to/{self.DEB_PACKAGE_NAME}"
+                )
                 return False
 
         try:
@@ -216,8 +218,7 @@ class StereoAceInstaller(Mindtrace):
                 # Download and extract directly
                 self.logger.info(f"Downloading from {self.GITHUB_TARBALL_URL}")
                 extracted_dir = download_and_extract_tarball(
-                    url=self.GITHUB_TARBALL_URL,
-                    extract_to=str(self.install_dir / "temp_download")
+                    url=self.GITHUB_TARBALL_URL, extract_to=str(self.install_dir / "temp_download")
                 )
                 self.logger.info(f"Downloaded and extracted to {extracted_dir}")
 
@@ -245,8 +246,11 @@ class StereoAceInstaller(Mindtrace):
                 self.logger.error(f"Failed to download package: {e}")
                 self.logger.info("Please download manually from:")
                 self.logger.info(f"  {self.BASLER_TARBALL_URL}")
-                self.logger.info(f"Then run: python setup_stereo_ace.py --method tarball --package /path/to/{self.TARBALL_PACKAGE_NAME}")
+                self.logger.info(
+                    f"Then run: python setup_stereo_ace.py --method tarball --package /path/to/{self.TARBALL_PACKAGE_NAME}"
+                )
                 import traceback
+
                 traceback.print_exc()
                 return False
 
@@ -326,6 +330,7 @@ class StereoAceInstaller(Mindtrace):
         except Exception as e:
             self.logger.error(f"tar.gz installation failed: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -387,7 +392,7 @@ echo "  - Documentation: ${PYLON_ROOT}/share/pylon/doc/stereo-ace/"
         if sys.stdin.isatty():
             self.logger.info("")
             response = input("Add environment setup to ~/.bashrc? (y/N): ").strip().lower()
-            if response in ['y', 'yes']:
+            if response in ["y", "yes"]:
                 try:
                     with open(bashrc_path, "a") as f:
                         f.write("\n# Basler Stereo ace environment (added by mindtrace)\n")
@@ -500,24 +505,13 @@ Download packages from:
         """,
     )
     parser.add_argument(
-        "--method",
-        choices=["deb", "tarball"],
-        default="tarball",
-        help="Installation method (default: tarball)"
+        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
     )
+    parser.add_argument("--package", help="Path to downloaded package file (.deb or .tar.gz)")
     parser.add_argument(
-        "--package",
-        help="Path to downloaded package file (.deb or .tar.gz)"
+        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
     )
-    parser.add_argument(
-        "--install-dir",
-        help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -545,20 +539,12 @@ def uninstall_stereo_ace() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--method",
-        choices=["deb", "tarball"],
-        default="tarball",
-        help="Installation method (default: tarball)"
+        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
     )
     parser.add_argument(
-        "--install-dir",
-        help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
+        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
     )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
@@ -601,29 +587,14 @@ Download packages from:
     )
 
     parser.add_argument(
-        "--method",
-        choices=["deb", "tarball"],
-        default="tarball",
-        help="Installation method (default: tarball)"
+        "--method", choices=["deb", "tarball"], default="tarball", help="Installation method (default: tarball)"
     )
+    parser.add_argument("--package", help="Path to downloaded package file (.deb or .tar.gz)")
     parser.add_argument(
-        "--package",
-        help="Path to downloaded package file (.deb or .tar.gz)"
+        "--install-dir", help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
     )
-    parser.add_argument(
-        "--install-dir",
-        help="Custom installation directory (for tarball method, default: ~/.local/share/pylon_stereo)"
-    )
-    parser.add_argument(
-        "--uninstall",
-        action="store_true",
-        help="Uninstall instead of install"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
+    parser.add_argument("--uninstall", action="store_true", help="Uninstall instead of install")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
