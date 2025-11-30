@@ -3,22 +3,16 @@ import json
 import pytest
 import requests
 
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 
 
 async def _extract_echoed(result):
-    # Try multiple possible return formats
-    try:
-        if isinstance(result, dict) and "echoed" in result:
-            return result["echoed"]
-        if hasattr(result, "echoed"):
-            return getattr(result, "echoed")
-        if isinstance(result, list) and result and hasattr(result[0], "text"):
-            data = json.loads(result[0].text)
-            return data.get("echoed")
-    except Exception:
-        return None
-    return None
+    # The result is in result.content[0].text as a JSON string
+    assert hasattr(result, "content")
+    assert len(result.content) > 0
+    text_content = result.content[0].text
+    data = json.loads(text_content)
+    return data.get("echoed")
 
 
 @pytest.mark.asyncio
@@ -42,7 +36,7 @@ async def test_mcp_client_manager_connect_integration(echo_mcp_manager):
 @pytest.mark.asyncio
 async def test_mcp_client_manager_launch_integration():
     host = "localhost"
-    port = 8094
+    port = 8095
     base_url = f"http://{host}:{port}"
     mcp_client = EchoService.mcp.launch(host=host, port=port, wait_for_launch=True, timeout=30)
 

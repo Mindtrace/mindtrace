@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-hardware"
-version = "0.4.0"
+version = "0.5.0"
 description = "Hardware integration for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -24,8 +24,8 @@ dependencies = [
     "click>=8.1.0",
     "psutil>=5.9.0",
     "rich>=13.0.0",
-    "reflex>=0.5.0",
     "pyyaml>=6.0.3",
+    "aiomqtt>=2.4.0",
 ]
 
 [project.scripts]

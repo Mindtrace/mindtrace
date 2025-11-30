@@ -39,3 +39,5 @@ export MINDTRACE_CLUSTER__DEFAULT_REDIS_URL=redis://localhost:6380
 export MINDTRACE_CLUSTER__RABBITMQ_PORT=5673
 
 export REDIS_OM_URL=redis://localhost:6380
+
+export GCP_PROJECT_ID=mindtrace-test

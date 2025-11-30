@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+from pydantic import BaseModel, SecretStr
+
 from mindtrace.core.config import Config
 from mindtrace.core.utils import load_ini_as_dict
 
@@ -39,10 +41,6 @@ print("Cloned:", cloned.MINDTRACE_DIR_PATHS.TEMP_DIR)  # "DEBUG"
 
 
 ##### Masking Sensitive Fields
-
-from pydantic import BaseModel, SecretStr
-
-from mindtrace.core.config import Config
 
 
 # Step 1: Define your secret config fields

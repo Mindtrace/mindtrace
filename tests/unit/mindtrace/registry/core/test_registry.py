@@ -31,7 +31,7 @@ def temp_registry_dir():
 @pytest.fixture
 def registry(temp_registry_dir):
     """Create a Registry instance with a temporary directory."""
-    return Registry(registry_dir=temp_registry_dir)
+    return Registry(registry_dir=temp_registry_dir, version_objects=True)
 
 
 @pytest.fixture
@@ -81,9 +81,10 @@ def test_path():
 
 
 @pytest.fixture
-def non_versioned_registry(temp_registry_dir):
+def non_versioned_registry():
     """Create a registry with versioning disabled."""
-    return Registry(registry_dir=temp_registry_dir, version_objects=False)
+    with TemporaryDirectory() as temp_dir:
+        yield Registry(registry_dir=temp_dir, version_objects=False)
 
 
 def test_registry_initialization(registry, temp_registry_dir):
@@ -1320,7 +1321,7 @@ def test_download_basic(registry, test_config):
     """Test basic download functionality between registries."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1340,7 +1341,7 @@ def test_download_with_rename(registry, test_config):
     """Test downloading with a different target name."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("source:config", test_config, version="1.0.0")
@@ -1363,7 +1364,7 @@ def test_download_with_reversion(registry, test_config):
     """Test downloading with a different target version."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1384,7 +1385,7 @@ def test_download_with_metadata(registry, test_config):
     """Test downloading preserves metadata."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save object with metadata
         metadata = {"key": "value", "number": 42}
@@ -1402,7 +1403,7 @@ def test_download_nonexistent_object(registry):
     """Test downloading a nonexistent object raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Attempt to download nonexistent object
         with pytest.raises(ValueError, match="Object test:config version 1.0.0 does not exist in source registry"):
@@ -1420,7 +1421,7 @@ def test_download_latest_version(registry, test_config):
     """Test downloading the latest version of an object."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save multiple versions
         source_reg.save("test:float", 1.0)
@@ -1438,7 +1439,7 @@ def test_download_with_materializer(registry):
     """Test downloading an object with a custom materializer."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
@@ -1466,7 +1467,7 @@ def test_download_version_conflict(registry, test_config):
     """Test downloading when target version already exists."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Save to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1501,7 +1502,7 @@ def test_download_latest_version_nonexistent(registry):
     """Test downloading a non-existent object with version 'latest'."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Try to download a non-existent object with version "latest"
         with pytest.raises(ValueError, match="No versions found for object nonexistent in source registry"):
@@ -1512,7 +1513,7 @@ def test_download_vs_dict_assignment(registry):
     """Test that download and dictionary-style assignment produce the same result."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
@@ -1527,8 +1528,8 @@ def test_download_vs_dict_assignment(registry):
 
         # Create two target registries
         with TemporaryDirectory() as target_dir1, TemporaryDirectory() as target_dir2:
-            target_reg1 = Registry(registry_dir=target_dir1)
-            target_reg2 = Registry(registry_dir=target_dir2)
+            target_reg1 = Registry(registry_dir=target_dir1, version_objects=True)
+            target_reg2 = Registry(registry_dir=target_dir2, version_objects=True)
 
             # Transfer using download method (without specifying target_version)
             target_reg1.download(source_reg, "test:config", version="1.0.0")
@@ -1558,7 +1559,7 @@ def test_update_with_registry(registry):
     """Test updating a registry with objects from another registry."""
     # Create source registry with multiple objects
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create and save multiple objects to source registry
         config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
@@ -1585,7 +1586,7 @@ def test_update_with_existing_objects(registry):
     """Test that updating with existing objects raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir)
+        source_reg = Registry(registry_dir=source_dir, version_objects=True)
 
         # Create and save object to source registry with multiple versions
         source_reg.save("test:int", 1, version="1.0.0")
@@ -1769,12 +1770,12 @@ def test_lock_timeout_error(registry):
         with patch.object(registry.backend, "acquire_lock", return_value=False):
             # Test exclusive lock timeout
             with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
-                with registry._get_object_lock("test_key", "1.0"):
+                with registry.get_lock("test_key", "1.0"):
                     pass
 
             # Test shared lock timeout
             with pytest.raises(TimeoutError, match="Timeout of 0.1 seconds reached"):
-                with registry._get_object_lock("test_key", "1.0", shared=True):
+                with registry.get_lock("test_key", "1.0", shared=True):
                     pass
     finally:
         # Restore original timeout
@@ -1789,7 +1790,7 @@ def test_lock_success(registry):
         patch.object(registry.backend, "release_lock", return_value=True) as mock_release,
     ):
         # Test exclusive lock
-        with registry._get_object_lock("test_key", "1.0"):
+        with registry.get_lock("test_key", "1.0"):
             mock_acquire.assert_called_once()
             assert not mock_acquire.call_args[1].get("shared", False)
 
@@ -1801,7 +1802,7 @@ def test_lock_success(registry):
         mock_release.reset_mock()
 
         # Test shared lock
-        with registry._get_object_lock("test_key", "1.0", shared=True):
+        with registry.get_lock("test_key", "1.0", shared=True):
             mock_acquire.assert_called_once()
             assert mock_acquire.call_args[1].get("shared", False)
 
@@ -1814,7 +1815,7 @@ def test_lock_timeout_value(registry):
     # Mock the backend's acquire_lock method
     with patch.object(registry.backend, "acquire_lock", return_value=True) as mock_acquire:
         # Test with default timeout
-        with registry._get_object_lock("test_key", "1.0"):
+        with registry.get_lock("test_key", "1.0"):
             mock_acquire.assert_called_once()
             # timeout is the third positional argument (index 2)
             assert mock_acquire.call_args[0][2] == registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
@@ -1826,7 +1827,7 @@ def test_lock_timeout_value(registry):
         original_timeout = registry.config.get("MINDTRACE_LOCK_TIMEOUT", 5)
         try:
             registry.config["MINDTRACE_LOCK_TIMEOUT"] = 60
-            with registry._get_object_lock("test_key", "1.0"):
+            with registry.get_lock("test_key", "1.0"):
                 mock_acquire.assert_called_once()
                 # timeout is the third positional argument (index 2)
                 assert mock_acquire.call_args[0][2] == 60
@@ -2009,3 +2010,277 @@ def test_register_materializer_accepts_materializer_class_type(registry):
     expected_key = f"{DummyClass.__module__}.{DummyClass.__name__}"
     expected_value = f"{DummyMaterializer.__module__}.{DummyMaterializer.__name__}"
     assert registry.registered_materializer(expected_key) == expected_value
+
+
+def test_version_objects_conflict_error(registry):
+    """Test version objects conflict error."""
+    # Create a registry with version_objects=True
+    _ = Registry(registry_dir=str(registry.backend.uri), version_objects=True)
+
+    # Try to create another registry with version_objects=False in the same directory
+    with pytest.raises(ValueError, match="Version objects conflict"):
+        Registry(registry_dir=str(registry.backend.uri), version_objects=False)
+
+
+def test_get_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.download = lambda remote_path, local_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = '{"version_objects": true, "materializers": {}}'
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                result = registry._get_registry_metadata()
+                assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_response = type("MockResponse", (), {})()
+    mock_response.data = b'{"version_objects": true, "materializers": {}}'
+    mock_client.get_object = lambda bucket, object_name: mock_response
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    result = registry._get_registry_metadata()
+    assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_local_backend(registry, monkeypatch):
+    """Test _get_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.read.return_value = '{"version_objects": true, "materializers": {}}'
+
+        result = registry._get_registry_metadata()
+        assert result == {"version_objects": True, "materializers": {}}
+
+
+def test_get_registry_metadata_fallback(registry, monkeypatch):
+    """Test _get_registry_metadata fallback."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=FileNotFoundError):
+        result = registry._get_registry_metadata()
+        assert result == {}
+
+
+def test_get_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test _get_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        result = registry._get_registry_metadata()
+        assert result == {}
+
+
+def test_save_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.upload = lambda local_path, remote_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("tempfile.NamedTemporaryFile") as mock_temp:
+        mock_file = mock_temp.return_value.__enter__.return_value
+        mock_file.name = "/tmp/test.json"
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_client.put_object = lambda bucket, object_name, data, length, content_type: None
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_local_backend(registry, monkeypatch):
+    """Test _save_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.write = lambda data: None
+
+        registry._save_registry_metadata({"version_objects": True})
+
+
+def test_save_registry_metadata_fallback(registry, monkeypatch):
+    """Test _save_registry_metadata fallback."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        # Mock register_materializer to avoid actual registration
+        with patch.object(registry.backend, "register_materializer"):
+            registry._save_registry_metadata({"materializers": {"test": "materializer"}})
+
+
+def test_save_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test _save_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        # Mock register_materializer to avoid actual registration
+        with patch.object(registry.backend, "register_materializer"):
+            registry._save_registry_metadata({"materializers": {"test": "materializer"}})
+
+
+def test_initialize_version_objects_exception_handling(temp_registry_dir, monkeypatch):
+    """Test _initialize_version_objects exception handler when metadata can't be read (lines 283-286)."""
+    # Create a fresh registry that hasn't been initialized yet
+    # We'll patch _get_registry_metadata to raise an exception during initialization
+    save_calls = []
+
+    def failing_get_metadata(self):
+        raise OSError("Cannot read metadata file")
+
+    def mock_save_metadata(self, metadata):
+        save_calls.append(metadata)
+        # Don't actually save to avoid side effects
+
+    # Patch before creating registry
+    monkeypatch.setattr(Registry, "_get_registry_metadata", failing_get_metadata)
+    monkeypatch.setattr(Registry, "_save_registry_metadata", mock_save_metadata)
+
+    # Create registry - should handle exception and save the provided value
+    registry = Registry(registry_dir=temp_registry_dir, version_objects=False)
+
+    # Verify that save was called (exception handler saved the value)
+    assert len(save_calls) > 0
+    # Verify the registry uses the provided value
+    assert registry.version_objects is False
+
+
+def test_get_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _get_registry_metadata fallback when backend doesn't have _metadata_path (line 329)."""
+
+    # Create a mock backend without _metadata_path
+    class MockBackend:
+        def registered_materializers(self):
+            return {"test.Object": "TestMaterializer"}
+
+    registry.backend = MockBackend()
+
+    # Should return fallback with just materializers
+    result = registry._get_registry_metadata()
+    assert result == {"materializers": {"test.Object": "TestMaterializer"}}
+
+
+def test_save_registry_metadata_fallback_no_metadata_path(registry, monkeypatch):
+    """Test _save_registry_metadata fallback when backend doesn't have _metadata_path (lines 382-384)."""
+
+    # Create a mock backend without _metadata_path but with register_materializer
+    class MockBackend:
+        def registered_materializers(self):
+            return {}
+
+        def register_materializer(self, object_class, materializer_class):
+            # Track registrations
+            if not hasattr(self, "_materializers"):
+                self._materializers = {}
+            self._materializers[object_class] = materializer_class
+
+    mock_backend = MockBackend()
+    registry.backend = mock_backend
+
+    # Save metadata with materializers
+    registry._save_registry_metadata({"materializers": {"test.Object": "TestMaterializer"}})
+
+    # Verify register_materializer was called
+    assert hasattr(mock_backend, "_materializers")
+    assert mock_backend._materializers["test.Object"] == "TestMaterializer"
+
+
+def test_clear_registry_metadata_gcp_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with GCP backend."""
+    # Mock the backend to have gcs attribute
+    mock_gcs = type("MockGCS", (), {})()
+    mock_gcs.upload = lambda local_path, remote_path: None
+
+    registry.backend.gcs = mock_gcs
+
+    # Mock the file operations
+    with patch("tempfile.NamedTemporaryFile") as mock_temp:
+        mock_file = mock_temp.return_value.__enter__.return_value
+        mock_file.name = "/tmp/test.json"
+
+        with patch("os.path.exists", return_value=True):
+            with patch("os.unlink"):
+                registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_minio_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with MinIO backend."""
+    # Mock the backend to have client attribute
+    mock_client = type("MockClient", (), {})()
+    mock_client.put_object = lambda bucket, object_name, data, length, content_type: None
+
+    registry.backend.client = mock_client
+    registry.backend.bucket = "test-bucket"
+
+    registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_local_backend(registry, monkeypatch):
+    """Test clear_registry_metadata with local backend."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations
+    with patch("builtins.open", create=True) as mock_open:
+        mock_file = mock_open.return_value.__enter__.return_value
+        mock_file.write = lambda data: None
+
+        registry.clear(clear_registry_metadata=True)
+
+
+def test_clear_registry_metadata_exception_handling(registry, monkeypatch):
+    """Test clear_registry_metadata exception handling."""
+    # Mock the backend to not have gcs or client attributes
+    delattr(registry.backend, "gcs", None) if hasattr(registry.backend, "gcs") else None
+    delattr(registry.backend, "client", None) if hasattr(registry.backend, "client") else None
+
+    # Mock the file operations to raise an exception
+    with patch("builtins.open", side_effect=Exception("Test error")):
+        registry.clear(clear_registry_metadata=True)
