@@ -7,11 +7,11 @@ A command-line interface for managing Mindtrace hardware services with process l
 ### Core Commands
 
 **Camera Services:**
-- **`mindtrace-hw camera start`** - Start camera API service and configurator web app
-- **`mindtrace-hw camera stop`** - Stop camera services gracefully
-- **`mindtrace-hw camera status`** - Show detailed camera service status with URLs
+- **`mindtrace-hw camera start`** - Start camera API service
+- **`mindtrace-hw camera stop`** - Stop camera API service gracefully
+- **`mindtrace-hw camera status`** - Show detailed camera API status with URLs
 - **`mindtrace-hw camera test`** - Run camera stress tests and validation scenarios
-- **`mindtrace-hw camera logs`** - View camera service logs and guidance
+- **`mindtrace-hw camera logs`** - View camera API service logs and guidance
 
 **Stereo Camera Services:**
 - **`mindtrace-hw stereo start`** - Start stereo camera API service
@@ -34,7 +34,6 @@ A command-line interface for managing Mindtrace hardware services with process l
 
 - **Intelligent Process Management** - Tracks service PIDs with graceful SIGTERM → SIGKILL fallback
 - **Port Availability Checking** - Validates ports before starting services
-- **Auto Browser Integration** - Automatically opens configurator interface
 - **Service Health Monitoring** - Real-time uptime, memory usage, and availability checks
 - **Mock Camera Support** - Include virtual cameras for testing and development
 - **Flexible Configuration** - Environment variable support with CLI overrides
@@ -45,13 +44,16 @@ A command-line interface for managing Mindtrace hardware services with process l
 
 **Camera Services:**
 ```bash
-# Start camera services (API + web configurator)
+# Start camera API service
 mindtrace-hw camera start
+
+# Start with API docs opened in browser
+mindtrace-hw camera start --open-docs
 
 # Check detailed status with access URLs
 mindtrace-hw camera status
 
-# Stop all camera services gracefully
+# Stop camera API service gracefully
 mindtrace-hw camera stop
 ```
 
@@ -85,19 +87,13 @@ mindtrace-hw plc stop
 ### Advanced Configuration
 ```bash
 # Custom host and port configuration
-mindtrace-hw camera start \
-  --api-host 192.168.1.100 \
-  --api-port 8080 \
-  --app-port 3001
-
-# API only mode (headless, no web interface)
-mindtrace-hw camera start --api-only
+mindtrace-hw camera start --api-host 192.168.1.100 --api-port 8080
 
 # Include mock cameras for development and testing
 mindtrace-hw camera start --include-mocks
 
 # Bind to all interfaces for network access
-mindtrace-hw camera start --api-host 0.0.0.0 --app-host 0.0.0.0
+mindtrace-hw camera start --api-host 0.0.0.0
 ```
 
 ### Service Management
@@ -153,7 +149,6 @@ cli/
 
 ### Service Integration Architecture
 - **Camera API**: Managed via `mindtrace.hardware.api.cameras.launcher`
-- **Camera Configurator**: Reflex app from `apps/camera_configurator/`
 - **Stereo Camera API**: Managed via `mindtrace.hardware.api.stereo_cameras.launcher`
 - **PLC API**: Managed via `mindtrace.hardware.api.plcs.launcher`
 - **Process Coordination**: PID tracking in `~/.mindtrace/hw_services.json`
@@ -171,27 +166,22 @@ cli/
 ```python
 # Service startup sequence
 1. Check existing service status
-2. Validate port availability  
+2. Validate port availability
 3. Start API service with specified configuration
 4. Wait for API health check (10s timeout)
-5. Start configurator app (if not --api-only)
-6. Wait for app health check (15s timeout)
-7. Open browser automatically
-8. Monitor service health continuously
+5. Monitor service health continuously
 ```
 
 ### Persistent State Management
 - **PID Storage**: `~/.mindtrace/hw_services.json`
 - **Graceful Shutdown**: SIGTERM with 5s timeout, then SIGKILL
 - **Automatic Cleanup**: Dead process detection and cleanup
-- **Service Dependencies**: Configurator depends on API, shutdown order respected
 
 ### Health Monitoring
 ```bash
 # Detailed status output includes:
 Service Name    | Status  | PID   | Host:Port        | Uptime | Memory
 camera_api      | Running | 12345 | localhost:8002   | 2h 15m | 45.2MB
-configurator    | Running | 12346 | localhost:3000   | 2h 14m | 123.4MB
 ```
 
 ## Installation
@@ -226,11 +216,6 @@ Configure services using standardized environment variables:
 - `CAMERA_API_PORT` - API service port (default: `8002`)
 - `CAMERA_API_URL` - Full API URL (default: `http://localhost:8002`)
 
-### Camera UI Service Configuration
-- `CAMERA_UI_HOST` - UI service host (default: `localhost`)
-- `CAMERA_UI_FRONTEND_PORT` - Frontend port (default: `3000`)
-- `CAMERA_UI_BACKEND_PORT` - Reflex backend port (default: `8000`)
-
 ### Stereo Camera API Service Configuration
 - `STEREO_CAMERA_API_HOST` - API service host (default: `localhost`)
 - `STEREO_CAMERA_API_PORT` - API service port (default: `8004`)
@@ -246,9 +231,6 @@ Configure services using standardized environment variables:
 # Network accessible configuration
 export CAMERA_API_HOST="0.0.0.0"
 export CAMERA_API_PORT="8080"
-export CAMERA_UI_HOST="0.0.0.0" 
-export CAMERA_UI_FRONTEND_PORT="3001"
-export CAMERA_UI_BACKEND_PORT="8005"
 
 # Start services with environment configuration
 mindtrace-hw camera start
@@ -262,6 +244,89 @@ mindtrace-hw camera start --api-port 9000
 ```
 
 ## Command Reference
+
+### Camera Commands
+
+#### camera start
+```bash
+mindtrace-hw camera start [OPTIONS]
+
+Options:
+  --api-host TEXT     API service host [default: localhost]
+  --api-port INTEGER  API service port [default: 8002]
+  --include-mocks     Include mock cameras for testing
+  --open-docs         Open API documentation in browser
+
+Examples:
+  # Start with default settings
+  mindtrace-hw camera start
+
+  # Start on custom host/port
+  mindtrace-hw camera start --api-host 0.0.0.0 --api-port 8080
+
+  # Start with mock cameras and open docs
+  mindtrace-hw camera start --include-mocks --open-docs
+
+Access URLs:
+  - API: http://localhost:8002
+  - Swagger UI: http://localhost:8002/docs
+  - ReDoc: http://localhost:8002/redoc
+```
+
+#### camera stop
+```bash
+mindtrace-hw camera stop
+
+# Gracefully stops camera API service
+```
+
+#### camera status
+```bash
+mindtrace-hw camera status
+
+# Shows detailed status:
+# - Service running status
+# - Process ID and resource usage
+# - Host:Port and access URLs
+# - Service uptime
+```
+
+#### camera logs
+```bash
+mindtrace-hw camera logs
+
+# Provides guidance on log locations:
+# - Console output for API service
+```
+
+#### camera test
+```bash
+mindtrace-hw camera test [OPTIONS]
+
+Options:
+  --config, -c TEXT    Test configuration to run (e.g., smoke_test)
+  --list              List available test configurations
+  --api-host TEXT     Camera API host [default: localhost]
+  --api-port INTEGER  Camera API port [default: 8002]
+  -v, --verbose       Enable verbose output
+
+Available Test Scenarios:
+  smoke_test       - Quick validation of basic camera operations
+  capture_stress   - High-frequency capture stress testing
+  multi_camera     - Concurrent multi-camera operations
+  stream_stress    - Streaming stability and cleanup validation
+  chaos_test       - Edge case discovery through aggressive operations
+  soak_test        - Long-duration stability and resource leak detection
+
+Exit Codes:
+  0 - Test passed (success rate meets expected threshold)
+  1 - Configuration error or test not found
+  2 - Test failed (success rate below expected threshold)
+
+📚 **Detailed Documentation:**
+- [Camera Test Suite](../test_suite/cameras/README.md) - Complete guide to camera testing, YAML configuration, parameters, and creating custom tests
+- [Test Suite Framework](../test_suite/README.md) - Core framework architecture and extension guide
+```
 
 ### Stereo Camera Commands
 
@@ -365,80 +430,6 @@ mindtrace-hw plc logs
 # - Console output for API service
 ```
 
-### Camera Commands
-
-#### camera start
-```bash
-mindtrace-hw camera start [OPTIONS]
-
-Options:
-  --api-host TEXT     API service host [default: localhost]
-  --api-port INTEGER  API service port [default: 8002]
-  --app-host TEXT     Configurator app host [default: localhost]
-  --app-port INTEGER  Configurator app port [default: 3000]
-  --backend-port INTEGER  Reflex backend port [default: 8000]
-  --api-only         Start only API service (no web interface)
-  --include-mocks    Include mock cameras for testing
-```
-
-### camera stop
-```bash
-mindtrace-hw camera stop
-
-# Gracefully stops services in dependency order:
-# 1. Camera Configurator (if running)
-# 2. Camera API (if running)
-```
-
-### camera status
-```bash
-mindtrace-hw camera status
-
-# Shows detailed status table with:
-# - Service name and running status
-# - Process ID and resource usage
-# - Host:Port and access URLs
-# - Service uptime
-```
-
-### camera logs
-```bash
-mindtrace-hw camera logs
-
-# Provides guidance on log locations:
-# - Console output for API service
-# - App log files for configurator
-```
-
-### camera test
-```bash
-mindtrace-hw camera test [OPTIONS]
-
-Options:
-  --config, -c TEXT    Test configuration to run (e.g., smoke_test)
-  --list              List available test configurations
-  --api-host TEXT     Camera API host [default: localhost]
-  --api-port INTEGER  Camera API port [default: 8002]
-  -v, --verbose       Enable verbose output
-
-Available Test Scenarios:
-  smoke_test       - Quick validation of basic camera operations
-  capture_stress   - High-frequency capture stress testing
-  multi_camera     - Concurrent multi-camera operations
-  stream_stress    - Streaming stability and cleanup validation
-  chaos_test       - Edge case discovery through aggressive operations
-  soak_test        - Long-duration stability and resource leak detection
-
-Exit Codes:
-  0 - Test passed (success rate meets expected threshold)
-  1 - Configuration error or test not found
-  2 - Test failed (success rate below expected threshold)
-
-📚 **Detailed Documentation:**
-- [Camera Test Suite](../test_suite/cameras/README.md) - Complete guide to camera testing, YAML configuration, parameters, and creating custom tests
-- [Test Suite Framework](../test_suite/README.md) - Core framework architecture and extension guide
-```
-
 ## Troubleshooting
 
 ### Common Issues
@@ -465,10 +456,8 @@ mindtrace-hw camera start
 #### Service Health Check Timeouts
 ```bash
 # API timeout (10s): Usually indicates camera backend issues
-# App timeout (15s): Usually indicates Reflex compilation issues
-
-# Check with API only mode first
-mindtrace-hw camera start --api-only
+# Check logs for more details
+mindtrace-hw camera logs
 ```
 
 ### Process Management Issues
