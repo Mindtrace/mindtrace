@@ -8,7 +8,7 @@ from urllib3.util.url import parse_url
 
 from mindtrace.services import generate_connection_manager
 from mindtrace.services.core.types import EndpointsOutput, HeartbeatOutput, PIDFileOutput, ServerIDOutput, StatusOutput
-from mindtrace.services.sample.echo_service import EchoInput, EchoOutput, EchoService
+from mindtrace.services.samples.echo_service import EchoInput, EchoOutput, EchoService
 
 
 class TestServiceIntegration:

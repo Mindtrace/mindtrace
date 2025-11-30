@@ -1,0 +1,59 @@
+# Promtail Configuration for Mindtrace Logging
+# This file tells Promtail how to collect and process your application logs
+
+# Promtail Server Configuration
+server:
+  http_listen_port: 9080  # Promtail metrics endpoint (optional)
+  grpc_listen_port: 0     # Disable gRPC (not needed for this setup)
+
+# Position Tracking
+# Promtail remembers where it left off reading files to avoid duplicates
+positions:
+  filename: /tmp/positions.yaml  # Stores current position in each log file
+
+# Loki Client Configuration  
+# Where to send the collected logs
+clients:
+  - url: http://loki:3100/loki/api/v1/push  # Loki API endpoint
+
+# Log Collection Jobs
+# Each job defines what logs to collect and how to process them
+scrape_configs:
+  # Job 1: Collect Structured Logs (JSON format)
+  # These are logs from your Python application using structlog
+  - job_name: mindtrace-structlogs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: mindtrace-structlogs  # Label for filtering in Grafana
+          # Path to your structured log files (mounted from host)
+          __path__: /var/log/mindtrace/structlogs/modules/*.log
+    pipeline_stages:
+      # Parse JSON log line directly (logs are pure JSON)
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            event: event
+            service: service              # legacy, if present
+            service_name: service_name    # preferred
+            operation: operation
+            request_id: request_id
+            timestamp: timestamp
+
+      # Promote selected fields to labels
+      - labels:
+          level:
+          logger:
+          event:
+          service:
+          service_name:
+          operation:
+          request_id:
+
+      # Use the embedded timestamp
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+          action_on_failure: skip
+

@@ -1,0 +1,69 @@
+name: Build and Publish Docs
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+  release:
+    types: [published]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref}}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+  pull-requests: write
+
+jobs:
+  deploy:
+    name: Publish Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Install uv and set Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+        with:
+          python-version: ${{ matrix.python-version }}
+          activate-environment: true
+
+      - name: Install dependencies
+        run: |
+          uv sync --group docs
+
+      - name: Configure git for github-actions
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy Development Docs
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
+        run: |
+          uv run mike deploy --push dev
+
+      - name: Set Default to Dev
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
+        run: |
+          uv run mike set-default dev --push
+
+      - name: Deploy Release Docs
+        if: github.event_name == 'release' && github.event.action == 'published'
+        run: |
+          latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
+          uv run mike deploy --push --update-aliases $latest_tag latest
+
+      - name: Deploy Main Docs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          uv run mike deploy --push main

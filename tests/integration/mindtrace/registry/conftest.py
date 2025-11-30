@@ -30,8 +30,8 @@ def minio_client():
 
 
 @pytest.fixture
-def test_bucket(minio_client) -> Generator[str, None, None]:
-    """Create a temporary bucket for testing."""
+def minio_test_bucket(minio_client) -> Generator[str, None, None]:
+    """Create a temporary MinIO bucket for testing."""
     bucket_name = f"test-bucket-{uuid.uuid4()}"
     minio_client.make_bucket(bucket_name)
     yield bucket_name
@@ -45,8 +45,8 @@ def test_bucket(minio_client) -> Generator[str, None, None]:
 
 
 @pytest.fixture
-def temp_dir() -> Generator[Path, None, None]:
-    """Create a temporary directory for testing."""
+def minio_temp_dir() -> Generator[Path, None, None]:
+    """Create a temporary directory for MinIO testing."""
     temp_dir = Path(CoreConfig()["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]) / f"test_dir_{uuid.uuid4()}"
     temp_dir.mkdir(parents=True, exist_ok=True)
     yield temp_dir
@@ -54,25 +54,25 @@ def temp_dir() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def backend(temp_dir, test_bucket):
+def minio_backend(minio_temp_dir, minio_test_bucket):
     """Create a MinioRegistryBackend instance with a test bucket."""
     endpoint = os.environ.get("MINDTRACE_MINIO__MINIO_ENDPOINT", "localhost:9000")
     access_key = os.environ.get("MINDTRACE_MINIO__MINIO_ACCESS_KEY", "minioadmin")
     secret_key = os.environ.get("MINDTRACE_MINIO__MINIO_SECRET_KEY", "minioadmin")
     secure = os.environ.get("MINIO_SECURE", "0") == "1"
     return MinioRegistryBackend(
-        uri=str(temp_dir),
+        uri=str(minio_temp_dir),
         endpoint=endpoint,
         access_key=access_key,
         secret_key=secret_key,
-        bucket=test_bucket,
+        bucket=minio_test_bucket,
         secure=secure,
     )
 
 
 @pytest.fixture
-def minio_registry(backend):
-    return Registry(backend=backend)
+def minio_registry(minio_backend):
+    return Registry(backend=minio_backend)
 
 
 @pytest.fixture

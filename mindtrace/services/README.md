@@ -9,7 +9,7 @@
 [Architecture](#architecture)<br>
 [Auto-generation for Connection Managers](#auto-generation-for-connection-managers)<br>
 [Usage Example](#usage-example)<br>
-[Testing & Coverage](#testing--coverage)<br>
+[Testing & Coverage](#testing-and-coverage)<br>
 [API Reference](#api-reference)<br>
 [MCP Integration: Exposing Service Endpoints as Tools](#mcp-integration-exposing-service-endpoints-as-tools)<br>
 [Remote MCP Server Usage with Cursor](#remote-mcp-server-usage-with-cursor)
@@ -69,7 +69,7 @@ cm.status()  # now generated as a method
 
 ## Usage Example
 
-See [`mindtrace/services/sample/echo_service.py`](./mindtrace/services/sample/echo_service.py) for a full example. Basic usage:
+See [`mindtrace/services/sample/echo_service.py`](https://github.com/Mindtrace/mindtrace/blob/dev/mindtrace/services/sample/echo_service.py) for a full example. Basic usage:
 
 ```python
 from mindtrace.services import Service
@@ -115,7 +115,7 @@ class EchoService(Service):
         return EchoOutput(echoed=payload.message)
 ```
 
-## Testing & Coverage
+## Testing and Coverage
 
 The test runner supports unit, integration, and stress tests:
 
@@ -181,9 +181,9 @@ The Model Context Protocol (MCP) is a protocol for exposing service functionalit
   This makes the `echo` function available both as a REST endpoint and as an MCP tool.
 
 ### Example: EchoService with MCP
-See [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py):
+See [`mindtrace/services/sample/echo_mcp.py`](https://github.com/Mindtrace/mindtrace/blob/dev/mindtrace/services/sample/echo_mcp.py):
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 
 # Launch the service
 connection_manager = EchoService.launch(port=8080, host="localhost", wait_for_launch=True, timeout=30)
@@ -225,7 +225,7 @@ Each `Service` subclass automatically receives a class-level `mcp` helper (MCPCl
 Connect to a running service:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -243,7 +243,7 @@ asyncio.run(main())
 Launch a new service and get a connected client:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -265,7 +265,7 @@ asyncio.run(main())
 Get the MCP client from a connection manager instance:
 
 ```python
-from mindtrace.services.sample.echo_mcp import EchoService
+from mindtrace.services.samples.echo_mcp import EchoService
 import asyncio
 
 async def main():
@@ -286,9 +286,9 @@ asyncio.run(main())
 - The MCP client allows you to list and call tools programmatically.
 
 For trial purposes, see the sample files:
-- [`mindtrace/services/sample/echo_mcp.py`](./mindtrace/services/sample/echo_mcp.py)
-- [`samples/services/echo_mcp_service.py`](../../samples/services/echo_mcp_service.py)
-- [`samples/services/mcp/mcp_client.py`](../../samples/services/mcp/mcp_client.py)
+- [`mindtrace/services/sample/echo_mcp.py`](https://github.com/Mindtrace/mindtrace/blob/dev/mindtrace/services/sample/echo_mcp.py)
+- [`samples/services/echo_mcp_service.py`](https://github.com/Mindtrace/mindtrace/blob/dev/samples/services/echo_mcp_service.py)
+- [`samples/services/mcp/mcp_client.py`](https://github.com/Mindtrace/mindtrace/blob/dev/samples/services/mcp/mcp_client.py)
 
 
 ## Remote MCP Server Usage with Cursor
@@ -304,7 +304,7 @@ Follow these steps to set up and use a remote MCP server with Cursor:
    Start your Mindtrace service with MCP enabled. For example, to launch the EchoService:
 
    ```python
-   from mindtrace.services.sample.echo_mcp import EchoService
+   from mindtrace.services.samples.echo_mcp import EchoService
    connection_manager = EchoService.launch(port=8080, host="localhost")
    ```
 

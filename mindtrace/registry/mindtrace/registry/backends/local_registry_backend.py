@@ -34,8 +34,11 @@ class LocalRegistryBackend(RegistryBackend):
 
         Args:
             uri (str | Path): The base directory path where all object files and metadata will be stored.
+                              Supports "file://" URI scheme which will be automatically stripped.
             **kwargs: Additional keyword arguments for the RegistryBackend.
         """
+        if isinstance(uri, str) and uri.startswith("file://"):
+            uri = uri[len("file://") :]
         super().__init__(uri=uri, **kwargs)
         self._uri = Path(uri).expanduser().resolve()
         self._uri.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,29 @@ class LocalRegistryBackend(RegistryBackend):
             Storage key for the object version.
         """
         return f"{name}/{version}"
+
+    def _object_metadata_path(self, name: str, version: str) -> Path:
+        """Generate the metadata file path for an object version.
+
+        Args:
+            name: Name of the object.
+            version: Version string.
+
+        Returns:
+            Metadata file path (e.g., Path("_meta_object_name@1.0.0.yaml")).
+        """
+        return self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+
+    def _object_metadata_prefix(self, name: str) -> str:
+        """Generate the metadata file prefix for listing versions of an object.
+
+        Args:
+            name: Name of the object.
+
+        Returns:
+            Metadata file prefix (e.g., "_meta_object_name@").
+        """
+        return f"_meta_{name.replace(':', '_')}@"
 
     def push(self, name: str, version: str, local_path: str | Path):
         """Upload a local directory to the remote backend.
@@ -143,7 +169,7 @@ class LocalRegistryBackend(RegistryBackend):
             metadata: Metadata to save.
         """
         self.validate_object_name(name)
-        meta_path = self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
         with open(meta_path, "w") as f:
             yaml.safe_dump(metadata, f)
@@ -158,7 +184,7 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             dict: The loaded metadata.
         """
-        meta_path = self.uri / f"_meta_{name.replace(':', '_')}@{version}.yaml"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
         with open(meta_path, "r") as f:
             metadata = yaml.safe_load(f)
@@ -171,14 +197,14 @@ class LocalRegistryBackend(RegistryBackend):
         self.logger.debug(f"Loaded metadata: {metadata}")
         return metadata
 
-    def delete_metadata(self, model_name: str, version: str):
+    def delete_metadata(self, name: str, version: str):
         """Delete metadata for a object version.
 
         Args:
-            model_name: Name of the object.
+            name: Name of the object.
             version: Version of the object.
         """
-        meta_path = self.uri / f"_meta_{model_name.replace(':', '_')}@{version}.yaml"
+        meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Deleting metadata file: {meta_path}")
         if meta_path.exists():
             meta_path.unlink()
@@ -211,7 +237,7 @@ class LocalRegistryBackend(RegistryBackend):
             Sorted list of version strings available for the object
         """
         # Build the prefix used in metadata filenames for this object.
-        prefix = f"_meta_{name.replace(':', '_')}@"
+        prefix = self._object_metadata_prefix(name)
         versions = []
 
         # Search for metadata files matching the prefix pattern in the base directory.
@@ -224,6 +250,9 @@ class LocalRegistryBackend(RegistryBackend):
     def has_object(self, name: str, version: str) -> bool:
         """Check if a specific object version exists in the backend.
 
+        This method uses direct existence checks instead of listing all objects
+        for better performance, especially with large registries.
+
         Args:
             name: Name of the object.
             version: Version string.
@@ -231,10 +260,9 @@ class LocalRegistryBackend(RegistryBackend):
         Returns:
             True if the object version exists, False otherwise.
         """
-        if name not in self.list_objects():
-            return False
-        else:
-            return version in self.list_versions(name)
+        # Check if metadata file exists directly (much faster than listing all objects)
+        meta_path = self._object_metadata_path(name, version)
+        return meta_path.exists()
 
     def register_materializer(self, object_class: str, materializer_class: str):
         """Register a materializer for an object class.
@@ -562,8 +590,8 @@ class LocalRegistryBackend(RegistryBackend):
         target_path = self._full_path(self._object_key(target_name, target_version))
 
         # Get the source and target metadata paths
-        source_meta_path = self.uri / f"_meta_{source_name.replace(':', '_')}@{source_version}.yaml"
-        target_meta_path = self.uri / f"_meta_{target_name.replace(':', '_')}@{target_version}.yaml"
+        source_meta_path = self._object_metadata_path(source_name, source_version)
+        target_meta_path = self._object_metadata_path(target_name, target_version)
 
         self.logger.debug(f"Overwriting {target_name}@{target_version} with {source_name}@{source_version}")
 

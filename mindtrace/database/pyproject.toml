@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-database"
-version = "0.4.0"
+version = "0.5.0"
 description = "Database functionality for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -17,6 +17,8 @@ dependencies = [
     "redis>=4.0.0",
     "redis-om>=0.3.5",
     "motor>=3.3.0",
+    "pymongo>=4.14.0",
+    "mindtrace-registry",
 ]
 
 [project.urls]
@@ -26,4 +28,7 @@ Repository = "https://github.com/mindtrace/mindtrace/blob/main/mindtrace/databas
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.uv.sources]
+mindtrace-registry = { workspace = true }
 
