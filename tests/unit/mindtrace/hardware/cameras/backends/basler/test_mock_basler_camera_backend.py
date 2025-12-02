@@ -590,7 +590,7 @@ class TestMockBaslerWhiteBalance:
         # Test setting different white balance modes
         wb_modes = await camera.get_wb_range()
         assert isinstance(wb_modes, list)
-        assert "auto" in wb_modes
+        assert "off" in wb_modes
 
         for mode in wb_modes:
             await camera.set_auto_wb_once(mode)
@@ -671,7 +671,8 @@ class TestMockBaslerPerformanceAndTiming:
     @pytest.mark.asyncio
     async def test_capture_timing_simulation(self):
         """Test that capture timing is simulated based on exposure."""
-        camera = MockBaslerCameraBackend("test_cam")
+        # Explicitly disable fast_mode for this timing test
+        camera = MockBaslerCameraBackend("test_cam", fast_mode=False)
         await camera.initialize()
 
         # Set very short exposure

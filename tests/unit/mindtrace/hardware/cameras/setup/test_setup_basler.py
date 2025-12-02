@@ -120,49 +120,51 @@ class TestSetupFunctions:
         """Test that uninstall_pylon_sdk function exists and is callable."""
         assert callable(uninstall_pylon_sdk)
 
+    @patch("sys.exit")
     @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
-    def test_install_function_creates_installer(self, mock_installer_class):
+    def test_install_function_creates_installer(self, mock_installer_class, mock_exit):
         """Test that install function creates and uses installer."""
         mock_installer = Mock()
         mock_installer.install.return_value = True
         mock_installer_class.return_value = mock_installer
 
-        result = install_pylon_sdk()
+        install_pylon_sdk([])
 
         # Should have created installer and called install
         mock_installer_class.assert_called_once()
         mock_installer.install.assert_called_once()
-        assert result is True
+        mock_exit.assert_called_once_with(0)
 
+    @patch("sys.exit")
     @patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller")
-    def test_uninstall_function_creates_installer(self, mock_installer_class):
+    def test_uninstall_function_creates_installer(self, mock_installer_class, mock_exit):
         """Test that uninstall function creates and uses installer."""
         mock_installer = Mock()
         mock_installer.uninstall.return_value = True
         mock_installer_class.return_value = mock_installer
 
-        result = uninstall_pylon_sdk()
+        uninstall_pylon_sdk([])
 
         # Should have created installer and called uninstall
         mock_installer_class.assert_called_once()
         mock_installer.uninstall.assert_called_once()
-        assert result is True
+        mock_exit.assert_called_once_with(0)
 
-    def test_install_function_default_parameters(self):
+    @patch("sys.exit")
+    def test_install_function_default_parameters(self, mock_exit):
         """Test install function with default parameters."""
         # Should accept version parameter
-        try:
-            # Mock the installer to avoid actual installation
-            with patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller") as mock_class:
-                mock_installer = Mock()
-                mock_installer.install.return_value = True
-                mock_class.return_value = mock_installer
+        # Mock the installer to avoid actual installation
+        with patch("mindtrace.hardware.cameras.setup.setup_basler.PylonSDKInstaller") as mock_class:
+            mock_installer = Mock()
+            mock_installer.install.return_value = True
+            mock_class.return_value = mock_installer
 
-                result = install_pylon_sdk("v1.0-test")
-                assert isinstance(result, bool)
-        except Exception as e:
-            # Function should at least be callable with parameters
-            assert "argument" not in str(e).lower()
+            install_pylon_sdk(["--version", "v1.0-test"])
+
+            # Should have called installer with custom version
+            mock_class.assert_called_once_with("v1.0-test")
+            mock_exit.assert_called_once_with(0)
 
     @patch("platform.system")
     def test_platform_detection_linux(self, mock_platform):
