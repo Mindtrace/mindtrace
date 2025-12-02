@@ -1,0 +1,16 @@
+node_modules
+.next
+out
+build
+dist
+coverage
+.cypress
+cypress/videos
+cypress/screenshots
+.git
+.gitignore
+README.md
+.env*.local
+.DS_Store
+*.log
+
