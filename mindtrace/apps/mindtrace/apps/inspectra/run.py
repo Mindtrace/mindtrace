@@ -1,18 +1,16 @@
 from mindtrace.apps.inspectra.inspectra import InspectraService, ConfigSchema
-
+from mindtrace.apps.inspectra.app.api.core.settings import settings
 
 def main() -> None:
-    # TODO: Change these config values to load from environment or config file
     config = ConfigSchema(
-        name="inspectra",
-        description="Inspectra Platform",
-        version="1.0.0",
-        author="Inspectra",
-        author_email="inspectra@inspectra.com",
-        url="https://inspectra.com",
+        name=settings.service_name,
+        description=settings.service_description,
+        version=settings.service_version,
+        author=settings.service_author,
+        author_email=settings.service_author_email,
+        url=settings.service_url,
     )
 
-    # Launch the service via the Mindtrace Service framework
     InspectraService.launch(
         "0.0.0.0:8000",
         block=True,
