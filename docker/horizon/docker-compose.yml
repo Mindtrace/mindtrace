@@ -1,0 +1,84 @@
+# Horizon Service Docker Compose
+# Provides Horizon service with MongoDB backend
+
+services:
+  horizon:
+    build:
+      context: ../..
+      dockerfile: docker/horizon/Dockerfile
+    container_name: horizon-service
+    ports:
+      - "${HORIZON_PORT:-8080}:8080"
+    environment:
+      - HORIZON__URL=http://0.0.0.0:8080
+      - HORIZON__MONGO_URI=mongodb://mongo:27017
+      - HORIZON__MONGO_DB=${HORIZON_MONGO_DB:-horizon}
+      - HORIZON__AUTH_ENABLED=${HORIZON_AUTH_ENABLED:-false}
+      - HORIZON__AUTH_SECRET_KEY=${HORIZON_AUTH_SECRET_KEY:-}
+      - HORIZON__LOG_LEVEL=${HORIZON_LOG_LEVEL:-INFO}
+      - HORIZON__DEBUG=${HORIZON_DEBUG:-false}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - horizon-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  mongo:
+    image: mongo:7
+    container_name: horizon-mongo
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - horizon-mongo-data:/data/db
+    environment:
+      # Optional authentication (uncomment and set for production)
+      # - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-admin}
+      # - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-password}
+      - MONGO_INITDB_DATABASE=${HORIZON_MONGO_DB:-horizon}
+    restart: unless-stopped
+    networks:
+      - horizon-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Optional: MongoDB Express for database management UI
+  mongo-express:
+    image: mongo-express:1
+    container_name: horizon-mongo-express
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongo
+      - ME_CONFIG_MONGODB_PORT=27017
+      # - ME_CONFIG_MONGODB_ADMINUSERNAME=${MONGO_ROOT_USER:-admin}
+      # - ME_CONFIG_MONGODB_ADMINPASSWORD=${MONGO_ROOT_PASSWORD:-password}
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_EXPRESS_USER:-admin}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_EXPRESS_PASSWORD:-admin}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - horizon-network
+    profiles:
+      - debug  # Only start with: docker compose --profile debug up
+
+networks:
+  horizon-network:
+    driver: bridge
+
+volumes:
+  horizon-mongo-data:
+    driver: local
+
