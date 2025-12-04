@@ -113,11 +113,11 @@ def test_redis_backend_is_async(mock_redis_backend):
 def test_redis_backend_is_async_direct():
     """Test Redis backend is_async method directly (covers line 135)."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-    
+
     with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        
+
         backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
         assert backend.is_async() is False  # Covers line 135
 
@@ -131,11 +131,11 @@ def test_redis_backend_get_raw_model(mock_redis_backend):
 def test_redis_backend_get_raw_model_direct():
     """Test Redis backend get_raw_model method directly (covers line 327)."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-    
+
     with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        
+
         backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
         model = backend.get_raw_model()
         assert model == UserDoc  # Covers line 327
@@ -145,13 +145,13 @@ def test_redis_backend_get_raw_model_direct():
 async def test_redis_backend_async_wrappers():
     """Test Redis async wrapper methods (covers lines 371, 396, 418, 436, 459)."""
     from mindtrace.database.backends.redis_odm_backend import RedisMindtraceODMBackend
-    
+
     with patch("mindtrace.database.backends.redis_odm_backend.get_redis_connection") as mock_get_redis:
         mock_redis = MagicMock()
         mock_get_redis.return_value = mock_redis
-        
+
         backend = RedisMindtraceODMBackend(model_cls=UserDoc, redis_url="redis://localhost:6379")
-        
+
         # Mock the sync methods
         mock_user = create_mock_redis_user()
         backend.insert = MagicMock(return_value=mock_user)
@@ -159,26 +159,26 @@ async def test_redis_backend_async_wrappers():
         backend.delete = MagicMock(return_value=True)
         backend.all = MagicMock(return_value=[mock_user])
         backend.find = MagicMock(return_value=[mock_user])
-        
+
         # Test insert_async (covers line 371)
         result = await backend.insert_async(UserCreate(name="John", age=30, email="john@example.com"))
         assert result == mock_user
         backend.insert.assert_called_once()
-        
+
         # Test get_async (covers line 396)
         result = await backend.get_async("test_id")
         assert result == mock_user
         backend.get.assert_called_once_with("test_id")
-        
+
         # Test delete_async (covers line 418)
         await backend.delete_async("test_id")
         backend.delete.assert_called_once_with("test_id")
-        
+
         # Test all_async (covers line 436)
         result = await backend.all_async()
         assert len(result) == 1
         backend.all.assert_called_once()
-        
+
         # Test find_async (covers line 459)
         result = await backend.find_async({"name": "John"})
         assert len(result) == 1
