@@ -33,7 +33,7 @@ def temp_registry_dir():
 @pytest.fixture
 def registry(temp_registry_dir):
     """Create a Registry instance with a temporary directory."""
-    return Registry(registry_dir=temp_registry_dir, version_objects=True)
+    return Registry(backend=temp_registry_dir, version_objects=True)
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_path():
 def non_versioned_registry():
     """Create a registry with versioning disabled."""
     with TemporaryDirectory() as temp_dir:
-        yield Registry(registry_dir=temp_dir, version_objects=False)
+        yield Registry(backend=temp_dir, version_objects=False)
 
 
 def test_registry_initialization(registry, temp_registry_dir):
@@ -113,7 +113,7 @@ def test_registry_directory_path_resolution():
     # Test with relative path
     with TemporaryDirectory() as temp_dir:
         rel_path = Path(temp_dir) / "subdir"
-        registry = Registry(registry_dir=str(rel_path))
+        registry = Registry(backend=str(rel_path))
         assert registry.backend.uri == rel_path.resolve()
         assert registry.backend.uri.is_absolute()
         assert registry.backend.uri.exists()
@@ -121,7 +121,7 @@ def test_registry_directory_path_resolution():
     # Test with home directory expansion
     with TemporaryDirectory() as temp_dir:
         home_path = Path.home() / "test_registry"
-        registry = Registry(registry_dir="~/test_registry")
+        registry = Registry(backend="~/test_registry")
         assert registry.backend.uri == home_path.resolve()
         assert registry.backend.uri.is_absolute()
         assert registry.backend.uri.exists()
@@ -129,7 +129,7 @@ def test_registry_directory_path_resolution():
     # Test with absolute path
     with TemporaryDirectory() as temp_dir:
         abs_path = Path(temp_dir).resolve()
-        registry = Registry(registry_dir=str(abs_path))
+        registry = Registry(backend=str(abs_path))
         assert registry.backend.uri == abs_path
         assert registry.backend.uri.is_absolute()
         assert registry.backend.uri.exists()
@@ -1323,7 +1323,7 @@ def test_download_basic(registry, test_config):
     """Test basic download functionality between registries."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1343,7 +1343,7 @@ def test_download_with_rename(registry, test_config):
     """Test downloading with a different target name."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("source:config", test_config, version="1.0.0")
@@ -1366,7 +1366,7 @@ def test_download_with_reversion(registry, test_config):
     """Test downloading with a different target version."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save object to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1387,7 +1387,7 @@ def test_download_with_metadata(registry, test_config):
     """Test downloading preserves metadata."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save object with metadata
         metadata = {"key": "value", "number": 42}
@@ -1405,7 +1405,7 @@ def test_download_nonexistent_object(registry):
     """Test downloading a nonexistent object raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Attempt to download nonexistent object
         with pytest.raises(ValueError, match="Object test:config version 1.0.0 does not exist in source registry"):
@@ -1423,7 +1423,7 @@ def test_download_latest_version(registry, test_config):
     """Test downloading the latest version of an object."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save multiple versions
         source_reg.save("test:float", 1.0)
@@ -1441,7 +1441,7 @@ def test_download_with_materializer(registry):
     """Test downloading an object with a custom materializer."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
@@ -1469,7 +1469,7 @@ def test_download_version_conflict(registry, test_config):
     """Test downloading when target version already exists."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Save to source registry
         source_reg.save("test:config", test_config, version="1.0.0")
@@ -1504,7 +1504,7 @@ def test_download_latest_version_nonexistent(registry):
     """Test downloading a non-existent object with version 'latest'."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Try to download a non-existent object with version "latest"
         with pytest.raises(ValueError, match="No versions found for object nonexistent in source registry"):
@@ -1515,7 +1515,7 @@ def test_download_vs_dict_assignment(registry):
     """Test that download and dictionary-style assignment produce the same result."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Create a test config
         config = Config(
@@ -1530,8 +1530,8 @@ def test_download_vs_dict_assignment(registry):
 
         # Create two target registries
         with TemporaryDirectory() as target_dir1, TemporaryDirectory() as target_dir2:
-            target_reg1 = Registry(registry_dir=target_dir1, version_objects=True)
-            target_reg2 = Registry(registry_dir=target_dir2, version_objects=True)
+            target_reg1 = Registry(backend=target_dir1, version_objects=True)
+            target_reg2 = Registry(backend=target_dir2, version_objects=True)
 
             # Transfer using download method (without specifying target_version)
             target_reg1.download(source_reg, "test:config", version="1.0.0")
@@ -1561,7 +1561,7 @@ def test_update_with_registry(registry):
     """Test updating a registry with objects from another registry."""
     # Create source registry with multiple objects
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Create and save multiple objects to source registry
         config1 = Config({"MINDTRACE_DIR_PATHS": {"TEMP_DIR": "/dir1"}})
@@ -1588,7 +1588,7 @@ def test_update_with_existing_objects(registry):
     """Test that updating with existing objects raises an error."""
     # Create source registry
     with TemporaryDirectory() as source_dir:
-        source_reg = Registry(registry_dir=source_dir, version_objects=True)
+        source_reg = Registry(backend=source_dir, version_objects=True)
 
         # Create and save object to source registry with multiple versions
         source_reg.save("test:int", 1, version="1.0.0")
@@ -1930,7 +1930,7 @@ def test_registry_instance_sees_class_level_materializer(temp_registry_dir):
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.MyClass", "test.module.MyMaterializer")
-        reg = Registry(registry_dir=temp_registry_dir)
+        reg = Registry(backend=temp_registry_dir)
         materializers = reg.registered_materializers()
         assert "test.module.MyClass" in materializers
         assert materializers["test.module.MyClass"] == "test.module.MyMaterializer"
@@ -1983,7 +1983,7 @@ def test_instance_materializer_override_class_level(temp_registry_dir):
     orig = Registry.get_default_materializers().copy()
     try:
         Registry.register_default_materializer("test.module.OverrideClass", "test.module.ClassLevelMaterializer")
-        reg = Registry(registry_dir=temp_registry_dir)
+        reg = Registry(backend=temp_registry_dir)
         reg.register_materializer("test.module.OverrideClass", "test.module.InstanceLevelMaterializer")
         materializers = reg.registered_materializers()
         assert materializers["test.module.OverrideClass"] == "test.module.InstanceLevelMaterializer"
@@ -2017,11 +2017,11 @@ def test_register_materializer_accepts_materializer_class_type(registry):
 def test_version_objects_conflict_error(registry):
     """Test version objects conflict error."""
     # Create a registry with version_objects=True
-    _ = Registry(registry_dir=str(registry.backend.uri), version_objects=True)
+    _ = Registry(backend=str(registry.backend.uri), version_objects=True)
 
     # Try to create another registry with version_objects=False in the same directory
     with pytest.raises(ValueError, match="Version objects conflict"):
-        Registry(registry_dir=str(registry.backend.uri), version_objects=False)
+        Registry(backend=str(registry.backend.uri), version_objects=False)
 
 
 def test_get_registry_metadata_gcp_backend(registry, monkeypatch):
@@ -2185,7 +2185,7 @@ def test_initialize_version_objects_exception_handling(temp_registry_dir, monkey
     monkeypatch.setattr(Registry, "_save_registry_metadata", mock_save_metadata)
 
     # Create registry - should handle exception and save the provided value
-    registry = Registry(registry_dir=temp_registry_dir, version_objects=False)
+    registry = Registry(backend=temp_registry_dir, version_objects=False)
 
     # Verify that save was called (exception handler saved the value)
     assert len(save_calls) > 0
@@ -2381,16 +2381,17 @@ def test_load_missing_hash_warning(registry, test_config, caplog):
 
 
 def test_load_hash_verification_passed_logging(registry, test_config, caplog):
-    """Test that load() logs debug message when hash verification passes."""
+    """Test that load() successfully verifies hash when verify_hash=True."""
     # Save an object
     registry.save("test:config", test_config, version="1.0.0")
     
-    # Load with hash verification
+    # Load with hash verification - should succeed without errors
     loaded_config = registry.load("test:config", version="1.0.0", verify_hash=True)
     assert loaded_config == test_config
     
-    # Verify debug message was logged
-    assert any("Hash verification passed" in record.message for record in caplog.records)
+    # Verify no hash verification errors were logged
+    assert not any("Hash mismatch" in record.message for record in caplog.records)
+    assert not any("Artifact hash verification failed" in record.message for record in caplog.records)
 
 
 def test_load_hash_mismatch_error_message(registry, test_config):
@@ -2477,8 +2478,8 @@ def test_get_cache_dir_from_backend_uri(registry):
 def test_get_cache_dir_from_backend_uri_different_backends(temp_registry_dir):
     """Test that different backend URIs produce different cache directories."""
     # Create two registries with different backend URIs
-    registry1 = Registry(registry_dir=temp_registry_dir + "_1")
-    registry2 = Registry(registry_dir=temp_registry_dir + "_2")
+    registry1 = Registry(backend=temp_registry_dir + "_1")
+    registry2 = Registry(backend=temp_registry_dir + "_2")
     
     # Get cache directories using class method
     cache_dir1 = Registry._get_cache_dir_from_backend_uri(registry1.backend.uri, registry1.config)
@@ -2529,7 +2530,7 @@ def test_load_hash_verification_with_container_types(registry):
 def test_list_versions_cache_expiration(temp_registry_dir):
     """Test that expired cache entries are removed from versions cache."""
     # Create registry with very short TTL to test expiration quickly
-    registry = Registry(registry_dir=temp_registry_dir, version_objects=True, versions_cache_ttl=0.01)
+    registry = Registry(backend=temp_registry_dir, version_objects=True, versions_cache_ttl=0.01)
     
     # Save an object with multiple versions
     registry.save("test:obj", "value1", version="1.0.0")
@@ -2560,7 +2561,7 @@ def test_list_versions_cache_expiration(temp_registry_dir):
 
 def test_cache_initialization_local_backend(temp_registry_dir):
     """Test that local backend has no cache."""
-    registry = Registry(registry_dir=temp_registry_dir)
+    registry = Registry(backend=temp_registry_dir)
     assert registry._cache is None
 
 
