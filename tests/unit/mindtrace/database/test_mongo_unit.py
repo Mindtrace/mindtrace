@@ -506,12 +506,12 @@ async def test_mongo_backend_initialize_second_call(mock_init_beanie):
     from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
 
     backend = MongoMindtraceODMBackend(model_cls=UserDoc, db_uri="mongodb://localhost:27017", db_name="test_db")
-    
+
     # First initialization
     await backend.initialize()
     assert backend._is_initialized is True
     mock_init_beanie.assert_called_once()
-    
+
     # Second initialization (should skip init_beanie)
     await backend.initialize()
     # init_beanie should still be called only once
@@ -543,50 +543,51 @@ async def test_mongo_backend_get_with_document_found():
 
 def test_mongo_backend_sync_wrappers_from_sync_context():
     """Test MongoDB sync wrapper methods when called from sync context (covers asyncio.run paths)."""
+    from unittest.mock import AsyncMock, patch
+
     from mindtrace.database.backends.mongo_odm_backend import MongoMindtraceODMBackend
-    from unittest.mock import patch, AsyncMock
 
     with patch("mindtrace.database.backends.mongo_odm_backend.AsyncIOMotorClient"):
         backend = MongoMindtraceODMBackend(UserDoc, "mongodb://localhost:27017", "test_db")
         backend.model_cls = UserDoc
-        
+
         # Mock the async methods
         mock_user = create_mock_mongo_user()
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock) as mock_init:
             with patch.object(backend, "insert", new_callable=AsyncMock, return_value=mock_user) as mock_insert:
                 # Test insert_sync from sync context (no running loop)
                 result = backend.insert_sync(UserCreate(name="John", age=30, email="john@example.com"))
                 assert result == mock_user
                 mock_insert.assert_called_once()
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock):
             with patch.object(backend, "get", new_callable=AsyncMock, return_value=mock_user) as mock_get:
                 # Test get_sync from sync context
                 result = backend.get_sync("test_id")
                 assert result == mock_user
                 mock_get.assert_called_once_with("test_id")
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock):
             with patch.object(backend, "delete", new_callable=AsyncMock) as mock_delete:
                 # Test delete_sync from sync context
                 backend.delete_sync("test_id")
                 mock_delete.assert_called_once_with("test_id")
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock):
             with patch.object(backend, "all", new_callable=AsyncMock, return_value=[mock_user]) as mock_all:
                 # Test all_sync from sync context
                 result = backend.all_sync()
                 assert len(result) == 1
                 mock_all.assert_called_once()
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock):
             with patch.object(backend, "find", new_callable=AsyncMock, return_value=[mock_user]) as mock_find:
                 # Test find_sync from sync context
                 result = backend.find_sync({"name": "John"})
                 assert len(result) == 1
                 mock_find.assert_called_once_with({"name": "John"})
-        
+
         with patch.object(backend, "initialize", new_callable=AsyncMock) as mock_init:
             # Test initialize_sync from sync context
             backend.initialize_sync()

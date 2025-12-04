@@ -1843,9 +1843,9 @@ def test_unified_backend_initialize_with_no_running_loop():
 # Tests for MongoDB sync wrapper methods
 # ============================================================================
 
+
 def test_mongo_sync_get_method(unified_backend_mongo_only, mock_mongo_backend):
     """Test MongoDB get_sync wrapper method."""
-    user = UserCreate(name="John", age=30, email="john@example.com")
     mongo_user = create_mock_mongo_user()
     mock_mongo_backend.get_sync.return_value = mongo_user
 
@@ -1917,6 +1917,7 @@ async def test_mongo_sync_methods_from_async_context_raises_error():
 # Tests for Redis async wrapper methods
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_redis_async_get_method(unified_backend_redis_only, mock_redis_backend):
     """Test Redis get_async wrapper method."""
@@ -1973,6 +1974,7 @@ async def test_redis_async_initialize_method(unified_backend_redis_only, mock_re
 # ============================================================================
 # Tests for unified backend routing logic
 # ============================================================================
+
 
 def test_unified_backend_sync_routing_mongo(unified_backend_mongo_only, mock_mongo_backend):
     """Test that unified backend routes sync calls to MongoDB sync wrappers."""
@@ -2108,6 +2110,7 @@ async def test_unified_backend_backend_switching_async_operations(
 # Tests for edge cases and error handling
 # ============================================================================
 
+
 def test_unified_backend_initialize_sync_handles_both_backends(
     unified_backend_both, mock_mongo_backend, mock_redis_backend
 ):
@@ -2127,9 +2130,7 @@ async def test_unified_backend_initialize_async_handles_both_backends(
     mock_redis_backend.initialize_async.assert_called_once()
 
 
-def test_unified_backend_sync_methods_with_unified_model(
-    unified_backend_with_unified_model, mock_mongo_backend
-):
+def test_unified_backend_sync_methods_with_unified_model(unified_backend_with_unified_model, mock_mongo_backend):
     """Test sync methods work with unified document model."""
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
     mongo_user = create_mock_mongo_user()
@@ -2141,9 +2142,7 @@ def test_unified_backend_sync_methods_with_unified_model(
 
 
 @pytest.mark.asyncio
-async def test_unified_backend_async_methods_with_unified_model(
-    unified_backend_with_unified_model, mock_mongo_backend
-):
+async def test_unified_backend_async_methods_with_unified_model(unified_backend_with_unified_model, mock_mongo_backend):
     """Test async methods work with unified document model."""
     user = UnifiedUserDoc(name="John", age=30, email="john@example.com")
     mongo_user = create_mock_mongo_user()
@@ -2158,53 +2157,54 @@ async def test_unified_backend_async_methods_with_unified_model(
 # Tests for missing coverage lines
 # ============================================================================
 
+
 def test_unified_backend_auto_generate_mongo_model_skips_id_field():
     """Test that MongoDB model generation skips id field (covers line 90)."""
     from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
-    
+
     class TestDoc(UnifiedMindtraceDocument):
         id: str = "test_id"  # This should be skipped
         name: str = "test"
-        
+
         class Meta:
             collection_name = "test"
-    
+
     mongo_model = TestDoc._auto_generate_mongo_model()
     # Verify id field is not in the generated model's annotations
-    annotations = getattr(mongo_model, "__annotations__", {})
     # The id field should be skipped during generation (line 90)
+    assert mongo_model is not None
 
 
 def test_unified_backend_auto_generate_redis_model_skips_id_field():
     """Test that Redis model generation skips id field (covers line 147)."""
     from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
-    
+
     class TestDoc(UnifiedMindtraceDocument):
         id: str = "test_id"  # This should be skipped
         name: str = "test"
-        
+
         class Meta:
             collection_name = "test"
-    
+
     redis_model = TestDoc._auto_generate_redis_model()
     # Verify id field is not in the generated model's annotations
-    annotations = getattr(redis_model, "__annotations__", {})
     # The id field should be skipped during generation (line 147)
+    assert redis_model is not None
 
 
 def test_unified_backend_auto_generate_mongo_model_has_field_attr():
     """Test MongoDB model generation when field has attr (covers line 80)."""
     from mindtrace.database.backends.unified_odm_backend import UnifiedMindtraceDocument
-    
+
     class TestDoc(UnifiedMindtraceDocument):
         name: str = "test"
-        
+
         class Meta:
             collection_name = "test"
-    
+
     # Set a field attribute to trigger line 80
     TestDoc.name = "test_value"
-    
+
     mongo_model = TestDoc._auto_generate_mongo_model()
     assert mongo_model is not None
 
@@ -2214,24 +2214,24 @@ async def test_unified_backend_insert_async_redis_fallback(unified_backend_redis
     """Test unified backend insert_async with Redis fallback (covers line 785)."""
     user = UserCreate(name="John", age=30, email="john@example.com")
     redis_user = create_mock_redis_user()
-    
+
     # Create a simple backend without insert_async (but with is_async)
     class SimpleBackend:
         def is_async(self):
             return False
-        
+
         def insert(self, obj):
             return redis_user
-    
+
     simple_backend = SimpleBackend()
     simple_backend.insert = MagicMock(return_value=redis_user)
-    
+
     # Replace the redis_backend with our simple backend
     unified_backend_redis_only.redis_backend = simple_backend
-    
+
     # Verify hasattr returns False for insert_async
     assert not hasattr(simple_backend, "insert_async")
-    
+
     result = await unified_backend_redis_only.insert_async(user)
     assert result.name == "John"
     simple_backend.insert.assert_called_once()
@@ -2241,17 +2241,19 @@ async def test_unified_backend_insert_async_redis_fallback(unified_backend_redis
 async def test_unified_backend_get_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
     """Test unified backend get_async with Redis fallback (covers line 819)."""
     redis_user = create_mock_redis_user()
-    
+
     # Mock hasattr to return False for get_async to trigger fallback
     mock_redis_backend.get = MagicMock(return_value=redis_user)
-    
+
     with patch("builtins.hasattr") as mock_hasattr:
+
         def hasattr_side_effect(obj, attr):
             if obj == mock_redis_backend and attr == "get_async":
                 return False
             return hasattr(obj, attr)
+
         mock_hasattr.side_effect = hasattr_side_effect
-        
+
         result = await unified_backend_redis_only.get_async(redis_user.pk)
         assert result.name == "John"
         mock_redis_backend.get.assert_called_once_with(redis_user.pk)
@@ -2262,14 +2264,16 @@ async def test_unified_backend_delete_async_redis_fallback(unified_backend_redis
     """Test unified backend delete_async with Redis fallback (covers line 850)."""
     # Mock hasattr to return False for delete_async to trigger fallback
     mock_redis_backend.delete = MagicMock(return_value=True)
-    
+
     with patch("builtins.hasattr") as mock_hasattr:
+
         def hasattr_side_effect(obj, attr):
             if obj == mock_redis_backend and attr == "delete_async":
                 return False
             return hasattr(obj, attr)
+
         mock_hasattr.side_effect = hasattr_side_effect
-        
+
         await unified_backend_redis_only.delete_async("test_id")
         mock_redis_backend.delete.assert_called_once_with("test_id")
 
@@ -2278,17 +2282,19 @@ async def test_unified_backend_delete_async_redis_fallback(unified_backend_redis
 async def test_unified_backend_all_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
     """Test unified backend all_async with Redis fallback (covers line 877)."""
     redis_user = create_mock_redis_user()
-    
+
     # Mock hasattr to return False for all_async to trigger fallback
     mock_redis_backend.all = MagicMock(return_value=[redis_user])
-    
+
     with patch("builtins.hasattr") as mock_hasattr:
+
         def hasattr_side_effect(obj, attr):
             if obj == mock_redis_backend and attr == "all_async":
                 return False
             return hasattr(obj, attr)
+
         mock_hasattr.side_effect = hasattr_side_effect
-        
+
         result = await unified_backend_redis_only.all_async()
         assert len(result) == 1
         mock_redis_backend.all.assert_called_once()
@@ -2298,17 +2304,19 @@ async def test_unified_backend_all_async_redis_fallback(unified_backend_redis_on
 async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_only, mock_redis_backend):
     """Test unified backend find_async with Redis fallback (covers line 909)."""
     redis_user = create_mock_redis_user()
-    
+
     # Mock hasattr to return False for find_async to trigger fallback
     mock_redis_backend.find = MagicMock(return_value=[redis_user])
-    
+
     with patch("builtins.hasattr") as mock_hasattr:
+
         def hasattr_side_effect(obj, attr):
             if obj == mock_redis_backend and attr == "find_async":
                 return False
             return hasattr(obj, attr)
+
         mock_hasattr.side_effect = hasattr_side_effect
-        
+
         result = await unified_backend_redis_only.find_async({"name": "John"})
         assert len(result) == 1
         mock_redis_backend.find.assert_called_once_with({"name": "John"})
@@ -2317,33 +2325,32 @@ async def test_unified_backend_find_async_redis_fallback(unified_backend_redis_o
 @pytest.mark.asyncio
 async def test_unified_backend_initialize_async_redis_fallback():
     """Test unified backend initialize_async with Redis fallback (covers line 530)."""
-    from mindtrace.database import UnifiedMindtraceODMBackend, BackendType, UnifiedMindtraceDocument
     from pydantic import Field
-    
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
-        
+
         class Meta:
             collection_name = "test"
-    
+
     backend = UnifiedMindtraceODMBackend(
-        unified_model_cls=TestDoc,
-        redis_url="redis://localhost:6379",
-        preferred_backend=BackendType.REDIS
+        unified_model_cls=TestDoc, redis_url="redis://localhost:6379", preferred_backend=BackendType.REDIS
     )
-    
+
     # Create a simple object without initialize_async to trigger fallback
     class SimpleBackend:
         def initialize(self):
             pass
-    
+
     simple_backend = SimpleBackend()
     simple_backend.initialize = MagicMock()
     backend.redis_backend = simple_backend
-    
+
     # hasattr should return False for initialize_async
     assert not hasattr(simple_backend, "initialize_async")
-    
+
     await backend.initialize_async()
     # The fallback should call initialize() directly (line 530)
     simple_backend.initialize.assert_called_once()
@@ -2351,35 +2358,36 @@ async def test_unified_backend_initialize_async_redis_fallback():
 
 def test_unified_backend_initialize_sync_mongo_fallback():
     """Test unified backend initialize_sync with MongoDB fallback (covers line 555)."""
-    from mindtrace.database import UnifiedMindtraceODMBackend, BackendType, UnifiedMindtraceDocument
+
     from pydantic import Field
-    import asyncio
-    
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
-        
+
         class Meta:
             collection_name = "test"
-    
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=TestDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Create a simple object without initialize_sync to trigger fallback
     class SimpleBackend:
         async def initialize(self):
             pass
-    
+
     simple_backend = SimpleBackend()
     simple_backend.initialize = AsyncMock()
     backend.mongo_backend = simple_backend
-    
+
     # hasattr should return False for initialize_sync
     assert not hasattr(simple_backend, "initialize_sync")
-    
+
     with patch("asyncio.run") as mock_asyncio_run:
         backend.initialize_sync()
         # The fallback should call asyncio.run(initialize()) (line 555)
@@ -2388,40 +2396,42 @@ def test_unified_backend_initialize_sync_mongo_fallback():
 
 def test_unified_backend_handle_async_call_fallback():
     """Test unified backend _handle_async_call fallback (covers lines 613-614)."""
-    from mindtrace.database import UnifiedMindtraceODMBackend, BackendType, UnifiedMindtraceDocument
-    from pydantic import Field
     import asyncio
-    
+
+    from pydantic import Field
+
+    from mindtrace.database import BackendType, UnifiedMindtraceDocument, UnifiedMindtraceODMBackend
+
     class TestDoc(UnifiedMindtraceDocument):
         name: str = Field()
-        
+
         class Meta:
             collection_name = "test"
-    
+
     backend = UnifiedMindtraceODMBackend(
         unified_model_cls=TestDoc,
         mongo_db_uri="mongodb://localhost:27017",
         mongo_db_name="test_db",
-        preferred_backend=BackendType.MONGO
+        preferred_backend=BackendType.MONGO,
     )
-    
+
     # Create a simple backend object without test_method_sync
     # Use a plain class to avoid triggering Pydantic's internal attribute checks
     class SimpleBackend:
         __slots__ = ()  # Prevent dynamic attribute creation that might trigger Pydantic
-        
+
         def is_async(self):
             return True
-        
+
         async def test_method(self, *args, **kwargs):
             return "result"
-    
+
     simple_backend = SimpleBackend()
-    
+
     # Verify test_method_sync doesn't exist using getattr to avoid hasattr triggering Pydantic
     sentinel = object()
     assert getattr(simple_backend, "test_method_sync", sentinel) is sentinel
-    
+
     with patch.object(backend, "_get_active_backend", return_value=simple_backend):
         # Use wraps to execute the real asyncio.run while still verifying it was called
         with patch("asyncio.run", wraps=asyncio.run) as mock_asyncio_run:
