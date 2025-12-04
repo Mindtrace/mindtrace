@@ -3,6 +3,8 @@
 import time
 from typing import Optional
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from mindtrace.services import Service
 from mindtrace.services.core.middleware import RequestLoggingMiddleware
 
@@ -64,6 +66,15 @@ class HorizonService(Service):
 
         kwargs.setdefault("use_structlog", True)
         super().__init__(url=url, **kwargs)
+
+        # CORS - allow frontend access
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
         # Database + job store
         self.db: Optional[HorizonDB] = None
