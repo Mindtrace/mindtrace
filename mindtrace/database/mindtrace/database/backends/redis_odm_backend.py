@@ -325,3 +325,135 @@ class RedisMindtraceODMBackend(MindtraceODMBackend):
                 print(f"Using model: {model_class.__name__}")
         """
         return self.model_cls
+
+    # Asynchronous wrapper methods for compatibility
+    async def initialize_async(self):
+        """
+        Initialize the Redis connection asynchronously (wrapper around sync initialize).
+
+        This method provides an asynchronous interface to the sync initialize method.
+        It should be called before performing any database operations in an async context.
+
+        Example:
+            .. code-block:: python
+
+                backend = RedisMindtraceODMBackend(User, "redis://localhost:6379")
+                await backend.initialize_async()  # Can be called from async code
+        """
+        # For sync operations, we can just call them directly
+        # They're fast enough that blocking the event loop briefly is acceptable
+        self.initialize()
+
+    async def insert_async(self, obj: BaseModel) -> ModelType:
+        """
+        Insert a new document asynchronously (wrapper around sync insert).
+
+        Args:
+            obj (BaseModel): The document object to insert into the database.
+
+        Returns:
+            ModelType: The inserted document with generated fields populated.
+
+        Raises:
+            DuplicateInsertError: If the document violates unique constraints.
+
+        Example:
+            .. code-block:: python
+
+                user = User(name="John", email="john@example.com")
+                try:
+                    inserted_user = await backend.insert_async(user)
+                    print(f"Inserted user with ID: {inserted_user.pk}")
+                except DuplicateInsertError as e:
+                    print(f"Duplicate entry: {e}")
+        """
+        # Call sync method directly - Redis operations are fast
+        return self.insert(obj)
+
+    async def get_async(self, id: str) -> ModelType:
+        """
+        Retrieve a document asynchronously (wrapper around sync get).
+
+        Args:
+            id (str): The unique identifier of the document to retrieve.
+
+        Returns:
+            ModelType: The retrieved document.
+
+        Raises:
+            DocumentNotFoundError: If no document with the given ID exists.
+
+        Example:
+            .. code-block:: python
+
+                try:
+                    user = await backend.get_async("01234567-89ab-cdef-0123-456789abcdef")
+                    print(f"Found user: {user.name}")
+                except DocumentNotFoundError:
+                    print("User not found")
+        """
+        # Call sync method directly - Redis operations are fast
+        return self.get(id)
+
+    async def delete_async(self, id: str):
+        """
+        Delete a document asynchronously (wrapper around sync delete).
+
+        Args:
+            id (str): The unique identifier of the document to delete.
+
+        Raises:
+            DocumentNotFoundError: If no document with the given ID exists.
+
+        Example:
+            .. code-block:: python
+
+                try:
+                    await backend.delete_async("01234567-89ab-cdef-0123-456789abcdef")
+                    print("User deleted successfully")
+                except DocumentNotFoundError:
+                    print("User not found")
+        """
+        # Call sync method directly - Redis operations are fast
+        return self.delete(id)
+
+    async def all_async(self) -> List[ModelType]:
+        """
+        Retrieve all documents asynchronously (wrapper around sync all).
+
+        Returns:
+            List[ModelType]: A list of all documents in the collection.
+
+        Example:
+            .. code-block:: python
+
+                all_users = await backend.all_async()
+                print(f"Found {len(all_users)} users")
+                for user in all_users:
+                    print(f"- {user.name}")
+        """
+        # Call sync method directly - Redis operations are fast
+        return self.all()
+
+    async def find_async(self, *args, **kwargs) -> List[ModelType]:
+        """
+        Find documents asynchronously (wrapper around sync find).
+
+        Args:
+            *args: Query conditions and filters.
+            **kwargs: Additional query parameters.
+
+        Returns:
+            List[ModelType]: A list of documents matching the query criteria.
+
+        Example:
+            .. code-block:: python
+
+                # Find users with specific email
+                users = await backend.find_async(User.email == "john@example.com")
+
+                # Find all users if no criteria specified
+                all_users = await backend.find_async()
+        """
+        # Call sync method directly - Redis operations are fast
+        return self.find(*args, **kwargs)

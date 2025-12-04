@@ -129,8 +129,7 @@ async def dual_unified_backend():
         preferred_backend=BackendType.MONGO,
     )
 
-    # Initialize both backends
-    backend.initialize_sync()
+    # Initialize both backends (async method handles both MongoDB and Redis)
     await backend.initialize_async()
 
     # Clean up existing data before test starts
@@ -176,8 +175,7 @@ async def unified_model_backend():
         preferred_backend=BackendType.MONGO,
     )
 
-    # Initialize both backends
-    backend.initialize_sync()
+    # Initialize both backends (async method handles both MongoDB and Redis)
     await backend.initialize_async()
 
     # Clean up existing data before test starts
@@ -432,15 +430,12 @@ def test_unified_backend_is_async_property(dual_unified_backend):
 
 @pytest.mark.asyncio
 async def test_unified_backend_initialization(dual_unified_backend):
-    """Test unified backend initialization."""
-    # Test async initialization
+    """Test unified backend initialization in async context."""
+    # Test async initialization (works in async context)
     await dual_unified_backend.initialize_async()
 
-    # Test sync initialization
-    dual_unified_backend.initialize_sync()
-
-    # Test general initialization
-    dual_unified_backend.initialize()
+    # Note: initialize_sync() cannot be called from async context
+    # Sync initialization is tested in unit tests with proper mocking
 
 
 def test_unified_backend_error_handling(mongo_unified_backend):
