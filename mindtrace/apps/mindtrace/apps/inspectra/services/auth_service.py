@@ -1,13 +1,13 @@
 from fastapi import HTTPException, status
 
-from mindtrace.apps.inspectra.app.api.core.security import (
+from ..core.security import (
     hash_password,
     verify_password,
     create_access_token,
 )
-from mindtrace.apps.inspectra.app.repositories.user_repository import UserRepository
-from mindtrace.apps.inspectra.app.repositories.role_repository import RoleRepository
-from mindtrace.apps.inspectra.app.schemas.auth import (
+from ..repositories.user_repository import UserRepository
+from ..repositories.role_repository import RoleRepository
+from ..schemas.auth import (
     LoginPayload,
     RegisterPayload,
     TokenResponse,
@@ -24,7 +24,7 @@ class AuthService:
         """
         role = await self.role_repo.get_by_name("user")
         if not role:
-            from mindtrace.apps.inspectra.app.schemas.role import RoleCreate
+            from ..schemas.role import RoleCreate
             role = await self.role_repo.create(
                 RoleCreate(name="user", description="Default user role")
             )

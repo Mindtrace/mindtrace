@@ -1,10 +1,15 @@
-from mindtrace.core import TaskSchema
+from typing import Optional
+from pydantic import BaseModel
+
 from mindtrace.services import Service
+from mindtrace.services.core.middleware import RequestLoggingMiddleware
 
-from mindtrace.apps.inspectra.app.api.core.settings import settings
-from mindtrace.apps.inspectra.app.api.routers import auth, plants, lines
+from .core.settings import settings
+from .routers import auth, plants, lines
 
-class ConfigSchema(TaskSchema):
+
+class ConfigSchema(BaseModel):
+    """Metadata about the Inspectra service, exposed at GET /config."""
     name: str
     description: str
     version: str
@@ -14,35 +19,40 @@ class ConfigSchema(TaskSchema):
 
 class InspectraService(Service):
     """
-    Inspectra Mindtrace Service.
-
-    - Uses Mindtrace Service lifecycle
-    - Owns FastAPI app via self.app
-    - Attaches routers from app/api/routers
+    Inspectra backend service.
     """
 
-    config_schema = ConfigSchema
+    def __init__(self, *, url: Optional[str] = None, **kwargs):
+        if url is None:
+            url = f"0.0.0.0:{settings.api_port}"
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        kwargs.setdefault("use_structlog", True)
+        super().__init__(url=url, **kwargs)
 
-        app = self.app
+        self.app.add_middleware(
+            RequestLoggingMiddleware,
+            service_name=self.name,
+            log_metrics=True,
+            add_request_id_header=True,
+            logger=self.logger,
+        )
 
-        @app.get("/health", tags=["Health"])
-        async def health_check():
-            return {"status": "ok"}
-
-        @app.get("/config", response_model=ConfigSchema, tags=["Config"])
-        async def config():
+        @self.app.get("/config", response_model=ConfigSchema, tags=["Config"])
+        async def config() -> ConfigSchema:  # type: ignore[unused-variable]
             return ConfigSchema(
                 name=settings.service_name,
                 description=settings.service_description,
                 version=settings.service_version,
                 author=settings.service_author,
                 author_email=settings.service_author_email,
-                url=settings.service_url,
+                url=settings.service_url,  # public URL, not bind URL
             )
 
-        app.include_router(auth.router)
-        app.include_router(plants.router)
-        app.include_router(lines.router)
+        self.app.include_router(auth.router)
+        self.app.include_router(plants.router)
+        self.app.include_router(lines.router)
+
+    @classmethod
+    def default_url(cls) -> str:
+        """Default bind URL based on API_PORT."""
+        return f"0.0.0.0:{settings.api_port}"

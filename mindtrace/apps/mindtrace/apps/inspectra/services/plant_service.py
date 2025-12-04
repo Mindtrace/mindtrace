@@ -1,7 +1,7 @@
 from typing import List
 
-from mindtrace.apps.inspectra.app.repositories.plant_repository import PlantRepository
-from mindtrace.apps.inspectra.app.schemas.plant import PlantCreate, PlantResponse
+from ..repositories.plant_repository import PlantRepository
+from ..schemas.plant import PlantCreate, PlantResponse
 
 class PlantService:
     def __init__(self, repo: PlantRepository | None = None) -> None:

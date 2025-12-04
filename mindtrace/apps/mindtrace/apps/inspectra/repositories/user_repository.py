@@ -1,8 +1,8 @@
 from typing import Optional
 from bson import ObjectId
 
-from mindtrace.apps.inspectra.app.api.core.db import get_db
-from mindtrace.apps.inspectra.app.models.user import User
+from ..core.db import get_db
+from ..models.user import User
 
 class UserRepository:
     def __init__(self):

@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends
 
-from mindtrace.apps.inspectra.app.api.core.security import (
+from ..core.security import (
     require_user,
     TokenData,
 )
-from mindtrace.apps.inspectra.app.schemas.plant import PlantCreate, PlantResponse
-from mindtrace.apps.inspectra.app.services.plant_service import PlantService
+from ..schemas.plant import PlantCreate, PlantResponse
+from ..services.plant_service import PlantService
 
 router = APIRouter(prefix="/plants", tags=["Plants"])
 

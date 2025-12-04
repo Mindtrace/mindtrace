@@ -1,13 +1,12 @@
-version: "3.9"
-
 services:
   api:
     build:
-      context: ../../..
-      dockerfile: mindtrace/apps/mindtrace/apps/inspectra/Dockerfile
+      context: ../..
+      dockerfile: docker/inspectra/Dockerfile
     container_name: inspectra_api
+    working_dir: /app
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     env_file:
       - .env
     depends_on:
@@ -16,15 +15,6 @@ services:
     restart: always
     networks:
       - inspectra_net
-    healthcheck:
-      # Use Python (already in the image) to hit /health
-      test: >
-        python -c "import urllib.request;
-        urllib.request.urlopen('http://localhost:8000/health')" || exit 1
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
 
   mongo:
     image: mongo:7
@@ -43,7 +33,6 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      # Basic Mongo ping check using mongosh
       test: >
         echo "db.runCommand({ ping: 1 })" | mongosh --host localhost -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --quiet
       interval: 20s
