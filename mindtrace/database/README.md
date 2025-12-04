@@ -11,7 +11,8 @@ A powerful, flexible Object-Document Mapping (ODM) system that provides a **unif
 - **Unified Backend System** - One interface for multiple databases
 - **Dynamic Backend Switching** - Switch between MongoDB and Redis at runtime
 - **Simplified Document Models** - Define once, use everywhere
-- **Async/Sync Support** - Choose your preferred programming style
+- **Full Async/Sync Support** - Both MongoDB and Redis support both sync and async interfaces
+- **Seamless Interface Compatibility** - Use sync code with async backends and vice versa
 - **Advanced Querying** - Rich query capabilities across all backends
 - **Comprehensive Error Handling** - Clear, actionable error messages
 - **Full Test Coverage** - Thoroughly tested with unit and integration tests
@@ -48,30 +49,31 @@ backend = UnifiedMindtraceODMBackend(
     preferred_backend=BackendType.MONGO  # Start with MongoDB
 )
 
-# 3. Initialize
-await backend.initialize_async()  # For async operations
+# 3. Initialize (both methods work with both backends!)
+await backend.initialize_async()  # Works with both MongoDB and Redis
 # or
-backend.initialize_sync()  # For sync operations
+backend.initialize_sync()  # Also works with both MongoDB and Redis
 
-# 4. Use it! (Same API regardless of backend)
+# 4. Use it! (Same API regardless of backend - both sync and async work!)
 user = User(name="Alice", age=30, email="alice@example.com", skills=["Python"])
 
-# Insert
+# Async operations (work with both MongoDB and Redis)
 inserted_user = await backend.insert_async(user)
-# or: inserted_user = backend.insert(user)
-
-# Get by ID
 retrieved_user = await backend.get_async(inserted_user.id)
-
-# Find with filters
 python_users = await backend.find_async({"skills": "Python"})
+all_users = await backend.all_async()
+
+# Sync operations (also work with both MongoDB and Redis!)
+inserted_user = backend.insert(user)  # Works with MongoDB (via sync wrapper) or Redis (native)
+retrieved_user = backend.get(inserted_user.id)
+python_users = backend.find({"skills": "Python"})
+all_users = backend.all()
 
 # Switch backends on the fly!
 backend.switch_backend(BackendType.REDIS)
-redis_user = backend.insert(user)  # Now using Redis
-
-# Get all users
-all_users = await backend.all_async()
+redis_user = backend.insert(user)  # Now using Redis (sync)
+# or
+redis_user = await backend.insert_async(user)  # Redis with async interface
 ```
 
 ### Traditional Way: Backend-Specific Models
@@ -164,7 +166,7 @@ backend = UnifiedMindtraceODMBackend(
 
 ### 2. MongoMindtraceODMBackend
 
-Specialized MongoDB backend using Beanie ODM:
+Specialized MongoDB backend using Beanie ODM. **Natively async, but supports sync interface too!**
 
 ```python
 from mindtrace.database import MongoMindtraceODMBackend, MindtraceDocument
@@ -183,6 +185,18 @@ backend = MongoMindtraceODMBackend(
     db_name="myapp"
 )
 
+# Initialize (both methods available)
+await backend.initialize()  # Native async
+backend.initialize_sync()   # Sync wrapper
+
+# Async operations (native)
+user = await backend.insert(User(name="Alice", email="alice@example.com"))
+all_users = await backend.all()
+
+# Sync operations (wrapper methods - use from sync code!)
+user = backend.insert_sync(User(name="Bob", email="bob@example.com"))
+all_users = backend.all_sync()
+
 # Supports MongoDB-specific features
 pipeline = [{"$match": {"age": {"$gte": 18}}}]
 results = await backend.aggregate(pipeline)
@@ -190,7 +204,7 @@ results = await backend.aggregate(pipeline)
 
 ### 3. RedisMindtraceODMBackend
 
-High-performance Redis backend with JSON support:
+High-performance Redis backend with JSON support. **Natively sync, but supports async interface too!**
 
 ```python
 from mindtrace.database import RedisMindtraceODMBackend, MindtraceRedisDocument
@@ -209,8 +223,17 @@ backend = RedisMindtraceODMBackend(
     redis_url="redis://localhost:6379"
 )
 
-# Initialize Redis OM
-await backend.initialize()
+# Initialize (both methods available)
+backend.initialize()        # Native sync
+await backend.initialize_async()  # Async wrapper
+
+# Sync operations (native)
+user = backend.insert(User(name="Alice", email="alice@example.com"))
+all_users = backend.all()
+
+# Async operations (wrapper methods - use from async code!)
+user = await backend.insert_async(User(name="Bob", email="bob@example.com"))
+all_users = await backend.all_async()
 
 # Supports Redis-specific queries
 users = backend.find(User.age >= 18)
@@ -236,29 +259,107 @@ backend = LocalMindtraceODMBackend(model_cls=User)
 
 ### Core Operations
 
-All backends support these essential operations:
+All backends support both **sync and async** interfaces for all operations. Choose the style that fits your codebase!
+
+#### Async Operations (Recommended for async code)
 
 ```python
 # Insert a document
 inserted_doc = await backend.insert_async(doc)
-# or: inserted_doc = backend.insert(doc)
 
 # Get document by ID
 doc = await backend.get_async("doc_id")
-# or: doc = backend.get("doc_id")
 
 # Delete document
 await backend.delete_async("doc_id")
-# or: backend.delete("doc_id")
 
 # Get all documents
 all_docs = await backend.all_async()
-# or: all_docs = backend.all()
 
 # Find documents with filters
 results = await backend.find_async({"name": "Alice"})
-# or: results = backend.find({"name": "Alice"})
 ```
+
+#### Sync Operations (Works with both MongoDB and Redis!)
+
+```python
+# Insert a document
+inserted_doc = backend.insert(doc)
+
+# Get document by ID
+doc = backend.get("doc_id")
+
+# Delete document
+backend.delete("doc_id")
+
+# Get all documents
+all_docs = backend.all()
+
+# Find documents with filters
+results = backend.find({"name": "Alice"})
+```
+
+**Note**: 
+- **MongoDB backend**: Sync methods use wrapper functions that run async code in an event loop
+- **Redis backend**: Async methods use wrapper functions that call native sync methods
+- **Unified backend**: Automatically routes to the appropriate method based on the active backend
+
+### Understanding Sync/Async Wrappers
+
+Both MongoDB and Redis backends now support both sync and async interfaces through wrapper methods:
+
+#### MongoDB (Natively Async)
+- **Native methods**: `insert()`, `get()`, `delete()`, `all()`, `find()`, `initialize()` - all async
+- **Sync wrappers**: `insert_sync()`, `get_sync()`, `delete_sync()`, `all_sync()`, `find_sync()`, `initialize_sync()` - run async code in event loop
+- **Use case**: Use sync wrappers when you need to call MongoDB from synchronous code
+
+```python
+# MongoDB backend - native async
+mongo_backend = MongoMindtraceODMBackend(...)
+await mongo_backend.initialize()
+user = await mongo_backend.insert(User(name="Alice"))
+
+# MongoDB backend - sync wrapper (for sync code)
+mongo_backend = MongoMindtraceODMBackend(...)
+mongo_backend.initialize_sync()  # Wrapper that runs async initialize()
+user = mongo_backend.insert_sync(User(name="Bob"))  # Wrapper that runs async insert()
+```
+
+#### Redis (Natively Sync)
+- **Native methods**: `insert()`, `get()`, `delete()`, `all()`, `find()`, `initialize()` - all sync
+- **Async wrappers**: `insert_async()`, `get_async()`, `delete_async()`, `all_async()`, `find_async()`, `initialize_async()` - call sync methods directly
+- **Use case**: Use async wrappers when you need to call Redis from asynchronous code
+
+```python
+# Redis backend - native sync
+redis_backend = RedisMindtraceODMBackend(...)
+redis_backend.initialize()
+user = redis_backend.insert(User(name="Alice"))
+
+# Redis backend - async wrapper (for async code)
+redis_backend = RedisMindtraceODMBackend(...)
+await redis_backend.initialize_async()  # Wrapper that calls sync initialize()
+user = await redis_backend.insert_async(User(name="Bob"))  # Wrapper that calls sync insert()
+```
+
+#### Important Notes
+- **Sync methods from async context**: MongoDB sync wrappers will raise `RuntimeError` if called from an async context (use native async methods instead)
+- **Performance**: Wrappers add minimal overhead - MongoDB sync wrappers use `asyncio.run()`, Redis async wrappers are direct calls
+- **Unified backend**: Automatically uses the correct method based on the active backend and your call style
+
+### Sync/Async Compatibility
+
+Both MongoDB and Redis backends now support both interfaces:
+
+| Backend | Native Interface | Wrapper Interface |
+|---------|-----------------|-------------------|
+| MongoDB | Async (`insert`, `get`, etc.) | Sync (`insert_sync`, `get_sync`, etc.) |
+| Redis | Sync (`insert`, `get`, etc.) | Async (`insert_async`, `get_async`, etc.) |
+
+This means you can:
+- Use sync code with MongoDB (via sync wrappers)
+- Use async code with Redis (via async wrappers)
+- Mix and match based on your needs!
 
 ### Unified Backend Specific
 
@@ -438,7 +539,9 @@ async def main():
         preferred_backend=BackendType.MONGO
     )
     
-    await backend.initialize_async()
+    # Initialize (both methods work with both backends!)
+    await backend.initialize_async()  # Initializes MongoDB (async) and Redis (via async wrapper)
+    # Alternative: backend.initialize_sync()  # Initializes Redis (sync) and MongoDB (via sync wrapper)
     
     # Create some users
     users = [
@@ -481,10 +584,10 @@ async def main():
         print(f"{eng.name} - Skills: {', '.join(eng.skills)}")
     
     # Switch to Redis for fast lookups
-    print("\n Switching to Redis for fast operations...")
+    print("\nSwitching to Redis for fast operations...")
     backend.switch_backend(BackendType.REDIS)
     
-    # Insert more users in Redis
+    # Insert more users in Redis (both sync and async work!)
     redis_user = User(
         name="Dave Wilson",
         email="dave@company.com",
@@ -493,8 +596,20 @@ async def main():
         skills=["Kubernetes", "Redis", "Monitoring"]
     )
     
+    # Use sync interface (native for Redis)
     redis_inserted = backend.insert(redis_user)
-    print(f"Redis user created: {redis_inserted.name}")
+    print(f"Redis user created (sync): {redis_inserted.name}")
+    
+    # Or use async interface (wrapper for Redis)
+    redis_user2 = User(
+        name="Eve Brown",
+        email="eve@company.com",
+        age=32,
+        department="DevOps",
+        skills=["Docker", "CI/CD"]
+    )
+    redis_inserted2 = await backend.insert_async(redis_user2)
+    print(f"Redis user created (async): {redis_inserted2.name}")
     
     # Demonstrate backend isolation
     print(f"\n MongoDB users: {len(await backend.get_mongo_backend().all())}")
@@ -563,20 +678,39 @@ else:
 ```
 
 ### 4. Initialization
+
+Both `initialize_async()` and `initialize_sync()` work with both MongoDB and Redis backends:
+
 ```python
 # Initialize once at application startup
 class DatabaseService:
     def __init__(self):
-        self.backend = UnifiedMindtraceODMBackend(...)
+        self.backend = UnifiedMindtraceODMBackend(
+            unified_model_cls=User,
+            mongo_db_uri="mongodb://localhost:27017",
+            mongo_db_name="myapp",
+            redis_url="redis://localhost:6379",
+            preferred_backend=BackendType.MONGO
+        )
     
-    async def initialize(self):
+    async def initialize_async(self):
+        # This initializes both MongoDB (native async) and Redis (via async wrapper)
         await self.backend.initialize_async()
-        self.backend.initialize_sync()  # If you need both
+    
+    def initialize_sync(self):
+        # This initializes both Redis (native sync) and MongoDB (via sync wrapper)
+        self.backend.initialize_sync()
     
     async def cleanup(self):
         # Cleanup if needed
         pass
 ```
+
+**Important**: 
+- `initialize_async()` can be called from async code and initializes both backends
+- `initialize_sync()` can be called from sync code and initializes both backends
+- You typically only need to call one, based on your code style
+- Both methods handle the initialization of all configured backends automatically
 
 ## Contributing
 

@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Type, TypeVar
 
 from beanie import Document, PydanticObjectId, init_beanie
@@ -290,3 +291,208 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
                 print(f"Using model: {model_class.__name__}")
         """
         return self.model_cls
+
+    # Synchronous wrapper methods for compatibility
+    def initialize_sync(self):
+        """
+        Initialize the MongoDB connection synchronously (wrapper around async initialize).
+
+        This method provides a synchronous interface to the async initialize method.
+        It should be called before performing any database operations in a sync context.
+
+        Example:
+            .. code-block:: python
+
+                backend = MongoMindtraceODMBackend(User, "mongodb://localhost:27017", "mydb")
+                backend.initialize_sync()  # Can be called from sync code
+        """
+        try:
+            # Check if we're already in an async context
+            _ = asyncio.get_running_loop()
+            # We're in an async context, so we can't use asyncio.run()
+            # The caller should use await initialize() directly
+            raise RuntimeError(
+                "initialize_sync() called from async context. Use await initialize() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                asyncio.run(self.initialize())
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def insert_sync(self, obj: BaseModel) -> T:
+        """
+        Insert a new document synchronously (wrapper around async insert).
+
+        Args:
+            obj (BaseModel): The document object to insert into the database.
+
+        Returns:
+            ModelType: The inserted document with generated fields populated.
+
+        Raises:
+            DuplicateInsertError: If the document violates unique constraints.
+
+        Example:
+            .. code-block:: python
+
+                user = User(name="John", email="john@example.com")
+                try:
+                    inserted_user = backend.insert_sync(user)
+                    print(f"Inserted user with ID: {inserted_user.id}")
+                except DuplicateInsertError as e:
+                    print(f"Duplicate entry: {e}")
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError(
+                "insert_sync() called from async context. Use await insert() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.insert(obj))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def get_sync(self, id: str | PydanticObjectId) -> T:
+        """
+        Retrieve a document synchronously (wrapper around async get).
+
+        Args:
+            id (str): The unique identifier of the document to retrieve.
+
+        Returns:
+            ModelType: The retrieved document.
+
+        Raises:
+            DocumentNotFoundError: If no document with the given ID exists.
+
+        Example:
+            .. code-block:: python
+
+                try:
+                    user = backend.get_sync("507f1f77bcf86cd799439011")
+                    print(f"Found user: {user.name}")
+                except DocumentNotFoundError:
+                    print("User not found")
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError(
+                "get_sync() called from async context. Use await get() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.get(id))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def delete_sync(self, id: str):
+        """
+        Delete a document synchronously (wrapper around async delete).
+
+        Args:
+            id (str): The unique identifier of the document to delete.
+
+        Raises:
+            DocumentNotFoundError: If no document with the given ID exists.
+
+        Example:
+            .. code-block:: python
+
+                try:
+                    backend.delete_sync("507f1f77bcf86cd799439011")
+                    print("User deleted successfully")
+                except DocumentNotFoundError:
+                    print("User not found")
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError(
+                "delete_sync() called from async context. Use await delete() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.delete(id))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def all_sync(self) -> List[T]:
+        """
+        Retrieve all documents synchronously (wrapper around async all).
+
+        Returns:
+            List[ModelType]: A list of all documents in the collection.
+
+        Example:
+            .. code-block:: python
+
+                all_users = backend.all_sync()
+                print(f"Found {len(all_users)} users")
+                for user in all_users:
+                    print(f"- {user.name}")
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError(
+                "all_sync() called from async context. Use await all() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.all())
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise
+
+    def find_sync(self, *args, **kwargs) -> List[T]:
+        """
+        Find documents synchronously (wrapper around async find).
+
+        Args:
+            *args: Query conditions and filters.
+            **kwargs: Additional query parameters.
+
+        Returns:
+            List[ModelType]: A list of documents matching the query criteria.
+
+        Example:
+            .. code-block:: python
+
+                # Find users with specific email
+                users = backend.find_sync(User.email == "john@example.com")
+
+                # Find users with name containing "John"
+                users = backend.find_sync({"name": {"$regex": "John"}})
+        """
+        try:
+            _ = asyncio.get_running_loop()
+            # We're in an async context, raise error
+            raise RuntimeError(
+                "find_sync() called from async context. Use await find() instead."
+            )
+        except RuntimeError as e:
+            # Check if this is the "no running event loop" error from get_running_loop()
+            if "no running event loop" in str(e).lower():
+                # No running loop, safe to use asyncio.run()
+                return asyncio.run(self.find(*args, **kwargs))
+            else:
+                # Re-raise if it's a different RuntimeError (like our custom one)
+                raise

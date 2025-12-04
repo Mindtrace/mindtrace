@@ -506,11 +506,10 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
 
     async def initialize_async(self):
         """
-        Initialize asynchronous backends (MongoDB).
+        Initialize all configured backends asynchronously.
 
-        This method should be called in an async context when using MongoDB
-        as it requires async initialization. Redis backends are initialized
-        synchronously and don't require this call.
+        This method initializes both MongoDB (native async) and Redis (via async wrapper)
+        backends. It should be called in an async context.
 
         Example:
             .. code-block:: python
@@ -518,34 +517,42 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # In an async function
                 await unified_backend.initialize_async()
         """
-        if not self.mongo_backend:
-            raise ValueError(
-                "initialize_async() called but no asynchronous (MongoDB) backend is configured. "
-                "Only synchronous (Redis) backends require no async initialization. "
-                "Use initialize() or initialize_sync() instead."
-            )
-        await self.mongo_backend.initialize()
+        # Initialize MongoDB backend (native async)
+        if self.mongo_backend:
+            await self.mongo_backend.initialize()
+
+        # Initialize Redis backend (via async wrapper)
+        if self.redis_backend:
+            if hasattr(self.redis_backend, "initialize_async"):
+                await self.redis_backend.initialize_async()
+            else:
+                # Fallback to sync method if async wrapper doesn't exist
+                self.redis_backend.initialize()
 
     def initialize_sync(self):
         """
-        Initialize synchronous backends (Redis).
+        Initialize all configured backends synchronously.
 
-        This method initializes Redis backends synchronously. It's called
-        automatically by the main initialize() method.
+        This method initializes both Redis (native sync) and MongoDB (via sync wrapper)
+        backends. It should be called in a synchronous context.
 
         Example:
             .. code-block:: python
 
-                # Usually called automatically, but can be called directly
+                # In a synchronous context
                 unified_backend.initialize_sync()
         """
-        if not self.redis_backend:
-            raise ValueError(
-                "initialize_sync() called but no synchronous (Redis) backend is configured. "
-                "Only asynchronous (MongoDB) backends require no sync initialization. "
-                "Use initialize() or initialize_async() instead."
-            )
-        self.redis_backend.initialize()
+        # Initialize Redis backend (native sync)
+        if self.redis_backend:
+            self.redis_backend.initialize()
+
+        # Initialize MongoDB backend (via sync wrapper)
+        if self.mongo_backend:
+            if hasattr(self.mongo_backend, "initialize_sync"):
+                self.mongo_backend.initialize_sync()
+            else:
+                # Fallback to async method in event loop if sync wrapper doesn't exist
+                asyncio.run(self.mongo_backend.initialize())
 
     def initialize(self):
         """
@@ -556,6 +563,9 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         async backends appropriately. If called from an async context, it will
         print a warning and skip async initialization.
 
+        This method is a convenience wrapper that calls initialize_sync() for sync
+        initialization. For explicit control, use initialize_sync() or initialize_async().
+
         Example:
             .. code-block:: python
 
@@ -565,22 +575,8 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 # In an async context - use this instead:
                 # await unified_backend.initialize_async()
         """
-        # Initialize sync backends first (if configured)
-        if self.redis_backend:
-            self.redis_backend.initialize()
-
-        # Initialize async backends (if configured)
-        if self.mongo_backend:
-            try:
-                # Check if we're already in an async context
-                _ = asyncio.get_running_loop()
-                # We're in an async context, so we can't use asyncio.run()
-                # The caller should use initialize_async() directly
-                # For now, just log a warning and skip async initialization
-                print("Warning: initialize() called from async context. Use await initialize_async() instead.")
-            except RuntimeError:
-                # No running loop, safe to use asyncio.run()
-                asyncio.run(self.mongo_backend.initialize())
+        # Use initialize_sync which now handles both backends
+        self.initialize_sync()
 
     def _handle_async_call(self, method_name: str, *args, **kwargs):
         """
@@ -605,12 +601,20 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
                 result = unified_backend._handle_async_call('insert', document)
         """
         backend = self._get_active_backend()
-        method = getattr(backend, method_name)
 
         if backend.is_async():
-            # Always use asyncio.run for clean event loop management
-            return asyncio.run(method(*args, **kwargs))
+            # For async backends (MongoDB), use sync wrapper methods
+            sync_method_name = f"{method_name}_sync"
+            if hasattr(backend, sync_method_name):
+                method = getattr(backend, sync_method_name)
+                return method(*args, **kwargs)
+            else:
+                # Fallback to running async method in event loop
+                method = getattr(backend, method_name)
+                return asyncio.run(method(*args, **kwargs))
         else:
+            # For sync backends (Redis), call method directly
+            method = getattr(backend, method_name)
             return method(*args, **kwargs)
 
     def _convert_unified_to_backend_data(self, obj: BaseModel) -> BaseModel:
@@ -770,9 +774,15 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         converted_obj = self._convert_unified_to_backend_data(obj)
         backend = self._get_active_backend()
         if backend.is_async():
+            # For async backends (MongoDB), call async method directly
             return await backend.insert(converted_obj)
         else:
-            return backend.insert(converted_obj)
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "insert_async"):
+                return await backend.insert_async(converted_obj)
+            else:
+                # Fallback to sync method
+                return backend.insert(converted_obj)
 
     async def get_async(self, id: str) -> ModelType:
         """
@@ -798,9 +808,15 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         backend = self._get_active_backend()
         if backend.is_async():
+            # For async backends (MongoDB), call async method directly
             return await backend.get(id)
         else:
-            return backend.get(id)
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "get_async"):
+                return await backend.get_async(id)
+            else:
+                # Fallback to sync method
+                return backend.get(id)
 
     async def delete_async(self, id: str):
         """
@@ -823,9 +839,15 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         backend = self._get_active_backend()
         if backend.is_async():
+            # For async backends (MongoDB), call async method directly
             return await backend.delete(id)
         else:
-            return backend.delete(id)
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "delete_async"):
+                return await backend.delete_async(id)
+            else:
+                # Fallback to sync method
+                return backend.delete(id)
 
     async def all_async(self) -> List[ModelType]:
         """
@@ -844,9 +866,15 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         backend = self._get_active_backend()
         if backend.is_async():
+            # For async backends (MongoDB), call async method directly
             return await backend.all()
         else:
-            return backend.all()
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "all_async"):
+                return await backend.all_async()
+            else:
+                # Fallback to sync method
+                return backend.all()
 
     async def find_async(self, *args, **kwargs) -> List[ModelType]:
         """
@@ -870,9 +898,15 @@ class UnifiedMindtraceODMBackend(MindtraceODMBackend):
         """
         backend = self._get_active_backend()
         if backend.is_async():
+            # For async backends (MongoDB), call async method directly
             return await backend.find(*args, **kwargs)
         else:
-            return backend.find(*args, **kwargs)
+            # For sync backends (Redis), use async wrapper method
+            if hasattr(backend, "find_async"):
+                return await backend.find_async(*args, **kwargs)
+            else:
+                # Fallback to sync method
+                return backend.find(*args, **kwargs)
 
     def get_raw_model(self) -> Type[ModelType]:
         """
