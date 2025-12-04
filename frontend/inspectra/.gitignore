@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# Allow lib/ folder (overrides root .gitignore)
+!/lib/
+
 # production
 /build
 
