@@ -311,9 +311,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
             _ = asyncio.get_running_loop()
             # We're in an async context, so we can't use asyncio.run()
             # The caller should use await initialize() directly
-            raise RuntimeError(
-                "initialize_sync() called from async context. Use await initialize() instead."
-            )
+            raise RuntimeError("initialize_sync() called from async context. Use await initialize() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
@@ -349,9 +347,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         try:
             _ = asyncio.get_running_loop()
             # We're in an async context, raise error
-            raise RuntimeError(
-                "insert_sync() called from async context. Use await insert() instead."
-            )
+            raise RuntimeError("insert_sync() called from async context. Use await insert() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
@@ -386,9 +382,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         try:
             _ = asyncio.get_running_loop()
             # We're in an async context, raise error
-            raise RuntimeError(
-                "get_sync() called from async context. Use await get() instead."
-            )
+            raise RuntimeError("get_sync() called from async context. Use await get() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
@@ -420,9 +414,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         try:
             _ = asyncio.get_running_loop()
             # We're in an async context, raise error
-            raise RuntimeError(
-                "delete_sync() called from async context. Use await delete() instead."
-            )
+            raise RuntimeError("delete_sync() called from async context. Use await delete() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
@@ -450,9 +442,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         try:
             _ = asyncio.get_running_loop()
             # We're in an async context, raise error
-            raise RuntimeError(
-                "all_sync() called from async context. Use await all() instead."
-            )
+            raise RuntimeError("all_sync() called from async context. Use await all() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
@@ -485,9 +475,7 @@ class MongoMindtraceODMBackend[T: MindtraceDocument](MindtraceODMBackend):
         try:
             _ = asyncio.get_running_loop()
             # We're in an async context, raise error
-            raise RuntimeError(
-                "find_sync() called from async context. Use await find() instead."
-            )
+            raise RuntimeError("find_sync() called from async context. Use await find() instead.")
         except RuntimeError as e:
             # Check if this is the "no running event loop" error from get_running_loop()
             if "no running event loop" in str(e).lower():
