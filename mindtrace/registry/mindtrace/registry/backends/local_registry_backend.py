@@ -388,6 +388,9 @@ class LocalRegistryBackend(RegistryBackend):
         lock_path = self._lock_path(key)
 
         try:
+            # Ensure parent directory exists
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            
             # Try atomic file creation first - only one process can create the file
             try:
                 # Use O_EXCL flag to ensure atomic creation
