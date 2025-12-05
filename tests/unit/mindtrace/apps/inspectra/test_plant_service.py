@@ -3,9 +3,9 @@ from typing import List
 
 import pytest
 
-from mindtrace.apps.inspectra.app.services.plant_service import PlantService
-from mindtrace.apps.inspectra.app.schemas.plant import PlantCreate, PlantResponse
-from mindtrace.apps.inspectra.app.models.plant import Plant
+from mindtrace.apps.inspectra.services.plant_service import PlantService
+from mindtrace.apps.inspectra.schemas.plant import PlantCreate, PlantResponse
+from mindtrace.apps.inspectra.models.plant import Plant
 
 @dataclass
 class _FakePlant(Plant):

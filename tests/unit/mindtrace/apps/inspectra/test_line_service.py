@@ -3,9 +3,9 @@ from typing import List, Optional
 
 import pytest
 
-from mindtrace.apps.inspectra.app.services.line_service import LineService
-from mindtrace.apps.inspectra.app.schemas.line import LineCreate, LineResponse
-from mindtrace.apps.inspectra.app.models.line import Line
+from mindtrace.apps.inspectra.services.line_service import LineService
+from mindtrace.apps.inspectra.schemas.line import LineCreate, LineResponse
+from mindtrace.apps.inspectra.models.line import Line
 
 @dataclass
 class _FakeLine(Line):

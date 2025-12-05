@@ -4,10 +4,10 @@ from typing import Optional
 import pytest
 from fastapi import HTTPException
 
-from mindtrace.apps.inspectra.app.services.auth_service import AuthService
-from mindtrace.apps.inspectra.app.schemas.auth import RegisterPayload, LoginPayload, TokenResponse
-from mindtrace.apps.inspectra.app.models.user import User
-from mindtrace.apps.inspectra.app.models.role import Role
+from mindtrace.apps.inspectra.services.auth_service import AuthService
+from mindtrace.apps.inspectra.schemas.auth import RegisterPayload, LoginPayload, TokenResponse
+from mindtrace.apps.inspectra.models.user import User
+from mindtrace.apps.inspectra.models.role import Role
 
 
 @dataclass
