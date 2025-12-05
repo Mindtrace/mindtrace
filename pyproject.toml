@@ -26,6 +26,8 @@ dependencies = [
   "mindtrace-ui>=0.5.0",
   "mindtrace-datalake>=0.5.0",
   "mindtrace-storage>=0.5.0",
+  "pydantic-settings>=2.12.0",
+  "passlib[bcrypt]>=1.7.4",
 ]
 
 [project.optional-dependencies]
