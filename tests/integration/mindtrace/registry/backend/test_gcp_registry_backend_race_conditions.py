@@ -77,19 +77,17 @@ def test_concurrent_lock_acquisition_race_condition(gcp_backend):
     gcp_backend.release_lock(lock_key, successful_acquires[0][2])
 
 
-def test_concurrent_shared_lock_acquisition(gcp_backend):
-    """Test that multiple processes can acquire shared locks simultaneously."""
+def test_shared_locks_are_noop(gcp_backend):
+    """Test that shared locks are no-ops .
+    
+    GCP backend intentionally doesn't implement shared locking - shared locks
+    always return True immediately without creating any lock object.
+    """
     lock_key = "test_shared_lock"
     timeout = 10
     num_threads = 5
     results: List[Tuple[int, bool, str]] = []
     results_lock = threading.Lock()
-
-    # Clean up any existing locks first
-    try:
-        gcp_backend.gcs.delete(f"_lock_{lock_key}")
-    except Exception:
-        pass
 
     def acquire_shared_lock_thread(thread_id: int):
         """Thread function to acquire shared lock."""
@@ -98,9 +96,6 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
             result = gcp_backend.acquire_lock(lock_key, lock_id, timeout, shared=True)
             with results_lock:
                 results.append((thread_id, result, lock_id))
-            # Hold lock briefly
-            time.sleep(0.1)
-            gcp_backend.release_lock(lock_key, lock_id)
         except Exception as e:
             with results_lock:
                 results.append((thread_id, False, f"Error: {e}"))
@@ -113,48 +108,17 @@ def test_concurrent_shared_lock_acquisition(gcp_backend):
 
     for thread in threads:
         thread.start()
-        time.sleep(0.001)
 
     for thread in threads:
         thread.join()
 
-    # All threads should have successfully acquired shared locks
+    # All threads should succeed (shared locks are no-ops)
     successful_acquires = [r for r in results if r[1] is True]
-    assert len(successful_acquires) == num_threads, (
-        f"Expected {num_threads} successful shared lock acquires, got {len(successful_acquires)}"
-    )
+    assert len(successful_acquires) == num_threads
 
-
-def test_exclusive_lock_conflicts_with_shared_locks(gcp_backend):
-    """Test that exclusive lock acquisition fails when shared locks exist."""
-    lock_key = "test_conflict_lock"
-    timeout = 10
-
-    # Clean up any existing locks first
-    try:
-        gcp_backend.gcs.delete(f"_lock_{lock_key}")
-    except Exception:
-        pass
-
-    # Acquire shared lock first
-    shared_lock_id = "shared_lock_1"
-    shared_result = gcp_backend.acquire_lock(lock_key, shared_lock_id, timeout, shared=True)
-    assert shared_result is True, "Should acquire shared lock"
-
-    # Try to acquire exclusive lock (should raise LockAcquisitionError)
-    exclusive_lock_id = "exclusive_lock_1"
-    with pytest.raises(LockAcquisitionError, match="is currently held as shared"):
-        gcp_backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-
-    # Release shared lock
-    gcp_backend.release_lock(lock_key, shared_lock_id)
-
-    # Now exclusive lock should succeed
-    exclusive_result = gcp_backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-    assert exclusive_result is True, "Should acquire exclusive lock after shared lock released"
-
-    # Clean up
-    gcp_backend.release_lock(lock_key, exclusive_lock_id)
+    # No actual lock created
+    is_locked, _ = gcp_backend.check_lock(lock_key)
+    assert not is_locked
 
 
 def test_lock_acquisition_stress_test(gcp_backend):

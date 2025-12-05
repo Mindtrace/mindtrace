@@ -159,16 +159,24 @@ class GCPRegistryBackend(RegistryBackend):
         self.logger.debug(f"Uploading directory from {local_path} to {remote_key}")
 
         local_path = Path(local_path)
-        uploaded_files = []
+        to_upload_files = []
         for file_path in local_path.rglob("*"):
             if file_path.is_file():
                 relative_path = file_path.relative_to(local_path)
                 remote_path = f"{remote_key}/{relative_path}".replace("\\", "/")
-                self.logger.debug(f"Uploading file {file_path} to {remote_path}")
-                self.gcs.upload(str(file_path), remote_path)
-                uploaded_files.append(remote_path)
+                to_upload_files.append((file_path, remote_path))
 
-        self.logger.debug(f"Upload complete. Files uploaded: {uploaded_files}")
+        if len(to_upload_files) > 1:
+            result = self.gcs.upload_batch(to_upload_files, max_workers=min(len(to_upload_files), 8))
+            uploaded_files = result.succeeded  # List of gs:// URIs
+        elif len(to_upload_files) == 1:
+            uri = self.gcs.upload(to_upload_files[0][0], to_upload_files[0][1])
+            uploaded_files = [uri]
+        else:
+            self.logger.warning(f"No files to upload for {name}@{version}")
+            uploaded_files = []
+
+        self.logger.debug(f"Upload complete. {len(uploaded_files)} files uploaded")
 
     def pull(self, name: str, version: str, local_path: str | Path):
         """Download a directory from GCS.
@@ -182,9 +190,9 @@ class GCPRegistryBackend(RegistryBackend):
         self.logger.debug(f"Downloading directory from {remote_key} to {local_path}")
 
         local_path = Path(local_path)
-        downloaded_files = []
+        to_download_files = []
 
-        # List all objects with the prefix
+        # List all objects with the prefix and prepare download list
         objects = self.gcs.list_objects(prefix=remote_key)
         for obj_name in objects:
             if not obj_name.endswith("/"):  # Skip directory markers
@@ -192,11 +200,19 @@ class GCPRegistryBackend(RegistryBackend):
                 if relative_path:
                     dest_path = local_path / relative_path
                     dest_path.parent.mkdir(parents=True, exist_ok=True)
-                    self.logger.debug(f"Downloading {obj_name} to {dest_path}")
-                    self.gcs.download(obj_name, str(dest_path))
-                    downloaded_files.append(str(dest_path))
+                    to_download_files.append((obj_name, str(dest_path)))
 
-        self.logger.debug(f"Download complete. Files downloaded: {downloaded_files}")
+        if len(to_download_files) > 1:
+            result = self.gcs.download_batch(to_download_files, max_workers=min(len(to_download_files), 8))
+            downloaded_files = result.succeeded  # List of local paths
+        elif len(to_download_files) == 1:
+            self.gcs.download(to_download_files[0][0], to_download_files[0][1])
+            downloaded_files = [to_download_files[0][1]]
+        else:
+            self.logger.warning(f"No files to download for {name}@{version}")
+            downloaded_files = []
+
+        self.logger.debug(f"Download complete. {len(downloaded_files)} files downloaded")
 
     def delete(self, name: str, version: str):
         """Delete a version directory from GCS.
@@ -224,15 +240,10 @@ class GCPRegistryBackend(RegistryBackend):
         meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Saving metadata to {meta_path}: {metadata}")
 
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            json.dump(metadata, f)
-            temp_path = f.name
-
-        try:
-            self.gcs.upload(temp_path, meta_path)
-        finally:
-            os.unlink(temp_path)
+        self.gcs._bucket().blob(meta_path).upload_from_string(
+            json.dumps(metadata),
+            content_type="application/json",
+        )
 
     def fetch_metadata(self, name: str, version: str) -> dict:
         """Fetch object metadata from GCS.
@@ -247,22 +258,12 @@ class GCPRegistryBackend(RegistryBackend):
         meta_path = self._object_metadata_path(name, version)
         self.logger.debug(f"Loading metadata from: {meta_path}")
 
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            temp_path = f.name
+        data = self.gcs._bucket().blob(meta_path).download_as_string()
+        metadata = json.loads(data)
 
-        try:
-            self.gcs.download(meta_path, temp_path)
-            with open(temp_path, "r") as f:
-                metadata = json.load(f)
-
-            # Add the GCS path to the metadata
-            object_key = self._object_key(name, version)
-            metadata["path"] = f"gs://{self.gcs.bucket_name}/{object_key}"
-
-            self.logger.debug(f"Loaded metadata: {metadata}")
-            return metadata
-        finally:
-            os.unlink(temp_path)
+        object_key = self._object_key(name, version)
+        metadata["path"] = f"gs://{self.gcs.bucket_name}/{object_key}"
+        return metadata
 
     def delete_metadata(self, name: str, version: str):
         """Delete object metadata from GCS.
@@ -458,6 +459,9 @@ class GCPRegistryBackend(RegistryBackend):
             self.logger.error(f"Error loading materializers: {e}")
             return {}
 
+    def _lock_payload(self, lock_id: str, expires_at: int, shared: bool):
+        return json.dumps({"lock_id": lock_id, "expires_at": expires_at, "shared": shared})
+
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using GCS object generation numbers.
 
@@ -479,115 +483,37 @@ class GCPRegistryBackend(RegistryBackend):
         Returns:
             True if the lock was acquired, False otherwise.
         """
+
+        if shared:
+            return True  ### We don't want read LOCKS for GCP.
         lock_key = self._lock_key(key)
         blob = self.gcs._bucket().blob(lock_key)
 
+        now = time.time()
         try:
-            # Step 1: Atomically read current lock state
-            generation_match = None  # Will be set based on lock state
+            payload = self._lock_payload(lock_id, now + timeout, shared)
+            blob.upload_from_string(payload, if_generation_match=0)
+            return True
+        except gexc.PreconditionFailed:
+            # Generation mismatch - another process modified the lock
+            # For shared locks, check if the existing lock is also shared - if so, we can share it
             try:
-                # Reload blob to get current generation number
-                blob.reload()
-                current_generation = blob.generation
-
-                # Download current lock content
-                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                    temp_path = f.name
-
-                try:
-                    self.gcs.download(lock_key, temp_path)
-                    with open(temp_path, "r") as f:
-                        current_metadata = json.load(f)
-
-                    # Check if lock is still valid (not expired)
-                    if time.time() < current_metadata.get("expires_at", 0):
-                        # Lock is valid - check compatibility
-                        if shared and not current_metadata.get("shared", False):
-                            # Trying to acquire shared lock but exclusive lock exists
-                            raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        if not shared and current_metadata.get("shared", False):
-                            # Trying to acquire exclusive lock but shared lock exists
-                            raise LockAcquisitionError(f"Lock {key} is currently held as shared")
-                        # If there's already a shared lock and we want a shared lock, we can share it
-                        if shared and current_metadata.get("shared", False):
-                            return True
-                        # Otherwise, lock is held exclusively (and we want exclusive)
-                        raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                    else:
-                        # Lock is expired - we'll update it atomically using generation number
-                        generation_match = current_generation
-                finally:
-                    if os.path.exists(temp_path):
-                        os.unlink(temp_path)
-
+                data = blob.download_as_string()
+                meta = json.loads(data)
             except gexc.NotFound:
-                # Lock doesn't exist (either never existed or was deleted between reload and download)
-                # Use generation_match=0 to create atomically
-                generation_match = 0
+                return False  # race cond, its released now. 
+            now = time.time()
+            if now > meta.get("expires_at", 0):
+                # expired
+                try:
+                    blob.reload()
+                    payload = self._lock_payload(lock_id, now + timeout, shared)
+                    blob.upload_from_string(payload, if_generation_match=blob.generation)
+                    return True
+                except gexc.PreconditionFailed:
+                    return False
 
-            # Step 2: Atomically create/update lock with generation check
-            # generation_match should be set by now (either from expired lock or NotFound)
-            if generation_match is None:
-                # This shouldn't happen, but handle it gracefully
-                self.logger.error(f"Unexpected state: generation_match is None for lock {key}")
-                return False
-
-            new_metadata = {"lock_id": lock_id, "expires_at": time.time() + timeout, "shared": shared}
-
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                json.dump(new_metadata, f)
-                temp_path = f.name
-
-            try:
-                # Atomic operation: only succeeds if generation matches (or is 0 for new file)
-                blob.upload_from_filename(temp_path, if_generation_match=generation_match)
-                return True
-            except gexc.PreconditionFailed:
-                # Generation mismatch - another process modified the lock
-                # For shared locks, check if the existing lock is also shared - if so, we can share it
-                if shared:
-                    try:
-                        # Reload to get the current lock state
-                        blob.reload()
-                        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                            temp_check_path = f.name
-                        try:
-                            self.gcs.download(lock_key, temp_check_path)
-                            with open(temp_check_path, "r") as f:
-                                existing_metadata = json.load(f)
-                            # If the existing lock is shared and valid, we can share it
-                            if existing_metadata.get("shared", False) and time.time() < existing_metadata.get(
-                                "expires_at", 0
-                            ):
-                                return True
-                            # If the existing lock is exclusive, raise error
-                            if not existing_metadata.get("shared", False):
-                                raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
-                        finally:
-                            if os.path.exists(temp_check_path):
-                                os.unlink(temp_check_path)
-                    except LockAcquisitionError:
-                        # Re-raise LockAcquisitionError
-                        raise
-                    except gexc.NotFound:
-                        # Lock was deleted between PreconditionFailed and check - return False to retry
-                        return False
-                    except Exception as e:
-                        # Log other exceptions but still return False to allow retry
-                        self.logger.debug(f"Error checking existing lock after PreconditionFailed: {e}")
-                        return False
-                # Return False to allow Registry class to retry
-                return False
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
-
-        except LockAcquisitionError:
-            # Re-raise LockAcquisitionError (Registry will handle retries)
-            raise
-        except Exception as e:
-            self.logger.error(f"Error acquiring {'shared ' if shared else ''}lock for {key}: {e}")
-            return False
+            raise LockAcquisitionError(f"Lock {key} is currently held exclusively")
 
     def release_lock(self, key: str, lock_id: str) -> bool:
         """Release a lock by verifying ownership and removing the lock object.
@@ -600,27 +526,13 @@ class GCPRegistryBackend(RegistryBackend):
             True if lock was released, False otherwise.
         """
         lock_key = self._lock_key(key)
-
+        blob = self.gcs._bucket().blob(lock_key)
         try:
-            # Verify lock ownership
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
-
-            try:
-                self.gcs.download(lock_key, temp_path)
-                with open(temp_path, "r") as f:
-                    lock_data = json.load(f)
-                if lock_data.get("lock_id") != lock_id:
-                    return False  # Not our lock
-            except Exception:
-                return True  # Lock doesn't exist
-
-            # Remove the lock
-            self.gcs.delete(lock_key)
+            blob.delete()
             return True
-        finally:
-            if "temp_path" in locals() and os.path.exists(temp_path):
-                os.unlink(temp_path)
+        except gexc.NotFound:  # it wasn't locked. do nothing.
+            pass
+        return True
 
     def check_lock(self, key: str) -> tuple[bool, str | None]:
         """Check if a key is currently locked.
@@ -633,23 +545,17 @@ class GCPRegistryBackend(RegistryBackend):
             If not locked, lock_id will be None.
         """
         lock_key = self._lock_key(key)
+        blob = self.gcs._bucket().blob(lock_key)
 
         try:
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                temp_path = f.name
+            data = blob.download_as_string()
+            lock_data = json.loads(data)
 
-            try:
-                self.gcs.download(lock_key, temp_path)
-                with open(temp_path, "r") as f:
-                    lock_data = json.load(f)
+            # Check if lock is expired
+            if time.time() > lock_data.get("expires_at", 0):
+                return False, None
 
-                # Check if lock is expired
-                if time.time() > lock_data.get("expires_at", 0):
-                    return False, None
-
-                return True, lock_data.get("lock_id")
-            finally:
-                os.unlink(temp_path)
+            return True, lock_data.get("lock_id")
 
         except Exception:
             return False, None
