@@ -519,27 +519,47 @@ async def test_unified_backend_cross_backend_data_isolation(dual_unified_backend
 # Integration tests for Unified Document Model
 @pytest.mark.asyncio
 async def test_unified_model_crud_mongodb(unified_model_backend):
-    """Test basic backend selection and configuration with MongoDB."""
+    """Test basic CRUD operations with unified model using MongoDB backend."""
     # Ensure we're using MongoDB
     unified_model_backend.switch_backend(BackendType.MONGO)
-
-    # Test that the backend is properly configured
     assert unified_model_backend.get_current_backend_type() == BackendType.MONGO
     assert unified_model_backend.is_async() is True
 
-    # Test that we can get the raw model (it will be auto-generated from unified model)
-    mongo_model = unified_model_backend.get_raw_model()
-    assert issubclass(mongo_model, MindtraceDocument)
+    # Create a user document using the unified model
+    user = IntegrationUnifiedUserDoc(name="Alice", age=30, email="alice@unified.com")
 
-    # Test backend switching works
-    if unified_model_backend.has_redis_backend():
-        unified_model_backend.switch_backend(BackendType.REDIS)
-        assert unified_model_backend.get_current_backend_type() == BackendType.REDIS
-        assert unified_model_backend.is_async() is False
+    # Test Create (insert)
+    inserted = await unified_model_backend.insert_async(user)
+    assert inserted.name == "Alice"
+    assert inserted.age == 30
+    assert inserted.email == "alice@unified.com"
+    assert hasattr(inserted, "id") or hasattr(inserted, "pk")
+    inserted_id = str(getattr(inserted, "id", getattr(inserted, "pk", None)))
+    assert inserted_id is not None
 
-        # Switch back
-        unified_model_backend.switch_backend(BackendType.MONGO)
-        assert unified_model_backend.get_current_backend_type() == BackendType.MONGO
+    # Test Read (get by ID)
+    fetched = await unified_model_backend.get_async(inserted_id)
+    assert fetched.name == "Alice"
+    assert fetched.age == 30
+    assert fetched.email == "alice@unified.com"
+
+    # Test Read All
+    all_users = await unified_model_backend.all_async()
+    assert len(all_users) >= 1
+    user_names = [u.name for u in all_users]
+    assert "Alice" in user_names
+
+    # Test Read (find with filter)
+    found_users = await unified_model_backend.find_async({"age": 30})
+    assert len(found_users) >= 1
+    assert any(u.name == "Alice" for u in found_users)
+
+    # Test Delete
+    await unified_model_backend.delete_async(inserted_id)
+
+    # Verify deletion by attempting to get the deleted document
+    with pytest.raises(DocumentNotFoundError):
+        await unified_model_backend.get_async(inserted_id)
 
 
 @pytest.mark.asyncio
@@ -573,62 +593,133 @@ async def test_unified_model_backend_switching(unified_model_backend):
 
 @pytest.mark.asyncio
 async def test_unified_model_find_operations(unified_model_backend):
-    """Test unified backend model access and configuration."""
-    # Test unified model access
-    unified_model = unified_model_backend.get_unified_model()
-    assert unified_model == IntegrationUnifiedUserDoc
+    """Test find operations with unified model across different backends."""
+    unified_model = IntegrationUnifiedUserDoc
 
-    # Test metadata access
-    meta = unified_model.get_meta()
-    assert hasattr(meta, "collection_name")
-    assert hasattr(meta, "global_key_prefix")
+    # Insert test data
+    users = [
+        unified_model(name="Alice", age=30, email="alice@find.com"),
+        unified_model(name="Bob", age=25, email="bob@find.com"),
+        unified_model(name="Charlie", age=35, email="charlie@find.com"),
+        unified_model(name="David", age=30, email="david@find.com"),
+    ]
 
-    # Test model generation capabilities
+    # Test MongoDB find operations
     if unified_model_backend.has_mongo_backend():
-        mongo_model = unified_model._auto_generate_mongo_model()
-        assert issubclass(mongo_model, MindtraceDocument)
+        unified_model_backend.switch_backend(BackendType.MONGO)
+        # Insert users and store inserted objects
+        inserted_mongo_users = []
+        for user in users:
+            inserted = await unified_model_backend.insert_async(user)
+            inserted_mongo_users.append(inserted)
 
+        # Test find with filter (age < 30)
+        young_users = await unified_model_backend.find_async({"age": {"$lt": 30}})
+        assert len(young_users) == 1
+        assert young_users[0].name == "Bob"
+
+        # Test find with equality filter (age == 30)
+        age_30_users = await unified_model_backend.find_async({"age": 30})
+        assert len(age_30_users) == 2
+        names = {u.name for u in age_30_users}
+        assert names == {"Alice", "David"}
+
+        # Test find with field equality (name)
+        alice_users = await unified_model_backend.find_async({"name": "Alice"})
+        assert len(alice_users) == 1
+        assert alice_users[0].email == "alice@find.com"
+
+        # Clean up
+        for user in inserted_mongo_users:
+            try:
+                user_id = str(getattr(user, "id", getattr(user, "pk", None)) or "")
+                if user_id:
+                    await unified_model_backend.delete_async(user_id)
+            except Exception:
+                pass
+
+    # Test Redis find operations
     if unified_model_backend.has_redis_backend():
-        redis_model = unified_model._auto_generate_redis_model()
-        assert issubclass(redis_model, MindtraceRedisDocument)
+        unified_model_backend.switch_backend(BackendType.REDIS)
+        redis_model = unified_model_backend.get_raw_model()
 
-    # Test document conversion methods
-    test_doc = unified_model(name="Test User", age=30, email="test@example.com")
+        # Insert users
+        inserted_users = []
+        for user in users:
+            inserted = unified_model_backend.insert(user)
+            inserted_users.append(inserted)
 
-    mongo_dict = test_doc.to_mongo_dict()
-    assert "name" in mongo_dict
-    assert "age" in mongo_dict
-    assert "email" in mongo_dict
+        # Test find by age (using raw model)
+        age_30_users = unified_model_backend.find(redis_model.age == 30)
+        assert len(age_30_users) >= 2
+        names = {u.name for u in age_30_users}
+        assert "Alice" in names or "David" in names
 
-    redis_dict = test_doc.to_redis_dict()
-    assert "name" in redis_dict
-    assert "age" in redis_dict
-    assert "email" in redis_dict
+        # Test find by name
+        alice_users = unified_model_backend.find(redis_model.name == "Alice")
+        assert len(alice_users) >= 1
+        assert alice_users[0].email == "alice@find.com"
+
+        # Test find by age < 30 (young users)
+        # Note: Redis-OM doesn't support $lt directly, so we'll find all and filter
+        all_redis_users = unified_model_backend.all()
+        young_redis_users = [u for u in all_redis_users if getattr(u, "age", 0) < 30]
+        assert len(young_redis_users) >= 1
+        assert any(u.name == "Bob" for u in young_redis_users)
+
+        # Clean up
+        for user in inserted_users:
+            try:
+                user_pk = getattr(user, "pk", None)
+                if user_pk:
+                    unified_model_backend.delete(user_pk)
+            except Exception:
+                pass
 
 
 @pytest.mark.asyncio
 async def test_unified_model_crud_redis(unified_model_backend):
-    """Test basic backend selection and configuration with Redis."""
+    """Test basic CRUD operations with unified model using Redis backend."""
     # Switch to Redis backend
     unified_model_backend.switch_backend(BackendType.REDIS)
-
-    # Test that the backend is properly configured
     assert unified_model_backend.get_current_backend_type() == BackendType.REDIS
-    assert unified_model_backend.is_async() is False
 
-    # Test that we can get the raw model (it will be auto-generated from unified model)
+    # Create a user document using the unified model
+    user = IntegrationUnifiedUserDoc(name="Bob", age=25, email="bob@redis.com")
+
+    # Test Create (insert)
+    inserted = await unified_model_backend.insert_async(user)
+    assert inserted.name == "Bob"
+    assert inserted.age == 25
+    assert inserted.email == "bob@redis.com"
+    assert hasattr(inserted, "pk") or hasattr(inserted, "id")
+    inserted_pk = getattr(inserted, "pk", getattr(inserted, "id", None))
+    assert inserted_pk is not None
+
+    # Test Read (get by ID)
+    fetched = await unified_model_backend.get_async(str(inserted_pk))
+    assert fetched.name == "Bob"
+    assert fetched.age == 25
+    assert fetched.email == "bob@redis.com"
+
+    # Test Read All
+    all_users = await unified_model_backend.all_async()
+    assert len(all_users) >= 1
+    user_names = [u.name for u in all_users]
+    assert "Bob" in user_names
+
+    # Test Read (find with filter) - Redis uses raw model for find
     redis_model = unified_model_backend.get_raw_model()
-    assert issubclass(redis_model, MindtraceRedisDocument)
+    found_users = await unified_model_backend.find_async(redis_model.name == "Bob")
+    assert len(found_users) >= 1
+    assert any(u.email == "bob@redis.com" for u in found_users)
 
-    # Test backend switching works
-    if unified_model_backend.has_mongo_backend():
-        unified_model_backend.switch_backend(BackendType.MONGO)
-        assert unified_model_backend.get_current_backend_type() == BackendType.MONGO
-        assert unified_model_backend.is_async() is True
+    # Test Delete
+    await unified_model_backend.delete_async(str(inserted_pk))
 
-        # Switch back
-        unified_model_backend.switch_backend(BackendType.REDIS)
-        assert unified_model_backend.get_current_backend_type() == BackendType.REDIS
+    # Verify deletion by attempting to get the deleted document
+    with pytest.raises(DocumentNotFoundError):
+        await unified_model_backend.get_async(str(inserted_pk))
 
 
 def test_unified_model_backend_configuration(unified_model_backend):
