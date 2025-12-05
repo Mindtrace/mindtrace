@@ -20,7 +20,7 @@ services:
     image: mongo:7
     container_name: inspectra_mongo
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     env_file:
       - .env
     environment:

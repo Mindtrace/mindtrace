@@ -6,17 +6,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml /build/pyproject.toml
+COPY pyproject.toml ./pyproject.toml
+COPY mindtrace ./mindtrace
 
-RUN python3 - <<EOF
-import tomllib, subprocess, sys
-with open("pyproject.toml", "rb") as f:
-    deps = tomllib.load(f)["project"]["dependencies"]
-for dep in deps:
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "--prefix", "/build/packages", dep]
-    )
-EOF
+RUN python -m pip install --no-cache-dir "pip==24.0" \
+ && python -m pip install --no-cache-dir --prefix=/install .
 
 FROM python:3.12-slim
 
@@ -25,10 +19,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-COPY --from=builder /build/packages /usr/local
-
-# Copy entire repo into /app (mindtrace/**, docker/**, etc.)
-COPY . /app
+COPY --from=builder /install /usr/local
 
 EXPOSE 8000
 
