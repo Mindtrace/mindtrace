@@ -313,49 +313,19 @@ def test_acquire_and_release_lock(backend):
     assert not is_locked_after
 
 
-def test_shared_locks(backend):
-    """Test shared locking functionality."""
+def test_shared_locks_are_noop(backend):
+    """Test that shared locks are no-ops (always return True without creating lock)."""
     lock_key = "test:shared"
     lock_id1 = "test-shared-lock-1"
-    lock_id2 = "test-shared-lock-2"
     timeout = 10
 
-    # Acquire first shared lock
+    # Shared locks always succeed (no-op for GCP)
     success1 = backend.acquire_lock(lock_key, lock_id1, timeout, shared=True)
     assert success1
 
-    # Acquire second shared lock (should work for shared locks)
-    success2 = backend.acquire_lock(lock_key, lock_id2, timeout, shared=True)
-    assert success2
-
-    # Release both locks
-    backend.release_lock(lock_key, lock_id1)
-    backend.release_lock(lock_key, lock_id2)
-
-    # Verify locks are released
+    # No actual lock is created, so check_lock returns False
     is_locked, _ = backend.check_lock(lock_key)
-    assert not is_locked
-
-
-def test_exclusive_lock_conflict(backend):
-    """Test that exclusive locks conflict with shared locks."""
-    from mindtrace.registry.core.exceptions import LockAcquisitionError
-
-    lock_key = "test:conflict"
-    shared_lock_id = "shared-lock"
-    exclusive_lock_id = "exclusive-lock"
-    timeout = 10
-
-    # Acquire shared lock first
-    shared_success = backend.acquire_lock(lock_key, shared_lock_id, timeout, shared=True)
-    assert shared_success
-
-    # Try to acquire exclusive lock (should raise LockAcquisitionError)
-    with pytest.raises(LockAcquisitionError, match="currently held as shared"):
-        backend.acquire_lock(lock_key, exclusive_lock_id, timeout, shared=False)
-
-    # Release shared lock
-    backend.release_lock(lock_key, shared_lock_id)
+    assert not is_locked  # No lock was actually created
 
 
 def test_overwrite_operation(backend, sample_object_dir, gcs_client, test_bucket):
