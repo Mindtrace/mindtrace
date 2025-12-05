@@ -125,6 +125,8 @@ def test_gcp_backend_cache_persistence(gcp_registry, backend):
 
 def test_gcp_backend_cache_hash_verification(gcp_registry):
     """Test that GCP backend cache properly verifies hashes."""
+    import json
+
     # Save initial data
     test_data1 = {"key": "hash_test", "value": 789}
     gcp_registry.save("test:hash", test_data1, version="1.0.0")
@@ -142,20 +144,33 @@ def test_gcp_backend_cache_hash_verification(gcp_registry):
     cached_metadata = gcp_registry._cache.info("test:hash", version="1.0.0")
     assert cached_metadata["hash"] == hash1
 
-    # Save updated data (different hash)
-    test_data2 = {"key": "hash_test", "value": 999}
-    gcp_registry.save("test:hash", test_data2, version="1.0.0")
+    # Corrupt the cache by modifying the data directly
+    # This simulates cache corruption or external modification
+    cache_dir = gcp_registry._cache.backend._full_path(
+        gcp_registry._cache.backend._object_key("test:hash", "1.0.0")
+    )
+    data_json_path = cache_dir / "data.json"
+    assert data_json_path.exists(), "data.json should exist in cache"
 
-    # Get new hash
-    metadata2 = gcp_registry.info("test:hash", version="1.0.0")
-    hash2 = metadata2["hash"]
-    assert hash2 != hash1, "Different data should produce different hash"
+    # Modify the cached data to have different content
+    corrupted_data = {"key": "hash_test", "value": 999}
+    with open(data_json_path, "w") as f:
+        json.dump(corrupted_data, f)
 
-    # Load should detect hash mismatch and download new version
+    # Verify cache now has corrupted data
+    cached_corrupted = gcp_registry._cache.load("test:hash", version="1.0.0", verify_hash=False)
+    assert cached_corrupted == corrupted_data
+
+    # Load with verify_hash=True should detect the hash mismatch
+    # and download the correct version from remote, updating the cache
     loaded2 = gcp_registry.load("test:hash", version="1.0.0", verify_hash=True)
-    assert loaded2 == test_data2
+    assert loaded2 == test_data1, "Should load original data from remote after detecting hash mismatch"
 
-    # Verify cache was updated
+    # Verify cache was updated with correct hash
     cached_metadata2 = gcp_registry._cache.info("test:hash", version="1.0.0")
-    assert cached_metadata2["hash"] == hash2
+    assert cached_metadata2["hash"] == hash1, "Cache should have correct hash after verification"
+    
+    # Verify cache now has correct data
+    cached_correct = gcp_registry._cache.load("test:hash", version="1.0.0", verify_hash=False)
+    assert cached_correct == test_data1, "Cache should have correct data after verification"
 
