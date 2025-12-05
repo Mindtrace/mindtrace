@@ -15,7 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Inspectra - Skeleton Setup",
-  description: "Inspectra application skeleton with Next.js, TypeScript, and modern tooling",
+  description:
+    "Inspectra application skeleton with Next.js, TypeScript, and modern tooling",
 };
 
 export default function RootLayout({

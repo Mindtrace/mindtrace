@@ -19,7 +19,8 @@ const apiResponseSchema = z.object({
 // Mock data for development (backend not ready yet)
 const mockApiResponse: ApiResponse = {
   status: "success",
-  message: "Inspectra API is ready! This is mock data until backend is connected.",
+  message:
+    "Inspectra API is ready! This is mock data until backend is connected.",
   timestamp: new Date().toISOString(),
 };
 
@@ -46,4 +47,3 @@ export async function getHealthCheck(): Promise<ApiResponse> {
   // Mock response for now
   return Promise.resolve(mockApiResponse);
 }
-

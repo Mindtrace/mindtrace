@@ -87,4 +87,3 @@ describe("Home Page", () => {
     expect(screen.getByText("Cypress")).toBeInTheDocument();
   });
 });
-

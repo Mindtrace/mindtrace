@@ -38,7 +38,10 @@ describe("Configuration Tests", () => {
         age: z.number(),
       });
 
-      const invalidData = { name: "Test", age: "not a number" as unknown as number };
+      const invalidData = {
+        name: "Test",
+        age: "not a number" as unknown as number,
+      };
 
       expect(() => schema.parse(invalidData)).toThrow();
     });

@@ -14,7 +14,7 @@ const eslintConfig = defineConfig([
     },
     rules: {
       "prettier/prettier": "error",
-      // Airbnb-style rules
+      // Code quality rules
       "no-console": ["warn", { allow: ["warn", "error"] }],
       "no-debugger": "error",
       "no-unused-vars": "off",

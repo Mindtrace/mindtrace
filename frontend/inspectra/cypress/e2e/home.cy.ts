@@ -8,14 +8,16 @@ describe("Home Page E2E Tests", () => {
   });
 
   it("should display the placeholder description", () => {
-    cy.contains("This is a placeholder page for Inspectra skeleton setup").should(
-      "be.visible"
-    );
+    cy.contains(
+      "This is a placeholder page for Inspectra skeleton setup"
+    ).should("be.visible");
   });
 
   it("should show API connection status", () => {
     cy.contains("API Connection Status").should("be.visible");
-    cy.contains("API Response Received", { timeout: 10000 }).should("be.visible");
+    cy.contains("API Response Received", { timeout: 10000 }).should(
+      "be.visible"
+    );
   });
 
   it("should display tech stack information", () => {
@@ -44,4 +46,3 @@ describe("Home Page E2E Tests", () => {
     cy.contains("Welcome to Inspectra").should("be.visible");
   });
 });
-

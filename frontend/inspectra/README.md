@@ -11,11 +11,11 @@ A modern Next.js application skeleton with TypeScript, Tailwind CSS, TanStack Qu
 - **Validation**: Zod
 - **UI Components**: shadcn/ui
 - **API Types**: openapi-typescript (for FastAPI backend integration)
-- **Testing**: 
+- **Testing**:
   - React Testing Library (unit/integration)
   - Cypress (E2E)
 - **Code Quality**: 
-  - ESLint with Airbnb style guide
+  - ESLint with Next.js and TypeScript recommended rules
   - Prettier
 
 ## Getting Started
@@ -67,6 +67,7 @@ npm start
 The backend FastAPI server is not ready yet. When it's available:
 
 1. Generate TypeScript types from OpenAPI schema:
+
    ```bash
    npx openapi-typescript http://localhost:8000/openapi.json -o ./lib/api/types.ts
    ```
@@ -121,8 +122,7 @@ npm run cypress:open
 
 This project uses:
 
-- **ESLint** with Airbnb style guide for code linting
+- **ESLint** with Next.js and TypeScript recommended rules for code linting
 - **Prettier** for code formatting
 
 Both are configured to work together. Run `npm run lint:fix` and `npm run format` before committing.
-

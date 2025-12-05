@@ -10,4 +10,3 @@ export default defineConfig({
     viewportHeight: 720,
   },
 });
-
