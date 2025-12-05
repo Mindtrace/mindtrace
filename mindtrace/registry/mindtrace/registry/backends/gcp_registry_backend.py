@@ -501,7 +501,7 @@ class GCPRegistryBackend(RegistryBackend):
                 data = blob.download_as_string()
                 meta = json.loads(data)
             except gexc.NotFound:
-                return False  # race cond, its released now. 
+                return False  # race cond, its released now.
             now = time.time()
             if now > meta.get("expires_at", 0):
                 # expired

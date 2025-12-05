@@ -11,10 +11,6 @@ import threading
 import time
 from typing import List, Tuple
 
-import pytest
-
-from mindtrace.registry.core.exceptions import LockAcquisitionError
-
 
 def test_concurrent_lock_acquisition_race_condition(gcp_backend):
     """Test that only one process can acquire a lock when multiple try simultaneously.
@@ -79,7 +75,7 @@ def test_concurrent_lock_acquisition_race_condition(gcp_backend):
 
 def test_shared_locks_are_noop(gcp_backend):
     """Test that shared locks are no-ops .
-    
+
     GCP backend intentionally doesn't implement shared locking - shared locks
     always return True immediately without creating any lock object.
     """
