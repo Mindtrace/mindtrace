@@ -14,7 +14,7 @@ A modern Next.js application skeleton with TypeScript, Tailwind CSS, TanStack Qu
 - **Testing**:
   - React Testing Library (unit/integration)
   - Cypress (E2E)
-- **Code Quality**: 
+- **Code Quality**:
   - ESLint with Next.js and TypeScript recommended rules
   - Prettier
 
