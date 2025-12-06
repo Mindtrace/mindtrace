@@ -2240,7 +2240,10 @@ def test_acquire_lock_shared_after_precondition_failed_exclusive(backend, mock_g
 
 
 def test_acquire_lock_shared_after_precondition_failed_not_found(backend, mock_gcs_handler):
-    """Test shared lock acquisition after PreconditionFailed when lock is NotFound."""
+    """Test shared lock acquisition after PreconditionFailed when lock is NotFound.
+    
+    This covers the path where NotFound exception after PreconditionFailed returns False.
+    """
     lock_key = "test:obj@1.0.0"
     lock_id = "test-lock-id"
     
@@ -2249,13 +2252,11 @@ def test_acquire_lock_shared_after_precondition_failed_not_found(backend, mock_g
         download_call_count[0] += 1
         if download_call_count[0] == 1:
             # First download succeeds (lock exists but is expired)
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            with open(local_path, "w") as f:
                 json.dump({"lock_id": "other", "expires_at": time.time() - 100, "shared": True}, f)
-                import shutil
-                shutil.copy(f.name, local_path)
-                os.unlink(f.name)
         else:
             # Second download (after PreconditionFailed) raises NotFound
+            # This should return False when lock is NotFound after PreconditionFailed
             raise gexc.NotFound("Lock not found")
     
     mock_blob = MagicMock()
@@ -2305,6 +2306,208 @@ def test_acquire_lock_shared_after_precondition_failed_other_exception(backend, 
             result = backend.acquire_lock(lock_key, lock_id, timeout=5, shared=True)
             # Should return False on other exceptions
             assert result is False
+
+
+def test_acquire_lock_generation_match_none_after_reload_succeeds(backend, mock_gcs_handler, caplog):
+    """Test acquire_lock when generation_match is None after reload succeeds but blob.generation is None.
+    
+    This covers the error handling path where generation_match is unexpectedly None.
+    This can happen if reload() succeeds but blob.generation is None (edge case), and the lock is expired.
+    """
+    lock_key = "test:obj@1.0.0"
+    lock_id = "test-lock-id"
+    
+    # Create a lock file that's expired
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        lock_data = {
+            "lock_id": "other-lock-id",
+            "expires_at": time.time() - 100,  # Expired
+            "shared": False
+        }
+        json.dump(lock_data, f)
+        temp_path = f.name
+    
+    try:
+        mock_blob = MagicMock()
+        # Edge case: reload succeeds but blob.generation is None
+        mock_blob.generation = None
+        mock_blob.reload = MagicMock(return_value=None)
+        
+        def mock_download(remote_path, local_path):
+            if remote_path == backend._lock_key(lock_key):
+                import shutil
+                shutil.copy(temp_path, local_path)
+            else:
+                raise gexc.NotFound("Lock not found")
+        
+        with patch.object(backend.gcs, "_bucket") as mock_bucket:
+            mock_bucket.return_value.blob.return_value = mock_blob
+            with patch.object(backend.gcs, "download", side_effect=mock_download):
+                result = backend.acquire_lock(lock_key, lock_id, timeout=5, shared=False)
+                # Should return False and log error when generation_match is None
+                # (because current_generation = None, so generation_match = None)
+                assert result is False
+                # Verify error was logged
+                assert "Unexpected state: generation_match is None" in caplog.text
+    finally:
+        import os
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
+def test_acquire_lock_shared_precondition_failed_exclusive_lock_re_raise(backend, mock_gcs_handler):
+    """Test that LockAcquisitionError is re-raised when checking exclusive lock after PreconditionFailed.
+    
+    This covers the path where an exclusive lock is detected after PreconditionFailed,
+    and the LockAcquisitionError is properly re-raised.
+    """
+    lock_key = "test:obj@1.0.0"
+    lock_id = "test-lock-id"
+    
+    # Create a lock file that's exclusively held
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        lock_data = {
+            "lock_id": "other-lock-id",
+            "expires_at": time.time() + 100,
+            "shared": False  # Exclusive lock
+        }
+        json.dump(lock_data, f)
+        temp_check_path = f.name
+    
+    try:
+        download_call_count = [0]
+        def mock_download(path, local_path):
+            download_call_count[0] += 1
+            if download_call_count[0] == 1:
+                # First download succeeds (lock exists but is expired)
+                with open(local_path, "w") as f:
+                    json.dump({"lock_id": "other", "expires_at": time.time() - 100, "shared": True}, f)
+            else:
+                # Second download (after PreconditionFailed) returns exclusive lock
+                import shutil
+                shutil.copy(temp_check_path, local_path)
+        
+        mock_blob = MagicMock()
+        mock_blob.generation = 1
+        # First upload fails with PreconditionFailed
+        mock_blob.upload_from_filename = MagicMock(side_effect=gexc.PreconditionFailed("Generation mismatch"))
+        # Reload succeeds both times
+        mock_blob.reload = MagicMock(return_value=None)
+        
+        with patch.object(backend.gcs, "_bucket") as mock_bucket:
+            mock_bucket.return_value.blob.return_value = mock_blob
+            with patch.object(backend.gcs, "download", side_effect=mock_download):
+                # Should raise LockAcquisitionError which is then re-raised
+                with pytest.raises(LockAcquisitionError, match="Lock .* is currently held exclusively"):
+                    backend.acquire_lock(lock_key, lock_id, timeout=5, shared=True)
+    finally:
+        if os.path.exists(temp_check_path):
+            os.unlink(temp_check_path)
+
+
+def test_acquire_lock_shared_precondition_failed_other_exception_logs_and_returns_false(backend, mock_gcs_handler, caplog):
+    """Test that other exceptions after PreconditionFailed are logged and return False.
+    
+    This covers the path where non-LockAcquisitionError/NotFound exceptions are handled
+    after PreconditionFailed for shared locks.
+    """
+    lock_key = "test:obj@1.0.0"
+    lock_id = "test-lock-id"
+    
+    download_call_count = [0]
+    def mock_download(path, local_path):
+        download_call_count[0] += 1
+        if download_call_count[0] == 1:
+            # First download succeeds (lock exists but is expired)
+            with open(local_path, "w") as f:
+                json.dump({"lock_id": "other", "expires_at": time.time() - 100, "shared": True}, f)
+        else:
+            # Second download (after PreconditionFailed) raises a non-NotFound, non-LockAcquisitionError exception
+            # Use a specific exception type to ensure we hit the generic Exception handler
+            # This happens when trying to download the lock file after PreconditionFailed
+            raise ValueError("Unexpected error during lock check")
+    
+    mock_blob = MagicMock()
+    mock_blob.generation = 1
+    # First upload fails with PreconditionFailed
+    mock_blob.upload_from_filename = MagicMock(side_effect=gexc.PreconditionFailed("Generation mismatch"))
+    # Reload succeeds both times
+    mock_blob.reload = MagicMock(return_value=None)
+    
+    with patch.object(backend.gcs, "_bucket") as mock_bucket:
+        mock_bucket.return_value.blob.return_value = mock_blob
+        with patch.object(backend.gcs, "download", side_effect=mock_download):
+            result = backend.acquire_lock(lock_key, lock_id, timeout=5, shared=True)
+            # Should return False on other exceptions
+            assert result is False
+            # Verify error was logged
+            assert "Error checking existing lock after PreconditionFailed" in caplog.text
+
+
+def test_overwrite_rollback_source_check_exception_handled(backend, mock_gcs_handler):
+    """Test overwrite rollback when list_objects raises exception during source existence check.
+    
+    This covers the path where exception during source check is silently caught in rollback.
+    """
+    source_key = "objects/test:source/1.0.0"
+    source_meta_key = "_meta_test_source@1.0.0.json"
+    target_meta_key = "_meta_test_target@2.0.0.json"
+    
+    upload_call_count = [0]
+    list_call_count = [0]
+    
+    def mock_list_objects(prefix=""):
+        list_call_count[0] += 1
+        if list_call_count[0] == 1 and prefix == source_key:
+            # First call: list source objects (succeeds)
+            return [f"{source_key}/file1.txt"]
+        elif list_call_count[0] >= 2 and prefix == source_key:
+            # Second call during rollback: raise exception to test exception handling
+            raise Exception("Source check failed during rollback")
+        return []
+    
+    def mock_upload(local_path, remote_path):
+        upload_call_count[0] += 1
+        # Make metadata upload fail to trigger rollback after objects are copied
+        if upload_call_count[0] == 1 and remote_path == target_meta_key:
+            raise Exception("Metadata upload failed during overwrite")
+    
+    def mock_download(remote_path, local_path):
+        if remote_path == source_meta_key:
+            with open(local_path, "w") as f:
+                json.dump({"class": "test", "path": f"gs://test-bucket/{source_key}"}, f)
+        else:
+            raise FileNotFoundError()
+    
+    def mock_delete(remote_path):
+        pass
+    
+    mock_blob = MagicMock()
+    # Make rewrite succeed (so copied_objects is not empty)
+    mock_blob.rewrite = MagicMock(return_value=None)
+    mock_blob.reload = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.return_value.blob.return_value = mock_blob
+    
+    with (
+        patch.object(backend.gcs, "list_objects", side_effect=mock_list_objects),
+        patch.object(backend.gcs, "upload", side_effect=mock_upload),
+        patch.object(backend.gcs, "download", side_effect=mock_download),
+        patch.object(backend.gcs, "delete", side_effect=mock_delete),
+        patch.object(backend.gcs, "_bucket", mock_bucket),
+    ):
+        # Should raise the original exception (metadata upload failed), not the source check exception
+        with pytest.raises(Exception, match="Metadata upload failed during overwrite"):
+            backend.overwrite(
+                source_name="test:source",
+                source_version="1.0.0",
+                target_name="test:target",
+                target_version="2.0.0",
+            )
+        # The source check exception should be silently caught (lines 885-886)
+        # Verify that list_objects was called for source check during rollback
+        # (at least once for initial listing, and once more during rollback)
+        assert list_call_count[0] >= 2
 
 
 def test_overwrite_verification_failed(backend, mock_gcs_handler):
