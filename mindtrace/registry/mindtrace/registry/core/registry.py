@@ -1167,6 +1167,32 @@ class Registry(Mindtrace):
                 f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
             )
 
+    def _format_object_value(self, object_name: str, version: str, class_name: str) -> str:
+        """Format object value for display in __str__ method.
+
+        Args:
+            object_name: Name of the object
+            version: Version of the object
+            class_name: Class name of the object
+
+        Returns:
+            Formatted string representation of the object value
+        """
+        # Only try to load basic built-in types
+        if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
+            try:
+                obj = self.load(object_name, version)
+                value_str = str(obj)
+                # Truncate long values
+                if len(value_str) > 50:
+                    value_str = value_str[:47] + "..."
+                return value_str
+            except Exception:
+                return "❓ (error loading)"
+        else:
+            # For non-basic types, just show the class name wrapped in angle brackets
+            return f"<{class_name.split('.')[-1]}>"
+
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
 
@@ -1208,20 +1234,7 @@ class Registry(Mindtrace):
 
                     # Get the class name from metadata
                     class_name = details.get("class", "❓")
-
-                    # Only try to load basic built-in types
-                    if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                        try:
-                            obj = self.load(object_name, version)
-                            value_str = str(obj)
-                            # Truncate long values
-                            if len(value_str) > 50:
-                                value_str = value_str[:47] + "..."
-                        except Exception:
-                            value_str = "❓ (error loading)"
-                    else:
-                        # For non-basic types, just show the class name wrapped in angle brackets
-                        value_str = f"<{class_name.split('.')[-1]}>"
+                    value_str = self._format_object_value(object_name, version, class_name)
 
                     if self.version_objects:
                         table.add_row(
@@ -1252,20 +1265,7 @@ class Registry(Mindtrace):
                 version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
             for version, details in version_items:
                 cls = details.get("class", "❓ Not registered")
-
-                # Only try to load basic built-in types
-                if cls in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                    try:
-                        obj = self.load(object_name, version)
-                        value_str = str(obj)
-                        # Truncate long values
-                        if len(value_str) > 50:
-                            value_str = value_str[:47] + "..."
-                    except Exception:
-                        value_str = "❓ (error loading)"
-                else:
-                    # For non-basic types, just show the class name wrapped in angle brackets
-                    value_str = f"<{cls.split('.')[-1]}>"
+                value_str = self._format_object_value(object_name, version, cls)
 
                 lines.append(f"  - v{version}:")
                 lines.append(f"      class: {cls}")
