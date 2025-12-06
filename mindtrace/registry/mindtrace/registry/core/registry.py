@@ -318,6 +318,49 @@ class Registry(Mindtrace):
             self._save_registry_metadata({"version_objects": version_objects})
             return version_objects
 
+    def _should_use_cache(self, name: str, version: str, metadata: dict, verify_hash: bool) -> bool:
+        """Determine if cache should be used for loading an object.
+
+        Args:
+            name: Object name
+            version: Object version
+            metadata: Object metadata containing expected hash
+            verify_hash: Whether to verify hash before using cache
+
+        Returns:
+            True if cache should be used, False otherwise
+        """
+        if not verify_hash:
+            # verify_hash is False, use cache without checking hash
+            return True
+
+        # If verify_hash is True, compute hash from cache directory before loading
+        object_key = self._cache.backend._object_key(name, version)
+        cache_dir = self._cache.backend._full_path(object_key)
+        if not cache_dir.exists():
+            # Cache directory doesn't exist, fall through to remote loading
+            return False
+
+        computed_hash = compute_dir_hash(cache_dir)
+        expected_hash = metadata.get("hash")
+        if expected_hash and computed_hash != expected_hash:
+            self.logger.debug(
+                f"Cache hash mismatch for {name}@{version}: "
+                f"expected {expected_hash}, cached {computed_hash}. Will download from remote."
+            )
+            # Delete stale cache entry before downloading new version
+            try:
+                if self._cache.has_object(name=name, version=version):
+                    self._cache.delete(name=name, version=version)
+                    self.logger.debug(f"Deleted stale cache entry for {name}@{version}")
+            except Exception as e:
+                self.logger.warning(f"Error deleting stale cache entry for {name}@{version}: {e}")
+            # Don't use cache - fall through to remote loading
+            return False
+
+        # Hash matches, use cache
+        return True
+
     def _get_registry_metadata(self) -> dict:
         """Get the registry metadata from the backend.
 
@@ -623,38 +666,7 @@ class Registry(Mindtrace):
                 self.logger.warning(f"Error checking cache for {name}@{version}: {e}. Falling back to remote.")
                 cache_available = False
 
-        use_cache = False
-        if cache_available:
-            # If verify_hash is True, compute hash from cache directory before loading
-            if verify_hash:
-                object_key = self._cache.backend._object_key(name, version)
-                cache_dir = self._cache.backend._full_path(object_key)
-                if cache_dir.exists():
-                    computed_hash = compute_dir_hash(cache_dir)
-                    expected_hash = metadata.get("hash")
-                    if expected_hash and computed_hash != expected_hash:
-                        self.logger.debug(
-                            f"Cache hash mismatch for {name}@{version}: "
-                            f"expected {expected_hash}, cached {computed_hash}. Will download from remote."
-                        )
-                        # Delete stale cache entry before downloading new version
-                        try:
-                            if self._cache.has_object(name=name, version=version):
-                                self._cache.delete(name=name, version=version)
-                                self.logger.debug(f"Deleted stale cache entry for {name}@{version}")
-                        except Exception as e:
-                            self.logger.warning(f"Error deleting stale cache entry for {name}@{version}: {e}")
-                        # Don't use cache - fall through to remote loading
-                        use_cache = False
-                    else:
-                        # Hash matches, use cache
-                        use_cache = True
-                else:
-                    # Cache directory doesn't exist, fall through to remote loading
-                    use_cache = False
-            else:
-                # verify_hash is False, use cache without checking hash
-                use_cache = True
+        use_cache = self._should_use_cache(name, version, metadata, verify_hash) if cache_available else False
 
         # If cache is available and hash matches (or verify_hash is False), load from cache
         if use_cache:
