@@ -706,8 +706,9 @@ class TestServiceLaunchExceptionHandling:
             Launcher.run(*args, *kwargs)
 
         with patch("mindtrace.services.core.launcher.Launcher.run", side_effect=fake_run):
+            # Use shorter timeout (0.01s) to speed up test while still testing timeout behavior
             with pytest.raises(TimeoutError):
-                Service.launch(timeout=1)
+                Service.launch(timeout=0.01)
 
     @patch.object(Service, "status_at_host")
     @patch.object(Service, "build_url")
