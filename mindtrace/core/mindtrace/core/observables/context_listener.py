@@ -11,38 +11,40 @@ class ContextListener(Mindtrace):
 
     1. Deriving from Mindtrace, it provides for uniform logging of events.
 
-    Example::
+    Example:
+    ```python
 
-        from mindtrace.core import ContextListener, Logger
+    from mindtrace.core import ContextListener, Logger
 
-        class MyListener(ContextListener):
-            def x_changed(self, source, old, new):
-                self.logger.info(f"x changed: {old} → {new}")  # Uses Mindtrace logging by default
+    class MyListener(ContextListener):
+        def x_changed(self, source, old, new):
+            self.logger.info(f"x changed: {old} → {new}")  # Uses Mindtrace logging by default
 
-        my_listener = MyListener(logger=Logger("MyListener"))  # May pass in a custom logger
-
+    my_listener = MyListener(logger=Logger("MyListener"))  # May pass in a custom logger
+    ```
 
     2. The default ContextListener can be used to automatically log changes to variables.
 
-    Example::
+    Example:
+    ```python
+    from mindtrace.core import ContextListener, ObservableContext
 
-        from mindtrace.core import ContextListener, ObservableContext
+    @ObservableContext(vars={"x": int, "y": int})
+    class MyContext:
+        def __init__(self):
+            self.x = 0
+            self.y = 0
 
-        @ObservableContext(vars={"x": int, "y": int})
-        class MyContext:
-            def __init__(self):
-                self.x = 0
-                self.y = 0
+    my_context = MyContext()
+    my_context.subscribe(ContextListener(autolog=["x", "y"]))
 
-        my_context = MyContext()
-        my_context.subscribe(ContextListener(autolog=["x", "y"]))
+    my_context.x = 1
+    my_context.y = 2
 
-        my_context.x = 1
-        my_context.y = 2
-
-        # Logs:
-        # [MyContext] x changed: 0 → 1
-        # [MyContext] y changed: 0 → 2
+    # Logs:
+    # [MyContext] x changed: 0 → 1
+    # [MyContext] y changed: 0 → 2
+    ```
     """
 
     def __init__(self, autolog: list[str] | None = None, log_level: int = logging.ERROR, logger: Any = None, **kwargs):

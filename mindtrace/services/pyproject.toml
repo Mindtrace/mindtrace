@@ -1,6 +1,6 @@
 [project]
 name = "mindtrace-services"
-version = "0.5.0"
+version = "0.6.0"
 description = "Service layer for Mindtrace"
 readme = "README.md"
 license = "Apache-2.0"
@@ -19,7 +19,7 @@ dependencies = [
     "structlog>=24.4.0",
     "uvicorn>=0.34.3",
     "aiohttp>=3.12.13",
-    "fastmcp==2.9.2",
+    "fastmcp>=2.13.0",
     "discord.py>=2.3.0",
 ]
 

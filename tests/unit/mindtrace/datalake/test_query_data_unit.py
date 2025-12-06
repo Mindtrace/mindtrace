@@ -1,4 +1,4 @@
-"""Unit tests for the query_data method in the Datalake class."""
+"""Unit tests for the query_data_legacy method in the Datalake class."""
 
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -31,7 +31,7 @@ def create_mock_datum(
 
 
 class TestQueryDataUnit:
-    """Unit tests for the query_data method."""
+    """Unit tests for the query_data_legacy method."""
 
     @pytest.fixture
     def mock_database(self):
@@ -94,7 +94,7 @@ class TestQueryDataUnit:
 
         # Test single query
         query = {"metadata.project": "test_project", "column": "image_id"}
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database call
         expected_query = {"metadata.project": "test_project"}
@@ -117,7 +117,7 @@ class TestQueryDataUnit:
 
         # Test single query as list
         query = [{"metadata.project": "test_project", "column": "image_id"}]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database call
         expected_query = {"metadata.project": "test_project"}
@@ -155,7 +155,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 2
@@ -213,7 +213,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "latest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 2
@@ -243,7 +243,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 2
@@ -288,7 +288,7 @@ class TestQueryDataUnit:
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
             {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 3
@@ -316,7 +316,7 @@ class TestQueryDataUnit:
         mock_database.find.return_value = []
 
         query = {"metadata.project": "nonexistent_project", "column": "image_id"}
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database call
         expected_query = {"metadata.project": "nonexistent_project"}
@@ -354,7 +354,7 @@ class TestQueryDataUnit:
         ]
 
         with pytest.raises(ValueError, match="Invalid strategy: invalid"):
-            await datalake.query_data(query)
+            await datalake.query_data_legacy(query)
 
     @pytest.mark.asyncio
     async def test_query_with_default_strategy(self, datalake, mock_database):
@@ -395,7 +395,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify result - should select the latest (new_derived)
         assert len(result) == 1
@@ -441,7 +441,7 @@ class TestQueryDataUnit:
             "data.location.city": "Paris",
             "column": "image_id",
         }
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database call
         expected_query = {
@@ -484,7 +484,7 @@ class TestQueryDataUnit:
             "metadata.models": {"$in": ["resnet50"]},
             "column": "image_id",
         }
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database call
         expected_query = {
@@ -542,7 +542,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 3
@@ -600,7 +600,7 @@ class TestQueryDataUnit:
             },  # Index 1: derived from 0
             {"derived_from": "label_id", "data.type": "bbox", "column": "bbox_id"},  # Index 2: derived from 1
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 3
@@ -628,7 +628,7 @@ class TestQueryDataUnit:
         query = []
 
         with pytest.raises(AssertionError):
-            await datalake.query_data(query)
+            await datalake.query_data_legacy(query)
 
     @pytest.mark.asyncio
     async def test_query_without_column_raises_error(self, datalake, mock_database):
@@ -636,7 +636,7 @@ class TestQueryDataUnit:
         query = {"metadata.project": "test_project"}
 
         with pytest.raises(ValueError, match="column must be provided"):
-            await datalake.query_data(query)
+            await datalake.query_data_legacy(query)
 
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_missing_no_derived_data(self, datalake, mock_database):
@@ -659,7 +659,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should return 1 result because no derived data was found (missing strategy)
         assert len(result) == 1
@@ -696,7 +696,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should return 0 results because derived data was found (missing strategy excludes it)
         assert len(result) == 0
@@ -736,7 +736,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should return 1 result (only base2) because base1 has derived data
         assert len(result) == 1
@@ -759,7 +759,7 @@ class TestQueryDataUnit:
         query = [{"metadata.project": "test_project", "strategy": "missing", "column": "image_id"}]
 
         with pytest.raises(ValueError, match="Invalid strategy: missing"):
-            await datalake.query_data(query)
+            await datalake.query_data_legacy(query)
 
     @pytest.mark.asyncio
     async def test_multi_query_without_column_raises_error(self, datalake, mock_database):
@@ -773,7 +773,7 @@ class TestQueryDataUnit:
         ]
 
         with pytest.raises(ValueError, match="column must be provided"):
-            await datalake.query_data(query)
+            await datalake.query_data_legacy(query)
 
     @pytest.mark.asyncio
     async def test_multi_query_with_strategy_earliest(self, datalake, mock_database):
@@ -795,7 +795,7 @@ class TestQueryDataUnit:
             {"metadata.project": "p", "column": "image_id"},
             {"derived_from": "image_id", "strategy": "earliest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         assert len(result) == 1
         assert isinstance(result[0], dict)
@@ -818,7 +818,7 @@ class TestQueryDataUnit:
         ]
 
         with patch("mindtrace.datalake.datalake.random.choice", return_value=b):
-            result = await datalake.query_data(
+            result = await datalake.query_data_legacy(
                 [
                     {"metadata.project": "p", "column": "image_id"},
                     {"derived_from": "image_id", "strategy": "random", "column": "label_id"},
@@ -837,7 +837,7 @@ class TestQueryDataUnit:
 
         mock_database.find.return_value = [d1, d2, d3]
 
-        result = await datalake.query_data({"metadata.project": "p", "column": "image_id"}, datums_wanted=2)
+        result = await datalake.query_data_legacy({"metadata.project": "p", "column": "image_id"}, datums_wanted=2)
 
         # Latest two should be selected: d3 and d2 (order not asserted)
         result_ids = {row["image_id"] for row in result}
@@ -853,7 +853,7 @@ class TestQueryDataUnit:
 
         mock_database.find.return_value = [d1, d2, d3]
 
-        result = await datalake.query_data(
+        result = await datalake.query_data_legacy(
             [{"metadata.project": "p", "strategy": "earliest", "column": "image_id"}], datums_wanted=2
         )
 
@@ -871,7 +871,7 @@ class TestQueryDataUnit:
         mock_database.find.return_value = [d1, d2, d3]
 
         with patch("mindtrace.datalake.datalake.random.sample", return_value=[d1, d3]):
-            result = await datalake.query_data(
+            result = await datalake.query_data_legacy(
                 [{"metadata.project": "p", "strategy": "random", "column": "image_id"}], datums_wanted=2
             )
 
@@ -900,7 +900,7 @@ class TestQueryDataUnit:
 
         # Test with transpose=True
         query = {"metadata.project": "test_project", "column": "image_id"}
-        result = await datalake.query_data(query, transpose=True)
+        result = await datalake.query_data_legacy(query, transpose=True)
 
         # Should return dictionary of lists
         assert isinstance(result, dict)
@@ -938,7 +938,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "column": "label_id"},
         ]
-        result = await datalake.query_data(query, transpose=True)
+        result = await datalake.query_data_legacy(query, transpose=True)
 
         # Should return dictionary of lists
         assert isinstance(result, dict)
@@ -955,7 +955,7 @@ class TestQueryDataUnit:
         mock_database.find.return_value = []
 
         query = {"metadata.project": "nonexistent_project", "column": "image_id"}
-        result = await datalake.query_data(query, transpose=True)
+        result = await datalake.query_data_legacy(query, transpose=True)
 
         # Should return empty dictionary
         assert isinstance(result, dict)
@@ -982,7 +982,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "missing", "column": "label_id"},
         ]
-        result = await datalake.query_data(query, transpose=True)
+        result = await datalake.query_data_legacy(query, transpose=True)
 
         # Should return dictionary with only image_id (no label_id since missing strategy)
         assert isinstance(result, dict)
@@ -1008,7 +1008,7 @@ class TestQueryDataUnit:
 
         # Test with transpose=True and datums_wanted=3
         query = {"metadata.project": "test_project", "column": "image_id"}
-        result = await datalake.query_data(query, datums_wanted=3, transpose=True)
+        result = await datalake.query_data_legacy(query, datums_wanted=3, transpose=True)
 
         # Should return dictionary with 3 items
         assert isinstance(result, dict)
@@ -1054,7 +1054,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Verify database calls
         assert mock_database.find.call_count == 2
@@ -1097,7 +1097,7 @@ class TestQueryDataUnit:
 
         # Test with quickest strategy and datums_wanted=2
         query = [{"metadata.project": "test_project", "strategy": "quickest", "column": "image_id"}]
-        result = await datalake.query_data(query, datums_wanted=2)
+        result = await datalake.query_data_legacy(query, datums_wanted=2)
 
         # Should return first 2 entries as they come from database (no sorting)
         assert len(result) == 2
@@ -1146,7 +1146,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should select the first one (derived1) without sorting
         assert len(result) == 1
@@ -1181,7 +1181,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should work the same as other strategies when there's only one entry
         assert len(result) == 1
@@ -1208,7 +1208,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query)
+        result = await datalake.query_data_legacy(query)
 
         # Should return empty result because no derived data found
         assert len(result) == 0
@@ -1240,7 +1240,7 @@ class TestQueryDataUnit:
             {"metadata.project": "test_project", "column": "image_id"},
             {"derived_from": "image_id", "data.type": "classification", "strategy": "quickest", "column": "label_id"},
         ]
-        result = await datalake.query_data(query, transpose=True)
+        result = await datalake.query_data_legacy(query, transpose=True)
 
         # Should return dictionary of lists
         assert isinstance(result, dict)

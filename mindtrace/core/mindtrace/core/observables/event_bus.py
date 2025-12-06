@@ -6,24 +6,24 @@ from typing import Callable, Dict, Union
 class EventBus:
     """A simple event bus that allows for subscribing to and emitting events.
 
-    Example::
+    Example:
+    ```python
+    from mindtrace.core import EventBus
 
-        from mindtrace.core import EventBus
+    bus = EventBus()
 
-        bus = EventBus()
+    def handler(**kwargs):
+        print(kwargs)
 
-        def handler(**kwargs):
-            print(kwargs)
+    bus.subscribe("event", handler)
+    bus.emit("event", x="1", y="2")
 
-        bus.subscribe("event", handler)
-        bus.emit("event", x="1", y="2")
+    # Output:
+    # {'x': '1', 'y': '2'}
 
-        # Output:
-        # {'x': '1', 'y': '2'}
-
-        bus.unsubscribe("event", handler)
-        bus.emit("event", x="1", y="2")
-
+    bus.unsubscribe("event", handler)
+    bus.emit("event", x="1", y="2")
+    ```
         # Output:
         # No output
     """
