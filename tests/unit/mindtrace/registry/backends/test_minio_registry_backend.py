@@ -1641,6 +1641,190 @@ def test_has_object_wrong_version(backend, monkeypatch):
     assert result is False
 
 
+def test_has_object_stat_object_other_s3error_fallback_success(backend, monkeypatch):
+    """Test has_object when stat_object raises non-NoSuchKey S3Error and fetch_metadata succeeds (lines 437-441)."""
+
+    # Mock stat_object to raise a non-NoSuchKey S3Error
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    # Mock fetch_metadata to succeed (return valid metadata)
+    class MockResponse:
+        def __init__(self):
+            self.data = json.dumps({"class": "TestClass", "materializer": "TestMaterializer"}).encode()
+
+    def mock_get_object(bucket, object_name):
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return True because fetch_metadata succeeds
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is True
+
+
+def test_has_object_stat_object_other_s3error_fallback_fails(backend, monkeypatch):
+    """Test has_object when stat_object raises non-NoSuchKey S3Error and fetch_metadata fails (lines 437-441)."""
+
+    # Mock stat_object to raise a non-NoSuchKey S3Error
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="InternalError",
+            message="Internal server error",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    # Mock fetch_metadata to fail (raise exception)
+    def mock_get_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return False because fetch_metadata fails
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_has_object_stat_object_generic_exception_fallback_success(backend, monkeypatch):
+    """Test has_object when stat_object raises non-S3Error exception and fetch_metadata succeeds (lines 442-448)."""
+
+    # Mock stat_object to raise a generic Exception (not S3Error)
+    def mock_stat_object(bucket, object_name):
+        raise Exception("Network timeout or other generic error")
+
+    # Mock fetch_metadata to succeed (return valid metadata)
+    class MockResponse:
+        def __init__(self):
+            self.data = json.dumps({"class": "TestClass", "materializer": "TestMaterializer"}).encode()
+
+    def mock_get_object(bucket, object_name):
+        return MockResponse()
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return True because fetch_metadata succeeds
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is True
+
+
+def test_has_object_stat_object_nosuchkey_returns_false(backend, monkeypatch):
+    """Test has_object when stat_object raises S3Error with NoSuchKey or 404 code.
+
+    This covers the path where stat_object raises S3Error with code "NoSuchKey" or "404",
+    which should return False directly without attempting to fetch metadata.
+    """
+
+    # Mock stat_object to raise S3Error with NoSuchKey code
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+
+    # Should return False directly when NoSuchKey is raised
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_has_object_stat_object_404_returns_false(backend, monkeypatch):
+    """Test has_object when stat_object raises S3Error with 404 code.
+
+    This covers the path where stat_object raises S3Error with code "404",
+    which should return False directly without attempting to fetch metadata.
+    """
+
+    # Mock stat_object to raise S3Error with 404 code
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="404",
+            message="Object not found",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+
+    # Should return False directly when 404 is raised
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_has_object_stat_object_generic_exception_fallback_fails(backend, monkeypatch):
+    """Test has_object when stat_object raises non-S3Error exception and fetch_metadata fails (lines 442-448)."""
+
+    # Mock stat_object to raise a generic Exception (not S3Error)
+    def mock_stat_object(bucket, object_name):
+        raise Exception("Network timeout or other generic error")
+
+    # Mock fetch_metadata to fail (raise exception)
+    def mock_get_object(bucket, object_name):
+        raise Exception("Failed to fetch metadata")
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Should return False because fetch_metadata fails
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_object_metadata_prefix(backend):
+    """Test _object_metadata_prefix method (line 483)."""
+    # Test with colon in name (should be replaced with underscore)
+    prefix = backend._object_metadata_prefix("test:object")
+    assert prefix == "_meta_test_object@"
+
+    # Test with multiple colons
+    prefix = backend._object_metadata_prefix("test:object:sub")
+    assert prefix == "_meta_test_object_sub@"
+
+    # Test with no colons
+    prefix = backend._object_metadata_prefix("test_object")
+    assert prefix == "_meta_test_object@"
+
+    # Test with special characters
+    prefix = backend._object_metadata_prefix("my:test:object")
+    assert prefix == "_meta_my_test_object@"
+
+
 def test_acquire_lock_success(backend, monkeypatch):
     """Test successful lock acquisition (lines 398-405)."""
 
@@ -1824,3 +2008,139 @@ def test_uri_property(backend):
     uri = backend.uri
     assert isinstance(uri, Path)
     assert uri == backend._uri
+
+
+def test_save_registry_metadata(backend, monkeypatch):
+    """Test save_registry_metadata method."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {
+            "test.Object": "TestMaterializer",
+            "another.Object": "AnotherMaterializer",
+        },
+    }
+
+    # Track calls to put_object
+    put_object_calls = []
+
+    def mock_put_object(bucket, object_name, data_io, length, content_type):
+        put_object_calls.append((bucket, object_name, length, content_type))
+        # Read the data to verify it
+        data_io.seek(0)
+        saved_data = json.loads(data_io.read().decode())
+        assert saved_data == metadata
+
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    # Save registry metadata
+    backend.save_registry_metadata(metadata)
+
+    # Verify put_object was called with correct parameters
+    assert len(put_object_calls) == 1
+    bucket, object_name, length, content_type = put_object_calls[0]
+    assert bucket == backend.bucket
+    assert object_name == str(backend._metadata_path)
+    assert content_type == "application/json"
+
+
+def test_save_registry_metadata_error(backend, monkeypatch, caplog):
+    """Test save_registry_metadata error handling."""
+
+    # Mock put_object to raise an exception
+    def mock_put_object(*args, **kwargs):
+        raise Exception("Failed to save metadata")
+
+    monkeypatch.setattr(backend.client, "put_object", mock_put_object)
+
+    metadata = {"version_objects": True}
+    with pytest.raises(Exception, match="Failed to save metadata"):
+        backend.save_registry_metadata(metadata)
+
+
+def test_fetch_registry_metadata_exists(backend, monkeypatch):
+    """Test fetch_registry_metadata when metadata file exists."""
+    metadata = {
+        "version_objects": True,
+        "materializers": {"test.Object": "TestMaterializer"},
+    }
+
+    # Mock get_object to return the metadata
+    class MockResponse:
+        def __init__(self, data):
+            self.data = data
+
+    def mock_get_object(bucket, object_name):
+        assert bucket == backend.bucket
+        assert object_name == str(backend._metadata_path)
+        return MockResponse(json.dumps(metadata).encode())
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Fetch metadata
+    fetched_metadata = backend.fetch_registry_metadata()
+
+    # Verify metadata content
+    assert fetched_metadata == metadata
+
+
+def test_fetch_registry_metadata_not_exists(backend, monkeypatch):
+    """Test fetch_registry_metadata when metadata file doesn't exist (lines 399-401)."""
+
+    # Mock get_object to raise NoSuchKey error
+    def mock_get_object(bucket, object_name):
+        error = S3Error(
+            code="NoSuchKey",
+            message="Object not found",
+            resource="/test-bucket/registry_metadata.json",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name=backend.bucket,
+            object_name=str(backend._metadata_path),
+        )
+        raise error
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Fetch metadata - should return empty dict
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_error(backend, monkeypatch):
+    """Test fetch_registry_metadata error handling (lines 404-406)."""
+
+    # Mock get_object to raise a non-S3Error exception
+    def mock_get_object(bucket, object_name):
+        raise Exception("Network error")
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Fetch metadata - should return empty dict on error
+    fetched_metadata = backend.fetch_registry_metadata()
+    assert fetched_metadata == {}
+
+
+def test_fetch_registry_metadata_s3_error_non_nosuchkey(backend, monkeypatch):
+    """Test fetch_registry_metadata when S3Error is not NoSuchKey (line 403)."""
+
+    # Mock get_object to raise an S3Error that is not NoSuchKey
+    def mock_get_object(bucket, object_name):
+        error = S3Error(
+            code="AccessDenied",
+            message="Access denied",
+            resource="/test-bucket/registry_metadata.json",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,
+            bucket_name=backend.bucket,
+            object_name=str(backend._metadata_path),
+        )
+        raise error
+
+    monkeypatch.setattr(backend.client, "get_object", mock_get_object)
+
+    # Fetch metadata - should re-raise the S3Error
+    with pytest.raises(S3Error) as exc_info:
+        backend.fetch_registry_metadata()
+    assert exc_info.value.code == "AccessDenied"

@@ -168,15 +168,16 @@ class TestLocalClient:
     def test_publish_receive_priority(self, temp_local_client):
         """Test publishing and receiving messages with priority."""
         client = temp_local_client
-        client.declare_queue("priority-queue", queue_type="priority")
+        queue_name = f"priority-queue-{int(time.time())}"
+        client.declare_queue(queue_name, queue_type="priority")
 
         msg1 = SampleMessage(data="low")
         msg2 = SampleMessage(data="high")
-        client.publish("priority-queue", msg1, priority=1)
-        client.publish("priority-queue", msg2, priority=10)
+        client.publish(queue_name, msg1, priority=1)
+        client.publish(queue_name, msg2, priority=10)
 
-        received1 = client.receive_message("priority-queue")
-        received2 = client.receive_message("priority-queue")
+        received1 = client.receive_message(queue_name)
+        received2 = client.receive_message(queue_name)
 
         assert received1["data"] == "high"
         assert received2["data"] == "low"
