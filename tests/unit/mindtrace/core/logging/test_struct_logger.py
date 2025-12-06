@@ -399,3 +399,64 @@ class TestStructLogger:
                 assert "test-service" in content
                 assert "1.0.0" in content
                 assert "test" in content
+
+    def test_setup_logger_with_structlog_no_log_dir_uses_struct_logger_dir(self):
+        """Test setup_logger with structlog when log_dir is None uses STRUCT_LOGGER_DIR.
+        
+        Tests that when log_dir is None and use_structlog is True, it uses STRUCT_LOGGER_DIR.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            struct_logger_dir = Path(tmpdir)
+
+            with patch("mindtrace.core.logging.logger.CoreSettings") as mock_config:
+                mock_config.return_value.MINDTRACE_LOGGER.USE_STRUCTLOG = True
+                mock_config.return_value.MINDTRACE_DIR_PATHS.STRUCT_LOGGER_DIR = str(struct_logger_dir)
+
+                # Call setup_logger without log_dir (None) and with use_structlog=True
+                logger = setup_logger(name="test_no_log_dir", log_dir=None, use_structlog=True)
+
+                # Should be a structlog bound logger
+                assert hasattr(logger, "bind")
+                assert hasattr(logger, "info")
+
+                # Test logging
+                logger.info("No log dir test message")
+
+                # Check that log file was created in STRUCT_LOGGER_DIR
+                log_file = struct_logger_dir / "modules" / "test_no_log_dir.log"
+                assert log_file.exists()
+
+                with open(log_file) as f:
+                    content = f.read()
+                    assert "No log dir test message" in content
+
+    def test_setup_logger_with_structlog_bind_dict_exception(self):
+        """Test setup_logger with structlog_bind that fails when converting to dict.
+        
+        Tests exception handling when structlog_bind is not callable and dict() conversion fails.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_dir = Path(tmpdir)
+
+            # Create an object that will fail when trying to convert to dict
+            class NonDictConvertible:
+                def __iter__(self):
+                    raise Exception("Cannot convert to dict")
+
+            non_dict_bind = NonDictConvertible()
+
+            logger = setup_logger(
+                name="test_dict_exception", log_dir=log_dir, use_structlog=True, structlog_bind=non_dict_bind
+            )
+
+            # Should still work despite binding failure
+            logger.info("Dict exception test")
+
+            # Check log file content
+            log_file = log_dir / "modules" / "test_dict_exception.log"
+            assert log_file.exists()
+
+            with open(log_file) as f:
+                content = f.read()
+                # Should contain the message
+                assert "Dict exception test" in content

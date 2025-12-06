@@ -7,6 +7,8 @@ from mindtrace.core.types.bounding_box import BoundingBox
 
 def test_basic_properties_and_area():
     bb = BoundingBox(10.0, 20.0, 30.0, 40.0)
+    assert bb.x1 == pytest.approx(10.0)
+    assert bb.y1 == pytest.approx(20.0)
     assert bb.x2 == pytest.approx(40.0)
     assert bb.y2 == pytest.approx(60.0)
     assert bb.right == pytest.approx(40.0)
