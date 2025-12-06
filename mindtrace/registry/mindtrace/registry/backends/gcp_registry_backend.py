@@ -458,6 +458,50 @@ class GCPRegistryBackend(RegistryBackend):
             self.logger.error(f"Error loading materializers: {e}")
             return {}
 
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+                json.dump(metadata, f)
+                temp_path = f.name
+            
+            try:
+                self.gcs.upload(temp_path, self._metadata_path)
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+                temp_path = f.name
+            
+            try:
+                self.gcs.download(self._metadata_path, temp_path)
+                with open(temp_path, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                self.logger.debug(f"Could not load registry metadata: {e}")
+                return {}
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
+
     def acquire_lock(self, key: str, lock_id: str, timeout: int, shared: bool = False) -> bool:
         """Acquire a lock using GCS object generation numbers.
 

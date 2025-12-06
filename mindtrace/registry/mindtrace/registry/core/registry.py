@@ -327,41 +327,7 @@ class Registry(Mindtrace):
             Dictionary containing registry metadata
         """
         try:
-            # Try to get materializers first to see if metadata exists
-            materializers = self.backend.registered_materializers()
-
-            # For backends that store metadata in a single file, we need to get the full metadata
-            # This is a bit of a hack, but we'll check if the backend has a way to get full metadata
-            if hasattr(self.backend, "_metadata_path"):
-                # For backends that store metadata in a file, we can read it directly
-                import json
-                import os
-                import tempfile
-
-                if hasattr(self.backend, "gcs"):
-                    # GCP backend
-                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                        temp_path = f.name
-                    try:
-                        self.backend.gcs.download(self.backend._metadata_path, temp_path)
-                        with open(temp_path, "r") as f:
-                            metadata = json.load(f)
-                        return metadata
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.unlink(temp_path)
-                elif hasattr(self.backend, "client"):
-                    # MinIO backend
-                    response = self.backend.client.get_object(self.backend.bucket, str(self.backend._metadata_path))
-                    return json.loads(response.data.decode())
-                else:
-                    # Local backend
-                    with open(self.backend._metadata_path, "r") as f:
-                        return json.load(f)
-            else:
-                # Fallback: return just the materializers
-                return {"materializers": materializers}
-
+            return self.backend.fetch_registry_metadata()
         except Exception:
             # If we can't read metadata, return empty dict
             return {}
@@ -384,44 +350,7 @@ class Registry(Mindtrace):
             existing_metadata.update(metadata)
 
             # Save the updated metadata
-            if hasattr(self.backend, "_metadata_path"):
-                import json
-                import os
-                import tempfile
-
-                if hasattr(self.backend, "gcs"):
-                    # GCP backend
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                        json.dump(existing_metadata, f)
-                        temp_path = f.name
-                    try:
-                        self.backend.gcs.upload(temp_path, self.backend._metadata_path)
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.unlink(temp_path)
-                elif hasattr(self.backend, "client"):
-                    # MinIO backend
-                    import io
-
-                    data = json.dumps(existing_metadata).encode()
-                    data_io = io.BytesIO(data)
-                    self.backend.client.put_object(
-                        self.backend.bucket,
-                        str(self.backend._metadata_path),
-                        data_io,
-                        len(data),
-                        content_type="application/json",
-                    )
-                else:
-                    # Local backend
-                    with open(self.backend._metadata_path, "w") as f:
-                        json.dump(existing_metadata, f)
-            else:
-                # Fallback: just register materializers if they exist
-                if "materializers" in metadata:
-                    for object_class, materializer_class in metadata["materializers"].items():
-                        self.backend.register_materializer(object_class, materializer_class)
-
+            self.backend.save_registry_metadata(existing_metadata)
         except Exception as e:
             self.logger.warning(f"Could not save registry metadata: {e}")
 
@@ -1567,42 +1496,9 @@ class Registry(Mindtrace):
         if clear_registry_metadata:
             # Clear registry metadata by creating a new empty metadata file
             try:
-                if hasattr(self.backend, "_metadata_path"):
-                    import json
-                    import os
-                    import tempfile
-
-                    # Create empty metadata (no version_objects setting)
-                    empty_metadata = {"materializers": {}}
-
-                    if hasattr(self.backend, "gcs"):
-                        # GCP backend
-                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                            json.dump(empty_metadata, f)
-                            temp_path = f.name
-                        try:
-                            self.backend.gcs.upload(temp_path, self.backend._metadata_path)
-                        finally:
-                            if os.path.exists(temp_path):
-                                os.unlink(temp_path)
-                    elif hasattr(self.backend, "client"):
-                        # MinIO backend
-                        import io
-
-                        data = json.dumps(empty_metadata).encode()
-                        data_io = io.BytesIO(data)
-                        self.backend.client.put_object(
-                            self.backend.bucket,
-                            str(self.backend._metadata_path),
-                            data_io,
-                            len(data),
-                            content_type="application/json",
-                        )
-                    else:
-                        # Local backend
-                        with open(self.backend._metadata_path, "w") as f:
-                            json.dump(empty_metadata, f)
-
+                # Create empty metadata (no version_objects setting)
+                empty_metadata = {"materializers": {}}
+                self.backend.save_registry_metadata(empty_metadata)
             except Exception as e:
                 self.logger.warning(f"Could not clear registry metadata: {e}")
 
