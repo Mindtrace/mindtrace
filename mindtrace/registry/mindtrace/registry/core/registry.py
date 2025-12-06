@@ -332,6 +332,20 @@ class Registry(Mindtrace):
         """
         return self.get_lock(name, version, shared=shared) if acquire_lock else nullcontext()
 
+    def _resolve_version(self, name: str, version: str | None) -> str | None:
+        """Resolve version string, converting 'latest' to actual version.
+
+        Args:
+            name: Object name
+            version: Version string (can be None, 'latest', or a specific version)
+
+        Returns:
+            Resolved version string or None
+        """
+        if version == "latest" or (version is None and not self.version_objects):
+            return self._latest(name)
+        return version
+
     def _should_use_cache(self, name: str, version: str, metadata: dict, verify_hash: bool) -> bool:
         """Determine if cache should be used for loading an object.
 
@@ -652,8 +666,7 @@ class Registry(Mindtrace):
                 name=name, version=version, verify_hash=verify_hash, verify_cache=verify_cache, **kwargs
             )
 
-        if version == "latest" or not self.version_objects:
-            version = self._latest(name)
+        version = self._resolve_version(name, version)
 
         if not self.has_object(name=name, version=version):
             self.logger.error(f"Object {name} version {version} does not exist.")
@@ -886,10 +899,9 @@ class Registry(Mindtrace):
         Returns:
             True if the object exists, False otherwise.
         """
-        if version == "latest":
-            version = self._latest(name)
-            if version is None:
-                return False
+        version = self._resolve_version(name, version)
+        if version is None:
+            return False
         return self.backend.has_object(name, version)
 
     def register_materializer(self, object_class: str | type, materializer_class: str | type):
