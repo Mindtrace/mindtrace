@@ -75,7 +75,7 @@ def create_large_file_or_directory(
             target_path = temp_dir / f"registry_test_{unique_id}"
         else:
             target_path = temp_dir / f"registry_test_{unique_id}.bin"
-    
+
     target_path = Path(target_path)
     size_bytes = int(size_mb * 1024 * 1024)  # Convert MB to bytes
 

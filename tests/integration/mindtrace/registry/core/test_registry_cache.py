@@ -277,10 +277,6 @@ def test_cache_load_with_verify_hash_false(gcp_registry):
     original_hash = remote_metadata.get("hash")
     assert original_hash is not None, "Remote metadata should have a hash"
 
-    # Get the cached hash (should be different now)
-    cached_metadata = gcp_registry._cache.info("test:cache:modified", version="1.0.0")
-    cached_hash = cached_metadata.get("hash")
-
     # The hashes should be different (cache was modified)
     # Note: The cached hash might not be updated yet, but the data is different
 

@@ -2027,8 +2027,8 @@ def test_cleanup_partial_overwrite_list_error(backend):
         assert stats["objects_deleted"] == 0
 
 
-def test_acquire_lock_generation_match_none(backend):
-    """Test acquire_lock when generation_match is None (unexpected state)."""
+def test_acquire_lock_generation_match_none_on_exception(backend):
+    """Test acquire_lock when generation_match is None due to exception (unexpected state)."""
     from unittest.mock import MagicMock, patch
 
     lock_key = "_lock_test_key"
