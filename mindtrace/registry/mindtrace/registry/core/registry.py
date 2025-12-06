@@ -342,8 +342,14 @@ class Registry(Mindtrace):
         Returns:
             Resolved version string or None
         """
-        if version == "latest" or (version is None and not self.version_objects):
+        # In non-versioned mode, always return "1" for any version string
+        if not self.version_objects:
+            return "1"
+        
+        # In versioned mode, resolve "latest" to actual version
+        if version == "latest" or version is None:
             return self._latest(name)
+            
         return version
 
     def _should_use_cache(self, name: str, version: str, metadata: dict, verify_hash: bool) -> bool:
