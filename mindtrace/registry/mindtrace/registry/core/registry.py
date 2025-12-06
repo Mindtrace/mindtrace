@@ -292,7 +292,6 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If there's a conflict between existing and new version_objects values
         """
-        # Try to get existing registry metadata
         try:
             existing_metadata = self._get_registry_metadata()
             existing_version_objects = existing_metadata.get("version_objects")
@@ -307,11 +306,10 @@ class Registry(Mindtrace):
                     )
                 # Use existing value
                 return existing_version_objects
-            else:
-                # No existing setting, use the provided value and save it
-                self._save_registry_metadata({"version_objects": version_objects})
-                return version_objects
 
+            # No existing setting, use the provided value and save it
+            self._save_registry_metadata({"version_objects": version_objects})
+            return version_objects
         except ValueError:
             # Re-raise ValueError (conflict)
             raise
@@ -320,6 +318,83 @@ class Registry(Mindtrace):
             self._save_registry_metadata({"version_objects": version_objects})
             return version_objects
 
+    def _get_lock_context(self, name: str, version: str, acquire_lock: bool, shared: bool = False):
+        """Get lock context, respecting acquire_lock flag.
+
+        Args:
+            name: Object name
+            version: Object version
+            acquire_lock: Whether to acquire a lock
+            shared: Whether to use a shared (read) lock
+
+        Returns:
+            Lock context manager or nullcontext if acquire_lock is False
+        """
+        return self.get_lock(name, version, shared=shared) if acquire_lock else nullcontext()
+
+    def _resolve_version(self, name: str, version: str | None) -> str | None:
+        """Resolve version string, converting 'latest' to actual version.
+
+        Args:
+            name: Object name
+            version: Version string (can be None, 'latest', or a specific version)
+
+        Returns:
+            Resolved version string or None
+        """
+        # In non-versioned mode, always return "1" for any version string
+        if not self.version_objects:
+            return "1"
+
+        # In versioned mode, resolve "latest" to actual version
+        if version == "latest" or version is None:
+            return self._latest(name)
+
+        return version
+
+    def _should_use_cache(self, name: str, version: str, metadata: dict, verify_hash: bool) -> bool:
+        """Determine if cache should be used for loading an object.
+
+        Args:
+            name: Object name
+            version: Object version
+            metadata: Object metadata containing expected hash
+            verify_hash: Whether to verify hash before using cache
+
+        Returns:
+            True if cache should be used, False otherwise
+        """
+        if not verify_hash:
+            # verify_hash is False, use cache without checking hash
+            return True
+
+        # If verify_hash is True, compute hash from cache directory before loading
+        object_key = self._cache.backend._object_key(name, version)
+        cache_dir = self._cache.backend._full_path(object_key)
+        if not cache_dir.exists():
+            # Cache directory doesn't exist, fall through to remote loading
+            return False
+
+        computed_hash = compute_dir_hash(cache_dir)
+        expected_hash = metadata.get("hash")
+        if expected_hash and computed_hash != expected_hash:
+            self.logger.debug(
+                f"Cache hash mismatch for {name}@{version}: "
+                f"expected {expected_hash}, cached {computed_hash}. Will download from remote."
+            )
+            # Delete stale cache entry before downloading new version
+            try:
+                if self._cache.has_object(name=name, version=version):
+                    self._cache.delete(name=name, version=version)
+                    self.logger.debug(f"Deleted stale cache entry for {name}@{version}")
+            except Exception as e:
+                self.logger.warning(f"Error deleting stale cache entry for {name}@{version}: {e}")
+            # Don't use cache - fall through to remote loading
+            return False
+
+        # Hash matches, use cache
+        return True
+
     def _get_registry_metadata(self) -> dict:
         """Get the registry metadata from the backend.
 
@@ -327,41 +402,7 @@ class Registry(Mindtrace):
             Dictionary containing registry metadata
         """
         try:
-            # Try to get materializers first to see if metadata exists
-            materializers = self.backend.registered_materializers()
-
-            # For backends that store metadata in a single file, we need to get the full metadata
-            # This is a bit of a hack, but we'll check if the backend has a way to get full metadata
-            if hasattr(self.backend, "_metadata_path"):
-                # For backends that store metadata in a file, we can read it directly
-                import json
-                import os
-                import tempfile
-
-                if hasattr(self.backend, "gcs"):
-                    # GCP backend
-                    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-                        temp_path = f.name
-                    try:
-                        self.backend.gcs.download(self.backend._metadata_path, temp_path)
-                        with open(temp_path, "r") as f:
-                            metadata = json.load(f)
-                        return metadata
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.unlink(temp_path)
-                elif hasattr(self.backend, "client"):
-                    # MinIO backend
-                    response = self.backend.client.get_object(self.backend.bucket, str(self.backend._metadata_path))
-                    return json.loads(response.data.decode())
-                else:
-                    # Local backend
-                    with open(self.backend._metadata_path, "r") as f:
-                        return json.load(f)
-            else:
-                # Fallback: return just the materializers
-                return {"materializers": materializers}
-
+            return self.backend.fetch_registry_metadata()
         except Exception:
             # If we can't read metadata, return empty dict
             return {}
@@ -384,46 +425,59 @@ class Registry(Mindtrace):
             existing_metadata.update(metadata)
 
             # Save the updated metadata
-            if hasattr(self.backend, "_metadata_path"):
-                import json
-                import os
-                import tempfile
-
-                if hasattr(self.backend, "gcs"):
-                    # GCP backend
-                    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                        json.dump(existing_metadata, f)
-                        temp_path = f.name
-                    try:
-                        self.backend.gcs.upload(temp_path, self.backend._metadata_path)
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.unlink(temp_path)
-                elif hasattr(self.backend, "client"):
-                    # MinIO backend
-                    import io
-
-                    data = json.dumps(existing_metadata).encode()
-                    data_io = io.BytesIO(data)
-                    self.backend.client.put_object(
-                        self.backend.bucket,
-                        str(self.backend._metadata_path),
-                        data_io,
-                        len(data),
-                        content_type="application/json",
-                    )
-                else:
-                    # Local backend
-                    with open(self.backend._metadata_path, "w") as f:
-                        json.dump(existing_metadata, f)
-            else:
-                # Fallback: just register materializers if they exist
-                if "materializers" in metadata:
-                    for object_class, materializer_class in metadata["materializers"].items():
-                        self.backend.register_materializer(object_class, materializer_class)
-
+            self.backend.save_registry_metadata(existing_metadata)
         except Exception as e:
             self.logger.warning(f"Could not save registry metadata: {e}")
+
+    def _find_materializer(self, obj: Any, provided_materializer: Type[BaseMaterializer] | None = None) -> str:
+        """Find the appropriate materializer for an object.
+
+        The order of precedence for determining the materializer is:
+        1. Materializer provided as an argument.
+        2. Materializer previously registered for the object type.
+        3. Materializer for any of the object's base classes (checked recursively).
+        4. The object itself, if it's its own materializer.
+
+        Args:
+            obj: Object to find materializer for.
+            provided_materializer: Materializer provided as argument. If None, will be inferred.
+
+        Returns:
+            Materializer class string.
+
+        Raises:
+            ValueError: If no materializer is found for the object.
+        """
+        object_class = f"{type(obj).__module__}.{type(obj).__name__}"
+
+        # Get all base classes recursively
+        def get_all_base_classes(cls):
+            bases = []
+            for base in cls.__bases__:
+                bases.append(base)
+                bases.extend(get_all_base_classes(base))
+            return bases
+
+        # Try to find a materializer in order of precedence
+        materializer = first_not_none(
+            (
+                provided_materializer,
+                self.registered_materializer(object_class),
+                *[
+                    self.registered_materializer(f"{base.__module__}.{base.__name__}")
+                    for base in get_all_base_classes(type(obj))
+                ],
+                object_class if isinstance(obj, BaseMaterializer) else None,
+            )
+        )
+
+        if materializer is None:
+            raise ValueError(f"No materializer found for object of type {type(obj)}.")
+
+        # Convert to string if needed
+        if isinstance(materializer, str):
+            return materializer
+        return f"{type(materializer).__module__}.{type(materializer).__name__}"
 
     def save(
         self,
@@ -461,35 +515,7 @@ class Registry(Mindtrace):
             ValueError: If version string is invalid.
         """
         object_class = f"{type(obj).__module__}.{type(obj).__name__}"
-
-        # Get all base classes recursively
-        def get_all_base_classes(cls):
-            bases = []
-            for base in cls.__bases__:
-                bases.append(base)
-                bases.extend(get_all_base_classes(base))
-            return bases
-
-        # Try to find a materializer in order of precedence
-        materializer = first_not_none(
-            (
-                materializer,
-                self.registered_materializer(object_class),
-                *[
-                    self.registered_materializer(f"{base.__module__}.{base.__name__}")
-                    for base in get_all_base_classes(type(obj))
-                ],
-                object_class if isinstance(obj, BaseMaterializer) else None,
-            )
-        )
-
-        if materializer is None:
-            raise ValueError(f"No materializer found for object of type {type(obj)}.")
-        materializer_class = (
-            f"{type(materializer).__module__}.{type(materializer).__name__}"
-            if not isinstance(materializer, str)
-            else materializer
-        )
+        materializer_class = self._find_materializer(obj, materializer)
 
         # Acquire a lock for the entire save operation to prevent race conditions
         # Use a special lock name that covers all operations for this object
@@ -565,10 +591,10 @@ class Registry(Mindtrace):
                         else:
                             # No cache - create temp directory and save object
                             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir_path:
-                                materializer = instantiate_target(
-                                    materializer, uri=str(temp_dir_path), artifact_store=self._artifact_store
+                                materializer_instance = instantiate_target(
+                                    materializer_class, uri=str(temp_dir_path), artifact_store=self._artifact_store
                                 )
-                                materializer.save(obj)
+                                materializer_instance.save(obj)
 
                                 # Compute artifact hash after materializer saves the object
                                 artifact_hash = compute_dir_hash(temp_dir_path)
@@ -646,16 +672,14 @@ class Registry(Mindtrace):
                 name=name, version=version, verify_hash=verify_hash, verify_cache=verify_cache, **kwargs
             )
 
-        if version == "latest" or not self.version_objects:
-            version = self._latest(name)
+        version = self._resolve_version(name, version)
 
         if not self.has_object(name=name, version=version):
             self.logger.error(f"Object {name} version {version} does not exist.")
             raise ValueError(f"Object {name} version {version} does not exist.")
 
         # Acquire shared lock for reading metadata
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
+        with self._get_lock_context(name, version, acquire_lock, shared=True):
             metadata = self.info(name=name, version=version, acquire_lock=acquire_lock)
             if not metadata.get("class"):
                 raise ValueError(f"Class not registered for {name}@{version}.")
@@ -674,38 +698,7 @@ class Registry(Mindtrace):
                 self.logger.warning(f"Error checking cache for {name}@{version}: {e}. Falling back to remote.")
                 cache_available = False
 
-        use_cache = False
-        if cache_available:
-            # If verify_hash is True, compute hash from cache directory before loading
-            if verify_hash:
-                object_key = self._cache.backend._object_key(name, version)
-                cache_dir = self._cache.backend._full_path(object_key)
-                if cache_dir.exists():
-                    computed_hash = compute_dir_hash(cache_dir)
-                    expected_hash = metadata.get("hash")
-                    if expected_hash and computed_hash != expected_hash:
-                        self.logger.debug(
-                            f"Cache hash mismatch for {name}@{version}: "
-                            f"expected {expected_hash}, cached {computed_hash}. Will download from remote."
-                        )
-                        # Delete stale cache entry before downloading new version
-                        try:
-                            if self._cache.has_object(name=name, version=version):
-                                self._cache.delete(name=name, version=version)
-                                self.logger.debug(f"Deleted stale cache entry for {name}@{version}")
-                        except Exception as e:
-                            self.logger.warning(f"Error deleting stale cache entry for {name}@{version}: {e}")
-                        # Don't use cache - fall through to remote loading
-                        use_cache = False
-                    else:
-                        # Hash matches, use cache
-                        use_cache = True
-                else:
-                    # Cache directory doesn't exist, fall through to remote loading
-                    use_cache = False
-            else:
-                # verify_hash is False, use cache without checking hash
-                use_cache = True
+        use_cache = self._should_use_cache(name, version, metadata, verify_hash) if cache_available else False
 
         # If cache is available and hash matches (or verify_hash is False), load from cache
         if use_cache:
@@ -717,8 +710,7 @@ class Registry(Mindtrace):
             return self._cache.load(name=name, version=version, verify_hash=False, **kwargs)
 
         # Get the object from the remote backend
-        lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-        with lock_context:
+        with self._get_lock_context(name, version, acquire_lock, shared=True):
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                     self.backend.pull(name=name, version=version, local_path=temp_dir)
@@ -879,8 +871,7 @@ class Registry(Mindtrace):
                 result[obj_name] = {}
                 for ver in self.list_versions(obj_name):
                     try:
-                        lock_context = self.get_lock(obj_name, ver, shared=True) if acquire_lock else nullcontext()
-                        with lock_context:
+                        with self._get_lock_context(obj_name, ver, acquire_lock, shared=True):
                             meta = self.backend.fetch_metadata(obj_name, ver)
                             result[obj_name][ver] = meta
                     except Exception as e:
@@ -891,16 +882,14 @@ class Registry(Mindtrace):
             # Return info for a specific object
             if version == "latest":
                 version = self._latest(name)
-            lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
-            with lock_context:
+            with self._get_lock_context(name, version, acquire_lock, shared=True):
                 info = self.backend.fetch_metadata(name, version)
                 info.update({"version": version})
                 return info
         else:  # name is not None and version is None, return all versions for the given object name
             result = {}
             for ver in self.list_versions(name):
-                lock_context = self.get_lock(name, ver, shared=True) if acquire_lock else nullcontext()
-                with lock_context:
+                with self._get_lock_context(name, ver, acquire_lock, shared=True):
                     info = self.backend.fetch_metadata(name, ver)
                     info.update({"version": ver})
                     result[ver] = info
@@ -916,10 +905,9 @@ class Registry(Mindtrace):
         Returns:
             True if the object exists, False otherwise.
         """
-        if version == "latest":
-            version = self._latest(name)
-            if version is None:
-                return False
+        version = self._resolve_version(name, version)
+        if version is None:
+            return False
         return self.backend.has_object(name, version)
 
     def register_materializer(self, object_class: str | type, materializer_class: str | type):
@@ -1206,6 +1194,32 @@ class Registry(Mindtrace):
                 f"Invalid version string '{version}'. Must be in semantic versioning format (e.g. '1', '1.0', '1.0.0')"
             )
 
+    def _format_object_value(self, object_name: str, version: str, class_name: str) -> str:
+        """Format object value for display in __str__ method.
+
+        Args:
+            object_name: Name of the object
+            version: Version of the object
+            class_name: Class name of the object
+
+        Returns:
+            Formatted string representation of the object value
+        """
+        # Only try to load basic built-in types
+        if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
+            try:
+                obj = self.load(object_name, version)
+                value_str = str(obj)
+                # Truncate long values
+                if len(value_str) > 50:
+                    value_str = value_str[:47] + "..."
+                return value_str
+            except Exception:
+                return "❓ (error loading)"
+        else:
+            # For non-basic types, just show the class name wrapped in angle brackets
+            return f"<{class_name.split('.')[-1]}>"
+
     def __str__(self, *, color: bool = True, latest_only: bool = True) -> str:
         """Returns a human-readable summary of the registry contents.
 
@@ -1247,20 +1261,7 @@ class Registry(Mindtrace):
 
                     # Get the class name from metadata
                     class_name = details.get("class", "❓")
-
-                    # Only try to load basic built-in types
-                    if class_name in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                        try:
-                            obj = self.load(object_name, version)
-                            value_str = str(obj)
-                            # Truncate long values
-                            if len(value_str) > 50:
-                                value_str = value_str[:47] + "..."
-                        except Exception:
-                            value_str = "❓ (error loading)"
-                    else:
-                        # For non-basic types, just show the class name wrapped in angle brackets
-                        value_str = f"<{class_name.split('.')[-1]}>"
+                    value_str = self._format_object_value(object_name, version, class_name)
 
                     if self.version_objects:
                         table.add_row(
@@ -1291,20 +1292,7 @@ class Registry(Mindtrace):
                 version_items = [max(versions.items(), key=lambda kv: [int(x) for x in kv[0].split(".")])]
             for version, details in version_items:
                 cls = details.get("class", "❓ Not registered")
-
-                # Only try to load basic built-in types
-                if cls in ("builtins.str", "builtins.int", "builtins.float", "builtins.bool"):
-                    try:
-                        obj = self.load(object_name, version)
-                        value_str = str(obj)
-                        # Truncate long values
-                        if len(value_str) > 50:
-                            value_str = value_str[:47] + "..."
-                    except Exception:
-                        value_str = "❓ (error loading)"
-                else:
-                    # For non-basic types, just show the class name wrapped in angle brackets
-                    value_str = f"<{cls.split('.')[-1]}>"
+                value_str = self._format_object_value(object_name, version, cls)
 
                 lines.append(f"  - v{version}:")
                 lines.append(f"      class: {cls}")
@@ -1414,6 +1402,19 @@ class Registry(Mindtrace):
 
     ### Dictionary-like interface methods ###
 
+    def _parse_key(self, key: str) -> tuple[str, str | None]:
+        """Parse a registry key into name and version components.
+
+        Args:
+            key: Registry key in format "name" or "name@version"
+
+        Returns:
+            Tuple of (name, version) where version is None if not specified
+        """
+        if "@" in key:
+            return key.split("@", 1)
+        return key, None
+
     def __getitem__(self, key: str) -> Any:
         """Get an object from the registry using dictionary-like syntax.
 
@@ -1428,10 +1429,9 @@ class Registry(Mindtrace):
             ValueError: If the version format is invalid
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, "latest"
+            name, version = self._parse_key(key)
+            if version is None:
+                version = "latest"
             return self.load(name=name, version=version)
         except ValueError as e:
             raise KeyError(f"Object not found: {key}") from e
@@ -1446,10 +1446,7 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If the version format is invalid
         """
-        if "@" in key:
-            name, version = key.split("@", 1)
-        else:
-            name, version = key, None
+        name, version = self._parse_key(key)
         self.save(name=name, obj=value, version=version)
 
     def __delitem__(self, key: str) -> None:
@@ -1463,10 +1460,7 @@ class Registry(Mindtrace):
             ValueError: If the version format is invalid
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
+            name, version = self._parse_key(key)
             self.delete(name=name, version=version)
         except ValueError as e:
             raise KeyError(f"Object not found: {key}") from e
@@ -1481,10 +1475,8 @@ class Registry(Mindtrace):
             True if the object exists, False otherwise.
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name = key
+            name, version = self._parse_key(key)
+            if version is None:
                 version = self._latest(name)
                 if version is None:
                     return False
@@ -1565,44 +1557,10 @@ class Registry(Mindtrace):
             del self[name]
 
         if clear_registry_metadata:
-            # Clear registry metadata by creating a new empty metadata file
             try:
-                if hasattr(self.backend, "_metadata_path"):
-                    import json
-                    import os
-                    import tempfile
-
-                    # Create empty metadata (no version_objects setting)
-                    empty_metadata = {"materializers": {}}
-
-                    if hasattr(self.backend, "gcs"):
-                        # GCP backend
-                        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-                            json.dump(empty_metadata, f)
-                            temp_path = f.name
-                        try:
-                            self.backend.gcs.upload(temp_path, self.backend._metadata_path)
-                        finally:
-                            if os.path.exists(temp_path):
-                                os.unlink(temp_path)
-                    elif hasattr(self.backend, "client"):
-                        # MinIO backend
-                        import io
-
-                        data = json.dumps(empty_metadata).encode()
-                        data_io = io.BytesIO(data)
-                        self.backend.client.put_object(
-                            self.backend.bucket,
-                            str(self.backend._metadata_path),
-                            data_io,
-                            len(data),
-                            content_type="application/json",
-                        )
-                    else:
-                        # Local backend
-                        with open(self.backend._metadata_path, "w") as f:
-                            json.dump(empty_metadata, f)
-
+                # Clear registry metadata by creating a new empty metadata file
+                empty_metadata = {"materializers": {}, "version_objects": False}
+                self.backend.save_registry_metadata(empty_metadata)
             except Exception as e:
                 self.logger.warning(f"Could not clear registry metadata: {e}")
 
@@ -1620,10 +1578,8 @@ class Registry(Mindtrace):
             KeyError: If the object doesn't exist and no default is provided.
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
+            name, version = self._parse_key(key)
+            if version is None:
                 version = self._latest(name)
                 if version is None:
                     if default is not None:
@@ -1660,10 +1616,7 @@ class Registry(Mindtrace):
             return self[key]
         except KeyError:
             if default is not None:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name, version = key, None
+                name, version = self._parse_key(key)
                 with self.get_lock(name, version or "latest"):
                     self[key] = default
             return default

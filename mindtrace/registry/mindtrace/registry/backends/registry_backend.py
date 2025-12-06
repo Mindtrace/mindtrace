@@ -82,6 +82,32 @@ class RegistryBackend(MindtraceABC):  # pragma: no cover
         pass
 
     @abstractmethod
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        This method saves metadata that applies to the entire registry (e.g., version_objects setting,
+        materializers registry). This is distinct from object-level metadata which is stored per object version.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save. Should include keys like
+                "version_objects" and "materializers".
+        """
+        pass
+
+    @abstractmethod
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        This method retrieves metadata that applies to the entire registry (e.g., version_objects setting,
+        materializers registry). This is distinct from object-level metadata which is stored per object version.
+
+        Returns:
+            Dictionary containing registry metadata. Should include keys like "version_objects" and
+            "materializers". Returns empty dict if no metadata exists.
+        """
+        pass
+
+    @abstractmethod
     def list_objects(self) -> List[str]:
         """List all objects in the backend.
 

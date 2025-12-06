@@ -370,6 +370,41 @@ class MinioRegistryBackend(RegistryBackend):
             self.logger.error(f"Error loading materializers: {e}")
             raise
 
+    def save_registry_metadata(self, metadata: dict):
+        """Save registry-level metadata to the backend.
+
+        Args:
+            metadata: Dictionary containing registry metadata to save.
+        """
+        try:
+            data = json.dumps(metadata).encode()
+            data_io = io.BytesIO(data)
+            self.client.put_object(
+                self.bucket, str(self._metadata_path), data_io, len(data), content_type="application/json"
+            )
+        except Exception as e:
+            self.logger.error(f"Error saving registry metadata: {e}")
+            raise e
+
+    def fetch_registry_metadata(self) -> dict:
+        """Fetch registry-level metadata from the backend.
+
+        Returns:
+            Dictionary containing registry metadata. Returns empty dict if no metadata exists.
+        """
+        try:
+            response = self.client.get_object(self.bucket, str(self._metadata_path))
+            return json.loads(response.data.decode())
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                # No metadata file exists
+                return {}
+            # Re-raise any other S3 errors
+            raise
+        except Exception as e:
+            self.logger.debug(f"Could not load registry metadata: {e}")
+            return {}
+
     def list_objects(self) -> List[str]:
         """List all objects in the registry.
 
