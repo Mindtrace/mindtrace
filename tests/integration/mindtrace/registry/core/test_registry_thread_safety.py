@@ -17,11 +17,9 @@ def registry(minio_backend):
 
 def test_concurrent_save_and_load(registry):
     """Test concurrent save and load operations with Minio backend."""
+
     def save_operation(i: int) -> None:
-        model_data = {
-            "weights": [0.1 * i, 0.2 * i],
-            "metadata": {"accuracy": 0.8 + 0.01 * i}
-        }
+        model_data = {"weights": [0.1 * i, 0.2 * i], "metadata": {"accuracy": 0.8 + 0.01 * i}}
         registry.save(f"model:{i}", model_data)
         return i
 
@@ -49,13 +47,11 @@ def test_concurrent_save_and_load(registry):
 
 def test_concurrent_versioning(registry):
     """Test concurrent versioning operations with Minio backend."""
+
     def version_operation(i: int) -> None:
         # Save multiple versions of the same model
         for j in range(3):
-            model_data = {
-                "weights": [0.1 * i, 0.2 * i],
-                "metadata": {"version": j, "accuracy": 0.8 + 0.01 * i}
-            }
+            model_data = {"weights": [0.1 * i, 0.2 * i], "metadata": {"version": j, "accuracy": 0.8 + 0.01 * i}}
             registry.save(f"model:{i}", model_data)
 
     # Create multiple threads to save different versions
@@ -101,6 +97,7 @@ def test_concurrent_metadata_updates(registry):
 
 def test_concurrent_mixed_operations(registry):
     """Test mixed concurrent operations with Minio backend."""
+
     def mixed_operation(i: int) -> None:
         try:
             if i % 3 == 0:
@@ -109,18 +106,18 @@ def test_concurrent_mixed_operations(registry):
             elif i % 3 == 1:
                 # Load and update existing model
                 try:
-                    if registry.has_object(f"model:{i-1}"):
-                        model_data = registry.load(f"model:{i-1}")
+                    if registry.has_object(f"model:{i - 1}"):
+                        model_data = registry.load(f"model:{i - 1}")
                         model_data["metadata"]["updated"] = True
-                        registry.save(f"model:{i-1}", model_data)
+                        registry.save(f"model:{i - 1}", model_data)
                 except ValueError:
                     # Model might not exist yet, which is expected in concurrent operations
                     pass
             else:
                 # Delete model
                 try:
-                    if registry.has_object(f"model:{i-2}"):
-                        registry.delete(f"model:{i-2}")
+                    if registry.has_object(f"model:{i - 2}"):
+                        registry.delete(f"model:{i - 2}")
                 except ValueError:
                     # Model might not exist yet, which is expected in concurrent operations
                     pass
@@ -137,14 +134,14 @@ def test_concurrent_mixed_operations(registry):
     # Verify final state
     # Get all objects in the registry
     objects = registry.list_objects()
-    
+
     # Verify that all existing objects have valid data
     for obj_name in objects:
         assert registry.has_object(obj_name), f"Object {obj_name} should exist"
         model_data = registry.load(obj_name)
         assert "weights" in model_data, f"Object {obj_name} should have weights"
         assert "metadata" in model_data, f"Object {obj_name} should have metadata"
-        
+
         # If the object was updated, verify the update flag
         if "updated" in model_data["metadata"]:
             assert model_data["metadata"]["updated"] is True, f"Object {obj_name} should have updated=True if present"
@@ -163,6 +160,7 @@ def test_concurrent_mixed_operations(registry):
 
 def test_concurrent_dict_interface(registry):
     """Test concurrent dictionary interface operations with Minio backend."""
+
     def dict_operation(i: int) -> None:
         # Save using dictionary syntax
         registry[f"config:{i}"] = {"param1": i, "param2": i * 2}
@@ -186,6 +184,7 @@ def test_concurrent_dict_interface(registry):
 
 def test_concurrent_materializer_registration(registry):
     """Test concurrent materializer registration with Minio backend."""
+
     def register_materializer(i: int) -> None:
         registry.register_materializer(f"test:class:{i}", f"test:materializer:{i}")
 
@@ -224,4 +223,3 @@ def test_concurrent_info_operations(registry):
         assert "class" in version_info
         assert "materializer" in version_info
         assert "metadata" in version_info
-

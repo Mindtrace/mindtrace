@@ -2,7 +2,6 @@
 
 import os
 import uuid
-from pathlib import Path
 from typing import Generator
 
 import pytest
@@ -18,9 +17,7 @@ def gcs_client():
     """Create a GCS client for testing."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
     if not credentials_path:
         pytest.skip("No GCP credentials path provided")
     if not os.path.exists(credentials_path):
@@ -58,9 +55,7 @@ def backend(test_bucket):
     """Create a GCPRegistryBackend instance with a test bucket."""
     config = CoreConfig()
     project_id = os.environ.get("GCP_PROJECT_ID", config["MINDTRACE_GCP"]["GCP_PROJECT_ID"])
-    credentials_path = os.environ.get(
-        "GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"]
-    )
+    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", config["MINDTRACE_GCP"]["GCP_CREDENTIALS_PATH"])
 
     try:
         return GCPRegistryBackend(
@@ -146,9 +141,7 @@ def test_gcp_backend_cache_hash_verification(gcp_registry):
 
     # Corrupt the cache by modifying the data directly
     # This simulates cache corruption or external modification
-    cache_dir = gcp_registry._cache.backend._full_path(
-        gcp_registry._cache.backend._object_key("test:hash", "1.0.0")
-    )
+    cache_dir = gcp_registry._cache.backend._full_path(gcp_registry._cache.backend._object_key("test:hash", "1.0.0"))
     data_json_path = cache_dir / "data.json"
     assert data_json_path.exists(), "data.json should exist in cache"
 
@@ -169,8 +162,7 @@ def test_gcp_backend_cache_hash_verification(gcp_registry):
     # Verify cache was updated with correct hash
     cached_metadata2 = gcp_registry._cache.info("test:hash", version="1.0.0")
     assert cached_metadata2["hash"] == hash1, "Cache should have correct hash after verification"
-    
+
     # Verify cache now has correct data
     cached_correct = gcp_registry._cache.load("test:hash", version="1.0.0", verify_hash=False)
     assert cached_correct == test_data1, "Cache should have correct data after verification"
-

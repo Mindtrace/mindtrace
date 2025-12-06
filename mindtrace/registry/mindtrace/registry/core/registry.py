@@ -195,7 +195,7 @@ class Registry(Mindtrace):
 
     def __init__(
         self,
-        backend: str | Path |RegistryBackend | None = None,
+        backend: str | Path | RegistryBackend | None = None,
         version_objects: bool = False,
         versions_cache_ttl: float = 60.0,
         use_cache: bool = True,
@@ -518,18 +518,28 @@ class Registry(Mindtrace):
                             metadata=metadata,
                         )
                         # Get the cached directory path
-                        cache_dir_path = self._cache.backend._full_path(
-                            self._cache.backend._object_key(name, version)
-                        )
+                        cache_dir_path = self._cache.backend._full_path(self._cache.backend._object_key(name, version))
                         # Verify the path exists (cache Registry's save() should have completed synchronously)
                         if not cache_dir_path.exists():
-                            self.logger.warning(f"Cache directory {cache_dir_path} does not exist after save. Will create temp directory.")
+                            self.logger.warning(
+                                f"Cache directory {cache_dir_path} does not exist after save. Will create temp directory."
+                            )
                             cache_dir_path = None
                         else:
                             self.logger.debug(f"Saved {name}@{version} to cache at {cache_dir_path}")
                     except Exception as e:
-                        self.logger.warning(f"Error saving to cache {name}@{version}: {e}. Continuing with remote save.")
+                        self.logger.warning(
+                            f"Error saving to cache {name}@{version}: {e}. Continuing with remote save."
+                        )
                         cache_dir_path = None
+
+                        # In case of error, the object may be in an inconsistent state. Delete it from the cache.
+                        try:
+                            self._cache.delete(name=name, version=version)
+                        except Exception as e:
+                            self.logger.warning(
+                                f"Error deleting object from cache {name}@{version}, it may be in an inconsistent state: {e}"
+                            )
 
                 # Generate temp version for atomic save
                 temp_version = f"__temp__{uuid.uuid4()}__"
@@ -540,15 +550,15 @@ class Registry(Mindtrace):
                         if cache_dir_path is not None and cache_dir_path.exists():
                             # Use cached directory - compute hash and upload to remote
                             artifact_hash = compute_dir_hash(cache_dir_path)
-                            
+
                             metadata_dict = {
-                            "class": object_class,
-                            "materializer": materializer_class,
-                            "init_params": ifnone(init_params, default={}),
-                            "metadata": ifnone(metadata, default={}),
+                                "class": object_class,
+                                "materializer": materializer_class,
+                                "init_params": ifnone(init_params, default={}),
+                                "metadata": ifnone(metadata, default={}),
                                 "hash": artifact_hash,
                             }
-                            
+
                             # Upload cached directory to remote backend
                             self.backend.push(name=name, version=temp_version, local_path=str(cache_dir_path))
                             self.backend.save_metadata(name=name, version=temp_version, metadata=metadata_dict)
@@ -556,13 +566,13 @@ class Registry(Mindtrace):
                             # No cache - create temp directory and save object
                             with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir_path:
                                 materializer = instantiate_target(
-                                        materializer, uri=str(temp_dir_path), artifact_store=self._artifact_store
+                                    materializer, uri=str(temp_dir_path), artifact_store=self._artifact_store
                                 )
                                 materializer.save(obj)
-                                    
+
                                 # Compute artifact hash after materializer saves the object
                                 artifact_hash = compute_dir_hash(temp_dir_path)
-                                
+
                                 metadata_dict = {
                                     "class": object_class,
                                     "materializer": materializer_class,
@@ -570,7 +580,7 @@ class Registry(Mindtrace):
                                     "metadata": ifnone(metadata, default={}),
                                     "hash": artifact_hash,
                                 }
-                                
+
                                 # Upload to remote backend
                                 self.backend.push(name=name, version=temp_version, local_path=str(temp_dir_path))
                                 self.backend.save_metadata(name=name, version=temp_version, metadata=metadata_dict)
@@ -632,15 +642,17 @@ class Registry(Mindtrace):
             ValueError: If verify_hash is True and the computed hash doesn't match the metadata hash.
         """
         if not verify_cache and self._cache is not None and self._cache.has_object(name):
-            return self._cache.load(name=name, version=version, verify_hash=verify_hash, verify_cache=verify_cache, **kwargs)
-            
+            return self._cache.load(
+                name=name, version=version, verify_hash=verify_hash, verify_cache=verify_cache, **kwargs
+            )
+
         if version == "latest" or not self.version_objects:
             version = self._latest(name)
 
         if not self.has_object(name=name, version=version):
             self.logger.error(f"Object {name} version {version} does not exist.")
             raise ValueError(f"Object {name} version {version} does not exist.")
-        
+
         # Acquire shared lock for reading metadata
         lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
         with lock_context:
@@ -661,7 +673,7 @@ class Registry(Mindtrace):
             except Exception as e:
                 self.logger.warning(f"Error checking cache for {name}@{version}: {e}. Falling back to remote.")
                 cache_available = False
-        
+
         use_cache = False
         if cache_available:
             # If verify_hash is True, compute hash from cache directory before loading
@@ -680,7 +692,7 @@ class Registry(Mindtrace):
                         try:
                             if self._cache.has_object(name=name, version=version):
                                 self._cache.delete(name=name, version=version)
-                                self.logger.debug(f"Deleted stale cache entry for {name}@{version}") 
+                                self.logger.debug(f"Deleted stale cache entry for {name}@{version}")
                         except Exception as e:
                             self.logger.warning(f"Error deleting stale cache entry for {name}@{version}: {e}")
                         # Don't use cache - fall through to remote loading
@@ -694,7 +706,7 @@ class Registry(Mindtrace):
             else:
                 # verify_hash is False, use cache without checking hash
                 use_cache = True
-        
+
         # If cache is available and hash matches (or verify_hash is False), load from cache
         if use_cache:
             # Make sure to sync the remote metadata with the cache before returning the object
@@ -703,14 +715,14 @@ class Registry(Mindtrace):
                 self._cache.backend.save_metadata(name=name, version=version, metadata=metadata)
 
             return self._cache.load(name=name, version=version, verify_hash=False, **kwargs)
-        
+
         # Get the object from the remote backend
         lock_context = self.get_lock(name, version, shared=True) if acquire_lock else nullcontext()
         with lock_context:
             try:
                 with TemporaryDirectory(dir=self._artifact_store.path) as temp_dir:
                     self.backend.pull(name=name, version=version, local_path=temp_dir)
-                    
+
                     # Verify hash if requested
                     if verify_hash:
                         expected_hash = metadata.get("hash")
@@ -728,10 +740,9 @@ class Registry(Mindtrace):
                                 )
                         else:
                             self.logger.warning(
-                                f"No hash found in metadata for {name}@{version}. "
-                                f"Skipping hash verification."
+                                f"No hash found in metadata for {name}@{version}. Skipping hash verification."
                             )
-                    
+
                     materializer = instantiate_target(materializer, uri=temp_dir, artifact_store=self._artifact_store)
 
                     # Convert string class name to actual class
@@ -741,7 +752,7 @@ class Registry(Mindtrace):
                         object_class = getattr(module, class_name)
 
                     obj = materializer.load(data_type=object_class, **init_params)
-                    
+
                     # Save to cache for future use
                     if self._cache is not None:
                         try:
@@ -750,13 +761,15 @@ class Registry(Mindtrace):
                                 name=name,
                                 obj=obj,
                                 version=version,
-                                materializer=metadata["materializer"], 
+                                materializer=metadata["materializer"],
                                 init_params=init_params,
                                 metadata=metadata.get("metadata", {}),
                             )
                             self.logger.debug(f"Saved {name}@{version} to cache after download")
                         except Exception as e:
-                            self.logger.warning(f"Error saving {name}@{version} to cache: {e}. Continuing without cache.")
+                            self.logger.warning(
+                                f"Error saving {name}@{version} to cache: {e}. Continuing without cache."
+                            )
 
                     # If the object is a Path, optionally move it to the target directory
                     if isinstance(obj, Path) and output_dir is not None:
@@ -771,7 +784,7 @@ class Registry(Mindtrace):
                                 for item in obj.iterdir():
                                     shutil.move(str(item), str(output_path / item.name))
                                 obj = output_path
-                
+
                 return obj
             except Exception as e:
                 self.logger.error(f"Error loading {name}@{version}: {e}")
@@ -804,7 +817,7 @@ class Registry(Mindtrace):
             with self.get_lock(name, version):
                 self.backend.delete(name, ver)
                 self.backend.delete_metadata(name, ver)
-                
+
                 # Delete from cache if it exists
                 if self._cache is not None:
                     try:
@@ -824,7 +837,7 @@ class Registry(Mindtrace):
         if self._cache is not None:
             self._cache.clear()
             self.logger.debug("Cleared cache.")
-    
+
     def info(self, name: str | None = None, version: str | None = None, acquire_lock: bool = True) -> Dict[str, Any]:
         """Get detailed information about objects in the registry.
 
@@ -1029,14 +1042,14 @@ class Registry(Mindtrace):
         """
         # Get backend URI as string and normalize
         backend_uri_str = str(backend_uri)
-        
+
         # Compute SHA256 hash of the URI
         uri_hash = hashlib.sha256(backend_uri_str.encode()).hexdigest()[:16]  # Use first 16 chars
-        
+
         # Build cache directory path
         temp_dir = Path(config["MINDTRACE_DIR_PATHS"]["TEMP_DIR"]).expanduser().resolve()
         cache_dir = temp_dir / f"registry_cache_{uri_hash}"
-        
+
         return cache_dir
 
     def list_objects_and_versions(self) -> Dict[str, List[str]]:
