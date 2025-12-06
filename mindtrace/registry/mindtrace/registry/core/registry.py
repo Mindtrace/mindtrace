@@ -1343,6 +1343,19 @@ class Registry(Mindtrace):
 
     ### Dictionary-like interface methods ###
 
+    def _parse_key(self, key: str) -> tuple[str, str | None]:
+        """Parse a registry key into name and version components.
+
+        Args:
+            key: Registry key in format "name" or "name@version"
+
+        Returns:
+            Tuple of (name, version) where version is None if not specified
+        """
+        if "@" in key:
+            return key.split("@", 1)
+        return key, None
+
     def __getitem__(self, key: str) -> Any:
         """Get an object from the registry using dictionary-like syntax.
 
@@ -1357,10 +1370,9 @@ class Registry(Mindtrace):
             ValueError: If the version format is invalid
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, "latest"
+            name, version = self._parse_key(key)
+            if version is None:
+                version = "latest"
             return self.load(name=name, version=version)
         except ValueError as e:
             raise KeyError(f"Object not found: {key}") from e
@@ -1375,10 +1387,7 @@ class Registry(Mindtrace):
         Raises:
             ValueError: If the version format is invalid
         """
-        if "@" in key:
-            name, version = key.split("@", 1)
-        else:
-            name, version = key, None
+        name, version = self._parse_key(key)
         self.save(name=name, obj=value, version=version)
 
     def __delitem__(self, key: str) -> None:
@@ -1392,10 +1401,7 @@ class Registry(Mindtrace):
             ValueError: If the version format is invalid
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
+            name, version = self._parse_key(key)
             self.delete(name=name, version=version)
         except ValueError as e:
             raise KeyError(f"Object not found: {key}") from e
@@ -1410,10 +1416,8 @@ class Registry(Mindtrace):
             True if the object exists, False otherwise.
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name = key
+            name, version = self._parse_key(key)
+            if version is None:
                 version = self._latest(name)
                 if version is None:
                     return False
@@ -1494,10 +1498,9 @@ class Registry(Mindtrace):
             del self[name]
 
         if clear_registry_metadata:
-            # Clear registry metadata by creating a new empty metadata file
             try:
-                # Create empty metadata (no version_objects setting)
-                empty_metadata = {"materializers": {}}
+                # Clear registry metadata by creating a new empty metadata file
+                empty_metadata = {"materializers": {}, "version_objects": False}
                 self.backend.save_registry_metadata(empty_metadata)
             except Exception as e:
                 self.logger.warning(f"Could not clear registry metadata: {e}")
@@ -1516,10 +1519,8 @@ class Registry(Mindtrace):
             KeyError: If the object doesn't exist and no default is provided.
         """
         try:
-            if "@" in key:
-                name, version = key.split("@", 1)
-            else:
-                name, version = key, None
+            name, version = self._parse_key(key)
+            if version is None:
                 version = self._latest(name)
                 if version is None:
                     if default is not None:
@@ -1556,10 +1557,7 @@ class Registry(Mindtrace):
             return self[key]
         except KeyError:
             if default is not None:
-                if "@" in key:
-                    name, version = key.split("@", 1)
-                else:
-                    name, version = key, None
+                name, version = self._parse_key(key)
                 with self.get_lock(name, version or "latest"):
                     self[key] = default
             return default
