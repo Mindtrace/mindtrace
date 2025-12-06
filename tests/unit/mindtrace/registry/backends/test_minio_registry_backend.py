@@ -1733,6 +1733,58 @@ def test_has_object_stat_object_generic_exception_fallback_success(backend, monk
     assert result is True
 
 
+def test_has_object_stat_object_nosuchkey_returns_false(backend, monkeypatch):
+    """Test has_object when stat_object raises S3Error with NoSuchKey or 404 code.
+    
+    This covers the path where stat_object raises S3Error with code "NoSuchKey" or "404",
+    which should return False directly without attempting to fetch metadata.
+    """
+    # Mock stat_object to raise S3Error with NoSuchKey code
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="NoSuchKey",
+            message="Object does not exist",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+
+    # Should return False directly when NoSuchKey is raised
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
+def test_has_object_stat_object_404_returns_false(backend, monkeypatch):
+    """Test has_object when stat_object raises S3Error with 404 code.
+    
+    This covers the path where stat_object raises S3Error with code "404",
+    which should return False directly without attempting to fetch metadata.
+    """
+    # Mock stat_object to raise S3Error with 404 code
+    def mock_stat_object(bucket, object_name):
+        raise S3Error(
+            code="404",
+            message="Object not found",
+            resource=f"/{backend.bucket}/{object_name}",
+            request_id="test-request-id",
+            host_id="test-host-id",
+            response=None,  # type: ignore
+            bucket_name=backend.bucket,
+            object_name=object_name,
+        )
+
+    monkeypatch.setattr(backend.client, "stat_object", mock_stat_object)
+
+    # Should return False directly when 404 is raised
+    result = backend.has_object("test:object", "1.0.0")
+    assert result is False
+
+
 def test_has_object_stat_object_generic_exception_fallback_fails(backend, monkeypatch):
     """Test has_object when stat_object raises non-S3Error exception and fetch_metadata fails (lines 442-448)."""
 
