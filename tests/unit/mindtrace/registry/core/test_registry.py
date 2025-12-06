@@ -412,6 +412,39 @@ def test_save_without_materializer(registry):
         registry.save("test:custom", custom_obj)
 
 
+def test_find_materializer_with_class_object(registry, test_config):
+    """Test that _find_materializer() converts a materializer class object to a string.
+    
+    This test covers the code path in _find_materializer() where a materializer
+    class object is converted to a string representation using type(materializer).
+    
+    Note: When a materializer class object is provided (not a string), it is converted
+    to a string using type(materializer) which returns:
+    - For classes with metaclasses: the metaclass (e.g., ArchiverMeta)
+    - For regular classes: builtins.type
+    """
+    from mindtrace.registry.archivers.config_archiver import ConfigArchiver
+    
+    # Call _find_materializer with a materializer class object (not a string)
+    # This should trigger the conversion: 
+    # return f"{type(materializer).__module__}.{type(materializer).__name__}"
+    materializer_str = registry._find_materializer(test_config, provided_materializer=ConfigArchiver)
+    
+    # Verify the materializer class was converted to a string
+    # Since ConfigArchiver uses a metaclass, type(ConfigArchiver) returns ArchiverMeta
+    assert materializer_str == "mindtrace.registry.core.archiver.ArchiverMeta"
+    assert isinstance(materializer_str, str)
+    
+    # Verify that if we pass a regular class, type() returns builtins.type
+    class SimpleMaterializer:
+        pass
+    
+    # This should convert type(SimpleMaterializer) which is builtins.type
+    simple_str = registry._find_materializer(test_config, provided_materializer=SimpleMaterializer)
+    assert simple_str == "builtins.type"
+    assert isinstance(simple_str, str)
+
+
 def test_load_without_class_metadata(registry, test_config):
     """Test that loading an object without a class in metadata raises a ValueError."""
     # Save the config first
